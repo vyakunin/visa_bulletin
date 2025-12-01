@@ -120,7 +120,7 @@ def build_multi_class_chart_with_projections(
     country_label = Country(country).label if country in [c.value for c in Country] else country
     fig.update_layout(
         title=dict(
-            text=f'Priority Date Progress: {category_label} - {country_label}',
+            text=f'Priority Date Progress: {category_label} - {country_label}<br><sub>Click legend items to show/hide • Double-click to focus</sub>',
             font=dict(size=16)
         ),
         xaxis=dict(
