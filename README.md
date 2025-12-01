@@ -87,11 +87,17 @@ deactivate
 
 ### Running Tests
 
-The project includes a comprehensive test suite for the parsing functionality:
+The project includes a comprehensive test suite in the `tests/` directory:
 
 ```bash
 source ~/visa-bulletin-venv/bin/activate
-python -m unittest test_parser.py -v
+python -m unittest discover -s tests -v
+```
+
+Or to run a specific test file:
+
+```bash
+python -m unittest tests.test_parser -v
 ```
 
 Tests verify:
@@ -100,6 +106,8 @@ Tests verify:
 - Proper handling of "C" (Current) and "U" (Unauthorized) statuses
 - Whitespace normalization
 - Data integrity across 3 randomly selected bulletins
+
+**Note:** Tests automatically run before every git commit via pre-commit hook.
 
 The script will:
 1. Fetch the main visa bulletin index page
@@ -118,14 +126,19 @@ To force a fresh download, delete the `saved_pages/` directory or specific HTML 
 
 ```
 visa_bulletin/
+├── .git/
+│   └── hooks/
+│       └── pre-commit           # Git hook to run tests before commit
 ├── lib/
 │   ├── __init__.py              # Package initializer
 │   ├── bulletint_parser.py      # HTML parsing logic
 │   ├── publication_data.py      # Data class for publications
 │   └── table.py                 # Data class for tables
+├── tests/
+│   ├── __init__.py              # Tests package initializer
+│   └── test_parser.py           # Unit tests for parser functions
 ├── saved_pages/                 # Cached HTML files (125 bulletins)
 ├── refresh_data.py              # Main entry point script
-├── test_parser.py               # Unit tests for parser functions
 ├── setup.sh                     # Automated setup script
 ├── requirements.txt             # Python dependencies
 ├── .gitignore                   # Git ignore rules
@@ -178,6 +191,18 @@ The test suite validates against these bulletins:
 - `visa-bulletin-for-october-2021.html`
 
 All 9 test cases pass successfully across all three files.
+
+### Git Pre-Commit Hook
+
+The repository includes an automated pre-commit hook that runs all tests before allowing commits. This ensures:
+- No broken code is committed
+- All tests pass before code is saved to version control
+- Code quality standards are maintained
+
+The hook will automatically block commits if tests fail. To bypass (not recommended):
+```bash
+git commit --no-verify
+```
 
 ## Data Extracted
 
@@ -270,6 +295,48 @@ Where:
 - Line 1: Bulletin URL
 - Line 2: Publication date
 - Line 3: Number of tables extracted
+
+## Git Workflow
+
+The repository is initialized with git and includes automated quality checks.
+
+### Initial Setup (Already Done)
+
+```bash
+git init  # Already initialized
+```
+
+### Making Commits
+
+When you commit changes, tests run automatically:
+
+```bash
+git add .
+git commit -m "Your commit message"
+```
+
+Output example:
+```
+Running tests before commit...
+test_normalize_whitespace ... ok
+test_extract_tables_returns_list ... ok
+[... all tests ...]
+----------------------------------------------------------------------
+Ran 9 tests in 0.334s
+
+OK
+
+✓ All tests passed! Proceeding with commit...
+```
+
+If tests fail, the commit is blocked and you'll see which tests failed.
+
+### Bypassing Tests (Not Recommended)
+
+Only use when necessary (e.g., documentation-only changes):
+```bash
+git commit --no-verify
+```
 
 ## Legal Notice
 
