@@ -6,12 +6,6 @@ for database storage.
 """
 
 from datetime import date
-from typing import List, Dict, Any
-import sys
-import os
-
-# Add project root to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
@@ -35,7 +29,7 @@ class BulletinExtractor:
         self.publication_date = publication_data.publication_date.date()
         self.publication_url = publication_data.url
     
-    def extract_from_table(self, table) -> List[Dict[str, Any]]:
+    def extract_from_table(self, table) -> list[dict[str, any]]:
         """
         Extract structured data from a parsed Table object
         
@@ -82,7 +76,7 @@ class BulletinExtractor:
         
         return results
     
-    def _parse_cutoff_value(self, value) -> Dict[str, Any]:
+    def _parse_cutoff_value(self, value) -> dict[str, any]:
         """
         Parse a cutoff value (date, 'C', or 'U')
         
