@@ -6,7 +6,7 @@
         <!-- Filter Card -->
         <div class="card filter-card">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">🔍 Filter Options</h5>
+                <h5 class="mb-0"><i class="bi bi-funnel"></i> Filter Options</h5>
             </div>
             <div class="card-body">
                 <form method="get" action="" id="filterForm">
@@ -58,7 +58,7 @@
                         <!-- Update Button -->
                         <div class="col-12">
                             <button type="submit" class="btn btn-primary w-100">
-                                Update
+                                <i class="bi bi-arrow-clockwise"></i> Update Analysis
                             </button>
                         </div>
                     </div>
@@ -68,7 +68,7 @@
         
         {% if not has_data %}
             <div class="alert alert-warning" role="alert">
-                <h5 class="alert-heading">📊 No Data Available</h5>
+                <h5 class="alert-heading"><i class="bi bi-graph-up-arrow"></i> No Data Available</h5>
                 <p>No visa bulletin data found for the selected combination:</p>
                 <ul class="mb-2">
                     <li><strong>Category:</strong> {{ category_display }}</li>
@@ -90,7 +90,7 @@
             <!-- Projection Results for Each Visa Class -->
             {% if visa_class_data %}
             <div class="alert projection-alert alert-info" role="alert">
-                <h5 class="alert-heading">📅 Processing Estimates by Visa Class</h5>
+                <h5 class="alert-heading"><i class="bi bi-calendar-check"></i> Processing Estimates by Visa Class</h5>
                 <p class="mb-2 small text-muted">
                     Hover over the projection lines in the chart below to see estimated dates for each visa class.
                 </p>
@@ -110,9 +110,9 @@
                                     {{ projection.avg_progress_days_per_month }} days/month
                                 </p>
                                 {% elif projection.status == 'current' %}
-                                <p class="mb-0 small text-success">✅ Current</p>
+                                <p class="mb-0 small text-success"><i class="bi bi-check-circle-fill"></i> Current</p>
                                 {% elif projection.status == 'no_movement' %}
-                                <p class="mb-0 small text-warning">⚠️ No movement</p>
+                                <p class="mb-0 small text-warning"><i class="bi bi-exclamation-triangle"></i> No movement</p>
                                 {% endif %}
                             </div>
                         </div>
@@ -123,7 +123,7 @@
                 </div>
                 <hr class="my-2">
                 <p class="mb-0 small">
-                    ⚠️ <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
+                    <i class="bi bi-exclamation-triangle"></i> <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
                 </p>
             </div>
             {% endif %}
@@ -133,7 +133,7 @@
                 <div class="card-body">
                     <div class="alert alert-light py-2 mb-3" role="alert">
                         <small class="text-muted">
-                            💡 <strong>Chart Tips:</strong> Click a visa class in the legend to show/hide it. Double-click to isolate only that class. Click data points to view official bulletins.
+                            <i class="bi bi-lightbulb"></i> <strong>Chart Tips:</strong> Click a visa class in the legend to show/hide it. Double-click to isolate only that class. Click data points to view official bulletins.
                         </small>
                     </div>
                     {{ chart_html|safe }}
@@ -144,7 +144,7 @@
         <!-- Info Section -->
         <div class="card mt-4">
             <div class="card-header">
-                <h5 class="mb-0">ℹ️ About This Dashboard</h5>
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Dashboard</h5>
             </div>
             <div class="card-body">
                 <h6>What is a Priority Date?</h6>

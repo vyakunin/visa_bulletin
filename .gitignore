@@ -26,5 +26,8 @@ Thumbs.db
 *.db
 *.sqlite3
 
+# Mockups (not for production)
+mockups/
+
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/

@@ -22,3 +22,13 @@ py_library(
     ],
 )
 
+py_library(
+    name = "context_processors",
+    srcs = ["context_processors.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings",
+        requirement("Django"),
+    ],
+)
+

@@ -80,6 +80,7 @@ py_binary(
     deps = [
         "//django_config:settings",
         "//django_config:urls",
+        "//django_config:context_processors",
         "//webapp:apps",
         "//webapp:views",
         "//webapp:urls",
@@ -125,5 +126,11 @@ py_binary(
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
+)
+
+# Convenience target to restart the development server
+sh_binary(
+    name = "restart_server",
+    srcs = ["scripts/restart_server.sh"],
 )
 

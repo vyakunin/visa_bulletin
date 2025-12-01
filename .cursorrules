@@ -10,6 +10,7 @@
 bazel test //tests:test_extractor
 bazel run //:refresh_data
 bazel test //tests:test_parser //tests:test_extractor //tests:test_integration
+./scripts/restart_server.sh              # Restart dev server (preferred)
 ```
 
 **❌ BAD:**
@@ -18,6 +19,7 @@ python refresh_data.py                    # Use: bazel run //:refresh_data
 pytest tests/                             # Use: bazel test //tests:...
 python -m unittest discover              # Use: bazel test //tests:...
 source ~/visa-bulletin-venv/bin/activate # Not needed with Bazel
+pkill -9 -f "runserver" && bazel run...  # Use: ./scripts/restart_server.sh
 ```
 
 **Rationale:**
@@ -27,24 +29,44 @@ source ~/visa-bulletin-venv/bin/activate # Not needed with Bazel
 - Single source of truth for dependencies
 
 ### Rule: Only Commit When Explicitly Asked
-**NEVER auto-commit changes. Only commit when user explicitly requests it.**
+**🚫 NEVER auto-commit changes. ONLY commit when user EXPLICITLY requests it. 🚫**
 
-**User must explicitly say:**
-- "commit these changes"
-- "make a commit"
-- "commit this"
-- Or use explicit phrasing requesting a commit
+**This is CRITICAL. When in doubt, DO NOT COMMIT.**
 
-**Do NOT commit when:**
-- Finishing a task
-- Fixing bugs
-- Making changes
-- User says "looks good" or "thanks"
+**User must use words like:**
+- "commit" / "commit this" / "commit these changes"
+- "push" / "push to git" / "push to github"
+- "save to git" / "add to git"
+- Or explicitly say "commit and push"
+
+**❌ DO NOT COMMIT when user says:**
+- "create a file" / "add a file" / "make a document"
+- "add analytics" / "update design"
+- "looks good" / "thanks" / "great"
+- "deploy" / "update the site" (deployment is separate from git commit)
+- Finishing ANY task
+- Fixing ANY bugs
+- Making ANY changes
+
+**✅ What to do instead:**
+1. Create/modify the files
+2. Show the user what changed
+3. WAIT for explicit commit request
+4. Let user review changes first
+
+**Example of what counts as explicit:**
+- User: "commit this" → ✅ Commit
+- User: "looks good, commit it" → ✅ Commit
+- User: "push the changes" → ✅ Commit and push
+- User: "add a README" → ❌ Create file but DON'T commit
+- User: "deploy to AWS" → ❌ Deploy but DON'T commit (unless they also say "commit")
 
 **Rationale:**
 - User controls git history
 - Prevents premature commits
 - Allows review before committing
+- User may want to make more changes
+- Commits are permanent and public
 
 ## Bazel Build System
 
