@@ -7,6 +7,7 @@ load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_test(
     name = "test_parser",
+    size = "small",
     srcs = ["test_parser.py"],
     data = [
         "//saved_pages:test_data",
@@ -23,6 +24,7 @@ py_test(
 
 py_test(
     name = "test_extractor",
+    size = "small",
     srcs = ["conftest.py", "test_extractor.py"],
     main = "test_extractor.py",
     deps = [
@@ -47,6 +49,7 @@ py_test(
 
 py_test(
     name = "test_integration",
+    size = "small",
     srcs = ["conftest.py", "test_integration.py"],
     main = "test_integration.py",
     data = [
