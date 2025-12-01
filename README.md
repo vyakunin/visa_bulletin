@@ -306,13 +306,11 @@ Represents an extracted table from a bulletin.
 
 ### Known Issues
 
-1. **Incomplete main() function**: The `main()` function in `refresh_data.py` (lines 98-102) has incomplete logic in the inner loop that doesn't do anything with the parsed table data.
+1. **Typo in filename**: `bulletint_parser.py` should be `bulletin_parser.py` (missing 'e', extra 'i')
 
-2. **Typo in filename**: `bulletint_parser.py` should be `bulletin_parser.py` (missing 'e', extra 'i')
+2. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
 
-3. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
-
-4. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `refresh_data.py`)
+3. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `refresh_data.py`)
 
 ### Potential Improvements
 
@@ -322,7 +320,7 @@ Represents an extracted table from a bulletin.
 - Export data to CSV/JSON formats
 - ~~Add unit tests~~ ✅ **Done!** (test_parser.py covers core functionality)
 - Create data visualization capabilities
-- Fix the incomplete main() function logic
+- ~~Fix the incomplete main() function logic~~ ✅ **Done!** (now displays parsed tables)
 - Add CI/CD pipeline for automated testing
 
 ## Example Output
