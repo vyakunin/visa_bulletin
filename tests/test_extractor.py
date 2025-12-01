@@ -31,11 +31,17 @@ class TestBulletinExtractor(unittest.TestCase):
         """Setup test database tables once"""
         super().setUpClass()
         # Create tables directly from models (no migrations needed)
-        from django.core.management import call_command
         from django.db import connection
         with connection.schema_editor() as schema_editor:
-            schema_editor.create_model(Bulletin)
-            schema_editor.create_model(VisaCutoffDate)
+            # Only create if tables don't exist
+            try:
+                schema_editor.create_model(Bulletin)
+            except Exception:
+                pass  # Table already exists
+            try:
+                schema_editor.create_model(VisaCutoffDate)
+            except Exception:
+                pass  # Table already exists
     
     def tearDown(self):
         """Clean up test data after each test"""
@@ -61,13 +67,14 @@ class TestBulletinExtractor(unittest.TestCase):
         extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
         results = extractor.extract_from_table(table)
         
-        # Verify F1 extraction
-        f1_all = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'ALL')
+        # Verify F1 extraction (using enum values, not names)
+        f1_all = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'all')
         self.assertEqual(f1_all['cutoff_date'], date(2016, 11, 8))
         self.assertFalse(f1_all['is_current'])
-        self.assertEqual(f1_all['action_type'], 'FINAL_ACTION')
+        self.assertEqual(f1_all['action_type'], 'final_action')
+        self.assertEqual(f1_all['visa_category'], 'family_sponsored')
         
-        f1_mexico = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'MEXICO')
+        f1_mexico = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'mexico')
         self.assertEqual(f1_mexico['cutoff_date'], date(2006, 3, 1))
     
     def test_handle_current_status(self):
@@ -102,11 +109,12 @@ class TestBulletinExtractor(unittest.TestCase):
     
     def test_map_table_title_to_category_and_action(self):
         """Test mapping table titles to enums"""
+        # Use enum values (lowercase), not names
         test_cases = [
-            ('family_sponsored_final_actions', 'FAMILY_SPONSORED', 'FINAL_ACTION'),
-            ('family_sponsored_dates_for_filing', 'FAMILY_SPONSORED', 'FILING'),
-            ('employment_based_final_action', 'EMPLOYMENT_BASED', 'FINAL_ACTION'),
-            ('employment_based_dates_for_filing', 'EMPLOYMENT_BASED', 'FILING'),
+            ('family_sponsored_final_actions', 'family_sponsored', 'final_action'),
+            ('family_sponsored_dates_for_filing', 'family_sponsored', 'filing'),
+            ('employment_based_final_action', 'employment_based', 'final_action'),
+            ('employment_based_dates_for_filing', 'employment_based', 'filing'),
         ]
         
         for title, expected_category, expected_action in test_cases:
@@ -134,11 +142,12 @@ class TestBulletinExtractor(unittest.TestCase):
         results = extractor.extract_from_table(table)
         
         countries = {r['country'] for r in results}
-        self.assertIn('ALL', countries)
-        self.assertIn('CHINA', countries)
-        self.assertIn('INDIA', countries)
-        self.assertIn('MEXICO', countries)
-        self.assertIn('PHILIPPINES', countries)
+        # Use enum values (lowercase), not names
+        self.assertIn('all', countries)
+        self.assertIn('china', countries)
+        self.assertIn('india', countries)
+        self.assertIn('mexico', countries)
+        self.assertIn('philippines', countries)
     
     def test_save_to_database(self):
         """Test saving extracted data to database"""
@@ -155,16 +164,17 @@ class TestBulletinExtractor(unittest.TestCase):
         for data in results:
             VisaCutoffDate.objects.create(bulletin=bulletin, **data)
         
-        # Query back
+        # Query back (using enum values)
         saved = VisaCutoffDate.objects.filter(
             bulletin=bulletin,
             visa_class='F1',
-            country='ALL'
+            country='all'
         ).first()
         
         self.assertIsNotNone(saved)
         self.assertEqual(saved.cutoff_date, date(2016, 11, 8))
-        self.assertEqual(saved.visa_category, 'FAMILY_SPONSORED')
+        self.assertEqual(saved.visa_category, 'family_sponsored')
+        self.assertEqual(saved.action_type, 'final_action')
     
     def test_idempotent_save(self):
         """Test that saving same bulletin twice doesn't duplicate"""
