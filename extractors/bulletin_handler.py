@@ -90,8 +90,8 @@ def save_bulletin_to_db(publication_data: Union[PublicationData, date], tables: 
     else:
         print(f"Bulletin already exists: {publication_date}")
     
-    # Create extractor for this bulletin
-    extractor = BulletinExtractor(publication_date=publication_date)
+    # Create extractor - pass PublicationData if available, else date
+    extractor = BulletinExtractor(publication_data)
     
     # Process each table
     for table in tables:

@@ -6,7 +6,7 @@ for database storage.
 """
 
 from datetime import date
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 import sys
 import os
 
@@ -16,19 +16,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
+from lib.publication_data import PublicationData
 
 
 class BulletinExtractor:
     """Extracts structured data from parsed bulletin tables"""
     
-    def __init__(self, publication_date: date):
+    def __init__(self, publication_data: Union[PublicationData, date]):
         """
-        Initialize extractor for a specific bulletin publication date
+        Initialize extractor for a specific bulletin
         
         Args:
-            publication_date: The date of the bulletin (first day of month)
+            publication_data: Either a PublicationData object (preferred) or a date
+            
+        Examples:
+            # Preferred: Pass PublicationData
+            extractor = BulletinExtractor(publication_data)
+            
+            # Legacy: Pass date directly (for tests)
+            extractor = BulletinExtractor(date(2023, 3, 1))
         """
-        self.publication_date = publication_date
+        if isinstance(publication_data, PublicationData):
+            self.publication_date = publication_data.publication_date.date()
+            self.publication_url = publication_data.url
+        else:
+            # Legacy format: date passed directly
+            self.publication_date = publication_data
+            self.publication_url = None
     
     def extract_from_table(self, table) -> List[Dict[str, Any]]:
         """
