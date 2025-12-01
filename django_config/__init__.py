@@ -1,0 +1,2 @@
+# Django configuration package
+
