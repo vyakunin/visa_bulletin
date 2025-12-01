@@ -201,17 +201,35 @@ open http://localhost:8000
 
 ## Deployment
 
-**Production deployment ready!** See [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md) for:
-- AWS Lightsail setup ($5/month)
-- Docker deployment (works on any cloud)
-- Security hardening
-- SSL/HTTPS configuration
-- Monitoring setup
+### Local vs Production Architecture
 
-**Quick deploy with Docker:**
+This project uses **different tooling** for local development vs production deployment:
+
+**Local Development (Your Machine):**
+- ✅ **Bazel** for building, testing, and running
+- ✅ Hermetic builds with caching
+- ✅ Fast iteration with `bazel run //:runserver`
+- ✅ Reproducible test environment
+- 💻 **Why**: Bazel's toolchain (~500MB) and build cache provide excellent DX
+
+**Production (AWS Lightsail $5/month):**
+- ✅ **Raw Python** with venv
+- ✅ Gunicorn as WSGI server
+- ✅ Direct `python` commands
+- ✅ Minimal resource footprint
+- 🚀 **Why**: Fits 1GB RAM constraint; Bazel requires ~1-2GB RAM for builds
+
+**Quick Deploy:**
 ```bash
-docker-compose up -d
+./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
 ```
+
+**Full deployment guide:** See [deployment/README.md](deployment/README.md) for:
+- AWS Lightsail setup ($5/month)
+- Nginx reverse proxy
+- SSL/HTTPS with Let's Encrypt
+- Systemd service management
+- Daily cron job for data refresh
 
 ## Project Structure
 
