@@ -1,17 +1,25 @@
 """Country/region enum for visa applicant chargeability"""
 
-from enum import Enum
+from django.db import models
 
 
-class Country(Enum):
-    """Country or region for visa chargeability"""
+class Country(models.TextChoices):
+    """
+    Country or region for visa chargeability
     
-    ALL = "all"
-    CHINA = "china"
-    INDIA = "india"
-    MEXICO = "mexico"
-    PHILIPPINES = "philippines"
-    EL_SALVADOR_GUATEMALA_HONDURAS = "el_salvador_guatemala_honduras"
+    Uses Django TextChoices for database integration:
+    - Stores readable string in DB ('china', 'india', 'all')
+    - Access as enum in Python (Country.CHINA, Country.INDIA)
+    - Query with: objects.filter(country=Country.CHINA)
+    - DB shows readable values: SELECT * shows 'china', not '1'
+    """
+    
+    ALL = "all", "All Chargeability Areas"
+    CHINA = "china", "China (mainland born)"
+    INDIA = "india", "India"
+    MEXICO = "mexico", "Mexico"
+    PHILIPPINES = "philippines", "Philippines"
+    EL_SALVADOR_GUATEMALA_HONDURAS = "el_salvador_guatemala_honduras", "El Salvador/Guatemala/Honduras"
     
     @classmethod
     def from_header(cls, header: str):
@@ -34,7 +42,4 @@ class Country(Enum):
             'EL SALVADOR\nGUATEMALA\nHONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
         }
         return mappings.get(normalized)
-    
-    def __str__(self):
-        return self.value
 

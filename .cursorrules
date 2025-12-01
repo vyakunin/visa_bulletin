@@ -50,67 +50,68 @@ Only bundle multiple files into one target when:
 - Add docstrings to public functions and classes
 - Keep functions focused and single-purpose
 
-### Rule: Use Enums, Not Hardcoded Strings
+### Rule: Use Django TextChoices for Database Enums
 
-**Always use enum values instead of hardcoded strings for categorical data.**
+**Always use Django TextChoices for categorical database fields.**
 
-**Bad:**
-```python
-if country == 'CHINA':  # Hardcoded string
-    ...
+**Why TextChoices?**
+- ✅ Type-safe enums in Python code
+- ✅ Readable strings in database ('china' not '1')
+- ✅ Human-readable labels for admin/UI
+- ✅ IDE autocomplete on enum values
+- ✅ Database constraints automatically
 
-data = {
-    'visa_category': 'FAMILY_SPONSORED',  # Hardcoded
-    'country': 'ALL',  # Hardcoded
-}
-```
-
-**Good:**
-```python
-if country == Country.CHINA.value:  # Enum value
-    ...
-
-data = {
-    'visa_category': VisaCategory.FAMILY_SPONSORED.value,  # Enum value
-    'country': Country.ALL.value,  # Enum value
-}
-```
-
-**For mapping/parsing, add class methods to the enum itself:**
+**Pattern:**
 
 ```python
-class Country(Enum):
-    ALL = "all"
-    CHINA = "china"
+from django.db import models
+
+class Country(models.TextChoices):
+    """Country for visa chargeability"""
+    CHINA = "china", "China (mainland born)"  # (value, label)
+    INDIA = "india", "India"
     
     @classmethod
     def from_header(cls, header: str):
-        """Parse country from table header"""
+        """Custom parsing method"""
         mappings = {
-            'All Chargeability Areas': cls.ALL,
             'CHINA-mainland born': cls.CHINA,
+            'INDIA': cls.INDIA,
         }
         return mappings.get(header)
+
+# In models
+class VisaCutoffDate(models.Model):
+    country = models.CharField(
+        max_length=50,
+        choices=Country.choices  # Django constraint
+    )
 ```
 
-**In tests and queries, always use enum values:**
+**Usage:**
 
 ```python
-# Bad: Hardcoded strings in tests
-self.assertEqual(result['country'], 'china')
-record = Model.objects.filter(country='all').first()
+# ✅ Queries with enums (type-safe)
+records = VisaCutoffDate.objects.filter(country=Country.CHINA)
 
-# Good: Use enum values
-self.assertEqual(result['country'], Country.CHINA.value)
-record = Model.objects.filter(country=Country.ALL.value).first()
+# ✅ Access enum instance from record
+record = VisaCutoffDate.objects.first()
+print(record.country)        # 'china' (string value)
+print(record.get_country_display())  # 'China (mainland born)' (label)
+
+# ✅ Tests
+assert result['country'] == Country.CHINA.value
+
+# ✅ Data creation
+VisaCutoffDate.objects.create(country=Country.CHINA)
 ```
 
 **Benefits:**
 - Type safety and IDE autocomplete
+- Readable database queries (SELECT shows 'china')
 - Single source of truth
-- Easy refactoring (rename enum, all usages update)
-- Clear intent and compile-time checks
-- Tests fail if enum values change
+- Automatic database constraints
+- Admin UI shows human-readable labels
 
 ## Testing
 

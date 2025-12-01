@@ -1,13 +1,20 @@
 """Visa category enum: Family-Sponsored vs Employment-Based"""
 
-from enum import Enum
+from django.db import models
 
 
-class VisaCategory(Enum):
-    """Category of visa (Family or Employment)"""
+class VisaCategory(models.TextChoices):
+    """
+    Category of visa (Family or Employment)
     
-    FAMILY_SPONSORED = "family_sponsored"
-    EMPLOYMENT_BASED = "employment_based"
+    Uses Django TextChoices for database integration:
+    - Stores readable string in DB ('family_sponsored')
+    - Access as enum in Python (VisaCategory.FAMILY_SPONSORED)
+    - Query with: objects.filter(visa_category=VisaCategory.FAMILY_SPONSORED)
+    """
+    
+    FAMILY_SPONSORED = "family_sponsored", "Family-Sponsored"
+    EMPLOYMENT_BASED = "employment_based", "Employment-Based"
     
     @classmethod
     def from_table_title(cls, title: str):
@@ -20,7 +27,4 @@ class VisaCategory(Enum):
             'employment_based_dates_for_filing': cls.EMPLOYMENT_BASED,
         }
         return mappings.get(title)
-    
-    def __str__(self):
-        return self.value
 

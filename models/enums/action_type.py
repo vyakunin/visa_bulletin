@@ -1,13 +1,20 @@
 """Action type enum: Final Action vs Filing"""
 
-from enum import Enum
+from django.db import models
 
 
-class ActionType(Enum):
-    """Type of action for visa processing"""
+class ActionType(models.TextChoices):
+    """
+    Type of action for visa processing
     
-    FINAL_ACTION = "final_action"
-    FILING = "filing"
+    Uses Django TextChoices for database integration:
+    - Stores readable string in DB ('final_action', 'filing')
+    - Access as enum in Python (ActionType.FINAL_ACTION)
+    - Query with: objects.filter(action_type=ActionType.FINAL_ACTION)
+    """
+    
+    FINAL_ACTION = "final_action", "Final Action"
+    FILING = "filing", "Dates for Filing"
     
     @classmethod
     def from_table_title(cls, title: str):
@@ -20,7 +27,4 @@ class ActionType(Enum):
             'employment_based_dates_for_filing': cls.FILING,
         }
         return mappings.get(title)
-    
-    def __str__(self):
-        return self.value
 
