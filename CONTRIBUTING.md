@@ -100,17 +100,30 @@ Each directory with Python code has a `BUILD` file that defines:
 - `py_test`: Test targets
 - `filegroup`: Data files
 
+**Rule: One Target Per File** - Always create one `py_library` target per Python file for better granularity and incremental builds.
+
 Example `BUILD` file:
 ```python
 load("@rules_python//python:defs.bzl", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
+# ✅ Good - one target per file
 py_library(
     name = "my_module",
-    srcs = ["my_module.py"],
+    srcs = ["my_module.py"],  # Only ONE file
     visibility = ["//visibility:public"],
     deps = [
         requirement("beautifulsoup4"),
+    ],
+)
+
+# ❌ Bad - bundling multiple files
+py_library(
+    name = "lib",
+    srcs = [
+        "module1.py",
+        "module2.py",
+        "module3.py",
     ],
 )
 ```

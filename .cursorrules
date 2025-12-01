@@ -1,0 +1,79 @@
+# Cursor Rules for Visa Bulletin Parser
+
+## Bazel Build System
+
+### Rule: One Bazel Target Per File
+Always create one `py_library` or `py_binary` target per Python file unless it's impossible due to circular dependencies.
+
+**Good:**
+```python
+py_library(
+    name = "bulletint_parser",
+    srcs = ["bulletint_parser.py"],
+    deps = [":table"],
+)
+
+py_library(
+    name = "table",
+    srcs = ["table.py"],
+)
+```
+
+**Bad:**
+```python
+py_library(
+    name = "lib",
+    srcs = [
+        "bulletint_parser.py",
+        "table.py",
+        "other.py",
+    ],
+)
+```
+
+**Rationale:**
+- Better granularity for incremental builds
+- Clear dependency tracking
+- Faster compilation (only rebuild changed modules)
+- Easier to understand build graph
+
+### Exceptions
+Only bundle multiple files into one target when:
+- Circular dependencies exist between modules
+- Files are tightly coupled and always used together
+- Performance measurements show significant benefit
+
+## Python Code Style
+
+- Follow PEP 8
+- Use type hints where appropriate
+- Add docstrings to public functions and classes
+- Keep functions focused and single-purpose
+
+## Testing
+
+- All new features must include tests
+- Tests should use Bazel: `bazel test //tests:...`
+- Run tests before committing (pre-commit hook handles this)
+- Aim for meaningful test coverage, not just high percentages
+
+## Documentation
+
+- Update README.md for user-facing changes
+- Update CONTRIBUTING.md for developer workflow changes
+- Update BAZEL.md for build system changes
+- Keep inline code comments focused on "why" not "what"
+
+## Git Workflow
+
+- Write clear, descriptive commit messages
+- Tests run automatically via pre-commit hook
+- Don't bypass hooks unless absolutely necessary
+- Keep commits focused and atomic
+
+## Dependencies
+
+- Add new dependencies to requirements.txt
+- Use pinned versions for reproducibility
+- Document why each dependency is needed
+

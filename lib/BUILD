@@ -1,21 +1,21 @@
 # Build file for lib package
+# Following rule: One Bazel target per file
 
 load("@rules_python//python:defs.bzl", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
+# One target per file for better granularity and incremental builds
+
 py_library(
-    name = "lib",
-    srcs = [
-        "__init__.py",
-        "bulletint_parser.py",
-        "publication_data.py",
-        "table.py",
-    ],
+    name = "table",
+    srcs = ["table.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        requirement("beautifulsoup4"),
-        requirement("soupsieve"),
-    ],
+)
+
+py_library(
+    name = "publication_data",
+    srcs = ["publication_data.py"],
+    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -27,17 +27,5 @@ py_library(
         requirement("beautifulsoup4"),
         requirement("soupsieve"),
     ],
-)
-
-py_library(
-    name = "publication_data",
-    srcs = ["publication_data.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "table",
-    srcs = ["table.py"],
-    visibility = ["//visibility:public"],
 )
 

@@ -109,21 +109,50 @@ py_library(
 
 ## Adding New Code
 
+### Coding Rule: One Target Per File
+
+**Always create one `py_library` or `py_binary` target per Python file** unless circular dependencies make it impossible.
+
+This provides:
+- Better incremental build performance
+- Clearer dependency tracking
+- Faster compilation (only rebuild what changed)
+- More maintainable build configuration
+
 ### Adding a New Python Library
 
 1. Create your Python file in `lib/`
-2. Update `lib/BUILD`:
+2. Add ONE target in `lib/BUILD` for that file:
 
 ```python
 py_library(
     name = "new_module",
-    srcs = ["new_module.py"],
+    srcs = ["new_module.py"],  # Only one file
     visibility = ["//visibility:public"],
     deps = [
         ":other_module",
         requirement("some_package"),
     ],
 )
+```
+
+**Don't** bundle multiple files in one target unless absolutely necessary:
+
+```python
+# ❌ Bad - bundles multiple files
+py_library(
+    name = "lib",
+    srcs = [
+        "module1.py",
+        "module2.py",
+        "module3.py",
+    ],
+)
+
+# ✅ Good - one target per file
+py_library(name = "module1", srcs = ["module1.py"])
+py_library(name = "module2", srcs = ["module2.py"])
+py_library(name = "module3", srcs = ["module3.py"])
 ```
 
 ### Adding a New Test
