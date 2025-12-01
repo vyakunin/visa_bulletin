@@ -48,11 +48,20 @@ def get_deduplicated_employment_classes() -> list[tuple[str, str]]:
         visa_category='employment_based'
     ).values_list('visa_class', flat=True).distinct()
     
+    # Filter out invalid visa class values (empty, 'C', 'U', single letters)
+    invalid_values = {'', 'C', 'U', 'c', 'u'}
+    
     # Build a map: normalized_display_name -> first raw value seen
     seen_displays: dict[str, str] = {}
     for raw_class in raw_classes:
+        # Skip invalid values
+        if not raw_class or raw_class in invalid_values:
+            continue
+        
         display_name = EmploymentPreference.normalize_for_display(raw_class)
-        if display_name not in seen_displays:
+        
+        # Skip if normalization returned empty or the same as input (unrecognized)
+        if display_name and display_name not in seen_displays:
             seen_displays[display_name] = raw_class
     
     # Convert to list of tuples and sort by display name
