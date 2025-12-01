@@ -46,7 +46,11 @@ Only bundle multiple files into one target when:
 ## Python Code Style
 
 - Follow PEP 8
-- Use type hints where appropriate
+- **Python 3.11+**: Use modern type hints (no `typing` imports for basic types)
+  - ✅ `list[str]`, `dict[str, int]`, `tuple[int, str]`
+  - ✅ `str | None` (not `Optional[str]`)
+  - ✅ `int | str` (not `Union[int, str]`)
+  - ❌ `from typing import List, Dict, Tuple, Optional, Union`
 - Add docstrings to public functions and classes
 - Keep functions focused and single-purpose
 

@@ -9,8 +9,6 @@ Handles the complete pipeline:
 
 import os
 import django
-from datetime import date
-from typing import List
 
 # Setup Django if not already configured
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
