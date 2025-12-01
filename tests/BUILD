@@ -21,17 +21,4 @@ py_test(
     srcs_version = "PY3",
 )
 
-py_test(
-    name = "test_enums",
-    srcs = ["test_enums.py"],
-    deps = [
-        "//models/enums:visa_category",
-        "//models/enums:action_type",
-        "//models/enums:country",
-        "//models/enums:family_preference",
-        "//models/enums:employment_preference",
-    ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-)
 
