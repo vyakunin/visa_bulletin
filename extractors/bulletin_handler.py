@@ -51,7 +51,7 @@ def save_bulletin_to_db(publication_data: PublicationData):
     # Import models here to ensure Django is fully set up
     from models.bulletin import Bulletin
     from models.visa_cutoff_date import VisaCutoffDate
-    from django.db import connection
+    from django.db import connection  # type: ignore
     
     # Create tables if they don't exist (only once per session)
     if not _TABLES_CREATED:
