@@ -9,6 +9,7 @@ py_library(
     srcs = ["bulletin_extractor.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib:publication_data",
         "//models/enums:visa_category",
         "//models/enums:action_type",
         "//models/enums:country",
