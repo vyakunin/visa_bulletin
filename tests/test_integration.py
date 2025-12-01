@@ -20,7 +20,8 @@ if not settings.configured:
     )
     django.setup()
 
-from datetime import date
+from datetime import date, datetime
+from lib.publication_data import PublicationData
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
 from models.enums.visa_category import VisaCategory
@@ -36,12 +37,15 @@ def test_save_bulletin_from_html():
     with open('saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
         html = f.read()
     
-    # Extract tables
-    tables = extract_tables(html)
-    assert len(tables) == 4, "Should extract 4 tables"
+    # Create PublicationData
+    pub_data = PublicationData(
+        url='/test-march-2023',
+        content=html,
+        publication_date=datetime(2023, 3, 1)
+    )
     
-    # Save to database (using legacy date+tables format)
-    bulletin = bulletin_handler.save_bulletin_to_db(date(2023, 3, 1), tables)
+    # Save to database
+    bulletin = bulletin_handler.save_bulletin_to_db(pub_data)
     
     # Verify bulletin created
     assert bulletin is not None
@@ -69,14 +73,14 @@ def test_idempotent_bulletin_save():
     with open('saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
         html = f.read()
     
-    tables = extract_tables(html)
+    pub_data = PublicationData('/test-march-2023', html, datetime(2023, 3, 1))
     
     # Save once
-    bulletin1 = bulletin_handler.save_bulletin_to_db(date(2023, 3, 1), tables)
+    bulletin1 = bulletin_handler.save_bulletin_to_db(pub_data)
     count1 = VisaCutoffDate.objects.count()
     
     # Save again
-    bulletin2 = bulletin_handler.save_bulletin_to_db(date(2023, 3, 1), tables)
+    bulletin2 = bulletin_handler.save_bulletin_to_db(pub_data)
     count2 = VisaCutoffDate.objects.count()
     
     # Should be same bulletin
@@ -89,16 +93,16 @@ def test_query_time_series_data():
     """Test querying time series data for specific visa class"""
     # Save multiple bulletins
     test_cases = [
-        ('saved_pages/visa-bulletin-for-february-2017.html', date(2017, 2, 1)),
-        ('saved_pages/visa-bulletin-for-march-2023.html', date(2023, 3, 1)),
-        ('saved_pages/visa-bulletin-for-october-2021.html', date(2021, 10, 1)),
+        ('saved_pages/visa-bulletin-for-february-2017.html', datetime(2017, 2, 1)),
+        ('saved_pages/visa-bulletin-for-march-2023.html', datetime(2023, 3, 1)),
+        ('saved_pages/visa-bulletin-for-october-2021.html', datetime(2021, 10, 1)),
     ]
     
     for filepath, pub_date in test_cases:
         with open(filepath, 'r', encoding='utf-8') as f:
             html = f.read()
-        tables = extract_tables(html)
-        bulletin_handler.save_bulletin_to_db(pub_date, tables)
+        pub_data = PublicationData(filepath, html, pub_date)
+        bulletin_handler.save_bulletin_to_db(pub_data)
     
     # Query F1 China Final Action across all bulletins using enum values
     f1_china_series = VisaCutoffDate.objects.filter(
