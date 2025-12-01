@@ -24,8 +24,9 @@ if not settings.configured:
     )
     django.setup()
 
-from datetime import date
+from datetime import date, datetime
 from lib.table import Table
+from lib.publication_data import PublicationData
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
 from extractors.bulletin_extractor import BulletinExtractor
@@ -46,7 +47,8 @@ def test_extract_family_sponsored_final_action_table():
     ]
     table = Table('family_sponsored_final_actions', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     # Verify F1 extraction (using enum values, not hardcoded strings)
@@ -66,7 +68,8 @@ def test_handle_current_status():
     rows = [('F2A', 'C')]
     table = Table('family_sponsored_final_actions', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     f2a = results[0]
@@ -83,7 +86,8 @@ def test_handle_unavailable_status():
     rows = [('Certain Religious Workers', 'U')]
     table = Table('employment_based_final_action', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     religious = results[0]
@@ -103,12 +107,14 @@ def test_map_table_title_to_category_and_action():
         ('employment_based_dates_for_filing', VisaCategory.EMPLOYMENT_BASED.value, ActionType.FILING.value),
     ]
     
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    
     for title, expected_category, expected_action in test_cases:
         headers = ('Test', 'All Chargeability Areas Except Those Listed')
         rows = [('F1', date(2020, 1, 1))]
         table = Table(title, headers, rows)
         
-        extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+        extractor = BulletinExtractor(pub_data)
         results = extractor.extract_from_table(table)
         
         assert results[0]['visa_category'] == expected_category, f"Failed for {title}"
@@ -123,7 +129,8 @@ def test_map_header_to_country_enum():
             date(2020, 1, 1), date(2020, 1, 1))]
     table = Table('family_sponsored_final_actions', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     countries = {r['country'] for r in results}
@@ -143,7 +150,8 @@ def test_save_to_database(sample_bulletin):
     rows = [('F1', date(2016, 11, 8))]
     table = Table('family_sponsored_final_actions', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     # Save to DB
@@ -171,7 +179,8 @@ def test_idempotent_save(sample_bulletin):
     rows = [('F1', date(2016, 11, 8))]
     table = Table('family_sponsored_final_actions', headers, rows)
     
-    extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
+    pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
+    extractor = BulletinExtractor(pub_data)
     results = extractor.extract_from_table(table)
     
     # Save once

@@ -10,7 +10,7 @@ Handles the complete pipeline:
 import os
 import django
 from datetime import date
-from typing import List, Union
+from typing import List
 
 # Setup Django if not already configured
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
@@ -29,36 +29,24 @@ from lib.publication_data import PublicationData
 _TABLES_CREATED = False
 
 
-def save_bulletin_to_db(publication_data: Union[PublicationData, date], tables: List = None):
+def save_bulletin_to_db(publication_data: PublicationData):
     """
     Save a bulletin and all its tables to the database (idempotent)
     
     Args:
-        publication_data: Either a PublicationData object (preferred) or a date
-        tables: List of Table objects (only needed if publication_data is a date)
+        publication_data: PublicationData object with URL, content, and date
         
     Returns:
         Bulletin instance (created or retrieved)
         
-    Examples:
-        # Preferred: Pass PublicationData directly
+    Example:
         save_bulletin_to_db(publication_data)
-        
-        # Legacy: Pass date and tables separately
-        save_bulletin_to_db(date(2023, 3, 1), tables)
     """
     global _TABLES_CREATED
     
-    # Handle both PublicationData and legacy date+tables format
-    if isinstance(publication_data, PublicationData):
-        publication_date = publication_data.publication_date.date()
-        if tables is None:
-            tables = extract_tables(publication_data.content)
-    else:
-        # Legacy format: date passed directly
-        publication_date = publication_data
-        if tables is None:
-            raise ValueError("tables parameter required when passing date directly")
+    # Extract date and tables from PublicationData
+    publication_date = publication_data.publication_date.date()
+    tables = extract_tables(publication_data.content)
     
     # Import models here to ensure Django is fully set up
     from models.bulletin import Bulletin

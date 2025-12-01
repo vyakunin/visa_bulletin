@@ -37,6 +37,10 @@ if not settings.configured:
 @pytest.fixture(scope='session')
 def django_db_setup(django_db_setup, django_db_blocker):
     """Create database tables once per test session"""
+    # Mark tables as already created to prevent handler from trying
+    from extractors import bulletin_handler
+    bulletin_handler._TABLES_CREATED = True
+    
     with django_db_blocker.unblock():
         from django.db import connection
         from models.bulletin import Bulletin

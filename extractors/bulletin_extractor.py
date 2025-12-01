@@ -6,7 +6,7 @@ for database storage.
 """
 
 from datetime import date
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 import sys
 import os
 
@@ -22,27 +22,18 @@ from lib.publication_data import PublicationData
 class BulletinExtractor:
     """Extracts structured data from parsed bulletin tables"""
     
-    def __init__(self, publication_data: Union[PublicationData, date]):
+    def __init__(self, publication_data: PublicationData):
         """
         Initialize extractor for a specific bulletin
         
         Args:
-            publication_data: Either a PublicationData object (preferred) or a date
+            publication_data: PublicationData object with URL, content, and date
             
-        Examples:
-            # Preferred: Pass PublicationData
+        Example:
             extractor = BulletinExtractor(publication_data)
-            
-            # Legacy: Pass date directly (for tests)
-            extractor = BulletinExtractor(date(2023, 3, 1))
         """
-        if isinstance(publication_data, PublicationData):
-            self.publication_date = publication_data.publication_date.date()
-            self.publication_url = publication_data.url
-        else:
-            # Legacy format: date passed directly
-            self.publication_date = publication_data
-            self.publication_url = None
+        self.publication_date = publication_data.publication_date.date()
+        self.publication_url = publication_data.url
     
     def extract_from_table(self, table) -> List[Dict[str, Any]]:
         """
