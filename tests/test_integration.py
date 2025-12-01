@@ -31,6 +31,9 @@ if not settings.configured:
 
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
+from models.enums.visa_category import VisaCategory
+from models.enums.action_type import ActionType
+from models.enums.country import Country
 from lib.bulletint_parser import extract_tables
 
 # Import handler after models are imported to avoid conflicts
@@ -91,13 +94,13 @@ class TestBulletinIntegration(unittest.TestCase):
         cutoff_count = VisaCutoffDate.objects.filter(bulletin=bulletin).count()
         self.assertGreater(cutoff_count, 0, "Should create cutoff date records")
         
-        # Verify specific data point (F1 Mexico Final Action)
+        # Verify specific data point (F1 Mexico Final Action) using enum values
         f1_mexico = VisaCutoffDate.objects.filter(
             bulletin=bulletin,
             visa_class='F1',
-            country='mexico',
-            action_type='final_action',
-            visa_category='family_sponsored'
+            country=Country.MEXICO.value,
+            action_type=ActionType.FINAL_ACTION.value,
+            visa_category=VisaCategory.FAMILY_SPONSORED.value
         ).first()
         
         self.assertIsNotNone(f1_mexico)
@@ -138,12 +141,12 @@ class TestBulletinIntegration(unittest.TestCase):
             tables = extract_tables(html)
             bulletin_handler.save_bulletin_to_db(pub_date, tables)
         
-        # Query F1 China Final Action across all bulletins
+        # Query F1 China Final Action across all bulletins using enum values
         f1_china_series = VisaCutoffDate.objects.filter(
             visa_class='F1',
-            country='china',
-            action_type='final_action',
-            visa_category='family_sponsored'
+            country=Country.CHINA.value,
+            action_type=ActionType.FINAL_ACTION.value,
+            visa_category=VisaCategory.FAMILY_SPONSORED.value
         ).order_by('bulletin__publication_date')
         
         self.assertEqual(f1_china_series.count(), 3)
@@ -152,10 +155,10 @@ class TestBulletinIntegration(unittest.TestCase):
         dates = [record.bulletin.publication_date for record in f1_china_series]
         self.assertEqual(dates, sorted(dates))
         
-        # Verify all are F1 China
+        # Verify all are F1 China using enum values
         for record in f1_china_series:
             self.assertEqual(record.visa_class, 'F1')
-            self.assertEqual(record.country, 'china')
+            self.assertEqual(record.country, Country.CHINA.value)
 
 
 if __name__ == '__main__':
