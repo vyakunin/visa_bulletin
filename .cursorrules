@@ -93,11 +93,24 @@ class Country(Enum):
         return mappings.get(header)
 ```
 
+**In tests and queries, always use enum values:**
+
+```python
+# Bad: Hardcoded strings in tests
+self.assertEqual(result['country'], 'china')
+record = Model.objects.filter(country='all').first()
+
+# Good: Use enum values
+self.assertEqual(result['country'], Country.CHINA.value)
+record = Model.objects.filter(country=Country.ALL.value).first()
+```
+
 **Benefits:**
 - Type safety and IDE autocomplete
 - Single source of truth
-- Easy refactoring
-- Clear intent
+- Easy refactoring (rename enum, all usages update)
+- Clear intent and compile-time checks
+- Tests fail if enum values change
 
 ## Testing
 

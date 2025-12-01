@@ -83,14 +83,14 @@ class TestBulletinExtractor(unittest.TestCase):
         extractor = BulletinExtractor(publication_date=date(2025, 12, 1))
         results = extractor.extract_from_table(table)
         
-        # Verify F1 extraction (using enum values, not names)
-        f1_all = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'all')
+        # Verify F1 extraction (using enum values, not hardcoded strings)
+        f1_all = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == Country.ALL.value)
         self.assertEqual(f1_all['cutoff_date'], date(2016, 11, 8))
         self.assertFalse(f1_all['is_current'])
-        self.assertEqual(f1_all['action_type'], 'final_action')
-        self.assertEqual(f1_all['visa_category'], 'family_sponsored')
+        self.assertEqual(f1_all['action_type'], ActionType.FINAL_ACTION.value)
+        self.assertEqual(f1_all['visa_category'], VisaCategory.FAMILY_SPONSORED.value)
         
-        f1_mexico = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == 'mexico')
+        f1_mexico = next(r for r in results if r['visa_class'] == 'F1' and r['country'] == Country.MEXICO.value)
         self.assertEqual(f1_mexico['cutoff_date'], date(2006, 3, 1))
     
     def test_handle_current_status(self):
@@ -126,12 +126,12 @@ class TestBulletinExtractor(unittest.TestCase):
     
     def test_map_table_title_to_category_and_action(self):
         """Test mapping table titles to enums"""
-        # Use enum values (lowercase), not names
+        # Use enum values, not hardcoded strings
         test_cases = [
-            ('family_sponsored_final_actions', 'family_sponsored', 'final_action'),
-            ('family_sponsored_dates_for_filing', 'family_sponsored', 'filing'),
-            ('employment_based_final_action', 'employment_based', 'final_action'),
-            ('employment_based_dates_for_filing', 'employment_based', 'filing'),
+            ('family_sponsored_final_actions', VisaCategory.FAMILY_SPONSORED.value, ActionType.FINAL_ACTION.value),
+            ('family_sponsored_dates_for_filing', VisaCategory.FAMILY_SPONSORED.value, ActionType.FILING.value),
+            ('employment_based_final_action', VisaCategory.EMPLOYMENT_BASED.value, ActionType.FINAL_ACTION.value),
+            ('employment_based_dates_for_filing', VisaCategory.EMPLOYMENT_BASED.value, ActionType.FILING.value),
         ]
         
         for title, expected_category, expected_action in test_cases:
@@ -159,12 +159,12 @@ class TestBulletinExtractor(unittest.TestCase):
         results = extractor.extract_from_table(table)
         
         countries = {r['country'] for r in results}
-        # Use enum values (lowercase), not names
-        self.assertIn('all', countries)
-        self.assertIn('china', countries)
-        self.assertIn('india', countries)
-        self.assertIn('mexico', countries)
-        self.assertIn('philippines', countries)
+        # Use enum values, not hardcoded strings
+        self.assertIn(Country.ALL.value, countries)
+        self.assertIn(Country.CHINA.value, countries)
+        self.assertIn(Country.INDIA.value, countries)
+        self.assertIn(Country.MEXICO.value, countries)
+        self.assertIn(Country.PHILIPPINES.value, countries)
     
     def test_save_to_database(self):
         """Test saving extracted data to database"""
@@ -181,17 +181,17 @@ class TestBulletinExtractor(unittest.TestCase):
         for data in results:
             VisaCutoffDate.objects.create(bulletin=bulletin, **data)
         
-        # Query back (using enum values)
+        # Query back (using enum values, not hardcoded strings)
         saved = VisaCutoffDate.objects.filter(
             bulletin=bulletin,
             visa_class='F1',
-            country='all'
+            country=Country.ALL.value
         ).first()
         
         self.assertIsNotNone(saved)
         self.assertEqual(saved.cutoff_date, date(2016, 11, 8))
-        self.assertEqual(saved.visa_category, 'family_sponsored')
-        self.assertEqual(saved.action_type, 'final_action')
+        self.assertEqual(saved.visa_category, VisaCategory.FAMILY_SPONSORED.value)
+        self.assertEqual(saved.action_type, ActionType.FINAL_ACTION.value)
     
     def test_idempotent_save(self):
         """Test that saving same bulletin twice doesn't duplicate"""
