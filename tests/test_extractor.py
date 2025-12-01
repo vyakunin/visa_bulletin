@@ -3,25 +3,16 @@ Behavioral tests for BulletinExtractor
 
 These tests verify actual behavior: parsing tables, handling dates,
 mapping strings to enums, handling special cases like "C" and "U".
-
-NOTE: These tests use pytest format but can also run directly via Python/Bazel.
-Django setup happens in conftest.py (pytest) or below (direct run).
 """
 
-# Django setup for direct execution (when not using pytest)
+# Django setup (for Bazel py_test; pytest uses conftest.py)
 import os
-import django
-from django.conf import settings
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
-if not settings.configured:
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-    settings.configure(
-        DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
-        INSTALLED_APPS=['django.contrib.contenttypes', 'models'],
-        SECRET_KEY='test-secret-key',
-        USE_TZ=True,
-        DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
-    )
+import django
+from django.apps import apps
+from django.conf import settings
+if not apps.ready:
     django.setup()
 
 from datetime import date, datetime

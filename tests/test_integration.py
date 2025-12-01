@@ -4,20 +4,13 @@ Integration tests for end-to-end bulletin processing
 Tests the complete pipeline: parse HTML → extract tables → save to DB
 """
 
-#Django setup for direct execution (when not using pytest)
+# Django setup (for Bazel py_test; pytest uses conftest.py)
 import os
-import django
-from django.conf import settings
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
-if not settings.configured:
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-    settings.configure(
-        DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
-        INSTALLED_APPS=['django.contrib.contenttypes', 'models'],
-        SECRET_KEY='test-secret-key',
-        USE_TZ=True,
-        DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
-    )
+import django
+from django.apps import apps
+if not apps.ready:
     django.setup()
 
 from datetime import date, datetime
