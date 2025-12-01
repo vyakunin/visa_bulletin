@@ -10,23 +10,130 @@
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
-    <!-- Custom CSS -->
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <!-- Analytics (Privacy-focused, GDPR compliant) -->
+    {% if analytics_script %}
+    {{ analytics_script|safe }}
+    {% endif %}
+    
+    <!-- Custom CSS - Government Official Theme -->
     <style>
+        :root {
+            --gov-navy: #003366;
+            --gov-red: #B31942;
+            --gov-gold: #D4AF37;
+            --gov-green: #2D7A3E;
+            --gov-background: #F5F7FA;
+            --gov-text: #1A1A1A;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--gov-background);
+            color: var(--gov-text);
         }
+        
+        h1, h2, h3, h4, h5, h6 {
+            font-family: Georgia, serif;
+            font-weight: normal;
+        }
+        
         .hero-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--gov-navy);
             color: white;
             padding: 3rem 0;
             margin-bottom: 2rem;
+            border-bottom: 4px solid var(--gov-red);
         }
+        
+        .hero-section h1 {
+            font-family: Georgia, serif;
+            font-weight: normal;
+        }
+        
         .filter-card {
-            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 2rem;
+            border: 1px solid #d0d0d0;
+            border-radius: 2px;
         }
+        
+        .filter-card .card-header {
+            background: var(--gov-navy) !important;
+            border-bottom: 2px solid var(--gov-red);
+        }
+        
+        .btn-primary {
+            background-color: var(--gov-red);
+            border-color: var(--gov-red);
+            font-weight: 600;
+        }
+        
+        .btn-primary:hover {
+            background-color: #9a1436;
+            border-color: #9a1436;
+        }
+        
         .projection-alert {
-            border-left: 4px solid #0d6efd;
+            border-left: 6px solid var(--gov-navy);
+            background-color: #e8f4f8;
+            border-radius: 2px;
+        }
+        
+        .card {
+            border: 1px solid #d0d0d0;
+            border-radius: 2px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-select, .form-control {
+            border: 2px solid #E8E8E8;
+            border-radius: 2px;
+        }
+        
+        .form-select:focus, .form-control:focus {
+            border-color: var(--gov-navy);
+            box-shadow: 0 0 0 0.2rem rgba(0, 51, 102, 0.15);
+        }
+        
+        .badge.bg-success {
+            background-color: var(--gov-green) !important;
+        }
+        
+        footer {
+            background-color: var(--gov-navy);
+            color: white;
+            padding: 2rem 0;
+            margin-top: 3rem;
+        }
+        
+        footer hr {
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        footer p {
+            color: rgba(255,255,255,0.9);
+        }
+        
+        .alert-info {
+            background-color: #e8f4f8;
+            border-color: var(--gov-navy);
+        }
+        
+        .alert-warning {
+            background-color: #fff9e6;
+            border-color: var(--gov-gold);
+            border-left: 6px solid var(--gov-gold);
+        }
+        
+        .text-success {
+            color: var(--gov-green) !important;
+        }
+        
+        .bi {
+            margin-right: 6px;
         }
         
         /* Mobile optimizations */
@@ -35,10 +142,10 @@
                 padding: 1.5rem 0;
             }
             .hero-section h1 {
-                font-size: 1.5rem;
+                font-size: 1.75rem;
             }
             .hero-section p {
-                font-size: 0.9rem;
+                font-size: 0.95rem;
             }
             .filter-card .card-body {
                 padding: 1rem;
@@ -71,8 +178,8 @@
 <body>
     <div class="hero-section">
         <div class="container">
-            <h1 class="display-4">📊 U.S. Visa Bulletin Dashboard</h1>
-            <p class="lead">Track priority date progress and estimate processing times for family-sponsored and employment-based immigration petitions</p>
+            <h1 class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Visa Bulletin Dashboard</h1>
+            <p class="lead">Independent tracker for family-sponsored and employment-based immigration priority dates</p>
         </div>
     </div>
     
@@ -81,8 +188,23 @@
     </div>
     
     <footer class="container mt-5 mb-4">
-        <hr>
-        <p class="text-muted text-center">
+        <hr style="border-color: rgba(255,255,255,0.2);">
+        
+        <div class="text-center mb-3" style="color: #8FA3B8; font-size: 0.95rem;">
+            <p class="mb-2">
+                <strong>Built to help the community</strong> — I created this tracker to make visa bulletin data easier to understand. 
+                If you find it useful, please share it with others who might benefit.
+            </p>
+            <p class="mb-2">
+                <i class="bi bi-envelope"></i> Questions or feedback? Email <a href="mailto:vyakunin@gmail.com" style="color: #5B9BD5; text-decoration: none;">vyakunin@gmail.com</a>
+                <br>
+                <i class="bi bi-github"></i> View source code on <a href="https://github.com/vyakunin/visa_bulletin" target="_blank" rel="noopener" style="color: #5B9BD5; text-decoration: none;">GitHub</a>
+            </p>
+        </div>
+        
+        <hr style="border-color: rgba(255,255,255,0.1); margin: 1rem 0;">
+        
+        <p class="text-center" style="color: #8FA3B8; font-size: 0.85rem;">
             Data sourced from U.S. Department of State Visa Bulletins. 
             Projections are estimates based on historical trends and should not be considered official guidance.
         </p>

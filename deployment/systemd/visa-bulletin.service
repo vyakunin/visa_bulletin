@@ -21,7 +21,12 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/opt/visa_bulletin
 Environment="DJANGO_SETTINGS_MODULE=django_config.settings"
+# IMPORTANT: Change this secret key in production! DEBUG mode auto-disables when you set a real key.
+# Generate a key: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 Environment="DJANGO_SECRET_KEY=CHANGE_ME_IN_PRODUCTION"
+# Analytics: Add your tracking script here (GoatCounter, Umami, Plausible, etc.)
+# Example: Environment="ANALYTICS_SCRIPT=<script data-goatcounter='https://yourcode.goatcounter.com/count' async src='//gc.zgo.at/count.js'></script>"
+Environment="ANALYTICS_SCRIPT="
 ExecStart=/opt/visa_bulletin/venv/bin/gunicorn --workers 1 --threads 2 --bind 0.0.0.0:8000 --timeout 120 --max-requests 100 --max-requests-jitter 20 django_config.wsgi:application
 Restart=always
 RestartSec=10

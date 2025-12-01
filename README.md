@@ -69,6 +69,43 @@ source ~/visa-bulletin-venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Configuration
+
+### DEBUG Mode (Development vs Production)
+
+The application automatically detects whether you're in development or production mode:
+
+**Local Development (Default):**
+- ✅ `DEBUG = True` (helpful error pages)
+- ✅ Development SECRET_KEY (unsafe for production)
+- ✅ Verbose logging
+
+**Production Mode (Auto-enabled):**
+- ✅ `DEBUG = False` (safe error pages)
+- ✅ Custom SECRET_KEY required
+- ✅ Production-ready settings
+
+**How it works:**
+The app checks if `DJANGO_SECRET_KEY` environment variable is set:
+- If using default key → **Development mode** (DEBUG=True)
+- If custom key is set → **Production mode** (DEBUG=False)
+
+**Check current mode:**
+```bash
+python scripts/check_debug_mode.py
+```
+
+**Enable production mode:**
+```bash
+# Generate a secure key
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+
+# Set it as environment variable (in systemd service or shell)
+export DJANGO_SECRET_KEY='your-generated-key-here'
+```
+
+⚠️ **Important:** Never commit production SECRET_KEY to git! It's automatically safe in development but must be set via environment variable in production.
+
 ## Usage
 
 ### Web Dashboard (Recommended)

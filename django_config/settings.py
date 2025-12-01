@@ -54,6 +54,7 @@ TEMPLATES = [
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
+                'django_config.context_processors.analytics',
             ],
         },
     },
@@ -67,10 +68,15 @@ STATICFILES_DIRS = [
 STATIC_ROOT = WORKSPACE_DIR / 'staticfiles'
 
 # Required settings
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-for-development-only')
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+# Debug mode: Enable for local development, ALWAYS False in production
+# Production check: if SECRET_KEY is NOT the default, we're in production
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-for-development-only')
+IS_PRODUCTION = SECRET_KEY != 'django-insecure-for-development-only'
+DEBUG = not IS_PRODUCTION  # True locally, False in production (safe by default)
+
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
@@ -90,6 +96,11 @@ CACHES = {
         'TIMEOUT': 60 * 60 * 3,  # Cache for 3 hours
     }
 }
+
+# Analytics Configuration
+# Flexible analytics support (GoatCounter, Umami, Plausible, etc.)
+# Set ANALYTICS_SCRIPT via environment variable with your tracking code
+ANALYTICS_SCRIPT = os.environ.get('ANALYTICS_SCRIPT', '')
 
 # HTTPS/Security settings (enable in production)
 # Uncomment these when deploying with HTTPS:

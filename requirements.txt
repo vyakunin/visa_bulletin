@@ -21,4 +21,4 @@ tenacity>=8.2.0
 packaging>=23.0
 narwhals>=2.0.0
 gunicorn==23.0.0
-
+praw==7.8.1
