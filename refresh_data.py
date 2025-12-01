@@ -9,9 +9,10 @@ import requests
 from lib.bulletint_parser import parse_publication_links, extract_tables
 from lib.publication_data import PublicationData
 
-# Get the project root directory (where this script lives)
-PROJECT_ROOT = Path(__file__).parent.absolute()
-SAVED_PAGES_DIR = PROJECT_ROOT / 'saved_pages'
+# Get workspace directory from Bazel (set when using 'bazel run')
+# Falls back to script directory if not running under Bazel
+WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent))
+SAVED_PAGES_DIR = WORKSPACE_DIR / 'saved_pages'
 
 
 def fetch_main_page(url):
