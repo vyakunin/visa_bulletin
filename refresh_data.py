@@ -111,21 +111,18 @@ def main():
     data = fetch_publication_data(publication_urls)
     
     for d in data:
-        tables = extract_tables(d.content)
         print(f"\n{'='*80}")
         print(f"URL: {d.url}")
         print(f"Date: {d.publication_date.strftime('%B %Y')}")
-        print(f"Tables: {len(tables)}")
         
         if save_to_db:
-            # Save to database
-            bulletin = save_bulletin_to_db(
-                publication_date=d.publication_date.date(),
-                tables=tables
-            )
+            # Save to database - pass PublicationData directly
+            bulletin = save_bulletin_to_db(d)
             print(f"✓ Saved to database")
         else:
             # Just print tables
+            tables = extract_tables(d.content)
+            print(f"Tables: {len(tables)}")
             print_all_tables(tables)
     
     if not save_to_db:
