@@ -24,7 +24,7 @@
                         </div>
                         
                         <!-- Country -->
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label for="country" class="form-label">Country</label>
                             <select class="form-select" id="country" name="country" onchange="autoSubmitForm()">
                                 {% for value, label in countries %}
@@ -35,24 +35,8 @@
                             </select>
                         </div>
                         
-                        <!-- Visa Class -->
-                        <div class="col-md-3">
-                            <label for="visa_class" class="form-label">Visa Class</label>
-                            <select class="form-select" id="visa_class" name="visa_class" onchange="autoSubmitForm()">
-                                {% for value, label in available_classes_with_labels %}
-                                <option value="{{ value }}" {% if value == visa_class %}selected{% endif %}>
-                                    {% if category == 'family_sponsored' %}
-                                        {{ value }}: {{ label|slice:"4:" }}
-                                    {% else %}
-                                        {{ label }}
-                                    {% endif %}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        
                         <!-- Action Type -->
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label for="action_type" class="form-label">Action Type</label>
                             <select class="form-select" id="action_type" name="action_type" onchange="autoSubmitForm()">
                                 {% for value, label in action_types %}
@@ -64,7 +48,7 @@
                         </div>
                         
                         <!-- Submission Date -->
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label for="submission_date" class="form-label">Priority Date</label>
                             <input type="date" class="form-control" id="submission_date" name="submission_date" 
                                    value="{{ submission_date|date:'Y-m-d' }}">
@@ -89,60 +73,69 @@
                 <ul class="mb-2">
                     <li><strong>Category:</strong> {{ category_display }}</li>
                     <li><strong>Country:</strong> {{ country_display }}</li>
-                    <li><strong>Visa Class:</strong> {{ visa_class }}</li>
                     <li><strong>Action Type:</strong> {{ action_type_display }}</li>
                 </ul>
                 <hr>
                 <p class="mb-1"><strong>Suggestions:</strong></p>
                 <ul class="mb-0">
                     <li>Try selecting "All Chargeability Areas" for the country filter</li>
-                    <li>Try a different visa class from the dropdown</li>
-                    <li>Some older bulletins may not have data for all visa classes</li>
+                    <li>Try a different visa category</li>
+                    <li>Some older bulletins may not have data for all categories</li>
                     <li>Make sure you have imported bulletin data: <code>bazel run //:refresh_data -- --save-to-db</code></li>
                 </ul>
             </div>
         {% endif %}
         
         {% if has_data %}
-            <!-- Projection Result -->
-            {% if projection %}
+            <!-- Projection Results for Each Visa Class -->
+            {% if visa_class_data %}
             <div class="alert projection-alert alert-info" role="alert">
-                <h5 class="alert-heading">📅 Processing Estimate</h5>
-                <p class="mb-1"><strong>{{ projection.message }}</strong></p>
-                
-                {% if projection.status == 'projected' %}
-                <p class="mb-1">
-                    Estimated processing date: <strong>{{ projection.estimated_date|date:"F Y" }}</strong>
+                <h5 class="alert-heading">📅 Processing Estimates by Visa Class</h5>
+                <p class="mb-2 small text-muted">
+                    Hover over the projection lines in the chart below to see estimated dates for each visa class.
                 </p>
-                <p class="mb-1 small text-muted">
-                    Based on average progress of {{ projection.avg_progress_days_per_month }} days per month over the last 12 months.
-                </p>
-                <hr>
+                <div class="row">
+                    {% for data in visa_class_data %}
+                    {% with projection=data.projection %}
+                    {% if projection and projection.estimated_date %}
+                    <div class="col-md-6 col-lg-4 mb-2">
+                        <div class="card">
+                            <div class="card-body py-2 px-3">
+                                <h6 class="card-title mb-1">{{ data.visa_class_label|default:data.visa_class }}</h6>
+                                {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
+                                <p class="mb-0 small">
+                                    <strong>Est. {{ projection.estimated_date|date:"F Y" }}</strong>
+                                </p>
+                                <p class="mb-0 small text-muted">
+                                    {{ projection.avg_progress_days_per_month }} days/month
+                                </p>
+                                {% elif projection.status == 'current' %}
+                                <p class="mb-0 small text-success">✅ Current</p>
+                                {% elif projection.status == 'no_movement' %}
+                                <p class="mb-0 small text-warning">⚠️ No movement</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                    {% endfor %}
+                </div>
+                <hr class="my-2">
                 <p class="mb-0 small">
-                    ⚠️ <em>This is a rough estimate based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
+                    ⚠️ <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
                 </p>
-                {% elif projection.status == 'projected_historical' %}
-                <p class="mb-1">
-                    Estimated processing date: <strong>{{ projection.estimated_date|date:"F Y" }}</strong>
-                </p>
-                <p class="mb-1 small text-muted">
-                    Recent months show little movement. This estimate uses long-term historical trend analysis ({{ valid_points.count }} data points) to project when your priority date may be reached.
-                </p>
-                <hr>
-                <p class="mb-0 small">
-                    ⚠️ <em>This projection is based on long-term historical patterns and assumes continued progress. Actual processing times may vary significantly due to policy changes, backlogs, retrogression, and other factors. When priority dates stall, projections become less reliable.</em>
-                </p>
-                {% elif projection.status == 'current' %}
-                <p class="mb-0">✅ Your priority date is already current or very close!</p>
-                {% elif projection.status == 'no_movement' %}
-                <p class="mb-0">⚠️ The priority dates have not been advancing recently. Check the official visa bulletin for updates.</p>
-                {% endif %}
             </div>
             {% endif %}
             
             <!-- Chart -->
             <div class="card">
                 <div class="card-body">
+                    <div class="alert alert-light py-2 mb-3" role="alert">
+                        <small class="text-muted">
+                            💡 <strong>Chart Tips:</strong> Click a visa class in the legend to show/hide it. Double-click to isolate only that class. Click data points to view official bulletins.
+                        </small>
+                    </div>
                     {{ chart_html|safe }}
             </div>
         </div>
@@ -164,16 +157,16 @@
                 <ol>
                     <li>Select your <strong>visa category</strong> (Family-Sponsored or Employment-Based)</li>
                     <li>Choose your <strong>country of chargeability</strong> (birth country, not citizenship)</li>
-                    <li>Select your <strong>visa class</strong> (e.g., F1, F2A, EB2, EB3)</li>
                     <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong> (to submit I-485)</li>
-                    <li>Enter your application <strong>priority date</strong> to see an estimated processing timeline</li>
+                    <li>Enter your application <strong>priority date</strong> to see estimated processing timelines</li>
                 </ol>
                 
                 <h6>Understanding the Chart</h6>
                 <ul>
-                    <li><strong>Blue line</strong>: Historical priority date cutoffs from visa bulletins</li>
+                    <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
                     <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                    <li><strong>Orange dashed line</strong>: Projected timeline based on recent trends</li>
+                    <li><strong>Dashed projection lines</strong>: Projected timelines for each visa class based on recent trends</li>
+                    <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month</li>
                 </ul>
             </div>
         </div>
