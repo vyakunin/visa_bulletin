@@ -9,10 +9,26 @@ import unittest
 import os
 import django
 from datetime import date
+from django.conf import settings
 
-# Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-django.setup()
+# Setup Django with in-memory database for tests
+if not settings.configured:
+    settings.configure(
+        DATABASES={
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': ':memory:',  # In-memory for tests
+            }
+        },
+        INSTALLED_APPS=[
+            'django.contrib.contenttypes',
+            'models',
+        ],
+        SECRET_KEY='test-secret-key',
+        USE_TZ=True,
+        DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
+    )
+    django.setup()
 
 from lib.table import Table
 from models.bulletin import Bulletin

@@ -21,4 +21,22 @@ py_test(
     srcs_version = "PY3",
 )
 
+py_test(
+    name = "test_extractor",
+    srcs = ["test_extractor.py"],
+    deps = [
+        "//lib:table",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//extractors:bulletin_extractor",
+        "//django_config:settings",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
 
