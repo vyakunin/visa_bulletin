@@ -95,7 +95,7 @@ def main():
         print(d.url)
         print(d.publication_date)
         print(len(tables))
-        for t in tables:
+        print_all_tables(tables)
 
 
 
