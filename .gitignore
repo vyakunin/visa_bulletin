@@ -29,5 +29,8 @@ Thumbs.db
 # Mockups (not for production)
 mockups/
 
+# Logs
+*.log
+
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/
