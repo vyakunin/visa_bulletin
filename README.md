@@ -1,0 +1,298 @@
+# Visa Bulletin Parser
+
+A Python-based web scraper and parser for the U.S. Department of State's Visa Bulletin data. This tool automatically downloads, caches, and extracts structured immigration priority date information from monthly visa bulletins.
+
+## Overview
+
+The Visa Bulletin is a monthly publication by the U.S. Department of State that provides information about immigrant visa availability for family-sponsored and employment-based preference categories. This project automates the process of:
+
+- Fetching historical visa bulletin pages from the official government website
+- Parsing and extracting priority date tables
+- Converting dates to structured Python date objects
+- Caching downloaded pages locally to minimize network requests
+
+## Features
+
+- **Automatic Discovery**: Finds and downloads all available visa bulletin publications
+- **Smart Caching**: Saves downloaded HTML pages locally to avoid redundant network requests
+- **Table Extraction**: Parses four key tables from each bulletin:
+  - Family-Sponsored Final Action Dates
+  - Family-Sponsored Dates for Filing
+  - Employment-Based Final Action Dates
+  - Employment-Based Dates for Filing
+- **Date Conversion**: Automatically converts date strings (DDMmmYY format) to Python date objects
+- **Pretty Printing**: Includes formatted console table output with box-drawing characters
+
+## Installation
+
+### Prerequisites
+
+- Python 3.11 or higher
+- pip (Python package installer)
+
+### Quick Setup (Recommended)
+
+Run the automated setup script:
+
+```bash
+cd /path/to/visa_bulletin
+./setup.sh
+```
+
+The setup script will:
+- Create a virtual environment at `~/visa-bulletin-venv`
+- Install all required dependencies
+- Create necessary directories
+- Provide activation instructions
+
+### Manual Setup
+
+If you prefer to set up manually:
+
+1. Clone or download this repository
+
+2. Create a virtual environment:
+```bash
+python3 -m venv ~/visa-bulletin-venv
+```
+
+3. Activate the virtual environment:
+```bash
+source ~/visa-bulletin-venv/bin/activate
+```
+
+4. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Basic Usage
+
+1. Activate the virtual environment:
+```bash
+source ~/visa-bulletin-venv/bin/activate
+```
+
+2. Run the main script to fetch and parse visa bulletin data:
+```bash
+python refresh_data.py
+```
+
+3. When done, deactivate the environment:
+```bash
+deactivate
+```
+
+### Running Tests
+
+The project includes a comprehensive test suite for the parsing functionality:
+
+```bash
+source ~/visa-bulletin-venv/bin/activate
+python -m unittest test_parser.py -v
+```
+
+Tests verify:
+- Table extraction from multiple bulletin formats
+- Date conversion (DDMmmYY format to Python date objects)
+- Proper handling of "C" (Current) and "U" (Unauthorized) statuses
+- Whitespace normalization
+- Data integrity across 3 randomly selected bulletins
+
+The script will:
+1. Fetch the main visa bulletin index page
+2. Extract links to individual monthly bulletins
+3. Download up to 100 most recent bulletins (skipping already cached pages)
+4. Parse tables from each bulletin
+5. Print extracted data to console
+
+### Cached Data
+
+Downloaded HTML pages are stored in the `saved_pages/` directory. The script automatically checks this directory before making network requests, making subsequent runs much faster.
+
+To force a fresh download, delete the `saved_pages/` directory or specific HTML files within it.
+
+## Project Structure
+
+```
+visa_bulletin/
+├── lib/
+│   ├── __init__.py              # Package initializer
+│   ├── bulletint_parser.py      # HTML parsing logic
+│   ├── publication_data.py      # Data class for publications
+│   └── table.py                 # Data class for tables
+├── saved_pages/                 # Cached HTML files (125 bulletins)
+├── refresh_data.py              # Main entry point script
+├── test_parser.py               # Unit tests for parser functions
+├── setup.sh                     # Automated setup script
+├── requirements.txt             # Python dependencies
+├── .gitignore                   # Git ignore rules
+└── README.md                    # This file
+
+~/visa-bulletin-venv/            # Virtual environment (external)
+```
+
+## How It Works
+
+### 1. Publication Discovery (`parse_publication_links`)
+- Fetches the main visa bulletin page
+- Extracts all links matching the pattern `/visa-bulletin-for-{Month}-{Year}.html`
+- Sorts publications by date (newest first)
+
+### 2. Data Fetching (`fetch_publication_data`)
+- Iterates through discovered publication URLs
+- Checks local cache before downloading
+- Extracts publication date from URL filename
+- Creates `PublicationData` objects containing URL, HTML content, and date
+
+### 3. Table Extraction (`extract_tables`)
+- Uses BeautifulSoup to parse HTML
+- Locates tables by finding preceding `<u>` (underline) tags containing table titles
+- Filters for only the four supported table types
+- Extracts headers and data rows
+
+### 4. Date Parsing
+- Converts date strings in format `DDMmmYY` (e.g., "15JAN25") to Python date objects
+- Preserves non-date values (like "C" for "Current") as strings
+
+## Testing
+
+The project includes a comprehensive test suite (`test_parser.py`) developed using Test-Driven Development (TDD). Tests are run against 3 randomly selected bulletins to ensure parsing works correctly across different time periods and HTML structures.
+
+### Test Coverage
+
+- **normalize()**: Whitespace handling and text normalization
+- **extract_tables()**: Complete table extraction from HTML
+- **extract_table()**: Individual table parsing logic
+- **Date conversion**: Validates DDMmmYY format conversion to Python date objects
+- **Data preservation**: Ensures special values ('C', 'U') remain as strings
+- **Data integrity**: Validates specific known values from real bulletins
+
+### Test Files
+
+The test suite validates against these bulletins:
+- `visa-bulletin-for-february-2017.html`
+- `visa-bulletin-for-march-2023.html`
+- `visa-bulletin-for-october-2021.html`
+
+All 9 test cases pass successfully across all three files.
+
+## Data Extracted
+
+The parser extracts four main table types from each visa bulletin:
+
+### 1. Family-Sponsored Categories
+- **Final Action Dates**: When visas can actually be issued
+- **Dates for Filing**: When applications can be filed
+
+Both tables include preference categories:
+- F1: Unmarried Sons and Daughters of U.S. Citizens
+- F2A: Spouses and Children of Permanent Residents
+- F2B: Unmarried Sons and Daughters (21+) of Permanent Residents
+- F3: Married Sons and Daughters of U.S. Citizens
+- F4: Brothers and Sisters of Adult U.S. Citizens
+
+### 2. Employment-Based Categories
+- **Final Action Dates**: When adjustment of status can be approved
+- **Dates for Filing**: When I-485 applications can be filed
+
+Both tables include preference categories:
+- EB-1: Priority Workers
+- EB-2: Professionals with Advanced Degrees or Exceptional Ability
+- EB-3: Skilled Workers, Professionals, and Other Workers
+- EB-4: Special Immigrants
+- EB-5: Immigrant Investors
+
+Each category may have separate dates for different countries (India, China, Mexico, Philippines, etc.).
+
+## Dependencies
+
+- **beautifulsoup4** (4.13.3): HTML parsing and navigation
+- **requests** (2.32.3): HTTP library for fetching web pages
+- **soupsieve** (2.6): CSS selector library for BeautifulSoup
+
+All dependencies are managed through the virtual environment and specified in `requirements.txt`.
+
+## Data Classes
+
+### `PublicationData`
+Represents a single visa bulletin publication.
+
+**Attributes:**
+- `url` (str): Relative URL to the bulletin page
+- `content` (str): HTML content of the page
+- `publication_date` (datetime): Parsed publication date
+
+### `Table`
+Represents an extracted table from a bulletin.
+
+**Attributes:**
+- `title` (str): Table identifier (e.g., "employment_based_final_action")
+- `headers` (tuple): Column headers
+- `rows` (list[tuple]): Data rows with date objects or strings
+
+## Code Quality Notes
+
+### Known Issues
+
+1. **Incomplete main() function**: The `main()` function in `refresh_data.py` (lines 98-102) has incomplete logic in the inner loop that doesn't do anything with the parsed table data.
+
+2. **Typo in filename**: `bulletint_parser.py` should be `bulletin_parser.py` (missing 'e', extra 'i')
+
+3. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
+
+4. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `refresh_data.py`)
+
+### Potential Improvements
+
+- Add database storage (SQLite integration started but not completed)
+- Implement comprehensive error handling and logging
+- Add command-line arguments for configuration
+- Export data to CSV/JSON formats
+- ~~Add unit tests~~ ✅ **Done!** (test_parser.py covers core functionality)
+- Create data visualization capabilities
+- Fix the incomplete main() function logic
+- Add CI/CD pipeline for automated testing
+
+## Example Output
+
+When run, the script prints information about each bulletin:
+
+```
+/content/travel/en/legal/visa-law0/visa-bulletin/2025/visa-bulletin-for-march-2025.html
+2025-03-01 00:00:00
+4
+```
+
+Where:
+- Line 1: Bulletin URL
+- Line 2: Publication date
+- Line 3: Number of tables extracted
+
+## Legal Notice
+
+This project scrapes publicly available data from the U.S. Department of State website. Please ensure your use complies with the website's terms of service and applicable laws. The data is provided by the U.S. government and is in the public domain.
+
+## Source
+
+Data is fetched from: https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html
+
+## License
+
+This project is provided as-is for educational and informational purposes.
+
+## Contributing
+
+This appears to be a personal project. If you find bugs or have suggestions:
+1. Fix the typo in `bulletint_parser.py` → `bulletin_parser.py`
+2. Complete the main() function logic
+3. Add proper error handling
+4. Consider adding tests
+
+---
+
+*Last updated: November 2025*
+*Bulletins cached: 125 files spanning from 2003 to 2025*
+

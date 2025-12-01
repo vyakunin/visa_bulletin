@@ -1,0 +1,103 @@
+import os
+import sqlite3
+from datetime import datetime
+from urllib.parse import urlparse
+
+import requests
+
+from lib.bulletint_parser import parse_publication_links, extract_tables
+from lib.publication_data import PublicationData
+
+
+def fetch_main_page(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
+
+
+def is_saved(pub_url):
+    filename = os.path.basename(urlparse(pub_url).path)
+    return os.path.exists(f'saved_pages/{filename}')
+
+
+def fetch_publication_data(publication_urls):
+    data = []
+    for pub_url in publication_urls[:100]:
+        content = maybe_fetch_publication(pub_url)
+
+        # Extract publication date from URL
+        filename = os.path.basename(urlparse(pub_url).path)
+        date_str = filename.replace('visa-bulletin-for-', '').replace('.html', '')
+        publication_date = datetime.strptime(date_str, '%B-%Y')
+
+        data.append(PublicationData(pub_url, content, publication_date))
+    return data
+
+
+def maybe_fetch_publication(pub_url):
+    if is_saved(pub_url):
+        with open(f'saved_pages/{os.path.basename(urlparse(pub_url).path)}', 'r', encoding='utf-8') as f:
+            content = f.read()
+    else:
+        full_url = f"https://travel.state.gov{pub_url}"
+        pub_response = requests.get(full_url)
+        pub_response.raise_for_status()
+        content = pub_response.text
+        save_page_content(full_url, content)
+    return content
+
+
+def print_all_tables(tables):
+    for i, table in enumerate(tables, 1):
+        pretty_print_table(table.headers, i, table.rows, table.title)
+
+
+def pretty_print_table(headers, i, rows, title):
+    # Print table title
+    print(f"\nTable {i}: {title}")
+    # Combine headers and rows
+    all_rows = [headers] + rows
+    # Calculate column widths
+    col_widths = [max(len(str(cell)) for cell in column) for column in zip(*all_rows)]
+    # Print table header
+    print('╔' + '╤'.join('═' * width for width in col_widths) + '╗')
+    header_cells = [str(cell).ljust(width) for cell, width in zip(headers, col_widths)]
+    print('║' + '│'.join(header_cells) + '║')
+    print('╟' + '┼'.join('─' * width for width in col_widths) + '╢')
+    # Print table rows
+    for row in rows:
+        cells = [str(cell).ljust(width) for cell, width in zip(row, col_widths)]
+        print('║' + '│'.join(cells) + '║')
+        print('╟' + '┼'.join('─' * width for width in col_widths) + '╢')
+    # Print table footer
+    print('╚' + '╧'.join('═' * width for width in col_widths) + '╝')
+
+
+def save_page_content(url, content):
+    # Create directory if it doesn't exist
+    os.makedirs('saved_pages', exist_ok=True)
+
+    # Extract filename from URL and sanitize it
+    filename = os.path.basename(urlparse(url).path)
+    filepath = os.path.join('saved_pages', filename)
+
+    # Save content
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+def main():
+    url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
+    html = fetch_main_page(url)
+    publication_urls = parse_publication_links(html)
+    data = fetch_publication_data(publication_urls)
+    for d in data:
+        tables = extract_tables(d.content)
+        print(d.url)
+        print(d.publication_date)
+        print(len(tables))
+        for t in tables:
+
+
+
+if __name__ == "__main__":
+    main()
