@@ -90,25 +90,41 @@ deactivate
 
 ### Running Tests
 
-The project uses **Bazel** for building and testing:
+The project uses **Bazel** as the primary test runner:
 
 ```bash
-# Run all tests
-bazel test //tests:test_parser
+# Run all tests (recommended)
+bazel test //tests:test_parser //tests:test_extractor //tests:test_integration
+
+# Run a specific test suite
+bazel test //tests:test_extractor
 
 # Run tests with detailed output
-bazel test //tests:test_parser --test_output=all
+bazel test //tests:test_extractor --test_output=all
 
-# Run tests with only error output
-bazel test //tests:test_parser --test_output=errors
+# Show only errors
+bazel test //tests:test_parser //tests:test_extractor //tests:test_integration --test_output=errors
 ```
 
-**Legacy method** (without Bazel):
+**Why Bazel?**
+- ✅ Hermetic builds (reproducible across machines)
+- ✅ Intelligent caching (faster repeated runs)
+- ✅ Automatic pre-commit hook integration
+- ✅ Single source of truth for dependencies
+
+**Alternative: pytest (for debugging only)**
+
+You can run tests directly with pytest for better debugging output:
 
 ```bash
 source ~/visa-bulletin-venv/bin/activate
-python -m unittest discover -s tests -v
+pytest tests/test_extractor.py -v -k test_specific_function
 ```
+
+Use pytest when you need:
+- 🐛 Better error messages for debugging
+- 🔍 Test filtering with `-k` flag
+- 💻 Quick iteration without rebuilding
 
 Tests verify:
 - Table extraction from multiple bulletin formats
@@ -116,6 +132,7 @@ Tests verify:
 - Proper handling of "C" (Current) and "U" (Unauthorized) statuses
 - Whitespace normalization
 - Data integrity across 3 randomly selected bulletins
+- Database integration and time-series data extraction
 
 **Note:** Tests automatically run before every git commit via Bazel-based pre-commit hook.
 
