@@ -2,6 +2,9 @@
 
 from django.db import models
 from .bulletin import Bulletin
+from .enums.visa_category import VisaCategory
+from .enums.action_type import ActionType
+from .enums.country import Country
 
 
 class VisaCutoffDate(models.Model):
@@ -10,6 +13,9 @@ class VisaCutoffDate(models.Model):
     
     Represents a single data point: for a specific bulletin, category,
     class, action type, and country, what is the priority date cutoff?
+    
+    Uses Django TextChoices for enum fields - readable strings in DB,
+    type-safe enums in Python code.
     """
     
     bulletin = models.ForeignKey(
@@ -20,7 +26,8 @@ class VisaCutoffDate(models.Model):
     
     visa_category = models.CharField(
         max_length=20,
-        help_text="FAMILY_SPONSORED or EMPLOYMENT_BASED"
+        choices=VisaCategory.choices,
+        help_text="Family-Sponsored or Employment-Based"
     )
     
     visa_class = models.CharField(
@@ -30,12 +37,14 @@ class VisaCutoffDate(models.Model):
     
     action_type = models.CharField(
         max_length=20,
-        help_text="FINAL_ACTION or FILING"
+        choices=ActionType.choices,
+        help_text="Final Action or Dates for Filing"
     )
     
     country = models.CharField(
         max_length=50,
-        help_text="Country/region: ALL, CHINA, INDIA, etc."
+        choices=Country.choices,
+        help_text="Country/region for chargeability"
     )
     
     cutoff_value = models.CharField(
