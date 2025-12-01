@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from django.shortcuts import render
+from django.views.decorators.cache import cache_page
 
 from models.visa_cutoff_date import VisaCutoffDate
 from models.enums.visa_category import VisaCategory
@@ -18,6 +19,7 @@ from lib.visa_class_utils import (
 )
 
 
+@cache_page(60 * 60 * 3)  # Cache for 3 hours (bulletins update monthly)
 def dashboard_view(request):
     """
     Main dashboard view with filters and time-series chart

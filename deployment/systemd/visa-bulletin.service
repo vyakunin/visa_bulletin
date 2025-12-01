@@ -1,0 +1,31 @@
+# Systemd service file for Visa Bulletin Dashboard
+# Location on server: /etc/systemd/system/visa-bulletin.service
+#
+# Installation:
+#   sudo cp visa-bulletin.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable visa-bulletin
+#   sudo systemctl start visa-bulletin
+#
+# Management:
+#   sudo systemctl status visa-bulletin
+#   sudo systemctl restart visa-bulletin
+#   sudo journalctl -u visa-bulletin -f
+
+[Unit]
+Description=Visa Bulletin Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/visa_bulletin
+Environment="DJANGO_SETTINGS_MODULE=django_config.settings"
+Environment="DJANGO_SECRET_KEY=CHANGE_ME_IN_PRODUCTION"
+ExecStart=/opt/visa_bulletin/venv/bin/gunicorn --workers 1 --threads 2 --bind 0.0.0.0:8000 --timeout 120 --max-requests 100 --max-requests-jitter 20 django_config.wsgi:application
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
