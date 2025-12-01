@@ -70,8 +70,8 @@ STATIC_ROOT = WORKSPACE_DIR / 'staticfiles'
 SECRET_KEY = 'django-insecure-for-development-only'
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-DEBUG = True
-ALLOWED_HOSTS = ['*']  # For development only
+DEBUG = False
+ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '3.82.99.148']
 
 # WSGI application
 ROOT_URLCONF = 'django_config.urls'
