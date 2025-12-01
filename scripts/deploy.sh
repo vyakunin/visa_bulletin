@@ -50,6 +50,25 @@ find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 
 echo ""
+echo "🔒 Checking security configuration..."
+if [ ! -f .env ]; then
+    echo "⚠️ .env file not found. Generating secure production secrets..."
+    # Generate a random 50-char key
+    SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')
+    echo "DJANGO_SECRET_KEY=$SECRET" > .env
+    echo "DEBUG=False" >> .env
+    chmod 600 .env
+    echo "✅ Generated new .env file with secure key."
+else
+    echo "✅ .env file exists."
+fi
+
+echo ""
+echo "⚙️ Updating system configuration..."
+sudo cp deployment/systemd/visa-bulletin.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+echo ""
 echo "🔄 Restarting application..."
 sudo systemctl restart visa-bulletin
 
