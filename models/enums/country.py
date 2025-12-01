@@ -14,7 +14,7 @@ class Country(models.TextChoices):
     - DB shows readable values: SELECT * shows 'china', not '1'
     """
     
-    ALL = "all", "All Countries (ROW)"
+    ALL = "all", "All Countries (not listed below)"
     CHINA = "china", "China (mainland born)"
     INDIA = "india", "India"
     MEXICO = "mexico", "Mexico"

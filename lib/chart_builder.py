@@ -94,30 +94,56 @@ def build_chart_with_projection(
                 hovertemplate='<b>Estimated Processing:</b> %{x|%B %Y}<extra></extra>'
             ))
     
-    # Layout
+    # Layout with mobile optimizations
     country_label = Country(country).label if country in [c.value for c in Country] else country
     fig.update_layout(
-        title=f'Priority Date Progress: {visa_class} - {country_label}',
-        xaxis_title='Bulletin Publication Date',
-        yaxis_title='Priority Date Cutoff',
+        title=dict(
+            text=f'Priority Date Progress: {visa_class} - {country_label}',
+            font=dict(size=16)
+        ),
+        xaxis=dict(
+            title=dict(text='Bulletin Publication Date', font=dict(size=12)),
+            tickfont=dict(size=10)
+        ),
+        yaxis=dict(
+            title=dict(text='Priority Date Cutoff', font=dict(size=12)),
+            tickfont=dict(size=10)
+        ),
         hovermode='closest',
         template='plotly_white',
-        height=600,
+        height=500,  # Reduced for mobile
         showlegend=True,
         legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+            orientation="v",  # Vertical legend works better on mobile
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='#ddd',
+            borderwidth=1,
+            font=dict(size=10)
+        ),
+        margin=dict(t=60, r=20, b=60, l=60)  # Tighter margins
     )
     
-    # Convert to HTML
+    # Convert to HTML with mobile-friendly config
     chart_html = fig.to_html(
         include_plotlyjs='cdn',
         div_id='priority-date-chart',
-        config={'displayModeBar': True, 'displaylogo': False}
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'responsive': True,
+            'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d'],
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': 'visa_bulletin_chart',
+                'height': 800,
+                'width': 1200,
+                'scale': 2
+            }
+        }
     )
     
     # Add JavaScript for click handling to open bulletin URLs
