@@ -136,17 +136,16 @@ def build_multi_class_chart_with_projections(
         height=500,  # Reduced for mobile
         showlegend=True,
         legend=dict(
-            orientation="v",  # Vertical legend works better on mobile
+            orientation="h",  # Horizontal legend below chart
             yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor='rgba(255,255,255,0.8)',
+            y=-0.20,  # Position below the chart
+            xanchor="center",
+            x=0.5,  # Center horizontally
             bordercolor='#ddd',
             borderwidth=1,
             font=dict(size=10)
         ),
-        margin=dict(t=60, r=20, b=60, l=60)  # Tighter margins
+        margin=dict(t=60, r=20, b=120, l=60)  # Extra bottom margin for legend
     )
     
     # Convert to HTML with mobile-friendly config
