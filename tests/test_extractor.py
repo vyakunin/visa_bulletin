@@ -94,7 +94,7 @@ class TestBulletinExtractor(unittest.TestCase):
         self.assertEqual(f1_mexico['cutoff_date'], date(2006, 3, 1))
     
     def test_handle_current_status(self):
-        """Test that 'C' (Current) is handled correctly"""
+        """Test that 'C' (Current) is handled correctly - sets cutoff to bulletin date"""
         headers = ('Family- Sponsored', 'All Chargeability Areas Except Those Listed')
         rows = [('F2A', 'C')]
         table = Table('family_sponsored_final_actions', headers, rows)
@@ -105,7 +105,8 @@ class TestBulletinExtractor(unittest.TestCase):
         f2a = results[0]
         self.assertEqual(f2a['cutoff_value'], 'C')
         self.assertTrue(f2a['is_current'])
-        self.assertIsNone(f2a['cutoff_date'])
+        # 'C' means Current - cutoff date should be the bulletin's publication date
+        self.assertEqual(f2a['cutoff_date'], date(2025, 12, 1))
         self.assertFalse(f2a['is_unavailable'])
     
     def test_handle_unavailable_status(self):

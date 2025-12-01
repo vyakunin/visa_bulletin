@@ -95,9 +95,10 @@ class BulletinExtractor:
                 'is_unavailable': False,
             }
         elif value == 'C':
+            # 'C' means Current - use the bulletin's publication date
             return {
                 'cutoff_value': 'C',
-                'cutoff_date': None,
+                'cutoff_date': self.publication_date,
                 'is_current': True,
                 'is_unavailable': False,
             }
