@@ -4,20 +4,37 @@
 
 ### Setting Up Your Environment
 
-1. Run the setup script:
+1. Run the setup script (installs Bazel if needed):
 ```bash
 ./setup.sh
 ```
 
-2. Activate the virtual environment:
+2. Verify Bazel is installed:
+```bash
+bazel --version
+```
+
+3. Activate the virtual environment (for running refresh_data.py):
 ```bash
 source ~/visa-bulletin-venv/bin/activate
 ```
 
 ### Running Tests
 
-Before making changes, ensure all tests pass:
+This project uses **Bazel** for building and testing. Before making changes, ensure all tests pass:
 
+```bash
+# Quick test run
+bazel test //tests:test_parser
+
+# Detailed output
+bazel test //tests:test_parser --test_output=all
+
+# Only show errors
+bazel test //tests:test_parser --test_output=errors
+```
+
+**Legacy method** (without Bazel):
 ```bash
 python -m unittest discover -s tests -v
 ```
@@ -31,34 +48,90 @@ git checkout -b feature-name
 
 2. Make your changes to the code
 
-3. Write tests for new functionality in `tests/`
+3. If you modify dependencies, update `requirements.txt`
 
-4. Run tests to verify everything works:
+4. If you add new Python files, update the appropriate `BUILD` file:
+   - `lib/BUILD` for library code
+   - `tests/BUILD` for test code
+
+5. Build your changes:
 ```bash
-python -m unittest discover -s tests -v
+bazel build //lib:lib
 ```
 
-5. Commit your changes (tests will run automatically):
+6. Write tests for new functionality in `tests/`
+
+7. Run tests to verify everything works:
+```bash
+bazel test //tests:test_parser
+```
+
+8. Commit your changes (tests will run automatically via Bazel):
 ```bash
 git add .
 git commit -m "Description of changes"
 ```
 
-The pre-commit hook will automatically:
-- Run all tests
+The Bazel-based pre-commit hook will automatically:
+- Run all tests with Bazel
 - Prevent commit if tests fail
 - Show which tests failed and why
+- Leverage Bazel's caching for fast execution
 
 ### Pre-Commit Hook
 
 The `.git/hooks/pre-commit` script runs automatically before each commit and:
-- Activates the virtual environment
-- Runs the full test suite
+- Checks for Bazel installation
+- Runs the full test suite via Bazel
 - Blocks the commit if any tests fail
+- Provides fast execution through Bazel's caching
 
 To bypass the hook (not recommended):
 ```bash
 git commit --no-verify
+```
+
+### Working with Bazel
+
+#### BUILD Files
+
+Each directory with Python code has a `BUILD` file that defines:
+- `py_library`: Reusable Python code
+- `py_test`: Test targets
+- `filegroup`: Data files
+
+Example `BUILD` file:
+```python
+load("@rules_python//python:defs.bzl", "py_library")
+load("@visa_bulletin_pip//:requirements.bzl", "requirement")
+
+py_library(
+    name = "my_module",
+    srcs = ["my_module.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("beautifulsoup4"),
+    ],
+)
+```
+
+#### Common Bazel Commands
+
+```bash
+# Build everything
+bazel build //...
+
+# Test everything
+bazel test //...
+
+# Clean build artifacts
+bazel clean
+
+# Query dependencies
+bazel query "deps(//tests:test_parser)"
+
+# Build specific target
+bazel build //lib:bulletint_parser
 ```
 
 ### Testing Guidelines

@@ -9,6 +9,10 @@ __pycache__/
 *$py.class
 *.so
 
+# Bazel
+/bazel-*
+.bazel_cache/
+
 # IDE
 .idea/
 .vscode/

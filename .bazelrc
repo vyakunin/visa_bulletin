@@ -1,0 +1,21 @@
+# Bazel configuration for Visa Bulletin Parser
+
+# Use Python 3
+build --python_path=/usr/bin/python3
+
+# Show test output
+test --test_output=errors
+
+# Enable color output
+common --color=yes
+
+# Optimization flags
+build --copt=-O2
+
+# Show progress
+build --show_progress_rate_limit=0.5
+
+# Use local resources efficiently
+build --local_resources=cpu=HOST_CPUS*.75
+build --local_resources=memory=HOST_RAM*.5
+

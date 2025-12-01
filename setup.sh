@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Visa Bulletin Parser - Environment Setup Script
-# This script sets up the Python virtual environment and installs dependencies
+# This script sets up Bazel, Python virtual environment and installs dependencies
 
 set -e  # Exit on error
 
@@ -11,6 +11,25 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "======================================"
 echo "Visa Bulletin Parser - Setup"
 echo "======================================"
+echo ""
+
+# Check if Bazel is installed
+if ! command -v bazel &> /dev/null; then
+    echo "⚠️  Bazel is not installed"
+    if command -v brew &> /dev/null; then
+        echo "Installing Bazel via Homebrew..."
+        brew install bazel
+        echo "✓ Bazel installed"
+    else
+        echo "❌ Error: Homebrew is not installed"
+        echo "Please install Bazel manually:"
+        echo "  Visit: https://bazel.build/install"
+        exit 1
+    fi
+else
+    BAZEL_VERSION=$(bazel --version | cut -d' ' -f2)
+    echo "✓ Found Bazel $BAZEL_VERSION"
+fi
 echo ""
 
 # Check if Python 3 is installed
@@ -82,15 +101,20 @@ echo "======================================"
 echo ""
 echo "Virtual environment location: $VENV_PATH"
 echo ""
-echo "To activate the environment in the future, run:"
-echo "  source ~/visa-bulletin-venv/bin/activate"
+echo "Build system: Bazel"
 echo ""
 echo "To run the script:"
 echo "  cd $PROJECT_DIR"
 echo "  source ~/visa-bulletin-venv/bin/activate"
 echo "  python refresh_data.py"
 echo ""
-echo "To deactivate when done:"
+echo "To build with Bazel:"
+echo "  bazel build //lib:lib"
+echo ""
+echo "To run tests with Bazel:"
+echo "  bazel test //tests:test_parser"
+echo ""
+echo "To deactivate venv when done:"
 echo "  deactivate"
 echo ""
 

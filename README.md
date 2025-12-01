@@ -28,7 +28,9 @@ The Visa Bulletin is a monthly publication by the U.S. Department of State that 
 ### Prerequisites
 
 - Python 3.11 or higher
+- [Bazel](https://bazel.build/) 8.1+ (build system)
 - pip (Python package installer)
+- Homebrew (macOS) for automatic Bazel installation
 
 ### Quick Setup (Recommended)
 
@@ -40,10 +42,11 @@ cd /path/to/visa_bulletin
 ```
 
 The setup script will:
+- Check for and install Bazel (via Homebrew if available)
 - Create a virtual environment at `~/visa-bulletin-venv`
-- Install all required dependencies
+- Install all required Python dependencies
 - Create necessary directories
-- Provide activation instructions
+- Provide usage instructions
 
 ### Manual Setup
 
@@ -87,17 +90,24 @@ deactivate
 
 ### Running Tests
 
-The project includes a comprehensive test suite in the `tests/` directory:
+The project uses **Bazel** for building and testing:
+
+```bash
+# Run all tests
+bazel test //tests:test_parser
+
+# Run tests with detailed output
+bazel test //tests:test_parser --test_output=all
+
+# Run tests with only error output
+bazel test //tests:test_parser --test_output=errors
+```
+
+**Legacy method** (without Bazel):
 
 ```bash
 source ~/visa-bulletin-venv/bin/activate
 python -m unittest discover -s tests -v
-```
-
-Or to run a specific test file:
-
-```bash
-python -m unittest tests.test_parser -v
 ```
 
 Tests verify:
@@ -107,7 +117,7 @@ Tests verify:
 - Whitespace normalization
 - Data integrity across 3 randomly selected bulletins
 
-**Note:** Tests automatically run before every git commit via pre-commit hook.
+**Note:** Tests automatically run before every git commit via Bazel-based pre-commit hook.
 
 The script will:
 1. Fetch the main visa bulletin index page
@@ -128,20 +138,30 @@ To force a fresh download, delete the `saved_pages/` directory or specific HTML 
 visa_bulletin/
 ├── .git/
 │   └── hooks/
-│       └── pre-commit           # Git hook to run tests before commit
+│       └── pre-commit           # Git hook (Bazel-based)
 ├── lib/
+│   ├── BUILD                    # Bazel build file for lib
 │   ├── __init__.py              # Package initializer
 │   ├── bulletint_parser.py      # HTML parsing logic
 │   ├── publication_data.py      # Data class for publications
 │   └── table.py                 # Data class for tables
 ├── tests/
+│   ├── BUILD                    # Bazel build file for tests
 │   ├── __init__.py              # Tests package initializer
 │   └── test_parser.py           # Unit tests for parser functions
-├── saved_pages/                 # Cached HTML files (125 bulletins)
+├── saved_pages/
+│   ├── BUILD                    # Bazel build file for test data
+│   └── *.html                   # Cached bulletins (125 files)
+├── BUILD                        # Root Bazel build file
+├── MODULE.bazel                 # Bazel module definition (Bzlmod)
+├── WORKSPACE                    # Legacy Bazel workspace file
+├── .bazelrc                     # Bazel configuration
+├── .bazelversion                # Pin Bazel version
 ├── refresh_data.py              # Main entry point script
 ├── setup.sh                     # Automated setup script
 ├── requirements.txt             # Python dependencies
 ├── .gitignore                   # Git ignore rules
+├── CONTRIBUTING.md              # Development guide
 └── README.md                    # This file
 
 ~/visa-bulletin-venv/            # Virtual environment (external)
@@ -170,9 +190,32 @@ visa_bulletin/
 - Converts date strings in format `DDMmmYY` (e.g., "15JAN25") to Python date objects
 - Preserves non-date values (like "C" for "Current") as strings
 
+## Build System
+
+This project uses **[Bazel](https://bazel.build/)** as its build system for:
+- Fast, reproducible builds
+- Hermetic dependency management
+- Parallel test execution
+- Cross-platform consistency
+
+### Building with Bazel
+
+```bash
+# Build the lib package
+bazel build //lib:lib
+
+# Build all targets
+bazel build //...
+
+# Clean build artifacts
+bazel clean
+```
+
 ## Testing
 
 The project includes a comprehensive test suite (`test_parser.py`) developed using Test-Driven Development (TDD). Tests are run against 3 randomly selected bulletins to ensure parsing works correctly across different time periods and HTML structures.
+
+All tests are managed by Bazel for consistent, reproducible execution.
 
 ### Test Coverage
 
@@ -194,10 +237,11 @@ All 9 test cases pass successfully across all three files.
 
 ### Git Pre-Commit Hook
 
-The repository includes an automated pre-commit hook that runs all tests before allowing commits. This ensures:
+The repository includes an automated Bazel-based pre-commit hook that runs all tests before allowing commits. This ensures:
 - No broken code is committed
 - All tests pass before code is saved to version control
 - Code quality standards are maintained
+- Fast test execution with Bazel's caching
 
 The hook will automatically block commits if tests fail. To bypass (not recommended):
 ```bash
