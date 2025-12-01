@@ -33,13 +33,41 @@ deployment/
 5. **Database**: SQLite with WAL mode
 6. **Caching**: Django LocMemCache (3 hours)
 
+### Architecture: Why Raw Python on AWS?
+
+**Local Development** uses Bazel:
+- ✅ Fast builds with caching
+- ✅ Hermetic test environment
+- ✅ Excellent developer experience
+
+**Production** uses raw Python (no Bazel):
+- ✅ **Minimal RAM usage**: Bazel requires 1-2GB for builds
+- ✅ **Lightweight deployment**: No JVM, no build system overhead
+- ✅ **Fits $5/month budget**: AWS Lightsail 1GB RAM instance
+- ✅ **Faster startup**: No Bazel analysis phase
+- ⚠️ Trade-off: Manual dependency management via `requirements.txt`
+
 ### Server Specs
 
 - **AWS Lightsail**: $5/month
-- **RAM**: 416 MB (with 2GB swap)
+- **RAM**: 1GB (416 MB + 2GB swap)
 - **CPU**: 1 vCPU
 - **Disk**: 20 GB SSD
 - **OS**: Ubuntu 22.04 LTS
+
+### Quick Deployment
+
+```bash
+# From your local machine
+./scripts/deploy.sh ~/path/to/ssh-key.pem
+```
+
+This script automatically:
+1. Pulls latest code from GitHub main
+2. Clears Python cache
+3. Restarts the service
+4. Tests the site
+5. Shows recent logs
 
 ## 📋 Installation Steps
 
