@@ -15,3 +15,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "bulletin_handler",
+    srcs = ["bulletin_handler.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bulletin_extractor",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//django_config:settings",
+        requirement("Django"),
+    ],
+)
+
+

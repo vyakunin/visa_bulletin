@@ -13,8 +13,26 @@ py_binary(
     deps = [
         "//lib:bulletint_parser",
         "//lib:publication_data",
+        "//lib:table",
+        "//extractors:bulletin_handler",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//django_config:settings",
         requirement("requests"),
+        requirement("beautifulsoup4"),
+        requirement("soupsieve"),
+        requirement("idna"),
+        requirement("urllib3"),
+        requirement("certifi"),
+        requirement("charset-normalizer"),
+        requirement("typing-extensions"),
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
     ],
     python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
 )
 
