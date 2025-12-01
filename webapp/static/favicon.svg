@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- US Flag simplified for favicon -->
+  <rect width="32" height="32" fill="#B22234"/>
+  <rect y="2.46" width="32" height="2.46" fill="#FFF"/>
+  <rect y="7.38" width="32" height="2.46" fill="#FFF"/>
+  <rect y="12.3" width="32" height="2.46" fill="#FFF"/>
+  <rect y="17.23" width="32" height="2.46" fill="#FFF"/>
+  <rect y="22.15" width="32" height="2.46" fill="#FFF"/>
+  <rect y="27.08" width="32" height="2.46" fill="#FFF"/>
+  <rect width="12.8" height="17.23" fill="#3C3B6E"/>
+  <!-- Simplified stars (3x3 grid) -->
+  <circle cx="3.2" cy="3.2" r="0.8" fill="#FFF"/>
+  <circle cx="6.4" cy="3.2" r="0.8" fill="#FFF"/>
+  <circle cx="9.6" cy="3.2" r="0.8" fill="#FFF"/>
+  <circle cx="3.2" cy="7" r="0.8" fill="#FFF"/>
+  <circle cx="6.4" cy="7" r="0.8" fill="#FFF"/>
+  <circle cx="9.6" cy="7" r="0.8" fill="#FFF"/>
+  <circle cx="3.2" cy="10.8" r="0.8" fill="#FFF"/>
+  <circle cx="6.4" cy="10.8" r="0.8" fill="#FFF"/>
+  <circle cx="9.6" cy="10.8" r="0.8" fill="#FFF"/>
+  <circle cx="3.2" cy="14.6" r="0.8" fill="#FFF"/>
+  <circle cx="6.4" cy="14.6" r="0.8" fill="#FFF"/>
+  <circle cx="9.6" cy="14.6" r="0.8" fill="#FFF"/>
+</svg>

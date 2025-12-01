@@ -1,0 +1,24 @@
+
+🔍 DIAGNOSIS: EB-1 Historical Data
+
+The data IS there going back to 2004, but EB-1 (Priority Workers) 
+was 'Current' (no backlog) for most of its history!
+
+When a category is Current, there's no meaningful priority date to show
+on the chart - everyone gets processed regardless of their priority date.
+
+**Try these categories instead to see full 20+ year history:**
+
+1. **EB-3 (Skilled Workers)** - Has actual backlogs since 2004
+   http://localhost:8000/?category=employment_sponsored&country=all&visa_class=3rd&action_type=final_action
+
+2. **EB-3 India** - Even longer backlogs
+   http://localhost:8000/?category=employment_sponsored&country=india&visa_class=3rd&action_type=final_action
+
+3. **F4 Philippines** - Longest family backlog (20+ years visible)
+   http://localhost:8000/?category=family_sponsored&country=philippines&visa_class=F4&action_type=final_action
+
+EB-1 only started having backlogs recently (2015+), which is why you
+only see meaningful data from that period!
+
+

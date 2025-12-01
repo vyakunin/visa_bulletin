@@ -13,6 +13,31 @@ py_library(
 )
 
 py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "chart_builder",
+    srcs = ["chart_builder.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/enums:country",
+        requirement("plotly"),
+    ],
+)
+
+py_library(
+    name = "visa_class_utils",
+    srcs = ["visa_class_utils.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:visa_cutoff_date",
+    ],
+)
+
+py_library(
     name = "publication_data",
     srcs = ["publication_data.py"],
     visibility = ["//visibility:public"],

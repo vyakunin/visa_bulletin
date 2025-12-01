@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database and cached pages
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    
+  # Daily data refresh (cron-like service)
+  data-refresh:
+    build: .
+    command: sh -c "while true; do python3 refresh_data_incremental.py --save-to-db; sleep 86400; done"
+    volumes:
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - web
+

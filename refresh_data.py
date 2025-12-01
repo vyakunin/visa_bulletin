@@ -36,7 +36,7 @@ def is_saved(pub_url):
 
 def fetch_publication_data(publication_urls):
     data = []
-    for pub_url in publication_urls[:100]:
+    for pub_url in publication_urls:  # Process all bulletins, not just first 100
         content = maybe_fetch_publication(pub_url)
 
         # Extract publication date from URL
@@ -54,11 +54,11 @@ def maybe_fetch_publication(pub_url):
         with open(SAVED_PAGES_DIR / filename, 'r', encoding='utf-8') as f:
             content = f.read()
     else:
-        full_url = f"https://travel.state.gov{pub_url}"
-        pub_response = requests.get(full_url)
+        # pub_url is now absolute from parse_publication_links()
+        pub_response = requests.get(pub_url)
         pub_response.raise_for_status()
         content = pub_response.text
-        save_page_content(full_url, content)
+        save_page_content(pub_url, content)
     return content
 
 

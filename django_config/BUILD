@@ -12,3 +12,13 @@ py_library(
     ],
 )
 
+py_library(
+    name = "urls",
+    srcs = ["urls.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//webapp:urls",
+        requirement("Django"),
+    ],
+)
+

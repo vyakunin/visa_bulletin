@@ -1,0 +1,208 @@
+{% extends "webapp/base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Filter Card -->
+        <div class="card filter-card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">🔍 Filter Options</h5>
+            </div>
+            <div class="card-body">
+                <form method="get" action="" id="filterForm">
+                    <div class="row g-3">
+                        <!-- Visa Category -->
+                        <div class="col-md-2">
+                            <label for="category" class="form-label">Visa Category</label>
+                            <select class="form-select" id="category" name="category" onchange="updateVisaClasses()">
+                                {% for value, label in visa_categories %}
+                                <option value="{{ value }}" {% if value == category %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <!-- Country -->
+                        <div class="col-md-2">
+                            <label for="country" class="form-label">Country</label>
+                            <select class="form-select" id="country" name="country" onchange="autoSubmitForm()">
+                                {% for value, label in countries %}
+                                <option value="{{ value }}" {% if value == country %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <!-- Visa Class -->
+                        <div class="col-md-3">
+                            <label for="visa_class" class="form-label">Visa Class</label>
+                            <select class="form-select" id="visa_class" name="visa_class" onchange="autoSubmitForm()">
+                                {% for value, label in available_classes_with_labels %}
+                                <option value="{{ value }}" {% if value == visa_class %}selected{% endif %}>
+                                    {% if category == 'family_sponsored' %}
+                                        {{ value }}: {{ label|slice:"4:" }}
+                                    {% else %}
+                                        {{ label }}
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <!-- Action Type -->
+                        <div class="col-md-2">
+                            <label for="action_type" class="form-label">Action Type</label>
+                            <select class="form-select" id="action_type" name="action_type" onchange="autoSubmitForm()">
+                                {% for value, label in action_types %}
+                                <option value="{{ value }}" {% if value == action_type %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <!-- Submission Date -->
+                        <div class="col-md-2">
+                            <label for="submission_date" class="form-label">Priority Date</label>
+                            <input type="date" class="form-control" id="submission_date" name="submission_date" 
+                                   value="{{ submission_date|date:'Y-m-d' }}">
+                            <small class="form-text text-muted">Your filing date</small>
+                        </div>
+                        
+                        <!-- Update Button -->
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100" style="margin-bottom: 20px;">
+                                Update
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        {% if not has_data %}
+            <div class="alert alert-warning" role="alert">
+                <h5 class="alert-heading">📊 No Data Available</h5>
+                <p>No visa bulletin data found for the selected combination:</p>
+                <ul class="mb-2">
+                    <li><strong>Category:</strong> {{ category_display }}</li>
+                    <li><strong>Country:</strong> {{ country_display }}</li>
+                    <li><strong>Visa Class:</strong> {{ visa_class }}</li>
+                    <li><strong>Action Type:</strong> {{ action_type_display }}</li>
+                </ul>
+                <hr>
+                <p class="mb-1"><strong>Suggestions:</strong></p>
+                <ul class="mb-0">
+                    <li>Try selecting "All Chargeability Areas" for the country filter</li>
+                    <li>Try a different visa class from the dropdown</li>
+                    <li>Some older bulletins may not have data for all visa classes</li>
+                    <li>Make sure you have imported bulletin data: <code>bazel run //:refresh_data -- --save-to-db</code></li>
+                </ul>
+            </div>
+        {% endif %}
+        
+        {% if has_data %}
+            <!-- Projection Result -->
+            {% if projection %}
+            <div class="alert projection-alert alert-info" role="alert">
+                <h5 class="alert-heading">📅 Processing Estimate</h5>
+                <p class="mb-1"><strong>{{ projection.message }}</strong></p>
+                
+                {% if projection.status == 'projected' %}
+                <p class="mb-1">
+                    Estimated processing date: <strong>{{ projection.estimated_date|date:"F Y" }}</strong>
+                </p>
+                <p class="mb-1 small text-muted">
+                    Based on average progress of {{ projection.avg_progress_days_per_month }} days per month over the last 12 months.
+                </p>
+                <hr>
+                <p class="mb-0 small">
+                    ⚠️ <em>This is a rough estimate based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
+                </p>
+                {% elif projection.status == 'projected_historical' %}
+                <p class="mb-1">
+                    Estimated processing date: <strong>{{ projection.estimated_date|date:"F Y" }}</strong>
+                </p>
+                <p class="mb-1 small text-muted">
+                    Recent months show little movement. This estimate uses long-term historical trend analysis ({{ valid_points.count }} data points) to project when your priority date may be reached.
+                </p>
+                <hr>
+                <p class="mb-0 small">
+                    ⚠️ <em>This projection is based on long-term historical patterns and assumes continued progress. Actual processing times may vary significantly due to policy changes, backlogs, retrogression, and other factors. When priority dates stall, projections become less reliable.</em>
+                </p>
+                {% elif projection.status == 'current' %}
+                <p class="mb-0">✅ Your priority date is already current or very close!</p>
+                {% elif projection.status == 'no_movement' %}
+                <p class="mb-0">⚠️ The priority dates have not been advancing recently. Check the official visa bulletin for updates.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Chart -->
+            <div class="card">
+                <div class="card-body">
+                    {{ chart_html|safe }}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Info Section -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">ℹ️ About This Dashboard</h5>
+            </div>
+            <div class="card-body">
+                <h6>What is a Priority Date?</h6>
+                <p>
+                    The priority date is the date when your immigration petition was filed. The Visa Bulletin publishes 
+                    "cutoff dates" each month, which determine whose cases can move forward based on their priority dates.
+                </p>
+                
+                <h6>How to Use This Dashboard</h6>
+                <ol>
+                    <li>Select your <strong>visa category</strong> (Family-Sponsored or Employment-Based)</li>
+                    <li>Choose your <strong>country of chargeability</strong> (birth country, not citizenship)</li>
+                    <li>Select your <strong>visa class</strong> (e.g., F1, F2A, EB2, EB3)</li>
+                    <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong> (to submit I-485)</li>
+                    <li>Enter your application <strong>priority date</strong> to see an estimated processing timeline</li>
+                </ol>
+                
+                <h6>Understanding the Chart</h6>
+                <ul>
+                    <li><strong>Blue line</strong>: Historical priority date cutoffs from visa bulletins</li>
+                    <li><strong>Red dashed line</strong>: Your application's priority date</li>
+                    <li><strong>Orange dashed line</strong>: Projected timeline based on recent trends</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-submit for dropdowns (but not for date input)
+function autoSubmitForm() {
+    document.getElementById('filterForm').submit();
+}
+
+// Category change needs to update visa classes AND submit
+function updateVisaClasses() {
+    document.getElementById('filterForm').submit();
+}
+
+// Optional: Submit on Enter key in date field
+document.addEventListener('DOMContentLoaded', function() {
+    const dateInput = document.getElementById('submission_date');
+    if (dateInput) {
+        dateInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('filterForm').submit();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
+
