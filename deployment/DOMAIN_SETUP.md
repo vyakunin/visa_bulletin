@@ -311,18 +311,21 @@ sudo tar -czf letsencrypt-backup-$(date +%Y%m%d).tar.gz /etc/letsencrypt/
 
 ## Post-Setup Checklist
 
-- [ ] Domain purchased
-- [ ] DNS configured (A records for @ and www)
-- [ ] DNS propagation verified
-- [ ] SSL certificate installed
-- [ ] HTTPS working for both visa-bulletin.us and www.visa-bulletin.us
-- [ ] HTTP redirects to HTTPS
-- [ ] Django ALLOWED_HOSTS updated
-- [ ] Security headers configured
-- [ ] Auto-renewal tested
-- [ ] SSL Labs test passed (A+ rating)
-- [ ] Monitoring set up
-- [ ] Site tested on multiple devices/browsers
+- [x] Domain purchased ✅ (Namecheap, $8.88/year)
+- [x] DNS configured (A records for @ and www) ✅
+- [x] DNS propagation verified ✅ (instant)
+- [x] SSL certificate installed ✅ (Let's Encrypt via Certbot)
+- [x] HTTPS working for both visa-bulletin.us and www.visa-bulletin.us ✅
+- [x] HTTP redirects to HTTPS ✅ (automatic via Certbot)
+- [x] Django ALLOWED_HOSTS updated ✅
+- [x] Auto-renewal configured ✅ (Certbot snap timer)
+- [ ] Security headers configured (optional enhancement)
+- [ ] SSL Labs test (optional - should be A+)
+- [ ] Uptime monitoring set up (optional)
+- [x] Site tested on mobile/desktop ✅
+
+**Deployment Date:** December 1, 2025  
+**Live Site:** https://visa-bulletin.us
 
 ---
 

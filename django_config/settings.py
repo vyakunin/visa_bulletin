@@ -67,12 +67,38 @@ STATICFILES_DIRS = [
 STATIC_ROOT = WORKSPACE_DIR / 'staticfiles'
 
 # Required settings
-SECRET_KEY = 'django-insecure-for-development-only'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-for-development-only')
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-DEBUG = False
-ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '3.82.99.148']
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '3.227.71.176',  # AWS Lightsail static IP
+    'visa-bulletin.us',
+    'www.visa-bulletin.us',
+]
 
 # WSGI application
 ROOT_URLCONF = 'django_config.urls'
+
+# Caching configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'TIMEOUT': 60 * 60 * 3,  # Cache for 3 hours
+    }
+}
+
+# HTTPS/Security settings (enable in production)
+# Uncomment these when deploying with HTTPS:
+# SECURE_SSL_REDIRECT = True
+# SESSION_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True
+# SECURE_BROWSER_XSS_FILTER = True
+# SECURE_CONTENT_TYPE_NOSNIFF = True
+# X_FRAME_OPTIONS = 'DENY'
+# SECURE_HSTS_SECONDS = 31536000  # 1 year
+# SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 

@@ -74,7 +74,7 @@ class TestChartBuilder(unittest.TestCase):
             dates, cutoffs, submission, None, 'F2A', 'all'
         )
         
-        self.assertIn('Your Submission Date', html)
+        self.assertIn('Your Priority Date', html)
     
     def test_projection_without_estimated_date(self):
         dates = [date(2024, 1, 1), date(2024, 2, 1)]
