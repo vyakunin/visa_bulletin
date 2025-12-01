@@ -10,7 +10,7 @@ Handles the complete pipeline:
 import os
 import django
 from datetime import date
-from typing import List
+from typing import List, Union
 
 # Setup Django if not already configured
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
@@ -22,23 +22,43 @@ if not django_apps.ready:
     django.setup()
 
 from extractors.bulletin_extractor import BulletinExtractor
+from lib.bulletint_parser import extract_tables
+from lib.publication_data import PublicationData
 
 # Track whether tables have been created
 _TABLES_CREATED = False
 
 
-def save_bulletin_to_db(publication_date: date, tables: List):
+def save_bulletin_to_db(publication_data: Union[PublicationData, date], tables: List = None):
     """
     Save a bulletin and all its tables to the database (idempotent)
     
     Args:
-        publication_date: Date of the bulletin publication
-        tables: List of Table objects from extract_tables()
+        publication_data: Either a PublicationData object (preferred) or a date
+        tables: List of Table objects (only needed if publication_data is a date)
         
     Returns:
         Bulletin instance (created or retrieved)
+        
+    Examples:
+        # Preferred: Pass PublicationData directly
+        save_bulletin_to_db(publication_data)
+        
+        # Legacy: Pass date and tables separately
+        save_bulletin_to_db(date(2023, 3, 1), tables)
     """
     global _TABLES_CREATED
+    
+    # Handle both PublicationData and legacy date+tables format
+    if isinstance(publication_data, PublicationData):
+        publication_date = publication_data.publication_date.date()
+        if tables is None:
+            tables = extract_tables(publication_data.content)
+    else:
+        # Legacy format: date passed directly
+        publication_date = publication_data
+        if tables is None:
+            raise ValueError("tables parameter required when passing date directly")
     
     # Import models here to ensure Django is fully set up
     from models.bulletin import Bulletin
