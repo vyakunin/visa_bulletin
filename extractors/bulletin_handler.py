@@ -40,8 +40,6 @@ def save_bulletin_to_db(publication_data: PublicationData):
     Example:
         save_bulletin_to_db(publication_data)
     """
-    global _TABLES_CREATED
-    
     # Extract date and tables from PublicationData
     publication_date = publication_data.publication_date.date()
     tables = extract_tables(publication_data.content)
@@ -49,27 +47,17 @@ def save_bulletin_to_db(publication_data: PublicationData):
     # Import models here to ensure Django is fully set up
     from models.bulletin import Bulletin
     from models.visa_cutoff_date import VisaCutoffDate
-    from django.db import connection
     
-    # Create tables if they don't exist (only once per session)
-    if not _TABLES_CREATED:
-        with connection.schema_editor() as schema_editor:
-            try:
-                schema_editor.create_model(Bulletin)
-                print("Created Bulletin table")
-            except Exception:
-                pass  # Table already exists
-            try:
-                schema_editor.create_model(VisaCutoffDate)
-                print("Created VisaCutoffDate table")
-            except Exception:
-                pass  # Table already exists
-        _TABLES_CREATED = True
-    
-    # Get or create bulletin
+    # Get or create bulletin with URL
     bulletin, created = Bulletin.objects.get_or_create(
-        publication_date=publication_date
+        publication_date=publication_date,
+        defaults={'url': publication_data.url}
     )
+    
+    # Update URL if bulletin exists but URL is missing
+    if not created and not bulletin.url and publication_data.url:
+        bulletin.url = publication_data.url
+        bulletin.save()
     
     if created:
         print(f"Created new bulletin: {publication_date}")

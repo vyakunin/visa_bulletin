@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv
+
+# Bazel
+bazel-*
+.bazel/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Database (will be mounted as volume)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# Cached pages (will be mounted as volume)
+saved_pages/
+
+# Test
+.pytest_cache/
+.coverage
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+

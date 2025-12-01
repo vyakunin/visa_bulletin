@@ -1,0 +1,28 @@
+[32mINFO: [0mInvocation ID: 02948235-9d49-4834-91be-6df9fa5af44e
+[32mComputing main repo mapping:[0m 
+[32mLoading:[0m 
+[32mLoading:[0m 0 packages loaded
+[32mAnalyzing:[0m target //:runserver (0 packages loaded, 0 targets configured)
+[32mAnalyzing:[0m target //:runserver (0 packages loaded, 0 targets configured)
+
+[32mINFO: [0mAnalyzed target //:runserver (0 packages loaded, 0 targets configured).
+[32mINFO: [0mFound 1 target...
+Target //:runserver up-to-date:
+  bazel-bin/runserver
+[32mINFO: [0mElapsed time: 0.224s, Critical Path: 0.00s
+[32mINFO: [0m1 process: 1 action cache hit, 1 internal.
+[32mINFO: [0mBuild completed successfully, 1 total action
+[32mINFO: [0mRunning command line: bazel-bin/runserver runserver 8000 --noreload
+[0m[01/Dec/2025 08:11:41] "GET /?category=employment_sponsored&country=all&visa_class=1st&action_type=final_action HTTP/1.1" 200 10370
+[01/Dec/2025 08:12:20] "GET /?category=employment_based&country=philippines&visa_class=F4&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 17336
+[01/Dec/2025 08:12:22] "GET /?category=employment_based&country=philippines&visa_class=1st&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 69070
+[01/Dec/2025 08:12:28] "GET /?category=employment_based&country=philippines&visa_class=3rd&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 69031
+[01/Dec/2025 08:12:36] "GET /?category=employment_based&country=all&visa_class=3rd&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 69076
+[01/Dec/2025 08:12:39] "GET /?category=family_sponsored&country=all&visa_class=3rd&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 32652
+[01/Dec/2025 08:12:41] "GET /?category=family_sponsored&country=all&visa_class=F4&action_type=final_action&submission_date=2025-12-01 HTTP/1.1" 200 52691
+[01/Dec/2025 08:12:58] "GET /?category=family_sponsored&country=all&visa_class=F4&action_type=final_action&submission_date=2022-04-01 HTTP/1.1" 200 52689
+[01/Dec/2025 08:14:33] "GET /?category=employment_based&country=all&visa_class=F4&action_type=final_action&submission_date=2022-04-01 HTTP/1.1" 200 17360
+[01/Dec/2025 08:14:36] "GET /?category=employment_based&country=all&visa_class=Other+Workers&action_type=final_action&submission_date=2022-04-01 HTTP/1.1" 200 70016
+[01/Dec/2025 08:14:46] "GET /?category=employment_based&country=all&visa_class=3rd&action_type=final_action&submission_date=2022-04-01 HTTP/1.1" 200 68285
+[01/Dec/2025 08:14:58] "GET /?category=employment_based&country=all&visa_class=3rd&action_type=filing&submission_date=2022-04-01 HTTP/1.1" 200 49217
+[01/Dec/2025 08:15:11] "GET /?category=employment_based&country=all&visa_class=3rd&action_type=final_action&submission_date=2022-04-01 HTTP/1.1" 200 69617

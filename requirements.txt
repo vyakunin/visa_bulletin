@@ -16,4 +16,8 @@ packaging>=21.3
 pluggy>=1.0.0
 pygments>=2.0.0
 exceptiongroup>=1.0.0
+plotly>=5.18.0
+tenacity>=8.2.0
+packaging>=23.0
+narwhals>=2.0.0
 

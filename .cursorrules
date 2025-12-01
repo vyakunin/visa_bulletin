@@ -1,5 +1,51 @@
 # Cursor Rules for Visa Bulletin Parser
 
+## 🚨 Critical Rules
+
+### Rule: Always Use Bazel for Testing and Running
+**NEVER run Python or pytest directly. ALWAYS use Bazel.**
+
+**✅ GOOD:**
+```bash
+bazel test //tests:test_extractor
+bazel run //:refresh_data
+bazel test //tests:test_parser //tests:test_extractor //tests:test_integration
+```
+
+**❌ BAD:**
+```bash
+python refresh_data.py                    # Use: bazel run //:refresh_data
+pytest tests/                             # Use: bazel test //tests:...
+python -m unittest discover              # Use: bazel test //tests:...
+source ~/visa-bulletin-venv/bin/activate # Not needed with Bazel
+```
+
+**Rationale:**
+- Hermetic builds (reproducible)
+- Intelligent caching (faster)
+- Consistent with pre-commit hook
+- Single source of truth for dependencies
+
+### Rule: Only Commit When Explicitly Asked
+**NEVER auto-commit changes. Only commit when user explicitly requests it.**
+
+**User must explicitly say:**
+- "commit these changes"
+- "make a commit"
+- "commit this"
+- Or use explicit phrasing requesting a commit
+
+**Do NOT commit when:**
+- Finishing a task
+- Fixing bugs
+- Making changes
+- User says "looks good" or "thanks"
+
+**Rationale:**
+- User controls git history
+- Prevents premature commits
+- Allows review before committing
+
 ## Bazel Build System
 
 ### Rule: One Bazel Target Per File
@@ -149,7 +195,8 @@ def test_parse_table_header_to_country_enum(self):
 ### Test Requirements
 
 - All new features must include meaningful behavioral tests
-- Tests should use Bazel: `bazel test //tests:...`
+- **ALWAYS use Bazel to run tests**: `bazel test //tests:test_name`
+- **NEVER use pytest or python directly** (see Critical Rules above)
 - Run tests before committing (pre-commit hook handles this)
 - Aim for meaningful test coverage, not just high percentages
 - Each test should verify actual behavior, not just existence
@@ -163,6 +210,7 @@ def test_parse_table_header_to_country_enum(self):
 
 ## Git Workflow
 
+- **ONLY commit when user explicitly requests it** (see Critical Rules above)
 - Write clear, descriptive commit messages
 - Tests run automatically via pre-commit hook
 - Don't bypass hooks unless absolutely necessary

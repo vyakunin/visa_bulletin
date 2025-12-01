@@ -71,22 +71,56 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### Web Dashboard (Recommended)
 
-1. Activate the virtual environment:
+The easiest way to explore visa bulletin data is through the interactive web dashboard:
+
+1. **First-time setup (run migrations):**
 ```bash
-source ~/visa-bulletin-venv/bin/activate
+bazel run //:migrate
 ```
 
-2. Run the main script to fetch and parse visa bulletin data:
+2. **Start the web server:**
 ```bash
-python refresh_data.py
+bazel run //:runserver
 ```
 
-3. When done, deactivate the environment:
+**Note:** The server runs with `--noreload` flag (no auto-reload on file changes). This prevents crashes in Bazel's sandboxed environment. To see code changes:
+- Stop the server (`Ctrl+C`)
+- Restart with `bazel run //:runserver` (Bazel rebuilds automatically - cached, takes <1s)
+
+**Bazel Performance:** The first run analyzes dependencies (~2s), subsequent runs use cache (<1s). The cache persists across sessions in `~/.cache/bazel/`.
+
+3. **Open your browser:**
+Navigate to `http://localhost:8000/`
+
+3. **Explore the data:**
+   - Select your visa category (Family-Sponsored or Employment-Based)
+   - Choose your country of chargeability
+   - Pick your visa class (F1, F2A, EB2, etc.)
+   - Select action type (Final Action or Filing)
+   - Enter your priority date to see processing estimates
+
+The dashboard features:
+- 📊 Interactive Plotly charts showing historical priority date progress
+- 🔮 Simple projection estimates based on recent trends
+- 🔗 Deep-linkable URLs for sharing specific filter combinations
+- 📱 Responsive Bootstrap 5 design
+
+### Fetching New Data
+
+To download and import the latest visa bulletins:
+
 ```bash
-deactivate
+# Fetch bulletins and save to database
+bazel run //:refresh_data -- --save-to-db
 ```
+
+This will:
+1. Check for new bulletins on travel.state.gov
+2. Download any new bulletins (skips already cached pages)
+3. Parse tables and extract priority dates
+4. Save structured data to the SQLite database
 
 ### Running Tests
 
@@ -148,6 +182,36 @@ The script will:
 Downloaded HTML pages are stored in the `saved_pages/` directory. The script automatically checks this directory before making network requests, making subsequent runs much faster.
 
 To force a fresh download, delete the `saved_pages/` directory or specific HTML files within it.
+
+## Quick Start
+
+```bash
+# 1. Setup environment
+./setup.sh
+
+# 2. Fetch data and populate database
+bazel run //:refresh_data -- --save-to-db
+
+# 3. Run web dashboard
+bazel run //:runserver
+
+# 4. Open browser
+open http://localhost:8000
+```
+
+## Deployment
+
+**Production deployment ready!** See [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md) for:
+- AWS Lightsail setup ($5/month)
+- Docker deployment (works on any cloud)
+- Security hardening
+- SSL/HTTPS configuration
+- Monitoring setup
+
+**Quick deploy with Docker:**
+```bash
+docker-compose up -d
+```
 
 ## Project Structure
 
