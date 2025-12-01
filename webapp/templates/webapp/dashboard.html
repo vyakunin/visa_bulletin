@@ -12,7 +12,7 @@
                 <form method="get" action="" id="filterForm">
                     <div class="row g-3">
                         <!-- Visa Category -->
-                        <div class="col-md-2">
+                        <div class="col-12">
                             <label for="category" class="form-label">Visa Category</label>
                             <select class="form-select" id="category" name="category" onchange="updateVisaClasses()">
                                 {% for value, label in visa_categories %}
@@ -24,7 +24,7 @@
                         </div>
                         
                         <!-- Country -->
-                        <div class="col-md-3">
+                        <div class="col-12">
                             <label for="country" class="form-label">Country</label>
                             <select class="form-select" id="country" name="country" onchange="autoSubmitForm()">
                                 {% for value, label in countries %}
@@ -36,7 +36,7 @@
                         </div>
                         
                         <!-- Action Type -->
-                        <div class="col-md-3">
+                        <div class="col-12">
                             <label for="action_type" class="form-label">Action Type</label>
                             <select class="form-select" id="action_type" name="action_type" onchange="autoSubmitForm()">
                                 {% for value, label in action_types %}
@@ -48,7 +48,7 @@
                         </div>
                         
                         <!-- Submission Date -->
-                        <div class="col-md-3">
+                        <div class="col-12">
                             <label for="submission_date" class="form-label">Priority Date</label>
                             <input type="date" class="form-control" id="submission_date" name="submission_date" 
                                    value="{{ submission_date|date:'Y-m-d' }}">
@@ -56,8 +56,8 @@
                         </div>
                         
                         <!-- Update Button -->
-                        <div class="col-md-1 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary w-100" style="margin-bottom: 20px;">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary w-100">
                                 Update
                             </button>
                         </div>
