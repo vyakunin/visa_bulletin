@@ -1,4 +1,5 @@
 import os
+import sys
 import sqlite3
 from datetime import datetime
 from urllib.parse import urlparse
@@ -6,8 +7,15 @@ from pathlib import Path
 
 import requests
 
+# Setup Django early (before imports that use models)
+if not os.environ.get('DJANGO_SETTINGS_MODULE'):
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+    import django
+    django.setup()
+
 from lib.bulletint_parser import parse_publication_links, extract_tables
 from lib.publication_data import PublicationData
+from extractors.bulletin_handler import save_bulletin_to_db
 
 # Get workspace directory from Bazel (set when using 'bazel run')
 # Falls back to script directory if not running under Bazel
@@ -93,16 +101,37 @@ def save_page_content(url, content):
         f.write(content)
 
 def main():
+    """Fetch bulletins and optionally save to database"""
+    # Check for --save-to-db flag
+    save_to_db = '--save-to-db' in sys.argv
+    
     url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
     html = fetch_main_page(url)
     publication_urls = parse_publication_links(html)
     data = fetch_publication_data(publication_urls)
+    
     for d in data:
         tables = extract_tables(d.content)
-        print(d.url)
-        print(d.publication_date)
-        print(len(tables))
-        print_all_tables(tables)
+        print(f"\n{'='*80}")
+        print(f"URL: {d.url}")
+        print(f"Date: {d.publication_date.strftime('%B %Y')}")
+        print(f"Tables: {len(tables)}")
+        
+        if save_to_db:
+            # Save to database
+            bulletin = save_bulletin_to_db(
+                publication_date=d.publication_date.date(),
+                tables=tables
+            )
+            print(f"✓ Saved to database")
+        else:
+            # Just print tables
+            print_all_tables(tables)
+    
+    if not save_to_db:
+        print("\n" + "="*80)
+        print("Tip: Use --save-to-db flag to save bulletins to database")
+        print("Example: bazel run //:refresh_data -- --save-to-db")
 
 
 if __name__ == "__main__":
