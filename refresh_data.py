@@ -98,6 +98,5 @@ def main():
         print_all_tables(tables)
 
 
-
 if __name__ == "__main__":
     main()
