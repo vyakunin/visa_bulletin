@@ -2,11 +2,16 @@ import os
 import sqlite3
 from datetime import datetime
 from urllib.parse import urlparse
+from pathlib import Path
 
 import requests
 
 from lib.bulletint_parser import parse_publication_links, extract_tables
 from lib.publication_data import PublicationData
+
+# Get the project root directory (where this script lives)
+PROJECT_ROOT = Path(__file__).parent.absolute()
+SAVED_PAGES_DIR = PROJECT_ROOT / 'saved_pages'
 
 
 def fetch_main_page(url):
@@ -17,7 +22,7 @@ def fetch_main_page(url):
 
 def is_saved(pub_url):
     filename = os.path.basename(urlparse(pub_url).path)
-    return os.path.exists(f'saved_pages/{filename}')
+    return (SAVED_PAGES_DIR / filename).exists()
 
 
 def fetch_publication_data(publication_urls):
@@ -36,7 +41,8 @@ def fetch_publication_data(publication_urls):
 
 def maybe_fetch_publication(pub_url):
     if is_saved(pub_url):
-        with open(f'saved_pages/{os.path.basename(urlparse(pub_url).path)}', 'r', encoding='utf-8') as f:
+        filename = os.path.basename(urlparse(pub_url).path)
+        with open(SAVED_PAGES_DIR / filename, 'r', encoding='utf-8') as f:
             content = f.read()
     else:
         full_url = f"https://travel.state.gov{pub_url}"
@@ -75,11 +81,11 @@ def pretty_print_table(headers, i, rows, title):
 
 def save_page_content(url, content):
     # Create directory if it doesn't exist
-    os.makedirs('saved_pages', exist_ok=True)
+    SAVED_PAGES_DIR.mkdir(exist_ok=True)
 
     # Extract filename from URL and sanitize it
     filename = os.path.basename(urlparse(url).path)
-    filepath = os.path.join('saved_pages', filename)
+    filepath = SAVED_PAGES_DIR / filename
 
     # Save content
     with open(filepath, 'w', encoding='utf-8') as f:
