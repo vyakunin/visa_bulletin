@@ -1,12 +1,13 @@
 {% extends "webapp/base.html" %}
 
 {% block content %}
+<main>
 <div class="row">
     <div class="col-12">
         <!-- Filter Card -->
-        <div class="card filter-card">
+        <div class="card filter-card" style="min-height: 420px;">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-funnel"></i> Filter Options</h5>
+                <h2 class="h5 mb-0"><i class="bi bi-funnel"></i> Filter Options</h2>
             </div>
             <div class="card-body">
                 <form method="get" action="" id="filterForm">
@@ -124,22 +125,32 @@
                 <hr class="my-2">
                 <p class="mb-0 small">
                     <i class="bi bi-exclamation-triangle"></i> <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
-                    <a href="{% url 'about' %}" class="text-decoration-none ms-1">How are projections calculated? →</a>
+                    <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;" class="ms-1">How are projections calculated? →</a>
                 </p>
             </div>
             {% endif %}
             
             <!-- Chart -->
-            <div class="card">
+            <div class="card" id="chart-container">
                 <div class="card-body">
                     <div class="alert alert-light py-2 mb-3" role="alert">
                         <small class="text-muted">
                             <i class="bi bi-lightbulb"></i> <strong>Chart Tips:</strong> Click a visa class in the legend to show/hide it. Double-click to isolate only that class. Click data points to view official bulletins.
                         </small>
                     </div>
-                    {{ chart_html|safe }}
+                    <div id="chart-content">
+                        <div class="text-center py-5" id="chart-loading">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading chart...</span>
+                            </div>
+                            <p class="text-muted mt-2">Loading chart...</p>
+                        </div>
+                        <div id="chart-plot" style="display:none;">
+                            {{ chart_html|safe }}
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
         {% endif %}
         
         <!-- Info Section -->
@@ -215,6 +226,7 @@
         </div>
     </div>
 </div>
+</main>
 
 <script>
 // Auto-submit for dropdowns (but not for date input)
@@ -238,6 +250,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // Show chart when Plotly loads
+    document.addEventListener('plotlyLoaded', function() {
+        const loading = document.getElementById('chart-loading');
+        const plot = document.getElementById('chart-plot');
+        if (loading && plot) {
+            loading.style.display = 'none';
+            plot.style.display = 'block';
+        }
+    });
 });
 </script>
 {% endblock %}
