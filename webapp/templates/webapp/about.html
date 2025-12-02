@@ -1,0 +1,112 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}About - Visa Bulletin Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 offset-lg-1">
+        <h2 class="mb-4"><i class="bi bi-info-circle"></i> About This Dashboard</h2>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">What is this tool?</h4>
+                <p class="card-text">
+                    This is an <strong>independent, community-driven tracker</strong> for U.S. immigration priority dates published in the monthly Visa Bulletin by the Department of State.
+                </p>
+                <p class="card-text">
+                    The dashboard helps family-sponsored and employment-based visa applicants:
+                </p>
+                <ul>
+                    <li>Track historical priority date movements over time</li>
+                    <li>See when their priority date might become current</li>
+                    <li>Understand retrogression patterns and trends</li>
+                    <li>Compare movement across countries and categories</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">Where does the data come from?</h4>
+                <p class="card-text">
+                    All data is sourced directly from the official <a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" target="_blank">U.S. Department of State Visa Bulletin</a> archives.
+                </p>
+                <p class="card-text">
+                    The dashboard automatically fetches new bulletins daily and parses cutoff dates going back to 2015. No manual data entry is involved—everything is extracted programmatically.
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">How do the projections work?</h4>
+                <p class="card-text">
+                    Projections are calculated using a simple rolling average:
+                </p>
+                <ol>
+                    <li>We look at the last 12 months of cutoff date movements.</li>
+                    <li>We calculate the average number of days the cutoff moves forward per month.</li>
+                    <li>We project forward from the most recent bulletin to estimate when your priority date might become current.</li>
+                </ol>
+                <p class="card-text">
+                    <strong>Important caveats:</strong>
+                </p>
+                <ul>
+                    <li>These are rough estimates, not guarantees.</li>
+                    <li>Visa Bulletin movements are influenced by many unpredictable factors: policy changes, application surges, Congressional action, USCIS processing speeds, etc.</li>
+                    <li>Retrogressions (backward movements) can happen suddenly.</li>
+                    <li>Use projections as a rough guide, not an official timeline.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">Who built this?</h4>
+                <p class="card-text">
+                    My name is <a href="mailto:vyakunin@gmail.com">Vladimir Yakunin</a>. I was sick of the siloed data scattered across different government pages and wanted to understand when my brother's immigration case would actually get processed. So I built this dashboard to visualize the trends and make sense of the Visa Bulletin's monthly updates.
+                </p>
+                <p class="card-text">
+                    If you're in the same boat—trying to figure out when your (or a loved one's) priority date will become current—I hope this tool helps you too.
+                </p>
+                <p class="card-text">
+                    The project is <strong>open source</strong> and available on <a href="https://github.com/vyakunin/visa_bulletin" target="_blank">GitHub</a>. Contributions, bug reports, and feature requests are welcome!
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">Is this affiliated with USCIS or the State Department?</h4>
+                <p class="card-text">
+                    <strong>No.</strong> This is an independent, volunteer project with no affiliation to any government agency.
+                </p>
+                <p class="card-text">
+                    For official information, always refer to:
+                </p>
+                <ul>
+                    <li><a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" target="_blank">U.S. Department of State Visa Bulletin</a></li>
+                    <li><a href="https://www.uscis.gov/" target="_blank">USCIS.gov</a></li>
+                    <li>Your immigration attorney</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">How can I help?</h4>
+                <p class="card-text">If you find this tool useful:</p>
+                <ul>
+                    <li><strong>Share it</strong> with others in the immigration community (forums, social media, friends).</li>
+                    <li><strong>Report bugs</strong> or suggest features via <a href="https://github.com/vyakunin/visa_bulletin/issues" target="_blank">GitHub Issues</a>.</li>
+                    <li><strong>Contribute code</strong> if you're a developer—the project is open source!</li>
+                </ul>
+                <p class="card-text">
+                    <i class="bi bi-envelope"></i> Questions? Email <a href="mailto:vyakunin@gmail.com">vyakunin@gmail.com</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

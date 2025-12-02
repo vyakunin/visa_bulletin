@@ -124,6 +124,7 @@
                 <hr class="my-2">
                 <p class="mb-0 small">
                     <i class="bi bi-exclamation-triangle"></i> <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
+                    <a href="{% url 'about' %}" class="text-decoration-none ms-1">How are projections calculated? →</a>
                 </p>
             </div>
             {% endif %}
@@ -151,13 +152,14 @@
                 <p>
                     The priority date is the date when your immigration petition was filed. The Visa Bulletin publishes 
                     "cutoff dates" each month, which determine whose cases can move forward based on their priority dates.
+                    <a href="{% url 'faq' %}#headingThree" class="text-decoration-none">Learn more about priority dates →</a>
                 </p>
                 
                 <h6>How to Use This Dashboard</h6>
                 <ol>
                     <li>Select your <strong>visa category</strong> (Family-Sponsored or Employment-Based)</li>
                     <li>Choose your <strong>country of chargeability</strong> (birth country, not citizenship)</li>
-                    <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong> (to submit I-485)</li>
+                    <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong> (to submit I-485). <a href="{% url 'faq' %}#headingTwo" class="text-decoration-none">What's the difference? →</a></li>
                     <li>Enter your application <strong>priority date</strong> to see estimated processing timelines</li>
                 </ol>
                 
@@ -168,6 +170,12 @@
                     <li><strong>Dashed projection lines</strong>: Projected timelines for each visa class based on recent trends</li>
                     <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month</li>
                 </ul>
+                
+                <div class="alert alert-info mt-3">
+                    <i class="bi bi-question-circle"></i> <strong>Have questions?</strong> 
+                    Check out our <a href="{% url 'faq' %}" class="alert-link">Frequently Asked Questions</a> page 
+                    for answers about PERM processing, priority dates, retrogressions, and more.
+                </div>
             </div>
         </div>
 
@@ -177,7 +185,7 @@
                 <h5 class="mb-0"><i class="bi bi-share"></i> Share with Community</h5>
             </div>
             <div class="card-body">
-                <p>Help others track their priority dates by sharing this tool:</p>
+                <p>Help others track their priority dates by sharing this tool. <a href="{% url 'about' %}" class="text-decoration-none">Learn more about this project →</a></p>
                 <div class="d-flex flex-wrap gap-2">
                     <!-- WhatsApp -->
                     <a href="whatsapp://send?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates:%20https://visa-bulletin.us/" 

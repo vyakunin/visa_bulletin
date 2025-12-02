@@ -1,0 +1,58 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}Contact - Visa Bulletin Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 offset-lg-2">
+        <h2 class="mb-4"><i class="bi bi-envelope"></i> Contact</h2>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4 class="card-title">Get in Touch</h4>
+                <p class="card-text">
+                    Have questions, feedback, or found a bug? I'd love to hear from you!
+                </p>
+                
+                <div class="mt-4">
+                    <h5><i class="bi bi-envelope-fill text-primary"></i> Email</h5>
+                    <p>
+                        <a href="mailto:vyakunin@gmail.com" class="btn btn-primary">
+                            <i class="bi bi-envelope"></i> vyakunin@gmail.com
+                        </a>
+                    </p>
+                    <p class="text-muted">
+                        Feel free to reach out with questions about the data, feature requests, or general feedback. I'll do my best to respond within a few days.
+                    </p>
+                </div>
+
+                <div class="mt-4">
+                    <h5><i class="bi bi-github text-dark"></i> GitHub</h5>
+                    <p>
+                        <a href="https://github.com/vyakunin/visa_bulletin" target="_blank" rel="noopener" class="btn btn-outline-dark">
+                            <i class="bi bi-github"></i> View Source Code
+                        </a>
+                    </p>
+                    <p class="text-muted">
+                        The entire project is open source. You can:
+                    </p>
+                    <ul class="text-muted">
+                        <li>Report bugs via <a href="https://github.com/vyakunin/visa_bulletin/issues" target="_blank">GitHub Issues</a></li>
+                        <li>Suggest features or improvements</li>
+                        <li>Contribute code via pull requests</li>
+                        <li>Fork the project and run your own instance</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-info">
+            <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Before contacting:</h5>
+            <p class="mb-0">
+                Check the <a href="{% url 'faq' %}" class="alert-link">FAQ page</a> first—your question might already be answered there!
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
