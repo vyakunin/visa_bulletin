@@ -159,7 +159,18 @@
             margin-bottom: 2rem;
             border: 1px solid #d0d0d0;
             border-radius: 2px;
-            min-height: 600px !important; /* Increased for mobile stacked layout - prevents CLS */
+            min-height: 700px !important; /* Further increased - mobile needs more space */
+        }
+        
+        /* Ensure filter card body has explicit height to prevent expansion */
+        .filter-card .card-body {
+            min-height: 550px !important;
+        }
+        
+        /* Reserve space for form controls to prevent shift */
+        .filter-card .form-select,
+        .filter-card .form-control {
+            height: 44px !important; /* Explicit height prevents auto-sizing shift */
         }
         
         .filter-card .card-header {
