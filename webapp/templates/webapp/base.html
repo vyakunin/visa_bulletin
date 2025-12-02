@@ -173,6 +173,17 @@
             height: 44px !important; /* Explicit height prevents auto-sizing shift */
         }
         
+        /* Reserve space for form groups including labels and help text */
+        .filter-card .col-12 {
+            min-height: 95px !important; /* Prevents shift from form-text loading */
+        }
+        
+        /* Ensure help text has reserved space */
+        .filter-card .form-text {
+            display: block;
+            min-height: 20px; /* Reserve space even before text loads */
+        }
+        
         .filter-card .card-header {
             background: var(--gov-navy) !important;
             border-bottom: 2px solid var(--gov-red);
