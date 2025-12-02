@@ -84,8 +84,8 @@
     </style>
     
     <!-- Full Bootstrap CSS (async load) -->
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></noscript>
+    <!-- Load Bootstrap synchronously to prevent CLS from async style application -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <!-- Bootstrap Icons (deferred - not critical for initial render) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" media="print" onload="this.media='all'">
@@ -131,10 +131,7 @@
             min-height: 1800px !important; /* Increased and forced to prevent any container shift */
         }
         
-        /* Alternative: apply to body for full page height */
-        body > .container.mt-4 {
-            min-height: 1800px !important;
-        }
+        /* CLS is now fixed by loading Bootstrap synchronously - no aggressive min-heights needed */
         
         h1, h2, h3, h4, h5, h6 {
             font-family: Georgia, serif;
@@ -205,6 +202,15 @@
             background-color: #e8f4f8;
             border-radius: 2px;
             min-height: 280px; /* Reserve space for projection cards - prevents CLS */
+        }
+        
+        /* Reserve space for Plotly chart - CRITICAL for CLS */
+        #chart-plot {
+            min-height: 600px !important; /* Prevents massive shift when chart loads */
+        }
+        
+        #chart-container {
+            min-height: 650px; /* Container including card padding */
         }
         
         .footer-link {
