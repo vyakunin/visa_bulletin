@@ -128,7 +128,12 @@
         
         /* Reserve space for dashboard content to prevent CLS */
         .container.mt-4 {
-            min-height: 1200px;
+            min-height: 1800px !important; /* Increased and forced to prevent any container shift */
+        }
+        
+        /* Alternative: apply to body for full page height */
+        body > .container.mt-4 {
+            min-height: 1800px !important;
         }
         
         h1, h2, h3, h4, h5, h6 {
