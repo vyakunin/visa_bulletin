@@ -148,37 +148,52 @@ def build_multi_class_chart_with_projections(
         margin=dict(t=60, r=20, b=120, l=60)  # Extra bottom margin for legend
     )
     
-    # Convert to HTML with mobile-friendly config
-    chart_html = fig.to_html(
-        include_plotlyjs='cdn',
-        div_id='priority-date-chart',
-        config={
-            'displayModeBar': True,
-            'displaylogo': False,
-            'responsive': True,
-            'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d'],
-            'toImageButtonOptions': {
-                'format': 'png',
-                'filename': 'visa_bulletin_chart',
-                'height': 800,
-                'width': 1200,
-                'scale': 2
-            }
-        }
-    )
+    # Convert to JSON for manual initialization to support deferred Plotly loading
+    chart_json = fig.to_json()
     
-    # Add JavaScript for click handling to open bulletin URLs
-    click_script = """
-    <script>
-    document.getElementById('priority-date-chart').on('plotly_click', function(data){
-        var point = data.points[0];
-        if (point.customdata) {
-            window.open(point.customdata, '_blank');
-        }
-    });
+    # HTML with deferred initialization script
+    chart_html = f"""
+    <div id="priority-date-chart" class="plotly-graph-div" style="height:500px; width:100%;"></div>
+    <script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', function() {{
+        // Function to initialize chart once Plotly is loaded
+        var initChart = function() {{
+            if (typeof Plotly === 'undefined') {{
+                // If Plotly hasn't loaded yet (due to defer), wait and try again
+                setTimeout(initChart, 50);
+                return;
+            }}
+            
+            var chartData = {chart_json};
+            var config = {{
+                'displayModeBar': true,
+                'displaylogo': false,
+                'responsive': true,
+                'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d'],
+                'toImageButtonOptions': {{
+                    'format': 'png',
+                    'filename': 'visa_bulletin_chart',
+                    'height': 800,
+                    'width': 1200,
+                    'scale': 2
+                }}
+            }};
+            
+            Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function(gd) {{
+                // Add click handler
+                gd.on('plotly_click', function(data){{
+                    var point = data.points[0];
+                    if (point.customdata) {{
+                        window.open(point.customdata, '_blank');
+                    }}
+                }});
+            }});
+        }};
+        
+        initChart();
+    }});
     </script>
     """
-    chart_html += click_script
     
     return chart_html
 
