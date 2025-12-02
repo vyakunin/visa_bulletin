@@ -194,15 +194,34 @@
 </main>
 
 <script>
+// Save scroll position before form submit
+function saveScrollPosition() {
+    sessionStorage.setItem('scrollPosition', window.scrollY || window.pageYOffset);
+}
+
 // Auto-submit for dropdowns (but not for date input)
 function autoSubmitForm() {
+    saveScrollPosition();
     document.getElementById('filterForm').submit();
 }
 
 // Category change needs to update visa classes AND submit
 function updateVisaClasses() {
+    saveScrollPosition();
     document.getElementById('filterForm').submit();
 }
+
+// Restore scroll position after page load
+window.addEventListener('load', function() {
+    const scrollPosition = sessionStorage.getItem('scrollPosition');
+    if (scrollPosition !== null) {
+        window.scrollTo({
+            top: parseInt(scrollPosition),
+            behavior: 'instant' // Instant scroll, no animation
+        });
+        sessionStorage.removeItem('scrollPosition'); // Clean up
+    }
+});
 
 // Optional: Submit on Enter key in date field
 document.addEventListener('DOMContentLoaded', function() {
@@ -211,6 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
         dateInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                saveScrollPosition();
                 document.getElementById('filterForm').submit();
             }
         });
