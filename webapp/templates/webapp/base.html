@@ -172,6 +172,12 @@
             border-left: 6px solid var(--gov-navy);
             background-color: #e8f4f8;
             border-radius: 2px;
+            min-height: 280px; /* Reserve space for projection cards - prevents CLS */
+        }
+        
+        .footer-link {
+            color: var(--footer-link-color);
+            text-decoration: underline;
         }
         
         .card {
@@ -228,28 +234,46 @@
             margin-right: 6px;
         }
         
+        /* Navigation Colors */
+        :root {
+            --nav-inactive-text: #4a5568;      /* Medium gray for inactive links */
+            --nav-inactive-bg: transparent;     /* No background for inactive */
+            --nav-hover-text: #1a365d;         /* Dark blue on hover */
+            --nav-hover-bg: #f7fafc;           /* Light gray background on hover */
+            --nav-active-text: #ffffff;        /* White text for active */
+            --nav-active-bg: #2c5282;          /* Strong blue background for active */
+            --nav-border-color: #e2e8f0;       /* Border color */
+            --footer-link-color: #0052A3;      /* Darker blue for footer links - WCAG AA (4.8:1 on gray) */
+        }
+        
         /* Navigation Bar */
         .navbar-compact {
             background-color: white;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--nav-border-color);
             box-shadow: 0 1px 3px rgba(0,0,0,0.08);
             padding: 0.5rem 0;
         }
         
         .navbar-compact .nav-link {
-            color: var(--gov-text);
+            color: var(--nav-inactive-text);
+            background-color: var(--nav-inactive-bg);
             font-size: 0.95rem;
-            padding: 0.5rem 1rem;
-            transition: color 0.2s;
+            padding: 0.5rem 1.25rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease;
+            font-weight: 500;
         }
         
         .navbar-compact .nav-link:hover {
-            color: var(--gov-red);
+            color: var(--nav-hover-text);
+            background-color: var(--nav-hover-bg);
         }
         
         .navbar-compact .nav-link.active {
-            color: #0a3161; /* Navy blue - WCAG AAA (8.5:1 contrast on white) */
+            color: var(--nav-active-text) !important;
+            background-color: var(--nav-active-bg) !important;
             font-weight: 600;
+            box-shadow: 0 2px 4px rgba(44, 82, 130, 0.3);
         }
         
         /* Mobile optimizations */
@@ -368,9 +392,9 @@
             </div>
             
             <p class="mb-2">
-                <i class="bi bi-envelope"></i> Questions or feedback? Email <a href="mailto:vyakunin@gmail.com" style="color: #0066CC; text-decoration: underline;">vyakunin@gmail.com</a>
+                <i class="bi bi-envelope"></i> Questions or feedback? Email <a href="mailto:vyakunin@gmail.com" class="footer-link">vyakunin@gmail.com</a>
                 <br>
-                <i class="bi bi-github"></i> View source code on <a href="https://github.com/vyakunin/visa_bulletin" target="_blank" rel="noopener" style="color: #0066CC; text-decoration: underline;">GitHub</a>
+                <i class="bi bi-github"></i> View source code on <a href="https://github.com/vyakunin/visa_bulletin" target="_blank" rel="noopener" class="footer-link">GitHub</a>
             </p>
         </div>
         
