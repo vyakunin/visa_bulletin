@@ -66,10 +66,13 @@ fi
 echo ""
 echo "⚙️ Updating system configuration..."
 sudo cp deployment/systemd/visa-bulletin.service /etc/systemd/system/
+sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
 sudo systemctl daemon-reload
-
-echo ""
-echo "🔄 Restarting application..."
+# Ensure Nginx config is linked (if not already)
+if [ ! -L /etc/nginx/sites-enabled/visa-bulletin ]; then
+    sudo ln -s /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
+fi
+sudo systemctl reload nginx
 sudo systemctl restart visa-bulletin
 
 echo ""

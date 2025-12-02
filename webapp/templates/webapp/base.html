@@ -7,6 +7,10 @@
     <title>{% block title %}{{ page_title|default:"Visa Bulletin Dashboard" }}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
     
+    <!-- Performance Optimizations -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdn.plot.ly">
+    
     <!-- SEO Meta Tags -->
     <meta name="description" content="{{ page_description|default:'Independent tracker for family-sponsored and employment-based immigration priority dates. View historical trends and future projections.' }}">
     {% if canonical_url %}
@@ -46,6 +50,14 @@
     
     <!-- Custom CSS - Government Official Theme -->
     <style>
+        /* Font Optimization */
+        @font-face {
+            font-family: 'Bootstrap-icons';
+            src: url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/fonts/bootstrap-icons.woff2?524846017b983fc8ded9325d94ed40f3") format('woff2'),
+                 url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/fonts/bootstrap-icons.woff?524846017b983fc8ded9325d94ed40f3") format('woff');
+            font-display: swap;
+        }
+
         :root {
             --gov-navy: #003366;
             --gov-red: #B31942;
@@ -289,7 +301,11 @@
     </footer>
     
     <!-- Bootstrap 5 JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
+    
+    <!-- Plotly.js (Basic Bundle - Lightweight) -->
+    <!-- Loaded with defer to not block rendering -->
+    <script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js" charset="utf-8" defer></script>
     
     {% block extra_scripts %}{% endblock %}
 </body>
