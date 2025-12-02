@@ -102,7 +102,7 @@
                     <div class="col-md-6 col-lg-4 mb-2">
                         <div class="card">
                             <div class="card-body py-2 px-3">
-                                <h5 class="card-title mb-1 h6">{{ data.visa_class_label|default:data.visa_class }}</h5>
+                                <h4 class="card-title mb-1 h6">{{ data.visa_class_label|default:data.visa_class }}</h4>
                                 {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
                                 <p class="mb-0 small">
                                     <strong>Est. {{ projection.estimated_date|date:"F Y" }}</strong>
