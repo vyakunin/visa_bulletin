@@ -162,6 +162,30 @@
             margin-right: 6px;
         }
         
+        /* Navigation Bar */
+        .navbar-compact {
+            background-color: white;
+            border-bottom: 1px solid #e0e0e0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            padding: 0.5rem 0;
+        }
+        
+        .navbar-compact .nav-link {
+            color: var(--gov-text);
+            font-size: 0.95rem;
+            padding: 0.5rem 1rem;
+            transition: color 0.2s;
+        }
+        
+        .navbar-compact .nav-link:hover {
+            color: var(--gov-red);
+        }
+        
+        .navbar-compact .nav-link.active {
+            color: var(--gov-red);
+            font-weight: 600;
+        }
+        
         /* Mobile optimizations */
         @media (max-width: 768px) {
             .hero-section {
@@ -209,7 +233,35 @@
         </div>
     </div>
     
-    <div class="container">
+    <!-- Navigation Bar -->
+    <nav class="navbar-compact">
+        <div class="container">
+            <ul class="nav nav-pills justify-content-center">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{% url 'dashboard' %}">
+                        <i class="bi bi-house-door"></i> Home
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/faq/' %}active{% endif %}" href="{% url 'faq' %}">
+                        <i class="bi bi-question-circle"></i> FAQ
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/about/' %}active{% endif %}" href="{% url 'about' %}">
+                        <i class="bi bi-info-circle"></i> About
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/contact/' %}active{% endif %}" href="{% url 'contact' %}">
+                        <i class="bi bi-envelope"></i> Contact
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
         {% block content %}{% endblock %}
     </div>
     
