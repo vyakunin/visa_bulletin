@@ -72,6 +72,13 @@ sudo systemctl daemon-reload
 if [ ! -L /etc/nginx/sites-enabled/visa-bulletin ]; then
     sudo ln -s /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
 fi
+
+echo ""
+echo "🔐 Ensuring SSL configuration is applied..."
+# Re-apply SSL configuration after copying base config
+# This ensures Certbot's SSL config is always present even if we overwrote it
+sudo certbot install --nginx -d visa-bulletin.us -d www.visa-bulletin.us --cert-name visa-bulletin.us 2>&1 | grep -E "(Successfully deployed|already exists)" || echo "⚠️ SSL config might need manual setup"
+
 sudo systemctl reload nginx
 sudo systemctl restart visa-bulletin
 
