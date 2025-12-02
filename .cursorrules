@@ -244,3 +244,20 @@ def test_parse_table_header_to_country_enum(self):
 - Use pinned versions for reproducibility
 - Document why each dependency is needed
 
+## Environment Variables
+
+**Stored in `~/.zshrc`:**
+
+- `GITHUB_TOKEN_VYAKUNIN` - GitHub personal access token for repository operations
+
+**Usage:**
+```bash
+# Reference in scripts
+export GITHUB_TOKEN=$GITHUB_TOKEN_VYAKUNIN
+```
+
+**Security:**
+- Never commit tokens to git
+- Always reference via environment variables
+- Tokens are stored in `~/.zshrc` (gitignored by default)
+
