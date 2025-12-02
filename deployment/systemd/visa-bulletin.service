@@ -29,7 +29,7 @@ EnvironmentFile=/opt/visa_bulletin/.env
 
 # Analytics: GoatCounter privacy-focused tracking
 # This can also be overridden in .env
-Environment="ANALYTICS_SCRIPT=<script data-goatcounter=\"https://visa-bulletin.goatcounter.com/count\" async src=\"https://gc.zgo.at/count.js\"></script>"
+Environment="ANALYTICS_SCRIPT=<script data-goatcounter=\"https://vyakunin.goatcounter.com/count\" async src=\"https://gc.zgo.at/count.js\"></script>"
 
 # Gunicorn: 3 workers (2 * CPU + 1) for better concurrency
 ExecStart=/opt/visa_bulletin/venv/bin/gunicorn --workers 3 --threads 2 --bind 0.0.0.0:8000 --timeout 120 --max-requests 1000 --max-requests-jitter 50 django_config.wsgi:application
