@@ -67,7 +67,7 @@ echo ""
 echo "⚙️ Updating system configuration..."
 sudo cp deployment/systemd/visa-bulletin.service /etc/systemd/system/
 sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
-sudo cp deployment/nginx/visa-bulletin-locations.conf /opt/visa_bulletin/deployment/nginx/
+# Note: visa-bulletin-locations.conf stays in /opt/visa_bulletin/deployment/nginx/ (already there from git pull)
 sudo systemctl daemon-reload
 # Ensure Nginx config is linked (if not already)
 if [ ! -L /etc/nginx/sites-enabled/visa-bulletin ]; then
