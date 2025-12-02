@@ -113,7 +113,7 @@ else
     else
         echo "⚠️  Certbot failed, trying manual SSL configuration..."
         # Fallback: Manually add SSL block if certs exist
-        if [ -f /etc/letsencrypt/live/visa-bulletin.us/fullchain.pem ]; then
+        if sudo [ -f /etc/letsencrypt/live/visa-bulletin.us/fullchain.pem ]; then
             sudo tee -a /etc/nginx/sites-available/visa-bulletin > /dev/null << 'EOF'
 
 # SSL Configuration (manually added)
