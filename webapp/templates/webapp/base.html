@@ -248,7 +248,7 @@
         }
         
         .navbar-compact .nav-link.active {
-            color: #8c1433; /* Darker red for better contrast on white (WCAG AA) */
+            color: #0a3161; /* Navy blue - WCAG AAA (8.5:1 contrast on white) */
             font-weight: 600;
         }
         
@@ -337,8 +337,36 @@
         <div class="text-center mb-3" style="color: #8FA3B8; font-size: 0.95rem;">
             <p class="mb-2">
                 <strong>Built to help the community</strong> — I created this tracker to make visa bulletin data easier to understand. 
-                If you find it useful, please share it with others who might benefit.
+                If you find it useful, please share it with others in the immigration community.
             </p>
+            
+            <!-- Share Buttons -->
+            <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
+                <!-- WhatsApp -->
+                <a href="whatsapp://send?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates:%20https://visa-bulletin.us/" 
+                   class="btn btn-success btn-sm">
+                    <i class="bi bi-whatsapp"></i> WhatsApp
+                </a>
+                
+                <!-- Telegram -->
+                <a href="https://t.me/share/url?url=https://visa-bulletin.us/&text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates" 
+                   class="btn btn-primary btn-sm text-white">
+                    <i class="bi bi-telegram"></i> Telegram
+                </a>
+                
+                <!-- Twitter/X -->
+                <a href="https://twitter.com/intent/tweet?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates&url=https://visa-bulletin.us/" 
+                   class="btn btn-dark btn-sm">
+                    <i class="bi bi-twitter-x"></i> Post
+                </a>
+                
+                <!-- Copy Link -->
+                <button onclick="navigator.clipboard.writeText('https://visa-bulletin.us/'); alert('Link copied!')" 
+                        class="btn btn-secondary btn-sm">
+                    <i class="bi bi-clipboard"></i> Copy Link
+                </button>
+            </div>
+            
             <p class="mb-2">
                 <i class="bi bi-envelope"></i> Questions or feedback? Email <a href="mailto:vyakunin@gmail.com" style="color: #0066CC; text-decoration: underline;">vyakunin@gmail.com</a>
                 <br>
