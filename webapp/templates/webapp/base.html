@@ -319,8 +319,15 @@
             .hero-section p {
                 font-size: 0.95rem;
             }
+            .filter-card {
+                min-height: 700px !important; /* Preserve min-height on mobile */
+            }
             .filter-card .card-body {
                 padding: 1rem;
+                min-height: 550px !important; /* Preserve min-height on mobile */
+            }
+            .filter-card .col-12 {
+                min-height: 95px !important; /* Preserve form group height on mobile */
             }
             .filter-card label {
                 font-size: 0.9rem;
@@ -328,6 +335,10 @@
             }
             .filter-card select, .filter-card input {
                 font-size: 0.9rem;
+                height: 44px !important; /* Preserve explicit height on mobile */
+            }
+            .filter-card .form-text {
+                min-height: 20px; /* Preserve help text space on mobile */
             }
             /* Make chart responsive on mobile */
             #chart-container {
