@@ -5,7 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ page_title|default:"Visa Bulletin Dashboard" }}{% endblock %}</title>
+    
+    <!-- Favicons (multiple formats for best compatibility) -->
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicon-32x32.png' %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'favicon-16x16.png' %}">
     <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'apple-touch-icon.png' %}">
+    
+    <!-- Theme color for mobile browsers -->
+    <meta name="theme-color" content="#003366">
     
     <!-- Performance Optimizations -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -13,6 +22,8 @@
     
     <!-- SEO Meta Tags -->
     <meta name="description" content="{{ page_description|default:'Independent tracker for family-sponsored and employment-based immigration priority dates. View historical trends and future projections.' }}">
+    <meta name="keywords" content="visa bulletin, priority date tracker, EB2, EB3, green card, immigration, USCIS, employment based visa, family sponsored visa, India EB2, China EB3, visa retrogression">
+    <meta name="author" content="Visa Bulletin Dashboard">
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
@@ -20,17 +31,63 @@
     <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="{{ og_type|default:'website' }}">
     <meta property="og:url" content="{{ og_url|default:request.build_absolute_uri }}">
-    <meta property="og:title" content="{{ page_title|default:'Visa Bulletin Dashboard' }}">
-    <meta property="og:description" content="{{ page_description|default:'Track priority dates and see projections.' }}">
-    <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'favicon.svg' %}">
+    <meta property="og:title" content="{{ page_title|default:'Visa Bulletin Dashboard - Priority Date Tracker' }}">
+    <meta property="og:description" content="{{ page_description|default:'Track immigration priority dates with historical data and future projections. Free tool for employment-based and family-sponsored visa applicants.' }}">
+    <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Visa Bulletin Tracker - Priority Date Predictions">
+    <meta property="og:site_name" content="Visa Bulletin Dashboard">
+    <meta property="og:locale" content="en_US">
 
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary">
-    <meta property="twitter:url" content="{{ og_url|default:request.build_absolute_uri }}">
-    <meta property="twitter:title" content="{{ page_title|default:'Visa Bulletin Dashboard' }}">
-    <meta property="twitter:description" content="{{ page_description|default:'Track priority dates and see projections.' }}">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="{{ og_url|default:request.build_absolute_uri }}">
+    <meta name="twitter:title" content="{{ page_title|default:'Visa Bulletin Dashboard - Priority Date Tracker' }}">
+    <meta name="twitter:description" content="{{ page_description|default:'Track immigration priority dates with historical data and future projections.' }}">
+    <meta name="twitter:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}">
+    <meta name="twitter:image:alt" content="Visa Bulletin Tracker - Priority Date Predictions">
     
-    <!-- Structured Data (JSON-LD) -->
+    <!-- Structured Data (JSON-LD) - Organization & Logo -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Visa Bulletin Dashboard",
+        "url": "https://visa-bulletin.us",
+        "logo": "{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}",
+        "description": "Independent tracker for U.S. immigration priority dates with historical data and projections",
+        "contactPoint": {
+            "@type": "ContactPoint",
+            "email": "vyakunin@gmail.com",
+            "contactType": "Customer Service"
+        },
+        "sameAs": [
+            "https://github.com/vyakunin/visa_bulletin"
+        ]
+    }
+    </script>
+    
+    <!-- Structured Data (JSON-LD) - WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Visa Bulletin Dashboard",
+        "url": "https://visa-bulletin.us",
+        "description": "Track U.S. immigration priority dates for employment-based and family-sponsored visas",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://visa-bulletin.us/?category={category}&country={country}"
+            },
+            "query-input": "required name=category"
+        }
+    }
+    </script>
+    
+    <!-- Structured Data (JSON-LD) - Page-specific data -->
     {% if structured_data %}
     <script type="application/ld+json">
         {{ structured_data|safe }}
