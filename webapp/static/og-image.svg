@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#003366"/>
+  
+  <!-- Top accent bar -->
+  <rect width="1200" height="8" fill="#B31942"/>
+  
+  <!-- Main content area -->
+  <g transform="translate(60, 100)">
+    <!-- Icon/Logo on left -->
+    <g transform="translate(0, 0)">
+      <circle cx="100" cy="100" r="90" fill="#B31942" opacity="0.15"/>
+      <g transform="translate(40, 40)">
+        <!-- Simplified US flag icon -->
+        <rect width="120" height="120" fill="#B31942" rx="8"/>
+        <rect y="9.2" width="120" height="9.2" fill="#FFF"/>
+        <rect y="27.6" width="120" height="9.2" fill="#FFF"/>
+        <rect y="46" width="120" height="9.2" fill="#FFF"/>
+        <rect y="64.4" width="120" height="9.2" fill="#FFF"/>
+        <rect y="82.8" width="120" height="9.2" fill="#FFF"/>
+        <rect y="101.2" width="120" height="9.2" fill="#FFF"/>
+        <rect width="48" height="64.4" fill="#3C3B6E"/>
+        <!-- Stars -->
+        <circle cx="12" cy="12" r="3" fill="#FFF"/>
+        <circle cx="24" cy="12" r="3" fill="#FFF"/>
+        <circle cx="36" cy="12" r="3" fill="#FFF"/>
+        <circle cx="12" cy="26" r="3" fill="#FFF"/>
+        <circle cx="24" cy="26" r="3" fill="#FFF"/>
+        <circle cx="36" cy="26" r="3" fill="#FFF"/>
+        <circle cx="12" cy="40" r="3" fill="#FFF"/>
+        <circle cx="24" cy="40" r="3" fill="#FFF"/>
+        <circle cx="36" cy="40" r="3" fill="#FFF"/>
+        <circle cx="12" cy="54" r="3" fill="#FFF"/>
+        <circle cx="24" cy="54" r="3" fill="#FFF"/>
+        <circle cx="36" cy="54" r="3" fill="#FFF"/>
+      </g>
+    </g>
+    
+    <!-- Text content on right -->
+    <g transform="translate(240, 0)">
+      <text x="0" y="60" font-family="Georgia, serif" font-size="72" font-weight="bold" fill="#FFFFFF">
+        Visa Bulletin
+      </text>
+      <text x="0" y="130" font-family="Georgia, serif" font-size="72" font-weight="bold" fill="#FFFFFF">
+        Tracker
+      </text>
+      
+      <text x="0" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" 
+            font-size="32" fill="#D4AF37">
+        Priority Date Predictions &amp; Analysis
+      </text>
+      
+      <text x="0" y="260" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" 
+            font-size="26" fill="#FFFFFF" opacity="0.9">
+        Track employment-based and family-sponsored
+      </text>
+      <text x="0" y="295" font-family="-apple-system, BlinkMacMatchSystemFont, 'Segoe UI', Arial, sans-serif" 
+            font-size="26" fill="#FFFFFF" opacity="0.9">
+        immigration priority dates with historical data
+      </text>
+      <text x="0" y="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" 
+            font-size="26" fill="#FFFFFF" opacity="0.9">
+        and future projections
+      </text>
+    </g>
+  </g>
+  
+  <!-- Bottom bar with website -->
+  <rect y="550" width="1200" height="80" fill="#000000" opacity="0.3"/>
+  <text x="60" y="600" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" 
+        font-size="32" font-weight="600" fill="#FFFFFF">
+    visa-bulletin.us
+  </text>
+  
+  <!-- Chart icon decoration -->
+  <g transform="translate(950, 380)" opacity="0.15">
+    <path d="M0,80 L0,0 L30,20 L60,10 L90,30 L120,15 L120,80 Z" fill="#D4AF37"/>
+  </g>
+</svg>
+
