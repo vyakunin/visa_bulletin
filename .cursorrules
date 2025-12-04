@@ -28,46 +28,6 @@ pkill -9 -f "runserver" && bazel run...  # Use: ./scripts/restart_server.sh
 - Consistent with pre-commit hook
 - Single source of truth for dependencies
 
-### Rule: Only Commit When Explicitly Asked
-**🚫 NEVER auto-commit changes. ONLY commit when user EXPLICITLY requests it. 🚫**
-
-**This is CRITICAL. When in doubt, DO NOT COMMIT.**
-
-**User must use words like:**
-- "commit" / "commit this" / "commit these changes"
-- "push" / "push to git" / "push to github"
-- "save to git" / "add to git"
-- Or explicitly say "commit and push"
-
-**❌ DO NOT COMMIT when user says:**
-- "create a file" / "add a file" / "make a document"
-- "add analytics" / "update design"
-- "looks good" / "thanks" / "great"
-- "deploy" / "update the site" (deployment is separate from git commit)
-- Finishing ANY task
-- Fixing ANY bugs
-- Making ANY changes
-
-**✅ What to do instead:**
-1. Create/modify the files
-2. Show the user what changed
-3. WAIT for explicit commit request
-4. Let user review changes first
-
-**Example of what counts as explicit:**
-- User: "commit this" → ✅ Commit
-- User: "looks good, commit it" → ✅ Commit
-- User: "push the changes" → ✅ Commit and push
-- User: "add a README" → ❌ Create file but DON'T commit
-- User: "deploy to AWS" → ❌ Deploy but DON'T commit (unless they also say "commit")
-
-**Rationale:**
-- User controls git history
-- Prevents premature commits
-- Allows review before committing
-- User may want to make more changes
-- Commits are permanent and public
-
 ## Bazel Build System
 
 ### Rule: One Bazel Target Per File
@@ -110,17 +70,6 @@ Only bundle multiple files into one target when:
 - Circular dependencies exist between modules
 - Files are tightly coupled and always used together
 - Performance measurements show significant benefit
-
-## Python Code Style
-
-- Follow PEP 8
-- **Python 3.11+**: Use modern type hints (no `typing` imports for basic types)
-  - ✅ `list[str]`, `dict[str, int]`, `tuple[int, str]`
-  - ✅ `str | None` (not `Optional[str]`)
-  - ✅ `int | str` (not `Union[int, str]`)
-  - ❌ `from typing import List, Dict, Tuple, Optional, Union`
-- Add docstrings to public functions and classes
-- Keep functions focused and single-purpose
 
 ### Rule: Use Django TextChoices for Database Enums
 
@@ -187,33 +136,6 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 
 ## Testing
 
-### Test Quality Rules
-
-**Do NOT write trivial tests** that only check if code exists:
-- ❌ BAD: Testing if an enum has a specific value (e.g., `assertEqual(MyEnum.VALUE, "value")`)
-- ❌ BAD: Testing if a class exists or can be imported
-- ❌ BAD: Testing simple getters/setters with no logic
-- ❌ BAD: Testing that a constant equals itself
-
-**DO write meaningful behavioral tests**:
-- ✅ GOOD: Testing business logic and transformations
-- ✅ GOOD: Testing edge cases and error handling
-- ✅ GOOD: Testing integration between components
-- ✅ GOOD: Testing data validation and constraints
-- ✅ GOOD: Testing complex parsing or extraction logic
-
-**Example:**
-```python
-# ❌ Trivial - just checks if value exists
-def test_has_value(self):
-    self.assertEqual(MyEnum.FOO.value, "foo")
-
-# ✅ Meaningful - tests behavior
-def test_parse_table_header_to_country_enum(self):
-    self.assertEqual(parse_country("CHINA-mainland born"), Country.CHINA)
-    self.assertEqual(parse_country("All Chargeability Areas"), Country.ALL)
-```
-
 ### Test Requirements
 
 - All new features must include meaningful behavioral tests
@@ -229,14 +151,6 @@ def test_parse_table_header_to_country_enum(self):
 - Update CONTRIBUTING.md for developer workflow changes
 - Update BAZEL.md for build system changes
 - Keep inline code comments focused on "why" not "what"
-
-## Git Workflow
-
-- **ONLY commit when user explicitly requests it** (see Critical Rules above)
-- Write clear, descriptive commit messages
-- Tests run automatically via pre-commit hook
-- Don't bypass hooks unless absolutely necessary
-- Keep commits focused and atomic
 
 ## Dependencies
 
@@ -255,9 +169,4 @@ def test_parse_table_header_to_country_enum(self):
 # Reference in scripts
 export GITHUB_TOKEN=$GITHUB_TOKEN_VYAKUNIN
 ```
-
-**Security:**
-- Never commit tokens to git
-- Always reference via environment variables
-- Tokens are stored in `~/.zshrc` (gitignored by default)
 
