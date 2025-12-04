@@ -1,10 +1,12 @@
 version: '3.8'
 
+# Development docker-compose that builds locally
+# Usage: docker-compose -f docker-compose.dev.yml up
+
 services:
   web:
-    # Pull pre-built image from GitHub Container Registry
-    # Override tag with: IMAGE_TAG=v1.2.3 docker-compose up
-    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    # Build locally for development
+    build: .
     ports:
       - "8000:8000"
     volumes:
@@ -19,8 +21,7 @@ services:
     
   # Daily data refresh (cron-like service)
   data-refresh:
-    # Use same image as web service
-    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    build: .
     command: sh -c "while true; do python3 refresh_data_incremental.py --save-to-db; sleep 86400; done"
     volumes:
       - ./visa_bulletin.db:/app/visa_bulletin.db

@@ -71,6 +71,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000').read()" || exit 1
 
-# Default command: run migrations then start server
-CMD ["sh", "-c", "python3 manage.py migrate --noinput && python3 manage.py runserver 0.0.0.0:8000"]
+# Default command: run migrations then start server with gunicorn
+# Using 3 workers (2 * CPU + 1), 2 threads per worker for concurrency
+# max-requests recycles workers to prevent memory leaks
+CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 3 --threads 2 --bind 0.0.0.0:8000 --timeout 120 --max-requests 1000 --max-requests-jitter 50 django_config.wsgi:application"]
 

@@ -1,0 +1,75 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to deploy (e.g., v1.2.3 or latest)'
+        required: true
+        default: 'latest'
+  # Optionally auto-deploy on successful tag builds
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail_key
+          chmod 600 ~/.ssh/lightsail_key
+          ssh-keyscan -H ${{ secrets.LIGHTSAIL_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Lightsail
+        env:
+          VERSION: ${{ github.event.inputs.version || 'latest' }}
+        run: |
+          ssh -i ~/.ssh/lightsail_key ubuntu@${{ secrets.LIGHTSAIL_IP }} << 'ENDSSH'
+          set -e
+          
+          echo "🚀 Starting deployment..."
+          cd /opt/visa_bulletin
+          
+          # Pull latest code (for docker-compose.yml and configs)
+          git pull origin main
+          
+          # Pull new Docker image
+          echo "📥 Pulling Docker image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          docker-compose pull
+          
+          # Run deployment script (handles nginx, ssl, secrets, etc.)
+          ./scripts/deploy.sh
+          
+          echo "✅ Deployment complete!"
+          ENDSSH
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "✅ Site is up! HTTP $STATUS"
+          else
+            echo "❌ Site returned HTTP $STATUS"
+            exit 1
+          fi
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/lightsail_key
+

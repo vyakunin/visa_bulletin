@@ -1,12 +1,13 @@
 #!/bin/bash
 #
-# Deployment script for Visa Bulletin Dashboard
-# Deploys the latest code from GitHub main branch to AWS Lightsail
+# Docker-based deployment script for Visa Bulletin Dashboard
+# Deploys the latest Docker image from GHCR to AWS Lightsail
 #
-# Usage: ./scripts/deploy.sh [ssh-key-path]
+# Usage: ./scripts/deploy.sh [ssh-key-path] [image-tag]
 #
-# Example:
+# Examples:
 #   ./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
+#   ./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
 #
 
 set -e  # Exit on any error
@@ -19,35 +20,36 @@ DEFAULT_KEY="$HOME/Downloads/VisaBulletin.pem"
 
 # Use provided SSH key or default
 SSH_KEY="${1:-$DEFAULT_KEY}"
+IMAGE_TAG="${2:-latest}"
 
 if [ ! -f "$SSH_KEY" ]; then
     echo "❌ SSH key not found: $SSH_KEY"
     echo ""
-    echo "Usage: $0 [ssh-key-path]"
-    echo "Example: $0 ~/Downloads/VisaBulletin.pem"
+    echo "Usage: $0 [ssh-key-path] [image-tag]"
+    echo "Example: $0 ~/Downloads/VisaBulletin.pem v1.2.3"
     exit 1
 fi
 
 echo "═══════════════════════════════════════════════════════════════════"
-echo "🚀 DEPLOYING TO AWS LIGHTSAIL"
+echo "🚀 DEPLOYING TO AWS LIGHTSAIL (DOCKER)"
 echo "═══════════════════════════════════════════════════════════════════"
 echo ""
 echo "Host: $AWS_HOST"
 echo "Key:  $SSH_KEY"
+echo "Image tag: $IMAGE_TAG"
 echo ""
 
 # Deploy via SSH
-ssh -i "$SSH_KEY" "${AWS_USER}@${AWS_HOST}" << 'ENDSSH'
+ssh -i "$SSH_KEY" "${AWS_USER}@${AWS_HOST}" "IMAGE_TAG=$IMAGE_TAG bash -s" << 'ENDSSH'
 set -e
 
-echo "📥 Pulling latest code from GitHub..."
+echo "📥 Pulling latest configs from GitHub..."
 cd /opt/visa_bulletin
 git pull origin main
 
 echo ""
-echo "🧹 Clearing Python cache..."
-find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-find . -name "*.pyc" -delete 2>/dev/null || true
+echo "🐳 Pulling Docker image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG}"
+docker-compose pull
 
 echo ""
 echo "🔒 Checking security configuration..."
@@ -64,11 +66,9 @@ else
 fi
 
 echo ""
-echo "⚙️ Updating system configuration..."
-sudo cp deployment/systemd/visa-bulletin.service /etc/systemd/system/
+echo "⚙️ Updating Nginx configuration..."
 sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
 # Note: visa-bulletin-locations.conf stays in /opt/visa_bulletin/deployment/nginx/ (already there from git pull)
-sudo systemctl daemon-reload
 # Ensure Nginx config is linked (if not already)
 if [ ! -L /etc/nginx/sites-enabled/visa-bulletin ]; then
     sudo ln -s /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
@@ -151,23 +151,26 @@ fi
 
 sudo nginx -t || { echo "❌ Nginx config test failed!"; exit 1; }
 sudo systemctl reload nginx
-sudo systemctl restart visa-bulletin
 
 echo ""
-echo "⏳ Waiting for service to start..."
-sleep 5
+echo "🔄 Restarting Docker services..."
+docker-compose up -d
 
 echo ""
-echo "✅ Checking service status..."
-sudo systemctl is-active visa-bulletin --quiet && echo "Service is active" || echo "❌ Service failed to start!"
+echo "⏳ Waiting for services to start..."
+sleep 10
+
+echo ""
+echo "✅ Checking Docker service status..."
+docker-compose ps
 
 echo ""
 echo "🧪 Testing site..."
 curl -s -o /dev/null -w "HTTP %{http_code}\n" https://visa-bulletin.us || echo "❌ Site unreachable!"
 
 echo ""
-echo "📋 Recent logs (last 10 lines)..."
-sudo journalctl -u visa-bulletin -n 10 --no-pager
+echo "📋 Recent logs (last 20 lines)..."
+docker-compose logs --tail=20 web
 
 ENDSSH
 
@@ -183,7 +186,7 @@ if [ $? -eq 0 ]; then
     echo ""
     echo "To view logs:"
     echo "  ssh -i $SSH_KEY ${AWS_USER}@${AWS_HOST}"
-    echo "  sudo journalctl -u visa-bulletin -f"
+    echo "  cd /opt/visa_bulletin && docker-compose logs -f"
     echo ""
 else
     echo ""
