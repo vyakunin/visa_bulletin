@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y \
 RUN wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazel
 
-# Create non-root user for Bazel build
-RUN groupadd -r builder && useradd -r -g builder builder && \
-    mkdir -p /app && chown -R builder:builder /app
+# Create non-root user for Bazel build with home directory
+RUN groupadd -r builder && \
+    useradd -r -g builder -m -d /home/builder builder && \
+    mkdir -p /app && \
+    chown -R builder:builder /app /home/builder
 
 # Switch to non-root user for build
 USER builder
