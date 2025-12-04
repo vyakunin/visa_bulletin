@@ -74,7 +74,7 @@ py_binary(
     args = ["runserver", "8000", "--noreload"],
     data = [
         "//webapp:templates",
-        "visa_bulletin.db",
+        # Note: visa_bulletin.db is created at runtime, not a build dependency
     ],
     visibility = ["//visibility:public"],
     deps = [
