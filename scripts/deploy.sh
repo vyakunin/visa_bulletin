@@ -79,44 +79,34 @@ echo "🔐 Ensuring SSL configuration is applied..."
 # Re-apply SSL configuration after copying base config
 # This ensures Certbot's SSL config is always present even if we overwrote it
 
-# First, check if SSL is already configured
-if sudo nginx -T 2>/dev/null | grep -q "ssl_certificate.*visa-bulletin.us"; then
-    echo "✅ SSL already configured in nginx"
+# First, check if SSL certificates exist
+if sudo [ -f /etc/letsencrypt/live/visa-bulletin.us/fullchain.pem ]; then
+    echo "✅ SSL certificates found"
     
-    # Check if SSL block uses include (new style) or has inline locations (old style)
-    if sudo grep -A5 "listen 443 ssl" /etc/nginx/sites-available/visa-bulletin | grep -q "include.*visa-bulletin-locations.conf"; then
-        echo "✅ SSL block already uses shared location includes"
-    else
-        echo "⚙️  Updating SSL block to use shared location includes..."
-        # Backup current config
-        sudo cp /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-available/visa-bulletin.backup.$(date +%s)
-        # Replace inline locations with include in HTTPS block
-        sudo sed -i '/listen 443 ssl/,/^}/ {
-            /location/,/^    }/d
-            /server_name/a\    \n    # Include shared location blocks\n    include /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf;
-        }' /etc/nginx/sites-available/visa-bulletin
-        echo "✅ Updated SSL block to use includes"
-    fi
-else
-    echo "Adding SSL configuration..."
-    # Use certbot to add SSL to the base config (preserves existing cert)
-    if sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us --cert-name visa-bulletin.us --non-interactive --redirect 2>&1 | grep -q "Successfully deployed"; then
-        echo "✅ SSL configured successfully by Certbot"
+    # Check if Nginx config already has SSL configured
+    if sudo nginx -T 2>/dev/null | grep -q "ssl_certificate.*visa-bulletin.us"; then
+        echo "✅ SSL already configured in Nginx"
         
-        # Update the Certbot-generated SSL block to use includes instead of duplicating locations
-        echo "⚙️  Optimizing SSL block to use shared location includes..."
-        sudo sed -i '/listen 443 ssl/,/^}/ {
-            /location/,/^    }/d
-            /server_name/a\    \n    # Include shared location blocks\n    include /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf;
-        }' /etc/nginx/sites-available/visa-bulletin
-        echo "✅ SSL block optimized"
+        # Check if SSL block uses include (new style) or has inline locations (old style)
+        if sudo grep -A5 "listen 443 ssl" /etc/nginx/sites-available/visa-bulletin | grep -q "include.*visa-bulletin-locations.conf"; then
+            echo "✅ SSL block already uses shared location includes"
+        else
+            echo "⚙️  Updating SSL block to use shared location includes..."
+            # Backup current config
+            sudo cp /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-available/visa-bulletin.backup.$(date +%s)
+            # Replace inline locations with include in HTTPS block
+            sudo sed -i '/listen 443 ssl/,/^}/ {
+                /location/,/^    }/d
+                /server_name/a\    \n    # Include shared location blocks\n    include /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf;
+            }' /etc/nginx/sites-available/visa-bulletin
+            echo "✅ Updated SSL block to use includes"
+        fi
     else
-        echo "⚠️  Certbot failed, trying manual SSL configuration..."
-        # Fallback: Manually add SSL block if certs exist
-        if sudo [ -f /etc/letsencrypt/live/visa-bulletin.us/fullchain.pem ]; then
-            sudo tee -a /etc/nginx/sites-available/visa-bulletin > /dev/null << 'EOF'
+        # SSL certs exist but not in Nginx config - add manually
+        echo "⚙️  Adding SSL configuration to Nginx (certs already exist)..."
+        sudo tee -a /etc/nginx/sites-available/visa-bulletin > /dev/null << 'EOF'
 
-# SSL Configuration (manually added)
+# SSL Configuration
 server {
     listen 443 ssl;
     server_name visa-bulletin.us www.visa-bulletin.us;
@@ -130,11 +120,32 @@ server {
     include /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf;
 }
 EOF
-            echo "✅ SSL manually configured with shared location blocks"
-        else
-            echo "❌ No SSL certificates found! Run: sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us"
-            exit 1
-        fi
+        echo "✅ SSL configuration added to Nginx"
+    fi
+else
+    # No SSL certificates exist - need to obtain them
+    echo "⚠️  No SSL certificates found. Attempting to obtain certificates with Certbot..."
+    
+    # Use certbot to obtain and configure SSL
+    if sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us --cert-name visa-bulletin.us --non-interactive --redirect 2>&1 | grep -q "Successfully"; then
+        echo "✅ SSL certificates obtained and configured by Certbot"
+        
+        # Update the Certbot-generated SSL block to use includes instead of duplicating locations
+        echo "⚙️  Optimizing SSL block to use shared location includes..."
+        sudo sed -i '/listen 443 ssl/,/^}/ {
+            /location/,/^    }/d
+            /server_name/a\    \n    # Include shared location blocks\n    include /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf;
+        }' /etc/nginx/sites-available/visa-bulletin
+        echo "✅ SSL block optimized"
+    else
+        echo "❌ Certbot failed to obtain SSL certificates!"
+        echo "   This may be due to:"
+        echo "   - Domain not pointing to this server"
+        echo "   - Port 80/443 blocked"
+        echo "   - Rate limiting from Let's Encrypt"
+        echo ""
+        echo "   Manual fix: sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us"
+        echo "   For now, site will run on HTTP only"
     fi
 fi
 
