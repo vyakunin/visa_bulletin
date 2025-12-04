@@ -18,12 +18,18 @@ RUN apt-get update && apt-get install -y \
 RUN wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazel
 
+# Create non-root user for Bazel build
+RUN groupadd -r builder && useradd -r -g builder builder && \
+    mkdir -p /app && chown -R builder:builder /app
+
+# Switch to non-root user for build
+USER builder
 WORKDIR /app
 
-# Copy project files
-COPY . .
+# Copy project files (will be owned by builder)
+COPY --chown=builder:builder . .
 
-# Build with Bazel (creates hermetic build)
+# Build with Bazel as non-root user (required by rules_python)
 RUN bazel build //:runserver //:refresh_data //:refresh_data_incremental //:migrate
 
 # Extract built artifacts
