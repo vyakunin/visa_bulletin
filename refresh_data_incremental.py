@@ -14,12 +14,22 @@ Usage:
 import os
 import sys
 import time
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 from pathlib import Path
 
 import requests
 from django.db import transaction, OperationalError
+
+# Configure logging with timestamps
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 # Setup Django early
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
@@ -100,7 +110,7 @@ def save_with_retry(publication_data, max_retries=3, base_delay=1.0):
         except OperationalError as e:
             if 'database is locked' in str(e) and attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt)  # Exponential backoff
-                print(f"  ⚠️  Database locked, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                logger.warning(f"  ⚠️  Database locked, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
             else:
                 raise
@@ -109,25 +119,28 @@ def save_with_retry(publication_data, max_retries=3, base_delay=1.0):
 
 def main():
     """Fetch only new bulletins not already in database"""
-    print("="*80)
-    print("🔄 INCREMENTAL DATA REFRESH")
-    print("="*80)
+    start_time = datetime.now()
+    logger.info("="*80)
+    logger.info("🔄 INCREMENTAL DATA REFRESH - STARTED")
+    logger.info("="*80)
     
     # Get existing bulletins from database
-    print("\n📊 Checking existing data...")
+    logger.info("")
+    logger.info("📊 Checking existing data...")
     existing_dates = get_existing_bulletin_dates()
-    print(f"  • Bulletins in database: {len(existing_dates)}")
+    logger.info(f"  • Bulletins in database: {len(existing_dates)}")
     if existing_dates:
         oldest = min(existing_dates)
         newest = max(existing_dates)
-        print(f"  • Date range: {oldest} to {newest}")
+        logger.info(f"  • Date range: {oldest} to {newest}")
     
     # Fetch list of available bulletins
-    print("\n🌐 Fetching bulletin list from travel.state.gov...")
+    logger.info("")
+    logger.info("🌐 Fetching bulletin list from travel.state.gov...")
     url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
     html = fetch_main_page(url)
     publication_urls = parse_publication_links(html)
-    print(f"  • Available bulletins: {len(publication_urls)}")
+    logger.info(f"  • Available bulletins: {len(publication_urls)}")
     
     # Filter to only new bulletins
     new_bulletins = []
@@ -140,28 +153,36 @@ def main():
             if publication_date not in existing_dates:
                 new_bulletins.append((pub_url, publication_date))
         except ValueError:
-            print(f"  ⚠️  Skipping invalid date format: {date_str}")
+            logger.warning(f"  ⚠️  Skipping invalid date format: {date_str}")
             continue
     
     if not new_bulletins:
-        print("\n✅ No new bulletins to fetch. Database is up to date!")
-        print("="*80)
-        return
+        logger.info("")
+        logger.info("✅ No new bulletins to fetch. Database is up to date!")
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        logger.info("="*80)
+        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)")
+        logger.info("="*80)
+        return 0
     
-    print(f"\n📥 Found {len(new_bulletins)} new bulletin(s) to fetch:")
+    logger.info("")
+    logger.info(f"📥 Found {len(new_bulletins)} new bulletin(s) to fetch:")
     for url, date in new_bulletins[:5]:
-        print(f"  • {date.strftime('%B %Y')}")
+        logger.info(f"  • {date.strftime('%B %Y')}")
     if len(new_bulletins) > 5:
-        print(f"  ... and {len(new_bulletins) - 5} more")
+        logger.info(f"  ... and {len(new_bulletins) - 5} more")
     
     # Fetch and save new bulletins
-    print("\n💾 Fetching and saving new bulletins...")
+    logger.info("")
+    logger.info("💾 Fetching and saving new bulletins...")
     success_count = 0
     error_count = 0
     
     for pub_url, publication_date in new_bulletins:
         try:
-            print(f"\n  📄 {publication_date.strftime('%B %Y')}...", end=" ")
+            logger.info("")
+            logger.info(f"  📄 {publication_date.strftime('%B %Y')}...", extra={'no_timestamp': True})
             
             # Fetch HTML
             content = fetch_publication(pub_url)
@@ -180,32 +201,72 @@ def main():
                 # Count saved records
                 tables = extract_tables(content)
                 total_records = sum(len(t.rows) for t in tables)
-                print(f"✓ Saved ({total_records} records)")
+                logger.info(f"✓ Saved ({total_records} records)")
                 success_count += 1
             else:
-                print("✗ Failed after retries")
+                logger.error("✗ Failed after retries")
                 error_count += 1
                 
         except Exception as e:
-            print(f"✗ Error: {e}")
+            logger.error(f"✗ Error: {e}")
             error_count += 1
     
     # Summary
-    print("\n" + "="*80)
-    print("📊 REFRESH SUMMARY")
-    print("="*80)
-    print(f"  • Successfully saved: {success_count}")
-    print(f"  • Errors: {error_count}")
-    print(f"  • Total bulletins now in DB: {len(existing_dates) + success_count}")
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
+    logger.info("")
+    logger.info("="*80)
+    logger.info("📊 REFRESH SUMMARY")
+    logger.info("="*80)
+    logger.info(f"  • Successfully saved: {success_count}")
+    logger.info(f"  • Errors: {error_count}")
+    logger.info(f"  • Total bulletins now in DB: {len(existing_dates) + success_count}")
+    logger.info(f"  • Duration: {duration:.1f}s")
     
-    if success_count > 0:
-        print("\n✅ Database updated successfully!")
-    elif error_count > 0:
-        print("\n⚠️  Some errors occurred. Check logs above.")
-    
-    print("="*80)
+    # Determine exit status
+    if error_count > 0:
+        logger.warning("")
+        logger.warning("⚠️  Some errors occurred. Check logs above.")
+        logger.error("="*80)
+        logger.error(f"❌ CRON_FAILURE: Refresh completed with {error_count} error(s) in {duration:.1f}s")
+        logger.error("="*80)
+        return 1
+    elif success_count > 0:
+        logger.info("")
+        logger.info("✅ Database updated successfully!")
+        logger.info("="*80)
+        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s ({success_count} new bulletin(s))")
+        logger.info("="*80)
+        return 0
+    else:
+        # No new bulletins case already handled above, but just in case
+        logger.info("="*80)
+        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)")
+        logger.info("="*80)
+        return 0
 
 
 if __name__ == "__main__":
-    main()
+    start_time = None
+    try:
+        exit_code = main()
+        sys.exit(exit_code if exit_code is not None else 0)
+    except KeyboardInterrupt:
+        logger.warning("")
+        logger.warning("⚠️  Refresh interrupted by user")
+        logger.error("❌ CRON_FAILURE: Refresh interrupted")
+        sys.exit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        end_time = datetime.now()
+        duration = 0.0
+        if start_time:
+            duration = (end_time - start_time).total_seconds()
+        logger.error("")
+        logger.error(f"❌ CRITICAL ERROR: {type(e).__name__}: {e}")
+        logger.error("="*80)
+        logger.error(f"❌ CRON_FAILURE: Refresh failed with exception in {duration:.1f}s")
+        logger.error("="*80)
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
