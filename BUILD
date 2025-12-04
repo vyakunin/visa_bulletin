@@ -107,9 +107,8 @@ py_binary(
     srcs = ["manage.py"],
     main = "manage.py",
     args = ["migrate"],
-    data = [
-        "visa_bulletin.db",
-    ],
+    # Note: visa_bulletin.db is created by migrate, not a dependency
+    data = [],
     visibility = ["//visibility:public"],
     deps = [
         "//django_config:settings",
