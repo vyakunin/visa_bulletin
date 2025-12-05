@@ -63,11 +63,12 @@ class EmploymentPreference(models.TextChoices):
                 return 'EB-5: Rural (20%)'
             if 'unreserved' in clean_lower or 'all others' in clean_lower:
                 return 'EB-5: Unreserved'
+            # Non-Regional must be checked BEFORE Regional (substring match issue)
+            if 'non-regional' in clean_lower:
+                return 'EB-5: Non-Regional Center'
             # Targeted/Regional (multiple spelling variations!)
             if 'targeted' in clean_lower or 'regional' in clean_lower or 'employ-ment' in clean_lower or 'employmentareas' in clean_lower:
                 return 'EB-5: Targeted Employment Areas / Regional Centers'
-            if 'non-regional' in clean_lower:
-                return 'EB-5: Non-Regional Center'
             if 'pilot' in clean_lower:
                 return 'EB-5: Pilot Programs'
             # Generic EB-5

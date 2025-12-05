@@ -87,14 +87,12 @@ def get_aggregated_visa_class_data(
         action_type=action_type
     ).select_related('bulletin').order_by('visa_class', 'bulletin__publication_date')
     
-    has_any_data = all_cutoff_data.exists()
-    
     if category == VisaCategory.EMPLOYMENT_BASED.value:
         visa_class_data = _aggregate_employment_data(all_cutoff_data, submission_date)
     else:
         visa_class_data = _aggregate_family_data(all_cutoff_data, submission_date)
     
-    return visa_class_data, has_any_data
+    return visa_class_data, bool(visa_class_data)
 
 
 def _aggregate_employment_data(
