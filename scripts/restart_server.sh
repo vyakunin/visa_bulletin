@@ -36,5 +36,16 @@ if ! command -v bazel &> /dev/null; then
 fi
 
 # Run bazel from the workspace root (not from bazel-bin)
-exec bazel run //:runserver
+if [[ "$1" == "--background" ]]; then
+    # Background mode: redirect output to log file
+    LOG_FILE="/tmp/visa-bulletin-server.log"
+    nohup bazel run //:runserver > "$LOG_FILE" 2>&1 &
+    SERVER_PID=$!
+    echo "   ✓ Server started in background (PID: $SERVER_PID)"
+    echo "   📋 Logs: tail -f $LOG_FILE"
+    echo "   🛑 Stop: kill $SERVER_PID or pkill -f runserver"
+else
+    # Foreground mode: for interactive use
+    exec bazel run //:runserver
+fi
 

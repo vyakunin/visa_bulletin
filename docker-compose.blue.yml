@@ -1,0 +1,41 @@
+version: '3.8'
+
+# Blue environment - runs on port 8000
+# Used for blue-green zero-downtime deployments
+
+services:
+  web-blue:
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_web_blue
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/dashboard/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+  data-refresh-blue:
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_refresh_blue
+    command: sh -c "while true; do python3 refresh_data_incremental.py --save-to-db; sleep 86400; done"
+    volumes:
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      web-blue:
+        condition: service_healthy

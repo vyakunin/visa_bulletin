@@ -24,11 +24,44 @@ bazel run //:runserver                   # Doesn't stop existing server
 - Consistent behavior across team
 - Self-documenting workflows
 
+## Rule: Run restart_server.sh with --background Flag
+
+**AI assistants should use the `--background` flag when restarting the development server.**
+
+**✅ CORRECT (for AI assistants):**
+```bash
+./scripts/restart_server.sh --background
+# Requires: required_permissions: ["all"] (Bazel needs /var/tmp access)
+```
+
+**Why `--background`:**
+- Runs server in background without blocking the terminal
+- Logs to `/tmp/visa-bulletin-server.log`
+- Returns control immediately
+- Perfect for automated restarts
+
+**Permissions Required:**
+- Must use `required_permissions: ["all"]` due to Bazel needing write access to `/var/tmp/_bazel_vyakunin/`
+- Sandbox restrictions prevent Bazel from accessing its cache directory
+
+**For interactive use (user in terminal):**
+```bash
+./scripts/restart_server.sh  # Runs in foreground, shows live logs
+```
+
+**Background Mode Details:**
+- Server output redirected to `/tmp/visa-bulletin-server.log`
+- View logs: `tail -f /tmp/visa-bulletin-server.log`
+- Stop server: `pkill -f runserver` or `kill <PID>`
+
 ## Available Scripts
 
 ### Development Scripts
 
 - **restart_server.sh**: Gracefully stop and restart the Django development server
+  - Usage: `./scripts/restart_server.sh` (foreground) or `./scripts/restart_server.sh --background` (background)
+  - Foreground: For interactive use, shows live logs, stop with Ctrl+C
+  - Background: For automation/AI, logs to `/tmp/visa-bulletin-server.log`
 - **setup_dev_tools.sh**: Install development dependencies
 
 ### Deployment Scripts
