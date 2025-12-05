@@ -37,14 +37,20 @@ git push origin v1.2.3
 
 # 3. Wait for GitHub Actions to build image
 
-# 4. Deploy
-./scripts/deploy.sh ~/ssh-key.pem v1.2.3
+# 4. Run pre-deployment checks
+./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
+
+# 5. Deploy
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
 ```
 
 ### Method 2: Deploy Latest
 ```bash
+# Run pre-deployment checks
+./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
+
 # Deploy whatever is currently tagged as 'latest'
-./scripts/deploy.sh ~/ssh-key.pem latest
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin latest
 ```
 
 ### Method 3: GitHub Actions Deployment
@@ -58,6 +64,26 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 ## Rollout Flow
 
 See `ROLLOUT_FLOW.md` for the complete step-by-step process.
+
+## Pre-Deployment Checks
+
+**ALWAYS run pre-deployment checks before deploying to catch configuration issues:**
+
+```bash
+# Run health checks on production environment
+./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
+```
+
+**The script validates:**
+- Port 8000 availability (detects old systemd services)
+- Docker and docker-compose installation
+- Nginx proxy configuration (should point to port 8000)
+- SSL certificate status
+- Disk space availability
+- Docker service running
+- Stale containers
+
+**If checks fail:** Follow the suggested fixes before proceeding with deployment.
 
 ## Rollback Procedure
 
