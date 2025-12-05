@@ -1,6 +1,14 @@
 # Cursor Rules for Visa Bulletin Parser
 
-## 🚨 Critical Rules
+## 📋 Rule Scope
+
+### Project-Specific Rules
+This section contains rules **specific to this visa bulletin project**: Bazel build system, Django models, domain-specific patterns. These rules apply ONLY to this codebase.
+
+### General Development Practices
+General software development best practices (tool management, code quality, testing, documentation) are defined in `~/.cursorrules` and apply across all projects.
+
+## 🚨 Project-Specific Critical Rules
 
 ### Rule: Always Use Bazel for Testing and Running
 **NEVER run Python or pytest directly. ALWAYS use Bazel.**
@@ -19,7 +27,8 @@ python refresh_data.py                    # Use: bazel run //:refresh_data
 pytest tests/                             # Use: bazel test //tests:...
 python -m unittest discover              # Use: bazel test //tests:...
 source ~/visa-bulletin-venv/bin/activate # Not needed with Bazel
-pkill -9 -f "runserver" && bazel run...  # Use: ./scripts/restart_server.sh
+pkill -f "runserver"                     # Use: ./scripts/restart_server.sh
+bazel run //:runserver                   # Use: ./scripts/restart_server.sh (handles cleanup)
 ```
 
 **Rationale:**
@@ -27,6 +36,30 @@ pkill -9 -f "runserver" && bazel run...  # Use: ./scripts/restart_server.sh
 - Intelligent caching (faster)
 - Consistent with pre-commit hook
 - Single source of truth for dependencies
+
+### Rule: Use Project Scripts for Common Tasks
+
+**ALWAYS use project scripts in `./scripts/` instead of ad-hoc commands.**
+
+**✅ GOOD:**
+```bash
+./scripts/restart_server.sh              # Handles process cleanup + PATH setup
+./scripts/deploy.sh                      # Standardized deployment
+```
+
+**❌ BAD:**
+```bash
+pkill -9 -f "runserver"                  # Aggressive, no graceful shutdown
+ps aux | grep runserver | awk...         # Complex, error-prone
+bazel run //:runserver                   # Doesn't stop existing server
+```
+
+**Rationale:**
+- Graceful process management (SIGTERM before SIGKILL)
+- Environment setup (PATH, Homebrew initialization)
+- Error handling and validation
+- Consistent behavior across team
+- Self-documenting workflows
 
 ## Bazel Build System
 

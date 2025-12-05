@@ -1,5 +1,6 @@
 """Country/region enum for visa applicant chargeability"""
 
+import re
 from django.db import models
 
 
@@ -23,23 +24,34 @@ class Country(models.TextChoices):
     
     @classmethod
     def from_header(cls, header: str):
-        """Parse country from table header string"""
-        # Normalize whitespace
-        normalized = ' '.join(header.split())
+        """
+        Parse country from table header string using robust pattern matching
         
-        # Mapping from table headers to enum values
-        mappings = {
-            'All Chargeability Areas Except Those Listed': cls.ALL,
-            'All Chargeability\xa0Areas Except Those Listed': cls.ALL,  # Non-breaking space
-            'CHINA-mainland born': cls.CHINA,
-            'CHINA- mainland born': cls.CHINA,
-            'CHINA-mainland\xa0born': cls.CHINA,
-            'CHINA- mainland\xa0born': cls.CHINA,
-            'INDIA': cls.INDIA,
-            'MEXICO': cls.MEXICO,
-            'PHILIPPINES': cls.PHILIPPINES,
-            'EL SALVADOR GUATEMALA HONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
-            'EL SALVADOR\nGUATEMALA\nHONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
+        Uses regex patterns to handle variations in spacing, punctuation, and formatting.
+        Falls back to exact matching for edge cases.
+        """
+        # Normalize whitespace and special characters
+        normalized = re.sub(r'[\s\xa0\n]+', ' ', header).strip().upper()
+        
+        # Pattern-based matching (order matters - most specific first)
+        patterns = [
+            (r'CHINA.*MAINLAND', cls.CHINA),
+            (r'^INDIA$', cls.INDIA),
+            (r'^MEXICO$', cls.MEXICO),
+            (r'^PHILIPPINES$', cls.PHILIPPINES),
+            (r'EL SALVADOR.*GUATEMALA.*HONDURAS', cls.EL_SALVADOR_GUATEMALA_HONDURAS),
+            (r'ALL.*CHARGEABILITY.*EXCEPT', cls.ALL),
+        ]
+        
+        for pattern, country in patterns:
+            if re.search(pattern, normalized):
+                return country
+        
+        # Fallback: exact matching for edge cases
+        exact_mappings = {
+            'ALL CHARGEABILITY AREAS EXCEPT THOSE LISTED': cls.ALL,
+            'ALL AREAS': cls.ALL,
         }
-        return mappings.get(normalized)
+        
+        return exact_mappings.get(normalized)
 

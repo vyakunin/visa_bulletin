@@ -4,10 +4,17 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_library(
+    name = "logging_config",
+    srcs = ["logging_config.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":logging_config",
         requirement("Django"),
     ],
 )

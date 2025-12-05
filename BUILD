@@ -11,7 +11,7 @@ py_binary(
     name = "refresh_data",
     srcs = ["refresh_data.py"],
     deps = [
-        "//lib:bulletint_parser",
+        "//lib:bulletin_parser",
         "//lib:publication_data",
         "//lib:table",
         "//extractors:bulletin_handler",
@@ -41,7 +41,7 @@ py_binary(
     name = "refresh_data_incremental",
     srcs = ["refresh_data_incremental.py"],
     deps = [
-        "//lib:bulletint_parser",
+        "//lib:bulletin_parser",
         "//lib:publication_data",
         "//lib:table",
         "//extractors:bulletin_handler",

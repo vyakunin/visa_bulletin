@@ -80,6 +80,7 @@ DEBUG = not IS_PRODUCTION  # True locally, False in production (safe by default)
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
+    'testserver',  # For Django tests
     '3.227.71.176',  # AWS Lightsail static IP
     'visa-bulletin.us',
     'www.visa-bulletin.us',
@@ -101,6 +102,10 @@ CACHES = {
 # Flexible analytics support (GoatCounter, Umami, Plausible, etc.)
 # Set ANALYTICS_SCRIPT via environment variable with your tracking code
 ANALYTICS_SCRIPT = os.environ.get('ANALYTICS_SCRIPT', '')
+
+# Logging Configuration
+from django_config.logging_config import setup_logging
+setup_logging(debug=DEBUG)
 
 # HTTPS/Security settings (enable in production)
 # Uncomment these when deploying with HTTPS:

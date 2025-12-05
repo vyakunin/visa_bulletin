@@ -1,0 +1,28 @@
+# Visa Bulletin Parser - Project Overview
+
+## Rule Scope
+
+### Project-Specific Rules
+This directory contains rules **specific to this visa bulletin project**: Bazel build system, Django models, domain-specific patterns. These rules apply ONLY to this codebase.
+
+### General Development Practices
+General software development best practices (tool management, code quality, testing, documentation) are defined in `AGENTS.md` and apply across all projects.
+
+## Project Structure
+
+This is a Django application that:
+- Parses historical visa bulletin data from travel.state.gov
+- Stores data in SQLite database
+- Provides web dashboard for visualization
+- Uses Bazel for hermetic builds
+- Deploys to AWS Lightsail via Docker
+
+## Key Technologies
+
+- **Python 3.11+**: Modern type hints
+- **Django 4.2**: Web framework and ORM
+- **Bazel**: Build system for reproducible builds
+- **Docker**: Container-based deployment
+- **SQLite with WAL**: Database for production
+- **Plotly**: Interactive charts
+- **GitHub Actions**: CI/CD pipeline

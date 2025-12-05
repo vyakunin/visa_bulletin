@@ -8,30 +8,10 @@ This file is automatically loaded by pytest and provides:
 """
 
 import pytest
-import os
-import django
-from django.conf import settings
 
-# Setup Django before any tests run
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-if not settings.configured:
-    settings.configure(
-        DATABASES={
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': ':memory:',
-            }
-        },
-        INSTALLED_APPS=[
-            'django.contrib.contenttypes',
-            'models',
-        ],
-        SECRET_KEY='test-secret-key',
-        USE_TZ=True,
-        DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
-    )
-    django.setup()
+# Use shared Django setup utility
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
 
 
 @pytest.fixture(scope='session')

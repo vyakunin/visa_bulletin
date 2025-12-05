@@ -1,0 +1,81 @@
+# Bazel Build System Rules
+
+## Rule: Always Use Bazel for Testing and Running
+**NEVER run Python or pytest directly. ALWAYS use Bazel.**
+
+**✅ GOOD:**
+```bash
+bazel test //tests:test_extractor
+bazel run //:refresh_data
+bazel test //tests:test_parser //tests:test_extractor //tests:test_integration
+./scripts/restart_server.sh              # Restart dev server (preferred)
+```
+
+**❌ BAD:**
+```bash
+python refresh_data.py                    # Use: bazel run //:refresh_data
+pytest tests/                             # Use: bazel test //tests:...
+python -m unittest discover              # Use: bazel test //tests:...
+source ~/visa-bulletin-venv/bin/activate # Not needed with Bazel
+pkill -f "runserver"                     # Use: ./scripts/restart_server.sh
+bazel run //:runserver                   # Use: ./scripts/restart_server.sh (handles cleanup)
+```
+
+**Rationale:**
+- Hermetic builds (reproducible)
+- Intelligent caching (faster)
+- Consistent with pre-commit hook
+- Single source of truth for dependencies
+
+## Rule: One Bazel Target Per File
+Always create one `py_library` or `py_binary` target per Python file unless it's impossible due to circular dependencies.
+
+**Good:**
+```python
+py_library(
+    name = "bulletint_parser",
+    srcs = ["bulletint_parser.py"],
+    deps = [":table"],
+)
+
+py_library(
+    name = "table",
+    srcs = ["table.py"],
+)
+```
+
+**Bad:**
+```python
+py_library(
+    name = "lib",
+    srcs = [
+        "bulletint_parser.py",
+        "table.py",
+        "other.py",
+    ],
+)
+```
+
+**Rationale:**
+- Better granularity for incremental builds
+- Clear dependency tracking
+- Faster compilation (only rebuild changed modules)
+- Easier to understand build graph
+
+## Exceptions
+Only bundle multiple files into one target when:
+- Circular dependencies exist between modules
+- Files are tightly coupled and always used together
+- Performance measurements show significant benefit
+
+## Testing with Bazel
+
+- **ALWAYS use Bazel to run tests**: `bazel test //tests:test_name`
+- **NEVER use pytest or python directly**
+- Run tests before committing (pre-commit hook handles this)
+
+## Dependencies
+
+- Add new Python dependencies to `requirements.txt`
+- Bazel dependencies are managed via `MODULE.bazel`
+- Keep both in sync for consistency

@@ -5,15 +5,9 @@ These tests verify actual behavior: parsing tables, handling dates,
 mapping strings to enums, handling special cases like "C" and "U".
 """
 
-# Django setup (for Bazel py_test; pytest uses conftest.py)
-import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-import django
-from django.apps import apps
-from django.conf import settings
-if not apps.ready:
-    django.setup()
+# Django setup (shared utility for both Bazel and pytest)
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
 
 from datetime import date, datetime
 from lib.table import Table

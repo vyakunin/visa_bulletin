@@ -204,8 +204,8 @@
             min-height: 600px;
         }
         
-        /* Reserve space for dashboard content to prevent CLS */
-        .container.mt-4 {
+        /* Reserve space for dashboard content to prevent CLS - only on pages with charts */
+        .dashboard-container {
             min-height: 1800px !important; /* Increased and forced to prevent any container shift */
         }
         
@@ -282,13 +282,31 @@
             min-height: 280px; /* Reserve space for projection cards - prevents CLS */
         }
         
-        /* Reserve space for Plotly chart - CRITICAL for CLS */
+        /* Plotly chart container */
         #chart-plot {
-            min-height: 600px !important; /* Prevents massive shift when chart loads */
+            min-height: 350px;
         }
         
         #chart-container {
-            min-height: 650px; /* Container including card padding */
+            min-height: 400px;
+        }
+        
+        /* Force Plotly chart to fit container width */
+        .plotly-graph-div {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        
+        .js-plotly-plot, .plot-container {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        
+        /* Position Plotly modebar to avoid title overlap */
+        .modebar {
+            top: auto !important;
+            bottom: 5px !important;
+            right: 5px !important;
         }
         
         .footer-link {
@@ -359,7 +377,7 @@
             --nav-active-text: #ffffff;        /* White text for active */
             --nav-active-bg: #2c5282;          /* Strong blue background for active */
             --nav-border-color: #e2e8f0;       /* Border color */
-            --footer-link-color: #0052A3;      /* Darker blue for footer links - WCAG AA (4.8:1 on gray) */
+            --footer-link-color: #60a5fa;      /* Light blue for footer links - excellent contrast on navy */
         }
         
         /* Navigation Bar */
@@ -424,10 +442,17 @@
             .filter-card .form-text {
                 min-height: 20px; /* Preserve help text space on mobile */
             }
-            /* Make chart responsive on mobile */
+            /* Constrain chart on mobile */
             #chart-container {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
+                overflow: hidden;
+            }
+            
+            #chart-plot {
+                min-height: 300px;
+            }
+            
+            .plotly-graph-div {
+                max-width: 100vw !important;
             }
             /* Reduce projection alert padding */
             .projection-alert {
@@ -478,7 +503,7 @@
         </div>
     </nav>
     
-    <div class="container mt-4">
+    <div class="container mt-4 {% block container_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </div>
     
@@ -505,10 +530,10 @@
                     <i class="bi bi-telegram"></i> Telegram
                 </a>
                 
-                <!-- Twitter/X -->
-                <a href="https://twitter.com/intent/tweet?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates&url=https://visa-bulletin.us/" 
-                   class="btn btn-dark btn-sm">
-                    <i class="bi bi-twitter-x"></i> Post
+                <!-- Bluesky -->
+                <a href="https://bsky.app/intent/compose?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates%20https://visa-bulletin.us/" 
+                   class="btn btn-primary btn-sm text-white">
+                    <i class="bi bi-cloud"></i> Bluesky
                 </a>
                 
                 <!-- Copy Link -->

@@ -13,7 +13,7 @@ py_test(
         "//saved_pages:test_data",
     ],
     deps = [
-        "//lib:bulletint_parser",
+        "//lib:bulletin_parser",
         "//lib:table",
         requirement("beautifulsoup4"),
         requirement("soupsieve"),
@@ -25,7 +25,7 @@ py_test(
 py_test(
     name = "test_extractor",
     size = "small",
-    srcs = ["conftest.py", "test_extractor.py"],
+    srcs = ["django_setup.py", "conftest.py", "test_extractor.py"],
     main = "test_extractor.py",
     data = [
         "//saved_pages:test_data",
@@ -55,13 +55,13 @@ py_test(
 py_test(
     name = "test_integration",
     size = "small",
-    srcs = ["conftest.py", "test_integration.py"],
+    srcs = ["django_setup.py", "conftest.py", "test_integration.py"],
     main = "test_integration.py",
     data = [
         "//saved_pages:test_data",
     ],
     deps = [
-        "//lib:bulletint_parser",
+        "//lib:bulletin_parser",
         "//lib:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",
@@ -111,7 +111,7 @@ py_test(
 py_test(
     name = "test_webapp_ui",
     size = "small",
-    srcs = ["test_webapp_ui.py"],
+    srcs = ["django_setup.py", "test_webapp_ui.py"],
     deps = [
         "//webapp:views",
         "//models:visa_cutoff_date",
@@ -141,7 +141,7 @@ py_test(
 py_test(
     name = "test_visa_class_utils",
     size = "small",
-    srcs = ["test_visa_class_utils.py"],
+    srcs = ["django_setup.py", "test_visa_class_utils.py"],
     deps = [
         "//lib:visa_class_utils",
         "//models:visa_cutoff_date",
@@ -153,6 +153,30 @@ py_test(
         "//models/enums:employment_preference",
         "//django_config:settings",
         "//webapp:apps",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_dashboard_integration",
+    size = "small",
+    srcs = ["django_setup.py", "test_dashboard_integration.py"],
+    deps = [
+        "//webapp:views",
+        "//models:visa_cutoff_date",
+        "//models:bulletin",
+        "//models/enums:visa_category",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//django_config:settings",
+        "//django_config:urls",
+        "//webapp:apps",
+        "//webapp:urls",
         requirement("Django"),
     ],
     python_version = "PY3",

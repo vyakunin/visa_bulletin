@@ -1,5 +1,7 @@
 {% extends "webapp/base.html" %}
 
+{% block container_class %}dashboard-container{% endblock %}
+
 {% block content %}
 <main>
 <div class="row">
@@ -51,9 +53,25 @@
                         <!-- Submission Date -->
                         <div class="col-12">
                             <label for="submission_date" class="form-label">Priority Date</label>
-                            <input type="date" class="form-control" id="submission_date" name="submission_date" 
-                                   value="{{ submission_date|date:'Y-m-d' }}">
-                            <small class="form-text text-muted">Your filing date</small>
+                            <div class="input-group">
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="submission_date" 
+                                       name="submission_date" 
+                                       value="{{ submission_date|date:'m/d/Y' }}"
+                                       placeholder="MM/DD/YYYY"
+                                       pattern="\d{1,2}/\d{1,2}/\d{4}"
+                                       inputmode="numeric"
+                                       autocomplete="off"
+                                       maxlength="10">
+                                <button class="btn btn-outline-secondary" type="button" id="datePickerBtn" 
+                                        title="Open calendar">
+                                    <i class="bi bi-calendar3"></i>
+                                </button>
+                                <input type="date" id="datePickerHidden" class="visually-hidden" tabindex="-1">
+                            </div>
+                            <small class="form-text text-muted">Format: MM/DD/YYYY (e.g., 03/15/2022)</small>
+                            <div class="invalid-feedback" id="dateError">Please enter a valid date (MM/DD/YYYY)</div>
                         </div>
                         
                         <!-- Update Button -->
@@ -133,9 +151,35 @@
             <!-- Chart -->
             <div class="card" id="chart-container">
                 <div class="card-body">
+                    <!-- Visa Class Checkboxes -->
+                    <div class="mb-3">
+                        <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
+                            <span class="text-muted small me-1"><i class="bi bi-eye"></i> Show:</span>
+                            {% for trace in chart_data.trace_info %}
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input visa-class-toggle" 
+                                       type="checkbox" 
+                                       id="toggle-{{ trace.visa_class }}" 
+                                       data-trace-indices="{{ trace.trace_indices|join:',' }}"
+                                       checked>
+                                <label class="form-check-label small" for="toggle-{{ trace.visa_class }}" style="color: {{ trace.color }}; font-weight: 500;">
+                                    {{ trace.label }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                            <!-- Priority date always shown (not toggleable) -->
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="checkbox" checked disabled>
+                                <label class="form-check-label small" style="color: red; font-weight: 500;">
+                                    Your Priority Date
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="alert alert-light py-2 mb-3" role="alert">
                         <small class="text-muted">
-                            <i class="bi bi-lightbulb"></i> <strong>Chart Tips:</strong> Click a visa class in the legend to show/hide it. Double-click to isolate only that class. Click data points to view official bulletins.
+                            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> Click data points to view official bulletins.
                         </small>
                     </div>
                     <div id="chart-content">
@@ -145,8 +189,8 @@
                             </div>
                             <p class="text-muted mt-2">Loading chart...</p>
                         </div>
-                        <div id="chart-plot" style="display:none; min-height: 550px;">
-                            {{ chart_html|safe }}
+                        <div id="chart-plot" style="display:none;">
+                            <div id="priority-date-chart" class="plotly-graph-div" style="width:100%; max-width:100%;"></div>
                         </div>
                     </div>
                 </div>
@@ -223,28 +267,277 @@ window.addEventListener('load', function() {
     }
 });
 
-// Optional: Submit on Enter key in date field
+// Date input handling
 document.addEventListener('DOMContentLoaded', function() {
     const dateInput = document.getElementById('submission_date');
+    const datePickerBtn = document.getElementById('datePickerBtn');
+    const datePickerHidden = document.getElementById('datePickerHidden');
+    const dateError = document.getElementById('dateError');
+    
     if (dateInput) {
+        // Auto-format as user types (add slashes)
+        dateInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+            let formatted = '';
+            
+            if (value.length > 0) {
+                // Month (first 2 digits)
+                formatted = value.substring(0, 2);
+                if (value.length > 2) {
+                    // Add slash and day
+                    formatted += '/' + value.substring(2, 4);
+                    if (value.length > 4) {
+                        // Add slash and year
+                        formatted += '/' + value.substring(4, 8);
+                    }
+                }
+            }
+            
+            e.target.value = formatted;
+            validateDate();
+        });
+        
+        // Submit on Enter key
         dateInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                saveScrollPosition();
-                document.getElementById('filterForm').submit();
+                if (validateDate()) {
+                    saveScrollPosition();
+                    document.getElementById('filterForm').submit();
+                }
+            }
+        });
+        
+        // Validate on blur
+        dateInput.addEventListener('blur', validateDate);
+    }
+    
+    // Calendar button opens native picker
+    if (datePickerBtn && datePickerHidden) {
+        datePickerBtn.addEventListener('click', function() {
+            // Sync current value to hidden picker
+            const mmddyyyy = dateInput.value;
+            if (mmddyyyy && mmddyyyy.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                const parts = mmddyyyy.split('/');
+                datePickerHidden.value = `${parts[2]}-${parts[0]}-${parts[1]}`; // YYYY-MM-DD
+            }
+            datePickerHidden.showPicker();
+        });
+        
+        // When user selects from calendar, update text input
+        datePickerHidden.addEventListener('change', function() {
+            if (this.value) {
+                const parts = this.value.split('-'); // YYYY-MM-DD
+                dateInput.value = `${parts[1]}/${parts[2]}/${parts[0]}`; // MM/DD/YYYY
+                validateDate();
             }
         });
     }
     
-    // Show chart when Plotly loads
-    document.addEventListener('plotlyLoaded', function() {
-        const loading = document.getElementById('chart-loading');
-        const plot = document.getElementById('chart-plot');
-        if (loading && plot) {
-            loading.style.display = 'none';
-            plot.style.display = 'block';
+    // Validation function
+    function validateDate() {
+        const value = dateInput.value;
+        
+        // Empty is valid (optional field)
+        if (!value) {
+            dateInput.classList.remove('is-invalid');
+            return true;
         }
-    });
+        
+        // Check format
+        if (!value.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+            dateInput.classList.add('is-invalid');
+            return false;
+        }
+        
+        const parts = value.split('/');
+        const month = parseInt(parts[0], 10);
+        const day = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        
+        // Validate ranges
+        if (month < 1 || month > 12) {
+            dateInput.classList.add('is-invalid');
+            return false;
+        }
+        
+        if (day < 1 || day > 31) {
+            dateInput.classList.add('is-invalid');
+            return false;
+        }
+        
+        // Reasonable year range for priority dates (1990-2030)
+        if (year < 1990 || year > 2030) {
+            dateInput.classList.add('is-invalid');
+            return false;
+        }
+        
+        // Check if date actually exists
+        const testDate = new Date(year, month - 1, day);
+        if (testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
+            dateInput.classList.add('is-invalid');
+            return false;
+        }
+        
+        dateInput.classList.remove('is-invalid');
+        return true;
+    }
+    
+    // Chart initialization and checkbox handling
+    {% if chart_data %}
+    var chartInitialized = false;
+    
+    function initChart() {
+        if (typeof Plotly === 'undefined') {
+            // If Plotly hasn't loaded yet, wait and try again
+            setTimeout(initChart, 50);
+            return;
+        }
+        
+        if (chartInitialized) return;
+        chartInitialized = true;
+        
+        var chartData = {{ chart_data.chart_json|safe }};
+        
+        // Disable autorange on layout to prevent default reset behavior
+        chartData.layout.xaxis.autorange = false;
+        chartData.layout.yaxis.autorange = false;
+        
+        var config = {
+            'displayModeBar': true,
+            'displaylogo': false,
+            'responsive': true,
+            'doubleClick': false,  // Disable default double-click reset
+            'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d'],
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': 'visa_bulletin_chart',
+                'height': 800,
+                'width': 1200,
+                'scale': 2
+            }
+        };
+        
+        Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function(gd) {
+            // Store initial smart range
+            var initialRange = calculateVisibleRange();
+            
+            // Set initial range to exclude priority date line
+            if (initialRange.xMin && initialRange.xMax && initialRange.yMin && initialRange.yMax) {
+                Plotly.relayout('priority-date-chart', {
+                    'xaxis.range': [initialRange.xMin, initialRange.xMax],
+                    'yaxis.range': [initialRange.yMin, initialRange.yMax]
+                });
+            }
+            
+            // Show chart, hide loading
+            document.getElementById('chart-loading').style.display = 'none';
+            document.getElementById('chart-plot').style.display = 'block';
+            
+            // Add click handler for bulletin links
+            gd.on('plotly_click', function(data) {
+                var point = data.points[0];
+                if (point.customdata) {
+                    window.open(point.customdata, '_blank');
+                }
+            });
+            
+            // Intercept relayout events (including double-click resets)
+            gd.on('plotly_relayout', function(eventdata) {
+                // If autorange was triggered (e.g., by toolbar reset button)
+                if (eventdata['xaxis.autorange'] || eventdata['yaxis.autorange']) {
+                    // Override with our smart range
+                    setTimeout(function() {
+                        var range = calculateVisibleRange();
+                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                            Plotly.relayout('priority-date-chart', {
+                                'xaxis.range': [range.xMin, range.xMax],
+                                'yaxis.range': [range.yMin, range.yMax],
+                                'xaxis.autorange': false,
+                                'yaxis.autorange': false
+                            });
+                        }
+                    }, 10);
+                }
+            });
+            
+            // Helper to calculate range from visible data traces only
+            function calculateVisibleRange() {
+                var data = gd.data;
+                var xMin = null, xMax = null, yMin = null, yMax = null;
+                
+                // Iterate through all traces except the last one (priority date line)
+                for (var i = 0; i < data.length - 1; i++) {
+                    var trace = data[i];
+                    
+                    // Skip hidden traces
+                    if (trace.visible === 'legendonly' || trace.visible === false) {
+                        continue;
+                    }
+                    
+                    // Get min/max from this trace
+                    if (trace.x && trace.y) {
+                        for (var j = 0; j < trace.x.length; j++) {
+                            var x = new Date(trace.x[j]).getTime();
+                            var y = trace.y[j] ? new Date(trace.y[j]).getTime() : null;
+                            
+                            if (x && (xMin === null || x < xMin)) xMin = x;
+                            if (x && (xMax === null || x > xMax)) xMax = x;
+                            if (y && (yMin === null || y < yMin)) yMin = y;
+                            if (y && (yMax === null || y > yMax)) yMax = y;
+                        }
+                    }
+                }
+                
+                // Add 5% padding
+                if (xMin !== null && xMax !== null) {
+                    var xPadding = (xMax - xMin) * 0.05;
+                    xMin = new Date(xMin - xPadding);
+                    xMax = new Date(xMax + xPadding);
+                }
+                
+                if (yMin !== null && yMax !== null) {
+                    var yPadding = (yMax - yMin) * 0.05;
+                    yMin = new Date(yMin - yPadding);
+                    yMax = new Date(yMax + yPadding);
+                }
+                
+                return {
+                    xMin: xMin,
+                    xMax: xMax,
+                    yMin: yMin,
+                    yMax: yMax
+                };
+            }
+            
+            // Setup checkbox handlers for instant trace toggling
+            document.querySelectorAll('.visa-class-toggle').forEach(function(checkbox) {
+                checkbox.addEventListener('change', function() {
+                    var traceIndices = this.dataset.traceIndices.split(',').map(Number);
+                    var visible = this.checked ? true : 'legendonly';
+                    
+                    // Update trace visibility
+                    traceIndices.forEach(function(idx) {
+                        Plotly.restyle('priority-date-chart', {'visible': visible}, [idx]);
+                    });
+                    
+                    // Auto-rescale to fit visible data only (excludes priority date line)
+                    setTimeout(function() {
+                        var range = calculateVisibleRange();
+                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                            Plotly.relayout('priority-date-chart', {
+                                'xaxis.range': [range.xMin, range.xMax],
+                                'yaxis.range': [range.yMin, range.yMax]
+                            });
+                        }
+                    }, 50);
+                });
+            });
+        });
+    }
+    
+    initChart();
+    {% endif %}
 });
 </script>
 {% endblock %}

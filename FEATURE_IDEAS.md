@@ -534,6 +534,13 @@ Comparative Analysis:
 **Viral Potential:** Congressional citations  
 **Data:** ✅ 100% public (uses your existing models)
 
+### Note on Case Tracking (Lower Priority - But Validated)
+**Lawfully validation:** Competitor analysis shows case tracking + predictive analytics is HIGH VALUE for user engagement (daily visits, addictive checking behavior). However, maintaining strategic focus on public data features for Phases 1-3:
+- Public data features = zero friction, instant value, no critical mass needed
+- Case tracking = requires user data, critical mass for predictions, webview/CAPTCHA handling
+- **Strategy:** Build traffic with Phases 1-3 FIRST, then add case tracking to capture daily engagement
+- **Unique opportunity:** Combine bulletin notifications + personal wait time recalculation (see vs Lawfully section) - no competitor does this
+
 ---
 
 ## 📈 Traffic Projections
@@ -617,6 +624,76 @@ Comparative Analysis:
 - Open source (community contributions)
 - 100% public data (transparent, verifiable)
 
+### vs Lawfully
+**Their Strengths:**
+- Real-time USCIS case tracking by receipt number
+- Predictive analytics (probability of next status, timeline estimates)
+- Case message history with full timeline
+- Processing time analysis by receipt number ranges
+- Approval & RFE rate statistics
+- Clean mobile-first UI
+- Established freemium business model
+
+**Their Technical Approach:**
+- Users provide receipt numbers (no scraping needed)
+- CAPTCHA handled via webview/iframe - they embed the USCIS page directly in the app
+- Users solve CAPTCHA themselves (no automation needed)
+- App extracts case status from the loaded page after user completes CAPTCHA
+- This approach is legally safe and ToS-compliant (user accesses their own case)
+
+**What We Can Learn:**
+- ✅ Case tracking is HIGH VALUE - users check daily
+- ✅ Predictive analytics create stickiness
+- ✅ Freemium model works for immigration apps
+- ✅ Mobile-first UI is essential
+- ⚠️ Requires critical mass for statistical predictions
+- ⚠️ CAPTCHA solved via webview (user solves it themselves)
+
+**Our Differentiation Strategy:**
+- Lead with public data features (salary DB, company report cards) - Lawfully doesn't have these
+- Build trust and traffic FIRST with zero-friction features
+- Add case tracking LATER once we have community
+- Combine case tracking WITH wait time predictions and company data for unique value
+- Open source approach vs closed platform
+
+**UNIQUE FEATURE OPPORTUNITY: Bulletin + Case Tracking Integration**
+
+Research shows NO existing service combines:
+1. Visa bulletin update notifications
+2. Automatic personal wait time recalculation
+3. Push notification: "Your wait changed from 25 to 24.5 years based on Jan 2026 bulletin"
+4. Connection to tracked case: "Your priority date became current! Expect I-485 movement"
+
+**Existing market gap:**
+- Lawfully: Case predictions (approval %, RFE rates) - NOT wait time based on bulletin
+- Enhanced Visa Bulletin: Forecasts movement - NOT personalized notifications
+- MyPriorityDate/ILW: Wait calculators - Static, user must check manually
+- Various: Bulletin notifications - No personalized impact analysis
+
+**Feature concept: "Personal Immigration Dashboard"**
+```
+New Visa Bulletin Released! (January 2026)
+
+Your profile: EB-2 India, Priority Date: Jan 2015
+
+This month's movement: +2 weeks
+├─ Previous cutoff: Jan 1, 2013
+├─ New cutoff: Jan 15, 2013
+└─ Your gap closed by: 0.5 months
+
+Updated wait estimate: 24.2 years (was 24.7 years)
+├─ Movement rate: 2.4 months/year (improving!)
+├─ 3-month trend: Accelerating (+15%)
+└─ If trend continues: Could reach you by 2049
+
+Your tracked case (I-485): 
+├─ Status: Pending at NBC
+├─ Priority date NOT yet current
+└─ We'll alert you when it becomes current!
+```
+
+This is a genuine market gap and could be our unique value proposition.
+
 ---
 
 ## 💡 Implementation Notes
@@ -674,6 +751,22 @@ These features require user-submitted data and are more complex to implement. Co
 - Requires critical mass of users to be useful
 - Privacy concerns with storing case numbers
 
+**Competitor Validation (Lawfully):**
+- Lawfully has successfully implemented this feature
+- Proven daily stickiness (users check status multiple times)
+- Predictive analytics layer adds significant value:
+  - "72% probability of approval in 44 days"
+  - Average time by receipt number range
+  - Case processing trend visualization
+- Freemium model: Basic tracking free, advanced analytics premium
+
+**Technical Feasibility (Based on Lawfully):**
+- ✅ Users provide their own receipt numbers (no scraping needed)
+- ✅ USCIS case status portal is accessible (Lawfully proved it works)
+- ✅ CAPTCHA solved via webview - embed USCIS page, user solves CAPTCHA themselves
+- ⚠️ Requires statistical model for predictions (need dataset of 500+ cases)
+- ⚠️ Mobile app recommended for best UX (webview integration)
+
 **Addressable Population:**
 - 1M+ active I-485 cases
 - 3M+ active I-140 cases
@@ -687,6 +780,15 @@ These features require user-submitted data and are more complex to implement. Co
 - Privacy-preserving data storage
 - Browser extension development
 - Critical mass problem (needs 1000+ users to be useful)
+
+**Updated Assessment (Based on Lawfully):**
+- Lawfully proves this is technically feasible and valuable
+- Key solution: Webview with USCIS page - users solve CAPTCHA themselves (no automation)
+- Requires backend for case status storage and analytics
+- Need statistical model for predictions (500+ cases minimum for significance)
+- Critical mass: Start small (manual tracking), grow to automated predictions
+- **Recommended approach:** Partner with users who manually update vs polling
+- **Priority:** Add AFTER Phases 1-3 to leverage existing traffic for critical mass
 
 ---
 
@@ -747,6 +849,64 @@ These features require user-submitted data and are more complex to implement. Co
 - Content moderation
 - Legal liability concerns
 - Privacy (anonymization)
+
+---
+
+### Appendix D: Predictive Case Analytics (Inspired by Lawfully)
+
+**Data Source:** Aggregated case status data (crowdsourced via case tracking feature)
+
+**What It Does:**
+- Predict probability of next status update
+- Estimate time to approval based on receipt number patterns
+- Show approval vs RFE rates for case type/service center
+- Visualize case processing trends
+
+**Example Output (like Lawfully):**
+```
+What message will you get next?
+
+Case Approved
+├─ Probability: 72%
+├─ Average time: 44 days
+└─ Based on 1,247 similar cases
+
+Approval & RFE Rate (Your service center)
+├─ Approval: 87%
+├─ RFE: 11%
+└─ Denial: 2%
+
+Average time to approval by receipt number
+├─ MSC2290000000-MSC2290050000: 45 days
+├─ MSC2290050000-MSC2290100000: 52 days
+└─ Your range: 44 days (faster than average)
+```
+
+**Addressable Population:**
+- Same as Appendix A (1M+ active cases)
+
+**Stickiness:** ⭐⭐⭐⭐⭐ (Daily checks, addictive)  
+**PR Potential:** ⭐⭐⭐⭐ (Data-driven predictions are newsworthy)
+
+**Why It's Powerful:**
+- Reduces anxiety (users know what to expect)
+- Creates daily habit (check probability updates)
+- Differentiates from basic case tracking
+- Premium feature opportunity (freemium model)
+
+**Implementation Requirements:**
+- Dataset of 500+ cases minimum for statistical significance
+- Machine learning model for probability predictions
+- Pattern recognition by receipt number ranges
+- Service center performance tracking
+- Historical trend analysis
+
+**Complexity:** VERY HIGH
+- Requires Appendix A (case tracking) infrastructure first
+- Need Phase 1-3 features to build audience for critical mass
+- Statistical modeling expertise required
+- Continuous model refinement needed
+- **Builds on:** Case tracking → Predictive analytics → Premium tier
 
 ---
 

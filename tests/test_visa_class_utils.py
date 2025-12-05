@@ -1,15 +1,10 @@
 """Tests for visa class utility functions"""
 
-import os
-import sys
-
-# Setup Django for Bazel if not already configured by pytest
-if 'pytest' not in sys.modules:
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-    import django
-    django.setup()
-
 import unittest
+
+# Django setup (shared utility for both Bazel and pytest)
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
 from lib.visa_class_utils import get_deduplicated_employment_classes
 
 

@@ -25,15 +25,11 @@ py_library(
     srcs = ["views.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//models:visa_cutoff_date",
         "//models/enums:visa_category",
         "//models/enums:action_type",
         "//models/enums:country",
-        "//models/enums:family_preference",
-        "//models/enums:employment_preference",
-        "//lib:projection",
         "//lib:chart_builder",
-        "//lib:visa_class_utils",
+        "//lib:dashboard_service",
         requirement("Django"),
     ],
 )
