@@ -1,8 +1,9 @@
 """UI behavior tests for the webapp dashboard"""
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import date
+from django.test import RequestFactory
 
 # Django setup (shared utility for both Bazel and pytest)
 from tests.django_setup import setup_django_for_tests
@@ -11,6 +12,10 @@ setup_django_for_tests()
 
 class TestDashboardUIBehavior(unittest.TestCase):
     """Test UI interaction patterns in the dashboard"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.factory = RequestFactory()
     
     def test_date_input_does_not_have_onchange_handler(self):
         """
@@ -24,23 +29,20 @@ class TestDashboardUIBehavior(unittest.TestCase):
         """
         from webapp.views import dashboard_view
         
-        # Create a mock request
-        request = Mock()
-        request.GET = {
+        # Create a proper Django request
+        request = self.factory.get('/dashboard/', {
             'category': 'family_sponsored',
             'country': 'all',
             'visa_class': 'F1',
             'action_type': 'final_action',
             'submission_date': '2024-01-01'
-        }
-        request.method = 'GET'
+        })
         
         with patch('webapp.views.render') as mock_render:
-            # Mock the database query to return empty
-            with patch('webapp.views.VisaCutoffDate') as mock_model:
-                mock_queryset = Mock()
-                mock_queryset.exists.return_value = False
-                mock_model.objects.filter.return_value.select_related.return_value.order_by.return_value = mock_queryset
+            # Mock the dashboard service to return empty data
+            with patch('webapp.views.get_aggregated_visa_class_data') as mock_service:
+                # Return empty visa class data and has_any_data=False
+                mock_service.return_value = ([], False)
                 
                 dashboard_view(request)
                 
@@ -81,21 +83,19 @@ class TestDashboardUIBehavior(unittest.TestCase):
         """Test that invalid date formats are handled gracefully"""
         from webapp.views import dashboard_view
         
-        request = Mock()
-        request.GET = {
+        # Create a proper Django request with invalid date
+        request = self.factory.get('/dashboard/', {
             'category': 'family_sponsored',
             'country': 'all',
             'visa_class': 'F1',
             'action_type': 'final_action',
             'submission_date': 'invalid-date'  # Bad format
-        }
-        request.method = 'GET'
+        })
         
         with patch('webapp.views.render') as mock_render:
-            with patch('webapp.views.VisaCutoffDate') as mock_model:
-                mock_queryset = Mock()
-                mock_queryset.exists.return_value = False
-                mock_model.objects.filter.return_value.select_related.return_value.order_by.return_value = mock_queryset
+            with patch('webapp.views.get_aggregated_visa_class_data') as mock_service:
+                # Return empty visa class data
+                mock_service.return_value = ([], False)
                 
                 # Should not raise exception, should use today's date as fallback
                 dashboard_view(request)

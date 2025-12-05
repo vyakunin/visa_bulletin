@@ -59,9 +59,10 @@ class TestEmploymentPreferenceNormalization(unittest.TestCase):
             EmploymentPreference.normalize_for_display("5th Unreserved (C5, T5, and all others)"),
             "EB-5: Unreserved"
         )
+        # Non-Regional Center maps to its own category, not Unreserved
         self.assertEqual(
             EmploymentPreference.normalize_for_display("5th Non-Regional Center (C5 and T5)"),
-            "EB-5: Unreserved"
+            "EB-5: Non-Regional Center"
         )
     
     def test_case_insensitive_matching(self):
