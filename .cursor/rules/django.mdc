@@ -1,0 +1,77 @@
+# Django Patterns and Best Practices
+
+## Rule: Use Django TextChoices for Database Enums
+
+**Always use Django TextChoices for categorical database fields.**
+
+**Why TextChoices?**
+- ✅ Type-safe enums in Python code
+- ✅ Readable strings in database ('china' not '1')
+- ✅ Human-readable labels for admin/UI
+- ✅ IDE autocomplete on enum values
+- ✅ Database constraints automatically
+
+**Pattern:**
+
+```python
+from django.db import models
+
+class Country(models.TextChoices):
+    """Country for visa chargeability"""
+    CHINA = "china", "China (mainland born)"  # (value, label)
+    INDIA = "india", "India"
+    
+    @classmethod
+    def from_header(cls, header: str):
+        """Custom parsing method"""
+        mappings = {
+            'CHINA-mainland born': cls.CHINA,
+            'INDIA': cls.INDIA,
+        }
+        return mappings.get(header)
+
+# In models
+class VisaCutoffDate(models.Model):
+    country = models.CharField(
+        max_length=50,
+        choices=Country.choices  # Django constraint
+    )
+```
+
+**Usage:**
+
+```python
+# ✅ Queries with enums (type-safe)
+records = VisaCutoffDate.objects.filter(country=Country.CHINA)
+
+# ✅ Access enum instance from record
+record = VisaCutoffDate.objects.first()
+print(record.country)        # 'china' (string value)
+print(record.get_country_display())  # 'China (mainland born)' (label)
+
+# ✅ Tests
+assert result['country'] == Country.CHINA.value
+
+# ✅ Data creation
+VisaCutoffDate.objects.create(country=Country.CHINA)
+```
+
+**Benefits:**
+- Type safety and IDE autocomplete
+- Readable database queries (SELECT shows 'china')
+- Single source of truth
+- Automatic database constraints
+- Admin UI shows human-readable labels
+
+## Django Settings
+
+- Use `settings.py` for local development
+- Use `settings_production.py` for production (imported conditionally)
+- Store secrets in environment variables, not in code
+- Use `.env` files for local secrets (gitignored)
+
+## Database
+
+- SQLite with WAL mode for production (suitable for read-heavy workloads)
+- Database file: `visa_bulletin.db`
+- WAL files: `visa_bulletin.db-wal`, `visa_bulletin.db-shm` (gitignored)

@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from lib.bulletint_parser import extract_tables, extract_table, normalize
+from lib.bulletin_parser import extract_tables, extract_table, normalize
 from bs4 import BeautifulSoup
 
 

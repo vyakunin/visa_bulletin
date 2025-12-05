@@ -44,13 +44,29 @@ py_library(
 )
 
 py_library(
-    name = "bulletint_parser",
-    srcs = ["bulletint_parser.py"],
+    name = "bulletin_parser",
+    srcs = ["bulletin_parser.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":table",
         requirement("beautifulsoup4"),
         requirement("soupsieve"),
+    ],
+)
+
+py_library(
+    name = "dashboard_service",
+    srcs = ["dashboard_service.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":projection",
+        ":visa_class_utils",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//models/enums:employment_preference",
+        "//models/enums:family_preference",
+        "//models/enums:visa_category",
     ],
 )
 

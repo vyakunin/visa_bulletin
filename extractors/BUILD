@@ -22,7 +22,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bulletin_extractor",
-        "//lib:bulletint_parser",
+        "//lib:bulletin_parser",
         "//lib:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",

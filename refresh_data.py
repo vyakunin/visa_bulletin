@@ -13,7 +13,7 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     import django
     django.setup()
 
-from lib.bulletint_parser import parse_publication_links, extract_tables
+from lib.bulletin_parser import parse_publication_links, extract_tables
 from lib.publication_data import PublicationData
 from extractors.bulletin_handler import save_bulletin_to_db
 

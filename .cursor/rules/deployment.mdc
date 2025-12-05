@@ -1,0 +1,99 @@
+---
+alwaysApply: true
+---
+
+# Deployment and Rollout Rules
+
+## Rule: Always Ask About Version Before Rollout
+
+**ALWAYS ask the user if they want to update the version before deploying/rolling out.**
+
+**Before any deployment or rollout, ask:**
+```
+Do you want to tag this as a new version before deploying?
+  1. Yes, create new version tag (e.g., v1.2.3)
+  2. No, deploy current latest
+  3. Deploy specific existing version (specify which)
+```
+
+**Rationale:**
+- Versions provide clear deployment history
+- Enable easy rollbacks to known good versions
+- Track what was deployed when
+- Follow semantic versioning best practices
+
+## Deployment Methods
+
+This project supports three deployment methods:
+
+### Method 1: Tag-Based Deployment (Recommended)
+```bash
+# 1. Commit changes
+git commit -m "Add feature X"
+
+# 2. Tag release
+git tag -a v1.2.3 -m "Release 1.2.3: Feature X"
+git push origin v1.2.3
+
+# 3. Wait for GitHub Actions to build image
+
+# 4. Deploy
+./scripts/deploy.sh ~/ssh-key.pem v1.2.3
+```
+
+### Method 2: Deploy Latest
+```bash
+# Deploy whatever is currently tagged as 'latest'
+./scripts/deploy.sh ~/ssh-key.pem latest
+```
+
+### Method 3: GitHub Actions Deployment
+```bash
+# Trigger via CLI
+source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
+
+# Or via GitHub web UI
+```
+
+## Rollout Flow
+
+See `ROLLOUT_FLOW.md` for the complete step-by-step process.
+
+## Rollback Procedure
+
+If deployment fails or issues arise:
+
+### Quick Rollback
+```bash
+# Deploy previous version
+./scripts/deploy.sh ~/ssh-key.pem v1.2.2
+```
+
+### Emergency Rollback (Docker → Systemd)
+```bash
+ssh lightsail 'cd /opt/visa_bulletin && \
+  sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
+  sudo nginx -t && sudo systemctl reload nginx'
+```
+
+## Testing Before Deployment
+
+**Always test major changes locally with `act` before pushing:**
+```bash
+cd /path/to/project
+source ~/.shrc
+act -W .github/workflows/docker-build-push.yml -j build-and-push
+```
+
+## Monitoring After Deployment
+
+After any deployment:
+```bash
+# Check site is up
+curl -I https://visa-bulletin.us
+
+# Check Docker logs
+ssh lightsail "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
+
+# Monitor for 10-15 minutes for errors
+```

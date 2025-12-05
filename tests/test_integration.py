@@ -4,14 +4,9 @@ Integration tests for end-to-end bulletin processing
 Tests the complete pipeline: parse HTML → extract tables → save to DB
 """
 
-# Django setup (for Bazel py_test; pytest uses conftest.py)
-import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-import django
-from django.apps import apps
-if not apps.ready:
-    django.setup()
+# Django setup (shared utility for both Bazel and pytest)
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
 
 from datetime import date, datetime
 from lib.publication_data import PublicationData
@@ -20,7 +15,7 @@ from models.visa_cutoff_date import VisaCutoffDate
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
-from lib.bulletint_parser import extract_tables
+from lib.bulletin_parser import extract_tables
 from extractors import bulletin_handler
 
 

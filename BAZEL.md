@@ -73,7 +73,7 @@ Each directory with code has a `BUILD` file defining targets:
 bazel build //lib:lib
 
 # Build individual modules
-bazel build //lib:bulletint_parser
+bazel build //lib:bulletin_parser
 bazel build //lib:publication_data
 bazel build //lib:table
 ```
@@ -186,10 +186,10 @@ new-package==1.2.3
 
 ```bash
 # 1. Make code changes
-vim lib/bulletint_parser.py
+vim lib/bulletin_parser.py
 
 # 2. Build to check compilation
-bazel build //lib:bulletint_parser
+bazel build //lib:bulletin_parser
 
 # 3. Run tests
 bazel test //tests:test_parser
@@ -221,7 +221,7 @@ bazel query //...
 bazel query "deps(//tests:test_parser)"
 
 # Show reverse dependencies
-bazel query "rdeps(//..., //lib:bulletint_parser)"
+bazel query "rdeps(//..., //lib:bulletin_parser)"
 
 # Visualize build graph (requires graphviz)
 bazel query --output=graph //tests:test_parser | dot -Tpng > graph.png

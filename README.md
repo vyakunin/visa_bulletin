@@ -278,7 +278,7 @@ visa_bulletin/
 ├── lib/
 │   ├── BUILD                    # Bazel build file for lib
 │   ├── __init__.py              # Package initializer
-│   ├── bulletint_parser.py      # HTML parsing logic
+│   ├── bulletin_parser.py       # HTML parsing logic
 │   ├── publication_data.py      # Data class for publications
 │   └── table.py                 # Data class for tables
 ├── tests/
@@ -442,9 +442,7 @@ Represents an extracted table from a bulletin.
 
 ### Known Issues
 
-1. **Typo in filename**: `bulletint_parser.py` should be `bulletin_parser.py` (missing 'e', extra 'i')
-
-2. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
+1. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
 
 3. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `refresh_data.py`)
 
@@ -531,10 +529,9 @@ This project is provided as-is for educational and informational purposes.
 ## Contributing
 
 This appears to be a personal project. If you find bugs or have suggestions:
-1. Fix the typo in `bulletint_parser.py` → `bulletin_parser.py`
-2. Complete the main() function logic
-3. Add proper error handling
-4. Consider adding tests
+1. Complete the main() function logic
+2. Add proper error handling
+3. Consider adding tests
 
 ---
 

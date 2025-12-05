@@ -144,7 +144,7 @@ bazel clean
 bazel query "deps(//tests:test_parser)"
 
 # Build specific target
-bazel build //lib:bulletint_parser
+bazel build //lib:bulletin_parser
 ```
 
 ### Testing Guidelines

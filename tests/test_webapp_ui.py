@@ -1,17 +1,12 @@
 """UI behavior tests for the webapp dashboard"""
 
-import os
 import unittest
 from unittest.mock import Mock, patch
 from datetime import date
 
-# Django setup for Bazel py_test
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-import django
-from django.apps import apps
-if not apps.ready:
-    django.setup()
+# Django setup (shared utility for both Bazel and pytest)
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
 
 
 class TestDashboardUIBehavior(unittest.TestCase):

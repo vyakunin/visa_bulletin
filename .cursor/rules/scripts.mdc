@@ -1,0 +1,88 @@
+# Project Scripts and Workflows
+
+## Rule: Use Project Scripts for Common Tasks
+
+**ALWAYS use project scripts in `./scripts/` instead of ad-hoc commands.**
+
+**✅ GOOD:**
+```bash
+./scripts/restart_server.sh              # Handles process cleanup + PATH setup
+./scripts/deploy.sh                      # Standardized deployment
+```
+
+**❌ BAD:**
+```bash
+pkill -9 -f "runserver"                  # Aggressive, no graceful shutdown
+ps aux | grep runserver | awk...         # Complex, error-prone
+bazel run //:runserver                   # Doesn't stop existing server
+```
+
+**Rationale:**
+- Graceful process management (SIGTERM before SIGKILL)
+- Environment setup (PATH, Homebrew initialization)
+- Error handling and validation
+- Consistent behavior across team
+- Self-documenting workflows
+
+## Available Scripts
+
+### Development Scripts
+
+- **restart_server.sh**: Gracefully stop and restart the Django development server
+- **setup_dev_tools.sh**: Install development dependencies
+
+### Deployment Scripts
+
+- **deploy.sh**: Deploy to production (Docker-based)
+  - Usage: `./scripts/deploy.sh [ssh-key-path] [image-tag]`
+  - Handles: git pull, Docker pull, nginx config, SSL, service restart
+
+### Utility Scripts
+
+- **check_cls.sh**: Check Cumulative Layout Shift for SEO
+- **check_debug_mode.py**: Verify DEBUG=False in production
+- **generate_favicon_png.sh**: Generate favicon variants
+
+## SSH Access
+
+**SSH Alias for Lightsail:**
+- Use `ssh lightsail` to connect to production server
+- Configured in `~/.ssh/config` with proper key and settings
+- Alternative alias: `ssh lightsail-visa-bulletin`
+
+**Common SSH Operations:**
+```bash
+# Connect to server
+ssh lightsail
+
+# Run commands remotely
+ssh lightsail "cd /opt/visa_bulletin && docker-compose ps"
+
+# View logs
+ssh lightsail "cd /opt/visa_bulletin && docker-compose logs -f"
+
+# Deploy using script
+./scripts/deploy.sh
+```
+
+**Reference:** See `SSH_COMMANDS.md` for comprehensive SSH command examples.
+
+## Environment Variables
+
+**Stored in `~/.zshrc`:**
+
+- `GITHUB_TOKEN_VYAKUNIN` - GitHub personal access token for repository operations
+
+**Usage:**
+```bash
+# Reference in scripts
+export GITHUB_TOKEN=$GITHUB_TOKEN_VYAKUNIN
+```
+
+## Documentation Files
+
+- **README.md**: User-facing documentation
+- **CONTRIBUTING.md**: Developer setup and workflow
+- **BAZEL.md**: Bazel build system guide
+- **DOCKER_DEPLOYMENT.md**: Docker deployment guide
+- **MIGRATION_TO_DOCKER.md**: Migration plan from venv to Docker
