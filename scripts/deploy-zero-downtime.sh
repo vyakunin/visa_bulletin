@@ -87,6 +87,9 @@ echo "🐳 Pulling Docker image on remote server..."
 $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE pull"
 
 echo ""
+echo "🧹 Stopping existing $NEW_COLOR environment (if any)..."
+$SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE down 2>/dev/null || true"
+
 echo "🚀 Starting $NEW_COLOR environment on port $NEW_PORT..."
 $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
 

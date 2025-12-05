@@ -16,9 +16,10 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
+      - ANALYTICS_SCRIPT=<script data-goatcounter="https://vyakunin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/').read()"]
       interval: 10s
       timeout: 5s
       retries: 3

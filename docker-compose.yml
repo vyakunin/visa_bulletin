@@ -15,6 +15,7 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
+      - ANALYTICS_SCRIPT=<script data-goatcounter="https://vyakunin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
     restart: unless-stopped
     
   # Daily data refresh (cron-like service)
