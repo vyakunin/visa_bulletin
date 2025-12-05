@@ -52,7 +52,8 @@ echo ""
 echo "🔍 Detecting active environment..."
 
 # Detect which environment is currently active by checking Nginx config
-ACTIVE_ENV=$($SSH_CMD "grep -oP 'proxy_pass.*127\\.0\\.0\\.1:\\K\\d+' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf | head -1")
+# Extract port number from proxy_pass lines (handles semicolon)
+ACTIVE_ENV=$($SSH_CMD "grep -oP '127\\.0\\.0\\.1:\\K\\d+' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf | head -1")
 
 if [ "$ACTIVE_ENV" = "8000" ]; then
     ACTIVE_COLOR="blue"
@@ -102,8 +103,8 @@ while [ $HEALTH_CHECK_COUNT -lt $MAX_HEALTH_CHECKS ]; do
     sleep 5
     HEALTH_CHECK_COUNT=$((HEALTH_CHECK_COUNT + 1))
     
-    # Check container health
-    HEALTH_STATUS=$($SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE ps | grep -i healthy" || echo "")
+    # Check container health - only check web container (data-refresh doesn't have healthcheck)
+    HEALTH_STATUS=$($SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE ps web-$NEW_COLOR | grep -i healthy" || echo "")
     
     if [ -n "$HEALTH_STATUS" ]; then
         echo "✅ $NEW_COLOR environment is healthy!"
@@ -132,7 +133,8 @@ echo ""
 echo "🔄 Switching Nginx proxy: $OLD_PORT → $NEW_PORT"
 
 # Update Nginx configuration atomically
-$SSH_CMD "sudo sed -i 's/proxy_pass http:\\/\\/127\\.0\\.0\\.1:$OLD_PORT/proxy_pass http:\\/\\/127.0.0.1:$NEW_PORT/g' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf"
+# Update ALL instances of the port in the locations config file (handles semicolon)
+$SSH_CMD "sudo sed -i 's/127\\.0\\.0\\.1:$OLD_PORT/127.0.0.1:$NEW_PORT/g' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf"
 
 # Test Nginx configuration
 echo "   Testing Nginx configuration..."
