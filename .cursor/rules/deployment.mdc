@@ -4,6 +4,18 @@ alwaysApply: true
 
 # Deployment and Rollout Rules
 
+## Pre-Deployment Checklist (MANDATORY)
+
+**Before ANY version tag or deployment, verify:**
+
+- [ ] All tests passing (`bazel test //tests:all` - pre-commit hook handles this)
+- [ ] Changes committed and pushed to main
+- [ ] **IF workflow changed:** Test with `act --dryrun` ⚠️ 
+- [ ] Version number decided (ask user)
+- [ ] Release notes written for tag message
+
+**Critical:** If `.github/workflows/*.yml` modified, **MUST** run `act` before tagging!
+
 ## Rule: Always Ask About Version Before Rollout
 
 **ALWAYS ask the user if they want to update the version before deploying/rolling out.**
@@ -31,16 +43,21 @@ This project supports three deployment methods:
 # 1. Commit changes
 git commit -m "Add feature X"
 
-# 2. Tag release
+# 2. TEST WORKFLOW WITH ACT (if workflow changed)
+cd /path/to/project
+source ~/.shrc
+act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
+
+# 3. Tag release
 git tag -a v1.2.3 -m "Release 1.2.3: Feature X"
 git push origin v1.2.3
 
-# 3. Wait for GitHub Actions to build image
+# 4. Wait for GitHub Actions to build image
 
-# 4. Run pre-deployment checks
+# 5. Run pre-deployment checks
 ./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
 
-# 5. Deploy
+# 6. Deploy
 ./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
 ```
 
@@ -102,14 +119,37 @@ ssh lightsail 'cd /opt/visa_bulletin && \
   sudo nginx -t && sudo systemctl reload nginx'
 ```
 
-## Testing Before Deployment
+## Testing GitHub Actions Workflows
 
-**Always test major changes locally with `act` before pushing:**
+**🚨 MANDATORY: Test workflow changes with `act` before pushing tags 🚨**
+
+**When to run `act`:**
+- ✅ **ALWAYS** when `.github/workflows/*.yml` files are modified
+- ✅ **ALWAYS** before creating a new version tag if workflow changed
+- ✅ When Dockerfile or docker-compose.yml changes affect build
+
+**How to test:**
 ```bash
 cd /path/to/project
 source ~/.shrc
+
+# Dry run (fast, checks syntax and steps)
+act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
+
+# Full run (slower, actually builds - use for major changes)
 act -W .github/workflows/docker-build-push.yml -j build-and-push
 ```
+
+**Why this matters:**
+- Failed workflows waste GitHub Actions minutes
+- Broken tags require deletion and recreation
+- Prevents deployment blockers
+- Catches configuration errors before production
+
+**If you skip this step:**
+- Risk: Broken builds discovered only after pushing tag
+- Impact: Deployment delays, tag management overhead
+- Cost: Wasted CI/CD time and manual fixes
 
 ## Monitoring After Deployment
 
