@@ -38,7 +38,7 @@ Run the automated setup script:
 
 ```bash
 cd /path/to/visa_bulletin
-./setup.sh
+./setup_dev_environment.sh
 ```
 
 The setup script will:
@@ -216,15 +216,15 @@ The script will:
 
 ### Cached Data
 
-Downloaded HTML pages are stored in the `saved_pages/` directory. The script automatically checks this directory before making network requests, making subsequent runs much faster.
+Downloaded HTML pages are stored in the `data/bulletin/saved_pages/` directory. The script automatically checks this directory before making network requests, making subsequent runs much faster.
 
-To force a fresh download, delete the `saved_pages/` directory or specific HTML files within it.
+To force a fresh download, delete the `data/bulletin/saved_pages/` directory or specific HTML files within it.
 
 ## Quick Start
 
 ```bash
 # 1. Setup environment
-./setup.sh
+./setup_dev_environment.sh
 
 # 2. Fetch data and populate database
 bazel run //:refresh_data -- --save-to-db
@@ -285,7 +285,11 @@ visa_bulletin/
 │   ├── BUILD                    # Bazel build file for tests
 │   ├── __init__.py              # Tests package initializer
 │   └── test_parser.py           # Unit tests for parser functions
-├── saved_pages/
+├── data/
+│   ├── bulletin/
+│   │   └── saved_pages/
+│   └── salary/
+│       └── dol_data/
 │   ├── BUILD                    # Bazel build file for test data
 │   └── *.html                   # Cached bulletins (125 files)
 ├── BUILD                        # Root Bazel build file
@@ -293,8 +297,14 @@ visa_bulletin/
 ├── WORKSPACE                    # Legacy Bazel workspace file
 ├── .bazelrc                     # Bazel configuration
 ├── .bazelversion                # Pin Bazel version
-├── refresh_data.py              # Main entry point script
-├── setup.sh                     # Automated setup script
+├── scripts/
+│   ├── bulletin/
+│   │   ├── refresh_data.py      # Main entry point script
+│   │   └── refresh_incremental.py
+│   └── salary/
+│       ├── import_data.py
+│       └── ...
+├── setup_dev_environment.sh    # Automated setup script
 ├── requirements.txt             # Python dependencies
 ├── .gitignore                   # Git ignore rules
 ├── CONTRIBUTING.md              # Development guide
@@ -420,6 +430,19 @@ Each category may have separate dates for different countries (India, China, Mex
 
 All dependencies are managed through the virtual environment and specified in `requirements.txt`.
 
+**For Bazel builds**, a `requirements.lock` file is required to resolve transitive dependencies. To update it:
+
+```bash
+bazel run //:update_requirements_lock
+```
+
+This generates `requirements.lock` with all transitive dependencies locked, which Bazel's pip rules need to resolve packages like pandas (which depends on pytz, numpy, etc.).
+
+**When to update requirements.lock:**
+- After adding new packages to `requirements.txt`
+- When dependency resolution errors occur (e.g., "no such package pytz")
+- Before committing dependency changes
+
 ## Data Classes
 
 ### `PublicationData`
@@ -444,7 +467,7 @@ Represents an extracted table from a bulletin.
 
 1. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
 
-3. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `refresh_data.py`)
+3. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `scripts/bulletin/refresh_data.py`)
 
 ### Potential Improvements
 

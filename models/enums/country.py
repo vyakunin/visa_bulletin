@@ -4,23 +4,24 @@ import re
 from django.db import models
 
 
-class Country(models.TextChoices):
+class Country(models.IntegerChoices):
     """
     Country or region for visa chargeability
     
-    Uses Django TextChoices for database integration:
-    - Stores readable string in DB ('china', 'india', 'all')
+    Uses IntegerChoices for performance (high-volume data):
+    - Stores integer in DB (0, 1, 2, 3, 4, 5)
     - Access as enum in Python (Country.CHINA, Country.INDIA)
     - Query with: objects.filter(country=Country.CHINA)
-    - DB shows readable values: SELECT * shows 'china', not '1'
+    - Faster comparisons and joins
+    - Smaller storage (4 bytes vs 10-50 bytes)
     """
     
-    ALL = "all", "Other Countries"
-    CHINA = "china", "China (mainland born)"
-    INDIA = "india", "India"
-    MEXICO = "mexico", "Mexico"
-    PHILIPPINES = "philippines", "Philippines"
-    EL_SALVADOR_GUATEMALA_HONDURAS = "el_salvador_guatemala_honduras", "El Salvador/Guatemala/Honduras"
+    ALL = 0, "Other Countries"
+    CHINA = 1, "China (mainland born)"
+    INDIA = 2, "India"
+    MEXICO = 3, "Mexico"
+    PHILIPPINES = 4, "Philippines"
+    EL_SALVADOR_GUATEMALA_HONDURAS = 5, "El Salvador/Guatemala/Honduras"
     
     @classmethod
     def from_header(cls, header: str):
@@ -54,4 +55,19 @@ class Country(models.TextChoices):
         }
         
         return exact_mappings.get(normalized)
+    
+    @classmethod
+    def from_string(cls, value: str):
+        """Convert string value to enum (for migration compatibility)"""
+        if not value:
+            return None
+        mappings = {
+            'all': cls.ALL,
+            'china': cls.CHINA,
+            'india': cls.INDIA,
+            'mexico': cls.MEXICO,
+            'philippines': cls.PHILIPPINES,
+            'el_salvador_guatemala_honduras': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
+        }
+        return mappings.get(value.lower())
 

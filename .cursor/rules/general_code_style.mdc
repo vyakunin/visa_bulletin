@@ -1,0 +1,134 @@
+---
+alwaysApply: true
+---
+
+# General Code Style Rules
+
+These are general code style rules that apply across all projects.
+
+## Python Code Style
+
+- Follow PEP 8
+- **Python 3.11+**: Use modern type hints (no `typing` imports for basic types)
+ - ✅ `list[str]`, `dict[str, int]`, `tuple[int, str]`
+ - ✅ `str | None` (not `Optional[str]`)
+ - ✅ `int | str` (not `Union[int, str]`)
+ - ❌ `from typing import List, Dict, Tuple, Optional, Union`
+- Add docstrings to public functions and classes
+- Keep functions focused and single-purpose
+
+## Rule: Only Add Comments for Non-Evident Code
+
+**Only add comments when the code's purpose or behavior is not immediately obvious from reading the surrounding code.**
+
+**✅ GOOD - Comments explain non-obvious behavior:**
+```python
+# Use atomic transaction to prevent partial updates if process crashes
+with transaction.atomic():
+    update_records()
+    update_stats()
+
+# DOL files use fiscal year, not calendar year (FY2024 = Oct 2023 - Sep 2024)
+fiscal_year = extract_fiscal_year(filename)
+
+# Skip non-data files (appendix, worksites) that don't contain salary records
+if 'appendix' in filename.lower():
+    continue
+```
+
+**❌ BAD - Comments restate obvious code:**
+```python
+download_cmd = ['bazel', 'run', '//:download']
+if not run_command(download_cmd):
+    sys.exit(1)
+
+import_cmd = ['bazel', 'run', '//:import']
+if not run_command(import_cmd):
+    sys.exit(1)
+
+data = parse_file(filename)
+transformed = transform(data)
+save_to_db(transformed)
+```
+
+**When to comment:**
+- ✅ Explaining "why" not "what" (business logic, design decisions)
+- ✅ Documenting non-obvious behavior or edge cases
+- ✅ Clarifying complex algorithms or workarounds
+- ✅ Explaining domain-specific knowledge (fiscal years, data formats)
+- ✅ Warning about side effects or gotchas
+
+**When NOT to comment:**
+- ❌ Restating what the code obviously does
+- ❌ Explaining simple operations (variable assignments, function calls)
+- ❌ Numbering steps that are already clear from function names
+- ❌ Describing self-documenting code
+
+**Rationale:**
+- Comments that restate code become maintenance burden
+- Self-documenting code is better than commented code
+- Comments should add information, not repeat it
+- Excessive comments clutter code and reduce readability
+
+## Rule: One Subroutine Per Step in Orchestration Functions
+
+**For any function that orchestrates multiple steps (workflows, pipelines, multi-step operations), each step must be a separate subroutine.**
+
+**✅ GOOD - One function per step:**
+```python
+def download_data() -> bool:
+    # Implementation
+    return success
+
+def import_data() -> bool:
+    # Implementation
+    return success
+
+def validate_data() -> bool:
+    # Implementation
+    return success
+
+def main():
+    if not download_data():
+        sys.exit(1)
+    if not import_data():
+        sys.exit(1)
+    if not validate_data():
+        sys.exit(1)
+```
+
+**❌ BAD - Steps inline in any function:**
+```python
+def main():
+    download_cmd = ['bazel', 'run', '//:download']
+    if not run_command(download_cmd):
+        sys.exit(1)
+    
+    import_cmd = ['bazel', 'run', '//:import']
+    if not run_command(import_cmd):
+        sys.exit(1)
+
+def process_data():
+    data = parse_file(...)
+    transformed = transform(data)
+    save_to_db(transformed)
+```
+
+**Benefits:**
+- Easier to test individual steps
+- Clearer code organization
+- Easier to skip or reorder steps
+- Better error handling per step
+- Self-documenting (function names describe steps)
+
+**When to apply:**
+- Functions with 3+ sequential steps
+- Workflows that can fail at different points
+- Operations that might need to be skipped or reordered
+- Any function where steps are logically distinct
+
+**Rationale:**
+- Improves maintainability and testability
+- Makes the workflow structure explicit
+- Allows easy modification of individual steps
+- Follows single responsibility principle

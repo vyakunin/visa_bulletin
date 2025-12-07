@@ -32,3 +32,21 @@ py_library(
     ],
 )
 
+py_library(
+    name = "salary",
+    srcs = ["salary.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/enums:visa_program",
+        requirement("Django"),
+    ],
+)
+
+filegroup(
+    name = "migrations",
+    srcs = glob(["migrations/*.py"]) + ["//models/ingest:migrations"],
+    visibility = ["//visibility:public"],
+)
+
+# Ingest models (targets are in models/ingest/BUILD)
+

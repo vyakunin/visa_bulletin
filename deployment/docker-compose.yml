@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  web:
+    # Pull pre-built image from GitHub Container Registry
+    # Override tag with: IMAGE_TAG=v1.2.3 docker-compose up
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database and cached pages
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ../data/bulletin/saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    
+  # Daily data refresh (cron-like service)
+  data-refresh:
+    # Use same image as web service
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    command: sh -c "while true; do python3 scripts/bulletin/refresh_incremental.py --save-to-db; sleep 86400; done"
+    volumes:
+      - ./visa_bulletin.db:/app/visa_bulletin.db
+      - ../data/bulletin/saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - web
+

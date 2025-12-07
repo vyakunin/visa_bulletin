@@ -1,3 +1,9 @@
+"""
+Data class for parsed visa bulletin tables.
+
+Simple container: Table(title, headers, rows)
+"""
+
 class Table:
     def __init__(self, title, headers, rows):
         self.title = title

@@ -48,3 +48,4 @@ def setup_django_for_tests():
             settings.configure(**test_settings)
         
         django.setup()
+

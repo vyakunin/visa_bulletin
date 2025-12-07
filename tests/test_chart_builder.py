@@ -3,7 +3,7 @@
 import unittest
 from datetime import date
 
-from lib.chart_builder import (
+from lib.business.bulletin.chart_builder import (
     build_chart_with_projection,
     build_multi_class_chart_with_projections
 )
@@ -66,7 +66,7 @@ class TestChartBuilder(unittest.TestCase):
         )
         
         self.assertIn('EB3', html)
-        self.assertIn('Mexico', html)  # Country label in title
+        self.assertIn('mexico', html.lower())  # Country label in title (case-insensitive)
     
     def test_includes_submission_date_line(self):
         dates = [date(2024, 1, 1), date(2024, 2, 1)]

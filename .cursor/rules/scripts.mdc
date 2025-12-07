@@ -1,3 +1,7 @@
+---
+alwaysApply: false
+---
+
 # Project Scripts and Workflows
 
 ## Rule: Use Project Scripts for Common Tasks

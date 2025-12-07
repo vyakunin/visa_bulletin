@@ -13,6 +13,8 @@ alwaysApply: true
 - [ ] **IF workflow changed:** Test with `act --dryrun` ⚠️ 
 - [ ] Version number decided (ask user)
 - [ ] Release notes written for tag message
+- [ ] **IF enum migrations:** Database will be swapped atomically during rollout (no complex migrations needed)
+- [ ] **Cron jobs updated:** Verify `deployment/cron/setup-ingest-cron.sh` is configured on production
 
 **Critical:** If `.github/workflows/*.yml` modified, **MUST** run `act` before tagging!
 

@@ -41,3 +41,4 @@ def setup_logging(debug=False):
 def get_logger(name):
     """Get a logger instance for the given name"""
     return logging.getLogger(name)
+

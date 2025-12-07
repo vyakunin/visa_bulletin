@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from lib.bulletin_parser import extract_tables, extract_table, normalize
+from lib.parsing.bulletin.parser import extract_tables, extract_table, normalize
 from bs4 import BeautifulSoup
 
 
@@ -13,9 +13,9 @@ class TestBulletinParser(unittest.TestCase):
     def setUp(self):
         """Load 3 random test HTML files"""
         self.test_files = [
-            'saved_pages/visa-bulletin-for-february-2017.html',
-            'saved_pages/visa-bulletin-for-march-2023.html',
-            'saved_pages/visa-bulletin-for-october-2021.html'
+            'data/bulletin/saved_pages/visa-bulletin-for-february-2017.html',
+            'data/bulletin/saved_pages/visa-bulletin-for-march-2023.html',
+            'data/bulletin/saved_pages/visa-bulletin-for-october-2021.html'
         ]
         
         self.test_htmls = []

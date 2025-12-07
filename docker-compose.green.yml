@@ -35,6 +35,13 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
+      # Database configuration - same as web-green
+      - DB_ENGINE=${DB_ENGINE:-sqlite3}
+      - DB_NAME=${DB_NAME:-visa_bulletin}
+      - DB_USER=${DB_USER:-visa_bulletin_user}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
     restart: unless-stopped
     depends_on:
       web-green:

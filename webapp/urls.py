@@ -11,6 +11,10 @@ urlpatterns = [
     path('about/', views.about_view, name='about'),
     path('contact/', views.contact_view, name='contact'),
     
+    # Salary Database
+    path('salaries/', views.salary_search_view, name='salary_search'),
+    path('api/company-autocomplete/', views.company_autocomplete_view, name='company_autocomplete'),
+    
     # SEO-friendly landing pages
     # Employment Based
     path('employment-based/', views.dashboard_view, {'category': 'employment_based'}, name='employment_based'),

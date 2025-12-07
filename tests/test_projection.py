@@ -3,7 +3,7 @@
 import unittest
 from datetime import date
 
-from lib.projection import (
+from lib.business.bulletin.cutoff_projection import (
     calculate_projection,
     calculate_months_between,
     add_months_to_date,

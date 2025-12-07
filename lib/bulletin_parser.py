@@ -1,3 +1,14 @@
+"""
+Parse visa bulletin HTML pages and extract table data.
+
+Key functions:
+- parse_publication_links(html) - Extract publication URLs
+- extract_tables(html) - Extract all visa cutoff tables
+- extract_table(table) - Parse single table
+- normalize(text) - Clean whitespace
+- convert_to_date(value) - Parse date strings (DDMmmYY format)
+"""
+
 import os
 import re
 from datetime import datetime

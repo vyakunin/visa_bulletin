@@ -1,15 +1,55 @@
+---
+alwaysApply: false
+---
+
 # Django Patterns and Best Practices
 
-## Rule: Use Django TextChoices for Database Enums
+## Rule: Use IntegerChoices for Performance, TextChoices for Readability
 
-**Always use Django TextChoices for categorical database fields.**
+**Choose enum type based on data volume and query frequency:**
 
-**Why TextChoices?**
-- ✅ Type-safe enums in Python code
-- ✅ Readable strings in database ('china' not '1')
-- ✅ Human-readable labels for admin/UI
-- ✅ IDE autocomplete on enum values
-- ✅ Database constraints automatically
+**Use IntegerChoices when:**
+- High-volume data (millions of records)
+- Frequently queried/filtered fields
+- Performance-critical (indexes, joins, comparisons)
+- Storage efficiency matters
+
+**Use TextChoices when:**
+- Low-volume metadata (hundreds/thousands of records)
+- Human readability in DB queries is valuable
+- Debugging ease is important
+- Storage overhead is negligible
+
+**Performance Comparison:**
+- IntegerChoices: 4 bytes, faster comparisons, better index performance
+- TextChoices: 10-50 bytes, slower comparisons, readable in queries
+
+**Examples:**
+```python
+# High-volume: Use IntegerChoices
+class IngestStatus(models.IntegerChoices):
+    PENDING = 0, 'Pending'
+    RUNNING = 1, 'Running'
+    COMPLETED = 2, 'Completed'
+
+# Low-volume: TextChoices OK
+class DataDomain(models.TextChoices):
+    DOL = 'dol', 'Department of Labor'
+    VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
+```
+
+**Why IntegerChoices for high-volume?**
+- ✅ Smaller storage (4 bytes vs 10-50 bytes per record)
+- ✅ Faster comparisons and joins
+- ✅ Better index performance
+- ✅ Less memory usage
+- ❌ Less readable in raw SQL queries (see '1' not 'pending')
+
+**Why TextChoices for low-volume?**
+- ✅ Human-readable in database queries
+- ✅ Self-documenting (no lookup table needed)
+- ✅ Easier debugging
+- ✅ Negligible performance impact at low volumes
 
 **Pattern:**
 
@@ -75,3 +115,42 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 - SQLite with WAL mode for production (suitable for read-heavy workloads)
 - Database file: `visa_bulletin.db`
 - WAL files: `visa_bulletin.db-wal`, `visa_bulletin.db-shm` (gitignored)
+
+## Database Migrations
+
+- **Always review migrations before committing**
+- **Never bypass migrations** (no `--fake` or `--skip-checks` in production)
+- Test migrations on development database first
+- Check for reversibility when possible
+- Document complex migrations with comments
+- Use `makemigrations --check` in CI/CD to catch missing migrations
+
+**Creating Migrations:**
+
+**For models in subdirectories (e.g., `models/ingest/`):**
+1. Import models in `models/__init__.py` so Django can discover them:
+   ```python
+   from .ingest import DataSource, IngestRun, IngestVersion
+   ```
+2. Run migrations via Bazel:
+   ```bash
+   bazel run //:makemigrations
+   ```
+3. The wrapper script automatically:
+   - Detects new models (including subdirectories)
+   - Creates migrations in the sandbox
+   - Copies migrations to workspace (`models/migrations/`)
+   - Handles both root and subdirectory migrations
+
+**Migration Wrapper:**
+- Uses `scripts/makemigrations_wrapper.py` to handle Bazel sandbox
+- Automatically copies migrations from sandbox to workspace
+- Handles both `models/migrations/` and `models/ingest/migrations/` (if needed)
+- Includes ingest models in BUILD deps: `//models:ingest`
+
+**Rationale:**
+- Migrations are part of your codebase
+- Bad migrations can corrupt production data
+- Migrations should be reviewed like code changes
+- Reversible migrations enable safe rollbacks
+- Subdirectory models must be imported for Django to detect them

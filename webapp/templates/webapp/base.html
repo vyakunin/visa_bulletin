@@ -527,6 +527,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/salaries/' %}active{% endif %}" href="{% url 'salary_search' %}">
+                        <i class="bi bi-currency-dollar"></i> Salaries
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {% if request.path == '/faq/' %}active{% endif %}" href="{% url 'faq' %}">
                         <i class="bi bi-question-circle"></i> FAQ
                     </a>

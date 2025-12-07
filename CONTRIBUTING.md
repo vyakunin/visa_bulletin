@@ -6,7 +6,7 @@
 
 1. Run the setup script (installs Bazel if needed):
 ```bash
-./setup.sh
+./setup_dev_environment.sh
 ```
 
 2. Verify Bazel is installed:
@@ -48,7 +48,10 @@ git checkout -b feature-name
 
 2. Make your changes to the code
 
-3. If you modify dependencies, update `requirements.txt`
+3. If you modify dependencies:
+   - Update `requirements.txt` with the new package
+   - Run `bazel run //:update_requirements_lock` to regenerate `requirements.lock`
+   - Commit both files
 
 4. If you add new Python files, update the appropriate `BUILD` file:
    - `lib/BUILD` for library code

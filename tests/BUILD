@@ -5,16 +5,20 @@
 load("@rules_python//python:defs.bzl", "py_test")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
+exports_files([
+    "test_salary_data.csv",
+])
+
 py_test(
     name = "test_parser",
     size = "small",
     srcs = ["test_parser.py"],
     data = [
-        "//saved_pages:test_data",
+        "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
-        "//lib:bulletin_parser",
-        "//lib:table",
+        "//lib/parsing/bulletin:parser",
+        "//lib/parsing/bulletin:bulletin_table",
         requirement("beautifulsoup4"),
         requirement("soupsieve"),
     ],
@@ -28,14 +32,14 @@ py_test(
     srcs = ["django_setup.py", "conftest.py", "test_extractor.py"],
     main = "test_extractor.py",
     data = [
-        "//saved_pages:test_data",
+        "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
-        "//lib:table",
-        "//lib:publication_data",
+        "//lib/parsing/bulletin:bulletin_table",
+        "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",
-        "//extractors:bulletin_extractor",
+        "//lib/parsing/bulletin:table_to_cutoff_data",
         "//django_config:settings",
         "//webapp:apps",
         "//models/enums:visa_category",
@@ -58,14 +62,14 @@ py_test(
     srcs = ["django_setup.py", "conftest.py", "test_integration.py"],
     main = "test_integration.py",
     data = [
-        "//saved_pages:test_data",
+        "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
-        "//lib:bulletin_parser",
-        "//lib:publication_data",
+        "//lib/parsing/bulletin:parser",
+        "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",
-        "//extractors:bulletin_handler",
+        "//lib/parsing/bulletin:db_importer",
         "//django_config:settings",
         "//webapp:apps",
         "//models/enums:visa_category",
@@ -88,7 +92,7 @@ py_test(
     size = "small",
     srcs = ["test_projection.py"],
     deps = [
-        "//lib:projection",
+        "//lib/business/bulletin:cutoff_projection",
     ],
     python_version = "PY3",
     srcs_version = "PY3",
@@ -99,7 +103,7 @@ py_test(
     size = "small",
     srcs = ["test_chart_builder.py"],
     deps = [
-        "//lib:chart_builder",
+        "//lib/business/bulletin:chart_builder",
         "//models/enums:country",
         requirement("Django"),
         requirement("plotly"),
@@ -143,7 +147,7 @@ py_test(
     size = "small",
     srcs = ["django_setup.py", "test_visa_class_utils.py"],
     deps = [
-        "//lib:visa_class_utils",
+        "//lib/business/bulletin:visa_class_utils",
         "//models:visa_cutoff_date",
         "//models:bulletin",
         "//models/enums:visa_category",
@@ -186,4 +190,165 @@ py_test(
     },
 )
 
+py_test(
+    name = "test_salary",
+    size = "small",
+    srcs = ["test_salary.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//models/ingest:ingest",  # Required for IngestVersion ForeignKey resolution
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_salary_import",
+    size = "small",
+    srcs = ["django_setup.py", "conftest.py", "test_salary_import.py"],
+    main = "test_salary_import.py",
+    data = [
+        ":test_salary_data.csv",
+    ],
+    deps = [
+        "//lib/parsing/salary:db_importer",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_ingest_integration",
+    size = "medium",
+    srcs = ["django_setup.py", "conftest.py", "test_ingest_integration.py"],
+    main = "test_ingest_integration.py",
+    deps = [
+        "//lib/ingest:ingest",
+        "//lib/ingest:orchestrator",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:plugins",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_salary_real_data",
+    size = "small",
+    srcs = ["django_setup.py", "conftest.py", "test_salary_real_data.py"],
+    main = "test_salary_real_data.py",
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        "//webapp:views",
+        "//webapp:urls",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_ingest_models",
+    size = "small",
+    srcs = ["django_setup.py", "conftest.py", "test_ingest_models.py"],
+    main = "test_ingest_models.py",
+    deps = [
+        "//models/ingest:ingest",
+        "//models/ingest:enums",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_ingest_plugins",
+    size = "small",
+    srcs = ["django_setup.py", "conftest.py", "test_ingest_plugins.py"],
+    main = "test_ingest_plugins.py",
+    deps = [
+        "//lib/ingest:base",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:dol_lca",
+        "//models/ingest:ingest",
+        "//models/ingest:enums",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_ingest_versioning",
+    size = "small",
+    srcs = ["django_setup.py", "conftest.py", "test_ingest_versioning.py"],
+    main = "test_ingest_versioning.py",
+    deps = [
+        "//lib/ingest:versioning",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//models:visa_cutoff_date",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("pytest"),
+        requirement("pytest-django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
 

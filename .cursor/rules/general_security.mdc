@@ -1,0 +1,48 @@
+---
+alwaysApply: true
+---
+
+# General Security Rules
+
+These are general security rules that apply across all projects.
+
+## General Token Security Rules
+
+- **NEVER** commit tokens to git
+- **NEVER** hardcode tokens in source code or configuration files
+- Always reference tokens via environment variables
+- Never mention tokens in code comments or documentation
+
+## GitHub Token Security Rules
+
+### Token Storage
+- GitHub personal access token is exported as `GITHUB_TOKEN` environment variable in `~/.shrc`
+- `~/.shrc` is sourced by both `~/.zshrc` and `~/.bashrc` for cross-shell compatibility
+- **NEVER** commit this token to any repository
+- **NEVER** mention the token in any project files, code, or documentation
+
+### Git Configuration
+- Git is configured to automatically use the token via environment variable `GITHUB_TOKEN`
+- The token is exported in `~/.shrc` and available as `$GITHUB_TOKEN` in shell sessions (both bash and zsh)
+
+### Security Best Practices
+1. The token in `~/.shrc` should never be:
+   - Committed to git repositories
+   - Shared in chat logs or documentation
+   - Exposed in environment variables in project files
+   - Mentioned in any code comments
+
+2. The environment variable `GITHUB_TOKEN` should:
+   - Only be set in `~/.shrc` (which is sourced by `~/.zshrc` and `~/.bashrc`)
+   - Never be hardcoded in project files or scripts
+   - Never be committed to version control
+
+3. If the token needs to be referenced:
+   - Use the `GITHUB_TOKEN` environment variable in local shell sessions only
+   - Never hardcode in any source code or project configuration files
+   - The token is available as `$GITHUB_TOKEN` after shell initialization (works in both bash and zsh)
+
+4. Token rotation:
+   - If token is compromised, revoke it immediately on GitHub
+   - Update the `GITHUB_TOKEN` export in `~/.shrc` with new token
+   - Restart shell or run `source ~/.shrc` (or `source ~/.zshrc` / `source ~/.bashrc`) to reload

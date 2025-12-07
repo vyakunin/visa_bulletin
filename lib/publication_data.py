@@ -1,3 +1,9 @@
+"""
+Data class for visa bulletin publications.
+
+Container: PublicationData(url, content, publication_date)
+"""
+
 class PublicationData:
     def __init__(self, url, content, publication_date):
         self.url = url

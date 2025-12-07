@@ -9,20 +9,20 @@ from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
 
 from datetime import date, datetime
-from lib.publication_data import PublicationData
+from lib.parsing.bulletin.publication_data import PublicationData
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
-from lib.bulletin_parser import extract_tables
-from extractors import bulletin_handler
+from lib.parsing.bulletin.parser import extract_tables
+from lib.parsing.bulletin import db_importer
 
 
 def test_save_bulletin_from_html():
     """Test saving a real bulletin HTML to database"""
     # Load a real saved bulletin
-    with open('saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
+    with open('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
         html = f.read()
     
     # Create PublicationData
@@ -33,7 +33,7 @@ def test_save_bulletin_from_html():
     )
     
     # Save to database
-    bulletin = bulletin_handler.save_bulletin_to_db(pub_data)
+    bulletin = db_importer.save_bulletin_to_db(pub_data)
     
     # Verify bulletin created
     assert bulletin is not None
@@ -58,17 +58,17 @@ def test_save_bulletin_from_html():
 
 def test_idempotent_bulletin_save():
     """Test that saving same bulletin twice is idempotent"""
-    with open('saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
+    with open('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', 'r', encoding='utf-8') as f:
         html = f.read()
     
     pub_data = PublicationData('/test-march-2023', html, datetime(2023, 3, 1))
     
     # Save once
-    bulletin1 = bulletin_handler.save_bulletin_to_db(pub_data)
+    bulletin1 = db_importer.save_bulletin_to_db(pub_data)
     count1 = VisaCutoffDate.objects.count()
     
     # Save again
-    bulletin2 = bulletin_handler.save_bulletin_to_db(pub_data)
+    bulletin2 = db_importer.save_bulletin_to_db(pub_data)
     count2 = VisaCutoffDate.objects.count()
     
     # Should be same bulletin
@@ -81,16 +81,16 @@ def test_query_time_series_data():
     """Test querying time series data for specific visa class"""
     # Save multiple bulletins
     test_cases = [
-        ('saved_pages/visa-bulletin-for-february-2017.html', datetime(2017, 2, 1)),
-        ('saved_pages/visa-bulletin-for-march-2023.html', datetime(2023, 3, 1)),
-        ('saved_pages/visa-bulletin-for-october-2021.html', datetime(2021, 10, 1)),
+        ('data/bulletin/saved_pages/visa-bulletin-for-february-2017.html', datetime(2017, 2, 1)),
+        ('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', datetime(2023, 3, 1)),
+        ('data/bulletin/saved_pages/visa-bulletin-for-october-2021.html', datetime(2021, 10, 1)),
     ]
     
     for filepath, pub_date in test_cases:
         with open(filepath, 'r', encoding='utf-8') as f:
             html = f.read()
         pub_data = PublicationData(filepath, html, pub_date)
-        bulletin_handler.save_bulletin_to_db(pub_data)
+        db_importer.save_bulletin_to_db(pub_data)
     
     # Query F1 China Final Action across all bulletins using enum values
     f1_china_series = VisaCutoffDate.objects.filter(

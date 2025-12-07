@@ -1,0 +1,42 @@
+---
+alwaysApply: false
+---
+
+# General Script Development Rules
+
+These are general script development rules that apply across all projects.
+
+## Debugging and Script Development
+
+**ALWAYS use Bazel for project-specific debugging tools - never run Python directly.**
+
+**✅ GOOD - Use Bazel:**
+```bash
+bazel run //:explore_db -- --query "SELECT ..."
+bazel run //:check_salary_stats
+```
+
+**❌ BAD - Direct Python:**
+```bash
+python3 -c "import django; ..."  # Fails: ModuleNotFoundError
+python explore_db.py  # Fails: Django not in system Python
+```
+
+**Why:**
+- Project dependencies (Django, etc.) are only available in Bazel environment
+- System Python doesn't have project libraries
+- Bazel ensures correct environment and dependencies
+
+## Script Development Flow
+
+When debugging and need a script:
+
+1. **Check documentation** - Can you reuse an existing tool?
+2. **Check if trivial** - Is it just command-line tools (`grep`, `curl`, `ls`)?
+3. **Check recent history** - Have you created similar scripts recently?
+   - **If yes** → Create/update a **permanent script** with logging
+   - **If no** → Create a **throwaway script** (but still log it)
+4. **Always use Bazel** for project-specific libraries
+5. **Log all script usage:**
+   - Permanent scripts: Log each call to their own log file
+   - Throwaway scripts: Log to shared throwaway calls log with context

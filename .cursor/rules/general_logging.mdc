@@ -1,0 +1,199 @@
+---
+alwaysApply: false
+---
+
+# General Logging Rules
+
+These are general logging rules that apply across all projects.
+
+## Two Types of Logging
+
+**There are TWO types of logging in scripts - use both appropriately:**
+
+1. **Application Logging** - For script output, debugging, errors (what the script does)
+2. **Script Usage Logging** - For tracking which scripts are run and why (script execution metadata)
+
+## Application Logging (Script Output)
+
+**ALWAYS use proper logging instead of print() statements for script output.**
+
+**✅ GOOD - Use logging:**
+```python
+import logging
+from django_config.logging_config import setup_logging
+
+setup_logging(debug=False)
+logger = logging.getLogger(__name__)
+
+logger.info("Processing file...")
+logger.warning("File not found, using default")
+logger.error("Failed to connect")
+logger.debug("Debug details...")
+```
+
+**❌ BAD - Don't use print:**
+```python
+print("Processing file...")  # Use logger.info()
+print(f"Error: {error}")     # Use logger.error()
+```
+
+**Application logging setup:**
+- Django scripts: Use `django_config.logging_config.setup_logging()`
+- Standalone scripts: Use `logging.basicConfig()` with proper format
+- Always use `logger = logging.getLogger(__name__)` for module-level logger
+
+**Log levels:**
+- `logger.debug()` - Detailed debugging info
+- `logger.info()` - General informational messages
+- `logger.warning()` - Warning messages (non-critical issues)
+- `logger.error()` - Error messages (failures that don't stop execution)
+- `logger.critical()` - Critical errors (may stop execution)
+
+**Rationale:**
+- Logging can be configured per environment (dev vs production)
+- Can filter by log level without code changes
+- Can redirect to files, syslog, etc.
+- Print statements can't be disabled or filtered
+- Professional code uses logging, not print
+
+## Script Usage Logging (Execution Tracking)
+
+**ALWAYS log script executions to track usage and effectiveness.**
+
+**Purpose:** Track which scripts are executed, with what arguments, and why. This helps identify useful tools, debug issues, and build institutional knowledge.
+
+**Two types of scripts:**
+
+### 1. Permanent Scripts (Reusable Tools)
+
+**Location:** `logs/<script_name>.log` (one file per script)
+
+**Usage:**
+```python
+#!/usr/bin/env python3
+"""Example permanent script"""
+import argparse
+from lib.utils.logging_utils import ScriptLogger
+
+# Initialize logger (creates logs/explore_db.log)
+logger = ScriptLogger(__file__)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--query', required=True)
+    args = parser.parse_args()
+    
+    # Log the execution with args and context
+    logger.log_call(
+        args={'query': args.query},
+        context='Database exploration for debugging'
+    )
+    
+    # ... rest of script logic ...
+    # IMPORTANT: Also use application logging for script output:
+    import logging
+    app_logger = logging.getLogger(__name__)
+    app_logger.info("Starting database exploration...")
+
+if __name__ == '__main__':
+    main()
+```
+
+**Log format:** `YYYY-MM-DD HH:MM:SS - {"timestamp": "...", "script": "...", "args": {...}, "context": "..."}`
+
+**Example log entry:**
+```
+2025-12-05 14:30:15 - {"timestamp": "2025-12-05T14:30:15.123456", "script": "/path/to/explore_db.py", "args": {"query": "SELECT COUNT(*) FROM salary_record"}, "context": "Database exploration for debugging"}
+```
+
+### 2. Throwaway Scripts (One-off Debugging)
+
+**Location:** `logs/throwaway_calls.log` (shared file for all throwaway scripts)
+
+**Usage:**
+```python
+#!/usr/bin/env python3
+"""Example throwaway script"""
+# Auto-logs on import (captures script path and sys.argv)
+from lib.utils.logging_utils import log_context
+
+# Optionally add context (recommended for clarity)
+log_context("Debugging salary calculation issue - checking wage_annual values")
+
+# ... rest of script logic ...
+# IMPORTANT: Also use application logging for script output if needed:
+# import logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+# logger.info("Checking wage_annual values...")
+```
+
+**Auto-logging:** Just importing `log_context` automatically logs:
+- Script path
+- Command-line arguments (parsed from `sys.argv`)
+- Timestamp
+
+**Log format:** JSON lines (one JSON object per line)
+```json
+{"timestamp": "2025-12-05T14:30:15.123456", "script": "debug_salary.py", "script_path": "/path/to/debug_salary.py", "args": {"--query": "SELECT ..."}, "context": "Debugging salary calculation issue"}
+```
+
+**When to add context:**
+- ✅ Script purpose is not obvious from name/args
+- ✅ Debugging a specific issue
+- ✅ Testing a hypothesis
+- ❌ Skip if script name and args are self-explanatory
+
+### Reading and Analyzing Script Logs
+
+**View permanent script logs:**
+```bash
+# View all executions of explore_db
+cat logs/explore_db.log
+
+# View recent executions (last 10 lines)
+tail -10 logs/explore_db.log
+
+# Search for specific context
+grep "salary calculation" logs/explore_db.log
+```
+
+**View throwaway script logs:**
+```bash
+# View all throwaway script executions
+cat logs/throwaway_calls.log
+
+# Parse JSON and filter
+cat logs/throwaway_calls.log | jq 'select(.context | contains("salary"))'
+
+# Count executions per script
+cat logs/throwaway_calls.log | jq -r '.script' | sort | uniq -c
+
+# Find frequently used throwaway scripts (candidates for permanent scripts)
+cat logs/throwaway_calls.log | jq -r '.script' | sort | uniq -c | sort -rn
+```
+
+**Analyzing script usage:**
+- **Frequent throwaway scripts** → Consider making permanent
+- **Scripts with same context** → May indicate recurring issues
+- **Scripts with errors** → Check if fixes are needed
+- **Unused permanent scripts** → Consider deprecating
+
+**Rationale:**
+- Track which tools are actually useful
+- Identify patterns (frequent throwaway → make permanent)
+- Debug issues with script context
+- Build institutional knowledge
+- Make data-driven decisions about tooling
+
+**Quick Reference:**
+
+| Type | Use For | Import | Log Location |
+|------|---------|--------|--------------|
+| **Application Logging** | Script output, errors, debugging | `logging.getLogger(__name__)` | stdout/stderr or configured handlers |
+| **Script Usage Logging (Permanent)** | Track reusable tool executions | `ScriptLogger(__file__)` | `logs/<script_name>.log` |
+| **Script Usage Logging (Throwaway)** | Track one-off debugging scripts | `log_context()` | `logs/throwaway_calls.log` |
+
+**Remember:** Use BOTH types of logging:
+- **Application logging** → What the script does (output, errors, progress)
+- **Script usage logging** → That the script ran (metadata, args, context)

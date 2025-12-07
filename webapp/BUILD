@@ -28,8 +28,10 @@ py_library(
         "//models/enums:visa_category",
         "//models/enums:action_type",
         "//models/enums:country",
-        "//lib:chart_builder",
-        "//lib:dashboard_service",
+        "//models/enums:visa_program",
+        "//models:salary",
+        "//lib/business/bulletin:chart_builder",
+        "//lib/business/bulletin:cutoff_data_aggregator",
         requirement("Django"),
     ],
 )

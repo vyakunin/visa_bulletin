@@ -1,2 +1,0 @@
-# Extractors package
-

@@ -88,7 +88,21 @@ $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE 
 
 echo ""
 echo "🚀 Starting $NEW_COLOR environment on port $NEW_PORT..."
-$SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+
+# Load environment variables for green environment (PostgreSQL) if .env.green exists
+if [ "$NEW_COLOR" = "green" ]; then
+    # Check if .env.green exists and load it
+    ENV_FILE_EXISTS=$($SSH_CMD "test -f $DEPLOY_DIR/.env.green && echo 'yes' || echo 'no'")
+    if [ "$ENV_FILE_EXISTS" = "yes" ]; then
+        echo "   Loading PostgreSQL config from .env.green..."
+        $SSH_CMD "cd $DEPLOY_DIR && export \$(cat .env.green | xargs) && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+    else
+        echo "   No .env.green found, using default (SQLite)"
+        $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+    fi
+else
+    $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+fi
 
 echo ""
 echo "⏳ Waiting for health checks (max 60s)..."

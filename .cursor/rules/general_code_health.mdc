@@ -1,0 +1,133 @@
+---
+alwaysApply: true
+---
+
+# General Code Health and Complexity Rules
+
+These are general code health rules that apply across all projects.
+
+## Function Length and Complexity
+
+**Functions must be focused and maintainable.**
+
+**Function length limits:**
+- **Maximum 50 lines** - Functions longer than 50 lines must be refactored
+- **Maximum 100 lines** - Hard limit (code review blocker)
+- **Cyclomatic complexity < 10** - Use early returns, extract helper functions
+
+**When to refactor:**
+- Function does multiple things (violates single responsibility)
+- Function has deeply nested conditionals (> 3 levels)
+- Function has repetitive code blocks
+- Function is hard to test in isolation
+- Function requires extensive comments to understand
+
+**Refactoring strategies:**
+- Extract helper functions for distinct operations
+- Use early returns to reduce nesting
+- Break complex conditionals into named functions
+- Separate data parsing from business logic
+- Extract validation into separate functions
+
+**✅ GOOD - Focused functions:**
+```python
+def parse_wage_info(row, column_mappings):
+    """Extract and validate wage information from row"""
+    wage_from = parse_decimal(get_column_value(row, column_mappings['wage_from']))
+    wage_unit = WageUnit.from_dol_value(get_column_value(row, column_mappings['wage_unit']))
+    wage_unit = correct_wage_unit_if_needed(wage_from, wage_unit)
+    wage_annual = calculate_annual_wage(wage_from, wage_unit)
+    return wage_from, wage_unit, wage_annual
+
+def correct_wage_unit_if_needed(wage_from, wage_unit):
+    """Fix incorrect wage units based on value ranges"""
+    if not wage_from or not (30000 <= float(wage_from) <= 1000000):
+        return wage_unit
+    
+    if wage_unit == WageUnit.HOUR and float(wage_from) > 5000:
+        return WageUnit.YEAR
+    # ... other checks
+    return wage_unit
+```
+
+**❌ BAD - Monolithic function:**
+```python
+def import_csv_file(...):  # 200+ lines doing everything
+    # Setup mappings
+    # Load existing cases
+    # Read file
+    # For each row:
+    #   Parse employer
+    #   Parse wage
+    #   Validate wage unit
+    #   Calculate annual
+    #   Parse dates
+    #   Create record
+    #   Batch insert
+    # Return results
+```
+
+**Rationale:**
+- Easier to test individual pieces
+- Easier to understand and maintain
+- Easier to reuse logic
+- Easier to debug issues
+- Reduces cognitive load
+
+## Code Reuse and DRY Principle
+
+**ALWAYS check for existing code before implementing new functionality.**
+
+**Before writing new code:**
+1. ✅ Search codebase for similar functionality
+2. ✅ Check `lib/` directory for reusable utilities
+3. ✅ Look for existing patterns in similar scripts
+4. ✅ Extract common code to shared libraries when duplicated
+
+**✅ GOOD - Reuse existing code:**
+```python
+# Use shared utilities
+from lib.utils.http_utils import get_workspace_dir, fetch_page, download_file
+from django_config.logging_config import setup_logging
+
+# Reuse workspace directory pattern
+WORKSPACE_DIR = get_workspace_dir()
+DATA_DIR = WORKSPACE_DIR / 'data'
+```
+
+**❌ BAD - Duplicate code:**
+```python
+# Don't duplicate workspace directory logic
+WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent))
+
+# Don't duplicate HTTP fetching
+def fetch_page(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
+
+# Don't duplicate logging setup
+logging.basicConfig(level=logging.INFO, format='...')
+```
+
+**When to extract to shared library:**
+- Same code appears in 2+ files
+- Functionality is reusable across scripts
+- Pattern is used consistently (e.g., workspace dir, HTTP fetching)
+
+**Shared utilities location:**
+- `lib/` - Reusable business logic and utilities (see `lib/README.md` for reference)
+- `django_config/` - Django-specific shared config (logging, settings)
+
+**Library documentation requirement:**
+- All modules in `lib/` must be documented in `lib/README.md`
+- Documentation must be concise (1-3 sentences per module)
+- Must list key functions/classes and their purpose
+- Must include "Quick Reference by Use Case" section
+- Goal: Developers can find functionality without scanning code
+
+**Rationale:**
+- Reduces maintenance burden (fix bugs once)
+- Ensures consistent behavior across scripts
+- Makes codebase easier to understand
+- Prevents inconsistencies from copy-paste errors

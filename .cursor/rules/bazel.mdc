@@ -1,3 +1,7 @@
+---
+alwaysApply: false
+---
+
 # Bazel Build System Rules
 
 ## Rule: Always Use Bazel for Testing and Running

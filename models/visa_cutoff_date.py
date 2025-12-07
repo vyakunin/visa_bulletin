@@ -6,6 +6,11 @@ from .enums.visa_category import VisaCategory
 from .enums.action_type import ActionType
 from .enums.country import Country
 
+# Use string reference - Django will resolve it after all models are loaded
+# No circular dependency exists (IngestVersion doesn't import from visa_cutoff_date),
+# but Bazel's module path makes direct imports unreliable during Django setup
+# The string reference works at runtime when Django's app registry is fully initialized
+
 
 class VisaCutoffDate(models.Model):
     """
@@ -41,8 +46,7 @@ class VisaCutoffDate(models.Model):
         help_text="Final Action or Dates for Filing"
     )
     
-    country = models.CharField(
-        max_length=50,
+    country = models.IntegerField(
         choices=Country.choices,
         help_text="Country/region for chargeability"
     )
@@ -66,6 +70,19 @@ class VisaCutoffDate(models.Model):
     is_unavailable = models.BooleanField(
         default=False,
         help_text="True if cutoff is 'U' (Unavailable)"
+    )
+    
+    # Ingest version tracking (for rollback)
+    # String reference - Django resolves after all models loaded
+    # No circular dependency: IngestVersion doesn't import from visa_cutoff_date
+    # null=True allows None without explicit default (Django's default behavior)
+    ingest_version = models.ForeignKey(
+        'models.IngestVersion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cutoff_dates',
+        help_text="Ingest version this record belongs to (for rollback)"
     )
     
     class Meta:

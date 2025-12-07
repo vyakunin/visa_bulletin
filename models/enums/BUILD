@@ -33,3 +33,9 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "visa_program",
+    srcs = ["visa_program.py"],
+    visibility = ["//visibility:public"],
+)
+
