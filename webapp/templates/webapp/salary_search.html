@@ -1,0 +1,645 @@
+{% extends "webapp/base.html" %}
+
+{% block container_class %}salary-container{% endblock %}
+
+{% block extra_head %}
+<style>
+    .salary-container {
+        min-height: 400px;
+    }
+    
+    .search-card {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .search-card .card-header {
+        background: var(--gov-navy) !important;
+        color: white;
+        border-bottom: 2px solid var(--gov-red);
+    }
+    
+    .results-table {
+        font-size: 0.9rem;
+    }
+    
+    .results-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .results-table td {
+        vertical-align: middle;
+    }
+    
+    .salary-highlight {
+        font-weight: 600;
+        color: var(--gov-green);
+    }
+    
+    .employer-link {
+        color: var(--gov-navy);
+        text-decoration: none;
+    }
+    
+    .employer-link:hover {
+        text-decoration: underline;
+    }
+    
+    .badge-h1b {
+        background-color: #0d6efd;
+    }
+    
+    .badge-perm {
+        background-color: var(--gov-green);
+    }
+    
+    .filter-tag {
+        display: inline-flex;
+        align-items: center;
+        background: #e8f4f8;
+        border: 1px solid var(--gov-navy);
+        border-radius: 20px;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+        font-size: 0.85rem;
+    }
+    
+    .filter-tag .bi-x {
+        cursor: pointer;
+        margin-left: 0.5rem;
+    }
+    
+    .stats-card {
+        background: linear-gradient(135deg, var(--gov-navy) 0%, #004080 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .stats-card h3 {
+        font-size: 2rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .stats-card p {
+        margin-bottom: 0;
+        opacity: 0.9;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    /* Autocomplete styles */
+    .autocomplete-wrapper {
+        position: relative;
+    }
+    
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    
+    .autocomplete-item strong {
+        color: var(--gov-navy);
+    }
+    
+    @media (max-width: 768px) {
+        .results-table {
+            font-size: 0.8rem;
+        }
+        
+        .results-table th, .results-table td {
+            padding: 0.5rem;
+        }
+        
+        .stats-card {
+            padding: 1rem;
+        }
+        
+        .stats-card h3 {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main>
+    <div class="row">
+        <div class="col-12">
+            <!-- Search Card -->
+            <div class="card search-card mb-4">
+                <div class="card-header">
+                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search H-1B & PERM Salary Data</h2>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="" id="searchForm">
+                        <div class="row g-2">
+                            <!-- Job Title / Keywords -->
+                            <div class="col-md-6">
+                                <label for="q" class="form-label">Job Title / Keywords</label>
+                                <input type="text" class="form-control" id="q" name="q" 
+                                       value="{{ query }}" 
+                                       placeholder="e.g., Software Engineer, Data Scientist">
+                            </div>
+                            
+                            <!-- Employer Name -->
+                            <div class="col-md-6">
+                                <label for="employer" class="form-label">Employer Name</label>
+                                <div class="autocomplete-wrapper" style="position: relative;">
+                                    <input type="text" class="form-control" id="employer" name="employer" 
+                                           value="{{ employer_filter }}" 
+                                           placeholder="e.g., Google, Amazon, Microsoft"
+                                           autocomplete="off">
+                                    <div id="employer-autocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- State -->
+                            <div class="col-md-4">
+                                <label for="state" class="form-label">State</label>
+                                <select class="form-select" id="state" name="state">
+                                    <option value="">All States</option>
+                                    {% for code, name in states %}
+                                    <option value="{{ code }}" {% if code == state_filter %}selected{% endif %}>
+                                        {{ name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Visa Program -->
+                            <div class="col-md-4">
+                                <label for="program" class="form-label">Visa Program</label>
+                                <select class="form-select" id="program" name="program">
+                                    <option value="">All Programs</option>
+                                    <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Fiscal Year -->
+                            <div class="col-md-4">
+                                <label for="year" class="form-label">Fiscal Year</label>
+                                <select class="form-select" id="year" name="year">
+                                    <option value="">All Years</option>
+                                    {% for year in fiscal_years %}
+                                    <option value="{{ year }}" {% if year == year_filter %}selected{% endif %}>
+                                        FY {{ year }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Search Button -->
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search"></i> Search
+                                </button>
+                                {% if query or employer_filter or state_filter or program_filter or year_filter %}
+                                <a href="{% url 'salary_search' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="bi bi-x-circle"></i> Clear Filters
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            {% if has_data %}
+            <!-- Statistics Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>{{ total_results|default:"0" }}</h3>
+                        <p>Results Found</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ avg_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Average Salary</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ min_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Minimum</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ max_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Maximum</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Active Filters -->
+            {% if query or employer_filter or state_filter or program_filter or year_filter %}
+            <div class="mb-3">
+                <span class="text-muted me-2">Active filters:</span>
+                {% if query %}
+                <span class="filter-tag">
+                    Job: {{ query }}
+                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if employer_filter %}
+                <span class="filter-tag">
+                    Employer: {{ employer_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if state_filter %}
+                <span class="filter-tag">
+                    State: {{ state_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if program_filter %}
+                <span class="filter-tag">
+                    Program: {{ program_filter|upper }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if year_filter %}
+                <span class="filter-tag">
+                    Year: FY{{ year_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Results Table -->
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover results-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Employer</th>
+                                    <th>Job Title</th>
+                                    <th>Location</th>
+                                    <th>Salary</th>
+                                    <th>Program</th>
+                                    <th>Year</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for record in records %}
+                                <tr>
+                                    <td>
+                                        <a href="?employer={{ record.employer_name|urlencode }}" class="employer-link">
+                                            {{ record.employer_name|truncatechars:40 }}
+                                        </a>
+                                    </td>
+                                    <td>{{ record.job_title|truncatechars:50 }}</td>
+                                    <td>
+                                        {% if record.worksite_city %}{{ record.worksite_city }}, {% endif %}{{ record.worksite_state }}
+                                    </td>
+                                    <td class="salary-highlight">
+                                        ${{ record.wage_annual|floatformat:0|default:"--" }}
+                                        {% if record.wage_to and record.wage_to != record.wage_from %}
+                                        - ${{ record.wage_to|floatformat:0 }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if record.visa_program == 1 %}
+                                        <span class="badge badge-h1b">H-1B</span>
+                                        {% elif record.visa_program == 4 %}
+                                        <span class="badge badge-perm">PERM</span>
+                                        {% elif record.visa_program == 2 %}
+                                        <span class="badge bg-secondary">H-1B1</span>
+                                        {% elif record.visa_program == 3 %}
+                                        <span class="badge bg-secondary">E-3</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ record.get_visa_program_display }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ record.fiscal_year }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">
+                                        No records found matching your search criteria.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                {% if records %}
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <span class="pagination-info">
+                        Showing {{ page_start }}-{{ page_end }} of {{ total_results }} results
+                    </span>
+                    
+                    {% if has_pagination %}
+                    <nav aria-label="Search results pagination">
+                        <ul class="pagination mb-0">
+                            {% if page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}">&laquo; Prev</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for p in page_range %}
+                            <li class="page-item {% if p == page %}active{% endif %}">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ p }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+                            
+                            {% if page < total_pages %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}">Next &raquo;</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            
+            {% else %}
+            <!-- No Data / Welcome Message -->
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-database" style="font-size: 4rem; color: var(--gov-navy);"></i>
+                    <h3 class="mt-3">Search H-1B & PERM Salary Data</h3>
+                    <p class="text-muted mb-4">
+                        Search through thousands of salary records from official DOL disclosure data.
+                        <br>Find out what companies pay for specific job titles and locations.
+                    </p>
+                    
+                    {% if no_data_yet %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>No salary data imported yet.</strong>
+                        <br>
+                        Run <code>bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain dol</code> to import DOL disclosure data.
+                    </div>
+                    {% else %}
+                    <p class="text-muted">
+                        Enter a job title, employer name, or location above to search.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Data Source Info -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Data</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Data Source</h6>
+                    <p>
+                        This data comes from the U.S. Department of Labor's public disclosure files for 
+                        <strong>Labor Condition Applications (LCA)</strong> and 
+                        <strong>Permanent Employment Certification (PERM)</strong> applications.
+                    </p>
+                    
+                    <h6>What You Can Find</h6>
+                    <ul>
+                        <li><strong>H-1B Salaries:</strong> Wages offered to H-1B specialty occupation workers</li>
+                        <li><strong>PERM Salaries:</strong> Wages offered for green card sponsorship positions</li>
+                        <li><strong>Employer Information:</strong> Which companies sponsor most workers</li>
+                        <li><strong>Location Data:</strong> Salary differences by state and city</li>
+                    </ul>
+                    
+                    <h6>How to Use This Data</h6>
+                    <ul>
+                        <li>Research salaries for your job title at specific companies</li>
+                        <li>Compare offers across different locations</li>
+                        <li>Find companies that actively sponsor green cards</li>
+                        <li>Understand market rates for salary negotiations</li>
+                    </ul>
+                    
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>Note:</strong> This data shows wages from official DOL filings. 
+                        Actual compensation may include additional benefits, bonuses, and equity not reflected here.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+(function() {
+    'use strict';
+    
+    const employerInput = document.getElementById('employer');
+    const autocompleteDropdown = document.getElementById('employer-autocomplete');
+    let autocompleteTimeout = null;
+    let currentSuggestions = [];
+    let selectedIndex = -1;
+    
+    if (!employerInput || !autocompleteDropdown) {
+        return; // Exit if elements don't exist
+    }
+    
+    // Debounce function
+    function debounce(func, wait) {
+        return function(...args) {
+            clearTimeout(autocompleteTimeout);
+            autocompleteTimeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+    
+    // Fetch autocomplete suggestions
+    async function fetchSuggestions(query) {
+        if (query.length < 2) {
+            hideAutocomplete();
+            return;
+        }
+        
+        try {
+            const response = await fetch(`{% url 'company_autocomplete' %}?q=${encodeURIComponent(query)}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch suggestions');
+            }
+            const suggestions = await response.json();
+            currentSuggestions = suggestions;
+            displaySuggestions(suggestions, query);
+        } catch (error) {
+            console.error('Autocomplete error:', error);
+            hideAutocomplete();
+        }
+    }
+    
+    // Display suggestions in dropdown
+    function displaySuggestions(suggestions, query) {
+        if (suggestions.length === 0) {
+            hideAutocomplete();
+            return;
+        }
+        
+        // Highlight matching text
+        const queryLower = query.toLowerCase();
+        const html = suggestions.map((suggestion, index) => {
+            const suggestionLower = suggestion.toLowerCase();
+            const matchIndex = suggestionLower.indexOf(queryLower);
+            
+            if (matchIndex === -1) {
+                return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(suggestion)}</div>`;
+            }
+            
+            const before = suggestion.substring(0, matchIndex);
+            const match = suggestion.substring(matchIndex, matchIndex + query.length);
+            const after = suggestion.substring(matchIndex + query.length);
+            
+            return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(before)}<strong>${escapeHtml(match)}</strong>${escapeHtml(after)}</div>`;
+        }).join('');
+        
+        autocompleteDropdown.innerHTML = html;
+        autocompleteDropdown.style.display = 'block';
+        selectedIndex = -1;
+        
+        // Add click handlers
+        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                selectSuggestion(suggestions[index]);
+            });
+            
+            item.addEventListener('mouseenter', function() {
+                selectedIndex = parseInt(this.dataset.index);
+                updateHighlight();
+            });
+        });
+    }
+    
+    // Hide autocomplete dropdown
+    function hideAutocomplete() {
+        autocompleteDropdown.style.display = 'none';
+        currentSuggestions = [];
+        selectedIndex = -1;
+    }
+    
+    // Select a suggestion
+    function selectSuggestion(suggestion) {
+        employerInput.value = suggestion;
+        hideAutocomplete();
+        employerInput.focus();
+    }
+    
+    // Update highlight for keyboard navigation
+    function updateHighlight() {
+        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+    
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Debounced input handler
+    const debouncedFetch = debounce((query) => {
+        fetchSuggestions(query);
+    }, 300);
+    
+    // Event listeners
+    employerInput.addEventListener('input', function() {
+        const query = this.value.trim();
+        debouncedFetch(query);
+    });
+    
+    employerInput.addEventListener('keydown', function(e) {
+        if (autocompleteDropdown.style.display === 'none' || currentSuggestions.length === 0) {
+            return;
+        }
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, currentSuggestions.length - 1);
+            updateHighlight();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateHighlight();
+        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+            e.preventDefault();
+            selectSuggestion(currentSuggestions[selectedIndex]);
+        } else if (e.key === 'Escape') {
+            hideAutocomplete();
+        }
+    });
+    
+    // Hide autocomplete when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!employerInput.contains(e.target) && !autocompleteDropdown.contains(e.target)) {
+            hideAutocomplete();
+        }
+    });
+    
+    // Hide autocomplete on form submit
+    const searchForm = document.getElementById('searchForm');
+    if (searchForm) {
+        searchForm.addEventListener('submit', function() {
+            hideAutocomplete();
+        });
+    }
+})();
+</script>
+{% endblock %}

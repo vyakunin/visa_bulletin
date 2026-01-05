@@ -307,7 +307,6 @@ ssh lightsail 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml
 ## Additional Resources
 
 - **Docker Deployment Guide**: `DOCKER_DEPLOYMENT.md`
-- **Migration Guide**: `MIGRATION_TO_DOCKER.md`
 - **Quick Reference**: `DOCKER_QUICKSTART.md`
 - **Deployment Scripts**: `scripts/deploy.sh`
 - **GitHub Actions**: `.github/workflows/`

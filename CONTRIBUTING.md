@@ -6,7 +6,7 @@
 
 1. Run the setup script (installs Bazel if needed):
 ```bash
-./setup_dev_environment.sh
+./scripts/setup_dev_environment.sh
 ```
 
 2. Verify Bazel is installed:
@@ -14,10 +14,28 @@
 bazel --version
 ```
 
-3. Activate the virtual environment (for running refresh_data.py):
+3. Activate the virtual environment (for running scripts):
 ```bash
 source ~/visa-bulletin-venv/bin/activate
 ```
+
+**Note:** Old `refresh_data.py` scripts have been replaced by the unified ingest pipeline. 
+
+**IMPORTANT: Always use the ingest framework for data operations:**
+
+```bash
+# Discover and ingest all domains (bulletin + salary)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
+
+# For one-off scripts, use ingest framework utilities (see README.md)
+```
+
+**Why use the ingest framework:**
+- Automatic discovery, validation, and error handling
+- Resume support for interrupted operations
+- Consistent logging and progress tracking
+- Works across all data sources (bulletin, salary, worksite)
+- **Avoid creating custom download/import scripts** - use framework utilities instead
 
 ### Running Tests
 

@@ -79,10 +79,53 @@ def import_csv_file(...):  # 200+ lines doing everything
 **ALWAYS check for existing code before implementing new functionality.**
 
 **Before writing new code:**
-1. ✅ Search codebase for similar functionality
-2. ✅ Check `lib/` directory for reusable utilities
-3. ✅ Look for existing patterns in similar scripts
-4. ✅ Extract common code to shared libraries when duplicated
+1. ✅ **Check for standard/open-source libraries** - Search PyPI and common libraries before implementing utilities
+2. ✅ Search codebase for similar functionality
+3. ✅ Check `lib/` directory for reusable utilities
+4. ✅ Look for existing patterns in similar scripts
+5. ✅ Extract common code to shared libraries when duplicated
+
+**Rule: Check Standard Libraries Before Implementing Utilities**
+
+**BEFORE implementing a utility or constant set, search for existing standard libraries:**
+
+**✅ GOOD - Use standard library when appropriate:**
+```python
+# For simple utilities, check PyPI first
+# Examples:
+# - US state codes → check 'us' library (pypi.org/project/us)
+# - Country codes → check 'pycountry' or 'country-list'
+# - Date parsing → use 'dateutil' (already common)
+# - URL parsing → use 'urllib.parse' (stdlib)
+```
+
+**When to use a standard library:**
+- ✅ Well-maintained, popular library (>1k stars on GitHub, >100k downloads/month)
+- ✅ Provides more than just the basic functionality needed
+- ✅ Actively maintained (recent commits/updates)
+- ✅ Small dependency footprint
+- ✅ Fits the project's dependency philosophy
+
+**When NOT to use a standard library:**
+- ❌ Simple constant set (like 50 state codes) - may be overkill
+- ❌ Library adds significant dependency overhead for minimal benefit
+- ❌ Library is unmaintained or has security issues
+- ❌ Project already has a working implementation that's sufficient
+- ❌ Only need basic functionality and library brings unnecessary complexity
+
+**Decision process:**
+1. Search PyPI/GitHub for relevant libraries
+2. Evaluate maintenance status and popularity
+3. Consider dependency footprint vs. benefit
+4. If adding a dependency seems excessive, implement a simple utility
+5. **Document the decision** - Add comment in code or README explaining why library was used or not used
+
+**Example:**
+```python
+# Note: Considered 'us' library (pypi.org/project/us) but chose simple 
+# implementation since we only need basic state code validation
+VALID_STATES = {'AL', 'AK', ...}
+```
 
 **✅ GOOD - Reuse existing code:**
 ```python

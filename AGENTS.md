@@ -154,6 +154,61 @@ Installing gh...  # ❌ Don't do this without asking
 - Enables automation and scripting
 - Better control over process lifecycle
 
+## Rule: NEVER Use `| head` or `| tail -N` in Command Pipes
+
+**🚨 CRITICAL: THIS IS THE #1 MISTAKE AI ASSISTANTS MAKE 🚨**
+
+**NEVER, EVER use `| head`, `| tail -N`, or `| grep | head` in command pipes. This applies to ALL commands, not just long-running scripts.**
+
+**❌ FORBIDDEN PATTERNS (will block monitoring):**
+```bash
+# ❌ NEVER DO THIS - EVER
+bazel run //:script 2>&1 | head -50
+bazel run //:script 2>&1 | tail -15
+bazel run //:script 2>&1 | grep "pattern" | head -20
+command | head -N  # ANY use of head in pipes
+command | tail -N   # ANY use of tail -N in pipes
+
+# ❌ SPECIFIC FORBIDDEN PATTERN (common violation):
+bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file 2>&1 | grep -E "pattern" -A 15 | head -40
+```
+
+**✅ ALWAYS DO THIS INSTEAD:**
+```bash
+# ✅ Run in background, then view logs
+bazel run //:script > /tmp/script.log 2>&1 &
+PID=$!
+echo "Started with PID: $PID"
+tail -f /tmp/script.log                    # Real-time monitoring
+tail -50 /tmp/script.log                   # View last 50 lines (on log file, not in pipe)
+tail -f /tmp/script.log | grep "pattern"   # Filter while monitoring (on log file)
+
+# ✅ CORRECT PATTERN for the forbidden example above:
+bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file > /tmp/validate.log 2>&1 &
+tail -f /tmp/validate.log | grep -E "Top file discrepancies|Per-file comparison|files with significant" -A 15
+# Or view last 40 lines after completion:
+tail -40 /tmp/validate.log
+```
+
+**Why this is critical:**
+- `| head` or `| tail -N` in pipes blocks monitoring and prevents seeing progress
+- You can't tell if script is stuck or just slow
+- Progress messages are hidden
+- Pipe closes early, may cause SIGPIPE errors
+- **AI assistants CONSTANTLY violate this** - check EVERY command for `| head` or `| tail -N`
+
+**If you need to see output:**
+1. Run command in background: `command > /tmp/log.log 2>&1 &`
+2. Monitor: `tail -f /tmp/log.log`
+3. View last N lines: `tail -N /tmp/log.log` (on the log file, NOT in the pipe)
+
+**Rationale:**
+- Prevents terminal blocking and improves responsiveness
+- Enables early detection of stuck scripts
+- Allows monitoring progress without interrupting execution
+- Better debugging (logs persist even if terminal closes)
+- Follows best practices for long-running operations
+
 ## Rule: Use SSH Config Aliases for Remote Servers
 
 **ALWAYS use SSH config aliases instead of raw IP addresses or long connection strings.**

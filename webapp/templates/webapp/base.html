@@ -234,23 +234,12 @@
             margin-bottom: 2rem;
             border: 1px solid #d0d0d0;
             border-radius: 2px;
-            min-height: 700px !important; /* Further increased - mobile needs more space */
-        }
-        
-        /* Ensure filter card body has explicit height to prevent expansion */
-        .filter-card .card-body {
-            min-height: 550px !important;
         }
         
         /* Reserve space for form controls to prevent shift */
         .filter-card .form-select,
         .filter-card .form-control {
             height: 44px !important; /* Explicit height prevents auto-sizing shift */
-        }
-        
-        /* Reserve space for form groups including labels and help text */
-        .filter-card .col-12 {
-            min-height: 95px !important; /* Prevents shift from form-text loading */
         }
         
         /* Ensure help text has reserved space */
@@ -463,15 +452,8 @@
             .hero-section p {
                 font-size: 0.95rem;
             }
-            .filter-card {
-                min-height: 700px !important; /* Preserve min-height on mobile */
-            }
             .filter-card .card-body {
                 padding: 1rem;
-                min-height: 550px !important; /* Preserve min-height on mobile */
-            }
-            .filter-card .col-12 {
-                min-height: 95px !important; /* Preserve form group height on mobile */
             }
             .filter-card label {
                 font-size: 0.9rem;

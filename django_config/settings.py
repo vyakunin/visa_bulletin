@@ -12,28 +12,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Workspace directory for Bazel compatibility
 WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 
-# Database configuration - supports both SQLite and PostgreSQL
-DB_ENGINE = os.environ.get('DB_ENGINE', 'sqlite3').lower()
+# Database configuration - PostgreSQL is now the default
+# SQLite is deprecated and disabled. Set DB_ENGINE=sqlite3 only for migration/backup purposes.
+DB_ENGINE = os.environ.get('DB_ENGINE', 'postgresql').lower()
 
-if DB_ENGINE == 'postgresql':
-    # PostgreSQL configuration
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'visa_bulletin'),
-            'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'OPTIONS': {
-                'connect_timeout': 10,
-            },
-        }
-    }
-    # Connection pooling for better performance
-    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
-else:
-    # SQLite configuration (default)
+if DB_ENGINE == 'sqlite3':
+    # SQLite is deprecated - use only for migration/backup purposes
+    # SQLite configuration (fallback, use DB_ENGINE=sqlite3 to enable)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -56,6 +41,23 @@ else:
     
     from django.db.backends.signals import connection_created
     connection_created.connect(setup_sqlite_wal)
+else:
+    # PostgreSQL configuration (default)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'visa_bulletin_dev'),
+            'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'dev_password'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
+    }
+    # Connection pooling for better performance
+    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
 
 # Application definition
 INSTALLED_APPS = [

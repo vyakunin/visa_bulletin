@@ -9,19 +9,21 @@ class Country(models.IntegerChoices):
     Country or region for visa chargeability
     
     Uses IntegerChoices for performance (high-volume data):
-    - Stores integer in DB (0, 1, 2, 3, 4, 5)
+    - Stores integer in DB (0=invalid, 1-6 for valid countries)
     - Access as enum in Python (Country.CHINA, Country.INDIA)
     - Query with: objects.filter(country=Country.CHINA)
     - Faster comparisons and joins
     - Smaller storage (4 bytes vs 10-50 bytes)
+    - Value 0 is reserved for invalid/unknown (allows safe truthiness checks)
     """
     
-    ALL = 0, "Other Countries"
-    CHINA = 1, "China (mainland born)"
-    INDIA = 2, "India"
-    MEXICO = 3, "Mexico"
-    PHILIPPINES = 4, "Philippines"
-    EL_SALVADOR_GUATEMALA_HONDURAS = 5, "El Salvador/Guatemala/Honduras"
+    INVALID = 0, "Invalid/Unknown"
+    ALL = 1, "Other Countries"
+    CHINA = 2, "China (mainland born)"
+    INDIA = 3, "India"
+    MEXICO = 4, "Mexico"
+    PHILIPPINES = 5, "Philippines"
+    EL_SALVADOR_GUATEMALA_HONDURAS = 6, "El Salvador/Guatemala/Honduras"
     
     @classmethod
     def from_header(cls, header: str):

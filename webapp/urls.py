@@ -13,6 +13,7 @@ urlpatterns = [
     
     # Salary Database
     path('salaries/', views.salary_search_view, name='salary_search'),
+    path('worksites/', views.worksite_search_view, name='worksite_search'),
     path('api/company-autocomplete/', views.company_autocomplete_view, name='company_autocomplete'),
     
     # SEO-friendly landing pages

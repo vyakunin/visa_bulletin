@@ -36,3 +36,8 @@ mockups/
 
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/
+
+# DOL data files - excluded from git (can be re-downloaded via ingest pipeline)
+# See LARGE_FILES_NOT_IN_GIT.md for details
+data/salary/dol_data/*.xlsx
+data/salary/dol_data/*.json

@@ -1,5 +1,5 @@
 ---
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Django Patterns and Best Practices
@@ -26,16 +26,17 @@ alwaysApply: false
 
 **Examples:**
 ```python
-# High-volume: Use IntegerChoices
+# High-volume: Use IntegerChoices (0 reserved for invalid)
 class IngestStatus(models.IntegerChoices):
-    PENDING = 0, 'Pending'
-    RUNNING = 1, 'Running'
-    COMPLETED = 2, 'Completed'
+    INVALID = 0, 'Invalid/Unknown'  # Reserved
+    PENDING = 1, 'Pending'
+    RUNNING = 2, 'Running'
+    COMPLETED = 3, 'Completed'
 
 # Low-volume: TextChoices OK
 class DataDomain(models.TextChoices):
-    DOL = 'dol', 'Department of Labor'
-    VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
+ DOL = 'dol', 'Department of Labor'
+ VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
 ```
 
 **Why IntegerChoices for high-volume?**
@@ -50,6 +51,125 @@ class DataDomain(models.TextChoices):
 - ✅ Self-documenting (no lookup table needed)
 - ✅ Easier debugging
 - ✅ Negligible performance impact at low volumes
+
+## Rule: Reserve 0 for Invalid/Unknown in IntegerChoices
+
+**ALWAYS reserve value `0` for invalid/unknown/unspecified in IntegerChoices enums.**
+
+**✅ GOOD - 0 reserved for invalid:**
+```python
+class Country(models.IntegerChoices):
+    INVALID = 0, "Invalid/Unknown"  # Reserved - never used for valid data
+    ALL = 1, "Other Countries"
+    CHINA = 2, "China (mainland born)"
+    INDIA = 3, "India"
+```
+
+**❌ BAD - 0 used for valid value:**
+```python
+class Country(models.IntegerChoices):
+    ALL = 0, "Other Countries"  # ❌ 0 should be reserved
+    CHINA = 1, "China (mainland born)"
+```
+
+**Benefits:**
+- ✅ Prevents falsy value bugs (0 is falsy, but it's invalid anyway)
+- ✅ Can use truthiness checks safely: `if country:` filters out invalid
+- ✅ Clear semantic meaning: 0 = invalid/unknown
+- ✅ Consistent pattern across all IntegerChoices
+- ✅ Easier debugging (0 always means invalid)
+
+**When to use:**
+- ✅ All new IntegerChoices enums
+- ✅ Migrate existing enums when feasible (see migration section below)
+
+**Rationale:**
+- Eliminates entire class of bugs (falsy value checks work correctly)
+- Makes code more readable (`if country:` is clear and safe)
+- Follows common pattern in many systems (0 = invalid/null)
+- Reduces cognitive load (no need to remember which enums use 0)
+
+## Rule: IntegerChoices Falsy Value Bug - Always Use Explicit None Checks
+
+**CRITICAL: When using IntegerChoices where a value can be `0`, NEVER use truthiness checks.**
+
+**Note:** This rule applies to legacy code or enums that haven't been migrated yet. After migrating to reserve 0 for invalid (see rule above), you can use truthiness checks safely: `if country:` will correctly filter out invalid (0) values.
+
+**The Bug (Legacy Pattern):**
+- IntegerChoices can have value `0` for valid data (e.g., `ALL = 0, "Other Countries"`)
+- `0` is falsy in Python: `bool(0) == False`
+- Code like `if not country:` treats `Country.ALL` (value 0) as falsy and skips it
+- This causes silent data loss - records are matched correctly but discarded
+- **Solution:** Reserve 0 for invalid, or use explicit `is None` checks
+
+**❌ BAD - Falsy check:**
+```python
+country = Country.from_header(header)
+if not country:  # ❌ Treats 0 as falsy!
+    # Skip unknown country
+    continue
+# Country.ALL (value=0) is incorrectly skipped here!
+```
+
+**✅ GOOD - Explicit None check:**
+```python
+country = Country.from_header(header)
+if country is None:  # ✅ Only skips actual None values
+    # Skip unknown country
+    continue
+# Country.ALL (value=0) is correctly processed here!
+```
+
+**Real-World Example (Legacy Pattern - Fixed):**
+```python
+# In lib/parsing/bulletin/table_to_cutoff_data.py (before migration)
+for country_header, cutoff_value in zip(country_headers, cutoff_values):
+    country = Country.from_header(country_header)
+    
+    # CRITICAL: Check for None explicitly, not just falsy!
+    # Country.ALL = 0 (legacy), which is falsy, so we must check `country is None`
+    if country is None:
+        logger.warning(f"Unknown country header: '{country_header}'")
+        continue
+    
+    # Process all valid countries including Country.ALL (value=0 in legacy)
+    data = {'country': country.value, ...}
+```
+
+**New Pattern (After Migration):**
+```python
+# With 0 reserved for INVALID, truthiness checks work correctly:
+for country_header, cutoff_value in zip(country_headers, cutoff_values):
+    country = Country.from_header(country_header)
+    
+    # Safe: 0 is invalid, so truthiness check filters it out correctly
+    if not country:  # ✅ Works correctly - filters out INVALID (0)
+        logger.warning(f"Unknown country header: '{country_header}'")
+        continue
+    
+    # Process all valid countries (all have value >= 1)
+    data = {'country': country.value, ...}
+```
+
+**When This Applies:**
+- ✅ Legacy IntegerChoices enums where first value is 0 (before migration)
+- ✅ Any code checking if enum value exists/is valid in legacy code
+- ✅ Any code filtering out "unknown" or "invalid" enum values
+
+**After Migration:**
+- ✅ With 0 reserved for INVALID, truthiness checks work correctly
+- ✅ `if country:` safely filters out invalid (0) and keeps all valid values (>= 1)
+- ✅ No need for explicit None checks to avoid falsy bugs
+
+**Test Coverage:**
+- Test `test_country_all_is_not_treated_as_none()` in `tests/test_country_header_parsing.py` verifies extraction works
+- Ensures Country.ALL (value=1 after migration) is extracted correctly
+
+**Rationale:**
+- Prevents silent data loss
+- Catches bug at test time, not production
+- Makes code intent explicit (checking for None, not falsy values)
+- Follows Python best practice: explicit is better than implicit
 
 **Pattern:**
 
@@ -103,6 +223,101 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 - Automatic database constraints
 - Admin UI shows human-readable labels
 
+## Rule: Always Use Enum Values Instead of String Literals
+
+**ALWAYS use enum values (`.value`) instead of hardcoded string literals when working with Django TextChoices or IntegerChoices.**
+
+**Why:**
+- Single source of truth (change enum value once, not everywhere)
+- Type safety (IDE autocomplete, catch typos)
+- Refactoring safety (rename enum value, code updates automatically)
+- Prevents inconsistencies (typos like `'dol'` vs `'DOL'` vs `'Dol'`)
+
+**❌ BAD - String literals:**
+```python
+# Hardcoded strings scattered throughout codebase
+source = DataSource.objects.create(domain='dol', source_type='lca')
+if domain == 'dol':
+    process_dol_data()
+parser.add_argument('--domain', choices=['dol', 'visa_bulletin'])
+assert result['domain'] == 'dol'
+```
+
+**✅ GOOD - Enum values:**
+```python
+from models.ingest.enums import DataDomain, SourceType
+
+# Use enum values
+source = DataSource.objects.create(
+    domain=DataDomain.DOL.value, 
+    source_type=SourceType.LCA.value
+)
+if domain == DataDomain.DOL.value:
+    process_dol_data()
+parser.add_argument('--domain', choices=[d.value for d in DataDomain])
+assert result['domain'] == DataDomain.DOL.value
+```
+
+**When to use `.value`:**
+- ✅ Setting enum fields: `domain=DataDomain.DOL.value`
+- ✅ Comparing against enum values: `if domain == DataDomain.DOL.value:`
+- ✅ Argparse choices: `choices=[d.value for d in DataDomain]`
+- ✅ Test assertions: `assert result['domain'] == DataDomain.DOL.value`
+- ✅ Dictionary keys/values: `{'domain': DataDomain.DOL.value}`
+
+**When NOT to use `.value` (use enum directly):**
+- ✅ Django queries: `DataSource.objects.filter(domain=DataDomain.DOL)` (Django handles conversion)
+- ✅ Model field assignments: `record.domain = DataDomain.DOL` (Django handles conversion)
+- ✅ Comparisons with model fields: `if record.domain == DataDomain.DOL:` (Django handles conversion)
+
+**Special cases:**
+
+1. **User input parsing** - Accept strings, convert to enum:
+```python
+# ✅ GOOD - Accept string input, convert to enum
+def parse_domain(input_str: str) -> DataDomain | None:
+    """Parse user input to enum"""
+    for domain in DataDomain:
+        if domain.value == input_str.lower():
+            return domain
+    return None
+
+# Use enum for internal logic
+domain = parse_domain(user_input)
+if domain == DataDomain.DOL:
+    process_dol_data()
+```
+
+2. **Argparse choices** - Use enum values:
+```python
+# ✅ GOOD - Use enum values for choices
+parser.add_argument(
+    '--domain', 
+    choices=[d.value for d in DataDomain],
+    help=f'Domain: {", ".join(d.value for d in DataDomain)}'
+)
+```
+
+3. **Plugin registry keys** - Use enum values:
+```python
+# ✅ GOOD - Use enum values for registry keys
+key = f"{plugin.domain.value}:{plugin.source_type.value}"
+PluginRegistry._plugins[key] = plugin
+```
+
+**Enums to check:**
+- `DataDomain`: `'dol'`, `'visa_bulletin'` → Use `DataDomain.DOL.value`, `DataDomain.VISA_BULLETIN.value`
+- `SourceType`: `'lca'`, `'perm'`, `'worksite'`, `'bulletin'` → Use `SourceType.LCA.value`, etc.
+- `VisaProgram`: `'h1b'`, `'perm'`, `'h1b1'`, `'e3'` → Use `VisaProgram.H1B.value` (IntegerChoices, but `.value` still works)
+- `VisaCategory`, `ActionType`, `Country`, etc. → Use enum values
+
+**Rationale:**
+- Prevents typos and inconsistencies
+- Makes refactoring safe (change enum definition, all code updates)
+- Type safety catches errors at development time
+- Single source of truth for all enum values
+- Easier to find all usages (search for `DataDomain.DOL` not `'dol'`)
+
 ## Django Settings
 
 - Use `settings.py` for local development
@@ -112,9 +327,9 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 
 ## Database
 
-- SQLite with WAL mode for production (suitable for read-heavy workloads)
-- Database file: `visa_bulletin.db`
-- WAL files: `visa_bulletin.db-wal`, `visa_bulletin.db-shm` (gitignored)
+- **PostgreSQL is the ONLY supported database** (configured in `django_config/settings.py`)
+- **SQLite is NOT supported** for development or production
+- Database connection configured via environment variables (DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT)
 
 ## Database Migrations
 
@@ -124,6 +339,28 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 - Check for reversibility when possible
 - Document complex migrations with comments
 - Use `makemigrations --check` in CI/CD to catch missing migrations
+
+### Rule: Running Migrations with Server
+
+**PostgreSQL supports concurrent schema changes:**
+- ✅ **Server can stay running** - PostgreSQL uses MVCC (Multi-Version Concurrency Control)
+- ✅ Migrations can run while server is active
+- ✅ No need to stop the server before running migrations
+
+**✅ GOOD - Server can run:**
+```bash
+# Server can be running - no need to stop
+bazel run //:migrate
+```
+
+**Production:**
+- In production (Docker), migrations run during container startup before the web server starts
+- No manual intervention needed - migrations are automatic
+- See `Dockerfile` and `docker-compose.yml` for production migration flow
+
+**Rationale:**
+- PostgreSQL uses MVCC (Multi-Version Concurrency Control) allowing concurrent schema changes
+- Server can remain running during migrations without conflicts
 
 **Creating Migrations:**
 
@@ -154,3 +391,60 @@ VisaCutoffDate.objects.create(country=Country.CHINA)
 - Migrations should be reviewed like code changes
 - Reversible migrations enable safe rollbacks
 - Subdirectory models must be imported for Django to detect them
+
+## Rule: ForeignKey Lazy References to Models in Subdirectories
+
+**When using ForeignKey with string references to models in subdirectories, you MUST import the model directly to ensure Django can resolve it.**
+
+**Problem:**
+Django's system check runs before `AppConfig.ready()`, so models in subdirectories aren't discovered when using lazy string references like `'models.IngestVersion'`.
+
+**Error:**
+```
+SystemCheckError: The field models.SalaryRecord.ingest_version was declared with a lazy reference 
+to 'models.ingestversion', but app 'models' doesn't provide model 'ingestversion'.
+```
+
+**Solution (3 parts required):**
+
+1. **Direct import in files that reference the model:**
+```python
+# In models/salary.py
+from .ingest.ingest_version import IngestVersion  # noqa: F401
+
+class SalaryRecord(models.Model):
+    ingest_version = models.ForeignKey(
+        'models.IngestVersion',  # String reference
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+```
+
+2. **Import in `models/__init__.py` for discovery:**
+```python
+from .ingest.ingest_version import IngestVersion
+```
+
+3. **Add Bazel dependency in BUILD file:**
+```python
+py_library(
+    name = "salary",
+    deps = [
+        "//models/ingest:ingest_version",  # Required
+        # ... other deps
+    ],
+)
+```
+
+**Why all three are needed:**
+- Direct import ensures model is registered before system checks run
+- `__init__.py` import enables Django to discover models during `makemigrations`
+- Bazel dependency makes module available in sandboxed environment
+
+**String reference format:**
+- ✅ Use `'models.ModelName'` (matches `app_label` in Meta class)
+- ❌ Don't use `'subdirectory.ModelName'` (Django looks for app 'subdirectory')
+- ❌ Don't use just `'ModelName'` (only works if model is in same file)
+
+**See:** `docs/DJANGO_MODEL_RESOLUTION_ISSUE.md` for complete troubleshooting guide.

@@ -38,7 +38,7 @@ Run the automated setup script:
 
 ```bash
 cd /path/to/visa_bulletin
-./setup_dev_environment.sh
+./scripts/setup_dev_environment.sh
 ```
 
 The setup script will:
@@ -114,6 +114,7 @@ The easiest way to explore visa bulletin data is through the interactive web das
 
 1. **First-time setup (run migrations):**
 ```bash
+# Note: Server can be running - PostgreSQL supports concurrent migrations
 bazel run //:migrate
 ```
 
@@ -121,6 +122,8 @@ bazel run //:migrate
 ```bash
 bazel run //:runserver
 ```
+
+**Note:** With PostgreSQL, you can run migrations while the server is running. The database supports concurrent schema changes, so there's no need to stop the server before running migrations.
 
 **Note:** The server runs with `--noreload` flag (no auto-reload on file changes). This prevents crashes in Bazel's sandboxed environment. To see code changes:
 - Stop the server (`Ctrl+C`)
@@ -149,15 +152,16 @@ The dashboard features:
 To download and import the latest visa bulletins:
 
 ```bash
-# Fetch bulletins and save to database
-bazel run //:refresh_data -- --save-to-db
+# Fetch bulletins and save to database (unified ingest pipeline)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain visa_bulletin
 ```
 
 This will:
-1. Check for new bulletins on travel.state.gov
-2. Download any new bulletins (skips already cached pages)
+1. Discover new bulletins on travel.state.gov
+2. Download any new bulletins (skips already processed sources)
 3. Parse tables and extract priority dates
-4. Save structured data to the SQLite database
+4. Save to database with duplicate detection
+4. Save structured data to the PostgreSQL database
 
 ### Running Tests
 
@@ -207,27 +211,28 @@ Tests verify:
 
 **Note:** Tests automatically run before every git commit via Bazel-based pre-commit hook.
 
-The script will:
-1. Fetch the main visa bulletin index page
+The ingest framework will:
+1. Discover new visa bulletin sources from the main index page
 2. Extract links to individual monthly bulletins
-3. Download up to 100 most recent bulletins (skipping already cached pages)
+3. Download bulletins (skipping already cached pages in `data/bulletin/saved_pages/`)
 4. Parse tables from each bulletin
-5. Print extracted data to console
+5. Save structured data to the database
+6. Validate data quality and completeness
 
 ### Cached Data
 
-Downloaded HTML pages are stored in the `data/bulletin/saved_pages/` directory. The script automatically checks this directory before making network requests, making subsequent runs much faster.
+Downloaded HTML pages are stored in the `data/bulletin/saved_pages/` directory. The ingest framework automatically checks this directory before making network requests, making subsequent runs much faster.
 
-To force a fresh download, delete the `data/bulletin/saved_pages/` directory or specific HTML files within it.
+To force a fresh download, delete the `data/bulletin/saved_pages/` directory or specific HTML files within it, then re-run the ingest pipeline.
 
 ## Quick Start
 
 ```bash
 # 1. Setup environment
-./setup_dev_environment.sh
+./scripts/setup_dev_environment.sh
 
-# 2. Fetch data and populate database
-bazel run //:refresh_data -- --save-to-db
+# 2. Fetch data and populate database (unified ingest pipeline)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 
 # 3. Run web dashboard
 bazel run //:runserver
@@ -235,6 +240,81 @@ bazel run //:runserver
 # 4. Open browser
 open http://localhost:8000
 ```
+
+## Data Ingestion (IMPORTANT: Use Ingest Framework)
+
+**⚠️ All users should use the unified ingest framework for data operations.**
+
+The project uses a unified ingest pipeline (`lib/ingest/`) for all data operations. This framework provides:
+- **Automatic discovery** of new data sources
+- **Resume support** (can resume interrupted operations)
+- **Progress tracking** and logging
+- **Validation** after ingestion
+- **Versioning** for data rollbacks
+- **Consistent behavior** across all data sources (bulletin, salary, etc.)
+
+### For Regular Updates
+
+**Always use the ingest framework for scheduled updates and cron jobs:**
+
+```bash
+# Discover and ingest all domains (bulletin + salary)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
+
+# Ingest only bulletin data
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain visa_bulletin
+
+# Ingest only salary data
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain dol
+```
+
+**Important: After ingesting salary data, run employer clustering:**
+
+```bash
+# Option 1: Use combined script (recommended - runs ingest + clustering)
+bazel run //scripts/ingest:ingest_and_cluster -- --source-id 123
+
+# Option 2: Run separately
+bazel run //scripts/ingest:run_pipeline -- run --source-id 123
+bazel run //scripts/salary:cluster_existing_employers
+```
+
+**Why clustering is separate:**
+- Clustering is disabled during ingest for performance (10-100x faster)
+- Clustering must be run after ingest to cluster newly imported employers
+- Clustering can take 30+ minutes for large datasets, so it's run separately
+
+### For One-Off Scripts
+
+**When creating one-off scripts or debugging tools, use the ingest framework whenever possible:**
+
+✅ **GOOD** - Use ingest framework utilities:
+```python
+from lib.ingest.orchestrator import PipelineOrchestrator
+from lib.ingest.registry import PluginRegistry
+from models.ingest.data_source import DataSource
+
+# Use framework for one-off imports
+plugin = PluginRegistry.get_plugin(DataDomain.VISA_BULLETIN, SourceType.BULLETIN)
+orchestrator = PipelineOrchestrator()
+run = orchestrator.run(source)
+```
+
+❌ **BAD** - Direct database access or custom download logic:
+```python
+# Don't create custom download/import logic
+# Use ingest framework instead
+```
+
+**Why use the framework:**
+- Consistent error handling and logging
+- Automatic validation and data quality checks
+- Resume support if script fails mid-way
+- Progress tracking and ETA calculations
+- Works with all data sources (bulletin, salary, worksite)
+
+**Legacy scripts:**
+Old standalone scripts may still exist in `scripts/bulletin/` and `scripts/salary/` directories. These are deprecated - migrate to using the ingest framework when possible.
 
 ## Deployment
 
@@ -287,24 +367,22 @@ visa_bulletin/
 │   └── test_parser.py           # Unit tests for parser functions
 ├── data/
 │   ├── bulletin/
-│   │   └── saved_pages/
+│   │   └── saved_pages/         # Cached HTML bulletins (used by ingest framework)
 │   └── salary/
-│       └── dol_data/
-│   ├── BUILD                    # Bazel build file for test data
-│   └── *.html                   # Cached bulletins (125 files)
+│       └── dol_data/            # Salary data files (PERM, LCA, worksite)
+│   └── BUILD                    # Bazel build file for test data
 ├── BUILD                        # Root Bazel build file
 ├── MODULE.bazel                 # Bazel module definition (Bzlmod)
-├── WORKSPACE                    # Legacy Bazel workspace file
 ├── .bazelrc                     # Bazel configuration
 ├── .bazelversion                # Pin Bazel version
 ├── scripts/
-│   ├── bulletin/
-│   │   ├── refresh_data.py      # Main entry point script
-│   │   └── refresh_incremental.py
+│   ├── ingest/
+│   │   └── run_pipeline.py      # Unified ingest pipeline (replaces old import scripts)
 │   └── salary/
-│       ├── import_data.py
-│       └── ...
-├── setup_dev_environment.sh    # Automated setup script
+│       ├── validate_data.py      # Data validation
+│       └── ...                   # Other utility scripts
+├── scripts/
+│   └── setup_dev_environment.sh    # Automated setup script
 ├── requirements.txt             # Python dependencies
 ├── .gitignore                   # Git ignore rules
 ├── CONTRIBUTING.md              # Development guide
@@ -467,7 +545,7 @@ Represents an extracted table from a bulletin.
 
 1. **No error handling**: The script doesn't handle network failures gracefully beyond basic `raise_for_status()` calls
 
-3. **Hardcoded limit**: Only processes first 100 bulletins (line 25 in `scripts/bulletin/refresh_data.py`)
+3. **Deprecated scripts**: Old `scripts/bulletin/refresh_data.py` and `refresh_incremental.py` have been replaced by the unified ingest pipeline (`scripts/ingest/run_pipeline.py`)
 
 ### Potential Improvements
 

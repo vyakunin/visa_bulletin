@@ -1,0 +1,28 @@
+Are these two employer names referring to the same company?
+
+Name 1: {emp1_name}
+Location 1: {emp1_city}, {emp1_state}
+
+Name 2: {emp2_name}
+Location 2: {emp2_city}, {emp2_state}
+
+CRITICAL: Treat the following as the SAME company (answer YES):
+✓ Case differences only: "Google Inc" = "GOOGLE INC" = "google inc"
+✓ Punctuation differences: "Inc." = "Inc" = ", Inc."
+✓ Legal suffix variations: "Inc" = "Incorporated" = "Corp" = "Corporation" = "LLC" = "Limited"
+  (These are just different legal entity types for the same company)
+✓ Abbreviation variations: "Co." = "Company" = "CO"
+✓ Unicode character differences: "-" (hyphen) = "–" (en-dash) = "—" (em-dash)
+✓ Minor spacing/punctuation: "Company, Inc" = "Company. Inc" = "Company Inc"
+
+Answer NO only if the names refer to clearly different companies (different business names, not just formatting).
+
+Answer with only "YES" or "NO" followed by a brief explanation.
+
+
+
+
+
+
+
+

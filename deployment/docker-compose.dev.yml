@@ -10,8 +10,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Persist database and cached pages
-      - ./visa_bulletin.db:/app/visa_bulletin.db
+      # Persist cached pages and logs (PostgreSQL is used for database)
       - ../data/bulletin/saved_pages:/app/saved_pages
       - ./logs:/app/logs
     environment:
@@ -22,9 +21,8 @@ services:
   # Daily data refresh (cron-like service)
   data-refresh:
     build: .
-    command: sh -c "while true; do python3 scripts/bulletin/refresh_incremental.py --save-to-db; sleep 86400; done"
+    command: sh -c "while true; do python3 scripts/ingest/run_pipeline.py discover-and-ingest --all-domains; sleep 86400; done"
     volumes:
-      - ./visa_bulletin.db:/app/visa_bulletin.db
       - ../data/bulletin/saved_pages:/app/saved_pages
       - ./logs:/app/logs
     environment:

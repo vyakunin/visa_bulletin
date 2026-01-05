@@ -17,6 +17,176 @@ These are general code style rules that apply across all projects.
 - Add docstrings to public functions and classes
 - Keep functions focused and single-purpose
 
+## Rule: Prefer YAML for Text Configuration Files
+
+**ALWAYS use YAML (`.yaml` or `.yml`) for human-readable text configuration files, not JSON.**
+
+**✅ GOOD - YAML for configs:**
+```python
+# config.yaml
+database:
+  host: localhost
+  port: 5432
+  name: myapp
+
+# Python code
+import yaml
+with open('config.yaml') as f:
+    config = yaml.safe_load(f)
+```
+
+**❌ BAD - JSON for configs:**
+```python
+# config.json (harder to read, no comments)
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432
+  }
+}
+```
+
+**When to use YAML:**
+- ✅ Configuration files (settings, thresholds, parameters)
+- ✅ Data files that need comments or documentation
+- ✅ Files that humans need to read or edit
+- ✅ Files with hierarchical structure
+
+**When JSON is acceptable:**
+- ✅ API request/response formats (standard)
+- ✅ Data exchange between systems
+- ✅ Machine-generated files
+- ✅ Files that must be strictly valid JSON (no comments)
+
+**When to use text template files:**
+- ✅ LLM prompts that need editing without code changes
+- ✅ Email templates
+- ✅ Report templates
+- ✅ Any text that users/non-developers might edit
+
+**Example - Prompt template:**
+```python
+# llm_prompt_template.txt
+Are these two employer names referring to the same company?
+
+Name 1: {emp1_name}
+Location 1: {emp1_city}, {emp1_state}
+
+Name 2: {emp2_name}
+Location 2: {emp2_city}, {emp2_state}
+
+Similarity score: {similarity:.3f}
+
+Answer with only "YES" or "NO" followed by a brief explanation.
+
+# Python code
+with open('llm_prompt_template.txt') as f:
+    template = f.read()
+prompt = template.format(emp1_name=..., ...)
+```
+
+**Benefits of YAML:**
+- ✅ Supports comments (can document why values were chosen)
+- ✅ More readable (less punctuation, better formatting)
+- ✅ Easier to edit manually
+- ✅ Better for version control diffs
+- ✅ Supports multi-line strings naturally
+
+**Rationale:**
+- Config files are meant to be human-readable and editable
+- Comments help explain why values were chosen
+- YAML is more maintainable for long-term projects
+- Reduces errors from missing commas, quotes, etc.
+
+## Rule: Prefer Top-Level Imports Over Local Imports
+
+**ALWAYS use top-level imports unless there's a specific reason for local imports.**
+
+**✅ GOOD - Top-level imports:**
+```python
+import os
+from pathlib import Path
+from datetime import datetime
+from lib.utils.data_source_utils import get_fiscal_year_from_filename
+from models.salary import SalaryRecord
+
+def process_data():
+    # Use imported functions directly
+    fiscal_year = get_fiscal_year_from_filename("file.csv")
+    return SalaryRecord.objects.filter(fiscal_year=fiscal_year)
+```
+
+**❌ BAD - Local imports without reason:**
+```python
+def process_data():
+    # ❌ BAD - Already imported at top, no reason for local import
+    from lib.utils.data_source_utils import get_fiscal_year_from_filename
+    from datetime import datetime  # ❌ Already imported at top
+    fiscal_year = get_fiscal_year_from_filename("file.csv")
+```
+
+**When local imports are acceptable (last resort only):**
+
+1. **Circular import prevention (avoid by reorganizing Bazel targets first):**
+```python
+# ⚠️ LAST RESORT - Only if Bazel target reorganization is not feasible
+# ✅ PREFERRED: Split into separate Bazel targets to avoid circular dependency
+def process_data():
+    from models.salary import SalaryRecord  # Import here to avoid circular import
+    return SalaryRecord.objects.all()
+```
+
+**Before using local imports for circular dependencies:**
+- ✅ **First**: Reorganize Bazel targets to break the cycle
+- ✅ **Second**: Split modules to eliminate circular dependency
+- ⚠️ **Last resort**: Use local import only if reorganization is not feasible
+
+2. **Optional/heavy dependencies (only if rarely executed AND unlikely to be used):**
+```python
+# ⚠️ LAST RESORT - Only if code path is rarely executed AND import may not be needed
+# ✅ PREFERRED: Split into separate Bazel target with optional dependency
+def generate_report(format: str):
+    if format == 'pdf':
+        from reportlab.pdfgen import canvas  # Heavy library, only import if needed
+        # ... use canvas
+```
+
+**Before using local imports for optional dependencies:**
+- ✅ **First**: Split into separate Bazel target with optional dependency
+- ✅ **Second**: Use lazy loading pattern with separate module
+- ⚠️ **Last resort**: Use local import only if code path is rarely executed AND there's decent chance import won't be used
+
+3. **Django setup requirements:**
+```python
+# ✅ GOOD - Local import after Django setup
+def some_function():
+    # Django must be set up first
+    from models.salary import SalaryRecord  # Import after django.setup()
+    return SalaryRecord.objects.all()
+```
+
+4. **Conditional/plugin imports:**
+```python
+# ✅ GOOD - Local import for plugin loading
+def load_plugin(plugin_name: str):
+    if plugin_name == 'excel':
+        from lib.parsing.excel import ExcelParser
+        return ExcelParser()
+```
+
+**Benefits of top-level imports:**
+- ✅ Make dependencies explicit and visible
+- ✅ Enable better IDE support (autocomplete, go-to-definition)
+- ✅ Catch import errors early (at module load time)
+- ✅ Follow PEP 8 style guide
+- ✅ Make code easier to understand and maintain
+
+**Rationale:**
+- Top-level imports make dependencies clear and visible
+- Local imports should only be used when necessary (circular imports, optional dependencies, etc.)
+- Consistent import style improves code readability and maintainability
+- Hiding imports inside functions makes code harder to understand and debug
+
 ## Rule: Only Add Comments for Non-Evident Code
 
 **Only add comments when the code's purpose or behavior is not immediately obvious from reading the surrounding code.**
@@ -132,3 +302,258 @@ def process_data():
 - Makes the workflow structure explicit
 - Allows easy modification of individual steps
 - Follows single responsibility principle
+
+## Rule: Prefer Exception Handling Decorator Over Manual Try/Except
+
+**ALWAYS prefer `handle_unrecoverable_errors` decorator from `lib.utils.exception_utils` over manual try/except blocks when distinguishing between unrecoverable and recoverable errors.**
+
+**Why:**
+- Consistent error handling pattern across codebase
+- Automatic logging with proper context
+- Distinguishes unrecoverable errors (ImportError, ModuleNotFoundError) from recoverable ones
+- Supports callbacks for state updates and error counting
+- Reduces boilerplate and prevents inconsistencies
+- **Forces better function scoping** - requires extracting protected code into focused functions, improving testability and maintainability
+
+**✅ GOOD - Use decorator:**
+```python
+from lib.utils.exception_utils import handle_unrecoverable_errors
+
+@handle_unrecoverable_errors(
+    log_message=f"[Run {run.id}] Unrecoverable error in validation",
+    logger_instance=logger
+)
+def _run_validation() -> ValidationResult:
+    """Run plugin validation - extracted for decorator usage"""
+    return plugin.validate_post_ingest(run)
+
+result = _run_validation()
+```
+
+**✅ GOOD - With recoverable error handling:**
+```python
+error_count = 0
+def handle_recoverable(e):
+    nonlocal error_count
+    error_count += 1
+    if error_count <= 5:
+        logger.error(f"Error: {e}", exc_info=True)
+
+@handle_unrecoverable_errors(
+    log_message=f"[Run {run.id}] Unrecoverable error",
+    logger_instance=logger,
+    on_recoverable=handle_recoverable,
+    suppress_recoverable=True
+)
+def _transform_record() -> object | None:
+    """Transform record - extracted for decorator usage"""
+    return plugin.transform(record)
+
+model = _transform_record()
+```
+
+**❌ BAD - Manual try/except:**
+```python
+try:
+    result = plugin.validate_post_ingest(run)
+except (ModuleNotFoundError, ImportError) as e:
+    logger.error(f"[Run {run.id}] Unrecoverable error: {e}", exc_info=True)
+    raise
+except Exception as e:
+    logger.error(f"[Run {run.id}] Validation error: {e}")
+    return ValidationResult(passed=False, errors=[str(e)])
+```
+
+**When to factor out functions:**
+- ✅ Code protected by try/except can be extracted to a separate function
+- ✅ Function can be decorated with `handle_unrecoverable_errors`
+- ✅ Original code calls the extracted function
+- ✅ **Forces better function scoping** - decorator pattern naturally encourages extracting focused, testable functions
+- ✅ Improves testability and readability
+- ✅ Makes error handling boundaries explicit (what's protected vs what's not)
+
+**When decorator is not suitable:**
+- ⚠️ Complex exception handling with multiple different exception types requiring different logic
+- ⚠️ Exception handling that needs to wrap code that can't be extracted (e.g., part of a loop body with complex state)
+- ⚠️ Exception handling that needs to interact with surrounding control flow in ways decorators can't support
+
+**Rationale:**
+- Ensures consistent error handling across codebase
+- Reduces duplication of unrecoverable error detection logic
+- Makes error handling patterns explicit and discoverable
+- Easier to maintain and update error handling behavior
+- Follows DRY principle
+
+## Rule: Never Eat Exceptions Silently - Always Log Errors
+
+**CRITICAL: When catching and suppressing exceptions, ALWAYS log them at ERROR level. Never silently ignore exceptions.**
+
+**Default behavior:**
+- ✅ **Fail by default** - Let exceptions propagate unless you have a specific reason to catch them
+- ✅ **Only catch known expected exceptions** - Catch specific exception types, not broad `Exception`
+- ✅ **Always log when suppressing** - If you must suppress an exception, log it with full context
+
+**✅ GOOD - Log when eating exceptions:**
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    schema_editor.create_model(Bulletin)
+except Exception as e:
+    # Table already exists - expected in test setup
+    logger.error(f"Failed to create model Bulletin (may already exist): {e}", exc_info=True)
+    # Suppress only if this is the expected case
+    pass
+```
+
+**✅ GOOD - Catch specific exceptions:**
+```python
+try:
+    with open(filepath, 'r') as f:
+        first_line = f.readline()
+        if first_line.startswith('#!'):
+            return True
+except (FileNotFoundError, PermissionError) as e:
+    # Expected: file may not exist or be readable
+    logger.error(f"Cannot read file to check shebang: {filepath}: {e}", exc_info=True)
+    return False  # Safe default
+except Exception as e:
+    # Unexpected error - log and re-raise
+    logger.error(f"Unexpected error reading file {filepath}: {e}", exc_info=True)
+    raise
+```
+
+**✅ GOOD - Fail by default (preferred):**
+```python
+# Don't catch exceptions unless you have a specific reason
+schema_editor.create_model(Bulletin)  # Let it fail if table exists - caller handles it
+```
+
+**❌ BAD - Silent exception eating:**
+```python
+try:
+    schema_editor.create_model(Bulletin)
+except Exception:
+    pass  # ❌ Silent failure - no logging, no context
+```
+
+**❌ BAD - Eating without logging:**
+```python
+try:
+    with open(filepath, 'r') as f:
+        first_line = f.readline()
+except Exception:
+    pass  # ❌ No logging - can't debug issues
+    return True
+```
+
+**When it's acceptable to suppress exceptions:**
+- ✅ **Test setup code** - But still log at ERROR level (e.g., table already exists)
+- ✅ **Optional operations** - But log failures (e.g., reading optional config file)
+- ✅ **Graceful degradation** - But log what failed (e.g., fallback mechanism)
+- ✅ **Expected failures** - But log with context (e.g., file already exists)
+
+**When to re-raise instead of suppressing:**
+- ✅ Unexpected errors (not the expected exception type)
+- ✅ Errors that indicate bugs or configuration issues
+- ✅ Errors that callers need to know about
+- ✅ Errors that should abort the operation
+
+**Logging requirements:**
+- ✅ Use `logger.error()` level (not warning or info)
+- ✅ Include full exception context: `exc_info=True`
+- ✅ Include relevant context (file paths, IDs, operation details)
+- ✅ Explain why the exception is being suppressed
+
+**Rationale:**
+- Silent failures make debugging impossible
+- Logs are the only way to diagnose production issues
+- Error context helps identify patterns and root causes
+- Logging suppressed exceptions maintains observability
+- Failing by default prevents bugs from being hidden
+
+## Rule: Prefer Named Structures Over Tuples for Return Values and Interfaces
+
+**When returning multiple related values or defining function interfaces, use dataclasses or NamedTuple instead of tuples for better readability and type safety.**
+
+**✅ GOOD - Named structure:**
+```python
+from dataclasses import dataclass
+
+@dataclass
+class EvaluationOutcome:
+    """Result of validation."""
+    is_valid: bool | None
+    response: str | None
+    
+    @classmethod
+    def valid(cls, response: str) -> 'EvaluationOutcome':
+        return cls(is_valid=True, response=response)
+    
+    @classmethod
+    def invalid(cls, response: str) -> 'EvaluationOutcome':
+        return cls(is_valid=False, response=response)
+    
+    @classmethod
+    def failed(cls) -> 'EvaluationOutcome':
+        return cls(is_valid=None, response=None)
+
+def validate() -> EvaluationOutcome:
+    # ...
+    return EvaluationOutcome.valid("OK")
+```
+
+**❌ BAD - Tuple return:**
+```python
+def validate() -> tuple[bool | None, str | None]:
+    # ...
+    return True, "OK"  # Unclear what each value means
+
+# Usage is unclear
+is_valid, response = validate()  # What does each value mean?
+```
+
+**When to use:**
+- ✅ Returning 2+ related values that form a logical unit
+- ✅ Values have semantic meaning (not just positional)
+- ✅ Return type is used in multiple places
+- ✅ Type safety and IDE autocomplete are valuable
+
+**When tuples are OK:**
+- ✅ Simple coordinate pairs: `(x, y)`
+- ✅ Key-value pairs: `(key, value)`
+- ✅ Temporary/unused return values
+- ✅ Standard Python patterns (e.g., `divmod()`)
+
+**❌ BAD - Unnamed structs in function interfaces:**
+```python
+# Function signature uses tuple - unclear what each value means
+def process_data(validator: Callable[[str, str, str, str, str, str, float], tuple[bool | None, str | None]]):
+    is_valid, response = validator(...)  # What does each value mean?
+```
+
+**✅ GOOD - Named structure in interface:**
+```python
+@dataclass
+class ValidationResult:
+    is_valid: bool | None
+    response: str | None
+
+def process_data(validator: Callable[[str, str, str, str, str, str, float], ValidationResult]):
+    result = validator(...)  # Clear: result.is_valid, result.response
+```
+
+**Benefits:**
+- Self-documenting (field names explain meaning)
+- Type safety (IDE autocomplete, type checkers)
+- Easier refactoring (add/remove fields safely)
+- Better testability (can compare entire objects)
+- Prevents positional errors (can't mix up order)
+
+**Rationale:**
+- Tuples are positional and error-prone
+- Named structures make code self-documenting
+- Type checkers can validate structure
+- Easier to extend without breaking callers

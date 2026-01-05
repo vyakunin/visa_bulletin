@@ -16,6 +16,6 @@ class ModelsConfig(AppConfig):
         
         # Then import other models (these may reference ingest models)
         from .bulletin import Bulletin  # noqa: F401
-        from .salary import SalaryRecord, Employer  # noqa: F401
+        from .salary import SalaryRecord, Employer, WorksiteRecord  # noqa: F401
         from .visa_cutoff_date import VisaCutoffDate  # noqa: F401
 

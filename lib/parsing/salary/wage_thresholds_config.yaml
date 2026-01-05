@@ -1,0 +1,24 @@
+_last_updated: '2026-01-04'
+_source: Calculated from salary data distributions (without unit correction, filtered
+  <5000, >5000000)
+annual_wage_range:
+  min: 5000
+  max: 480719
+percentiles:
+  p1: 25085.0
+  p5: 41086.1
+  p50: 130000.0
+  p95: 286585.0
+  p99: 435000.0
+calculation_method:
+  min_threshold: max(MIN_FILTER, mean - 4*std)
+  max_threshold: min(MAX_FILTER, mean + 4*std)
+  coverage: "~99.99% (4\u03C3)"
+statistics:
+  mean: 143016.23
+  std: 84425.77
+  median: 130000.0
+  count: 11468
+  fiscal_years:
+  - null
+  - 2025

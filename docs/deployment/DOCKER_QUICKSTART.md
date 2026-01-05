@@ -77,7 +77,6 @@ Prod:   docker pull → docker-compose up
 ## Documentation
 
 - **DOCKER_DEPLOYMENT.md** - Complete Docker deployment guide
-- **MIGRATION_TO_DOCKER.md** - Step-by-step migration from systemd
 - **DOCKER_QUICKSTART.md** - This file
 
 ## Common Commands
@@ -202,7 +201,6 @@ Two workflows are configured:
 
 See full documentation:
 - [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Complete guide
-- [MIGRATION_TO_DOCKER.md](MIGRATION_TO_DOCKER.md) - Migration steps
 
 Or check existing deployment docs:
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Current deployment (systemd)

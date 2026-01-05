@@ -5,12 +5,12 @@ Logging configuration for visa bulletin application
 import logging
 import sys
 
-def setup_logging(debug=False):
+def setup_logging(debug=True):
     """
     Configure logging for the application
     
     Args:
-        debug: If True, set log level to DEBUG, otherwise INFO
+        debug: If True, set log level to DEBUG, otherwise INFO (default: True)
     """
     log_level = logging.DEBUG if debug else logging.INFO
     
@@ -41,4 +41,14 @@ def setup_logging(debug=False):
 def get_logger(name):
     """Get a logger instance for the given name"""
     return logging.getLogger(name)
+
+
+
+
+
+
+
+
+
+
 

@@ -1,0 +1,38 @@
+# Ruff configuration for Python 3.11+ style enforcement
+# See: https://docs.astral.sh/ruff/
+
+[lint]
+# Enable common rules
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "W",   # pycodestyle warnings
+    "UP",  # pyupgrade (modernizes Python syntax)
+]
+
+# Ignore line length (handled by formatter)
+ignore = ["E501"]
+
+# Python 3.11+ style enforcement
+# UP007: Use X | None instead of Optional[X]
+# UP006: Use list[X] instead of List[X]
+# UP008: Use X | Y instead of Union[X, Y]
+target-version = "py311"
+
+[lint.per-file-ignores]
+# Ignore migrations (generated code)
+"**/migrations/**" = ["E501", "F401"]
+
+[format]
+# Use double quotes (consistent with existing codebase)
+quote-style = "double"
+line-ending = "auto"
+
+
+
+
+
+
+

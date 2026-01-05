@@ -1,5 +1,5 @@
 ---
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Project Scripts and Workflows
@@ -116,6 +116,166 @@ ssh lightsail "cd /opt/visa_bulletin && docker-compose logs -f"
 export GITHUB_TOKEN=$GITHUB_TOKEN_VYAKUNIN
 ```
 
+## Note: Employer Clustering Rules
+
+Employer clustering rules have been moved to `.cursor/rules/employer_clustering.mdc` for better organization.
+
+See that file for:
+- Collecting clustering examples
+- Benchmark iteration workflow
+- Generic word definitions
+- State normalization utilities
+
+For human-readable documentation, see `lib/business/salary/README.md`.
+
+
+## Rule: Delete Instead of Deprecate
+
+**ALWAYS delete old code instead of marking it as deprecated, whenever possible.**
+
+**When to delete:**
+- ✅ Functionality has been fully merged into another script
+- ✅ All references have been updated
+- ✅ BUILD targets have been removed
+- ✅ Documentation has been updated
+- ✅ No external dependencies rely on the old code
+
+**When deprecation is acceptable:**
+- ⚠️ External systems or users depend on the script (give migration period)
+- ⚠️ Script is part of public API that others use
+- ⚠️ Need to maintain backward compatibility temporarily
+
+**Process:**
+1. **Merge functionality** into unified script
+2. **Update all references** (BUILD files, documentation, other scripts)
+3. **Delete the old script** immediately (don't add deprecation notices)
+4. **Remove BUILD targets** for deleted scripts
+5. **Update documentation** to point to new unified script
+
+**✅ GOOD - Delete immediately:**
+```bash
+# After merging functionality
+rm scripts/old_script.py
+# Remove BUILD target
+# Update documentation
+```
+
+**❌ BAD - Deprecate and keep:**
+```python
+"""
+DEPRECATED: Use new_script.py instead
+"""
+# Keep old code around "just in case"
+```
+
+**Rationale:**
+- Deprecated code accumulates and creates confusion
+- Dead code increases maintenance burden
+- Clean codebase is easier to navigate
+- If needed, old code is in git history
+- Forces complete migration (no half-measures)
+
+## Rule: Always Search for Existing Scripts Before Creating New Ones
+
+**ALWAYS search for existing scripts with similar functionality before creating a new script.**
+
+**Before creating a new script:**
+1. ✅ **Search codebase** - Use `codebase_search` or `grep` to find similar functionality
+2. ✅ **Check `scripts/README.md`** - Review categorized list of existing scripts
+3. ✅ **Consider extending existing script** - Add new mode/flag to existing script rather than creating new one
+4. ✅ **Only create new script if functionality is truly distinct** - Avoid duplication
+5. ✅ **Document decision** - Explain in script docstring why new script was needed vs extending existing
+
+**✅ GOOD - Extend existing script:**
+```python
+# Add new flag to existing validate_data.py
+parser.add_argument(
+    '--check-new-feature',
+    action='store_true',
+    help='Check new feature'
+)
+```
+
+**❌ BAD - Create duplicate script:**
+```python
+# Don't create validate_data_v2.py when validate_data.py exists
+# Instead, add flags to existing script
+```
+
+**When to create new script:**
+- ✅ Functionality is fundamentally different (e.g., clustering vs validation)
+- ✅ Script serves different purpose (e.g., fix vs validate)
+- ✅ Script is in different category (e.g., deployment vs data processing)
+
+**When to extend existing script:**
+- ✅ Same category (e.g., both validation scripts)
+- ✅ Similar functionality (e.g., both check data quality)
+- ✅ Can be controlled via flags/modes
+
+**Rationale:**
+- Prevents script proliferation and duplication
+- Makes functionality discoverable in one place
+- Reduces maintenance burden
+- Follows DRY principle
+- Easier for developers to find and use tools
+
+## Rule: Always Document New Scripts
+
+**ALWAYS document new scripts, even temporary ones.**
+
+**Every new script must include:**
+1. ✅ **Docstring** with:
+   - Purpose/description
+   - Usage examples
+   - Key flags/options
+   - When to use it
+2. ✅ **Entry in `scripts/README.md`** (appropriate category)
+3. ✅ **BUILD target** with proper dependencies
+4. ✅ **Script usage logging** (if permanent script - use `ScriptLogger`)
+
+**✅ GOOD - Well-documented script:**
+```python
+#!/usr/bin/env python3
+"""
+Check for duplicate case numbers in PERM files.
+
+Usage:
+    bazel run //scripts:check_duplicates -- data/salary/PERM_FY2009.xlsx
+    
+    bazel run //scripts:check_duplicates  # Uses default file
+
+When to use:
+- After importing PERM data to verify no duplicates
+- When investigating data quality issues
+- Before running clustering (duplicates can cause issues)
+"""
+```
+
+**❌ BAD - Undocumented script:**
+```python
+#!/usr/bin/env python3
+# No docstring, no README entry, unclear purpose
+```
+
+**For temporary/one-off scripts:**
+- ✅ Still add docstring with purpose
+- ✅ Use `log_context()` for usage logging (logs to `logs/throwaway_calls.log`)
+- ✅ Place in `scripts/oneoff/` directory
+- ⚠️ README entry optional (but recommended if script might be reused)
+
+**For permanent scripts:**
+- ✅ Full docstring with examples
+- ✅ Entry in `scripts/README.md` (appropriate category)
+- ✅ Use `ScriptLogger(__file__)` for usage logging (logs to `logs/<script_name>.log`)
+- ✅ BUILD target with all dependencies
+
+**Rationale:**
+- Makes scripts discoverable and understandable
+- Helps developers find right tool for the job
+- Documents usage patterns and examples
+- Tracks script usage for maintenance decisions
+- Prevents accumulation of undocumented scripts
+
 ## Documentation Files
 
 - **README.md**: User-facing documentation
@@ -123,3 +283,4 @@ export GITHUB_TOKEN=$GITHUB_TOKEN_VYAKUNIN
 - **BAZEL.md**: Bazel build system guide
 - **DOCKER_DEPLOYMENT.md**: Docker deployment guide
 - **MIGRATION_TO_DOCKER.md**: Migration plan from venv to Docker
+- **scripts/README.md**: Comprehensive script documentation (see that file for all scripts)

@@ -3,9 +3,9 @@
 Generic database exploration tool for debugging and analysis.
 
 Usage:
-    bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_record"
-    bazel run //:explore_db -- --query "SELECT * FROM salary_record WHERE wage_annual > 1000000 LIMIT 5"
-    bazel run //:explore_db -- --table salary_record --limit 10
+    bazel run //scripts:explore_db -- --query "SELECT COUNT(*) FROM salary_record"
+    bazel run //scripts:explore_db -- --query "SELECT * FROM salary_record WHERE wage_annual > 1000000 LIMIT 5"
+    bazel run //scripts:explore_db -- --table salary_record --limit 10
 """
 
 import argparse
@@ -29,7 +29,7 @@ from lib.utils.logging_utils import ScriptLogger
 from django_config.logging_config import setup_logging
 
 script_logger = ScriptLogger(__file__)
-setup_logging(debug=False)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

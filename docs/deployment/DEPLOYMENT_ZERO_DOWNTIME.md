@@ -39,12 +39,12 @@ The blue-green deployment approach eliminates downtime by running two separate e
 
 ### Docker Compose Configurations
 
-**`docker-compose.blue.yml`**
+**`deployment/docker-compose.blue.yml`**
 - Runs on port 8000
 - Container names: `visa_bulletin_web_blue`, `visa_bulletin_refresh_blue`
 - Health checks enabled
 
-**`docker-compose.green.yml`**
+**`deployment/docker-compose.green.yml`**
 - Runs on port 8001
 - Container names: `visa_bulletin_web_green`, `visa_bulletin_refresh_green`
 - Health checks enabled
@@ -72,7 +72,7 @@ The blue-green deployment approach eliminates downtime by running two separate e
 2. **Deploy to Inactive Environment**
    ```bash
    # If blue is active (8000), deploy to green (8001)
-   IMAGE_TAG=1.2.3 docker-compose -f docker-compose.green.yml up -d
+   IMAGE_TAG=1.2.3 docker-compose -f deployment/docker-compose.green.yml up -d
    ```
 
 3. **Wait for Health Checks**
@@ -91,7 +91,7 @@ The blue-green deployment approach eliminates downtime by running two separate e
 5. **Stop Old Environment**
    ```bash
    # After 10 seconds of traffic validation
-   docker-compose -f docker-compose.blue.yml down
+   docker-compose -f deployment/docker-compose.blue.yml down
    ```
 
 ### Timeline
@@ -182,19 +182,19 @@ ssh lightsail "sudo systemctl reload nginx"
 docker ps | grep visa_bulletin
 
 # Stop one environment
-docker-compose -f docker-compose.blue.yml down
+docker-compose -f deployment/docker-compose.blue.yml down
 # OR
-docker-compose -f docker-compose.green.yml down
+docker-compose -f deployment/docker-compose.green.yml down
 ```
 
 ### Issue: Health checks not passing
 
 ```bash
 # Check container logs
-docker-compose -f docker-compose.green.yml logs web-green
+docker-compose -f deployment/docker-compose.green.yml logs web-green
 
 # Check container status
-docker-compose -f docker-compose.green.yml ps
+docker-compose -f deployment/docker-compose.green.yml ps
 
 # Test health check manually
 curl http://localhost:8001/dashboard/

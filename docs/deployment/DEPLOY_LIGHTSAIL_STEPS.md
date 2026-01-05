@@ -180,7 +180,7 @@ docker-compose logs -f
 ```bash
 # This will take 5-10 minutes (fetches 20+ years of data)
 docker-compose exec web python manage.py migrate
-docker-compose exec web python refresh_data.py --save-to-db
+docker-compose exec web python scripts/ingest/run_pipeline.py discover-and-ingest --all-domains
 ```
 
 ---

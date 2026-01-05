@@ -9,18 +9,27 @@ from django.shortcuts import render
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.cache import cache_page
-from django.db.models import Q, Avg, Min, Max, Count
+from django.core.cache import cache
+from django.db.models import Avg, Min, Max, Count, F
 
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
 from models.enums.visa_program import VisaProgram
-from models.salary import SalaryRecord, Employer
+from models.salary import SalaryRecord, Employer, EmployerCluster, WorksiteRecord
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     get_aggregated_visa_class_data,
     build_seo_metadata,
 )
+from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
+from lib.utils.filter_utils import (
+    apply_text_search_filter,
+    apply_visa_program_filter,
+    apply_fiscal_year_filter,
+)
+from lib.utils.location_utils import US_STATES
+from webapp.forms import SalarySearchForm, WorksiteSearchForm
 
 logger = logging.getLogger(__name__)
 
@@ -187,109 +196,33 @@ def contact_view(request):
     })
 
 
-# US States for dropdown
-US_STATES = [
-    ('AL', 'Alabama'), ('AK', 'Alaska'), ('AZ', 'Arizona'), ('AR', 'Arkansas'),
-    ('CA', 'California'), ('CO', 'Colorado'), ('CT', 'Connecticut'), ('DE', 'Delaware'),
-    ('DC', 'District of Columbia'), ('FL', 'Florida'), ('GA', 'Georgia'), ('HI', 'Hawaii'),
-    ('ID', 'Idaho'), ('IL', 'Illinois'), ('IN', 'Indiana'), ('IA', 'Iowa'),
-    ('KS', 'Kansas'), ('KY', 'Kentucky'), ('LA', 'Louisiana'), ('ME', 'Maine'),
-    ('MD', 'Maryland'), ('MA', 'Massachusetts'), ('MI', 'Michigan'), ('MN', 'Minnesota'),
-    ('MS', 'Mississippi'), ('MO', 'Missouri'), ('MT', 'Montana'), ('NE', 'Nebraska'),
-    ('NV', 'Nevada'), ('NH', 'New Hampshire'), ('NJ', 'New Jersey'), ('NM', 'New Mexico'),
-    ('NY', 'New York'), ('NC', 'North Carolina'), ('ND', 'North Dakota'), ('OH', 'Ohio'),
-    ('OK', 'Oklahoma'), ('OR', 'Oregon'), ('PA', 'Pennsylvania'), ('RI', 'Rhode Island'),
-    ('SC', 'South Carolina'), ('SD', 'South Dakota'), ('TN', 'Tennessee'), ('TX', 'Texas'),
-    ('UT', 'Utah'), ('VT', 'Vermont'), ('VA', 'Virginia'), ('WA', 'Washington'),
-    ('WV', 'West Virginia'), ('WI', 'Wisconsin'), ('WY', 'Wyoming'),
-]
 
 
-def _parse_salary_search_params(request) -> dict:
-    """Parse query parameters from salary search request"""
-    return {
-        'query': request.GET.get('q', '').strip(),
-        'employer_filter': request.GET.get('employer', '').strip(),
-        'state_filter': request.GET.get('state', '').strip().upper(),
-        'program_filter': request.GET.get('program', '').strip().lower(),
-        'year_filter': request.GET.get('year', '').strip(),
-        'page': int(request.GET.get('page', 1)),
-    }
-
-
-def _apply_salary_filters(records, params: dict):
-    """Apply filters to salary records query"""
-    if params['query']:
-        records = records.filter(
-            Q(job_title__icontains=params['query']) |
-            Q(soc_title__icontains=params['query'])
+def _get_cached_fiscal_years() -> list[int]:
+    """
+    Get available fiscal years with caching.
+    
+    Fiscal years change infrequently (monthly), so we cache for 24 hours.
+    Cache key invalidates when new data is imported.
+    """
+    cache_key = 'salary_fiscal_years'
+    fiscal_years = cache.get(cache_key)
+    
+    if fiscal_years is None:
+        fiscal_years = list(
+            SalaryRecord.objects
+            .exclude(fiscal_year__isnull=True)
+            .values_list('fiscal_year', flat=True)
+            .distinct()
+            .order_by('-fiscal_year')
         )
+        cache.set(cache_key, fiscal_years, 60 * 60 * 24)  # Cache for 24 hours
     
-    if params['employer_filter']:
-        records = records.filter(employer_name__icontains=params['employer_filter'])
-    
-    if params['state_filter']:
-        records = records.filter(worksite_state=params['state_filter'])
-    
-    if params['program_filter']:
-        if params['program_filter'] == 'h1b':
-            records = records.filter(visa_program__in=[
-                VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3
-            ])
-        elif params['program_filter'] == 'perm':
-            records = records.filter(visa_program=VisaProgram.PERM)
-    
-    if params['year_filter']:
-        try:
-            records = records.filter(fiscal_year=int(params['year_filter']))
-        except ValueError:
-            pass
-    
-    return records
-
-
-def _calculate_pagination_info(total_results: int, page: int, per_page: int) -> dict:
-    """Calculate pagination metadata"""
-    total_pages = (total_results + per_page - 1) // per_page
-    page = max(1, min(page, total_pages)) if total_pages > 0 else 1
-    offset = (page - 1) * per_page
-    
-    # Calculate page range for pagination display
-    if total_pages <= 7:
-        page_range = list(range(1, total_pages + 1))
-    elif page <= 4:
-        page_range = list(range(1, 6)) + ['...', total_pages]
-    elif page >= total_pages - 3:
-        page_range = [1, '...'] + list(range(total_pages - 4, total_pages + 1))
-    else:
-        page_range = [1, '...'] + list(range(page - 1, page + 2)) + ['...', total_pages]
-    
-    return {
-        'page': page,
-        'total_pages': total_pages,
-        'offset': offset,
-        'page_range': [p for p in page_range if p != '...'],
-    }
-
-
-def _build_pagination_query_string(params: dict) -> str:
-    """Build query string for pagination links (without page param)"""
-    pagination_parts = []
-    if params['query']:
-        pagination_parts.append(f'q={params["query"]}')
-    if params['employer_filter']:
-        pagination_parts.append(f'employer={params["employer_filter"]}')
-    if params['state_filter']:
-        pagination_parts.append(f'state={params["state_filter"]}')
-    if params['program_filter']:
-        pagination_parts.append(f'program={params["program_filter"]}')
-    if params['year_filter']:
-        pagination_parts.append(f'year={params["year_filter"]}')
-    return '&'.join(pagination_parts)
+    return fiscal_years
 
 
 # Note: @cache_page automatically varies by query parameters, so different searches have different cache keys
-# Cache is cleared when server restarts or via: bazel run //:clear_cache
+# Cache is cleared when server restarts or via: bazel run //scripts:clear_cache
 @cache_page(60 * 60)  # Cache for 1 hour
 def salary_search_view(request):
     """
@@ -303,48 +236,130 @@ def salary_search_view(request):
         year: Fiscal year filter
         page: Page number for pagination
     """
-    params = _parse_salary_search_params(request)
+    # Get available fiscal years (cached) - needed for form choices
+    fiscal_years = _get_cached_fiscal_years()
+    
+    # Initialize form with dynamic fiscal year choices
+    form = SalarySearchForm(request.GET)
+    form.fields['year'].choices = [('', 'All Years')] + [(str(y), f'FY {y}') for y in fiscal_years]
+    
     per_page = 50
     
-    # Check if any data exists
-    no_data_yet = SalaryRecord.objects.count() == 0
+    # Extract cleaned form data, with fallback to request.GET for robustness
+    # This ensures filters work even if form validation fails
+    cleaned_data = form.cleaned_data if form.is_valid() else {}
+    query = cleaned_data.get('q') or request.GET.get('q', '') or ''
+    employer_filter = cleaned_data.get('employer') or request.GET.get('employer', '') or ''
+    state_filter = cleaned_data.get('state') or request.GET.get('state', '') or ''
+    program_filter = cleaned_data.get('program') or request.GET.get('program', '') or ''
+    year_filter = cleaned_data.get('year') or request.GET.get('year') or None
+    try:
+        page = cleaned_data.get('page') or int(request.GET.get('page', 1))
+    except (ValueError, TypeError):
+        page = 1
     
-    # Get available fiscal years
-    fiscal_years = list(
-        SalaryRecord.objects
-        .values_list('fiscal_year', flat=True)
-        .distinct()
-        .order_by('-fiscal_year')
-    )
+    # Build params dict for compatibility with existing code
+    params = {
+        'query': query,
+        'employer_filter': employer_filter,
+        'state_filter': state_filter,
+        'program_filter': program_filter,
+        'year_filter': str(year_filter) if year_filter else '',
+        'page': page,
+    }
     
-    # Build and apply filters
+    # Check if any data exists (cache this check)
+    cache_key_no_data = 'salary_has_data'
+    no_data_yet = cache.get(cache_key_no_data)
+    if no_data_yet is None:
+        no_data_yet = SalaryRecord.objects.count() == 0
+        cache.set(cache_key_no_data, no_data_yet, 60 * 60)  # Cache for 1 hour
+    
+    # Build and apply filters FIRST (before expensive exclude)
+    # This reduces the dataset size before the expensive exclude operation
+    has_filters = any([query, employer_filter, state_filter, program_filter, year_filter])
     records = SalaryRecord.objects.all()
-    has_filters = any([params['query'], params['employer_filter'], params['state_filter'], 
-                       params['program_filter'], params['year_filter']])
-    records = _apply_salary_filters(records, params)
     
-    # Calculate statistics before pagination
-    stats = records.filter(wage_annual__isnull=False, wage_annual__gt=0).aggregate(
-        avg_salary=Avg('wage_annual'),
-        min_salary=Min('wage_annual'),
-        max_salary=Max('wage_annual'),
-    )
+    # Apply filters using generic utilities
+    records = apply_text_search_filter(records, query, ['job_title', 'soc_title'])
+    if employer_filter:
+        # Filter by cluster canonical name ONLY (matches cluster head)
+        # This ensures that searching for a company matches all records in that company's cluster
+        # PERFORMANCE: Composite index on (employer, is_worksite) makes this JOIN efficient
+        records = records.filter(
+            employer__canonical_cluster__canonical_name__icontains=employer_filter
+        )
+    if state_filter:
+        records = records.filter(worksite_state=state_filter)
+    records = apply_visa_program_filter(records, program_filter)
+    records = apply_fiscal_year_filter(records, year_filter)
     
-    total_results = records.count()
+    # Exclude worksite records AFTER applying filters (reduces dataset size)
+    # Use indexed is_worksite field for fast filtering (much faster than source_file pattern matching)
+    records = records.exclude(is_worksite=True)
+    
+    # Also exclude records with 'Unknown' employer (safety measure - worksite records should be filtered above,
+    # but this catches any edge cases where is_worksite flag isn't set correctly)
+    records = records.exclude(employer_name='Unknown')
+    
+    # Only calculate statistics when filters are applied (expensive query)
+    if has_filters:
+        stats = records.filter(wage_annual__isnull=False, wage_annual__gt=0).aggregate(
+            avg_salary=Avg('wage_annual'),
+            min_salary=Min('wage_annual'),
+            max_salary=Max('wage_annual'),
+        )
+    else:
+        # No filters - don't calculate expensive stats
+        stats = {
+            'avg_salary': None,
+            'min_salary': None,
+            'max_salary': None,
+        }
+    
+    # Get total results - needed for pagination
+    # Cache counts for common filter combinations to avoid expensive count operations
+    # The exclude() on source_file causes full table scans, so caching is critical
+    cache_key_count = None
+    if not has_filters:
+        cache_key_count = 'salary_non_worksite_count'
+    elif params['program_filter'] == 'h1b' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter']]):
+        # Common case: just program=h1b filter (no other filters)
+        cache_key_count = 'salary_h1b_non_worksite_count'
+    elif params['program_filter'] == 'perm' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter']]):
+        # Common case: just program=perm filter (no other filters)
+        cache_key_count = 'salary_perm_non_worksite_count'
+    
+    if cache_key_count:
+        total_results = cache.get(cache_key_count)
+        if total_results is None:
+            total_results = records.count()
+            cache.set(cache_key_count, total_results, 60 * 60)  # Cache for 1 hour
+    else:
+        # For complex filters, calculate count (but this will be slow)
+        total_results = records.count()
     
     # Pagination
-    pagination = _calculate_pagination_info(total_results, params['page'], per_page)
-    records = records.order_by('-wage_annual', '-fiscal_year')[
+    pagination = calculate_pagination_info(total_results, page, per_page)
+    
+    # Use only() to reduce data loaded - we only need these fields for the list view
+    records = records.only(
+        'id', 'employer_name', 'job_title', 'worksite_city', 'worksite_state',
+        'wage_annual', 'wage_to', 'visa_program', 'fiscal_year'
+    ).order_by('-wage_annual', '-fiscal_year')[
         pagination['offset']:pagination['offset'] + per_page
     ]
     
     context = {
-        # Search parameters
-        'query': params['query'],
-        'employer_filter': params['employer_filter'],
-        'state_filter': params['state_filter'],
-        'program_filter': params['program_filter'],
-        'year_filter': int(params['year_filter']) if params['year_filter'].isdigit() else None,
+        # Form for rendering
+        'form': form,
+        
+        # Search parameters (for backward compatibility with templates)
+        'query': query,
+        'employer_filter': employer_filter,
+        'state_filter': state_filter,
+        'program_filter': program_filter,
+        'year_filter': year_filter,
         
         # Filter options
         'states': US_STATES,
@@ -365,10 +380,10 @@ def salary_search_view(request):
         'page': pagination['page'],
         'total_pages': pagination['total_pages'],
         'per_page': per_page,
-        'page_start': pagination['offset'] + 1 if total_results > 0 else 0,
-        'page_end': min(pagination['offset'] + per_page, total_results),
+        'page_start': pagination['offset'] + 1 if total_results and total_results > 0 else 0,
+        'page_end': min(pagination['offset'] + per_page, total_results) if total_results else 0,
         'has_pagination': pagination['total_pages'] > 1,
-        'pagination_query': _build_pagination_query_string(params),
+        'pagination_query': build_pagination_query_string(params),
         'page_range': pagination['page_range'],
         
         # SEO
@@ -377,6 +392,153 @@ def salary_search_view(request):
     }
     
     return render(request, 'webapp/salary_search.html', context)
+
+
+def _get_cached_worksite_fiscal_years() -> list[int]:
+    """Get available fiscal years for worksite records with caching"""
+    cache_key = 'worksite_fiscal_years'
+    fiscal_years = cache.get(cache_key)
+    
+    if fiscal_years is None:
+        fiscal_years = list(
+            WorksiteRecord.objects
+            .exclude(fiscal_year__isnull=True)
+            .values_list('fiscal_year', flat=True)
+            .distinct()
+            .order_by('-fiscal_year')
+        )
+        cache.set(cache_key, fiscal_years, 60 * 60 * 24)  # Cache for 24 hours
+    
+    return fiscal_years
+
+
+@cache_page(60 * 60)  # Cache for 1 hour
+def worksite_search_view(request):
+    """
+    Search worksite location data from DOL Worksites disclosure files.
+    
+    Query params:
+        q: Job title / keyword search
+        state: Worksite state filter (2-letter code)
+        city: Worksite city filter
+        program: Visa program filter (h1b, perm)
+        year: Fiscal year filter
+        page: Page number for pagination
+    """
+    # Get available fiscal years (cached) - needed for form choices
+    fiscal_years = _get_cached_worksite_fiscal_years()
+    
+    # Initialize form with dynamic fiscal year choices
+    form = WorksiteSearchForm(request.GET)
+    form.fields['year'].choices = [('', 'All Years')] + [(str(y), f'FY {y}') for y in fiscal_years]
+    
+    per_page = 50
+    
+    # Extract cleaned form data
+    cleaned_data = form.cleaned_data if form.is_valid() else {}
+    query = cleaned_data.get('q', '') or ''
+    state_filter = cleaned_data.get('state', '') or ''
+    city_filter = cleaned_data.get('city', '') or ''
+    program_filter = cleaned_data.get('program', '') or ''
+    year_filter = cleaned_data.get('year')
+    page = cleaned_data.get('page', 1) or 1
+    
+    # Build params dict for compatibility with existing code
+    params = {
+        'query': query,
+        'state_filter': state_filter,
+        'city_filter': city_filter,
+        'program_filter': program_filter,
+        'year_filter': str(year_filter) if year_filter else '',
+        'page': page,
+    }
+    
+    # Check if any data exists (cache this check)
+    cache_key_no_data = 'worksite_has_data'
+    no_data_yet = cache.get(cache_key_no_data)
+    if no_data_yet is None:
+        no_data_yet = WorksiteRecord.objects.count() == 0
+        cache.set(cache_key_no_data, no_data_yet, 60 * 60)  # Cache for 1 hour
+    
+    # Build and apply filters
+    records = WorksiteRecord.objects.all()
+    has_filters = any([query, state_filter, city_filter, program_filter, year_filter])
+    
+    # Apply filters using generic utilities
+    records = apply_text_search_filter(records, query, ['job_title', 'soc_title', 'worksite_city'])
+    if state_filter:
+        records = records.filter(worksite_state=state_filter)
+    if city_filter:
+        records = records.filter(worksite_city__icontains=city_filter)
+    records = apply_visa_program_filter(records, program_filter)
+    records = apply_fiscal_year_filter(records, year_filter)
+    
+    # Only calculate statistics when filters are applied (expensive query)
+    if has_filters:
+        stats = records.filter(wage_annual__isnull=False, wage_annual__gt=0).aggregate(
+            avg_salary=Avg('wage_annual'),
+            min_salary=Min('wage_annual'),
+            max_salary=Max('wage_annual'),
+        )
+    else:
+        # No filters - don't calculate expensive stats
+        stats = {
+            'avg_salary': None,
+            'min_salary': None,
+            'max_salary': None,
+        }
+    
+    # Get total results - needed for pagination
+    total_results = records.count()
+    
+    # Pagination
+    pagination = calculate_pagination_info(total_results, page, per_page)
+    records = records.order_by('-wage_annual', '-fiscal_year')[
+        pagination['offset']:pagination['offset'] + per_page
+    ]
+    
+    context = {
+        # Form for rendering
+        'form': form,
+        
+        # Search parameters (for backward compatibility with templates)
+        'query': query,
+        'state_filter': state_filter,
+        'city_filter': city_filter,
+        'program_filter': program_filter,
+        'year_filter': year_filter,
+        
+        # Filter options
+        'states': US_STATES,
+        'fiscal_years': fiscal_years,
+        
+        # Results
+        'records': records,
+        'has_data': has_filters or not no_data_yet,
+        'no_data_yet': no_data_yet,
+        
+        # Statistics
+        'total_results': total_results,
+        'avg_salary': stats['avg_salary'],
+        'min_salary': stats['min_salary'],
+        'max_salary': stats['max_salary'],
+        
+        # Pagination
+        'page': pagination['page'],
+        'total_pages': pagination['total_pages'],
+        'per_page': per_page,
+        'page_start': pagination['offset'] + 1 if total_results and total_results > 0 else 0,
+        'page_end': min(pagination['offset'] + per_page, total_results) if total_results else 0,
+        'has_pagination': pagination['total_pages'] > 1,
+        'pagination_query': build_pagination_query_string(params),
+        'page_range': pagination['page_range'],
+        
+        # SEO
+        'page_title': 'Worksite Location Data - Visa Bulletin Dashboard',
+        'page_description': 'Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and job title.',
+    }
+    
+    return render(request, 'webapp/worksite_search.html', context)
 
 
 @cache_page(60 * 60)  # Cache for 1 hour
@@ -388,7 +550,7 @@ def company_autocomplete_view(request):
         q: Search query (partial company name)
         limit: Maximum number of results (default: 20)
     
-    Returns JSON array of company names matching the query.
+    Returns JSON array of canonical cluster names matching the query.
     """
     query = request.GET.get('q', '').strip()
     limit = int(request.GET.get('limit', 20))
@@ -396,15 +558,14 @@ def company_autocomplete_view(request):
     if not query or len(query) < 2:
         return HttpResponse(json.dumps([]), content_type='application/json')
     
-    # Get distinct employer names that match the query
-    # Order by frequency (most common first) for better UX
+    # Get cluster canonical names that match the query
+    # Order by total record count (LCA + PERM) for relevance
     matching_companies = (
-        SalaryRecord.objects
-        .filter(employer_name__icontains=query)
-        .values('employer_name')
-        .annotate(count=Count('id'))
-        .order_by('-count', 'employer_name')
-        .values_list('employer_name', flat=True)
+        EmployerCluster.objects
+        .filter(canonical_name__icontains=query)
+        .annotate(total_count=F('total_lca_count') + F('total_perm_count'))
+        .order_by('-total_count', 'canonical_name')
+        .values_list('canonical_name', flat=True)
         [:limit]
     )
     

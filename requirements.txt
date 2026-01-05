@@ -23,7 +23,12 @@ packaging>=23.0
 narwhals>=2.0.0
 gunicorn==23.0.0
 pandas>=2.0.0
+numpy>=1.24.0  # Required for statistical calculations (pandas dependency, but explicit for clarity)
 openpyxl>=3.1.0
 et-xmlfile>=1.1.0
 ruff>=0.1.0
 pip-tools>=7.0.0  # Build tool for generating requirements.lock
+pyyaml>=6.0.0  # YAML parser for configuration files
+datasketch>=1.6.0  # Locality-Sensitive Hashing for fast similarity search
+ollama>=0.1.0  # Ollama Python library for HTTP API (async support for parallel LLM calls)
+tqdm>=4.66.0  # Progress bar for long-running operations

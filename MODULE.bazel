@@ -17,3 +17,51 @@ pip.parse(
 )
 
 use_repo(pip, "visa_bulletin_pip")
+
+# Homebrew package manager dependency - automatically installs if missing
+homebrew = use_extension("//tools:homebrew.bzl", "homebrew_extension")
+use_repo(homebrew, "homebrew")
+
+# Ollama LLM dependency - hermetic version (downloads binary and manages models in Bazel cache)
+# Using platform-specific repositories with select() for cross-platform support
+# Note: Ollama releases single binary files (not tarballs), so we use http_file instead of http_archive
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Ollama v0.5.5 for macOS (universal binary - works on both Intel and Apple Silicon)
+http_file(
+    name = "ollama_platform_macos_arm64",
+    urls = ["https://github.com/ollama/ollama/releases/download/v0.5.5/ollama-darwin"],
+    sha256 = "3e282de57e03baf940ba87bc3af600602c65d9b4d037de0ab0360a1395e3e8ed",
+    downloaded_file_path = "ollama_bin",
+    executable = True,
+)
+
+# Ollama v0.5.5 for Linux (AMD64/x86_64)
+http_file(
+    name = "ollama_platform_linux_x86_64",
+    urls = ["https://github.com/ollama/ollama/releases/download/v0.5.5/ollama-linux-amd64"],
+    sha256 = "614e78776e76ff28d8b9305d09cd81638241c6e2ae546891f4a76d100ed1e746",
+    downloaded_file_path = "ollama_bin",
+    executable = True,
+)
+
+# Ollama v0.5.5 for Linux (ARM64)
+# Note: SHA256 needs to be updated once we get it from GitHub releases
+http_file(
+    name = "ollama_platform_linux_arm64",
+    urls = ["https://github.com/ollama/ollama/releases/download/v0.5.5/ollama-linux-arm64"],
+    sha256 = "",  # TODO: Get SHA256 from GitHub release
+    downloaded_file_path = "ollama_bin",
+    executable = True,
+)
+
+# Ruff linter/formatter - hermetic version (downloads binary from GitHub releases)
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "ruff",
+    urls = ["https://github.com/astral-sh/ruff/releases/download/0.14.8/ruff-aarch64-apple-darwin.tar.gz"],
+    sha256 = "4efc019832a6b9225f650ee256d31b2e875021cae662963d533c78b5cf865f52",
+    type = "tar.gz",
+    strip_prefix = "ruff-aarch64-apple-darwin",
+    build_file_content = "filegroup(name = \"ruff_binary\", srcs = [\"ruff\"], visibility = [\"//visibility:public\"])",
+)

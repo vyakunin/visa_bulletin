@@ -134,8 +134,8 @@ bash deployment/cron/setup-cron.sh
 ### 8. Initial Data Load
 
 ```bash
-source venv/bin/activate
-python refresh_data.py --save-to-db
+# Using unified ingest pipeline
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain visa_bulletin
 ```
 
 ## 🔧 Management Commands
@@ -159,8 +159,8 @@ sudo journalctl -u visa-bulletin -f
 
 ```bash
 cd /opt/visa_bulletin
-source venv/bin/activate
-python refresh_data_incremental.py --save-to-db
+# Using unified ingest pipeline (replaces old refresh_data_incremental.py)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 ```
 
 ### Monitor Cron Jobs

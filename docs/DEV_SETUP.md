@@ -167,6 +167,25 @@ If commands aren't found after installation:
 2. Check your shell config: `cat ~/.zshrc | grep brew`
 3. Manually source: `source ~/.zshrc`
 
+### Django Model Resolution Errors
+
+If you see errors like:
+```
+SystemCheckError: The field models.SalaryRecord.ingest_version was declared with a lazy reference 
+to 'models.ingestversion', but app 'models' doesn't provide model 'ingestversion'.
+```
+
+**This is a common issue when using ForeignKey references to models in subdirectories.**
+
+**Quick fix:** See `docs/DJANGO_MODEL_RESOLUTION_ISSUE.md` for complete solution.
+
+**Summary:** You need to:
+1. Import the model directly in files that reference it
+2. Import in `models/__init__.py` for discovery
+3. Add Bazel dependency in BUILD file
+
+See the documentation for detailed steps and examples.
+
 ## Next Steps
 
 1. ✅ Install Homebrew

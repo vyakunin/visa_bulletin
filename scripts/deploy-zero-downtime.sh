@@ -59,15 +59,15 @@ if [ "$ACTIVE_ENV" = "8000" ]; then
     NEW_COLOR="green"
     NEW_PORT="8001"
     OLD_PORT="8000"
-    NEW_COMPOSE="docker-compose.green.yml"
-    OLD_COMPOSE="docker-compose.blue.yml"
+    NEW_COMPOSE="deployment/docker-compose.green.yml"
+    OLD_COMPOSE="deployment/docker-compose.blue.yml"
 elif [ "$ACTIVE_ENV" = "8001" ]; then
     ACTIVE_COLOR="green"
     NEW_COLOR="blue"
     NEW_PORT="8000"
     OLD_PORT="8001"
-    NEW_COMPOSE="docker-compose.blue.yml"
-    OLD_COMPOSE="docker-compose.green.yml"
+    NEW_COMPOSE="deployment/docker-compose.blue.yml"
+    OLD_COMPOSE="deployment/docker-compose.green.yml"
 else
     # No active environment or unknown port - default to deploying blue
     echo "⚠️  No active environment detected (Nginx points to port $ACTIVE_ENV)"
@@ -76,7 +76,7 @@ else
     NEW_COLOR="blue"
     NEW_PORT="8000"
     OLD_PORT=""
-    NEW_COMPOSE="docker-compose.blue.yml"
+    NEW_COMPOSE="deployment/docker-compose.blue.yml"
     OLD_COMPOSE=""
 fi
 

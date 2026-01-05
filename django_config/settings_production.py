@@ -18,28 +18,12 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
-# Database configuration - supports both SQLite and PostgreSQL
-DB_ENGINE = os.environ.get('DB_ENGINE', 'sqlite3').lower()
+# Database configuration - PostgreSQL is now the default
+# SQLite is deprecated and disabled. Set DB_ENGINE=sqlite3 only for migration/backup purposes.
+DB_ENGINE = os.environ.get('DB_ENGINE', 'postgresql').lower()
 
-if DB_ENGINE == 'postgresql':
-    # PostgreSQL configuration
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'visa_bulletin'),
-            'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'OPTIONS': {
-                'connect_timeout': 10,
-            },
-        }
-    }
-    # Connection pooling for better performance
-    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
-else:
-    # SQLite configuration (default)
+if DB_ENGINE == 'sqlite3':
+    # SQLite is deprecated - use only for migration/backup purposes
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -61,6 +45,24 @@ else:
     
     from django.db.backends.signals import connection_created
     connection_created.connect(setup_sqlite_wal)
+else:
+    # PostgreSQL configuration (default)
+    # PostgreSQL configuration
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'visa_bulletin'),
+            'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
+    }
+    # Connection pooling for better performance
+    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
 
 # Application definition
 INSTALLED_APPS = [

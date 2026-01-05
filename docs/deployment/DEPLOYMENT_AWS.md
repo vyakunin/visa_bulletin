@@ -58,7 +58,7 @@
 │                                             │
 │  ┌─────────────────────────────────────┐   │
 │  │  Cron Job: Daily Data Refresh       │   │
-│  │  9 AM UTC: refresh_data_incremental  │   │
+│  │  9 AM UTC: ingest pipeline          │   │
 │  └─────────────────────────────────────┘   │
 └─────────────────────────────────────────────┘
 ```
@@ -146,8 +146,8 @@ pip install -r requirements.txt
 # Run migrations
 bazel run //:migrate
 
-# Fetch initial data
-bazel run //:refresh_data -- --save-to-db
+# Fetch initial data (unified ingest pipeline)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 
 # Install systemd service (see below)
 ```
@@ -234,7 +234,8 @@ sudo systemctl status visa-bulletin
 crontab -e
 
 # Add this line (9 AM UTC daily)
-0 9 * * * cd /opt/visa_bulletin && /usr/local/bin/bazel run //:refresh_data_incremental >> /opt/visa_bulletin/logs/cron_refresh.log 2>&1
+# Using unified ingest pipeline (replaces old refresh_data_incremental)
+0 9 * * * cd /opt/visa_bulletin && /usr/local/bin/bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains >> /opt/visa_bulletin/logs/cron_refresh.log 2>&1
 ```
 
 ---

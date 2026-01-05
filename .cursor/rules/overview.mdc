@@ -1,5 +1,5 @@
 ---
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Visa Bulletin Parser - Project Overview
@@ -16,7 +16,7 @@ General software development best practices (tool management, code quality, test
 
 This is a Django application that:
 - Parses historical visa bulletin data from travel.state.gov
-- Stores data in SQLite database
+- Stores data in PostgreSQL database
 - Provides web dashboard for visualization
 - Uses Bazel for hermetic builds
 - Deploys to AWS Lightsail via Docker
@@ -27,6 +27,6 @@ This is a Django application that:
 - **Django 4.2**: Web framework and ORM
 - **Bazel**: Build system for reproducible builds
 - **Docker**: Container-based deployment
-- **SQLite with WAL**: Database for production
+- **PostgreSQL**: Production database
 - **Plotly**: Interactive charts
 - **GitHub Actions**: CI/CD pipeline

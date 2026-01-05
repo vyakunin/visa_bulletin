@@ -1,0 +1,58 @@
+version: '3.8'
+
+# Green environment - runs on port 8001
+# Used for blue-green zero-downtime deployments
+
+services:
+  web-green:
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_web_green
+    ports:
+      - "8001:8000"
+    volumes:
+      # PostgreSQL is used for database (no SQLite volume needed)
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # Memory limit: 200MB for web container (prevents OOM on 1GB instance)
+    # System needs ~200MB, Nginx ~20MB, data-refresh ~50MB, leaving ~200MB for web
+    mem_limit: 200m
+    memswap_limit: 200m
+    # Override CMD to use optimized gunicorn settings (2 workers, 60s timeout)
+    # This allows updating without rebuilding Docker image
+    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 django_config.wsgi:application"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+  data-refresh-green:
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_refresh_green
+    command: sh -c "while true; do python3 scripts/ingest/run_pipeline.py discover-and-ingest --all-domains; sleep 86400; done"
+    volumes:
+      # PostgreSQL is used for database (no SQLite volume needed)
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+      # Database configuration - PostgreSQL is default
+      - DB_ENGINE=${DB_ENGINE:-postgresql}
+      - DB_NAME=${DB_NAME:-visa_bulletin}
+      - DB_USER=${DB_USER:-visa_bulletin_user}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+    restart: unless-stopped
+    # Memory limit: 100MB for data-refresh container (runs infrequently)
+    mem_limit: 100m
+    memswap_limit: 100m
+    depends_on:
+      web-green:
+        condition: service_healthy

@@ -1,0 +1,715 @@
+---
+alwaysApply: true
+---
+
+# General Performance Rules
+
+These are general performance rules that apply across all projects.
+
+## Database Operations and Batching
+
+**ALWAYS use batched operations for database queries, especially in loops processing multiple records.**
+
+**Performance impact:**
+- Individual queries per record: ~12k records/min (too slow)
+- Batched operations: 100k-200k records/min (10-20x faster)
+- Each individual query adds network/DB overhead that compounds
+
+**❌ BAD - Per-record queries (N+1 problem):**
+```python
+# Processing 1000 records = 1000+ database queries
+for record in records:
+    if MyModel.objects.filter(case_number=record.case_number).exists():  # Query 1
+        continue
+    if OtherModel.objects.get(pk=record.id):  # Query 2
+        continue
+    MyModel.objects.create(**record)  # Query 3
+# Total: 3000 queries for 1000 records
+```
+
+**✅ GOOD - Bulk operations with pre-loading:**
+```python
+# Pre-load all existing data once (single query)
+existing_case_numbers = set(
+    MyModel.objects.values_list('case_number', flat=True)
+)
+
+# Process in batches
+batch = []
+for record in records:
+    # Check in-memory set (no query)
+    if record.case_number in existing_case_numbers:
+        continue
+    
+    batch.append(MyModel(**record))
+    existing_case_numbers.add(record.case_number)  # Track new ones
+    
+    # Bulk insert every 5000 records
+    if len(batch) >= 5000:
+        MyModel.objects.bulk_create(batch, ignore_conflicts=True)
+        batch = []
+
+# Insert remaining
+if batch:
+    MyModel.objects.bulk_create(batch, ignore_conflicts=True)
+```
+
+**✅ GOOD - Bulk duplicate check:**
+```python
+# Instead of: if record.exists() for each record
+# Use: bulk check with set intersection
+new_case_numbers = {r.case_number for r in records}
+existing_case_numbers = set(
+    MyModel.objects.filter(case_number__in=new_case_numbers)
+    .values_list('case_number', flat=True)
+)
+duplicates = new_case_numbers & existing_case_numbers
+new_records = [r for r in records if r.case_number not in duplicates]
+MyModel.objects.bulk_create(new_records)
+```
+
+**Batching strategies:**
+
+1. **Pre-load existing data:**
+   - Load all relevant records once at start
+   - Store in sets/dicts for O(1) lookups
+   - Avoids repeated queries
+
+2. **Use bulk operations:**
+   - `bulk_create()` instead of individual `create()`
+   - `bulk_update()` instead of individual `save()`
+   - `bulk_get()` pattern (filter with `__in`)
+   - **Use shared utilities:** `lib.utils.db_utils.bulk_update_batched()` and `bulk_create_batched()` for consistent batching
+
+3. **Batch size:**
+   - Start with 1000-5000 records per batch
+   - Adjust based on memory and transaction size
+   - Larger batches = fewer transactions = faster
+
+4. **Avoid per-record queries:**
+   - Never use `exists()`, `get()`, or `filter()` in loops
+   - Never use `save()` in loops (use `bulk_update()`)
+   - Never use `create()` in loops (use `bulk_create()`)
+
+**When to batch:**
+- ✅ Processing > 100 records
+- ✅ Any loop that queries the database
+- ✅ Data migration scripts
+- ✅ Import/ingest operations
+- ✅ Bulk updates or deletes
+
+**Performance targets:**
+- **Minimum:** 50k records/min
+- **Target:** 100k-200k records/min
+- **If slower:** Review for per-record queries and optimize
+
+**Rationale:**
+- Individual queries create massive overhead (network, connection, parsing)
+- Batched operations are 10-20x faster
+- Prevents database connection exhaustion
+- Reduces transaction overhead
+- Critical for data migrations and imports
+
+## N+1 Query Problem
+
+**ALWAYS use `select_related()` or `prefetch_related()` when accessing related objects in loops.**
+
+**The Problem:**
+- Accessing related objects in a loop triggers one query per object
+- 100 records with related data = 100+ queries
+- Should be 1-2 queries total
+
+**❌ BAD - N+1 queries:**
+```python
+# 1 query for records, then 1 query per record for related data
+records = MyModel.objects.all()
+for record in records:
+    print(record.related_model.name)  # Query per record!
+# Total: 1 + N queries (N+1 problem)
+```
+
+**✅ GOOD - Use select_related/prefetch_related:**
+```python
+# 1 query with JOIN (select_related for ForeignKey/OneToOne)
+records = MyModel.objects.select_related('related_model').all()
+for record in records:
+    print(record.related_model.name)  # No additional query!
+
+# 1 query + 1 query for all related (prefetch_related for ManyToMany/Reverse FK)
+records = MyModel.objects.prefetch_related('tags').all()
+for record in records:
+    for tag in record.tags.all():  # Uses prefetched data, no query!
+        print(tag.name)
+```
+
+**When to use:**
+- `select_related()` - ForeignKey, OneToOne (single related object)
+- `prefetch_related()` - ManyToMany, Reverse ForeignKey (multiple related objects)
+
+**Rationale:**
+- Reduces queries from N+1 to 1-2 queries
+- Dramatically improves performance for related data access
+- Standard Django optimization pattern
+
+## Rule: Avoid N+1 Problems When Processing Many DB Objects
+
+**CRITICAL: ALWAYS analyze expected query count before implementing scripts that process multiple database objects. If > 1000 queries expected, use caching + batching patterns.**
+
+### Query Count Analysis Process
+
+**Before writing any script that processes multiple records, estimate query count:**
+
+1. **Count queries per iteration** (queries inside loops)
+2. **Multiply by iteration count** (number of records/objects)
+3. **If total > 1000 queries:** Use optimization patterns below
+
+### Common N+1 Anti-Patterns
+
+**❌ Pattern 1: Individual saves in loop**
+```python
+# 1000 records = 1000 queries
+for employer in employers:
+    employer.canonical_cluster = cluster
+    employer.save()  # ❌ N queries
+```
+
+**❌ Pattern 2: Individual deletes in loop**
+```python
+# 100 clusters = 100 queries
+for cluster in duplicates:
+    cluster.delete()  # ❌ N queries
+```
+
+**❌ Pattern 3: Accessing related objects without prefetch**
+```python
+# 1000 records = 1000 queries
+for cluster in clusters:
+    count = cluster.employers.count()  # ❌ N queries
+```
+
+**❌ Pattern 4: Individual creates in loop**
+```python
+# 500 reviews = 500+ queries
+for review_data in reviews:
+    Review.objects.create(**review_data)  # ❌ N queries
+```
+
+### Optimization Patterns
+
+**✅ Pattern 1: Pre-load + Bulk Update**
+```python
+# Load data with prefetch_related (2 queries total)
+clusters = EmployerCluster.objects.all().prefetch_related('employers')
+
+# Update in memory, then bulk update
+all_updates = []
+for cluster in clusters:
+    for employer in cluster.employers.all():  # Uses prefetched data, no query
+        employer.canonical_cluster = new_cluster
+        all_updates.append(employer)
+
+# Bulk update (1-2 queries instead of N)
+bulk_update_batched(all_updates, fields=['canonical_cluster'])
+
+# Query count: 2 (load) + 2 (bulk update) = ~4 queries (vs 1000+)
+```
+
+**✅ Pattern 2: Bulk Delete with Filter**
+```python
+# Collect IDs, then bulk delete
+cluster_ids_to_delete = [c.id for c in duplicates]
+
+# Bulk delete (1 query instead of N)
+EmployerCluster.objects.filter(id__in=cluster_ids_to_delete).delete()
+
+# Query count: 1 query (vs 100)
+```
+
+**✅ Pattern 3: Prefetch Related Data**
+```python
+# Prefetch once (2 queries: main + related)
+clusters = EmployerCluster.objects.all().prefetch_related('employers')
+
+# Access prefetched data (0 additional queries)
+for cluster in clusters:
+    count = len(list(cluster.employers.all()))  # Uses cache, no query!
+
+# Query count: 2 queries (vs 1000+)
+```
+
+**✅ Pattern 4: Batch Creates**
+```python
+# Collect records in memory
+reviews = [Review(**data) for data in review_data_list]
+
+# Bulk create (1-2 queries instead of N)
+bulk_create_batched(reviews, ignore_conflicts=True)
+
+# Query count: 1-2 queries (vs 500+)
+```
+
+### Real-World Example: Merge Duplicate Clusters
+
+**Before optimization (502 queries):**
+```python
+# Find duplicates: 2 queries ✅
+duplicates = find_duplicates()
+
+# Process each duplicate group: 500 queries ❌
+for canonical_name, clusters in duplicates.items():
+    primary = select_primary(clusters)
+    
+    # Reassign employers: 400 queries ❌
+    for cluster in clusters:
+        for employer in cluster.employers.all():
+            employer.canonical_cluster = primary
+            employer.save()  # N queries!
+    
+    # Delete clusters: 100 queries ❌
+    for cluster in clusters:
+        cluster.delete()  # N queries!
+
+# Total: 2 + 400 + 100 = 502 queries
+```
+
+**After optimization (5 queries):**
+```python
+# Find duplicates with prefetch: 2 queries ✅
+clusters = EmployerCluster.objects.all().prefetch_related('employers')
+duplicates = group_by_canonical_name(clusters)
+
+# Process each duplicate group with batching: 3 queries ✅
+for canonical_name, clusters in duplicates.items():
+    primary = select_primary(clusters)  # Uses prefetched data, no queries
+    
+    # Collect updates in memory: 0 queries ✅
+    all_updates = []
+    cluster_ids = []
+    for cluster in clusters:
+        for employer in cluster.employers.all():  # Uses prefetched data
+            employer.canonical_cluster = primary
+            all_updates.append(employer)
+        cluster_ids.append(cluster.id)
+    
+    # Bulk update employers: 1-2 queries ✅
+    bulk_update_batched(all_updates, fields=['canonical_cluster'])
+    
+    # Bulk delete clusters: 1 query ✅
+    EmployerCluster.objects.filter(id__in=cluster_ids).delete()
+
+# Total: 2 + 2 + 1 = 5 queries (100x faster!)
+```
+
+### Performance Impact
+
+**Optimization results:**
+- **Before:** 502 queries = ~30-60 seconds
+- **After:** 5 queries = ~1-2 seconds
+- **Speedup:** 30-60x faster! 🚀
+
+### When to Apply This Rule
+
+**Apply optimization if:**
+- ✅ Processing > 100 database objects in loops
+- ✅ Expected queries > 1000 (estimate: iterations × queries-per-iteration)
+- ✅ Script processes multiple related objects (N+1 risk)
+- ✅ Data migration or bulk operation scripts
+- ✅ Any script that could run for > 10 seconds due to query overhead
+
+**Optimization checklist:**
+1. ✅ Use `prefetch_related()` for related objects
+2. ✅ Collect updates in memory, then bulk update
+3. ✅ Use `bulk_update_batched()` instead of individual `save()`
+4. ✅ Use `filter().delete()` instead of individual `delete()`
+5. ✅ Use `bulk_create_batched()` instead of individual `create()`
+6. ✅ Estimate final query count: should be < 10 queries regardless of data size
+
+**Rationale:**
+- Network latency dominates when making many small queries
+- Bulk operations amortize connection/parsing overhead
+- 100x speedups are common with proper batching
+- Essential for production scripts processing thousands of records
+- Prevents database connection pool exhaustion
+
+## Script Performance Patterns
+
+**ALWAYS use shared utilities and batch operations in scripts that process multiple records.**
+
+### Rule: Never Use Individual Saves in Loops
+
+**❌ BAD - Individual saves (N queries):**
+```python
+for record in records:
+    record.wage_annual = calculate_annual_wage(record.wage_from, record.wage_unit)
+    record.save()  # ❌ One query per record
+# 1000 records = 1000 queries (~30 seconds)
+```
+
+**✅ GOOD - Use BatchedUpdateCollector (recommended):**
+```python
+from lib.utils.db_utils import BatchedUpdateCollector
+
+collector = BatchedUpdateCollector(
+    fields=['wage_annual'],
+    batch_size=1000,
+    dry_run=False,
+    use_transaction=True
+)
+
+for record in queryset.iterator(chunk_size=1000):
+    record.wage_annual = calculate_annual_wage(record.wage_from, record.wage_unit)
+    collector.add(record)  # Auto-flushes at batch_size
+
+collector.flush()  # Flush remaining records
+fixed_count = collector.count
+# 1000 records = 1-2 queries (~0.5 seconds) - 60x faster!
+# Handles transactions, dry_run mode, and counting automatically
+```
+
+**✅ GOOD - Manual batching (if collector doesn't fit):**
+```python
+from lib.utils.db_utils import bulk_update_batched
+
+records_to_update = []
+for record in queryset.iterator(chunk_size=1000):
+    record.wage_annual = calculate_annual_wage(record.wage_from, record.wage_unit)
+    records_to_update.append(record)
+    
+    if len(records_to_update) >= 1000:
+        bulk_update_batched(records_to_update, fields=['wage_annual'])
+        records_to_update = []
+
+if records_to_update:
+    bulk_update_batched(records_to_update, fields=['wage_annual'])
+# 1000 records = 1-2 queries (~0.5 seconds) - 60x faster!
+```
+
+### Rule: Cache Querysets to Avoid Repeated Filtering
+
+**❌ BAD - Repeated queries:**
+```python
+# Same filter applied 3 times = 3 queries
+count1 = SalaryRecord.objects.filter(Q(wage_annual__isnull=True) | Q(wage_annual=0)).count()
+sample = list(SalaryRecord.objects.filter(Q(wage_annual__isnull=True) | Q(wage_annual=0))[:10])
+grouped = SalaryRecord.objects.filter(Q(wage_annual__isnull=True) | Q(wage_annual=0)).values('employer_name').annotate(...)
+```
+
+**✅ GOOD - Cache queryset:**
+```python
+# Filter once, reuse for all operations
+missing_salary_qs = SalaryRecord.objects.filter(Q(wage_annual__isnull=True) | Q(wage_annual=0))
+count1 = missing_salary_qs.count()
+sample = list(missing_salary_qs[:10])
+grouped = missing_salary_qs.values('employer_name').annotate(...)
+```
+
+### Rule: Use Batch Processing for Large Datasets
+
+**❌ BAD - Load all into memory:**
+```python
+# Loads all records into memory (2GB for 100k records)
+all_records = list(queryset.values('id', 'wage_from', 'wage_unit'))
+for record in all_records:
+    process(record)
+```
+
+**✅ GOOD - Process in batches:**
+```python
+from lib.utils.db_utils import process_in_batches
+
+def process_batch(batch):
+    # Process batch of records
+    updates = []
+    for record in batch:
+        updates.append(calculate_update(record))
+    bulk_update_batched(updates, fields=['wage_annual'])
+
+process_in_batches(queryset, batch_size=1000, func=process_batch)
+# Memory efficient, processes in chunks
+```
+
+### Rule: Use Shared Validation Utilities
+
+**❌ BAD - Duplicate queryset logic:**
+```python
+# Same pattern repeated in multiple scripts
+missing_salary = SalaryRecord.objects.filter(
+    Q(wage_annual__isnull=True) | Q(wage_annual=0)
+)
+```
+
+**✅ GOOD - Use shared utility:**
+```python
+from lib.utils.validation_utils import get_missing_salary_data_queryset
+
+missing_salary = get_missing_salary_data_queryset()
+# Reusable, consistent across all scripts
+```
+
+**Available shared utilities:**
+- `lib/utils/db_utils.py` - `BatchedUpdateCollector` (recommended), `bulk_update_batched()`, `bulk_create_batched()`, `process_in_batches()`
+- `lib/utils/validation_utils.py` - Reusable validation querysets (to be created)
+- See `docs/SCRIPT_PERFORMANCE_IMPROVEMENTS.md` for complete list
+
+**BatchedUpdateCollector benefits:**
+- Eliminates boilerplate (no manual batch size checking, transaction wrapping, or count tracking)
+- Handles dry_run mode automatically
+- Wraps updates in transactions by default
+- Tracks count of processed records
+- Consistent pattern across all scripts
+
+**Rationale:**
+- Individual saves are 60x slower than bulk operations
+- Repeated queries waste database resources
+- Loading all records causes memory issues
+- Shared utilities ensure consistency and performance
+
+## Bulk Update Pattern
+
+**ALWAYS use `bulk_update()` instead of individual `save()` calls in loops.**
+
+**❌ BAD - Individual saves:**
+```python
+# Processing 1000 records = 1000 database UPDATE queries
+for employer in employers:
+    employer.canonical_cluster = cluster
+    employer.save()  # Query per record!
+# Total: 1000 queries
+```
+
+**✅ GOOD - Use BatchedUpdateCollector (recommended):**
+```python
+from lib.utils.db_utils import BatchedUpdateCollector
+
+collector = BatchedUpdateCollector(
+    fields=['canonical_cluster'],
+    batch_size=1000,
+    dry_run=False,
+    use_transaction=True
+)
+
+for employer in employers:
+    employer.canonical_cluster = cluster
+    collector.add(employer)  # Auto-flushes at batch_size
+
+collector.flush()  # Flush remaining
+updated_count = collector.count
+```
+
+**✅ GOOD - Manual batching:**
+```python
+# Collect updates, then bulk update
+employers_to_update = []
+for employer in employers:
+    employer.canonical_cluster = cluster
+    employers_to_update.append(employer)
+    
+    # Bulk update in batches
+    if len(employers_to_update) >= 1000:
+        Employer.objects.bulk_update(employers_to_update, ['canonical_cluster'])
+        employers_to_update = []
+
+# Final batch
+if employers_to_update:
+    Employer.objects.bulk_update(employers_to_update, ['canonical_cluster'])
+```
+
+**✅ GOOD - Using bulk_update_batched utility:**
+```python
+from lib.utils.db_utils import bulk_update_batched
+
+# Collect updates
+employers_to_update = []
+for employer in employers:
+    employer.canonical_cluster = cluster
+    employers_to_update.append(employer)
+
+# Bulk update (handles batching automatically)
+bulk_update_batched(employers_to_update, fields=['canonical_cluster'])
+```
+
+**When to use:**
+- ✅ Updating multiple records with same field changes
+- ✅ Any loop that modifies model instances
+- ✅ Data migration scripts
+- ✅ Bulk assignment operations
+
+**Rationale:**
+- Reduces database round-trips from N to N/batch_size
+- 10-20x faster than individual saves
+- Reduces transaction overhead
+- Prevents connection pool exhaustion
+
+## Bulk Create Pattern
+
+**ALWAYS use `bulk_create()` instead of individual `create()` calls or `get_or_create()` in loops.**
+
+**❌ BAD - Individual creates:**
+```python
+# Processing 1000 records = 1000 database INSERT queries
+for review_data in reviews:
+    EmployerClusteringReview.objects.get_or_create(
+        employer1=review_data['emp1'],
+        employer2=review_data['emp2'],
+        defaults={...}
+    )  # Query per record!
+# Total: 1000+ queries (get_or_create does SELECT + INSERT)
+```
+
+**✅ GOOD - Bulk create with ignore_conflicts:**
+```python
+# Collect new records, then bulk create
+review_entries = []
+for review_data in reviews:
+    review_entries.append(
+        EmployerClusteringReview(
+            employer1=review_data['emp1'],
+            employer2=review_data['emp2'],
+            ...
+        )
+    )
+    
+    # Bulk create in batches
+    if len(review_entries) >= 1000:
+        EmployerClusteringReview.objects.bulk_create(
+            review_entries, ignore_conflicts=True
+        )
+        review_entries = []
+
+# Final batch
+if review_entries:
+    EmployerClusteringReview.objects.bulk_create(
+        review_entries, ignore_conflicts=True
+    )
+```
+
+**✅ GOOD - Using shared utility:**
+```python
+from lib.utils.db_utils import bulk_create_batched
+
+# Collect new records
+review_entries = [EmployerClusteringReview(...) for ...]
+
+# Bulk create (handles batching automatically)
+bulk_create_batched(review_entries, ignore_conflicts=True)
+```
+
+**Note:** `ignore_conflicts=True` handles duplicates automatically (similar to `get_or_create` but faster).
+
+**When to use:**
+- ✅ Creating multiple new records
+- ✅ Replacing `get_or_create()` in loops (use `ignore_conflicts=True`)
+- ✅ Data import/migration scripts
+- ✅ Any loop that creates model instances
+
+**Rationale:**
+- Reduces database round-trips from N to N/batch_size
+- 10-20x faster than individual creates
+- `ignore_conflicts=True` handles duplicates without separate SELECT queries
+- Prevents connection pool exhaustion
+
+## Caching Expensive Calculations
+
+**ALWAYS cache expensive calculations (string similarity, difflib, etc.) when comparing pairs.**
+
+**❌ BAD - Recalculating same values:**
+```python
+# Recalculates similarity for same pairs multiple times
+for i in range(len(names)):
+    for j in range(i + 1, len(names)):
+        similarity = difflib.SequenceMatcher(None, names[i], names[j]).ratio()
+        # If names[i] compared with names[k] later, recalculates
+```
+
+**✅ GOOD - Cache calculations:**
+```python
+# Cache normalized name similarities
+similarity_cache = {}
+for i in range(len(normalized_names)):
+    for j in range(i + 1, len(normalized_names)):
+        cache_key = tuple(sorted([normalized_names[i], normalized_names[j]]))
+        if cache_key not in similarity_cache:
+            similarity = difflib.SequenceMatcher(
+                None, normalized_names[i], normalized_names[j]
+            ).ratio()
+            similarity_cache[cache_key] = similarity
+        else:
+            similarity = similarity_cache[cache_key]
+```
+
+**When to cache:**
+- ✅ String similarity calculations (difflib, Levenshtein)
+- ✅ Normalized name comparisons
+- ✅ Any expensive computation used multiple times
+- ✅ Comparisons in nested loops
+
+**Rationale:**
+- Avoids redundant calculations
+- Significant speedup for O(n²) comparison algorithms
+- Reduces CPU usage
+- Critical for large datasets
+
+## Progress Tracking for Long-Running Scripts
+
+**ALWAYS add progress tracking with ETA for scripts that process > 1000 records or take > 10 seconds.**
+
+**✅ GOOD - Progress tracking with ETA:**
+```python
+import time
+from collections import defaultdict
+
+class ProgressTracker:
+    def __init__(self, total: int, phase_name: str):
+        self.total = total
+        self.processed = 0
+        self.phase_name = phase_name
+        self.start_time = time.time()
+    
+    def update(self, count: int = 1):
+        self.processed += count
+    
+    def log_progress(self, batch_size: int = 1000):
+        if self.processed % batch_size != 0:
+            return
+        
+        elapsed = time.time() - self.start_time
+        rate = self.processed / elapsed if elapsed > 0 else 0
+        
+        if rate > 0 and self.total > 0:
+            remaining = self.total - self.processed
+            eta_seconds = remaining / rate
+            eta_minutes = eta_seconds / 60
+            percentage = (self.processed / self.total) * 100
+            
+            logger.info(
+                f"[{self.phase_name}] Processed {self.processed:,}/{self.total:,} "
+                f"({percentage:.1f}%) | Rate: {rate:.0f}/sec | ETA: {eta_minutes:.1f} min"
+            )
+
+# Usage
+total_pairs = calculate_total_pairs()  # Pre-calculate for accurate ETA
+progress = ProgressTracker(total_pairs, "Phase 1")
+
+for item in items:
+    process(item)
+    progress.update()
+    progress.log_progress(batch_size=1000)
+```
+
+**Key features:**
+- Pre-calculate total items for accurate ETA
+- Log percentage complete, rate, and ETA
+- Use phase names for multi-phase operations
+- Log at batch intervals (every 1000 items)
+
+**When to use:**
+- ✅ Scripts processing > 1000 records
+- ✅ Scripts that take > 10 seconds
+- ✅ Multi-phase operations
+- ✅ Long-running data migrations
+
+**Rationale:**
+- Enables monitoring progress in background
+- Helps estimate completion time
+- Identifies stuck scripts (no progress updates)
+- Better user experience for long operations

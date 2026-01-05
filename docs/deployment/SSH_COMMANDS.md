@@ -62,8 +62,8 @@ ssh lightsail "cd /opt/visa_bulletin && docker-compose logs web"
 # Run migrations
 ssh lightsail "cd /opt/visa_bulletin && docker-compose exec web python manage.py migrate"
 
-# Refresh data
-ssh lightsail "cd /opt/visa_bulletin && docker-compose exec web python refresh_data.py --save-to-db"
+# Refresh data (unified ingest pipeline)
+ssh lightsail "cd /opt/visa_bulletin && docker-compose exec web python scripts/ingest/run_pipeline.py discover-and-ingest --all-domains"
 
 # Check database
 ssh lightsail "cd /opt/visa_bulletin && docker-compose exec web sqlite3 visa_bulletin.db '.tables'"

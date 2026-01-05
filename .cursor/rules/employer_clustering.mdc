@@ -1,0 +1,395 @@
+---
+alwaysApply: true
+---
+# Employer Clustering Rules
+
+Rules for employer name clustering and matching logic.
+
+## Rule: Collect Employer Clustering Examples
+
+**ALWAYS collect employer clustering matching examples when running clustering or evaluation scripts.**
+
+**Purpose:**
+- Build dataset for benchmarking LLM verifiers
+- Track false positives/negatives over time
+- Improve prompt engineering with real examples
+- Measure verifier performance improvements
+
+**When to collect:**
+- ✅ After running `cluster_existing_employers.py` (new pairs created)
+- ✅ After running `evaluate_clustering_threshold.py` (false positives/negatives identified)
+- ✅ After reviewing pairs in `EmployerClusteringReview` table
+- ✅ Periodically (weekly/monthly) to build comprehensive dataset
+- ✅ **Before committing clustering changes** - Use dry-run mode to collect sample matches for review:
+  ```bash
+  bazel run //scripts/salary:cluster_existing_employers -- \
+    --dry-run \
+    --min-pairs 500 \
+    --pairs-output /tmp/clustering_sample.jsonl \
+    --shuffle \
+    --shuffle-seed 42
+  ```
+  Review the sample to verify matches look correct before committing changes.
+
+**How to collect:**
+```bash
+# Collect all available examples
+bazel run //scripts/salary:collect_clustering_examples
+
+# Collect with custom limits
+bazel run //scripts/salary:collect_clustering_examples -- \
+ --auto-clustered-size 2000 \
+ --different-size 1000
+
+# Collect only reviewed pairs
+bazel run //scripts/salary:collect_clustering_examples -- \
+ --skip-auto-clustered \
+ --skip-different
+```
+
+**Output:**
+- Saves to `data/clustering_examples.jsonl` by default
+- Each line is a JSON object with pair data and ground truth
+- Includes: reviewed pairs, auto-clustered pairs, different-company pairs
+
+**Use collected examples:**
+- Benchmark LLM verifiers: `benchmark_llm_verifier.py`
+- Test prompt improvements
+- Measure precision/recall over time
+- Train or fine-tune models (future)
+
+**Rationale:**
+- Examples are valuable training/evaluation data
+- Helps identify patterns in false positives/negatives
+- Enables data-driven prompt engineering
+- Tracks clustering quality improvements over time
+
+## Rule: Clustering Benchmark Iteration Workflow
+
+**ALWAYS follow the iterative clustering improvement workflow when improving employer clustering logic.**
+
+**Purpose:**
+- Systematically improve clustering precision/recall
+- Measure impact of threshold/rule changes
+- Build comprehensive benchmark dataset
+- Track improvements over time
+
+**Workflow Steps (repeat 2+ times per improvement cycle):**
+
+1. **Run Benchmark** - Measure current performance:
+   ```bash
+   # Quick iteration (fast feedback)
+   bazel run //scripts/salary:benchmark_clustering -- \
+     --mode production --examples-file $(pwd)/data/clustering_examples.jsonl \
+     --only-reviewed --limit 0
+   
+   # Full benchmark (before committing)
+   bazel run //scripts/salary:benchmark_clustering -- \
+     --mode production --examples-file $(pwd)/data/clustering_examples.jsonl \
+     --only-reviewed --limit 0
+   ```
+
+2. **Analyze Results** - Identify patterns:
+   - **Low Precision** → Too many false positives (clustering too aggressively)
+   - **Low Recall** → Too many false negatives (clustering too conservatively)
+   - Review specific false positive/negative examples
+   - Note patterns (structural words, similarity thresholds, etc.)
+
+3. **Adjust Clustering Logic** - Fix identified issues:
+   - Edit `lib/business/salary/employer_clustering.py`
+   - Adjust similarity thresholds in `should_auto_cluster()`
+   - Refine structural word detection in `_has_conflicting_structural_words()`
+   - Update rule-based matching in `match_employers()`
+
+4. **Run Clustering Dry Run** - Test changes and collect samples:
+   ```bash
+   # Quick dry run to test changes
+   bazel run //scripts/salary:cluster_existing_employers -- \
+     --dry-run \
+     --min-pairs 1000
+   
+   # Collect sample matches for review (recommended before committing)
+   # Note: Use different random seeds for variability (not always 42)
+   bazel run //scripts/salary:cluster_existing_employers -- \
+     --dry-run \
+     --min-pairs 500 \
+     --pairs-output /tmp/clustering_sample.jsonl \
+     --shuffle \
+     --shuffle-seed 42  # Use different seeds (e.g., $(date +%s)) for variability
+   ```
+   - Check auto-cluster count
+   - Review sample matches in output file
+   - Verify no obvious false positives/negatives
+   - Use `--pairs-output` to save matches to JSONL for review
+   - Use `--min-pairs` to stop early after collecting enough samples
+   - Use `--shuffle --shuffle-seed` for reproducible random sampling
+
+5. **Collect New Examples** - Add to benchmark dataset:
+   ```bash
+   bazel run //scripts/salary:collect_clustering_examples -- \
+     --auto-clustered-size 2000 \
+     --different-size 1000 \
+     --output $(pwd)/data/clustering_examples_new.jsonl
+   ```
+
+6. **Add Samples to Benchmark** - Update dataset:
+   ```bash
+   # Append new examples
+   cat data/clustering_examples_new.jsonl >> data/clustering_examples.jsonl
+   
+   # Or replace if starting fresh
+   cp data/clustering_examples_new.jsonl data/clustering_examples.jsonl
+   ```
+
+7. **Repeat** - Run benchmark again to measure improvement
+
+**Key Metrics:**
+- **Precision > 0.90**: Few false positives
+- **Recall > 0.90**: Most true matches found
+- **F1 > 0.90**: Good balance
+- **Performance**: >10000 pairs per second
+
+**Common Adjustments:**
+
+**Too Many False Positives (Low Precision):**
+- Increase similarity threshold: `threshold = 0.98` (up from 0.95)
+- Add more structural words to distinguish companies
+- Improve structural word conflict detection
+- Add location-based filtering for generic names
+
+**Too Many False Negatives (Low Recall):**
+- Decrease similarity threshold: `threshold = 0.90` (down from 0.95)
+- Improve corporate suffix handling
+- Add more equivalent word groups
+- Improve normalization consistency
+
+**Files to Modify:**
+- `lib/business/salary/employer_clustering.py` - Clustering logic
+- `models/salary.py` - Normalization logic (`normalize_name()`)
+- `lib/business/salary/generic_words.py` - Generic word definitions
+- `data/clustering_examples.jsonl` - Benchmark dataset
+
+**Documentation:**
+- See `lib/business/salary/README.md` for detailed clustering documentation
+- Document threshold changes and rationale in code comments
+- Track benchmark results over time
+
+**Rationale:**
+- Iterative improvement ensures systematic progress
+- Benchmarking measures actual impact of changes
+- Dry runs prevent bad changes from affecting production
+- New examples improve dataset coverage over time
+
+## Rule: Run Clustering Script in Monitorable Mode
+
+**ALWAYS run `cluster_existing_employers.py` in background mode with log monitoring - it's a long-running script that processes hundreds of thousands of employer pairs.**
+
+**Why:**
+- Script processes 400k+ employers, comparing millions of pairs
+- Can take 30+ minutes to hours depending on database size
+- Needs active monitoring to detect issues early
+- Progress tracking helps estimate completion time
+
+**✅ GOOD - Background execution with monitoring:**
+```bash
+# Run clustering in background with full logging
+bazel run //scripts/salary:cluster_existing_employers > /tmp/clustering.log 2>&1 &
+PID=$!
+echo "Started with PID: $PID, monitoring: tail -f /tmp/clustering.log"
+
+# Monitor progress (check every 30 seconds initially)
+INTERVAL=30
+ITERATION=0
+
+while ps -p $PID > /dev/null; do
+  sleep $INTERVAL
+  ITERATION=$((ITERATION + 1))
+  
+  echo "=== Check $ITERATION (after $((ITERATION * INTERVAL)) seconds) ==="
+  tail -20 /tmp/clustering.log
+  
+  # Check for progress indicators
+  if grep -q "Phase 1 complete\|Phase 2 complete\|CLUSTERING SUMMARY" /tmp/clustering.log; then
+    echo "✅ Script completed!"
+    tail -50 /tmp/clustering.log
+    break
+  fi
+  
+  # Check for errors
+  if grep -q "ERROR\|Exception\|Traceback" /tmp/clustering.log; then
+    echo "❌ Errors detected"
+    tail -50 /tmp/clustering.log | grep -A 10 "ERROR\|Exception"
+    kill $PID
+    exit 1
+  fi
+  
+  # Slow exponential backoff after first 5 minutes
+  if [ $ITERATION -ge 10 ] && [ $INTERVAL -lt 300 ]; then
+    INTERVAL=$((INTERVAL * 3 / 2))  # Multiply by 1.5
+  fi
+done
+```
+
+**✅ GOOD - Using nohup for persistence:**
+```bash
+# Run with nohup (survives terminal close)
+nohup bazel run //scripts/salary:cluster_existing_employers > /tmp/clustering.log 2>&1 &
+PID=$!
+echo "Started with PID: $PID"
+echo "Monitor with: tail -f /tmp/clustering.log"
+echo "Check progress: grep -E 'Phase|Processed|CLUSTERING SUMMARY' /tmp/clustering.log"
+```
+
+**❌ BAD - Foreground execution:**
+```bash
+# ❌ Blocks terminal for hours - can't monitor or interrupt easily
+bazel run //scripts/salary:cluster_existing_employers
+```
+
+**What to monitor:**
+- **Phase 1 progress**: "Phase 1: Processing same normalized name matches"
+- **Phase 2 progress**: "Phase 2: Processing cross-normalized-name matches"
+- **Progress updates**: "Processed X/Y pairs" messages
+- **Completion**: "CLUSTERING SUMMARY" section
+- **Errors**: Any ERROR, Exception, or Traceback messages
+
+**Resumability:**
+- ⚠️ **Partially safe to resume** - Script has some idempotency but not perfect:
+  - ✅ Skips pairs already in same cluster (line 207-209: `if emp1.canonical_cluster and emp2.canonical_cluster`)
+  - ✅ Uses batched updates (partial progress is saved periodically)
+  - ⚠️ **Not fully idempotent**: Will re-process pairs not yet clustered, potentially creating duplicate clusters or re-queuing reviews
+  - ⚠️ **Best practice**: Let it complete if possible - re-running is inefficient but won't break data
+  - ✅ **If interrupted**: Can re-run, but expect some duplicate work (pairs already processed will be skipped, but unprocessed pairs will be handled)
+  - ✅ **Verification**: Check final summary for "Auto-clustered pairs" and "Queued for review" counts
+
+**Performance expectations:**
+- Phase 1 (same normalized names): ~50k-100k pairs/sec
+- Phase 2 (cross-normalized with LSH): ~10k-50k candidate pairs/sec
+- Total time: 30 minutes to 2+ hours depending on database size
+
+## Rule: Fast Debug Iterations for Clustering
+
+**ALWAYS use the `--limit-employers` flag when debugging or developing clustering logic to ensure fast feedback loops.**
+
+**Why:**
+- Full clustering runs take 30+ minutes
+- Debug runs with limit take < 1 second
+- Allows rapid testing of logic changes, threshold adjustments, and LSH parameters
+- Verifies the entire pipeline (LSH build, Phase 1, Phase 2) works without waiting
+
+**✅ GOOD - Fast debug run:**
+```bash
+# Process only 1000 random employers (takes < 1s)
+bazel run //scripts/salary:cluster_existing_employers -- \
+  --dry-run \
+  --limit-employers 1000 \
+  --min-pairs 5 \
+  --threshold 0.1
+```
+
+**Workflow for optimization:**
+1. Run with `--limit-employers 1000` to verify code changes work
+2. Run with `--limit-employers 10000` to get a better representative sample (takes ~10s)
+3. Only run full set (no limit) when ready for production or final verification
+
+**Rationale:**
+- Reduces LSH index build time from minutes to milliseconds
+- Reduces pair comparison volume exponentially
+- Enables interactive development workflow
+
+## Rule: Keep All Generic Word Definitions in `lib/business/salary/generic_words.py`
+
+**ALWAYS define all generic word sets in the canonical `generic_words.py` module, never inline in other files.**
+
+**Why:**
+- Single source of truth for all generic word definitions
+- Easier to maintain and update word lists
+- Consistent behavior across all code that uses generic words
+- Prevents duplication and inconsistencies
+
+**✅ GOOD - Import from generic_words module:**
+```python
+from lib.business.salary.generic_words import (
+    GENERIC_WORDS,
+    DISTINGUISHING_GENERIC_WORDS,
+    VERY_GENERIC_WORDS,
+)
+
+# Use imported constants
+if word in VERY_GENERIC_WORDS:
+    # Handle very generic word
+```
+
+**❌ BAD - Inline definition:**
+```python
+# Don't define generic words inline
+very_generic_words = {'hospital', 'school', 'center', 'clinic'}
+if word in very_generic_words:
+    # Handle very generic word
+```
+
+**Available generic word sets:**
+- `GENERIC_WORDS` - Words removed during normalization (don't help distinguish companies)
+- `DISTINGUISHING_GENERIC_WORDS` - Words kept when only 1 non-generic word (help distinguish)
+- `VERY_GENERIC_WORDS` - Words that require location match (too generic to match across states)
+
+**When to add new generic words:**
+- Add to appropriate set in `lib/business/salary/generic_words.py`
+- Update documentation/comments if needed
+- Import and use in code that needs it
+
+**Rationale:**
+- Centralized definitions prevent inconsistencies
+- Easier to review and maintain word lists
+- Single place to update when business logic changes
+- Follows DRY principle
+
+## Rule: Use State Normalization Utility for Location Matching
+
+**ALWAYS use `normalize_state_code()` from `lib/utils/location_utils.py` for state code normalization, never implement inline state mapping.**
+
+**Why:**
+- Single source of truth for state code normalization
+- Handles both full state names ("MASSACHUSETTS") and abbreviations ("MA")
+- Consistent behavior across all code that compares states
+- Prevents duplication and inconsistencies
+
+**✅ GOOD - Import and use utility:**
+```python
+from lib.utils.location_utils import normalize_state_code
+
+# Normalize states for comparison
+state1 = normalize_state_code(employer1.state)  # "MASSACHUSETTS" -> "MA"
+state2 = normalize_state_code(employer2.state)  # "MA" -> "MA"
+if state1 == state2:
+    # Same state
+```
+
+**❌ BAD - Inline state mapping:**
+```python
+# Don't define state mappings inline
+state_map = {
+    'MASSACHUSETTS': 'MA',
+    'LOUISIANA': 'LA',
+    # ... more mappings
+}
+state1 = state_map.get(state1.upper(), state1[:2])
+```
+
+**Usage:**
+- Handles full state names: `normalize_state_code("MASSACHUSETTS")` → `"MA"`
+- Handles abbreviations: `normalize_state_code("MA")` → `"MA"`
+- Handles case variations: `normalize_state_code("ma")` → `"MA"`
+- Returns empty string for None/empty input
+- Fallback: returns first 2 characters (uppercased) if not found in mapping
+
+**When to use:**
+- Comparing employer locations for matching
+- Normalizing state codes for consistency
+- Any code that needs to compare or normalize US state codes
+
+**Rationale:**
+- Centralized state normalization prevents inconsistencies
+- Easier to maintain (add new states in one place)
+- Handles edge cases (missing states, variations)
+- Reusable across the codebase

@@ -6,10 +6,9 @@ from .enums.visa_category import VisaCategory
 from .enums.action_type import ActionType
 from .enums.country import Country
 
-# Use string reference - Django will resolve it after all models are loaded
-# No circular dependency exists (IngestVersion doesn't import from visa_cutoff_date),
-# but Bazel's module path makes direct imports unreliable during Django setup
-# The string reference works at runtime when Django's app registry is fully initialized
+# Import IngestVersion to ensure it's registered in Django's app registry
+# This is needed because Django's system check runs before AppConfig.ready()
+from .ingest.ingest_version import IngestVersion  # noqa: F401
 
 
 class VisaCutoffDate(models.Model):

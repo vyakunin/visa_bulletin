@@ -87,8 +87,8 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 ## Blue-Green Deployment Architecture
 
 **Files:**
-- `docker-compose.blue.yml` - Blue environment (port 8000)
-- `docker-compose.green.yml` - Green environment (port 8001)
+- `deployment/docker-compose.blue.yml` - Blue environment (port 8000)
+- `deployment/docker-compose.green.yml` - Green environment (port 8001)
 - `scripts/deploy-zero-downtime.sh` - Blue-green deployment orchestrator
 
 **How It Works:**

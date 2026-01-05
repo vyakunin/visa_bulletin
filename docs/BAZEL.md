@@ -13,10 +13,10 @@ This project uses [Bazel](https://bazel.build/) for building and testing. Bazel 
 
 ### Installation
 
-Bazel is automatically installed by `./setup_dev_environment.sh` if you have Homebrew:
+Bazel is automatically installed by `./scripts/setup_dev_environment.sh` if you have Homebrew:
 
 ```bash
-./setup_dev_environment.sh
+./scripts/setup_dev_environment.sh
 ```
 
 Manual installation:
@@ -60,7 +60,6 @@ Each directory with code has a `BUILD` file defining targets:
 ### Configuration Files
 
 - **`MODULE.bazel`**: Bzlmod module definition (Bazel 8+)
-- **`WORKSPACE`**: Legacy workspace file (for backward compatibility)
 - **`.bazelrc`**: Bazel configuration options
 - **`.bazelversion`**: Pins Bazel version to 8.1.1
 
@@ -93,6 +92,8 @@ bazel test //tests:test_parser --test_output=errors
 
 ## Dependencies
 
+### Python Dependencies
+
 Python dependencies are managed via `requirements.txt` and loaded through Bazel's `rules_python`:
 
 ```python
@@ -106,6 +107,48 @@ py_library(
     ],
 )
 ```
+
+### Accessing Data Files (Runfiles)
+
+**Use the standard Bazel runfiles library** - don't manually construct paths.
+
+**✅ GOOD - Use standard library:**
+```python
+from lib.utils.bazel_runfiles import get_data_file_path, get_template_file
+
+# Access any data file
+template_path = get_template_file("llm_prompt_template.txt")
+if template_path:
+    with open(template_path) as f:
+        content = f.read()
+
+# Or use directly
+data_path = get_data_file_path("scripts/salary/llm_prompt_template.txt")
+```
+
+**❌ BAD - Manual path construction:**
+```python
+# Don't manually construct paths - unreliable across platforms
+runfiles_base = os.environ.get('TEST_SRCDIR') or os.environ.get('BUILD_WORKSPACE_DIRECTORY')
+path = Path(runfiles_base) / '_main' / 'scripts' / 'salary' / 'template.txt'
+```
+
+**Why use the standard library:**
+- ✅ Handles all path variations automatically (tests vs binaries, different platforms)
+- ✅ Cross-platform compatible (Windows/Unix differences handled)
+- ✅ Uses Bazel's runfiles manifest for reliable resolution
+- ✅ No need for multiple path attempts or manual path construction
+
+**Implementation:**
+- Uses `rules_python.python.runfiles` (standard Bazel library)
+- Available via `lib/utils/bazel_runfiles.py`
+- Automatically falls back to workspace directory in non-Bazel environments
+
+**See also:**
+- `docs/BAZEL_RUNFILES.md` - Comprehensive guide on accessing data files
+- `docs/BAZEL_RUNFILES_IMPLEMENTATION.md` - Key findings from implementation
+- `lib/utils/bazel_runfiles.py` - Implementation details
+- `lib/README.md` - Library documentation
 
 ## Adding New Code
 
@@ -262,6 +305,18 @@ bazel query "rdeps(//..., //lib:bulletin_parser)"
 bazel query --output=graph //tests:test_parser | dot -Tpng > graph.png
 ```
 
+## Accessing Data Files
+
+See `docs/BAZEL_RUNFILES.md` for detailed guide on accessing Bazel data dependencies in Python code.
+
+**Quick reference:**
+```python
+from lib.utils.bazel_runfiles import get_data_file_path, get_template_file
+
+# Use standard library - don't manually construct paths
+template_path = get_template_file("llm_prompt_template.txt")
+```
+
 ## Performance Tips
 
 ### Caching
@@ -313,8 +368,11 @@ If dependency resolution fails:
 # Check MODULE.bazel.lock
 cat MODULE.bazel.lock
 
-# Force re-fetch dependencies
-bazel sync --configure
+# View current module dependencies
+bazel mod deps
+
+# Force re-fetch dependencies (MODULE.bazel)
+bazel fetch //...
 
 # Verify requirements.txt
 cat requirements.txt

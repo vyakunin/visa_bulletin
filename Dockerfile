@@ -32,7 +32,7 @@ WORKDIR /app
 COPY --chown=builder:builder . .
 
 # Build with Bazel as non-root user (required by rules_python)
-RUN bazel build //:runserver //:refresh_data //:refresh_data_incremental //:migrate
+RUN bazel build //:runserver //:migrate //:ingest
 
 # Extract built artifacts
 RUN mkdir -p /app/dist && \
@@ -42,6 +42,7 @@ RUN mkdir -p /app/dist && \
     cp -r extractors /app/dist/ && \
     cp -r webapp /app/dist/ && \
     cp -r django_config /app/dist/ && \
+    cp -r scripts /app/dist/ && \
     cp manage.py /app/dist/
 
 # Production stage
@@ -51,8 +52,8 @@ FROM python:3.11-slim
 RUN groupadd -r visabulletin && useradd -r -g visabulletin visabulletin
 
 # Install runtime dependencies only
+# Note: PostgreSQL client libraries are included in psycopg2-binary Python package
 RUN apt-get update && apt-get install -y \
-    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -80,7 +81,9 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000').read()" || exit 1
 
 # Default command: run migrations then start server with gunicorn
-# Using 3 workers (2 * CPU + 1), 2 threads per worker for concurrency
+# Using 2 workers for 1GB RAM instance (reduced from 3 to prevent OOM)
+# 2 threads per worker for concurrency (4 total concurrent requests)
+# Reduced timeout to 60s to fail faster and prevent memory buildup
 # max-requests recycles workers to prevent memory leaks
-CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 3 --threads 2 --bind 0.0.0.0:8000 --timeout 120 --max-requests 1000 --max-requests-jitter 50 django_config.wsgi:application"]
+CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 django_config.wsgi:application"]
 

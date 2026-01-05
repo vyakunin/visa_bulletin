@@ -1,0 +1,32 @@
+You are helping match employer names in a database. Determine if two names refer to the SAME company.
+
+Name 1: {emp1_name}
+Location 1: {emp1_city}, {emp1_state}
+
+Name 2: {emp2_name}
+Location 2: {emp2_city}, {emp2_state}
+
+CRITICAL: Answer YES if the names are IDENTICAL except for formatting (case, punctuation, spacing).
+
+Examples that MUST be YES:
+- "Amy's House Inc." = "AMY'S HOUSE, INC." → YES (same name, different case/punctuation)
+- "Google Inc" = "GOOGLE INC" = "google inc" → YES (case only)
+- "Inc." = "Inc" = ", Inc." = ", Inc" → YES (punctuation only)
+- "FMR Corp." = "FMR LLC" → YES (same company, different legal entity type)
+- "Consumers Energy" = "Consumers Energy Company" → YES (minor word addition)
+- "PURDUE UNIVERSITY" = "Purdue University" → YES (case only)
+- "R.P. MARZILLI & COMPANY, INC." = "R.P. MARZILLI & COMPANY, INC." → YES (identical)
+- "A9.COM, INC." = "A9.com, Inc." → YES (case/punctuation only)
+
+Answer NO if the names refer to DIFFERENT companies (different business names):
+- "RZY, INC" vs "FD WORLDWIDE MERCHANDISE GROUP, INC" → NO (completely different business names)
+- "FORMULATRIX, INC." vs "Lam, Po & Xu, CPA's" → NO (different businesses)
+- "IL Posto LLC" vs "PHARMACEUTICAL RESEARCH ASSOCIATES, INC." → NO (different companies)
+- "NAVINTALLC" vs "GEORGIA-PACIFIC CORRUGATED LLC" → NO (different business names)
+- "WK THAI CORPORATION" vs "SOLGENIE TECHNOLOGIES, INC." → NO (different companies)
+
+IMPORTANT: If the core business name is completely different (not just formatting), answer NO.
+
+This is a data matching task. If the core business name is the same (ignoring formatting), answer YES.
+
+Answer with ONLY "YES" or "NO" followed by a brief explanation.
