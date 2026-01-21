@@ -66,6 +66,22 @@ class DataSourcePlugin(ABC):
     data_dir: str | None = None  # Relative to workspace/data/ (e.g., 'salary/dol_data')
     filename_prefix: str = ''  # Fallback filename prefix (e.g., 'lca', 'perm', 'bulletin')
     
+    def __init__(self):
+        """Initialize plugin with rejection tracker placeholder"""
+        self._rejection_tracker = None
+    
+    def set_rejection_tracker(self, tracker):
+        """
+        Set rejection tracker for this run.
+        
+        Called by orchestrator before transform stage to enable rejection tracking.
+        Plugins can use this to record why records are rejected.
+        
+        Args:
+            tracker: RejectionTracker instance
+        """
+        self._rejection_tracker = tracker
+    
     def generate_filename(self, source: DataSource, url_path: str) -> str | None:
         """
         Generate custom filename from URL (optional override).

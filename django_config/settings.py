@@ -12,57 +12,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Workspace directory for Bazel compatibility
 WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 
-# Database configuration - PostgreSQL is now the default
-# SQLite is deprecated and disabled. Set DB_ENGINE=sqlite3 only for migration/backup purposes.
-DB_ENGINE = os.environ.get('DB_ENGINE', 'postgresql').lower()
-
-if DB_ENGINE == 'sqlite3':
-    # SQLite is deprecated - use only for migration/backup purposes
-    # SQLite configuration (fallback, use DB_ENGINE=sqlite3 to enable)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': WORKSPACE_DIR / 'visa_bulletin.db',
-            # Enable WAL mode for concurrent reads during writes
-            'OPTIONS': {
-                'timeout': 20,  # Wait up to 20 seconds for locks
-            },
-        }
+# Database configuration - PostgreSQL only
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'visa_bulletin_dev'),
+        'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'dev_password'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+        'OPTIONS': {
+            'connect_timeout': 10,
+        },
     }
-    
-    # Database connection initialization (WAL mode for SQLite only)
-    def setup_sqlite_wal(sender, connection, **kwargs):
-        """Enable WAL mode for SQLite to allow concurrent reads/writes"""
-        if connection.vendor == 'sqlite':
-            cursor = connection.cursor()
-            cursor.execute('PRAGMA journal_mode=WAL;')
-            cursor.execute('PRAGMA synchronous=NORMAL;')  # Faster writes
-            cursor.execute('PRAGMA cache_size=-64000;')   # 64MB cache
-    
-    from django.db.backends.signals import connection_created
-    connection_created.connect(setup_sqlite_wal)
-else:
-    # PostgreSQL configuration (default)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'visa_bulletin_dev'),
-            'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'dev_password'),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'OPTIONS': {
-                'connect_timeout': 10,
-            },
-        }
-    }
-    # Connection pooling for better performance
-    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
+}
+# Connection pooling for better performance
+DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
 
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',  # For intcomma and other human-readable filters
     'models',  # Our models app
     'webapp',  # Web dashboard
 ]

@@ -2,6 +2,8 @@
 
 from typing import TypeVar, Generic, Iterable, Callable
 from django.db import models, transaction
+from models.salary import EmployerCluster
+from lib.business.salary.cluster_utils import normalize_canonical_name
 
 ModelType = TypeVar('ModelType', bound=models.Model)
 
@@ -215,8 +217,6 @@ class BatchedUpdates:
         
         # Pre-load all existing clusters into cache (single query at startup)
         # This prevents duplicate cluster creation across multiple runs
-        from models.salary import EmployerCluster
-        from lib.business.salary.cluster_utils import normalize_canonical_name
         import logging
         logger = logging.getLogger(__name__)
         
@@ -372,9 +372,6 @@ class BatchedUpdates:
         provided (first occurrence wins). Subsequent lookups with different casing will
         return the same cluster instance.
         """
-        from models.salary import EmployerCluster
-        from lib.business.salary.cluster_utils import normalize_canonical_name
-        
         # Use normalized (lowercase) key for case-insensitive lookup
         normalized_key = normalize_canonical_name(canonical_name)
         
@@ -398,7 +395,10 @@ class BatchedUpdates:
         if not self._clusters_to_create or self.dry_run:
             return
         
-        from models.salary import EmployerCluster
+        # CRITICAL FIX: Create mapping from canonical_name to unsaved instances
+        # We need to update these instances in-place after bulk_create so that
+        # employers referencing them will have saved cluster instances
+        unsaved_by_name = {c.canonical_name: c for c in self._clusters_to_create}
         
         # Batch create clusters with ignore_conflicts=True to handle race conditions
         # and concurrent runs gracefully (requires unique constraint on canonical_name)
@@ -407,15 +407,29 @@ class BatchedUpdates:
         # Refresh cluster instances with IDs from database
         # We need to reload them to get the IDs assigned by the database
         # Note: If ignore_conflicts skipped some, we'll get the existing ones from DB
-        canonical_names = [c.canonical_name for c in self._clusters_to_create]
-        created_clusters = {
-            c.canonical_name: c 
-            for c in EmployerCluster.objects.filter(canonical_name__in=canonical_names)
-        }
+        canonical_names = list(unsaved_by_name.keys())
+        created_clusters = EmployerCluster.objects.filter(canonical_name__in=canonical_names)
         
-        # Update cache with created clusters (now with IDs)
-        for canonical_name, cluster in created_clusters.items():
-            self._cluster_cache[canonical_name] = cluster
+        # ✅ FIX PART 1: Update cache using normalized key (consistent with lookups in get_or_queue_cluster)
+        # Previously used canonical_name as key, but lookups use normalize_canonical_name(canonical_name)
+        # This caused cache misses for different casing variations (e.g., "BBC" vs "bbc")
+        # leading to unsaved cluster instances being passed to bulk_update()
+        #
+        # ✅ FIX PART 2: Update the original unsaved instances in-place with DB values
+        # This ensures employers referencing these instances will have saved clusters
+        for cluster in created_clusters:
+            normalized_key = normalize_canonical_name(cluster.canonical_name)
+            self._cluster_cache[normalized_key] = cluster
+            
+            # Update original unsaved instance in-place (this is the KEY fix)
+            # Employers hold references to these instances, so we need to copy the DB values into them
+            unsaved_instance = unsaved_by_name.get(cluster.canonical_name)
+            if unsaved_instance:
+                # Copy all fields from saved cluster to unsaved instance
+                unsaved_instance.pk = cluster.pk
+                unsaved_instance.id = cluster.id
+                for field in cluster._meta.fields:
+                    setattr(unsaved_instance, field.name, getattr(cluster, field.name))
         
         self._clusters_to_create = []
     

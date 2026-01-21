@@ -514,6 +514,16 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {% if '/job-title' in request.path %}active{% endif %}" href="{% url 'job_title_directory' %}">
+                        <i class="bi bi-briefcase"></i> Job Titles
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if '/employer' in request.path %}active{% endif %}" href="{% url 'employer_directory' %}">
+                        <i class="bi bi-building"></i> Employers
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {% if request.path == '/faq/' %}active{% endif %}" href="{% url 'faq' %}">
                         <i class="bi bi-question-circle"></i> FAQ
                     </a>

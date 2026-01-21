@@ -35,20 +35,6 @@ py_binary(
 
 
 py_binary(
-    name = "check_source_columns",
-    srcs = ["check_source_columns.py"],
-    main = "check_source_columns.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//django_config:logging_config",
-        "//lib/utils:http_utils",
-        "//lib/utils:excel_utils",  # Transitively includes openpyxl
-        "//lib/utils:data_source_utils",
-    ],
-    python_version = "PY3",
-)
-
-py_binary(
     name = "explore_db",
     srcs = ["explore_db.py"],
     visibility = ["//visibility:public"],

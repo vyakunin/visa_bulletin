@@ -4,9 +4,11 @@ import logging
 import time
 import traceback
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterator, Optional
-from django.db import transaction
+from django.db import transaction, connection, models
+from django.core.exceptions import FieldDoesNotExist
 from django.utils import timezone
 
 from models.ingest.enums import IngestStatus, IngestStage, SourceType
@@ -20,6 +22,7 @@ from lib.utils.data_source_utils import get_data_source_filepath, count_file_row
 from lib.utils.exception_utils import handle_unrecoverable_errors
 from .base import DataSourcePlugin, ValidationResult
 from .registry import PluginRegistry
+from .rejection_tracker import RejectionTracker
 from .versioning import create_version, activate_version
 
 logger = logging.getLogger(__name__)
@@ -64,13 +67,18 @@ def _identify_new_and_existing(
     case_numbers = [r.case_number for r in records]
     
     # Query in batches to avoid huge IN clauses
-    # Fetch existing records with source_file_date for comparison
+    # Fetch existing records with source_file_date for comparison when available
     existing_records_dict = {}
+    try:
+        model_class._meta.get_field('source_file_date')
+        only_fields = ['case_number', 'source_file_date']
+    except Exception:
+        only_fields = ['case_number']
     for i in range(0, len(case_numbers), batch_size):
         batch_cases = case_numbers[i:i+batch_size]
         existing = model_class.objects.filter(
             case_number__in=batch_cases
-        ).only('case_number', 'source_file_date')
+        ).only(*only_fields)
         
         for existing_record in existing:
             existing_records_dict[existing_record.case_number] = existing_record
@@ -113,6 +121,9 @@ class PipelineOrchestrator:
         self.update_filter = update_filter or {}
         self.initial_batch_size = batch_size
         self.batch_size = batch_size
+        if self.use_copy:
+            self.batch_size = max(self.batch_size, 10000)
+            self.initial_batch_size = self.batch_size
         # Track stage timings for performance analysis
         self.stage_timings = {}
         # Track pipeline-wide stats for ETA
@@ -126,6 +137,7 @@ class PipelineOrchestrator:
             logger=logger,
             log_level=logging.INFO
         )
+        self._copy_preflight_done = False
         
         # Validate update_mode configuration
         if self.update_mode:
@@ -151,11 +163,21 @@ class PipelineOrchestrator:
         if not plugin:
             raise ValueError(f"No plugin found for {source.domain}:{source.source_type}")
         
+        # Initialize rejection tracker for this run
+        rejection_tracker = RejectionTracker(run)
+        
+        # Set rejection tracker on plugin (plugins can optionally use it)
+        if hasattr(plugin, 'set_rejection_tracker'):
+            plugin.set_rejection_tracker(rejection_tracker)
+        
         # Initialize pipeline context if provided
         if pipeline_context:
             self.pending_sources_count = pipeline_context.get('pending_count', 0)
             self.completed_sources_count = pipeline_context.get('completed_count', 0)
             self.pipeline_start_time = pipeline_context.get('start_time', time.time())
+            self._skip_records = pipeline_context.get('skip_records', 0)
+        else:
+            self._skip_records = 0
         
         # Reset stage timings for this run
         self.stage_timings = {}
@@ -247,13 +269,19 @@ class PipelineOrchestrator:
             else:
                 logger.info(f"[Run {run.id}] Update mode: Skipping versioning (updates modify existing records)")
             
+            # Save rejection statistics to database
+            rejection_tracker.save_to_db()
+            
             run.mark_completed()
             
             # Log performance summary
             total_duration = time.time() - run_start_time
             self._log_performance_summary(run, total_duration, total_expected_records)
             
-            logger.info(f"[Run {run.id}] Pipeline completed successfully (version: {version_tag})")
+            if not self.update_mode:
+                logger.info(f"[Run {run.id}] Pipeline completed successfully (version: {version_tag})")
+            else:
+                logger.info(f"[Run {run.id}] Pipeline completed successfully (update mode)")
             
             # Update pipeline context if provided
             if pipeline_context:
@@ -376,6 +404,11 @@ class PipelineOrchestrator:
         run.save()
         logger.info(f"[Run {run.id}] Stage: TRANSFORMING")
         
+        # Check if we should skip records (for debugging)
+        skip_records = getattr(self, '_skip_records', 0)
+        if skip_records > 0:
+            logger.warning(f"[Run {run.id}] DEBUG MODE: Skipping first {skip_records:,} records")
+        
         transform_error_count = 0
         records_processed_count = 0
         transform_rate_logger = RateLimitedLogger(
@@ -386,6 +419,9 @@ class PipelineOrchestrator:
         )
         
         for record_num, record in enumerate(records, start=1):
+            # Skip records if in debug mode
+            if skip_records > 0 and record_num <= skip_records:
+                continue
             # Log progress: every 1000 records, with rate limiting
             if record_num % 1000 == 0:
                 transform_rate_logger.log(f"[Run {run.id}] Transforming record {record_num:,}...")
@@ -468,6 +504,8 @@ class PipelineOrchestrator:
                 logger.info(f"[Run {run.id}] Found {current_count:,} existing {model_class.__name__} records (count took {count_duration:.2f}s)")
                 
                 self.batch_size = get_optimal_batch_size(model_class, current_count)
+                if self.use_copy:
+                    self.batch_size = max(self.batch_size, 10000)
                 logger.info(f"[Run {run.id}] Adaptive batch size: {self.batch_size} (based on {model_class.__name__})")
             except StopIteration:
                 logger.warning(f"[Run {run.id}] No models to load")
@@ -950,6 +988,21 @@ class PipelineOrchestrator:
         
         try:
             model_class = type(batch[0])
+            valid_update_fields = []
+            for field in self.update_fields:
+                try:
+                    model_class._meta.get_field(field)
+                    valid_update_fields.append(field)
+                except FieldDoesNotExist:
+                    continue
+
+            if not valid_update_fields:
+                run.records_skipped += len(batch)
+                logger.warning(
+                    f"[Run {run.id}] No valid update fields for {model_class.__name__}; "
+                    f"skipping {len(batch)} records"
+                )
+                return
             
             # Extract case_numbers from batch
             if not hasattr(batch[0], 'case_number'):
@@ -981,7 +1034,7 @@ class PipelineOrchestrator:
                 if case_number in existing_records and case_number not in matched_case_numbers:
                     existing = existing_records[case_number]
                     # Copy fields from new_record to existing
-                    for field in self.update_fields:
+                    for field in valid_update_fields:
                         if hasattr(new_record, field):
                             setattr(existing, field, getattr(new_record, field))
                     records_to_update.append(existing)
@@ -999,7 +1052,7 @@ class PipelineOrchestrator:
                     with transaction.atomic():
                         model_class.objects.bulk_update(
                             records_to_update,
-                            self.update_fields,
+                            valid_update_fields,
                             batch_size=self.batch_size
                         )
                 
@@ -1122,9 +1175,38 @@ class PipelineOrchestrator:
                 warnings=[]
             )
     
+    def _validate_copy_preflight(self, records: list, fields: list, model_class) -> None:
+        if self._copy_preflight_done:
+            return
+        self._copy_preflight_done = True
+        decimal_fields = [f for f in fields if isinstance(f, models.DecimalField)]
+        if not decimal_fields:
+            return
+        sample_records = records[:200]
+        failures: list[tuple[str, object]] = []
+        for record in sample_records:
+            for field in decimal_fields:
+                value = getattr(record, field.attname, None)
+                if value is None or isinstance(value, (Decimal, int, float)):
+                    continue
+                try:
+                    Decimal(str(value))
+                except (InvalidOperation, ValueError, TypeError):
+                    failures.append((field.attname, value))
+                    if len(failures) >= 5:
+                        break
+            if len(failures) >= 5:
+                break
+        if failures:
+            logger.error(
+                "COPY preflight failed for %s; non-numeric values: %s",
+                model_class.__name__,
+                failures,
+            )
+            raise ValueError("COPY preflight failed: non-numeric DecimalField values detected")
+
     def _bulk_insert_via_copy(self, records: list, model_class):
         """Use PostgreSQL COPY for fastest bulk insert (3-10x faster than bulk_create)"""
-        from django.db import connection
         from io import StringIO
         
         if not records:
@@ -1132,22 +1214,153 @@ class PipelineOrchestrator:
         
         # Prepare data as tab-separated values
         buffer = StringIO()
-        field_names = [f.name for f in model_class._meta.fields if not f.primary_key]
+        fields = [f for f in model_class._meta.fields if not f.primary_key]
+        field_names = [f.attname for f in fields]
+
+        self._validate_copy_preflight(records, fields, model_class)
         
+        # DEBUG: Log field names to verify order
+        field_names_str = ', '.join(f.attname for f in fields)
+        logger.info(f"🔍 COPY field order for {model_class.__name__}: {field_names_str}")
+        
+        record_count = 0
         for record in records:
             values = []
-            for field_name in field_names:
-                value = getattr(record, field_name, None)
+            # Get unique identifier for logging (case_number if available)
+            record_id = getattr(record, 'case_number', None) or f"record_{id(record)}"
+            record_count += 1
+            
+            # DEBUG: Log first 3 records completely for debugging
+            if record_count <= 3:
+                logger.info(f"Record {record_count} ({record_id}): wage_from={getattr(record, 'wage_from', None)}, wage_to={getattr(record, 'wage_to', None)}, wage_unit={getattr(record, 'wage_unit', None)}")
+            
+            for field in fields:
+                value = getattr(record, field.attname, None)
                 if value is None:
                     values.append('')
-                elif isinstance(value, (int, float)):
+                    continue
+                
+                # Convert enum values to their string representation
+                original_value = value
+                if hasattr(value, 'value'):
+                    # This is a Django TextChoices/IntegerChoices enum
+                    value = value.value
+                    # DEBUG: Log enum conversions for wage fields (first 3 records)
+                    if record_count <= 3 and field.attname in ('wage_unit', 'wage_from', 'wage_to', 'prevailing_wage_unit', 'visa_program', 'case_status'):
+                        logger.info(f"  ⚙️  {field.attname}: {original_value!r} -> {value!r}")
+                
+                # Debug: Log ALL values going to wage_to field  
+                if field.attname == 'wage_to':
+                    # Log EVERY record's wage_to to catch the bug
+                    if value and isinstance(value, str) and not value.replace('.', '').replace('-', '').isdigit():
+                        logger.error(
+                            "🐛 BUG FOUND! Line %d: About to write non-numeric %r to wage_to for case %s. "
+                            "Raw record fields: wage_from=%r (type=%s), wage_to=%r (type=%s), wage_unit=%r (type=%s)",
+                            record_count,
+                            value,
+                            record_id,
+                            getattr(record, 'wage_from', None),
+                            type(getattr(record, 'wage_from', None)).__name__,
+                            getattr(record, 'wage_to', None),
+                            type(getattr(record, 'wage_to', None)).__name__,
+                            getattr(record, 'wage_unit', None),
+                            type(getattr(record, 'wage_unit', None)).__name__,
+                        )
+
+                # Normalize Decimal fields to avoid invalid numeric literals in COPY.
+                if isinstance(field, models.DecimalField):
+                    if isinstance(value, Decimal):
+                        values.append(str(value))
+                        continue
+                    # Check for string values that can't be decimals
+                    if isinstance(value, str):
+                        # Strip whitespace and check if it looks like a decimal
+                        cleaned = value.strip()
+                        if not cleaned or not any(c.isdigit() for c in cleaned):
+                            # Empty or no digits - write NULL
+                            logger.warning(
+                                "COPY value error [%s]: %s.%s has non-numeric string %r; writing NULL. "
+                                "Record: case_number=%s",
+                                record_id,
+                                model_class.__name__,
+                                field.attname,
+                                value,
+                                record_id,
+                            )
+                            values.append('')
+                            continue
+                    try:
+                        values.append(str(Decimal(str(value))))
+                        continue
+                    except (InvalidOperation, ValueError, TypeError):
+                        logger.error(
+                            "COPY value error [%s]: %s.%s has non-decimal value %r; writing NULL. "
+                            "Record: case_number=%s, type=%s",
+                            record_id,
+                            model_class.__name__,
+                            field.attname,
+                            value,
+                            record_id,
+                            type(value).__name__,
+                        )
+                        values.append('')
+                        continue
+
+                if isinstance(value, (int, float)):
                     values.append(str(value))
-                else:
-                    # Escape tabs and newlines
-                    str_value = str(value).replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
-                    values.append(str_value)
+                    continue
+
+                # Escape special characters for PostgreSQL COPY TEXT format
+                # CRITICAL: Escape backslashes FIRST (backslash is escape character in COPY)
+                # A trailing backslash before a tab would escape the tab, causing field misalignment!
+                str_value = (str(value)
+                            .replace('\\', '\\\\')  # Escape backslashes FIRST
+                            .replace('\t', ' ')      # Then replace tabs
+                            .replace('\n', ' ')
+                            .replace('\r', ' '))
+                values.append(str_value)
+
+            # DEBUG: Log ALL wage_to values for records around line 786
+            if 780 <= record_count <= 790:
+                wage_from_pos, wage_to_pos, wage_unit_pos = 9, 10, 11
+                logger.error(
+                    "🔍 Line %d (%s): wage_from=%r, wage_to=%r, wage_unit=%r",
+                    record_count,
+                    record_id,
+                    values[wage_from_pos] if len(values) > wage_from_pos else None,
+                    values[wage_to_pos] if len(values) > wage_to_pos else None,
+                    values[wage_unit_pos] if len(values) > wage_unit_pos else None,
+                )
+            
+            # Also check if "year" is in wage_to position for ANY record
+            if len(values) > 10 and values[10] == 'year':
+                copy_line = '\t'.join(values)
+                logger.error(
+                    "🐛 GOTCHA! Line %d: COPY buffer has 'year' in wage_to position! Case: %s\n"
+                    "   wage_from (pos 9): %r\n"
+                    "   wage_to (pos 10): %r\n"
+                    "   wage_unit (pos 11): %r\n"
+                    "   Full COPY line preview: %s",
+                    record_count,
+                    record_id,
+                    values[9] if len(values) > 9 else None,
+                    values[10],
+                    values[11] if len(values) > 11 else None,
+                    copy_line[:300]
+                )
+
             buffer.write('\t'.join(values) + '\n')
         
+        buffer.seek(0)
+        
+        # DEBUG: Save buffer to file for inspection
+        buffer_content = buffer.getvalue()
+        debug_path = f"/tmp/copy_buffer_{model_class.__name__}.tsv"
+        with open(debug_path, 'w') as f:
+            f.write(buffer_content)
+        logger.info(f"💾 Saved COPY buffer to {debug_path} ({len(buffer_content)} bytes, {len(records)} records)")
+        
+        # Reset buffer
         buffer.seek(0)
         
         with connection.cursor() as cursor:

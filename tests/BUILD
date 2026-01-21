@@ -21,6 +21,27 @@ py_library(
 )
 
 py_test(
+    name = "test_worksite_record_copy_bug",
+    size = "small",
+    srcs = ["test_worksite_record_copy_bug.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
     name = "test_wage_unit_parsing",
     size = "small",
     srcs = ["test_wage_unit_parsing.py"],
@@ -173,7 +194,7 @@ py_test(
     size = "small",
     srcs = ["django_setup.py", "test_webapp_ui.py"],
     deps = [
-        "//webapp:views",
+        "//webapp/views:views",
         "//models:visa_cutoff_date",
         "//django_config:settings",
         "//webapp:apps",
@@ -227,7 +248,7 @@ py_test(
     size = "small",
     srcs = ["django_setup.py", "test_dashboard_integration.py"],
     deps = [
-        "//webapp:views",
+        "//webapp/views:views",
         "//models:visa_cutoff_date",
         "//models:bulletin",
         "//models/enums:visa_category",
@@ -259,6 +280,29 @@ py_test(
         "//django_config:settings",
         "//webapp:apps",
         requirement("Django"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_salary_search_view",
+    size = "small",
+    srcs = ["django_setup.py", "test_salary_search_view.py"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
     ],
     python_version = "PY3",
     srcs_version = "PY3",
@@ -328,7 +372,7 @@ py_test(
         "//models/enums:visa_program",
         "//django_config:settings",
         "//webapp:apps",
-        "//webapp:views",
+        "//webapp/views:views",
         "//webapp:urls",
         requirement("Django"),
         requirement("pytest"),
@@ -728,6 +772,58 @@ py_test(
 )
 
 py_test(
+    name = "test_dol_parsing_smoke",
+    size = "medium",  # Parses actual DoL files - may take longer
+    srcs = ["test_dol_parsing_smoke.py"],
+    deps = [
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:dol_lca",
+        "//lib/ingest/plugins:dol_perm",
+        "//lib/utils:http_utils",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+    tags = ["smoke", "parsing"],  # Mark as smoke test
+)
+
+py_test(
+    name = "test_dol_parsing_comprehensive",
+    size = "small",  # Uses hardcoded samples - fast
+    srcs = ["test_dol_parsing_comprehensive.py"],
+    deps = [
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:dol_lca",
+        "//lib/ingest/plugins:dol_perm",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+    tags = ["smoke", "parsing", "precommit"],  # Fast smoke test for pre-commit
+)
+
+py_test(
     name = "test_file_discovery",
     size = "small",
     srcs = ["test_file_discovery.py"],
@@ -766,6 +862,99 @@ py_test(
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_clustering_cache_fix",
+    size = "small",
+    srcs = ["test_clustering_cache_fix.py"],
+    deps = [
+        ":django_setup",  # Shared Django setup library
+        "//lib/utils:db_utils",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_job_title_normalization",
+    size = "small",
+    srcs = ["test_job_title_normalization.py"],
+    deps = [
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_employer_profile_view",
+    size = "small",
+    srcs = ["test_employer_profile_view.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
+    name = "test_job_title_profile_view",
+    size = "small",
+    srcs = ["django_setup.py", "test_job_title_profile_view.py"],
+    deps = [
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//models:job_title",
+        "//models/enums:visa_program",
+        "//models/ingest:ingest_version",
+        "//lib/business/salary:job_title_stats",
+        "//lib/business/salary:job_title_chart_builder",
+        "//django_config:settings",
+        "//django_config:urls",
+        "//django_config:context_processors",
+        "//webapp:apps",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("plotly"),
     ],
     python_version = "PY3",
     srcs_version = "PY3",

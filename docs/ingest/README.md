@@ -149,6 +149,28 @@ bazel run //scripts/salary:validate_data -- --post-ingest-only
 - Errors abort pipeline, warnings are logged only
 - See VALIDATION_FRAMEWORK.md for details
 
+### Rejection Tracking
+- Pipeline tracks why records are rejected during transform stage
+- Each `IngestRun` stores rejection statistics in `IngestRejectionStats`
+- Tracks counts per rejection reason with sample case numbers
+- Helps identify data quality issues and format mismatches
+
+**Query rejection stats:**
+```python
+# Get rejection stats for a run
+run = IngestRun.objects.get(id=504)
+for stat in run.rejection_stats.all().order_by('-count'):
+    print(f"{stat.get_reason_display()}: {stat.count:,} records")
+    print(f"  Sample case numbers: {stat.sample_case_numbers}")
+```
+
+**Common rejection reasons:**
+- `missing_case_number` - No case number in record
+- `missing_employer_name` - Employer name is null/empty
+- `unknown_employer_name` - Employer name is "Unknown"
+- `missing_job_title` - Job title is null/empty
+- `missing_wage_data` - No wage information provided
+
 ## Performance Optimization
 
 - **Batched Streaming:** Process large files in chunks (memory efficient)

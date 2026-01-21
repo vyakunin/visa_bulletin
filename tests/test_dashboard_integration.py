@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 from datetime import date
 import xml.etree.ElementTree as ET
 
-from webapp.views import robots_view, sitemap_view
+from webapp.views.seo.sitemaps import robots_view, sitemap_view
 
 
 class TestDashboardBasic(unittest.TestCase):

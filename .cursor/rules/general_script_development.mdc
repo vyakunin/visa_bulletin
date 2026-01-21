@@ -217,11 +217,39 @@ When debugging and need a script:
 4. **Check recent history** - Have you created similar scripts recently?
    - **If yes** → Create/update a **permanent script** with logging
    - **If no** → Create a **throwaway script** (but still log it)
-5. **ALWAYS ask for explicit confirmation before creating new scripts** - Only create new scripts when user explicitly requests it
+5. **🚨 CRITICAL: NEVER create temporary scripts without explicit user request** - Only create scripts when user explicitly asks for them
 6. **Always use Bazel** for project-specific libraries
 7. **Log all script usage:**
    - Permanent scripts: Log each call to their own log file
    - Throwaway scripts: Log to shared throwaway calls log with context
+
+## Rule: Never Create Temporary Scripts Without Explicit Request
+
+**🚨 CRITICAL: NEVER create temporary, one-off, or debugging scripts unless the user explicitly requests it.**
+
+**❌ FORBIDDEN - Creating scripts without explicit request:**
+- ❌ "I'll create a quick script to check X" → Don't create it, use existing tools or ask first
+- ❌ "Let me write a script to test Y" → Don't create it, use existing tools or ask first
+- ❌ Creating helper scripts for debugging → Use existing scripts or command-line tools instead
+- ❌ Creating scripts to generate sample data → Ask user first
+
+**✅ GOOD - Only create scripts when explicitly requested:**
+- ✅ User says: "Create a script to do X" → Create it
+- ✅ User says: "Write a tool to check Y" → Create it
+- ✅ User explicitly asks for a new script → Create it
+
+**What to do instead:**
+- ✅ Use existing scripts from `scripts/README.md`
+- ✅ Use command-line tools (`grep`, `curl`, `jq`, etc.)
+- ✅ Use Bazel run commands with existing targets
+- ✅ Ask user: "Should I create a script for this, or can we use existing tools?"
+
+**Rationale:**
+- Prevents accumulation of temporary scripts
+- Keeps codebase clean and maintainable
+- Forces reuse of existing tools
+- User controls what scripts exist in the project
+- Temporary scripts often become permanent clutter
 
 ## Rule: Check Recent History and Logs Before Re-Running Scripts
 

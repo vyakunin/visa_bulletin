@@ -80,6 +80,30 @@ py_binary(
 )
 
 py_binary(
+    name = "manage_salary_indexes",
+    srcs = ["manage_salary_indexes.py"],
+    main = "manage_salary_indexes.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:http_utils",
+        "//lib/utils:logging_utils",
+        "//models/ingest:ingest",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("PyYAML"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "reset_clustering",
     srcs = ["reset_clustering.py"],
     main = "reset_clustering.py",
@@ -117,6 +141,7 @@ py_binary(
         "//lib/ingest/plugins:visa_bulletin",
         "//lib/business/bulletin:cutoff_data_aggregator",
         "//models:salary",
+        "//models:job_title",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models/ingest:ingest",
@@ -338,6 +363,75 @@ py_binary(
         requirement("psycopg2_binary"),  # PostgreSQL adapter
         requirement("datasketch"),  # Locality-Sensitive Hashing for fast similarity search
         requirement("tqdm"),  # Progress bar for long-running operations
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "cluster_job_titles",
+    srcs = ["cluster_job_titles.py"],
+    main = "cluster_job_titles.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:db_utils",
+        "//lib/business:clustering_engine",
+        "//lib/business/salary:job_title_config",
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "analyze_job_title_normalization",
+    srcs = ["analyze_job_title_normalization.py"],
+    main = "analyze_job_title_normalization.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "fix_job_title_normalization",
+    srcs = ["fix_job_title_normalization.py"],
+    main = "fix_job_title_normalization.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:db_utils",
+        "//models:job_title",
+        "//models:salary",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
     python_version = "PY3",
     env = {
@@ -1027,6 +1121,157 @@ py_binary(
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+
+py_binary(
+    name = "check_job_title_status",
+    srcs = ["check_job_title_status.py"],
+    main = "check_job_title_status.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "backfill_job_title_links",
+    srcs = ["backfill_job_title_links.py"],
+    main = "backfill_job_title_links.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:db_utils",
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "populate_job_title_slugs",
+    srcs = ["populate_job_title_slugs.py"],
+    main = "populate_job_title_slugs.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "find_valid_job_title_slug",
+    srcs = ["find_valid_job_title_slug.py"],
+    main = "find_valid_job_title_slug.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "check_sitemap_eligibility",
+    srcs = ["check_sitemap_eligibility.py"],
+    main = "check_sitemap_eligibility.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "debug_job_title_data",
+    srcs = ["debug_job_title_data.py"],
+    main = "debug_job_title_data.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "update_job_title_cluster_stats",
+    srcs = ["update_job_title_cluster_stats.py"],
+    main = "update_job_title_cluster_stats.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:db_utils",
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     env = {

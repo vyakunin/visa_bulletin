@@ -84,6 +84,59 @@ py_binary(
 )
 
 py_binary(
+    name = "inspect_source_columns",
+    srcs = ["inspect_source_columns.py"],
+    main = "inspect_source_columns.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/utils:data_source_utils",
+        "//lib/utils:excel_utils",
+        "//lib/utils:http_utils",
+        "//lib/utils:logging_utils",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:plugins",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "inspect_unknown_source_rows",
+    srcs = ["inspect_unknown_source_rows.py"],
+    main = "inspect_unknown_source_rows.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/parsing/salary:db_importer",
+        "//lib/utils:excel_utils",
+        "//lib/utils:http_utils",
+        "//lib/utils:logging_utils",
+        "//models:salary",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "check_run_status",
     srcs = ["check_run_status.py"],
     main = "check_run_status.py",
@@ -119,6 +172,30 @@ py_binary(
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "extract_smoke_test_samples",
+    srcs = ["extract_smoke_test_samples.py"],
+    main = "extract_smoke_test_samples.py",
+    deps = [
+        "//django_config:settings",
+        "//lib/utils:excel_utils",
+        "//lib/utils:http_utils",
+        "//models:salary",
+        "//models/ingest:ingest",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("openpyxl"),
+        requirement("PyYAML"),
     ],
     python_version = "PY3",
     env = {

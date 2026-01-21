@@ -144,10 +144,37 @@ All library code is organized in subdirectories following a clear structure:
 
 ## Business Logic: Salary
 
+### `business/salary/common_stats.py`
+**Purpose:** Shared salary aggregation helpers (percentiles, trends, geographic distributions).
+
+### `business/salary/common_chart_builder.py`
+**Purpose:** Shared Plotly chart builders for salary visualizations.
+
+### `business/salary/market_overview.py`
+**Purpose:** Market-wide salary overview stats for landing pages.
+
 ### `business/salary/` - Employer Clustering Module
 **Purpose:** Employer clustering logic for grouping similar employers across name variations and locations.
 
 **See `lib/business/salary/README.md` for comprehensive documentation.**
+
+### `business/salary/` - Job Title Normalization (Implemented)
+**Purpose:** Job title normalization and clustering for standardizing job titles across variations and seniority levels.
+
+**Status:** ✅ Core normalization implemented. Models and tests complete.
+
+**Key components:**
+- `models/job_title.py` - JobTitle and JobTitleCluster models with normalization logic
+- `JobTitle.normalize_title(title)` - Removes seniority indicators, standardizes titles
+- `JobTitle.extract_experience_level(title)` - Extracts junior/senior/staff/principal/etc.
+- `tests/test_job_title_normalization.py` - Comprehensive test coverage
+
+**Next steps:**
+- Backfill existing SalaryRecords with JobTitle entities
+- Run clustering to create JobTitleClusters
+- Integrate with views for job title profile pages
+
+**Reference:** `docs/department_of_labor/JOB_TITLE_NORMALIZATION_DESIGN.md`
 
 **Key files:**
 - `employer_clustering.py` - Core matching algorithm
@@ -232,6 +259,59 @@ cluster = assign_to_cluster(employer)
 **Why needed:**
 - Historical data has inconsistent visa class naming
 - Handles variations like "EB-2", "EB2", "Employment Second Preference"
+
+---
+
+## Ingest Framework
+
+### `ingest/rejection_tracker.py`
+**Purpose:** Track and save record rejection statistics during ingestion for data quality analysis.
+
+**Key class:**
+- `RejectionTracker(run)` - Collects rejection counts and sample case numbers per reason
+
+**Key methods:**
+- `record_rejection(reason, case_number)` - Record a rejected record with optional case number
+- `save_to_db()` - Save collected stats to `IngestRejectionStats` table
+- `get_stats()` - Get current rejection statistics (for testing)
+- `total_rejections()` - Get total number of rejections
+
+**Usage:**
+```python
+from lib.ingest.rejection_tracker import RejectionTracker
+
+# Orchestrator creates tracker for each run
+tracker = RejectionTracker(run)
+
+# Plugin records rejections during transform
+if not employer_name:
+    if self._rejection_tracker:
+        self._rejection_tracker.record_rejection('missing_employer_name', case_number)
+    return None
+
+# Orchestrator saves stats at end of run
+tracker.save_to_db()
+
+# Query stats after ingest
+for stat in run.rejection_stats.all().order_by('-count'):
+    print(f"{stat.get_reason_display()}: {stat.count:,}")
+    print(f"  Samples: {stat.sample_case_numbers}")
+```
+
+**Common rejection reasons:**
+- `missing_case_number` - No case number in record
+- `missing_employer_name` - Employer name is null/empty
+- `unknown_employer_name` - Employer name is "Unknown"
+- `missing_job_title` - Job title is null/empty
+- `missing_wage_data` - No wage information
+
+**Benefits:**
+- Identify data quality issues and format mismatches
+- Track rejection trends across ingests
+- Sample case numbers enable investigation of rejected records
+- Helps distinguish between missing data vs wrong column mappings
+
+**See also:** `docs/ingest/README.md` for complete rejection tracking documentation.
 
 ---
 

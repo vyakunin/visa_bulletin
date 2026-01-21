@@ -44,6 +44,16 @@ py_library(
 )
 
 py_library(
+    name = "rejection_stats",
+    srcs = ["rejection_stats.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ingest_run",
+        requirement("Django"),
+    ],
+)
+
+py_library(
     name = "ingest",
     srcs = ["__init__.py"],
     visibility = ["//visibility:public"],
@@ -51,6 +61,7 @@ py_library(
         ":data_source",
         ":ingest_run",
         ":ingest_version",
+        ":rejection_stats",
         ":enums",
     ],
 )

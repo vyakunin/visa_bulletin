@@ -1,27 +1,18 @@
-"""Views for visa bulletin dashboard"""
-
-import json
-import logging
-from datetime import date, datetime
-from decimal import Decimal
+"""Salary and worksite search views."""
 
 from django.shortcuts import render
-from django.http import HttpResponse
-from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.core.cache import cache
-from django.db.models import Avg, Min, Max, Count, F
+from django.db.models import Avg, Min, Max
 
-from models.enums.visa_category import VisaCategory
-from models.enums.action_type import ActionType
-from models.enums.country import Country
-from models.enums.visa_program import VisaProgram
-from models.salary import SalaryRecord, Employer, EmployerCluster, WorksiteRecord
-from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
-from lib.business.bulletin.cutoff_data_aggregator import (
-    get_aggregated_visa_class_data,
-    build_seo_metadata,
+from models.salary import SalaryRecord, WorksiteRecord
+from lib.business.salary.common_chart_builder import (
+    build_filing_volume_chart,
+    build_geographic_chart,
+    build_geographic_median_chart,
+    build_salary_trend_chart,
 )
+from lib.business.salary.market_overview import get_market_overview_stats
 from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
 from lib.utils.filter_utils import (
     apply_text_search_filter,
@@ -30,172 +21,6 @@ from lib.utils.filter_utils import (
 )
 from lib.utils.location_utils import US_STATES
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
-
-logger = logging.getLogger(__name__)
-
-
-def _parse_submission_date(date_str: str) -> date:
-    """Parse submission date from request, supports MM/DD/YYYY and YYYY-MM-DD"""
-    if not date_str:
-        return date.today()
-    
-    # Try MM/DD/YYYY format first
-    try:
-        return datetime.strptime(date_str, '%m/%d/%Y').date()
-    except ValueError:
-        pass
-    
-    # Try YYYY-MM-DD format (backward compatibility)
-    try:
-        return datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        logger.warning(f"Invalid submission_date format: {date_str}, using today")
-        return date.today()
-
-
-@cache_page(60 * 60 * 3)  # Cache for 3 hours (bulletins update monthly)
-def dashboard_view(request, category=None, country=None):
-    """
-    Main dashboard view with filters and time-series chart
-    
-    URL kwargs or query params:
-        category: visa category (family_sponsored, employment_based)
-        country: country code (all, china, india, mexico, philippines)
-        action_type: action type (final_action, dates_for_filing)
-        submission_date: priority date (MM/DD/YYYY or YYYY-MM-DD)
-    """
-    # Parse request parameters
-    category = category or request.GET.get('category', VisaCategory.FAMILY_SPONSORED.value)
-    country = country or request.GET.get('country', Country.ALL.value)
-    action_type = request.GET.get('action_type', ActionType.FINAL_ACTION.value)
-    submission_date = _parse_submission_date(request.GET.get('submission_date', ''))
-    
-    # Get aggregated visa class data
-    visa_class_data, has_data = get_aggregated_visa_class_data(
-        category, country, action_type, submission_date
-    )
-    
-    # Build chart
-    chart_data = None
-    if has_data:
-        cat_label = VisaCategory(category).label if category in [c.value for c in VisaCategory] else category
-        chart_data = build_multi_class_chart_with_projections(
-            visa_class_data, submission_date, country, cat_label
-        )
-    
-    # Build SEO metadata
-    seo = build_seo_metadata(category, country, request.build_absolute_uri())
-    action_type_display = ActionType(action_type).label if action_type in [c.value for c in ActionType] else action_type
-    
-    context = {
-        # Filter state
-        'category': category,
-        'country': country,
-        'action_type': action_type,
-        'submission_date': submission_date,
-        
-        # Data
-        'chart_data': chart_data,
-        'visa_class_data': visa_class_data,
-        'has_data': has_data,
-        
-        # Filter options
-        'visa_categories': VisaCategory.choices,
-        'countries': Country.choices,
-        'action_types': ActionType.choices,
-        
-        # Display labels
-        'category_display': seo['category_display'],
-        'country_display': seo['country_display'],
-        'action_type_display': action_type_display,
-        
-        # SEO
-        'page_title': seo['page_title'],
-        'page_description': seo['page_description'],
-        'structured_data': json.dumps(seo['structured_data']),
-        'canonical_url': request.build_absolute_uri(),
-        'og_url': request.build_absolute_uri(),
-        'og_type': 'website',
-    }
-    
-    return render(request, 'webapp/dashboard.html', context)
-
-
-@cache_page(60 * 60 * 24)
-def robots_view(request):
-    """Generate robots.txt"""
-    lines = [
-        "User-agent: *",
-        "Allow: /",
-        f"Sitemap: {request.build_absolute_uri(reverse('sitemap'))}"
-    ]
-    return HttpResponse("\n".join(lines), content_type="text/plain")
-
-
-@cache_page(60 * 60 * 24)
-def sitemap_view(request):
-    """Generate XML sitemap"""
-    base_url = request.build_absolute_uri('/')[:-1]
-    
-    urls = [
-        f"{base_url}/",
-        f"{base_url}/faq/",
-        f"{base_url}/about/",
-        f"{base_url}/contact/",
-    ]
-    
-    # Category landing pages
-    categories = [
-        ('employment_based', 'employment-based'),
-        ('family_sponsored', 'family-sponsored')
-    ]
-    
-    for _, cat_slug in categories:
-        urls.append(f"{base_url}/{cat_slug}/")
-        for c in Country:
-            if c.value != Country.ALL.value:
-                urls.append(f"{base_url}/{cat_slug}/{c.value}/")
-    
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
-    xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-    
-    for url in urls:
-        xml_parts.extend([
-            '  <url>',
-            f'    <loc>{url}</loc>',
-            '    <changefreq>monthly</changefreq>',
-            '    <priority>0.8</priority>',
-            '  </url>'
-        ])
-    
-    xml_parts.append('</urlset>')
-    return HttpResponse("\n".join(xml_parts), content_type="application/xml")
-
-
-def faq_view(request):
-    """FAQ page"""
-    return render(request, 'webapp/faq.html', {
-        'page_title': 'Frequently Asked Questions - Visa Bulletin Dashboard',
-        'page_description': 'Common questions about priority dates, PERM processing, Final Action vs Filing Dates, and how the Visa Bulletin tracker works.',
-    })
-
-
-def about_view(request):
-    """About page"""
-    return render(request, 'webapp/about.html', {
-        'page_title': 'About - Visa Bulletin Dashboard',
-        'page_description': 'Learn about the Visa Bulletin dashboard, data sources, projection methodology, and the team behind this community tool.',
-    })
-
-
-def contact_view(request):
-    """Contact page"""
-    return render(request, 'webapp/contact.html', {
-        'page_title': 'Contact - Visa Bulletin Dashboard',
-        'page_description': 'Get in touch with questions, feedback, or bug reports about the Visa Bulletin tracker.',
-    })
-
-
 
 
 def _get_cached_fiscal_years() -> list[int]:
@@ -301,6 +126,9 @@ def salary_search_view(request):
     # Also exclude records with 'Unknown' employer (safety measure - worksite records should be filtered above,
     # but this catches any edge cases where is_worksite flag isn't set correctly)
     records = records.exclude(employer_name='Unknown')
+
+    # Exclude records without a usable annual salary to avoid null/zero bands in the UI
+    records = records.filter(wage_annual__isnull=False, wage_annual__gt=0)
     
     # Only calculate statistics when filters are applied (expensive query)
     if has_filters:
@@ -316,6 +144,39 @@ def salary_search_view(request):
             'min_salary': None,
             'max_salary': None,
         }
+    
+    market_stats = None
+    market_chart_data = {}
+    if not has_filters and not no_data_yet:
+        market_stats = get_market_overview_stats()
+        geographic_dist = market_stats.get('geographic_dist', [])
+        geographic_dist_by_median = market_stats.get('geographic_dist_by_median', [])
+        yoy_trends = market_stats.get('yoy_trends', [])
+        
+        if geographic_dist:
+            market_chart_data['state_filings'] = build_geographic_chart(
+                geographic_dist,
+                "Filings by State",
+            )
+        if geographic_dist_by_median:
+            market_chart_data['state_median_salary'] = build_geographic_median_chart(
+                geographic_dist_by_median,
+                "Median Salary by State",
+            )
+        if yoy_trends:
+            filing_volume_chart = build_filing_volume_chart(
+                yoy_trends,
+                "Filing Volume Over Time",
+            )
+            if filing_volume_chart:
+                market_chart_data['filing_volume'] = filing_volume_chart
+            
+            salary_trend_chart = build_salary_trend_chart(
+                yoy_trends,
+                "Median Salary Trend",
+            )
+            if salary_trend_chart:
+                market_chart_data['salary_trend'] = salary_trend_chart
     
     # Get total results - needed for pagination
     # Cache counts for common filter combinations to avoid expensive count operations
@@ -342,10 +203,12 @@ def salary_search_view(request):
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
     
+    # Use select_related to include employer cluster slug for profile links
     # Use only() to reduce data loaded - we only need these fields for the list view
-    records = records.only(
+    records = records.select_related('employer__canonical_cluster').only(
         'id', 'employer_name', 'job_title', 'worksite_city', 'worksite_state',
-        'wage_annual', 'wage_to', 'visa_program', 'fiscal_year'
+        'wage_annual', 'wage_to', 'visa_program', 'fiscal_year',
+        'employer__canonical_cluster__slug',
     ).order_by('-wage_annual', '-fiscal_year')[
         pagination['offset']:pagination['offset'] + per_page
     ]
@@ -368,6 +231,7 @@ def salary_search_view(request):
         # Results
         'records': records,
         'has_data': has_filters or not no_data_yet,
+        'has_filters': has_filters,
         'no_data_yet': no_data_yet,
         
         # Statistics
@@ -375,6 +239,8 @@ def salary_search_view(request):
         'avg_salary': stats['avg_salary'],
         'min_salary': stats['min_salary'],
         'max_salary': stats['max_salary'],
+        'market_stats': market_stats,
+        'market_chart_data': market_chart_data,
         
         # Pagination
         'page': pagination['page'],
@@ -395,7 +261,7 @@ def salary_search_view(request):
 
 
 def _get_cached_worksite_fiscal_years() -> list[int]:
-    """Get available fiscal years for worksite records with caching"""
+    """Get available fiscal years for worksite records with caching."""
     cache_key = 'worksite_fiscal_years'
     fiscal_years = cache.get(cache_key)
     
@@ -539,36 +405,3 @@ def worksite_search_view(request):
     }
     
     return render(request, 'webapp/worksite_search.html', context)
-
-
-@cache_page(60 * 60)  # Cache for 1 hour
-def company_autocomplete_view(request):
-    """
-    API endpoint for company name autocomplete suggestions.
-    
-    Query params:
-        q: Search query (partial company name)
-        limit: Maximum number of results (default: 20)
-    
-    Returns JSON array of canonical cluster names matching the query.
-    """
-    query = request.GET.get('q', '').strip()
-    limit = int(request.GET.get('limit', 20))
-    
-    if not query or len(query) < 2:
-        return HttpResponse(json.dumps([]), content_type='application/json')
-    
-    # Get cluster canonical names that match the query
-    # Order by total record count (LCA + PERM) for relevance
-    matching_companies = (
-        EmployerCluster.objects
-        .filter(canonical_name__icontains=query)
-        .annotate(total_count=F('total_lca_count') + F('total_perm_count'))
-        .order_by('-total_count', 'canonical_name')
-        .values_list('canonical_name', flat=True)
-        [:limit]
-    )
-    
-    # Convert to list and return as JSON
-    suggestions = list(matching_companies)
-    return HttpResponse(json.dumps(suggestions), content_type='application/json')

@@ -1047,7 +1047,11 @@ Best employer options for your situation:
 
 **Missing Data (Future Phase):**
 - ⚠️ `naics_code` - Not in current model, need migration
-- ⚠️ Job title normalization - Need to implement
+- ✅ **Job title normalization - IMPLEMENTED** (see `models/job_title.py`, `tests/test_job_title_normalization.py`)
+  - JobTitle and JobTitleCluster models created
+  - Normalization logic: removes seniority indicators, standardizes titles, handles variations
+  - Experience level extraction: identifies junior/senior/staff/principal/director levels
+  - Reference: `docs/department_of_labor/JOB_TITLE_NORMALIZATION_DESIGN.md`
 - ⚠️ Country of origin - **PERM data has `COUNTRY_OF_CITIZENSHIP` and `FOREIGN_WORKER_BIRTH_COUNTRY` fields (verified in source files), BUT we're not currently importing/storing them. LCA/H-1B data does NOT have these fields.**
 
 **Itemized Work Estimate:**
@@ -1137,11 +1141,13 @@ Best employer options for your situation:
 
 **Itemized Work Estimate:**
 
-1. **Job Title Normalization - 6-8 hours**
-   - Implement normalization algorithm (remove seniority levels, standardize titles)
-   - Create JobTitle model/table for canonical titles
-   - Backfill existing records with normalized titles
-   - Add indexes on normalized_job_title
+1. **Job Title Normalization - ✅ COMPLETED**
+   - ✅ Normalization algorithm implemented (removes seniority levels, standardizes titles)
+   - ✅ JobTitle and JobTitleCluster models created (`models/job_title.py`)
+   - ✅ Experience level extraction implemented
+   - ✅ Tests written and passing (`tests/test_job_title_normalization.py`)
+   - ⚠️ **Next steps:** Backfill existing records, add indexes, run clustering
+   - **Reference:** `docs/department_of_labor/JOB_TITLE_NORMALIZATION_DESIGN.md`
 
 2. **Backend (Django Views) - 8-10 hours**
    - Create job title detail view (`/job-title/<slug>/`)
@@ -1395,24 +1401,27 @@ Best employer options for your situation:
 
 **Timeline (1 full-time developer):**
 - Week 1: Feature 1.1 (Employer Profile) + Feature 1.3 (State Profile)
-- Week 2: Feature 1.2 (Job Title Profile)
+- Week 2: Feature 1.2 (Job Title Profile) - **✅ Normalization logic complete**
 - Week 3: Feature 1.4 (Search/Filter)
 - Week 4: Feature 1.5 (Comparison Tool) + Integration testing + Bug fixes
 
 **Critical Path Dependencies:**
-1. Job title normalization (Feature 1.2) should be done first - affects other features
+1. ✅ Job title normalization (Feature 1.2) - **Core logic implemented** (see `models/job_title.py`)
 2. Search/filter (Feature 1.4) can be built in parallel with profiles
 3. Comparison tool (Feature 1.5) depends on profile page queries
 
 **Risk Mitigation:**
 - Start with employer profiles (simplest, highest value)
-- Job title normalization is most complex - allocate buffer time
+- ✅ Job title normalization core logic complete - **Remaining:** backfill, clustering, integration
 - Search performance may require Elasticsearch (add 1-2 days if needed)
 
 **Data Completeness:**
 - ✅ 95%+ of required data already in database
-- ⚠️ Job title normalization needs implementation
-- ⚠️ Employer clustering already exists but may need tuning
+- ✅ **Job title normalization implemented** - Models, normalization logic, and tests complete
+  - **Reference:** `docs/department_of_labor/JOB_TITLE_NORMALIZATION_DESIGN.md`
+  - **Implementation:** `models/job_title.py`, `tests/test_job_title_normalization.py`
+  - **Next steps:** Backfill existing records, run clustering, integrate with views
+- ✅ Employer clustering already exists and working
 
 **Launch Readiness Checklist:**
 - [ ] All 5 features functional

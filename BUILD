@@ -33,7 +33,7 @@ py_binary(
         "//django_config:urls",
         "//django_config:context_processors",
         "//webapp:apps",
-        "//webapp:views",
+        "//webapp/views:views",
         "//webapp:urls",
         "//models:bulletin",
         "//models:visa_cutoff_date",

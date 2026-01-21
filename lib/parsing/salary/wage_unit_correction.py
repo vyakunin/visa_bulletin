@@ -109,7 +109,7 @@ HOURS_PER_YEAR = 2080
 
 def should_correct_wage_unit(
     wage_from: Decimal | None,
-    wage_unit: str,
+    wage_unit: str | WageUnit,
     wage_annual: Decimal | None = None,
 ) -> bool:
     """
@@ -147,10 +147,10 @@ def should_correct_wage_unit(
 
 def correct_wage_unit(
     wage_from: Decimal | None,
-    wage_unit: str,
+    wage_unit: str | WageUnit,
     row_num: int | None = None,
     wage_annual: Decimal | None = None,
-) -> str:
+) -> WageUnit:
     """
     Correct wage unit if value suggests it's actually an annual salary.
     
@@ -172,8 +172,10 @@ def correct_wage_unit(
     # Generate appropriate log message with rate limiting
     if row_num is not None:
         implied_annual = float(calculate_annual_wage(wage_from, wage_unit))
+        # Extract string value if wage_unit is enum
+        unit_display = wage_unit.value if hasattr(wage_unit, 'value') else wage_unit
         message = (
-            f"wage_from=${wage_from:,.0f} with unit={wage_unit} "
+            f"wage_from=${wage_from:,.0f} with unit={unit_display} "
             f"implies annual=${implied_annual:,.0f} (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range) "
             f"- treating as YEAR instead"
         )
@@ -181,10 +183,10 @@ def correct_wage_unit(
         # Log with rate limiting (automatically includes suppressed count if needed)
         _wage_correction_rate_logger.log(f"Row {row_num}: {message}")
     
-    return WageUnit.YEAR
+    return WageUnit.YEAR  # Return enum (consistent with input type)
 
 
-def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str) -> Decimal | None:
+def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str | WageUnit) -> Decimal | None:
     """
     Calculate annual wage from wage_from and wage_unit.
     

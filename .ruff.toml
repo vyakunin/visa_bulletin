@@ -1,6 +1,12 @@
 # Ruff configuration for Python 3.11+ style enforcement
 # See: https://docs.astral.sh/ruff/
 
+# Python 3.11+ style enforcement
+# UP007: Use X | None instead of Optional[X]
+# UP006: Use list[X] instead of List[X]
+# UP008: Use X | Y instead of Union[X, Y]
+target-version = "py311"
+
 [lint]
 # Enable common rules
 select = [
@@ -14,12 +20,6 @@ select = [
 
 # Ignore line length (handled by formatter)
 ignore = ["E501"]
-
-# Python 3.11+ style enforcement
-# UP007: Use X | None instead of Optional[X]
-# UP006: Use list[X] instead of List[X]
-# UP008: Use X | Y instead of Union[X, Y]
-target-version = "py311"
 
 [lint.per-file-ignores]
 # Ignore migrations (generated code)

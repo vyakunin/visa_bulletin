@@ -51,6 +51,7 @@ for app_config in apps.get_app_configs():
 # IMPORTANT: Import ALL models so makemigrations can detect them
 # makemigrations runs BEFORE AppConfig.ready(), so models must be imported here
 from models.salary import Employer, SalaryRecord
+from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion
@@ -58,6 +59,9 @@ from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
 logger.debug(f"Employer model: {Employer}")
 logger.debug(f"SalaryRecord model: {SalaryRecord}")
+logger.debug(f"JobTitle model: {JobTitle}")
+logger.debug(f"JobTitleCluster model: {JobTitleCluster}")
+logger.debug(f"JobTitleClusteringReview model: {JobTitleClusteringReview}")
 logger.debug(f"DataSource model: {DataSource}")
 logger.debug(f"IngestRun model: {IngestRun}")
 logger.debug(f"IngestVersion model: {IngestVersion}")

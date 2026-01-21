@@ -318,6 +318,62 @@ PluginRegistry._plugins[key] = plugin
 - Single source of truth for all enum values
 - Easier to find all usages (search for `DataDomain.DOL` not `'dol'`)
 
+## Rule: Use Enum Types in Function Signatures (Internal Code)
+
+**ALWAYS use enum types (not `str`) in function signatures for parameters that represent enum values in code we own.**
+
+**❌ BAD - String types for enum parameters:**
+```python
+def create_salary_record(
+    visa_program: str,  # ❌ Should be VisaProgram
+    case_status: str,   # ❌ Should be CaseStatus | None
+    wage_unit: str,     # ❌ Should be WageUnit | None
+) -> SalaryRecord:
+    ...
+```
+
+**✅ GOOD - Enum types:**
+```python
+from models.enums.visa_program import VisaProgram, CaseStatus, WageUnit
+
+def create_salary_record(
+    visa_program: VisaProgram,
+    case_status: CaseStatus | None,
+    wage_unit: WageUnit | None,
+) -> SalaryRecord:
+    ...
+```
+
+**Why:**
+- Type checkers can validate enum usage at development time
+- IDE autocomplete shows valid enum options
+- Prevents passing invalid string values
+- Makes code self-documenting (clear what values are valid)
+- Catches typos before runtime
+
+**When to use `str` for enum-related parameters:**
+- ✅ Parsing user input or external data (e.g., `parse_visa_program(raw_value: str) -> VisaProgram | None`)
+- ✅ CLI arguments that accept string inputs (convert to enum after parsing)
+- ✅ External APIs or serialization formats
+
+**When to use enum types:**
+- ✅ Internal function signatures (code we own)
+- ✅ Model creation/updates (Django handles enum-to-value conversion)
+- ✅ Business logic functions
+- ✅ Data transformation pipelines
+
+**Django ORM Integration:**
+- Django automatically converts enum instances to their database values
+- When creating models: `SalaryRecord(visa_program=VisaProgram.H1B)` → Django stores the integer value
+- When querying: `SalaryRecord.objects.filter(visa_program=VisaProgram.H1B)` → Django converts to value
+- When using COPY (bypassing ORM): Must convert manually with `.value` attribute
+
+**Rationale:**
+- Type safety prevents entire class of bugs (passing invalid enum values)
+- Self-documenting code (enum type shows valid options)
+- IDE support for autocomplete and refactoring
+- Consistent with modern Python type hinting best practices
+
 ## Django Settings
 
 - Use `settings.py` for local development

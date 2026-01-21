@@ -4,6 +4,20 @@ Logging configuration for visa bulletin application
 
 import logging
 import sys
+from datetime import datetime
+
+
+class LocalTimeFormatter(logging.Formatter):
+    """Log timestamps in local time with timezone offset."""
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created).astimezone()
+        if datefmt:
+            return dt.strftime(datefmt)
+
+        timestamp = dt.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+        tz_offset = dt.strftime("%z")
+        return f"{timestamp} {tz_offset}"
 
 def setup_logging(debug=True):
     """
@@ -15,12 +29,16 @@ def setup_logging(debug=True):
     log_level = logging.DEBUG if debug else logging.INFO
     
     # Root logger configuration
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        LocalTimeFormatter(
+            fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        )
+    )
+
     logging.basicConfig(
         level=log_level,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[handler],
     )
     
     # Set specific loggers

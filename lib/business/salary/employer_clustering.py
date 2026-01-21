@@ -4,6 +4,11 @@ import difflib
 import re
 from typing import Optional
 from models.salary import Employer
+from lib.business import clustering_engine
+from lib.business.salary.employer_config import EmployerClusteringConfig
+
+# Create config instance for use in public API functions
+_config = EmployerClusteringConfig()
 
 
 def _get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
@@ -355,169 +360,18 @@ def match_employers(
         norm1 = Employer.normalize_name(employer1.name)
     if norm2 is None:
         norm2 = Employer.normalize_name(employer2.name)
-    
-    result = _check_hyphen_variation(employer1, employer2, norm1, norm2)
-    if result is not None:
-        return result
-    
-    result = _check_exact_match(employer1, employer2, norm1, norm2)
-    if result is not None:
-        return result
-    
-    result = _check_substring_match(employer1, employer2, norm1, norm2)
-    if result is not None:
-        return result
-    
-    result = _check_similarity_match(employer1, employer2, norm1, norm2)
-    if result is not None:
-        return result
-    
-    return (False, 0.0, "")
-    
-    # Rule 1: Exact normalized name match
-    # For very generic names (common single words that could be many different companies),
-    # require location match to prevent false positives like "CHILDREN'S HOSPITAL" (Boston) 
-    # vs "CHILDREN'S HOSPITAL" (New Orleans)
-    if norm1 == norm2:
-        # Check if name is very generic - only truly generic common words, not company names
-        # that happen to normalize to a single word (e.g., "EMC", "ABB" are company names, not generic)
-        words1 = norm1.split()
-        words2 = norm2.split()
-        
-        # Very generic: names containing common generic words that could refer to many different entities
-        # Examples: "hospital", "school", "center", "clinic" - these are too generic to match across states
-        # After normalization (which handles plural-to-singular), very generic names contain words like: 
-        # "hospital", "school", "center", "clinic" (all singular forms)
-        # Note: Normalization converts "schools" -> "school", "centers" -> "center", etc.
-        from lib.business.salary.generic_words import VERY_GENERIC_WORDS
-        
-        # Check if normalized name contains any very generic word (not just single word)
-        # This catches "children s hospital" -> contains "hospital" (after normalization)
-        is_very_generic = (
-            any(word in VERY_GENERIC_WORDS for word in words1) or
-            any(word in VERY_GENERIC_WORDS for word in words2)
-        )
-        
-        # PRECISION FIX: Single-word normalized names are often too generic
-        # BUT: Only apply to truly generic words, not company names
-        # (e.g., "school" alone could be any school, but "emc" is a company name)
-        # Require location match only if the single word is in VERY_GENERIC_WORDS
-        is_single_word_generic = (
-            len(words1) == 1 and len(words2) == 1 and
-            (words1[0] in VERY_GENERIC_WORDS or words2[0] in VERY_GENERIC_WORDS)
-        )
-        
-        if is_very_generic or is_single_word_generic:
-            # For very generic names, require location match to prevent false positives
-            # Normalize state codes (MA vs MASSACHUSETTS) using shared utility
-            from lib.utils.location_utils import normalize_state_code
-            
-            state1 = normalize_state_code(employer1.state)
-            state2 = normalize_state_code(employer2.state)
-            city1 = (employer1.city or '').upper().strip()
-            city2 = (employer2.city or '').upper().strip()
-            
-            # Require same state (city can differ for same company locations)
-            if state1 and state2 and state1 == state2:
-                return (True, 1.0, "Exact normalized name match (same state)")
-            elif not state1 or not state2:
-                # PRECISION FIX: For very generic names, missing state is risky
-                # Lower confidence below auto-cluster threshold (0.95) to prevent false positives
-                if city1 and city2 and city1 == city2:
-                    # Same city, state missing - lower confidence (below 0.95 threshold)
-                    return (True, 0.90, "Exact normalized name match (same city, state missing - lower confidence)")
-                elif city1 and city2:
-                    # Cities differ but state missing - even lower confidence
-                    return (True, 0.85, "Exact normalized name match (cities differ, state missing - lower confidence)")
-                else:
-                    # Both state and city missing - very low confidence
-                    return (True, 0.80, "Exact normalized name match (location data missing - very low confidence)")
-            else:
-                # Different states for very generic name
-                # PRECISION FIX: For very generic names (hospital, school, etc.), different states
-                # almost always means different entities (e.g., "CHILDREN'S HOSPITAL" in Boston vs New Orleans)
-                # Reject these to improve precision
-                return (False, 0.0, f"Exact normalized name match but different states ({state1} vs {state2}) - very generic name requires same state")
-        
-        # For non-generic names, exact match is sufficient (same company, different locations)
-        return (True, 1.0, "Exact normalized name match")
-    
-    # Rule 2: One name is substring of another (after normalization)
-    # This handles cases like "CONSUMERS ENERGY" vs "Consumers Energy Company"
-    # BUT: Reject if structural words conflict (precision improvement)
-    if norm1 in norm2 or norm2 in norm1:
-        # PRECISION FIX: Check for geographic qualifiers BEFORE allowing substring match
-        # Geographic qualifiers (USA, US, North, South, etc.) distinguish companies
-        from lib.utils.location_utils import GEOGRAPHIC_QUALIFIERS
-        name1_lower = employer1.name.lower()
-        name2_lower = employer2.name.lower()
-        qualifiers1 = {q for q in GEOGRAPHIC_QUALIFIERS if q in name1_lower}
-        qualifiers2 = {q for q in GEOGRAPHIC_QUALIFIERS if q in name2_lower}
-        # If one name has a qualifier and the other doesn't, they're different companies
-        if (qualifiers1 and not qualifiers2) or (qualifiers2 and not qualifiers1):
-            return (False, 0.0, "Substring match rejected: geographic qualifiers differ (indicates different entities)")
-        # If both have qualifiers but different ones, they're different
-        if qualifiers1 and qualifiers2 and qualifiers1 != qualifiers2:
-            return (False, 0.0, "Substring match rejected: different geographic qualifiers (indicates different entities)")
-        
-        # PRECISION FIX: Check for structural word conflicts BEFORE allowing substring match
-        # This prevents false positives like "SERVICE MANAGEMENT GROUP" vs "CORPORATION SERVICE COMPANY"
-        has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
-        if has_conflict:
-            # Structural words conflict - these are different companies
-            return (False, 0.0, "Substring match rejected: conflicting structural words indicate different entities")
-        
-        # Check if the longer name just adds generic words
-        longer = norm1 if len(norm1) > len(norm2) else norm2
-        shorter = norm1 if len(norm1) <= len(norm2) else norm2
-        
-        # Extract the difference (what's in longer but not shorter)
-        # Simple check: if longer starts with shorter, the difference is at the end
-        if longer.startswith(shorter):
-            diff = longer[len(shorter):].strip()
-            # If difference is just generic words, high confidence
-            from lib.business.salary.generic_words import GENERIC_WORDS
-            diff_words = set(diff.split())
-            if diff_words.issubset(GENERIC_WORDS) or not diff_words:
-                return (True, 0.95, f"Substring match: '{shorter}' in '{longer}' (difference: generic words only)")
-            else:
-                # Difference contains significant non-generic words - these likely indicate different entities
-                # (e.g., "bbc" vs "bbc innovation" - "innovation" is significant)
-                return (False, 0.0, f"Substring match rejected: difference contains significant words: {' '.join(diff_words)}")
-        
-        # If not a simple prefix match, reject the substring match
-        # (e.g., "innovation bbc" vs "bbc" where "bbc" is in the middle)
-        return (False, 0.0, "Substring match rejected: not a simple prefix/suffix match")
-    
-    # Rule 3: Calculate similarity for context-aware structural word conflict detection
-    # Generic words are already removed during normalization, so we can use normalized names directly
-    similarity = difflib.SequenceMatcher(None, norm1, norm2).ratio()
-    
-    # IMPORTANT: Check for conflicting structural words, but be lenient for very high-similarity pairs
-    # This prevents false positives like "Macro Consultants" vs "Macro International"
-    # But allows very high-similarity pairs (>= 0.95) where structural word differences may be variations
-    # PRECISION FIX: Increased threshold from 0.90 to 0.95 to be more strict
-    has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
-    if has_conflict:
-        # Only reject if similarity is not very high
-        # Very high similarity (>= 0.95) suggests structural word differences may be variations
-        if similarity < 0.95:
-            return (False, 0.0, "Conflicting structural words indicate different entities")
-        # For very high similarity (>= 0.95), structural word conflicts may be false positives
-        # Continue to similarity-based matching below
-    
-    # Rule 4: Very high similarity (Levenshtein distance)
-    # PRECISION FIX: Increased threshold from 0.98 to 0.99 for higher precision
-    if similarity >= 0.99:  # Increased from 0.98 to 0.99 for higher precision
-        return (True, similarity, f"Very high similarity ({similarity:.2f})")
-    
-    # Rule 5: High similarity with known patterns
-    # PRECISION FIX: Increased threshold from 0.90 to 0.95 to reduce false positives
-    if similarity >= 0.95:  # Increased from 0.90 to 0.95 to reduce false positives
-        # Check for common variations (spaces, punctuation already normalized)
-        # This is borderline - might need review
-        return (True, similarity, f"High similarity ({similarity:.2f})")
-    
+
+    checks = (
+        _check_hyphen_variation,
+        _check_exact_match,
+        _check_substring_match,
+        _check_similarity_match,
+    )
+    for check in checks:
+        result = check(employer1, employer2, norm1, norm2)
+        if result is not None:
+            return result
+
     return (False, 0.0, "")
 
 
@@ -568,11 +422,9 @@ def should_auto_cluster(
     Returns: (should_cluster, confidence, reason)
     """
     is_match, confidence, reason = match_employers(employer1, employer2, norm1, norm2)
-    
-    if is_match and confidence >= threshold:
-        return (True, confidence, reason)
-    
-    return (False, confidence, reason)
+    if not is_match:
+        return (False, confidence, reason)
+    return (confidence >= threshold, confidence, reason)
 
 
 def assign_to_cluster(employer: Employer, auto_approve_threshold: float = 0.95) -> Optional['EmployerCluster']:
@@ -586,69 +438,6 @@ def assign_to_cluster(employer: Employer, auto_approve_threshold: float = 0.95) 
     
     Returns: EmployerCluster instance
     """
-    from models.salary import EmployerCluster, EmployerClusteringReview
-    
-    # If already assigned, return existing cluster
-    if employer.canonical_cluster:
-        return employer.canonical_cluster
-    
-    # Search for existing clusters with similar normalized names
-    # Re-normalize from original name to ensure we use latest normalization logic
-    employer_normalized = Employer.normalize_name(employer.name)
-    
-    # RECALL FIX: Use fuzzy bucket matching to catch typos and variations
-    # Generate multiple bucket candidates to check (exact + fuzzy variants)
-    bucket_candidates = _get_fuzzy_bucket_candidates(employer_normalized)
-    
-    # Get all employers and filter by fuzzy bucket matching
-    # Note: We can't use name_normalized filter directly since DB values may be outdated.
-    # Instead, we'll load and filter in Python (acceptable since this is called during import,
-    # not in hot path).
-    all_employers = Employer.objects.exclude(id=employer.id).select_related('canonical_cluster')
-    
-    # Check if any employer's normalized name matches any of our bucket candidates
-    similar_employers = []
-    for emp in all_employers:
-        emp_normalized = Employer.normalize_name(emp.name)
-        emp_buckets = _get_fuzzy_bucket_candidates(emp_normalized)
-        
-        # If any bucket candidate overlaps, they might be the same company
-        if bucket_candidates & emp_buckets:
-            similar_employers.append(emp)
-    
-    # Check if any similar employers are already in clusters
-    for similar_emp in similar_employers:
-        if similar_emp.canonical_cluster:
-            # Found existing cluster - check if we should join it
-            should_cluster, confidence, reason = should_auto_cluster(
-                employer, similar_emp, threshold=auto_approve_threshold
-            )
-            
-            if should_cluster:
-                # Auto-assign to existing cluster
-                employer.canonical_cluster = similar_emp.canonical_cluster
-                employer.save()
-                return employer.canonical_cluster
-            else:
-                # Ambiguous - add to review queue (only if not already queued)
-                similarity, _ = fuzzy_match(employer, similar_emp)
-                if similarity >= 0.6:  # Only queue reasonably similar names
-                    EmployerClusteringReview.objects.get_or_create(
-                        employer1=min(employer, similar_emp, key=lambda e: e.id),
-                        employer2=max(employer, similar_emp, key=lambda e: e.id),
-                        defaults={
-                            'similarity_score': similarity,
-                            'match_reason': reason or f"Fuzzy match: {similarity:.3f}",
-                            'status': 'pending'
-                        }
-                    )
-    
-    # No match found - create new cluster
-    cluster = EmployerCluster.objects.create(
-        canonical_name=employer.name
-    )
-    employer.canonical_cluster = cluster
-    employer.save()
-    
-    return cluster
+    # Delegate to generic framework
+    return clustering_engine.assign_to_cluster(employer, _config, auto_approve_threshold)
 

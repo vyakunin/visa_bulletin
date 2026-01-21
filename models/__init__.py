@@ -10,7 +10,7 @@
 # - System checks run after Django is fully initialized, so models are available then
 #
 # Explicitly make models available at package level (but don't import them here)
-__all__ = ['DataSource', 'IngestRun', 'IngestVersion']
+__all__ = ['DataSource', 'IngestRun', 'IngestVersion', 'IngestRejectionStats', 'RejectionReason']
 
 # Ensure Django can discover the app config
 default_app_config = 'models.apps.ModelsConfig'

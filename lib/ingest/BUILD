@@ -26,12 +26,23 @@ py_library(
 )
 
 py_library(
+    name = "rejection_tracker",
+    srcs = ["rejection_tracker.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/ingest:ingest_run",
+        "//models/ingest:rejection_stats",
+    ],
+)
+
+py_library(
     name = "orchestrator",
     srcs = ["orchestrator.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":base",
         ":registry",
+        ":rejection_tracker",
         ":versioning",  # For create_version, activate_version
         "//lib/utils:rate_limited_logger",
         "//lib/utils:data_source_utils",

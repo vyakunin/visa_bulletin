@@ -87,6 +87,7 @@ from lib.utils.location_utils import VALID_STATES
 from lib.parsing.salary.wage_unit_correction import calculate_annual_wage
 from models.enums.visa_program import VisaProgram, WageUnit, CaseStatus
 from models.salary import Employer, SalaryRecord, WorksiteRecord
+from models.job_title import JobTitle
 
 # Additional imports for comprehensive validation
 from lib.business.bulletin.cutoff_data_aggregator import get_aggregated_visa_class_data
@@ -1165,6 +1166,71 @@ def validate_data_sanity(total_records: int | None = None) -> list[ValidationRes
     return results
 
 
+def validate_job_titles() -> list[ValidationResult]:
+    """Validate job title normalization quality and roman numeral preservation."""
+    results = []
+    
+    # Job title normalization check (duplicate words in normalized titles)
+    logger.info("  Checking job title normalization quality...")
+    duplicate_word_count = 0
+    sample_bad_titles = []
+    
+    for jt in JobTitle.objects.all()[:10000]:  # Check sample of 10K titles
+        words = jt.title_normalized.split()
+        if len(words) != len(set(words)):  # Has duplicate words
+            duplicate_word_count += 1
+            if len(sample_bad_titles) < 5:  # Collect first 5 examples
+                sample_bad_titles.append({
+                    'title': jt.title,
+                    'normalized': jt.title_normalized,
+                    'level': jt.experience_level or 'no level'
+                })
+    
+    results.append(ValidationResult(
+        check_name="Job Title Normalization Quality",
+        passed=duplicate_word_count == 0,
+        message=f"Job titles with duplicate words in normalized form (sample of 10K): {duplicate_word_count}",
+        details={
+            'duplicate_word_count': duplicate_word_count,
+            'sample_size': min(10000, JobTitle.objects.count()),
+            'sample_bad_titles': sample_bad_titles
+        },
+        errors=[] if duplicate_word_count == 0 else [
+            f"Found {duplicate_word_count} job titles with duplicate words in normalized form",
+            "Run: bazel run //scripts/salary:fix_job_title_normalization",
+            f"Examples: {sample_bad_titles[:3]}"
+        ]
+    ))
+    
+    # Roman numeral preservation check (ensure II, III, IV, V are kept verbatim)
+    logger.info("  Checking roman numeral preservation in job titles...")
+    roman_numeral_count = sum([
+        JobTitle.objects.filter(experience_level='ii').count(),
+        JobTitle.objects.filter(experience_level='iii').count(),
+        JobTitle.objects.filter(experience_level='iv').count(),
+        JobTitle.objects.filter(experience_level='v').count(),
+    ])
+    
+    results.append(ValidationResult(
+        check_name="Job Title Roman Numeral Preservation",
+        passed=roman_numeral_count > 0,
+        message=f"Job titles with roman numerals (ii, iii, iv, v): {roman_numeral_count:,}",
+        details={
+            'roman_numeral_titles': roman_numeral_count,
+            'level_ii': JobTitle.objects.filter(experience_level='ii').count(),
+            'level_iii': JobTitle.objects.filter(experience_level='iii').count(),
+            'level_iv': JobTitle.objects.filter(experience_level='iv').count(),
+            'level_v': JobTitle.objects.filter(experience_level='v').count(),
+        },
+        warnings=[] if roman_numeral_count > 0 else [
+            "No job titles with roman numerals found - may indicate normalization issue",
+            "Expected titles like 'Software Engineer II' to preserve 'ii' as experience level"
+        ]
+    ))
+    
+    return results
+
+
 # ============================================================================
 # Comprehensive validation functions (from validate_data_comprehensive.py)
 # ============================================================================
@@ -1823,6 +1889,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--check-job-titles',
+        action='store_true',
+        help='Check job title normalization quality and roman numeral preservation'
+    )
+    
+    parser.add_argument(
         '--analyze-ingestion',
         action='store_true',
         help='Analyze latest ingestion logs'
@@ -1863,6 +1935,7 @@ Examples:
             'skip_spot_checks': args.skip_spot_checks,
             'check_import_completeness': args.check_import_completeness,
             'check_incomplete_records': args.check_incomplete_records,
+            'check_job_titles': args.check_job_titles,
             'analyze_ingestion': args.analyze_ingestion,
             'compare_input_served': args.compare_input_served,
             'test_homepage_queries': args.test_homepage_queries,
@@ -1883,6 +1956,7 @@ Examples:
         args.check_import_completeness,
         args.check_import_completeness_by_file,
         args.check_incomplete_records,
+        args.check_job_titles,
         args.analyze_ingestion,
         args.compare_input_served,
         args.test_homepage_queries,
@@ -1893,6 +1967,7 @@ Examples:
         'basic_stats': [],
         'integrity': [],
         'sanity': [],
+        'job_titles': [],
         'import_counts': [],
         'import_counts_by_year': [],
         'completeness': [],
@@ -1924,6 +1999,13 @@ Examples:
         sanity = validate_data_sanity(total_records=total_records)
         results['sanity'] = [r.to_dict() for r in sanity]
         logger.info("  Data sanity validation completed")
+    
+    # Job title validation
+    if run_all or args.check_job_titles:
+        logger.info("Running job title validation...")
+        job_titles = validate_job_titles()
+        results['job_titles'] = [r.to_dict() for r in job_titles]
+        logger.info("  Job title validation completed")
     
     # Import completeness check
     if run_all or args.check_import_completeness:

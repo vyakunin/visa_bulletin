@@ -1,0 +1,499 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .job-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .job-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .job-title-link {
+        color: var(--gov-navy);
+        font-weight: 600;
+        font-size: 1.1rem;
+        text-decoration: none;
+    }
+    
+    .job-title-link:hover {
+        text-decoration: underline;
+    }
+    
+    .stat-badge {
+        background: linear-gradient(135deg, var(--gov-navy) 0%, #004080 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+    
+    .stat-badge strong {
+        font-size: 1.2rem;
+        display: block;
+    }
+    
+    .search-card {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .search-card .card-header {
+        background: var(--gov-navy) !important;
+        color: white;
+        border-bottom: 2px solid var(--gov-red);
+    }
+    
+    .autocomplete-wrapper {
+        position: relative;
+    }
+    
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    
+    .autocomplete-item strong {
+        color: var(--gov-navy);
+    }
+    
+    .autocomplete-count {
+        color: #6c757d;
+        font-size: 0.8rem;
+        margin-left: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main>
+    <div class="row">
+        <div class="col-12">
+            <div class="mb-4">
+                <h1><i class="bi bi-briefcase"></i> Job Title Directory</h1>
+                <p class="text-muted">Explore salary and sponsorship trends by occupation</p>
+            </div>
+            
+            <div class="card search-card mb-4">
+                <div class="card-header">
+                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search Job Titles</h2>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="" id="jobSearchForm">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-8">
+                                <label for="q" class="form-label">Job Title</label>
+                                <div class="autocomplete-wrapper">
+                                    <input type="text" class="form-control" id="q" name="q"
+                                           value="{{ query }}"
+                                           placeholder="e.g., Software Engineer, Data Analyst"
+                                           autocomplete="off">
+                                    <div id="job-title-autocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
+                                <div class="form-text">
+                                    Autocomplete opens a profile directly; press Enter to search the directory list.
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search"></i> Search
+                                </button>
+                                {% if query %}
+                                <a href="{% url 'job_title_directory' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="bi bi-x-circle"></i> Clear
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3 class="text-primary">{{ summary.total_titles|default:0|intcomma }}</h3>
+                            <p class="text-muted mb-0">Job Titles Tracked</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3 class="text-success">{{ summary.total_filings|default:0|intcomma }}</h3>
+                            <p class="text-muted mb-0">Total Filings</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3 class="text-info">
+                                {% if summary.avg_salary %}
+                                    ${{ summary.avg_salary|floatformat:0|intcomma }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </h3>
+                            <p class="text-muted mb-0">Average Salary</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-lg-7">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-star"></i> Popular Job Titles</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                {% for title in popular_titles %}
+                                <div class="col-md-6 mb-2">
+                                    <a href="{% url 'job_title_profile' slug=title.slug %}" class="job-title-link">
+                                        {{ title.canonical_title }}
+                                    </a>
+                                    <div class="small text-muted">
+                                        {{ title.total_filings|intcomma }} filings
+                                    </div>
+                                </div>
+                                {% empty %}
+                                <div class="col-12 text-muted">No job titles available yet.</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-graph-up"></i> Highest Average Salaries</h5>
+                        </div>
+                        <div class="card-body">
+                            {% for title in top_salary_titles %}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <a href="{% url 'job_title_profile' slug=title.slug %}" class="job-title-link">
+                                    {{ title.canonical_title }}
+                                </a>
+                                <span class="text-success">
+                                    {% if title.avg_salary %}
+                                        ${{ title.avg_salary|floatformat:0|intcomma }}
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% empty %}
+                            <div class="text-muted">Salary data will appear once filings are processed.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <p class="text-muted">
+                    <strong>{{ total_results|intcomma }}</strong> job title{{ total_results|pluralize }} found
+                    {% if page_start > 0 %}
+                    (showing {{ page_start }}-{{ page_end }})
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div class="row">
+                {% for title in titles %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card job-card h-100">
+                        <div class="card-body">
+                            <a href="{% url 'job_title_profile' slug=title.slug %}" class="job-title-link">
+                                {{ title.canonical_title }}
+                            </a>
+                            
+                            <div class="mt-3 d-flex justify-content-between">
+                                <div class="stat-badge text-center flex-fill me-2">
+                                    <strong>{{ title.total_filings|intcomma }}</strong>
+                                    <small>Filings</small>
+                                </div>
+                                <div class="stat-badge text-center flex-fill">
+                                    <strong>
+                                        {% if title.avg_salary %}
+                                            ${{ title.avg_salary|floatformat:0|intcomma }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </strong>
+                                    <small>Avg Salary</small>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <a href="{% url 'job_title_profile' slug=title.slug %}" class="btn btn-sm btn-outline-primary w-100">
+                                    <i class="bi bi-bar-chart"></i> View Profile
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-body text-center py-5">
+                            <i class="bi bi-briefcase" style="font-size: 4rem; color: var(--gov-navy);"></i>
+                            <h3 class="mt-3">No Job Titles Found</h3>
+                            {% if has_titles_without_slugs %}
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Matching job titles exist but don't have profile pages yet.</strong>
+                                <br>
+                                Try another variation or use the autocomplete search to jump to known titles.
+                            </div>
+                            {% else %}
+                            <p class="text-muted">
+                                Try adjusting your search criteria or clearing filters.
+                                <br>
+                                <small>Tip: Search is case-insensitive. Try alternate wording (e.g., "Software Engineer" vs "Software Developer").</small>
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            {% if has_pagination %}
+            <nav aria-label="Job title directory pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if page > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}">&laquo; Prev</a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for p in page_range %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% endfor %}
+                    
+                    {% if page < total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}">Next &raquo;</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> About Job Title Profiles</h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Job title profiles group related role variations (e.g., "Software Engineer" and "Software Engineer II")
+                        to provide a clearer view of market demand and salary trends.
+                    </p>
+                    
+                    <h6>What You Can Find</h6>
+                    <ul>
+                        <li><strong>Market overview:</strong> Total filings, salary ranges, and growth trends</li>
+                        <li><strong>Top employers:</strong> Companies hiring for each role</li>
+                        <li><strong>Geography:</strong> States and metros with the most filings</li>
+                    </ul>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-lightbulb"></i>
+                        <strong>Tip:</strong> Use the autocomplete box to jump directly to a job title profile.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+(function() {
+    'use strict';
+    
+    const jobTitleInput = document.getElementById('q');
+    const autocompleteDropdown = document.getElementById('job-title-autocomplete');
+    const profileBaseUrl = "{% url 'job_title_profile' slug='__slug__' %}";
+    let autocompleteTimeout = null;
+    let currentSuggestions = [];
+    let selectedIndex = -1;
+    const countFormatter = new Intl.NumberFormat('en-US');
+    
+    if (!jobTitleInput || !autocompleteDropdown) {
+        return;
+    }
+    
+    function debounce(func, wait) {
+        return function(...args) {
+            clearTimeout(autocompleteTimeout);
+            autocompleteTimeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+    
+    async function fetchSuggestions(query) {
+        if (query.length < 2) {
+            hideAutocomplete();
+            return;
+        }
+        
+        try {
+            const response = await fetch(`{% url 'job_title_autocomplete' %}?q=${encodeURIComponent(query)}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch suggestions');
+            }
+            const suggestions = await response.json();
+            currentSuggestions = suggestions;
+            displaySuggestions(suggestions, query);
+        } catch (error) {
+            console.error('Autocomplete error:', error);
+            hideAutocomplete();
+        }
+    }
+    
+    function displaySuggestions(suggestions, query) {
+        if (suggestions.length === 0) {
+            hideAutocomplete();
+            return;
+        }
+        
+        const queryLower = query.toLowerCase();
+        const html = suggestions.map((suggestion, index) => {
+            const suggestionLower = suggestion.title.toLowerCase();
+            const matchIndex = suggestionLower.indexOf(queryLower);
+            const countLabel = suggestion.total_filings ? `${countFormatter.format(suggestion.total_filings)} filings` : '—';
+            
+            if (matchIndex === -1) {
+                return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(suggestion.title)}<span class="autocomplete-count">${countLabel}</span></div>`;
+            }
+            
+            const before = suggestion.title.substring(0, matchIndex);
+            const match = suggestion.title.substring(matchIndex, matchIndex + query.length);
+            const after = suggestion.title.substring(matchIndex + query.length);
+            
+            return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(before)}<strong>${escapeHtml(match)}</strong>${escapeHtml(after)}<span class="autocomplete-count">${countLabel}</span></div>`;
+        }).join('');
+        
+        autocompleteDropdown.innerHTML = html;
+        autocompleteDropdown.style.display = 'block';
+        selectedIndex = -1;
+        
+        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                selectSuggestion(suggestions[index]);
+            });
+            
+            item.addEventListener('mouseenter', function() {
+                selectedIndex = parseInt(this.dataset.index);
+                updateHighlight();
+            });
+        });
+    }
+    
+    function hideAutocomplete() {
+        autocompleteDropdown.style.display = 'none';
+        currentSuggestions = [];
+        selectedIndex = -1;
+    }
+    
+    function selectSuggestion(suggestion) {
+        if (!suggestion || !suggestion.slug) {
+            return;
+        }
+        window.location.href = profileBaseUrl.replace('__slug__', suggestion.slug);
+    }
+    
+    function updateHighlight() {
+        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    const debouncedFetch = debounce((query) => {
+        fetchSuggestions(query);
+    }, 300);
+    
+    jobTitleInput.addEventListener('input', function() {
+        const query = this.value.trim();
+        debouncedFetch(query);
+    });
+    
+    jobTitleInput.addEventListener('keydown', function(e) {
+        if (autocompleteDropdown.style.display === 'none' || currentSuggestions.length === 0) {
+            return;
+        }
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, currentSuggestions.length - 1);
+            updateHighlight();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateHighlight();
+        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+            e.preventDefault();
+            selectSuggestion(currentSuggestions[selectedIndex]);
+        } else if (e.key === 'Escape') {
+            hideAutocomplete();
+        }
+    });
+    
+    document.addEventListener('click', function(e) {
+        if (!jobTitleInput.contains(e.target) && !autocompleteDropdown.contains(e.target)) {
+            hideAutocomplete();
+        }
+    });
+})();
+</script>
+{% endblock %}

@@ -98,6 +98,32 @@ alwaysApply: true
 - Planning documents in project root are version controlled and can be manually edited/recovered
 - Plans in `.cursor/plans/` are managed by Cursor's internal system and can be corrupted during iterations
 
+## Rule: Never Create Progress Report or Implementation Summary Documents
+
+**🚨 CRITICAL: NEVER create progress reports, implementation summaries, status documents, or "what was implemented" documents.**
+
+**❌ FORBIDDEN document types:**
+- ❌ `*_IMPLEMENTATION.md` - Implementation summaries
+- ❌ `*_PROGRESS.md` - Progress reports
+- ❌ `*_STATUS.md` - Status documents
+- ❌ `*_SUMMARY.md` - Summary documents
+- ❌ `WHAT_WAS_DONE.md` - Work logs
+- ❌ `COMPLETED_FEATURES.md` - Feature completion logs
+
+**✅ GOOD - Update permanent documentation instead:**
+- ✅ Update README files with current state
+- ✅ Update design docs with actual implementation
+- ✅ Add code comments explaining design decisions
+- ✅ Update rule files with lessons learned
+- ✅ Keep documentation current, not historical
+
+**Rationale:**
+- Progress reports become stale immediately
+- Historical "what was done" docs create confusion
+- Permanent docs (READMEs, design docs) should reflect current state
+- Git history preserves what was done and when
+- Current documentation is more valuable than historical summaries
+
 ## Rule: Clean Up Status/Workplan Documents After Work Completes
 
 **ALWAYS clean up temporary status, workplan, investigation, and design documents after work is finished.**

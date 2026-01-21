@@ -41,9 +41,20 @@ py_library(
     srcs = ["salary.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":job_title",
         "//lib/business/salary:generic_words",
         "//models/enums:visa_program",
         "//models/ingest:ingest_version",
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+py_library(
+    name = "job_title",
+    srcs = ["job_title.py"],
+    visibility = ["//visibility:public"],
+    deps = [
         requirement("Django"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],

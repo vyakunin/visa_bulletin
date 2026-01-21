@@ -122,4 +122,3 @@ py_library(
         requirement("Django"),
     ],
 )
-

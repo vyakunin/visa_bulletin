@@ -25,14 +25,17 @@ from lib.utils.data_source_utils import (
 
 logger = logging.getLogger(__name__)
 
+# DB precision limit for wage fields (max_digits=12, decimal_places=2 => abs(value) < 1e10)
+MAX_DB_WAGE_ABS = Decimal("10000000000")
+
 
 # Column mappings for different DOL file formats
 LCA_COLUMN_MAPPINGS = {
     'case_number': ['CASE_NUMBER', 'LCA_CASE_NUMBER'],
     'case_status': ['CASE_STATUS', 'STATUS'],
-    'employer_name': ['EMPLOYER_NAME', 'EMPLOYER_BUSINESS_NAME'],
-    'employer_city': ['EMPLOYER_CITY'],
-    'employer_state': ['EMPLOYER_STATE'],
+    'employer_name': ['EMPLOYER_NAME', 'EMPLOYER_BUSINESS_NAME', 'LCA_CASE_EMPLOYER_NAME'],
+    'employer_city': ['EMPLOYER_CITY', 'LCA_CASE_EMPLOYER_CITY'],
+    'employer_state': ['EMPLOYER_STATE', 'LCA_CASE_EMPLOYER_STATE'],
     'job_title': ['JOB_TITLE', 'LCA_CASE_JOB_TITLE'],
     'soc_code': ['SOC_CODE', 'LCA_CASE_SOC_CODE'],
     'soc_title': ['SOC_TITLE', 'LCA_CASE_SOC_NAME'],
@@ -60,16 +63,16 @@ LCA_COLUMN_MAPPINGS = {
 }
 
 PERM_COLUMN_MAPPINGS = {
-    'case_number': ['CASE_NUMBER'],
-    'case_status': ['CASE_STATUS'],
-    'employer_name': ['EMPLOYER_NAME', 'EMPLOYER_BUSINESS_NAME'],
-    'employer_city': ['EMPLOYER_CITY'],
-    'employer_state': ['EMPLOYER_STATE'],
-    'job_title': ['JOB_TITLE', 'PW_JOB_TITLE_9089', 'PW_JOB_TITLE', 'JOB_INFO_JOB_TITLE'],
-    'soc_code': ['PW_SOC_CODE', 'SOC_CODE'],
+    'case_number': ['CASE_NUMBER', 'CASE_NO'],
+    'case_status': ['CASE_STATUS', 'Case_Status'],
+    'employer_name': ['EMPLOYER_NAME', 'Employer_Name', 'EMPLOYER_BUSINESS_NAME'],
+    'employer_city': ['EMPLOYER_CITY', 'Employer_City'],
+    'employer_state': ['EMPLOYER_STATE', 'Employer_State'],
+    'job_title': ['JOB_TITLE', 'PW_JOB_TITLE_9089', 'PW_Job_Title_9089', 'PW_JOB_TITLE', 'JOB_INFO_JOB_TITLE'],
+    'soc_code': ['PW_SOC_CODE', 'PW_SOC_Code', 'SOC_CODE'],
     'soc_title': ['PW_SOC_TITLE', 'SOC_TITLE'],
-    'worksite_city': ['WORKSITE_CITY', 'EMPLOYER_CITY', 'JOB_INFO_WORK_CITY'],
-    'worksite_state': ['WORKSITE_STATE', 'EMPLOYER_STATE', 'JOB_INFO_WORK_STATE'],
+    'worksite_city': ['WORKSITE_CITY', 'EMPLOYER_CITY', 'JOB_INFO_WORK_CITY', 'Job_Info_Work_City'],
+    'worksite_state': ['WORKSITE_STATE', 'EMPLOYER_STATE', 'JOB_INFO_WORK_STATE', 'Job_Info_Work_State'],
     # PERM files use _9089 suffix for newer form versions (Form 9089)
     # Different PERM files use slightly different column names, so we check all variants
     # Older files (FY2011-2014) use JOB_OPP_WAGE_* format instead of WAGE_OFFER_*
@@ -99,7 +102,7 @@ PERM_COLUMN_MAPPINGS = {
     'prevailing_wage': ['PW_AMOUNT_9089', 'PW_AMOUNT', 'PREVAILING_WAGE', 'PW_WAGE_1', 'PW_WAGE'],
     'prevailing_wage_unit': ['PW_UNIT_OF_PAY_9089', 'PW_UNIT_OF_PAY', 'PW_WAGE_UNIT_1'],
     'case_submitted': ['CASE_RECEIVED_DATE', 'RECEIVED_DATE'],
-    'decision_date': ['DECISION_DATE'],
+    'decision_date': ['DECISION_DATE', 'Decision_Date'],
     'employment_start': ['EMPLOYMENT_START_DATE', 'BEGIN_DATE'],
     'employment_end': ['EMPLOYMENT_END_DATE', 'END_DATE'],
 }
@@ -319,7 +322,61 @@ def _parse_wage_range(wage_str: str | None) -> tuple[Decimal | None, Decimal | N
     return None, None
 
 
-def _parse_wage_info(row: dict, column_mappings: dict, row_num: int) -> tuple[Decimal | None, Decimal | None, str, Decimal | None]:
+def _is_db_safe_wage(value: Decimal | None) -> bool:
+    """Check if a wage value fits in database precision limits."""
+    return value is None or abs(value) < MAX_DB_WAGE_ABS
+
+
+def _sanitize_wage_values(
+    row_num: int,
+    wage_from: Decimal | None,
+    wage_to: Decimal | None,
+    wage_unit: WageUnit | None,
+    wage_annual: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None, WageUnit | None, Decimal | None, bool]:
+    """Ensure wage values won't overflow database precision."""
+    if wage_from is not None and not isinstance(wage_from, Decimal):
+        logger.error(
+            "Row %s: wage_from has non-decimal value %r; skipping record.",
+            row_num,
+            wage_from,
+        )
+        return None, None, wage_unit, None, True
+
+    if wage_to is not None and not isinstance(wage_to, Decimal):
+        logger.error(
+            "Row %s: wage_to has non-decimal value %r; clearing wage_to.",
+            row_num,
+            wage_to,
+        )
+        wage_to = None
+
+    if wage_annual is not None and not isinstance(wage_annual, Decimal):
+        logger.error(
+            "Row %s: wage_annual has non-decimal value %r; clearing wage_annual.",
+            row_num,
+            wage_annual,
+        )
+        wage_annual = None
+
+    if not _is_db_safe_wage(wage_from) or not _is_db_safe_wage(wage_to):
+        logger.error(
+            "Row %s: wage value exceeds DB precision; skipping record.",
+            row_num,
+        )
+        return None, None, wage_unit, None, True
+
+    if not _is_db_safe_wage(wage_annual):
+        logger.error(
+            "Row %s: annual wage exceeds DB precision; clearing wage_annual.",
+            row_num,
+        )
+        wage_annual = None
+
+    return wage_from, wage_to, wage_unit, wage_annual, False
+
+
+def _parse_wage_info(row: dict, column_mappings: dict, row_num: int) -> tuple[Decimal | None, Decimal | None, WageUnit | None, Decimal | None]:
     """Parse wage information from row, correcting unit if needed"""
     # First try standard FROM/TO columns
     wage_from = parse_decimal(get_column_value(row, column_mappings['wage_from']))
@@ -344,11 +401,23 @@ def _parse_wage_info(row: dict, column_mappings: dict, row_num: int) -> tuple[De
     
     # Calculate annual wage (using shared logic)
     wage_annual = calculate_annual_wage(wage_from, wage_unit)
+
+    # Sanitize wage values (keep enum, don't convert to string yet)
+    wage_from, wage_to, wage_unit, wage_annual, should_skip = _sanitize_wage_values(
+        row_num,
+        wage_from,
+        wage_to,
+        wage_unit,
+        wage_annual,
+    )
+    
+    if should_skip:
+        return None, None, None, None
     
     return wage_from, wage_to, wage_unit, wage_annual
 
 
-def _parse_case_info(row: dict, column_mappings: dict) -> tuple[str, datetime | None, datetime | None, datetime | None, datetime | None, Decimal | None, str]:
+def _parse_case_info(row: dict, column_mappings: dict) -> tuple[CaseStatus | None, datetime | None, datetime | None, datetime | None, datetime | None, Decimal | None, WageUnit | None]:
     """Parse case status, dates, and prevailing wage from row"""
     case_status_raw = get_column_value(row, column_mappings['case_status'])
     case_status = CaseStatus.from_dol_value(case_status_raw)  # Returns None if not found, which is fine for nullable field
@@ -359,8 +428,11 @@ def _parse_case_info(row: dict, column_mappings: dict) -> tuple[str, datetime | 
     employment_end = parse_date(get_column_value(row, column_mappings['employment_end']))
     
     prevailing_wage = parse_decimal(get_column_value(row, column_mappings['prevailing_wage']))
+    if not _is_db_safe_wage(prevailing_wage):
+        logger.error("Prevailing wage exceeds DB precision; clearing value.")
+        prevailing_wage = None
     pw_unit_raw = get_column_value(row, column_mappings['prevailing_wage_unit'])
-    prevailing_wage_unit = WageUnit.from_dol_value(pw_unit_raw) if pw_unit_raw else ''
+    prevailing_wage_unit = WageUnit.from_dol_value(pw_unit_raw) if pw_unit_raw else None
     
     return case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit
 
@@ -369,24 +441,65 @@ def _create_salary_record(
     row: dict,
     column_mappings: dict,
     case_number: str,
-    visa_program: str,
+    visa_program: VisaProgram,
     employer: Employer,
     employer_name: str,
+    job_title: str,
     wage_from: Decimal | None,
     wage_to: Decimal | None,
-    wage_unit: str,
+    wage_unit: WageUnit | None,
     wage_annual: Decimal | None,
-    case_status: str,
+    case_status: CaseStatus | None,
     case_submitted: datetime | None,
     decision_date: datetime | None,
     employment_start: datetime | None,
     employment_end: datetime | None,
     prevailing_wage: Decimal | None,
-    prevailing_wage_unit: str,
+    prevailing_wage_unit: WageUnit | None,
     fiscal_year: int,
     source_file: str,
 ) -> SalaryRecord:
     """Create a SalaryRecord object from parsed data"""
+    # Final validation: ensure wage fields are None or numeric
+    if wage_from is not None and not isinstance(wage_from, (Decimal, int, float)):
+        logger.error(
+            "Final validation failed for case %s: wage_from=%r (type: %s). "
+            "Clearing to NULL. wage_to=%r, wage_unit=%r, wage_annual=%r",
+            case_number,
+            wage_from,
+            type(wage_from).__name__,
+            wage_to,
+            wage_unit,
+            wage_annual,
+        )
+        wage_from = None
+    
+    if wage_to is not None and not isinstance(wage_to, (Decimal, int, float)):
+        logger.error(
+            "Final validation failed for case %s: wage_to=%r (type: %s). "
+            "Clearing to NULL. wage_from=%r, wage_unit=%r, wage_annual=%r",
+            case_number,
+            wage_to,
+            type(wage_to).__name__,
+            wage_from,
+            wage_unit,
+            wage_annual,
+        )
+        wage_to = None
+    
+    if wage_annual is not None and not isinstance(wage_annual, (Decimal, int, float)):
+        logger.error(
+            "Final validation failed for case %s: wage_annual=%r (type: %s). "
+            "Clearing to NULL. wage_from=%r, wage_to=%r, wage_unit=%r",
+            case_number,
+            wage_annual,
+            type(wage_annual).__name__,
+            wage_from,
+            wage_to,
+            wage_unit,
+        )
+        wage_annual = None
+    
     # Determine if this is a worksite record for efficient filtering
     # Worksite records are identified by:
     # 1. Filename contains 'worksite' or 'worksites' (worksite files)
@@ -404,7 +517,7 @@ def _create_salary_record(
         case_status=case_status,
         employer=employer,
         employer_name=employer_name,
-        job_title=get_column_value(row, column_mappings['job_title']) or 'Unknown',
+        job_title=job_title,
         soc_code=get_column_value(row, column_mappings['soc_code']) or '',
         soc_title=get_column_value(row, column_mappings['soc_title']) or '',
         worksite_city=get_column_value(row, column_mappings['worksite_city']) or '',
@@ -455,7 +568,7 @@ def _process_row(
     row: dict,
     row_num: int,
     column_mappings: dict,
-    visa_program: str,
+    visa_program: VisaProgram,
     fiscal_year: int,
     source_file: str,
     existing_cases: set[str],
@@ -472,11 +585,19 @@ def _process_row(
             return RowProcessResult.skipped()
         
         # Parse employer info
-        employer_name = get_column_value(row, column_mappings['employer_name']) or 'Unknown'
+        employer_name_raw = get_column_value(row, column_mappings['employer_name'])
+        if not employer_name_raw or employer_name_raw.strip() == '' or employer_name_raw.strip().lower() == 'unknown':
+            return RowProcessResult.rejected("Missing employer name - record skipped")
+        employer_name = employer_name_raw.strip()
         employer_city = get_column_value(row, column_mappings['employer_city']) or ''
         employer_state = get_column_value(row, column_mappings['employer_state']) or ''
         
         employer = _get_or_create_employer(employer_name, employer_city, employer_state, employers_cache)
+
+        job_title_raw = get_column_value(row, column_mappings['job_title'])
+        if not job_title_raw or job_title_raw.strip() == '' or job_title_raw.strip().lower() == 'unknown':
+            return RowProcessResult.rejected("Missing job title - record skipped")
+        job_title = job_title_raw.strip()
         
         # Parse wage info
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(row, column_mappings, row_num)
@@ -496,7 +617,7 @@ def _process_row(
         
         # Create record
         record = _create_salary_record(
-            row, column_mappings, case_number, visa_program, employer, employer_name,
+            row, column_mappings, case_number, visa_program, employer, employer_name, job_title,
             wage_from, wage_to, wage_unit, wage_annual,
             case_status, case_submitted, decision_date, employment_start, employment_end,
             prevailing_wage, prevailing_wage_unit, fiscal_year, source_file
@@ -539,7 +660,7 @@ def _batch_insert_records(records: list[SalaryRecord], imported: int, batch_size
 
 def import_csv_file(
     filepath: Path,
-    visa_program: str,
+    visa_program: VisaProgram,
     batch_size: int = 1000,
     skip_existing: bool = True,
 ) -> tuple[int, int, int]:

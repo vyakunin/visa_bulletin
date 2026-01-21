@@ -13,9 +13,11 @@ class ModelsConfig(AppConfig):
         from .ingest.data_source import DataSource  # noqa: F401
         from .ingest.ingest_run import IngestRun  # noqa: F401
         from .ingest.ingest_version import IngestVersion  # noqa: F401
+        from .ingest.rejection_stats import IngestRejectionStats, RejectionReason  # noqa: F401
         
         # Then import other models (these may reference ingest models)
         from .bulletin import Bulletin  # noqa: F401
         from .salary import SalaryRecord, Employer, WorksiteRecord  # noqa: F401
+        from .job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview  # noqa: F401
         from .visa_cutoff_date import VisaCutoffDate  # noqa: F401
 

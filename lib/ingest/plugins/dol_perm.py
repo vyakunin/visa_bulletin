@@ -2,9 +2,12 @@
 
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 from urllib.parse import urlparse
+
+from django.db import IntegrityError
 
 from lib.ingest.base import DataSourcePlugin, SourceInfo, ValidationResult
 from lib.utils.excel_utils import read_excel_streaming
@@ -31,6 +34,14 @@ from lib.utils.http_utils import download_file, get_workspace_dir, fetch_page
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EmployerCacheEntry:
+    """Cached employer metadata for fast lookup."""
+
+    employer_id: int
+    has_cluster: bool
+
+
 class PERMSalaryDataSourcePlugin(DataSourcePlugin):
     """Plugin for Department of Labor PERM (Permanent Labor Certification) salary disclosure data"""
     
@@ -39,16 +50,47 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
     data_dir = 'salary/dol_data'  # Override default data directory
     filename_prefix = 'perm'
     
-    def __init__(self, skip_clustering: bool = False):
+    def __init__(self, skip_clustering: bool = False, case_number_whitelist: set[str] | None = None):
         """
         Initialize plugin with employer cache
         
         Args:
             skip_clustering: If True, skip employer clustering (faster for re-imports)
+            case_number_whitelist: If provided, only ingest records matching these case numbers
         """
         self._employer_cache = {}
+        self._employer_cache_loaded = False
         self._current_run = None
         self.skip_clustering = skip_clustering
+        self.case_number_whitelist = (
+            {case.strip().upper() for case in case_number_whitelist}
+            if case_number_whitelist
+            else None
+        )
+
+    def _load_employer_cache(self) -> None:
+        """Preload employers to avoid per-record lookups."""
+        if self._employer_cache_loaded:
+            return
+
+        logger.info("Preloading employer cache for PERM ingest.")
+        employer_qs = Employer.objects.values_list(
+            'name_normalized',
+            'city',
+            'state',
+            'id',
+            'canonical_cluster_id',
+        ).iterator(chunk_size=10000)
+
+        for name_normalized, city, state, employer_id, cluster_id in employer_qs:
+            employer_key = (name_normalized, city or '', state or '')
+            self._employer_cache[employer_key] = EmployerCacheEntry(
+                employer_id=employer_id,
+                has_cluster=bool(cluster_id),
+            )
+
+        self._employer_cache_loaded = True
+        logger.info("Loaded %s employers into cache.", len(self._employer_cache))
     
     def discover_sources(self) -> list[SourceInfo]:
         """Discover new PERM data sources from DOL website"""
@@ -172,6 +214,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         Skips records without required data:
         - Must have case_number
         - Must have employer_name (not empty/None)
+        - Must have job_title (not empty/None/"Unknown")
         - Must have salary data (wage_from and wage_unit, or wage_annual)
         
         Note:
@@ -184,35 +227,80 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         case_number = get_column_value(record, column_mappings['case_number'])
         if not case_number:
             return None
+        case_number_value = str(case_number).strip().upper()
+        if self.case_number_whitelist and case_number_value.upper() not in self.case_number_whitelist:
+            return None
         
         # Parse employer info - REQUIRED for salary records
         employer_name_raw = get_column_value(record, column_mappings['employer_name'])
-        if not employer_name_raw or employer_name_raw.strip() == '':
+        if (
+            not employer_name_raw
+            or employer_name_raw.strip() == ''
+            or employer_name_raw.strip().lower() == 'unknown'
+        ):
             # Skip records without employer name (required for salary records)
-            logger.debug(f"Skipping record {case_number}: missing employer_name")
+            logger.debug(f"Skipping record {case_number_value}: missing employer_name")
             return None
         
-        employer_name = employer_name_raw
+        employer_name = employer_name_raw.strip()
         employer_city = get_column_value(record, column_mappings['employer_city']) or ''
         employer_state = get_column_value(record, column_mappings['employer_state']) or ''
         
         employer_key = (Employer.normalize_name(employer_name), employer_city, employer_state)
-        
+        self._load_employer_cache()
+
         if employer_key not in self._employer_cache:
-            employer, _ = Employer.objects.get_or_create(
-                name_normalized=employer_key[0],
-                city=employer_key[1],
-                state=employer_key[2],
-                defaults={'name': employer_name}
-            )
+            try:
+                employer = Employer.objects.create(
+                    name=employer_name,
+                    name_normalized=employer_key[0],
+                    city=employer_key[1],
+                    state=employer_key[2],
+                )
+            except IntegrityError:
+                logger.error(
+                    "Employer insert failed for %s; falling back to lookup.",
+                    employer_key,
+                    exc_info=True,
+                )
+                employer = Employer.objects.get(
+                    name_normalized=employer_key[0],
+                    city=employer_key[1],
+                    state=employer_key[2],
+                )
+
             # Assign to cluster (skip during re-import for performance)
             if not self.skip_clustering and not employer.canonical_cluster:
                 from lib.business.salary.employer_clustering import assign_to_cluster
+
                 assign_to_cluster(employer)
-            self._employer_cache[employer_key] = employer
+
+            self._employer_cache[employer_key] = EmployerCacheEntry(
+                employer_id=employer.id,
+                has_cluster=bool(employer.canonical_cluster),
+            )
+
+            employer_instance = employer
+        else:
+            cache_entry = self._employer_cache[employer_key]
+            if not self.skip_clustering and not cache_entry.has_cluster:
+                from lib.business.salary.employer_clustering import assign_to_cluster
+
+                employer_instance = Employer.objects.get(id=cache_entry.employer_id)
+                assign_to_cluster(employer_instance)
+                self._employer_cache[employer_key] = EmployerCacheEntry(
+                    employer_id=employer_instance.id,
+                    has_cluster=bool(employer_instance.canonical_cluster),
+                )
+            else:
+                employer_instance = Employer(id=cache_entry.employer_id)
         
-        employer = self._employer_cache[employer_key]
-        
+        job_title_raw = get_column_value(record, column_mappings['job_title'])
+        if not job_title_raw or job_title_raw.strip() == '' or job_title_raw.strip().lower() == 'unknown':
+            logger.debug(f"Skipping record {case_number}: missing job_title")
+            return None
+        job_title = job_title_raw.strip()
+
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(
             record, column_mappings, 0
         )
@@ -220,7 +308,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         # REQUIRED: Salary records must have salary data (wage_from and wage_unit, or wage_annual)
         # Skip records without any salary information
         if not wage_from and not wage_annual:
-            logger.debug(f"Skipping record {case_number}: missing salary data (no wage_from or wage_annual)")
+            logger.debug(f"Skipping record {case_number_value}: missing salary data (no wage_from or wage_annual)")
             return None
         
         case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit = _parse_case_info(
@@ -234,7 +322,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
             fiscal_year = get_fiscal_year_from_filename(self._current_run.checkpoint.get('filepath', '')) if self._current_run else 0
         
         salary_record = _create_salary_record(
-            record, column_mappings, case_number, VisaProgram.PERM, employer, employer_name,
+            record, column_mappings, case_number_value, VisaProgram.PERM, employer_instance, employer_name, job_title,
             wage_from, wage_to, wage_unit, wage_annual,
             case_status, case_submitted, decision_date, employment_start, employment_end,
             prevailing_wage, prevailing_wage_unit, fiscal_year, source_file

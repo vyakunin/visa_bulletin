@@ -251,7 +251,27 @@ The project uses a unified ingest pipeline (`lib/ingest/`) for all data operatio
 - **Progress tracking** and logging
 - **Validation** after ingestion
 - **Versioning** for data rollbacks
+- **Rejection tracking** for data quality analysis
 - **Consistent behavior** across all data sources (bulletin, salary, etc.)
+
+**Rejection Tracking:**
+Each ingest run tracks why records are rejected during processing. This helps identify:
+- Data quality issues (missing employer, job title, salary data)
+- Format mismatches (wrong column mappings, unexpected data formats)
+- Filtering decisions (whitelist, worksite records, etc.)
+
+Query rejection stats after ingestion:
+```python
+from models.ingest.ingest_run import IngestRun
+
+# Get rejection statistics for a run
+run = IngestRun.objects.get(id=504)
+for stat in run.rejection_stats.all().order_by('-count'):
+    print(f"{stat.get_reason_display()}: {stat.count:,} records")
+    print(f"  Sample case numbers: {stat.sample_case_numbers}")
+```
+
+See `docs/ingest/README.md` for complete rejection tracking documentation.
 
 ### For Regular Updates
 

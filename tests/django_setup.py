@@ -36,8 +36,10 @@ def setup_django_for_tests():
                 'USE_TZ': prod_settings.USE_TZ,
                 'DEFAULT_AUTO_FIELD': prod_settings.DEFAULT_AUTO_FIELD,
                 'ALLOWED_HOSTS': prod_settings.ALLOWED_HOSTS,
+                'STATIC_URL': '/static/',
                 'TEMPLATES': prod_settings.TEMPLATES,
                 'ROOT_URLCONF': prod_settings.ROOT_URLCONF,
+                'ANALYTICS_SCRIPT': '',
                 'CACHES': {
                     'default': {
                         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',

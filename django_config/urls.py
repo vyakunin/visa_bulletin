@@ -1,7 +1,8 @@
 """URL configuration for visa_bulletin project"""
 
 from django.urls import path, include
-from webapp.views import robots_view, sitemap_view
+
+from webapp.views.seo.sitemaps import robots_view, sitemap_view
 
 urlpatterns = [
     path('robots.txt', robots_view, name='robots'),

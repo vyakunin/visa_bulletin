@@ -11,6 +11,6 @@ def analytics(request):
     Supports any analytics provider via ANALYTICS_SCRIPT environment variable.
     """
     return {
-        'analytics_script': settings.ANALYTICS_SCRIPT,
+        'analytics_script': getattr(settings, 'ANALYTICS_SCRIPT', ''),
     }
 

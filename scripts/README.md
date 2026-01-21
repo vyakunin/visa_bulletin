@@ -174,7 +174,18 @@ bazel run //scripts/ingest:run_pipeline -- ingest --source-type lca
 
 # Full pipeline (download + ingest)
 bazel run //scripts/ingest:run_pipeline -- full --domain dol
+
+# Re-ingest specific local files (drops non-unique indexes first, recreates after)
+bazel run //scripts/ingest:run_pipeline -- reingest-files -- \
+  --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx data/salary/dol_data/PERM_Disclosure_Data_FY2024_Q4.xlsx
 ```
+
+**Index management during re-ingest:**
+- The `reingest-files` command **automatically drops non-unique indexes** on `salary_record`/`worksite_record`
+  using `scripts/salary/manage_salary_indexes.py`, runs ingest, then recreates the indexes.
+- Snapshot path defaults to `data/index_snapshots/salary_indexes.yaml`. Use
+  `--index-snapshot` and `--overwrite-index-snapshot` to control it.
+- Re-ingest runs in **update mode** to refresh existing records for the supplied files.
 
 ### Supporting Scripts
 
@@ -201,6 +212,21 @@ bazel run //scripts/ingest:reset_missing_files
 **`scripts/ingest/inspect_raw_file_headers.py`** - Inspect column headers in raw files
 ```bash
 bazel run //scripts/ingest:inspect_raw_file_headers -- --file data/salary/file.xlsx
+```
+
+**`scripts/ingest/inspect_unknown_source_rows.py`** - Inspect raw rows for unknown employer/job title values
+
+Use this to locate a few `SalaryRecord` entries with `employer_name` or `job_title` set to `Unknown` and print the raw source columns to see if the data exists in alternative fields.
+
+```bash
+# Inspect both employer + job title unknowns (default)
+bazel run //scripts/ingest:inspect_unknown_source_rows
+
+# Limit to 5 cases
+bazel run //scripts/ingest:inspect_unknown_source_rows -- --limit 5
+
+# Inspect only employer unknowns
+bazel run //scripts/ingest:inspect_unknown_source_rows -- --mode employer
 ```
 
 **`scripts/ingest/rollback.py`** - Rollback ingestion runs
@@ -622,6 +648,13 @@ bazel run //scripts:clear_cache
 bazel run //scripts/salary:drop_data
 ```
 
+**`scripts/salary/manage_salary_indexes.py`** - Drop/recreate non-unique salary indexes for bulk ingest
+```bash
+bazel run //scripts/salary:manage_salary_indexes -- --list
+bazel run //scripts/salary:manage_salary_indexes -- --drop
+bazel run //scripts/salary:manage_salary_indexes -- --recreate
+```
+
 ---
 
 ## Deployment
@@ -694,45 +727,30 @@ bazel run //scripts:check_debug_mode
 
 ### File Inspection
 
-**`scripts/check_source_columns.py`** - Check available columns and sample data in DOL source files
+**`scripts/ingest/inspect_source_columns.py`** - Inspect columns and sample data in DOL source files
 
-**Purpose:** Inspect what columns exist in DOL source files (PERM, LCA) and view sample data from those columns. Useful for understanding data structure, identifying available fields, and estimating storage impact for new features.
+**Purpose:** Inspect what columns exist in DOL source files (PERM, LCA), filter by keywords, and view sample data from those columns. Useful for understanding data structure, identifying available fields, and estimating storage impact for new features.
 
 **Usage:**
 ```bash
 # Check columns in default PERM and LCA files
-bazel run //scripts:check_source_columns
+bazel run //scripts/ingest:inspect_source_columns
 
-# Output shows:
-# - Total columns in each file
-# - Name-related columns (employee/beneficiary/alien)
-# - Sample values from each column
-# - Total record counts per file
-# - Storage impact estimates
+# Inspect specific files with keyword filters
+bazel run //scripts/ingest:inspect_source_columns -- \
+  --files data/salary/dol_data/PERM_Disclosure_Data_FY2020.xlsx \
+  --match-terms job,title \
+  --show-all-columns
+
+# Estimate storage impact
+bazel run //scripts/ingest:inspect_source_columns -- --estimate-storage
 ```
 
-**Example output:**
-```
-Checking PERM_Disclosure_Data_FY2020.xlsx...
-================================================================================
-Total columns: 67
-All columns:
-  1. CASE_NUMBER
-  2. EMPLOYER_NAME
-  3. FOREIGN_WORKER_BIRTH_COUNTRY
-  4. FOREIGN_WORKER_EDUCATION
-  ...
-
-================================================================================
-Name-related columns (employee/beneficiary/alien):
-  ✓ FOREIGN_WORKER_BIRTH_COUNTRY
-    Sample: ['POLAND', 'INDIA']
-  ✓ FOREIGN_WORKER_EDUCATION
-    Sample: ['Bachelor's', 'Master's']
-  ...
-
-Total records in PERM FY2020: 123,456
-```
+**Output shows:**
+- Total columns in each file
+- Matching columns (keyword filters) with sample values
+- Total record counts per file
+- Optional storage impact estimates
 
 **When to use:**
 - Before adding new fields to database schema

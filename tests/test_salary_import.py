@@ -513,4 +513,3 @@ class SalaryImportIntegrationTest(TestCase):
         )
         
         self.assertTrue(result.rejected, "Salary above maximum should be rejected")
-

@@ -7,6 +7,10 @@ from .enums.visa_program import VisaProgram, WageUnit, CaseStatus
 # This is needed because Django's system check runs before AppConfig.ready()
 from .ingest.ingest_version import IngestVersion  # noqa: F401
 
+# Import JobTitle models to ensure they're registered for ForeignKey reference
+# This is needed because Django's system check runs before AppConfig.ready()
+from .job_title import JobTitle, JobTitleCluster  # noqa: F401
+
 
 class EmployerCluster(models.Model):
     """
@@ -18,6 +22,15 @@ class EmployerCluster(models.Model):
         max_length=255,
         db_index=True,
         help_text="Canonical employer name (e.g., 'Google LLC')"
+    )
+    
+    slug = models.SlugField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        null=True,  # Temporary: allow null during migration
+        blank=True,
+        help_text="URL-safe slug for employer (e.g., 'google-llc')"
     )
     
     # Aggregated statistics across all employers in cluster
@@ -46,10 +59,39 @@ class EmployerCluster(models.Model):
         db_table = 'salary_employer_cluster'
         indexes = [
             models.Index(fields=['canonical_name']),
+            models.Index(fields=['slug']),
         ]
     
     def __str__(self):
         return f"{self.canonical_name} (Cluster {self.id})"
+    
+    def generate_slug(self):
+        """Generate URL-safe slug from canonical_name"""
+        if not self.canonical_name:
+            return ""
+        
+        import re
+        from django.utils.text import slugify
+        
+        # Use Django's slugify to handle basic conversion
+        base_slug = slugify(self.canonical_name)
+        
+        # Ensure uniqueness by checking database
+        slug = base_slug
+        counter = 1
+        
+        # Check if this slug already exists (excluding current instance)
+        while EmployerCluster.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        
+        return slug
+    
+    def save(self, *args, **kwargs):
+        """Auto-generate slug on save if not present"""
+        if not self.slug and self.canonical_name:
+            self.slug = self.generate_slug()
+        super().save(*args, **kwargs)
 
 
 class Employer(models.Model):
@@ -309,6 +351,15 @@ class SalaryRecord(models.Model):
     )
     
     # Job details
+    job_title_entity = models.ForeignKey(
+        'JobTitle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='salary_records',
+        help_text="Link to normalized job title entity"
+    )
+    
     job_title = models.CharField(
         max_length=255,
         db_index=True,

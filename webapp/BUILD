@@ -15,7 +15,7 @@ py_library(
     srcs = ["urls.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":views",
+        "//webapp/views:views",
         requirement("Django"),
     ],
 )
@@ -25,26 +25,6 @@ py_library(
     srcs = ["forms.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//lib/utils:location_utils",
-        requirement("Django"),
-    ],
-)
-
-py_library(
-    name = "views",
-    srcs = ["views.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":forms",
-        "//models/enums:visa_category",
-        "//models/enums:action_type",
-        "//models/enums:country",
-        "//models/enums:visa_program",
-        "//models:salary",
-        "//lib/business/bulletin:chart_builder",
-        "//lib/business/bulletin:cutoff_data_aggregator",
-        "//lib/utils:pagination",
-        "//lib/utils:filter_utils",
         "//lib/utils:location_utils",
         requirement("Django"),
     ],

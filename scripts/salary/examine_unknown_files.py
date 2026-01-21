@@ -2,6 +2,7 @@
 """
 Examine unknown file types to determine if they contain salary/worksite records.
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -11,6 +12,7 @@ sys.path.insert(0, str(project_root))
 
 from lib.utils.excel_utils import read_excel_headers, read_excel_rows
 from lib.utils.http_utils import get_workspace_dir
+from lib.utils.logging_utils import ScriptLogger
 
 def examine_file(filepath: Path):
     """Examine a single file and report its characteristics."""
@@ -56,10 +58,26 @@ def examine_file(filepath: Path):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Examine source files and print sample rows"
+    )
+    parser.add_argument(
+        '--files',
+        nargs='*',
+        help='Specific filenames to examine (default: known unknowns)'
+    )
+    args = parser.parse_args()
+
+    script_logger = ScriptLogger(__file__)
+    script_logger.log_call(
+        args={'files': args.files},
+        context='Examining DOL source files for sample rows'
+    )
+
     workspace = get_workspace_dir()
     data_dir = workspace / 'data' / 'salary' / 'dol_data'
-    
-    # Unknown files from the log
+
+    # Unknown files from the log (default set)
     unknown_files = [
         'H-1B_Case_Data_FY2008.xlsx',
         'H-1B_Disclosure_Data_FY15_Q4.xlsx',
@@ -70,10 +88,11 @@ def main():
         'lca_362.xlsx',
         'LCA_Appendix_A_FY2021.xlsx',
     ]
-    
-    print(f"Examining {len(unknown_files)} unknown files...")
-    
-    for filename in unknown_files:
+    filenames = args.files if args.files else unknown_files
+
+    print(f"Examining {len(filenames)} file(s)...")
+
+    for filename in filenames:
         filepath = data_dir / filename
         if filepath.exists():
             examine_file(filepath)

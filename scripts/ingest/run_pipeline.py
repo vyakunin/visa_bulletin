@@ -14,6 +14,7 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- resume --run-id 456
     bazel run //scripts/ingest:run_pipeline -- status
     bazel run //scripts/ingest:run_pipeline -- check-completeness --domain dol
+    bazel run //scripts/ingest:run_pipeline -- reingest-files --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx
 """
 
 import argparse
@@ -30,6 +31,7 @@ import django
 django.setup()
 
 from django_config.logging_config import setup_logging
+from django.db.models import Q
 from lib.ingest.registry import PluginRegistry
 from lib.ingest.orchestrator import PipelineOrchestrator
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
@@ -39,11 +41,13 @@ from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion
 from models.ingest.enums import DataDomain, SourceType, IngestStatus, IngestStage
+from models.salary import SalaryRecord
 from django.utils import timezone
 from lib.utils.logging_utils import ScriptLogger
 from lib.utils.data_source_utils import get_data_source_filepath
+from lib.utils.http_utils import get_workspace_dir
 
-setup_logging()
+setup_logging(debug=False)
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
@@ -97,7 +101,8 @@ def run_pipeline(
     all_pending: bool = False,
     missing_only: bool = False,
     retry_failed: bool = False,
-    domain: str | None = None
+    domain: str | None = None,
+    skip_records: int = 0
 ):
     """
     Run ingest pipeline for source(s)
@@ -196,9 +201,18 @@ def run_pipeline(
         sys.exit(1)
     
     orchestrator = PipelineOrchestrator(
+        batch_size=10000,
         adaptive_batch=True,
-        prefilter_existing=True
+        prefilter_existing=True,
+        use_copy=True
     )
+    
+    # Add skip_records to pipeline context if specified
+    if skip_records > 0:
+        if pipeline_context is None:
+            pipeline_context = {}
+        pipeline_context['skip_records'] = skip_records
+        logger.info(f"Skipping first {skip_records:,} records for debugging")
     
     for idx, source in enumerate(sources, 1):
         logger.info(f"Running pipeline for source {source.id} ({idx}/{len(sources)}): {source.url}")
@@ -216,6 +230,146 @@ def run_pipeline(
     if pipeline_context and len(sources) > 0:
         total_time = time.time() - pipeline_context['start_time']
         logger.info(f"Pipeline completed: {len(sources)} sources processed in {total_time/60:.1f} min")
+
+
+def _run_manage_salary_indexes(action: str, snapshot_path: str | None, overwrite: bool) -> None:
+    script_path = get_workspace_dir() / "scripts" / "salary" / "manage_salary_indexes.py"
+    if not script_path.exists():
+        logger.error("manage_salary_indexes.py not found at %s", script_path)
+        sys.exit(1)
+
+    args = [sys.executable, str(script_path), f"--{action}"]
+    if snapshot_path:
+        args.extend(["--snapshot", snapshot_path])
+    if overwrite:
+        args.append("--overwrite")
+
+    logger.info("Running index manager: %s", " ".join(args))
+    result = os.spawnv(os.P_WAIT, sys.executable, args)
+    if result != 0:
+        logger.error("Index manager failed with exit code %s", result)
+        sys.exit(result)
+
+
+def _resolve_sources_from_files(file_paths: list[str]) -> list[DataSource]:
+    sources = []
+    for file_path in file_paths:
+        candidate = Path(file_path)
+        if not candidate.is_absolute():
+            candidate = get_workspace_dir() / candidate
+        if not candidate.exists():
+            logger.error("File not found: %s", candidate)
+            sys.exit(1)
+
+        filename = candidate.name
+        matches = list(DataSource.objects.filter(local_file_path=str(candidate)))
+        if not matches:
+            matches = list(DataSource.objects.filter(local_file_path__endswith=filename))
+        if not matches:
+            matches = list(DataSource.objects.filter(url__endswith=filename))
+
+        if not matches:
+            logger.error("No DataSource found for file: %s", candidate)
+            sys.exit(1)
+        if len(matches) > 1:
+            logger.error("Multiple DataSources found for file %s: %s", candidate, [m.id for m in matches])
+            sys.exit(1)
+
+        source = matches[0]
+        if source.local_file_path != str(candidate):
+            source.local_file_path = str(candidate)
+            source.save(update_fields=["local_file_path"])
+        sources.append(source)
+
+    return sources
+
+
+def _get_unknown_case_numbers(source_filename: str) -> list[str]:
+    unknown_qs = SalaryRecord.objects.filter(
+        source_file=source_filename,
+    ).filter(
+        Q(employer_name__iexact="unknown")
+        | Q(employer_name="")
+        | Q(job_title__iexact="unknown")
+        | Q(job_title="")
+    )
+    return [
+        str(case_number).strip().upper()
+        for case_number in unknown_qs.values_list("case_number", flat=True).distinct()
+        if case_number
+    ]
+
+
+def reingest_files(
+    file_paths: list[str],
+    snapshot_path: str | None,
+    overwrite_snapshot: bool,
+) -> None:
+    register_plugins()
+    sources = _resolve_sources_from_files(file_paths)
+    update_fields = [
+        "employer",
+        "employer_name",
+        "job_title_entity",
+        "job_title",
+        "soc_code",
+        "soc_title",
+        "worksite_city",
+        "worksite_state",
+        "worksite_zip",
+        "wage_from",
+        "wage_to",
+        "wage_unit",
+        "wage_annual",
+        "prevailing_wage",
+        "case_status",
+        "case_submitted",
+        "decision_date",
+        "source_file",
+        "source_file_date",
+    ]
+
+    indexes_dropped = False
+    try:
+        _run_manage_salary_indexes("drop", snapshot_path, overwrite_snapshot)
+        indexes_dropped = True
+
+        for idx, source in enumerate(sources, 1):
+            logger.info(f"Re-ingesting source {source.id} ({idx}/{len(sources)}): {source.url}")
+            try:
+                source_filename = Path(source.local_file_path).name
+                case_numbers = _get_unknown_case_numbers(source_filename)
+                if not case_numbers:
+                    logger.info(f"No unknown employer/job title records found for {source_filename}; skipping")
+                    continue
+
+                logger.info(f"Updating {len(case_numbers):,} unknown records from {source_filename}")
+                if source.source_type == SourceType.LCA.value:
+                    PluginRegistry.register(
+                        H1BSalaryDataSourcePlugin(
+                            skip_clustering=True,
+                            force_salary_record=True,
+                        )
+                    )
+                elif source.source_type == SourceType.PERM.value:
+                    PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
+                orchestrator = PipelineOrchestrator(
+                    batch_size=1000,
+                    adaptive_batch=True,
+                    prefilter_existing=False,
+                    use_copy=False,
+                    update_mode=True,
+                    update_fields=update_fields,
+                    update_filter={"case_number__in": case_numbers},
+                )
+                run = orchestrator.run(source, resume=True)
+                logger.info(f"Pipeline completed: Run {run.id}")
+            except Exception as e:
+                logger.error(f"Pipeline failed for source {source.id}: {e}", exc_info=True)
+                continue
+    finally:
+        if indexes_dropped:
+            _run_manage_salary_indexes("recreate", snapshot_path, overwrite_snapshot)
 
 
 def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
@@ -311,7 +465,11 @@ def resume_run(run_id: int):
         logger.warning(f"Run {run_id} is already completed")
         return
     
-    orchestrator = PipelineOrchestrator(adaptive_batch=True, prefilter_existing=True)
+    orchestrator = PipelineOrchestrator(
+        adaptive_batch=True,
+        prefilter_existing=True,
+        use_copy=False
+    )
     
     logger.info(f"Resuming run {run_id} from stage: {run.stage}")
     try:
@@ -499,6 +657,7 @@ def main():
     run_group.add_argument('--missing-only', action='store_true', help='Run only sources with local files but no completed runs')
     run_group.add_argument('--retry-failed', action='store_true', help='Retry sources that have failed runs (but no completed runs)')
     run_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Filter by domain (works with --all-pending, --missing-only, --retry-failed)')
+    run_parser.add_argument('--skip-records', type=int, default=0, help='Skip first N records (for debugging specific records)')
     
     # Discover and ingest
     di_parser = subparsers.add_parser('discover-and-ingest', help='Discover and ingest in one command')
@@ -524,6 +683,24 @@ def main():
     # Check completeness command
     completeness_parser = subparsers.add_parser('check-completeness', help='Check if all available data sources have been ingested')
     completeness_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to check (default: all)')
+
+    # Re-ingest specific files with index management
+    reingest_parser = subparsers.add_parser('reingest-files', help='Re-ingest specific local files with index drop/recreate')
+    reingest_parser.add_argument(
+        '--files',
+        nargs='+',
+        required=True,
+        help='File paths to re-ingest (relative to workspace or absolute)',
+    )
+    reingest_parser.add_argument(
+        '--index-snapshot',
+        help='Snapshot path for dropped indexes (default: data/index_snapshots/salary_indexes.yaml)',
+    )
+    reingest_parser.add_argument(
+        '--overwrite-index-snapshot',
+        action='store_true',
+        help='Overwrite existing index snapshot when dropping indexes',
+    )
     
     args = parser.parse_args()
     
@@ -543,7 +720,8 @@ def main():
                 args.all_pending,
                 args.missing_only,
                 args.retry_failed,
-                args.domain
+                args.domain,
+                args.skip_records
             )
         elif args.command == 'discover-and-ingest':
             discover_and_ingest(args.domain, args.all_domains)
@@ -555,6 +733,8 @@ def main():
             show_status(args.source_id)
         elif args.command == 'check-completeness':
             check_completeness(args.domain)
+        elif args.command == 'reingest-files':
+            reingest_files(args.files, args.index_snapshot, args.overwrite_index_snapshot)
     except Exception as e:
         logger.error(f"Command failed: {e}", exc_info=True)
         sys.exit(1)
