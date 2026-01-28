@@ -142,7 +142,37 @@ If any missing files/years are reported, re-run step 5 and repeat this check.
 
 **Completion criteria:** steps 6–8 must all pass with no errors.
 
-### 9) If SSH becomes unstable
+### 9) Verify indexes before clustering (MANDATORY)
+
+**⚠️ CRITICAL:** Check if indexes were dropped during ingest. If so, recreate BEFORE clustering.
+
+```bash
+# Check index count
+ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+  "sudo -u postgres psql -d visa_bulletin_blue -t -c \
+  \"SELECT COUNT(*) FROM pg_indexes WHERE tablename='salary_record';\""
+
+# Expected: 10+ indexes
+# If < 5 indexes: Indexes were dropped, must recreate before clustering
+```
+
+**If indexes missing, recreate them:**
+```bash
+# Emergency manual recreation (if snapshot missing)
+ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 << 'COMMANDS'
+sudo -u postgres psql -d visa_bulletin_blue << 'SQL'
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state);
+SQL
+COMMANDS
+```
+
+**Why critical:** Without indexes, clustering does full table scans (1.5M records) and is 100x+ slower.
+
+### 10) If SSH becomes unstable
 - Check OOM logs: `sudo dmesg -T | tail -200`
 - If PostgreSQL killed, restart it and re-run step 5.
 - If network DNS errors occur, verify DNS: `python3 - <<'PY'` with `socket.gethostbyname('www.dol.gov')`.
@@ -559,6 +589,20 @@ Record any manual fixes or deviations here:
     - Memory history: `sar -r` (after sysstat collects data)
     - Instance state: `aws lightsail get-instance-state --instance-name VisaBulletin2GB --region us-east-1`
   - **Recovery:** If running but SSH unresponsive: `aws lightsail stop-instance` then `aws lightsail start-instance`
+
+- **Issue:** Job title clustering extremely slow (no progress in 10+ minutes) - Jan 28.
+  - **Root Cause:** Indexes were dropped for fast ingest but never recreated before clustering.
+  - **Fix:** Manually recreated critical indexes via SQL (emergency), then updated scripts to use `bazel shutdown` after builds.
+  - **Prevention:** Always follow post-ingestion step 1 (recreate indexes) in `INGESTION_PLAYBOOK.md` before clustering.
+  - **Emergency recovery:** If clustering is stuck:
+    ```bash
+    # Create critical indexes manually
+    sudo -u postgres psql -d $DB_NAME << 'SQL'
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title);
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name);
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title);
+    SQL
+    ```
 
 ## Instance Stability Issue: OOM Killer (Jan 22, 2026)
 

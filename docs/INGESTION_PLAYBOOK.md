@@ -188,18 +188,34 @@ bazel run //scripts/ingest:run_pipeline -- run --source-id 6 --force-restart
 
 **Run these steps AFTER all ingestion completes:**
 
-### 1. Recreate Indexes (If Dropped)
+### 1. Recreate Indexes (MANDATORY If Dropped)
+
+**⚠️ CRITICAL:** If indexes were dropped for fast ingest, you MUST recreate them before clustering. Clustering without indexes is 100x+ slower.
 
 ```bash
-# Recreate indexes from snapshot
+# Method 1: Recreate from snapshot (preferred)
 bazel run //scripts/salary:manage_salary_indexes -- --recreate \
   --snapshot data/index_snapshots/salary_indexes.yaml
 
+# Method 2: Emergency manual recreation (if snapshot missing)
+# On production instances with <4GB RAM:
+bazel build //scripts/salary:manage_salary_indexes && bazel shutdown && \
+cd /opt/visa_bulletin && set -a && source .env && set +a && \
+sudo -u postgres psql -d $DB_NAME << 'SQL'
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state);
+SQL
+
 # Verify indexes restored
-bazel run //scripts/salary:manage_salary_indexes -- --list
+sudo -u postgres psql -d $DB_NAME -c "SELECT indexname FROM pg_indexes WHERE tablename='salary_record' ORDER BY indexname;"
 ```
 
-**Time:** ~5-10 minutes for full database.
+**Time:** ~5-20 minutes for full database (depends on size).
+
+**Why critical:** Without `job_title` index, clustering queries do full table scans on 1.5M records, taking hours instead of minutes.
 
 ### 2. Backfill Job Title Links
 
