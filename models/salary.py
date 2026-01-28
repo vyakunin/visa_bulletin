@@ -426,20 +426,23 @@ class SalaryRecord(models.Model):
         help_text="Annualized wage (calculated)"
     )
     
-    # Prevailing wage (for comparison)
+    # Prevailing wage (DOL benchmark wage for comparison)
+    # DOL determines prevailing wage as the average paid to similarly employed workers
+    # in the geographic area. Used to ensure employers aren't underpaying foreign workers.
     prevailing_wage = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="Prevailing wage for the position"
+        help_text="DOL's benchmark wage for similarly employed workers in the area"
     )
     
     prevailing_wage_unit = models.CharField(
         max_length=20,
         choices=WageUnit.choices,
         blank=True,
-        help_text="Prevailing wage unit"
+        null=True,  # Allow NULL when prevailing_wage is not provided
+        help_text="Unit for prevailing wage (year, hour, etc.)"
     )
     
     # Dates
@@ -532,6 +535,8 @@ class SalaryRecord(models.Model):
             models.Index(fields=['fiscal_year', 'decision_date']),
             # Performance: Composite index for employer filtering with worksite exclusion
             models.Index(fields=['employer', 'is_worksite']),
+            # Clustering: Index for job title entity lookups (prevents slow COUNTs during clustering)
+            models.Index(fields=['job_title_entity']),
         ]
     
     def __str__(self):
