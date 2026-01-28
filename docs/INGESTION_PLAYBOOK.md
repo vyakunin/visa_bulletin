@@ -554,12 +554,19 @@ bazel run //scripts/salary:backfill_job_title_links
 
 **Expected:**
 - Ingestion: ~500MB-1GB (employer cache)
-- Employer clustering: ~2-3GB (LSH index + employer data)
 - Job title clustering: ~300-500MB
+- **Employer clustering: ~2-3GB (LSH index + employer data)** ⚠️
 
-**Limits:**
-- Max employer cache: ~1M employers (~4-5GB)
-- LSH index growth: O(n) with employers
+**⚠️ CRITICAL:** Employer clustering requires 2-3GB RAM. **2GB instances CANNOT run this step** (will thrash and hang).
+
+**Instance requirements:**
+- ✅ **2GB instance:** Can run ingest + job title clustering
+- ❌ **2GB instance:** Cannot run employer clustering (requires 4GB)
+- ✅ **4GB instance:** Can run full pipeline including employer clustering
+
+**Workaround for 2GB instances:**
+- Skip employer clustering (employer names won't be deduplicated)
+- Or run on a larger temporary instance, then export/import cluster data
 
 ---
 
