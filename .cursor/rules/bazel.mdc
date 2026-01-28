@@ -4,6 +4,41 @@ alwaysApply: true
 
 # Bazel Build System Rules
 
+## Rule: Always Shut Down Bazel Server After Builds on Memory-Constrained Instances
+
+**On instances with <4GB RAM, ALWAYS run `bazel shutdown` after building to free ~400-500MB.**
+
+**✅ GOOD - Shutdown after build:**
+```bash
+# Build, then shutdown to free memory, then run
+bazel build //scripts/salary:cluster_job_titles && bazel shutdown && cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/salary/cluster_job_titles
+```
+
+**❌ BAD - Leave server running:**
+```bash
+# Bazel server stays running, consuming 400-500MB RAM
+bazel build //scripts/salary:cluster_job_titles && ./bazel-bin/scripts/salary/cluster_job_titles
+```
+
+**When to use:**
+- ✅ Production instances with <4GB RAM (2GB Lightsail)
+- ✅ After building binaries that will run for hours (ingest, clustering)
+- ✅ Before running memory-intensive scripts
+
+**When NOT needed:**
+- ✅ Development machines with plenty of RAM
+- ✅ CI/CD builds (ephemeral environments)
+- ✅ Rapid iteration (rebuilding frequently)
+
+**Why:**
+- Bazel server daemon: ~400-500MB RAM
+- On 2GB instance with swap: critical to free this memory
+- Scripts like clustering need all available RAM
+
+**Pattern in this project:**
+- `scripts/cron/build_all.sh`: Pre-builds all binaries, then shuts down
+- Cron jobs: Run pre-built binaries (no Bazel server)
+
 ## Rule: Always Use Bazel for Testing and Running
 **NEVER run Python or pytest directly. ALWAYS use Bazel.**
 

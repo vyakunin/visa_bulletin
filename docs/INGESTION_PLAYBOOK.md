@@ -234,8 +234,18 @@ bazel run //scripts/salary:backfill_source_file_date
 Creates `JobTitle` entities and `JobTitleCluster` groupings. **Note:** This creates entities but does NOT update statistics (done separately in step 6).
 
 ```bash
+# Development (local machine with RAM):
 bazel run //scripts/salary:cluster_job_titles
+
+# Production (<4GB RAM) - Build, shutdown Bazel server, then run:
+bazel build //scripts/salary:cluster_job_titles && \
+bazel shutdown && \
+cd /opt/visa_bulletin && set -a && source .env && set +a && \
+DB_HOST=localhost nohup ./bazel-bin/scripts/salary/cluster_job_titles \
+  > /var/log/visa-bulletin/cluster_job_titles.log 2>&1 &
 ```
+
+**Why `bazel shutdown`?** Bazel server uses ~400-500MB RAM. On 2GB instances, this memory is critical for clustering scripts.
 
 **Expected output:**
 - Job titles processed: ~120k
@@ -252,16 +262,25 @@ bazel run //scripts/salary:cluster_job_titles
 Creates `EmployerCluster` groupings and links duplicate employers:
 
 ```bash
-# Run in background (long-running: 30-60 minutes)
+# Development (local machine with RAM):
 bazel run //scripts/salary:cluster_existing_employers \
   > /tmp/employer_clustering.log 2>&1 &
 
+# Production (<4GB RAM) - Build, shutdown Bazel server, then run:
+bazel build //scripts/salary:cluster_existing_employers && \
+bazel shutdown && \
+cd /opt/visa_bulletin && set -a && source .env && set +a && \
+DB_HOST=localhost nohup ./bazel-bin/scripts/salary/cluster_existing_employers \
+  > /var/log/visa-bulletin/cluster_employers.log 2>&1 &
+
 # Monitor progress
-tail -f /tmp/employer_clustering.log
+tail -f /var/log/visa-bulletin/cluster_employers.log
 
 # Check for errors
-grep "Error\|ValueError" /tmp/employer_clustering.log
+grep "Error\|ValueError" /var/log/visa-bulletin/cluster_employers.log
 ```
+
+**Why `bazel shutdown`?** Bazel server uses ~400-500MB RAM. On 2GB instances, this memory is critical for clustering scripts.
 
 **Expected output:**
 - Employers processed: ~600k
