@@ -353,7 +353,12 @@ def _load_and_group_employers(
         limit: Limit number of employers to load (for fast debugging)
     """
     logger.info("Loading employers...")
-    qs = Employer.objects.all().select_related('canonical_cluster')
+    # Load only fields needed for clustering to reduce memory (critical for 2GB instances)
+    # Fields needed: id, name, city, state, canonical_cluster (for matching logic)
+    # Skip: name_normalized, slug, created_at, updated_at (not used in clustering)
+    qs = Employer.objects.all().select_related('canonical_cluster').only(
+        'id', 'name', 'city', 'state', 'canonical_cluster'
+    )
     
     if limit and not shuffle:
         # If limiting and not shuffling, we can limit at DB level for speed
@@ -697,8 +702,9 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
     
     # Create LSH index with threshold
     # num_perm controls precision: higher = more accurate but slower
-    # 128 is a good balance for string similarity
-    lsh = MinHashLSH(threshold=threshold, num_perm=128)
+    # 64 chosen for 2GB instances (halves memory vs 128: ~115MB vs ~230MB)
+    # Still provides good accuracy for employer name matching
+    lsh = MinHashLSH(threshold=threshold, num_perm=64)
     minhashes = {}
     
     # Progress tracking
@@ -707,7 +713,7 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
     
     for idx, norm_name in enumerate(normalized_names):
         # Create MinHash for this normalized name
-        m = MinHash(num_perm=128)
+        m = MinHash(num_perm=64)
         
         # Add words to MinHash (split by space)
         words = norm_name.split()
