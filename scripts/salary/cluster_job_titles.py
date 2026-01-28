@@ -174,9 +174,20 @@ def cluster_job_titles(dry_run: bool = False):
     if dry_run:
         logger.info("DRY RUN MODE: Skipping SalaryRecord linking")
     else:
+        # Get total for progress logging
+        total_job_titles = JobTitle.objects.count()
+        logger.info(f"Total JobTitle entities to process: {total_job_titles:,}")
+        
         linked_count = 0
+        processed_count = 0
         for job_title in JobTitle.objects.select_related('canonical_cluster').iterator(chunk_size=1000):
-            # Update all SalaryRecords with this job title
+            processed_count += 1
+            
+            # Log progress every 10k job titles
+            if processed_count % 10000 == 0:
+                logger.info(f"  Processed {processed_count:,}/{total_job_titles:,} job titles ({processed_count/total_job_titles*100:.1f}%) - Linked: {linked_count:,}")
+            
+            # Update all SalaryRecords with this job title (exact match)
             salary_records = SalaryRecord.objects.filter(
                 job_title=job_title.title,
                 job_title_entity__isnull=True
@@ -185,12 +196,9 @@ def cluster_job_titles(dry_run: bool = False):
             count = salary_records.update(job_title_entity=job_title)
             if count > 0:
                 linked_count += count
-                
-                # Update JobTitle statistics
-                job_title.total_filings = SalaryRecord.objects.filter(job_title_entity=job_title).count()
-                job_title.save(update_fields=['total_filings'])
         
         logger.info(f"Linked {linked_count:,} SalaryRecords to JobTitle entities")
+        logger.info("Note: Run update_job_title_cluster_stats to update statistics (don't do it here - too slow)")
     
     # Summary
     logger.info("\n" + "=" * 80)

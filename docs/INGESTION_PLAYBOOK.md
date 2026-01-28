@@ -231,7 +231,7 @@ bazel run //scripts/salary:backfill_source_file_date
 
 ### 4. Cluster Job Titles
 
-Creates `JobTitle` entities and `JobTitleCluster` groupings:
+Creates `JobTitle` entities and `JobTitleCluster` groupings. **Note:** This creates entities but does NOT update statistics (done separately in step 6).
 
 ```bash
 bazel run //scripts/salary:cluster_job_titles
@@ -241,9 +241,11 @@ bazel run //scripts/salary:cluster_job_titles
 - Job titles processed: ~120k
 - Auto-clustered: ~10k-15k
 - New clusters created: ~10k-15k
-- SalaryRecords linked: ~13k-20k
+- SalaryRecords linked: ~400k-500k
 
 **Time:** ~5-10 minutes for full database.
+
+**Performance note:** Phase 3 (linking) iterates through all JobTitle entities but does NOT update statistics (no COUNT queries). Statistics are updated separately in step 6.
 
 ### 5. Cluster Employers
 
