@@ -702,9 +702,8 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
     
     # Create LSH index with threshold
     # num_perm controls precision: higher = more accurate but slower
-    # 64 chosen for 2GB instances (halves memory vs 128: ~115MB vs ~230MB)
-    # Still provides good accuracy for employer name matching
-    lsh = MinHashLSH(threshold=threshold, num_perm=64)
+    # 128 is a good balance for string similarity (provides good accuracy)
+    lsh = MinHashLSH(threshold=threshold, num_perm=128)
     minhashes = {}
     
     # Progress tracking
@@ -713,7 +712,7 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
     
     for idx, norm_name in enumerate(normalized_names):
         # Create MinHash for this normalized name
-        m = MinHash(num_perm=64)
+        m = MinHash(num_perm=128)
         
         # Add words to MinHash (split by space)
         words = norm_name.split()
