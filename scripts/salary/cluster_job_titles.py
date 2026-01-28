@@ -183,8 +183,10 @@ def cluster_job_titles(dry_run: bool = False):
         for job_title in JobTitle.objects.select_related('canonical_cluster').iterator(chunk_size=1000):
             processed_count += 1
             
-            # Log progress every 10k job titles
-            if processed_count % 10000 == 0:
+            # Log progress every 1k job titles initially, then 10k (for early visibility)
+            if processed_count <= 5000 and processed_count % 1000 == 0:
+                logger.info(f"  Processed {processed_count:,}/{total_job_titles:,} job titles ({processed_count/total_job_titles*100:.1f}%) - Linked: {linked_count:,}")
+            elif processed_count % 10000 == 0:
                 logger.info(f"  Processed {processed_count:,}/{total_job_titles:,} job titles ({processed_count/total_job_titles*100:.1f}%) - Linked: {linked_count:,}")
             
             # Update all SalaryRecords with this job title (exact match)
