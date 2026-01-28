@@ -23,6 +23,7 @@ from lib.utils.exception_utils import handle_unrecoverable_errors
 from .base import DataSourcePlugin, ValidationResult
 from .registry import PluginRegistry
 from .rejection_tracker import RejectionTracker
+from .schema import ModelCopySchema
 from .versioning import create_version, activate_version
 
 logger = logging.getLogger(__name__)
@@ -186,6 +187,7 @@ class PipelineOrchestrator:
         logger.info(f"[Run {run.id}] Starting pipeline for source: {source.url}")
         logger.info(f"[Run {run.id}] Current stage: {run.stage}, status: {run.status}")
         
+        total_expected_records = None
         # Estimate total records if possible (for ETA)
         logger.info(f"[Run {run.id}] Estimating total records in file...")
         filepath = get_data_source_filepath(source)
@@ -914,9 +916,14 @@ class PipelineOrchestrator:
                         
                         if self._is_newer_than_existing(incoming_date, existing_date):
                             # Incoming is newer - update existing record with all fields from incoming
+                            # Skip auto fields (auto_now, auto_now_add) - Django handles these automatically
                             for field in incoming_record._meta.fields:
-                                if field.name not in ['id', 'pk'] and not field.primary_key:
-                                    setattr(existing_record, field.name, getattr(incoming_record, field.name, None))
+                                if field.name in ['id', 'pk'] or field.primary_key:
+                                    continue
+                                # Skip auto timestamp fields - Django sets these automatically
+                                if isinstance(field, models.DateTimeField) and (field.auto_now or field.auto_now_add):
+                                    continue
+                                setattr(existing_record, field.name, getattr(incoming_record, field.name, None))
                             records_to_update[model_class].append(existing_record)
                         else:
                             # Existing is newer or equal - skip (keep existing)
@@ -950,7 +957,11 @@ class PipelineOrchestrator:
                                 f.name for f in model_class._meta.fields
                                 if not f.primary_key and f.name != 'id'
                             ]
-                            model_class.objects.bulk_update(update_batch, update_fields, batch_size=self.batch_size)
+                            # Cap bulk_update batch size at 1000 to prevent memory exhaustion
+                            # Large batch sizes create massive CASE statements (one WHEN per record × fields)
+                            # which can consume 1.5GB+ RAM and take 1+ hours on low-memory instances
+                            update_batch_size = min(self.batch_size, 1000)
+                            model_class.objects.bulk_update(update_batch, update_fields, batch_size=update_batch_size)
                             total_updated += len(update_batch)
                 
                 return total_created, total_updated
@@ -1216,8 +1227,21 @@ class PipelineOrchestrator:
         buffer = StringIO()
         fields = [f for f in model_class._meta.fields if not f.primary_key]
         field_names = [f.attname for f in fields]
+        schema = ModelCopySchema.from_model(model_class)
 
         self._validate_copy_preflight(records, fields, model_class)
+
+        field_names_set = set(field_names)
+        wage_fields = {"wage_from", "wage_to", "wage_unit"}
+        if wage_fields & field_names_set and not wage_fields.issubset(field_names_set):
+            missing = ", ".join(sorted(wage_fields - field_names_set))
+            logger.error(
+                "Schema validation failed for %s: missing wage fields: %s",
+                model_class.__name__,
+                missing,
+            )
+            raise ValueError(f"Schema mismatch: missing wage fields: {missing}")
+        wage_fields_present = wage_fields.issubset(field_names_set)
         
         # DEBUG: Log field names to verify order
         field_names_str = ', '.join(f.attname for f in fields)
@@ -1237,7 +1261,24 @@ class PipelineOrchestrator:
             for field in fields:
                 value = getattr(record, field.attname, None)
                 if value is None:
-                    values.append('')
+                    if isinstance(field, models.DateTimeField) and (field.auto_now or field.auto_now_add) and not field.null:
+                        values.append(timezone.now().isoformat())
+                        continue
+                    if isinstance(field, (models.CharField, models.TextField)) and not field.null:
+                        values.append('')
+                    else:
+                        values.append('\\N')
+                    continue
+                if value == '' and field.attname.endswith('_id'):
+                    logger.warning(
+                        "COPY value warning [%s]: %s.%s has empty string for FK field; writing NULL. "
+                        "Record: case_number=%s",
+                        record_id,
+                        model_class.__name__,
+                        field.attname,
+                        record_id,
+                    )
+                    values.append('\\N')
                     continue
                 
                 # Convert enum values to their string representation
@@ -1269,6 +1310,9 @@ class PipelineOrchestrator:
 
                 # Normalize Decimal fields to avoid invalid numeric literals in COPY.
                 if isinstance(field, models.DecimalField):
+                    if value is None:
+                        values.append('\\N')
+                        continue
                     if isinstance(value, Decimal):
                         values.append(str(value))
                         continue
@@ -1287,7 +1331,7 @@ class PipelineOrchestrator:
                                 value,
                                 record_id,
                             )
-                            values.append('')
+                            values.append('\\N')
                             continue
                     try:
                         values.append(str(Decimal(str(value))))
@@ -1303,8 +1347,36 @@ class PipelineOrchestrator:
                             record_id,
                             type(value).__name__,
                         )
-                        values.append('')
+                        values.append('\\N')
                         continue
+
+                if value == '' and isinstance(
+                    field,
+                    (
+                        models.IntegerField,
+                        models.BigIntegerField,
+                        models.SmallIntegerField,
+                        models.PositiveIntegerField,
+                        models.PositiveSmallIntegerField,
+                        models.AutoField,
+                        models.BigAutoField,
+                        models.ForeignKey,
+                    ),
+                ):
+                    logger.warning(
+                        "COPY value warning [%s]: %s.%s has empty string for numeric field; writing NULL. "
+                        "Record: case_number=%s",
+                        record_id,
+                        model_class.__name__,
+                        field.attname,
+                        record_id,
+                    )
+                    values.append('\\N')
+                    continue
+
+                if value is None:
+                    values.append('\\N')
+                    continue
 
                 if isinstance(value, (int, float)):
                     values.append(str(value))
@@ -1320,9 +1392,11 @@ class PipelineOrchestrator:
                             .replace('\r', ' '))
                 values.append(str_value)
 
-            # DEBUG: Log ALL wage_to values for records around line 786
-            if 780 <= record_count <= 790:
-                wage_from_pos, wage_to_pos, wage_unit_pos = 9, 10, 11
+            # DEBUG: Log wage fields for records around line 786
+            if wage_fields_present and 780 <= record_count <= 790:
+                wage_from_pos = schema.wage_from
+                wage_to_pos = schema.wage_to
+                wage_unit_pos = schema.wage_unit
                 logger.error(
                     "🔍 Line %d (%s): wage_from=%r, wage_to=%r, wage_unit=%r",
                     record_count,
@@ -1333,19 +1407,22 @@ class PipelineOrchestrator:
                 )
             
             # Also check if "year" is in wage_to position for ANY record
-            if len(values) > 10 and values[10] == 'year':
+            if wage_fields_present and len(values) > schema.wage_to and values[schema.wage_to] == 'year':
                 copy_line = '\t'.join(values)
                 logger.error(
                     "🐛 GOTCHA! Line %d: COPY buffer has 'year' in wage_to position! Case: %s\n"
-                    "   wage_from (pos 9): %r\n"
-                    "   wage_to (pos 10): %r\n"
-                    "   wage_unit (pos 11): %r\n"
+                    "   wage_from (pos %s): %r\n"
+                    "   wage_to (pos %s): %r\n"
+                    "   wage_unit (pos %s): %r\n"
                     "   Full COPY line preview: %s",
                     record_count,
                     record_id,
-                    values[9] if len(values) > 9 else None,
-                    values[10],
-                    values[11] if len(values) > 11 else None,
+                    schema.wage_from,
+                    values[schema.wage_from] if len(values) > schema.wage_from else None,
+                    schema.wage_to,
+                    values[schema.wage_to],
+                    schema.wage_unit,
+                    values[schema.wage_unit] if len(values) > schema.wage_unit else None,
                     copy_line[:300]
                 )
 
@@ -1368,5 +1445,5 @@ class PipelineOrchestrator:
                 buffer,
                 model_class._meta.db_table,
                 columns=field_names,
-                null=''
+                null='\\N'
             )

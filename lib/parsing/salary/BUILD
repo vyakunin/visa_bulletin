@@ -30,6 +30,7 @@ py_library(
         "//models/enums:visa_program",
         "//lib/parsing/salary:wage_unit_correction",
         "//lib/utils:data_source_utils",
+        "//lib/utils:location_utils",
         requirement("Django"),
         requirement("pandas"),
         requirement("openpyxl"),

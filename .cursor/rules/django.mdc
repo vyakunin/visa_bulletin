@@ -396,6 +396,67 @@ def create_salary_record(
 - Document complex migrations with comments
 - Use `makemigrations --check` in CI/CD to catch missing migrations
 
+### Rule: Never Circumvent makemigrations/migrate Process
+
+**🚨 CRITICAL: NEVER run direct SQL schema changes (ALTER TABLE, etc.) to bypass migrations unless explicitly instructed.**
+
+**Always use the proper migration workflow:**
+
+```bash
+# 1. Create migration locally
+bazel run //:makemigrations
+
+# 2. Review the migration file
+cat models/migrations/NNNN_*.py
+
+# 3. Copy to server (if needed)
+scp models/migrations/NNNN_*.py server:/path/to/models/migrations/
+
+# 4. Apply migration on server with correct DB_HOST
+ssh server "cd /path && DB_HOST=localhost bazel run //:migrate"
+```
+
+**❌ FORBIDDEN - Direct SQL:**
+```bash
+# ❌ NEVER DO THIS
+psql -c "ALTER TABLE salary_record ALTER COLUMN field DROP NOT NULL;"
+```
+
+**When direct SQL is acceptable:**
+- ✅ User explicitly instructs: "run this SQL directly"
+- ✅ Emergency production fix with explicit approval
+- ✅ One-time data fixes (not schema changes)
+
+**Why this matters:**
+- Django's migration system tracks schema state
+- Direct SQL bypasses migration history
+- Creates inconsistency between code and database
+- Breaks rollback capability
+- Causes "No migrations to apply" confusion when migration file exists but wasn't recorded
+
+**Common issues and fixes:**
+
+**Issue: `bazel run //:migrate` fails with "could not translate host name 'host.docker.internal'"`**
+- **Root cause:** `.env` has `DB_HOST=host.docker.internal` (correct for Docker containers), but Bazel commands run directly on the host (cron jobs, manual commands)
+- **Fix:** Override with `DB_HOST=localhost bazel run //:migrate`
+- **Pattern:** 
+  - `.env` has `host.docker.internal` for Docker containers (web service)
+  - Cron jobs run on the host (not in Docker), need `localhost`
+  - Bazel scripts auto-convert to `localhost` when running on host:
+    - `scripts/cron/refresh_data.sh` (lines 175-176)
+    - `scripts/ingest/run_pipeline.py` (lines 28-30)
+
+**Issue: "could not change directory to '/home/ubuntu': Permission denied" when running `sudo -u postgres psql`**
+- **This is harmless** - postgres user can't access /home/ubuntu, but psql works fine
+- Can be avoided with: `sudo -u postgres psql -d dbname` (no cd needed)
+- Not an error, just a warning
+
+**Rationale:**
+- Migrations are the single source of truth for database schema
+- Bypassing migrations creates technical debt and confusion
+- Proper workflow ensures consistency across environments
+- Migration history enables safe rollbacks
+
 ### Rule: Running Migrations with Server
 
 **PostgreSQL supports concurrent schema changes:**

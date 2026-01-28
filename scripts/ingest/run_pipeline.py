@@ -15,13 +15,20 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- status
     bazel run //scripts/ingest:run_pipeline -- check-completeness --domain dol
     bazel run //scripts/ingest:run_pipeline -- reingest-files --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx
+    bazel run //scripts/ingest:run_pipeline -- cleanup --days 30
 """
 
 import argparse
 import logging
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
+
+# Convert DB_HOST from host.docker.internal to localhost when running on host
+# (Docker containers use host.docker.internal, but Bazel runs directly on host)
+if os.environ.get('DB_HOST') == 'host.docker.internal':
+    os.environ['DB_HOST'] = 'localhost'
 
 # Setup Django early
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
@@ -381,6 +388,28 @@ def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
     run_pipeline(all_pending=True)
 
 
+def cleanup_ingest_runs(days: int, dry_run: bool = False) -> None:
+    """Delete old ingest run metadata older than the given number of days."""
+    cutoff = timezone.now() - timedelta(days=days)
+    stale_qs = IngestRun.objects.filter(
+        Q(completed_at__lt=cutoff)
+        | Q(
+            completed_at__isnull=True,
+            started_at__lt=cutoff,
+            status__in=[IngestStatus.COMPLETED, IngestStatus.FAILED],
+        )
+    )
+    stale_count = stale_qs.count()
+    logger.info("Found %s ingest runs older than %s days", stale_count, days)
+
+    if dry_run:
+        logger.info("Dry run enabled - no records deleted")
+        return
+
+    deleted_count, _ = stale_qs.delete()
+    logger.info("Deleted %s ingest run records", deleted_count)
+
+
 def download_sources(domain: str | None = None, all_domains: bool = False, list_available: bool = False):
     """Download sources without ingesting"""
     register_plugins()
@@ -684,6 +713,11 @@ def main():
     completeness_parser = subparsers.add_parser('check-completeness', help='Check if all available data sources have been ingested')
     completeness_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to check (default: all)')
 
+    # Cleanup command
+    cleanup_parser = subparsers.add_parser('cleanup', help='Delete old ingest run metadata')
+    cleanup_parser.add_argument('--days', type=int, default=30, help='Delete runs older than N days (default: 30)')
+    cleanup_parser.add_argument('--dry-run', action='store_true', help='Report deletions without removing records')
+
     # Re-ingest specific files with index management
     reingest_parser = subparsers.add_parser('reingest-files', help='Re-ingest specific local files with index drop/recreate')
     reingest_parser.add_argument(
@@ -733,6 +767,8 @@ def main():
             show_status(args.source_id)
         elif args.command == 'check-completeness':
             check_completeness(args.domain)
+        elif args.command == 'cleanup':
+            cleanup_ingest_runs(args.days, args.dry_run)
         elif args.command == 'reingest-files':
             reingest_files(args.files, args.index_snapshot, args.overwrite_index_snapshot)
     except Exception as e:
