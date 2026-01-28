@@ -156,18 +156,19 @@ ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
 # If < 5 indexes: Indexes were dropped, must recreate before clustering
 ```
 
-**If indexes missing, recreate them:**
+**If indexes missing, create clustering indexes:**
 ```bash
-# Emergency manual recreation (if snapshot missing)
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 << 'COMMANDS'
-sudo -u postgres psql -d visa_bulletin_blue << 'SQL'
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state);
-SQL
-COMMANDS
+# Create minimal indexes required for clustering
+ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+  "cd /opt/visa_bulletin && \
+   bazel build //scripts/salary:manage_salary_indexes && bazel shutdown && \
+   set -a && source .env && set +a && \
+   DB_HOST=localhost ./bazel-bin/scripts/salary/manage_salary_indexes --create-clustering-indexes"
+
+# Verify indexes created (should show 8+ indexes now)
+ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+  "sudo -u postgres psql -d visa_bulletin_blue -t -c \
+  \"SELECT COUNT(*) FROM pg_indexes WHERE tablename='salary_record';\""
 ```
 
 **Why critical:** Without indexes, clustering does full table scans (1.5M records) and is 100x+ slower.

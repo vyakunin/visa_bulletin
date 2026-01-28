@@ -4,9 +4,20 @@ Manage non-unique indexes for salary_record and worksite_record.
 
 Usage:
   bazel run //scripts/salary:manage_salary_indexes -- --list
-  bazel run //scripts/salary:manage_salary_indexes -- --drop
-  bazel run //scripts/salary:manage_salary_indexes -- --recreate
-  bazel run //scripts/salary:manage_salary_indexes -- --drop --snapshot data/index_snapshots/salary_indexes.yaml --overwrite
+  bazel run //scripts/salary:manage_salary_indexes -- --drop --snapshot data/index_snapshots/salary_indexes.yaml
+  bazel run //scripts/salary:manage_salary_indexes -- --recreate --snapshot data/index_snapshots/salary_indexes.yaml
+  bazel run //scripts/salary:manage_salary_indexes -- --create-clustering-indexes
+
+Modes:
+  --list: Show current indexes
+  --drop: Drop non-unique indexes (saves snapshot)
+  --recreate: Recreate indexes from snapshot (requires snapshot file)
+  --create-clustering-indexes: Create minimal indexes for clustering (emergency mode when snapshot missing)
+
+Index Strategy:
+  - During ingest: Drop indexes for speed (--drop)
+  - Before clustering: Create clustering indexes (--create-clustering-indexes or --recreate)
+  - After clustering: Recreate all indexes (--recreate)
 """
 
 import argparse
@@ -185,6 +196,30 @@ def recreate_indexes(snapshot_path: Path) -> None:
     logger.info("Recreated %d indexes.", len(indexes))
 
 
+def create_clustering_indexes() -> None:
+    """Create minimal indexes required for clustering (job titles and employers)."""
+    _ensure_no_running_ingests()
+    
+    clustering_indexes = [
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state)",
+    ]
+    
+    logger.info("Creating %d clustering indexes...", len(clustering_indexes))
+    
+    with connection.cursor() as cursor:
+        for indexdef in clustering_indexes:
+            # Extract index name from SQL
+            index_name = indexdef.split('EXISTS ')[1].split(' ON ')[0]
+            logger.info("Creating index: %s", index_name)
+            cursor.execute(indexdef)
+    
+    logger.info("Created clustering indexes successfully.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description='Manage non-unique indexes on salary_record/worksite_record',
@@ -194,6 +229,8 @@ def main() -> None:
     action_group.add_argument('--list', action='store_true', help='List indexes for target tables')
     action_group.add_argument('--drop', action='store_true', help='Drop non-unique indexes')
     action_group.add_argument('--recreate', action='store_true', help='Recreate dropped indexes from snapshot')
+    action_group.add_argument('--create-clustering-indexes', action='store_true', 
+                              help='Create minimal indexes required for clustering (job_title, employer_name)')
     parser.add_argument(
         '--snapshot',
         help='Path to snapshot YAML (default: data/index_snapshots/salary_indexes.yaml)',
@@ -208,7 +245,9 @@ def main() -> None:
     snapshot_path = _snapshot_path(args.snapshot)
 
     script_logger.log_call(
-        args={'list': args.list, 'drop': args.drop, 'recreate': args.recreate, 'snapshot': str(snapshot_path), 'overwrite': args.overwrite},
+        args={'list': args.list, 'drop': args.drop, 'recreate': args.recreate, 
+              'create_clustering_indexes': args.create_clustering_indexes,
+              'snapshot': str(snapshot_path), 'overwrite': args.overwrite},
         context='Manage salary/worksite indexes for bulk ingest',
     )
 
@@ -220,6 +259,9 @@ def main() -> None:
         return
     if args.recreate:
         recreate_indexes(snapshot_path)
+        return
+    if args.create_clustering_indexes:
+        create_clustering_indexes()
         return
 
 

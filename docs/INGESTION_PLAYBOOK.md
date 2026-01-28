@@ -193,29 +193,38 @@ bazel run //scripts/ingest:run_pipeline -- run --source-id 6 --force-restart
 **⚠️ CRITICAL:** If indexes were dropped for fast ingest, you MUST recreate them before clustering. Clustering without indexes is 100x+ slower.
 
 ```bash
-# Method 1: Recreate from snapshot (preferred)
+# Method 1: Recreate from snapshot (preferred - restores ALL indexes)
 bazel run //scripts/salary:manage_salary_indexes -- --recreate \
   --snapshot data/index_snapshots/salary_indexes.yaml
 
-# Method 2: Emergency manual recreation (if snapshot missing)
-# On production instances with <4GB RAM:
+# Method 2: Create minimal clustering indexes (if snapshot missing)
+# Creates only the 5 indexes required for job title and employer clustering
+bazel run //scripts/salary:manage_salary_indexes -- --create-clustering-indexes
+
+# On production instances with <4GB RAM, add bazel shutdown:
 bazel build //scripts/salary:manage_salary_indexes && bazel shutdown && \
 cd /opt/visa_bulletin && set -a && source .env && set +a && \
-sudo -u postgres psql -d $DB_NAME << 'SQL'
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state);
-SQL
+DB_HOST=localhost ./bazel-bin/scripts/salary/manage_salary_indexes --create-clustering-indexes
 
-# Verify indexes restored
-sudo -u postgres psql -d $DB_NAME -c "SELECT indexname FROM pg_indexes WHERE tablename='salary_record' ORDER BY indexname;"
+# Verify indexes created
+bazel run //scripts/salary:manage_salary_indexes -- --list
 ```
+
+**Indexes created by `--create-clustering-indexes` (minimal set for clustering):**
+- `salary_record_job_title_idx` - Required for job title clustering Phase 3 (linking)
+- `salary_record_employer_name_idx` - Required for employer clustering
+- `salary_record_visa_program_idx` - Required for filtering by program
+- `salary_record_employer_job_title_idx` - Composite index for combined queries
+- `salary_record_job_title_state_idx` - Composite index for location-based queries
 
 **Time:** ~5-20 minutes for full database (depends on size).
 
 **Why critical:** Without `job_title` index, clustering queries do full table scans on 1.5M records, taking hours instead of minutes.
+
+**Index strategy:**
+- **During ingest**: Drop indexes (`--drop`) for 2-3x faster inserts
+- **Before clustering**: Create clustering indexes (`--create-clustering-indexes`)
+- **After clustering**: Recreate all indexes (`--recreate`) for optimal query performance
 
 ### 2. Backfill Job Title Links
 
