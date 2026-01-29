@@ -52,30 +52,37 @@ def main():
     missing_files = []
     
     for source in sources_needing_hash:
-        filepath = Path(source.local_file_path)
+        path_str = str(source.local_file_path)
         
-        # Handle different path formats:
-        # 1. Absolute paths: /opt/visa_bulletin/data/...
-        # 2. Relative to workspace: data/salary/dol_data/file.xlsx
-        # 3. Bazel runfiles paths: bazel-bin/.../runfiles/_main/lib/data/...
+        # Try multiple path resolution strategies in order
+        candidate_paths = []
         
-        if not filepath.is_absolute():
-            # Try relative to workspace first
-            filepath = workspace_dir / filepath
+        # Strategy 1: Use path as-is if absolute
+        if Path(path_str).is_absolute():
+            candidate_paths.append(Path(path_str))
         
-        if not filepath.exists():
-            # Try extracting just the data path for Bazel runfiles
-            # Path like: bazel-bin/.../runfiles/_main/lib/data/salary/dol_data/file.xlsx
-            # Should become: data/salary/dol_data/file.xlsx
-            path_str = str(source.local_file_path)
-            if '/data/' in path_str:
-                data_path = path_str[path_str.index('/data/')+1:]  # Keep 'data/...'
-                filepath = workspace_dir / data_path
+        # Strategy 2: Relative to workspace
+        candidate_paths.append(workspace_dir / path_str)
         
-        if not filepath.exists():
-            missing_files.append(str(source.local_file_path))
-            logger.warning(f"File not found: {filepath}")
+        # Strategy 3: Extract data path from Bazel runfiles
+        # Path like: bazel-bin/.../runfiles/_main/lib/data/salary/dol_data/file.xlsx
+        # Should become: /opt/visa_bulletin/data/salary/dol_data/file.xlsx
+        if '/data/' in path_str:
+            data_path = path_str[path_str.rindex('/data/')+1:]  # Keep 'data/...'
+            candidate_paths.append(workspace_dir / data_path)
+        
+        # Find first path that exists
+        filepath = None
+        for candidate in candidate_paths:
+            if candidate.exists():
+                filepath = candidate
+                break
+        
+        if not filepath:
+            missing_files.append(path_str)
+            logger.warning(f"File not found (tried {len(candidate_paths)} paths)")
             logger.warning(f"  Source: {source.url}")
+            logger.warning(f"  Last tried: {candidate_paths[-1]}")
             continue
         
         # Compute hash
