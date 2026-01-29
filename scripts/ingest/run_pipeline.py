@@ -584,10 +584,13 @@ def check_completeness(domain: str | None = None):
         ).values_list('url', flat=True).distinct()
     )
     logger.info(f"  Found {len(sources_with_completed_urls)} unique sources with completed runs")
+    logger.info(f"  DEBUG: Sample completed URLs: {list(sources_with_completed_urls)[:3]}")
+    logger.info(f"  DEBUG: Sample discovered URLs: {[s.url for s in all_available_sources[:3]]}")
     
     # Match discovered sources against completed URLs
     ingested_sources = [s for s in all_available_sources if s.url in sources_with_completed_urls]
     missing_sources = [s for s in all_available_sources if s.url not in sources_with_completed_urls]
+    logger.info(f"  DEBUG: Matched {len(ingested_sources)} ingested sources")
     
     # Step 3: Categorize missing sources
     broken_links = []  # Sources with 404 errors (files don't exist)
