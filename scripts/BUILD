@@ -56,6 +56,30 @@ py_binary(
 )
 
 py_binary(
+    name = "spot_check_new_dol_files",
+    srcs = ["spot_check_new_dol_files.py"],
+    main = "spot_check_new_dol_files.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:salary",
+        "//models/ingest:data_source",
+        "//lib/utils:http_utils",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("requests"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "benchmark_db_ingest",
     srcs = ["benchmark_db_ingest.py"],
     main = "benchmark_db_ingest.py",
