@@ -41,15 +41,63 @@ After running, follow the manual steps below for domain-specific configuration.
 
 ---
 
+## Deployment Scenarios
+
+Choose your setup based on instance purpose:
+
+### Scenario 1: Production Web Server
+**Purpose:** Public-facing website (visa-bulletin.us)
+
+**Components needed:**
+- ✅ PostgreSQL (data storage)
+- ✅ Docker + Docker Compose (web service)
+- ✅ Nginx (reverse proxy, SSL termination)
+- ✅ Certbot (SSL certificates)
+- ✅ Cron jobs (data refresh)
+
+**Skip:**
+- ❌ Never use Django dev server (`runserver`) in production
+
+### Scenario 2: Ingestion-Only Instance
+**Purpose:** Data processing and database management (like current 2GB instance)
+
+**Components needed:**
+- ✅ PostgreSQL (data storage)
+- ✅ Bazel (build system for data scripts)
+- ✅ Cron jobs (scheduled ingestion)
+
+**Skip:**
+- ❌ Docker containers (not needed, data processing runs on host)
+- ❌ Nginx (no web traffic to serve)
+- ❌ SSL/Certbot (no public web access)
+
+### Scenario 3: Development/Testing
+**Purpose:** Local development or testing on dedicated instance
+
+**Components needed:**
+- ✅ PostgreSQL (data storage)
+- ✅ Bazel (build system)
+- ⚠️ Django dev server (for testing only)
+
+**Skip:**
+- ❌ Production Docker setup
+- ❌ Nginx/SSL (unless testing production config)
+
+---
+
 ## Manual Setup Steps (Reference)
 
 The following sections document the manual setup steps for reference and troubleshooting.
 
 ---
 
-## Handoff: Monitoring the Pipeline (New Agent)
+## Handoff: Monitoring the Pipeline (Ingestion-Only Instance)
+
+**Instance Type:** Ingestion-only (44.209.204.255 - 2GB RAM)
 
 **Goal:** Continue the ingest pipeline safely on the 2GB instance using prebuilt binaries and avoid Bazel JVM.
+
+**Note:** This instance does NOT run a web server. It only processes data and updates the PostgreSQL database.
 
 ### 1) Confirm instance + SSH
 ```bash
@@ -360,13 +408,70 @@ Follow `docs/POSTGRESQL_SETUP.md` and note any deviations here:
 - Create `visa_bulletin` database and user
 - Verify authentication
 
-## Docker Deployment
+## Production Web Server Setup
+
+**⚠️ IMPORTANT: NEVER use Django dev server (`runserver`) in production!**
+
+Production web server runs in Docker containers with Nginx reverse proxy.
+
+### Option 1: Docker-Based Production (Recommended)
+
+**For production instances with public web access:**
+
+```bash
+cd /opt/visa_bulletin/deployment
+
+# Pull pre-built image from GitHub Container Registry
+export IMAGE_TAG=latest  # Or specific version like v1.2.3
+docker-compose pull
+
+# Start web service
+docker-compose up -d
+
+# Verify container is running
+docker-compose ps
+docker-compose logs --tail=50 web
+
+# Check web service responds
+curl -I http://localhost:8000
+```
+
+**Container details:**
+- Uses pre-built image from `ghcr.io/vyakunin/visa_bulletin`
+- Runs Gunicorn WSGI server (production-ready)
+- Exposes port 8000 for Nginx reverse proxy
+- Auto-restarts on failure
+
+### Option 2: Development Server (Testing Only)
+
+**For non-production instances or development:**
 
 ```bash
 cd /opt/visa_bulletin
-docker-compose pull
-docker-compose up -d
+
+# Start dev server using helper script
+./scripts/start_dev_server.sh
+
+# Or manually:
+# bazel build //:runserver && bazel shutdown
+# DB_HOST=localhost ./bazel-bin/runserver runserver 0.0.0.0:8000
 ```
+
+**⚠️ Dev server limitations:**
+- Single-threaded (slow under load)
+- Not suitable for production traffic
+- No auto-restart on crash
+- Security warnings in Django
+
+### Option 3: Ingestion-Only Instance (No Web Server)
+
+**For dedicated ingestion instances (like this one):**
+
+No web server needed. Only run:
+- PostgreSQL (for data storage)
+- Cron jobs (for scheduled data refresh)
+
+Skip Docker and Nginx setup entirely.
 
 ## Bazel Installation
 
@@ -418,22 +523,82 @@ Set up a single weekly cron job to run the end-to-end refresh:
 
 **Note:** `refresh_data.sh` automatically detects and uses pre-built binaries when available, falling back to `bazel run` if they're missing.
 
-## Nginx Setup
+## Nginx Setup (Production Web Server Only)
+
+**Only needed if running production web service with Docker containers.**
+Skip this for ingestion-only instances.
 
 ```bash
 sudo apt install -y nginx
+
+# Copy configuration files
 sudo cp /opt/visa_bulletin/deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
+# Note: Update server_name in the config with your domain
+
+# Enable site
 sudo ln -s /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test and reload
+sudo nginx -t
+if [ $? -eq 0 ]; then
+    sudo systemctl restart nginx
+    sudo systemctl enable nginx
+    echo "✅ Nginx configured and running"
+else
+    echo "❌ Nginx configuration error - check /var/log/nginx/error.log"
+    exit 1
+fi
+
+# Verify Nginx is proxying to port 8000
+curl -I http://localhost/
 ```
 
-## SSL (Post-DNS Swap)
+**What this does:**
+- Nginx listens on port 80 (HTTP) and 443 (HTTPS after SSL setup)
+- Reverse proxies to Django app on port 8000 (Docker container)
+- Serves static files directly (performance optimization)
+- Handles SSL/TLS termination
+- Provides caching and security headers
 
-After DNS points to the new IP:
+## SSL Setup (Production Web Server Only)
 
+**Only needed for production web servers with public domains.**
+Skip this for ingestion-only or development instances.
+
+### Prerequisites
+1. Domain DNS must point to this instance's IP
+2. Nginx must be installed and configured
+3. Docker web service must be running on port 8000
+
+### Install Certbot
 ```bash
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/bin/certbot
+```
+
+### Obtain SSL Certificate
+```bash
+# Replace with your domain
 sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us
+
+# Certbot will:
+# 1. Verify domain ownership (via HTTP challenge)
+# 2. Obtain Let's Encrypt certificate
+# 3. Update Nginx config for HTTPS
+# 4. Configure auto-renewal
+```
+
+### Verify SSL
+```bash
+# Check certificate
+sudo certbot certificates
+
+# Test HTTPS
+curl -I https://visa-bulletin.us
+
+# Check auto-renewal
+sudo certbot renew --dry-run
 ```
 
 ## Testing Checklist

@@ -349,6 +349,65 @@ else
 fi
 
 # =============================================================================
+# Step 7: Configure Nginx
+# =============================================================================
+echo ""
+echo "[7/9] Configuring Nginx..."
+echo "--------------------------------------------------------------"
+
+sudo apt install -y nginx
+
+# Copy nginx configuration
+sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
+sudo cp deployment/nginx/visa-bulletin-locations.conf /opt/visa_bulletin/deployment/nginx/
+sudo cp deployment/nginx/rate-limiting.conf /opt/visa_bulletin/deployment/nginx/
+
+# Enable site
+sudo ln -sf /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test configuration
+if sudo nginx -t; then
+    echo "✅ Nginx configuration valid"
+    sudo systemctl restart nginx
+    sudo systemctl enable nginx
+else
+    echo "❌ Nginx configuration error"
+    exit 1
+fi
+
+# =============================================================================
+# Step 8: Build Docker Image or Pull from Registry
+# =============================================================================
+echo ""
+echo "[8/9] Docker image setup..."
+echo "--------------------------------------------------------------"
+echo "Choose Docker image option:"
+echo "  1. Pull from GitHub Container Registry (recommended for production)"
+echo "  2. Build locally (for development/testing)"
+echo ""
+echo "For production, it's recommended to:"
+echo "  - Build images in GitHub Actions"
+echo "  - Pull pre-built images on production servers"
+echo ""
+echo "Skipping automatic image setup. To start web server:"
+echo "  Production: cd deployment && docker-compose up -d"
+echo "  Dev: Use bazel run //:runserver for development"
+
+# =============================================================================
+# Step 9: Setup SSL with Certbot (optional)
+# =============================================================================
+echo ""
+echo "[9/9] SSL Certificate Setup (optional)..."
+echo "--------------------------------------------------------------"
+echo "To enable HTTPS, run after updating your domain DNS:"
+echo "  sudo snap install --classic certbot"
+echo "  sudo ln -s /snap/bin/certbot /usr/bin/certbot"
+echo "  sudo certbot --nginx -d your-domain.com -d www.your-domain.com"
+echo ""
+echo "Certbot will automatically configure Nginx for HTTPS."
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
@@ -364,6 +423,7 @@ echo "  ✅ PostgreSQL (optimized for bulk operations)"
 echo "  ✅ Blue-green databases: $DB_BLUE, $DB_GREEN"
 echo "  ✅ Monitoring: sysstat, atop, health_check.sh"
 echo "  ✅ Bazel memory limits"
+echo "  ✅ Nginx reverse proxy"
 echo ""
 echo "Database credentials:"
 echo "  User: $DB_USER"
@@ -372,10 +432,14 @@ echo ""
 echo "Next steps:"
 echo "  1. Log out and back in (for docker group)"
 echo "  2. Update .env with your domain/static IP"
-echo "  3. Run: ./scripts/cron/build_all.sh  (pre-build Bazel binaries)"
-echo "  4. Run: bazel run //:migrate"
-echo "  5. Configure Nginx and SSL"
-echo "  6. Set up cron jobs"
+echo "  3. Update deployment/nginx/visa-bulletin-nginx.conf with your domain"
+echo "  4. Run: ./scripts/cron/build_all.sh  (pre-build Bazel binaries)"
+echo "  5. Run: bazel run //:migrate  (apply database migrations)"
+echo "  6. Start web server:"
+echo "     Production: cd deployment && docker-compose up -d"
+echo "     Dev: Use ./scripts/start_dev_server.sh for development"
+echo "  7. Setup SSL: sudo certbot --nginx -d your-domain.com"
+echo "  8. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
 echo ""
 echo "For detailed instructions, see: docs/deployment/NEW_INSTANCE_SETUP.md"
 echo ""
