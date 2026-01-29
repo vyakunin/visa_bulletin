@@ -80,6 +80,27 @@ py_binary(
 )
 
 py_binary(
+    name = "backfill_content_hashes",
+    srcs = ["backfill_content_hashes.py"],
+    main = "backfill_content_hashes.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models/ingest:data_source",
+        "//lib/utils:http_utils",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "benchmark_db_ingest",
     srcs = ["benchmark_db_ingest.py"],
     main = "benchmark_db_ingest.py",
