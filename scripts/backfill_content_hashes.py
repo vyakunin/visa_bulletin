@@ -82,7 +82,9 @@ def main():
             missing_files.append(path_str)
             logger.warning(f"File not found (tried {len(candidate_paths)} paths)")
             logger.warning(f"  Source: {source.url}")
-            logger.warning(f"  Last tried: {candidate_paths[-1]}")
+            logger.warning(f"  Stored path: {path_str}")
+            for i, p in enumerate(candidate_paths):
+                logger.warning(f"  Try {i+1}: {p} (exists={p.exists()})")
             continue
         
         # Compute hash
