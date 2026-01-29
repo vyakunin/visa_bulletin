@@ -54,9 +54,23 @@ def main():
     for source in sources_needing_hash:
         filepath = Path(source.local_file_path)
         
-        # Make path absolute if relative
+        # Handle different path formats:
+        # 1. Absolute paths: /opt/visa_bulletin/data/...
+        # 2. Relative to workspace: data/salary/dol_data/file.xlsx
+        # 3. Bazel runfiles paths: bazel-bin/.../runfiles/_main/lib/data/...
+        
         if not filepath.is_absolute():
+            # Try relative to workspace first
             filepath = workspace_dir / filepath
+        
+        if not filepath.exists():
+            # Try extracting just the data path for Bazel runfiles
+            # Path like: bazel-bin/.../runfiles/_main/lib/data/salary/dol_data/file.xlsx
+            # Should become: data/salary/dol_data/file.xlsx
+            path_str = str(source.local_file_path)
+            if '/data/' in path_str:
+                data_path = path_str[path_str.index('/data/')+1:]  # Keep 'data/...'
+                filepath = workspace_dir / data_path
         
         if not filepath.exists():
             missing_files.append(str(source.local_file_path))
