@@ -542,6 +542,7 @@ def check_completeness(domain: str | None = None):
     register_plugins()
     
     all_available_sources = []
+    seen_urls = set()  # Track URLs to avoid duplicates in list
     plugins = PluginRegistry.list_plugins()
     
     for plugin_domain, plugin_source_type, plugin in plugins:
@@ -552,6 +553,11 @@ def check_completeness(domain: str | None = None):
         source_infos = plugin.discover_sources()
         
         for source_info in source_infos:
+            # Skip if we've already added this URL (multiple plugins may discover same source)
+            if source_info.url in seen_urls:
+                continue
+            seen_urls.add(source_info.url)
+            
             # Get or create DataSource record
             source, created = DataSource.objects.get_or_create(
                 url=source_info.url,
@@ -566,26 +572,22 @@ def check_completeness(domain: str | None = None):
             if created:
                 logger.info(f"    ✓ Discovered new: {source.url}")
     
-    logger.info(f"  Found {len(all_available_sources)} total available sources")
+    logger.info(f"  Found {len(all_available_sources)} total available sources (unique URLs)")
     
     # Step 2: Check which sources have completed ingest runs
     logger.info("Step 2: Checking ingestion status...")
     
-    # Debug: Check if enum comparison works
-    completed_runs_count = IngestRun.objects.filter(status=IngestStatus.COMPLETED).count()
-    logger.info(f"  DEBUG: Found {completed_runs_count} completed runs total")
-    
-    sources_with_completed = set(
+    # Get all sources with completed runs (from existing DB records, not just discovered)
+    sources_with_completed_urls = set(
         DataSource.objects.filter(
             runs__status=IngestStatus.COMPLETED
-        ).values_list('id', flat=True).distinct()
+        ).values_list('url', flat=True).distinct()
     )
-    logger.info(f"  DEBUG: Found {len(sources_with_completed)} unique source IDs with completed runs")
-    logger.info(f"  DEBUG: Source IDs with completed runs: {sorted(list(sources_with_completed))[:10]}")
-    logger.info(f"  DEBUG: Discovered source IDs: {sorted([s.id for s in all_available_sources])[:10]}")
+    logger.info(f"  Found {len(sources_with_completed_urls)} unique sources with completed runs")
     
-    ingested_sources = [s for s in all_available_sources if s.id in sources_with_completed]
-    missing_sources = [s for s in all_available_sources if s.id not in sources_with_completed]
+    # Match discovered sources against completed URLs
+    ingested_sources = [s for s in all_available_sources if s.url in sources_with_completed_urls]
+    missing_sources = [s for s in all_available_sources if s.url not in sources_with_completed_urls]
     
     # Step 3: Categorize missing sources
     broken_links = []  # Sources with 404 errors (files don't exist)
