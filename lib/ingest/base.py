@@ -150,11 +150,21 @@ class DataSourcePlugin(ABC):
                 logger.info(f"[Run {run.id}] File already downloaded (from DB record): {dest_path}")
             else:
                 logger.info(f"[Run {run.id}] File exists locally, skipping download: {dest_path}")
+            
+            # Compute hash if not already stored (for existing files)
+            from lib.utils.http_utils import compute_file_hash
+            if not source.content_hash:
+                content_hash = compute_file_hash(dest_path)
+                logger.info(f"[Run {run.id}] Computing hash for existing file: {content_hash}")
+                source.content_hash = content_hash
+            
             # Update source record to reflect that file exists
             if not source.downloaded_at:
                 source.downloaded_at = timezone.now()
                 source.local_file_path = str(dest_path)
-                source.save(update_fields=['downloaded_at', 'local_file_path'])
+                source.save(update_fields=['downloaded_at', 'local_file_path', 'content_hash'])
+            elif not source.content_hash:
+                source.save(update_fields=['content_hash'])
             return dest_path
         
         # Download file
@@ -198,6 +208,17 @@ class DataSourcePlugin(ABC):
         
         logger.info(f"[Run {run.id}] Downloading: {source.url}")
         download_file(source.url, dest_path)
+        
+        # Compute content hash for duplicate detection
+        from lib.utils.http_utils import compute_file_hash
+        content_hash = compute_file_hash(dest_path)
+        logger.info(f"[Run {run.id}] Content hash: {content_hash}")
+        
+        # Update source record with download metadata
+        source.downloaded_at = timezone.now()
+        source.local_file_path = str(dest_path)
+        source.content_hash = content_hash
+        source.save(update_fields=['downloaded_at', 'local_file_path', 'content_hash'])
         
         return dest_path
     

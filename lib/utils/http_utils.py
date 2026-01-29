@@ -1,6 +1,7 @@
 """Shared HTTP and file utilities for data fetching scripts"""
 
 import os
+import hashlib
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
@@ -95,3 +96,24 @@ def is_file_saved(url: str, data_dir: Path) -> bool:
     """
     filename = os.path.basename(urlparse(url).path)
     return (data_dir / filename).exists()
+
+
+def compute_file_hash(filepath: Path) -> str:
+    """
+    Compute SHA256 hash of file content.
+    
+    This is used to detect duplicate files even when URLs change.
+    Files with identical content will have the same hash regardless of URL.
+    
+    Args:
+        filepath: Path to file
+        
+    Returns:
+        SHA256 hash as hex string (64 characters)
+    """
+    sha256 = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        # Read in chunks to handle large files efficiently
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()

@@ -38,6 +38,12 @@ class DataSource(models.Model):
         blank=True,
         help_text="Cached local path if downloaded (for reference)"
     )
+    content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="SHA256 hash of file content (detects duplicates with different URLs)"
+    )
     metadata = models.JSONField(
         default=dict,
         blank=True,
