@@ -571,11 +571,18 @@ def check_completeness(domain: str | None = None):
     # Step 2: Check which sources have completed ingest runs
     logger.info("Step 2: Checking ingestion status...")
     
+    # Debug: Check if enum comparison works
+    completed_runs_count = IngestRun.objects.filter(status=IngestStatus.COMPLETED).count()
+    logger.info(f"  DEBUG: Found {completed_runs_count} completed runs total")
+    
     sources_with_completed = set(
         DataSource.objects.filter(
             runs__status=IngestStatus.COMPLETED
         ).values_list('id', flat=True).distinct()
     )
+    logger.info(f"  DEBUG: Found {len(sources_with_completed)} unique source IDs with completed runs")
+    logger.info(f"  DEBUG: Source IDs with completed runs: {sorted(list(sources_with_completed))[:10]}")
+    logger.info(f"  DEBUG: Discovered source IDs: {sorted([s.id for s in all_available_sources])[:10]}")
     
     ingested_sources = [s for s in all_available_sources if s.id in sources_with_completed]
     missing_sources = [s for s in all_available_sources if s.id not in sources_with_completed]
