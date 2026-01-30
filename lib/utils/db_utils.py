@@ -410,18 +410,7 @@ class BatchedUpdates:
         canonical_names = list(unsaved_by_name.keys())
         created_clusters = EmployerCluster.objects.filter(canonical_name__in=canonical_names)
         
-        # ✅ FIX PART 1: Update cache using normalized key (consistent with lookups in get_or_queue_cluster)
-        # Previously used canonical_name as key, but lookups use normalize_canonical_name(canonical_name)
-        # This caused cache misses for different casing variations (e.g., "BBC" vs "bbc")
-        # leading to unsaved cluster instances being passed to bulk_update()
-        #
-        # ✅ FIX PART 2: Update the original unsaved instances in-place with DB values
-        # This ensures employers referencing these instances will have saved clusters
-        for cluster in created_clusters:
-            normalized_key = normalize_canonical_name(cluster.canonical_name)
-            self._cluster_cache[normalized_key] = cluster
-        
-        # ✅ FIX PART 3: Generate slugs for newly created clusters (bulk_create bypasses save())
+        # ✅ FIX PART 1: Generate slugs for newly created clusters (bulk_create bypasses save())
         # bulk_create doesn't call save(), so slugs aren't auto-generated
         # We need to explicitly generate them after creation
         clusters_needing_slugs = [c for c in created_clusters if not c.slug]
@@ -455,12 +444,19 @@ class BatchedUpdates:
                 ['slug'],
                 batch_size=self.batch_size
             )
+        
+        # ✅ FIX PART 2: Update cache and unsaved instances in ONE loop (performance optimization)
+        # - Update cache using normalized key (consistent with lookups in get_or_queue_cluster)
+        # - Update original unsaved instances in-place with DB values (employers hold references)
+        for cluster in created_clusters:
+            # Update cache with normalized key
+            normalized_key = normalize_canonical_name(cluster.canonical_name)
+            self._cluster_cache[normalized_key] = cluster
             
-            # Update original unsaved instance in-place (this is the KEY fix)
+            # Update original unsaved instance in-place
             # Employers hold references to these instances, so we need to copy the DB values into them
             unsaved_instance = unsaved_by_name.get(cluster.canonical_name)
             if unsaved_instance:
-                # Copy all fields from saved cluster to unsaved instance
                 unsaved_instance.pk = cluster.pk
                 unsaved_instance.id = cluster.id
                 for field in cluster._meta.fields:

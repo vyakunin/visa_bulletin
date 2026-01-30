@@ -400,6 +400,24 @@ if [[ "$LINK_PERCENTAGE" -lt 30 ]]; then
     log "WARNING: Low job title link percentage: $LINK_PERCENTAGE% (expected >30%)"
 fi
 
+# Test 5: Check employer cluster slugs (required for employer directory)
+log "Test 5: Checking employer cluster slugs..."
+TOTAL_CLUSTERS=$(psql -h localhost -U "$DB_USER" -d "$INACTIVE_DB" -t -c \
+    "SELECT COUNT(*) FROM employer_cluster;" | tr -d ' ')
+CLUSTERS_WITH_SLUGS=$(psql -h localhost -U "$DB_USER" -d "$INACTIVE_DB" -t -c \
+    "SELECT COUNT(*) FROM employer_cluster WHERE slug IS NOT NULL;" | tr -d ' ')
+
+log "Employer clusters: $TOTAL_CLUSTERS total, $CLUSTERS_WITH_SLUGS with slugs"
+if [[ "$TOTAL_CLUSTERS" -gt 0 ]]; then
+    SLUG_PERCENTAGE=$((CLUSTERS_WITH_SLUGS * 100 / TOTAL_CLUSTERS))
+    log "Slug coverage: $SLUG_PERCENTAGE%"
+    if [[ "$SLUG_PERCENTAGE" -lt 99 ]]; then
+        log "ERROR: Too many employer clusters without slugs: $((TOTAL_CLUSTERS - CLUSTERS_WITH_SLUGS)) missing"
+        log "       Employer directory will show incomplete data"
+        SMOKE_TEST_PASSED=false
+    fi
+fi
+
 if [[ "$SMOKE_TEST_PASSED" != "true" ]]; then
     log "ERROR: Smoke tests failed. Aborting swap."
     exit 1

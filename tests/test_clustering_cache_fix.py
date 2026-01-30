@@ -159,6 +159,72 @@ class TestClusteringCacheBugFix(TestCase):
         ).count()
         self.assertEqual(cluster_count, 1, 
             "Should have created only one cluster despite different casings")
+    
+    def test_slugs_generated_during_flush_clusters(self):
+        """
+        Test that slugs are generated for clusters created via flush_clusters().
+        
+        bulk_create() bypasses save(), so slugs aren't auto-generated.
+        flush_clusters() must explicitly generate slugs after bulk_create.
+        
+        This is critical for the employer directory view which filters by
+        slug__isnull=False - clusters without slugs won't appear.
+        """
+        batched = BatchedUpdates(batch_size=1000, dry_run=False)
+        
+        # Queue multiple clusters
+        cluster1 = batched.get_or_queue_cluster("ACME CORPORATION")
+        cluster2 = batched.get_or_queue_cluster("BETA INDUSTRIES")
+        cluster3 = batched.get_or_queue_cluster("GAMMA TECHNOLOGIES")
+        
+        # Flush to create clusters
+        batched.flush_clusters()
+        
+        # Reload from database to verify slugs were saved
+        cluster1_db = EmployerCluster.objects.get(canonical_name="ACME CORPORATION")
+        cluster2_db = EmployerCluster.objects.get(canonical_name="BETA INDUSTRIES")
+        cluster3_db = EmployerCluster.objects.get(canonical_name="GAMMA TECHNOLOGIES")
+        
+        # All clusters should have slugs
+        self.assertIsNotNone(cluster1_db.slug, 
+            "BUG: Cluster created via flush_clusters() has no slug. "
+            "Employer directory will not show this employer.")
+        self.assertIsNotNone(cluster2_db.slug,
+            "BUG: Cluster created via flush_clusters() has no slug.")
+        self.assertIsNotNone(cluster3_db.slug,
+            "BUG: Cluster created via flush_clusters() has no slug.")
+        
+        # Slugs should be properly formatted
+        self.assertEqual(cluster1_db.slug, "acme-corporation")
+        self.assertEqual(cluster2_db.slug, "beta-industries")
+        self.assertEqual(cluster3_db.slug, "gamma-technologies")
+    
+    def test_unsaved_instances_updated_with_slugs(self):
+        """
+        Test that original unsaved instances are updated with slugs after flush.
+        
+        When employers hold references to unsaved cluster instances, those
+        instances must be updated in-place with the saved values including slugs.
+        """
+        batched = BatchedUpdates(batch_size=1000, dry_run=False)
+        
+        # Get unsaved cluster instance
+        cluster = batched.get_or_queue_cluster("DELTA SYSTEMS")
+        
+        # Before flush: no pk, no slug
+        self.assertIsNone(cluster.pk)
+        self.assertIsNone(cluster.slug)
+        
+        # Flush to create cluster
+        batched.flush_clusters()
+        
+        # After flush: the SAME instance should have pk AND slug
+        # (not just a new instance in the cache)
+        self.assertIsNotNone(cluster.pk, 
+            "Original instance should have pk after flush")
+        self.assertIsNotNone(cluster.slug,
+            "Original instance should have slug after flush")
+        self.assertEqual(cluster.slug, "delta-systems")
 
 
 if __name__ == '__main__':
