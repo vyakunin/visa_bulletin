@@ -75,7 +75,8 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     'testserver',  # For Django tests
-    '3.227.71.176',  # AWS Lightsail static IP
+    '3.227.71.176',  # AWS Lightsail static IP (old production)
+    '44.209.204.255',  # AWS Lightsail static IP (new 2GB instance)
     'visa-bulletin.us',
     'www.visa-bulletin.us',
 ]
