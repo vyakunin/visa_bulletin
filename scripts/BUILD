@@ -101,6 +101,48 @@ py_binary(
 )
 
 py_binary(
+    name = "test_url_discovery",
+    srcs = ["test_url_discovery.py"],
+    main = "test_url_discovery.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:dol_lca",
+        "//lib/ingest/plugins:dol_perm",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "clean_bad_datasources",
+    srcs = ["clean_bad_datasources.py"],
+    main = "clean_bad_datasources.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models/ingest:data_source",
+        "//models/ingest:ingest_run",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "benchmark_db_ingest",
     srcs = ["benchmark_db_ingest.py"],
     main = "benchmark_db_ingest.py",
