@@ -186,6 +186,26 @@ py_binary(
     },
 )
 
+py_binary(
+    name = "import_visa_bulletin_data",
+    srcs = ["import_visa_bulletin_data.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
 # investigate_salary_issues target removed - functionality merged into //scripts/salary:validate_data
 # Use: bazel run //scripts/salary:validate_data
 
