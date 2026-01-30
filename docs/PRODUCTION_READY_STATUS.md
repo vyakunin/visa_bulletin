@@ -44,6 +44,8 @@ Server: gunicorn
 - Test: `curl -I http://localhost/` → 200 OK ✅
 
 ### 3. Data Completeness - VERIFIED ✅
+
+**DOL Salary Data:**
 ```
 Total Records: 1,543,123
 Fiscal Years: 2008-2025 (18 years)
@@ -61,6 +63,20 @@ Completed Runs: 34 successful
 - ✅ PERM: Comprehensive coverage (2008-2024)
 - ✅ FY 2007: Not available from DOL (no data files exist)
 
+**Visa Bulletin Data:**
+```
+Total Bulletins: 284
+Visa Cutoff Dates: 26,751
+Date Range: 2001-12 to 2025-12 (24 years)
+```
+
+**Coverage:**
+- ✅ All historical visa bulletins from travel.state.gov
+- ✅ Family-Sponsored categories (F1, F2A, F2B, F3, F4)
+- ✅ Employment-Based categories (EB1, EB2, EB3, EB4, EB5)
+- ✅ Both Final Action and Filing dates
+- ✅ All countries (China, India, Mexico, Philippines, Other)
+
 ### 4. Automated Refresh - READY ✅
 **Features Implemented:**
 - Content hashing (SHA256) for duplicate detection
@@ -68,11 +84,20 @@ Completed Runs: 34 successful
 - Pre-built binaries (no Bazel JVM overhead)
 - Blue-green database support
 - Cron infrastructure configured
+- **Visa bulletin + DOL data** refresh automatically with `--all-domains`
+
+**What Gets Refreshed:**
+- ✅ Visa Bulletin: New monthly bulletins from travel.state.gov
+- ✅ DOL LCA: Quarterly H-1B/H-1B1/E-3 data
+- ✅ DOL PERM: Quarterly permanent labor certification data
+- ✅ Clustering: Job titles and employer names
+- ✅ Job title links: Automatic URL generation
 
 **Test:**
 ```bash
 cd /opt/visa_bulletin
 ./bazel-bin/scripts/ingest/run_pipeline check-completeness --domain dol
+./bazel-bin/scripts/ingest/run_pipeline check-completeness --domain visa_bulletin
 # Result: ✅ All available sources ingested
 ```
 
@@ -163,6 +188,25 @@ cd /opt/visa_bulletin
 #  - Updates statistics
 ```
 
+## Initial Data Bootstrap
+
+**New VM Setup Process:**
+1. ✅ Run `./scripts/setup_new_instance.sh` (system setup)
+2. ✅ Run `./scripts/cron/build_all.sh` (pre-build Bazel binaries)
+3. ✅ Run `./scripts/bootstrap_initial_data.sh` (load initial data)
+
+**What `bootstrap_initial_data.sh` does:**
+- Runs Django migrations
+- Discovers and ingests all visa bulletin data (~288 bulletins)
+- Discovers DOL sources (ready for ingest)
+- Takes ~5 minutes for visa bulletin data
+
+**Automated Refresh:**
+- Weekly cron: `scripts/cron/refresh_data.sh`
+- Refreshes ALL data: visa bulletins + DOL salary data
+- Blue-green deployment (zero downtime)
+- Content hash deduplication prevents re-ingesting same files
+
 ## Files Modified/Created
 
 ### Source Code Fixes
@@ -171,6 +215,8 @@ cd /opt/visa_bulletin
 - `models/ingest/data_source.py` - Added content_hash field
 - `lib/utils/http_utils.py` - Added compute_file_hash()
 - `lib/ingest/base.py` - Compute hash after download
+- `webapp/templates/webapp/dashboard.html` - Removed internal developer message
+- `django_config/settings.py` - Added new instance IP to ALLOWED_HOSTS
 
 ### Configuration
 - `deployment/systemd/visa-bulletin-web.service` - Production gunicorn service
@@ -178,14 +224,18 @@ cd /opt/visa_bulletin
 - `.env` on instance: Changed DB_HOST from host.docker.internal to localhost
 
 ### Scripts
+- `scripts/bootstrap_initial_data.sh` - **NEW**: Initial data loading for new VMs
+- `scripts/import_visa_bulletin_data.py` - Import visa bulletin from CSV (migration tool)
 - `scripts/clean_bad_datasources.py` - Cleanup malformed URLs
 - `scripts/backfill_content_hashes.py` - Backfill hashes for existing files
 - `scripts/start_dev_server.sh` - Dev server helper (NOT for production)
+- `scripts/setup_new_instance.sh` - Updated to install gunicorn and create systemd service
+- `scripts/cron/refresh_data.sh` - Updated header to document visa bulletin refresh
 
 ### Documentation
 - `docs/DATA_STATUS.md` - Comprehensive data coverage
-- `docs/deployment/NEW_INSTANCE_SETUP.md` - Updated with scenarios
-- `docs/DEPLOYMENT_COMPLETE.md` - Deployment summary
+- `docs/deployment/NEW_INSTANCE_SETUP.md` - Updated with systemd + production setup
+- `docs/DEPLOYMENT_COMPLETE.md` - Deployment summary (superseded by this file)
 - `docs/PRODUCTION_READY_STATUS.md` - This file
 
 ## Production Cutover Plan

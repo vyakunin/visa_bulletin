@@ -2,7 +2,12 @@
 # scripts/cron/refresh_data.sh
 # Automated blue-green database refresh with memory optimization
 #
-# This script uses pre-built binaries from bazel-bin/ when available to avoid
+# This script refreshes ALL data sources:
+#   - Visa Bulletin data (travel.state.gov)
+#   - DOL LCA salary data (H-1B, H-1B1, E-3)
+#   - DOL PERM salary data (permanent labor certification)
+#
+# Uses pre-built binaries from bazel-bin/ when available to avoid
 # Bazel JVM memory overhead (~400MB). Falls back to `bazel run` if binaries missing.
 #
 # PREREQUISITES (for low-memory mode):
