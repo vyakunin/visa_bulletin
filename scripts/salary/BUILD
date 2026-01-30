@@ -1278,25 +1278,3 @@ py_binary(
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
 )
-
-py_binary(
-    name = "populate_missing_slugs",
-    srcs = ["populate_missing_slugs.py"],
-    main = "populate_missing_slugs.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//lib/utils:logging_utils",
-        "//models:salary",
-        "//models:job_title",
-        "//django_config:settings",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),
-    ],
-    python_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-)
