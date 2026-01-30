@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 from django.db import IntegrityError
 
@@ -30,6 +30,7 @@ from lib.parsing.salary.db_importer import (
 )
 from lib.utils.data_source_utils import get_fiscal_year_from_datasource
 from lib.utils.http_utils import download_file, get_workspace_dir, fetch_page
+from lib.utils.location_utils import normalize_state_code
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +106,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
             matches = re.findall(pattern, html, re.IGNORECASE)
             
             for match in matches:
-                if match.startswith('http'):
-                    url = match
-                else:
-                    url = f"{base_url}/{match.lstrip('/')}"
+                url = urljoin(base_url, match)
                 
                 fiscal_year_match = re.search(r'FY(\d{4})', match, re.IGNORECASE)
                 if fiscal_year_match:
@@ -244,30 +242,37 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         
         employer_name = employer_name_raw.strip()
         employer_city = get_column_value(record, column_mappings['employer_city']) or ''
-        employer_state = get_column_value(record, column_mappings['employer_state']) or ''
+        employer_state_raw = get_column_value(record, column_mappings['employer_state']) or ''
+        employer_state = normalize_state_code(employer_state_raw)
         
         employer_key = (Employer.normalize_name(employer_name), employer_city, employer_state)
         self._load_employer_cache()
 
         if employer_key not in self._employer_cache:
-            try:
-                employer = Employer.objects.create(
-                    name=employer_name,
-                    name_normalized=employer_key[0],
-                    city=employer_key[1],
-                    state=employer_key[2],
-                )
-            except IntegrityError:
-                logger.error(
-                    "Employer insert failed for %s; falling back to lookup.",
-                    employer_key,
-                    exc_info=True,
-                )
-                employer = Employer.objects.get(
-                    name_normalized=employer_key[0],
-                    city=employer_key[1],
-                    state=employer_key[2],
-                )
+            employer = Employer.objects.filter(
+                name_normalized=employer_key[0],
+                city=employer_key[1],
+                state=employer_key[2],
+            ).first()
+            if not employer:
+                try:
+                    employer = Employer.objects.create(
+                        name=employer_name,
+                        name_normalized=employer_key[0],
+                        city=employer_key[1],
+                        state=employer_key[2],
+                    )
+                except IntegrityError:
+                    logger.error(
+                        "Employer insert failed for %s; falling back to lookup.",
+                        employer_key,
+                        exc_info=True,
+                    )
+                    employer = Employer.objects.get(
+                        name_normalized=employer_key[0],
+                        city=employer_key[1],
+                        state=employer_key[2],
+                    )
 
             # Assign to cluster (skip during re-import for performance)
             if not self.skip_clustering and not employer.canonical_cluster:

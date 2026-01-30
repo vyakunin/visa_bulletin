@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Iterator
 from decimal import Decimal
+from urllib.parse import urljoin
 
 from django.db import IntegrityError
 
@@ -38,6 +39,7 @@ from lib.parsing.salary.wage_unit_correction import (
 )
 from lib.parsing.salary.file_detection import WORKSITE_COLUMN_MAPPINGS
 from lib.utils.http_utils import download_file, get_workspace_dir, fetch_page
+from lib.utils.location_utils import normalize_state_code
 from lib.utils.data_source_utils import get_fiscal_year_from_datasource
 from lib.utils.logging_utils import ScriptLogger
 
@@ -146,11 +148,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
                 if 'worksite' in match.lower():
                     continue
                 
-                # Make absolute URL if relative
-                if match.startswith('http'):
-                    url = match
-                else:
-                    url = f"{base_url}/{match.lstrip('/')}"
+                url = urljoin(base_url, match)
                 
                 # Extract fiscal year from filename
                 fiscal_year_match = re.search(r'FY(\d{4})', match, re.IGNORECASE)
@@ -174,11 +172,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             worksite_matches = re.findall(worksite_pattern, html, re.IGNORECASE)
             
             for match in worksite_matches:
-                # Make absolute URL if relative
-                if match.startswith('http'):
-                    url = match
-                else:
-                    url = f"{base_url}/{match.lstrip('/')}"
+                url = urljoin(base_url, match)
                 
                 # Extract fiscal year from filename
                 fiscal_year_match = re.search(r'FY(\d{4})', match, re.IGNORECASE)
@@ -333,8 +327,11 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
                 self._rejection_tracker.record_rejection('whitelist_filtered', case_number_value)
             return None
         
-        # Route I-200 records to WorksiteRecord
-        if case_number_value.startswith('I-200'):
+        source_file = record.get('_source_file', '')
+        is_worksite_file = 'worksite' in source_file.lower()
+
+        # Route worksite files or I-200 records to WorksiteRecord
+        if is_worksite_file or case_number_value.startswith('I-200'):
             if self.force_salary_record:
                 return self._transform_to_salary_record(record, column_mappings)
             if self.skip_worksite:
@@ -427,31 +424,38 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         
         employer_name = employer_name_raw.strip()
         employer_city = get_column_value(record, column_mappings['employer_city']) or ''
-        employer_state = get_column_value(record, column_mappings['employer_state']) or ''
+        employer_state_raw = get_column_value(record, column_mappings['employer_state']) or ''
+        employer_state = normalize_state_code(employer_state_raw)
         
         # Get or create employer (with caching)
         employer_key = (Employer.normalize_name(employer_name), employer_city, employer_state)
         self._load_employer_cache()
 
         if employer_key not in self._employer_cache:
-            try:
-                employer = Employer.objects.create(
-                    name=employer_name,
-                    name_normalized=employer_key[0],
-                    city=employer_key[1],
-                    state=employer_key[2],
-                )
-            except IntegrityError:
-                logger.error(
-                    "Employer insert failed for %s; falling back to lookup.",
-                    employer_key,
-                    exc_info=True,
-                )
-                employer = Employer.objects.get(
-                    name_normalized=employer_key[0],
-                    city=employer_key[1],
-                    state=employer_key[2],
-                )
+            employer = Employer.objects.filter(
+                name_normalized=employer_key[0],
+                city=employer_key[1],
+                state=employer_key[2],
+            ).first()
+            if not employer:
+                try:
+                    employer = Employer.objects.create(
+                        name=employer_name,
+                        name_normalized=employer_key[0],
+                        city=employer_key[1],
+                        state=employer_key[2],
+                    )
+                except IntegrityError:
+                    logger.error(
+                        "Employer insert failed for %s; falling back to lookup.",
+                        employer_key,
+                        exc_info=True,
+                    )
+                    employer = Employer.objects.get(
+                        name_normalized=employer_key[0],
+                        city=employer_key[1],
+                        state=employer_key[2],
+                    )
 
             # Assign to cluster only if employer is new or doesn't have a cluster yet
             # Skip clustering for existing employers with clusters (much faster for re-imports)
@@ -571,7 +575,8 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         
         # Parse worksite location fields (using LCA mappings - works for both)
         worksite_city = get_column_value(record, column_mappings['worksite_city']) or ''
-        worksite_state = get_column_value(record, column_mappings['worksite_state']) or ''
+        worksite_state_raw = get_column_value(record, column_mappings['worksite_state']) or ''
+        worksite_state = normalize_state_code(worksite_state_raw)
         
         # Try to get worksite_zip if available (LCA_COLUMN_MAPPINGS doesn't include zip, but files may have it)
         # Use WORKSITE_COLUMN_MAPPINGS for zip column names
