@@ -24,6 +24,10 @@ from lib.utils.logging_utils import ScriptLogger
 
 logger = ScriptLogger(__file__)
 
+# Salary bounds for filtering out absurd values (same as job_title_stats.py)
+MIN_REASONABLE_SALARY = 30000  # $30k/year minimum
+MAX_REASONABLE_SALARY = 1000000  # $1M/year maximum
+
 
 def main():
     parser = argparse.ArgumentParser(description='Update JobTitleCluster aggregated statistics')
@@ -51,7 +55,8 @@ def main():
             stats = SalaryRecord.objects.filter(
                 job_title_entity__in=job_titles,
                 wage_annual__isnull=False,
-                wage_annual__gt=0
+                wage_annual__gte=MIN_REASONABLE_SALARY,
+                wage_annual__lte=MAX_REASONABLE_SALARY
             ).aggregate(
                 total=Count('id'),
                 avg_sal=Avg('wage_annual')
@@ -78,11 +83,12 @@ def main():
         # Get all job titles in this cluster
         job_titles = JobTitle.objects.filter(canonical_cluster=cluster)
         
-        # Calculate statistics from salary records
+        # Calculate statistics from salary records (with reasonable salary bounds)
         stats = SalaryRecord.objects.filter(
             job_title_entity__in=job_titles,
             wage_annual__isnull=False,
-            wage_annual__gt=0
+            wage_annual__gte=MIN_REASONABLE_SALARY,
+            wage_annual__lte=MAX_REASONABLE_SALARY
         ).aggregate(
             total=Count('id'),
             avg_sal=Avg('wage_annual')
