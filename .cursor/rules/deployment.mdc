@@ -32,6 +32,93 @@ alwaysApply: true
 - Wrong instance = data corruption or service disruption
 - Always be explicit when making changes
 
+## Rule: Never Use Development Scripts on Production
+
+**🚨 CRITICAL: NEVER use development scripts like `restart_server.sh` on production instances.**
+
+**Development vs Production:**
+
+**Development (local machine):**
+- ✅ Use `./scripts/restart_server.sh` (manages Django runserver)
+- ✅ Run `bazel run //:runserver` directly
+- ✅ Kill processes with `pkill -f runserver`
+- ✅ Uses Django development server (runserver)
+
+**Production (deployed instances):**
+- ✅ Use Docker Compose to manage services
+- ✅ Use `docker-compose restart` for specific environment
+- ❌ **NEVER** use `restart_server.sh` (breaks production)
+- ❌ **NEVER** kill gunicorn processes manually
+- ❌ **NEVER** run `bazel run //:runserver` on production
+- Uses Gunicorn in Docker containers
+
+**How to properly restart/clear cache on production:**
+
+### 1. Check which environment is active (blue or green)
+```bash
+# Check nginx config to see which port is active
+ssh production "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
+# Port 8000 = blue, Port 8001 = green
+
+# Or check running containers
+ssh production "docker ps --format '{{.Names}}'"
+```
+
+### 2. Restart the active environment
+```bash
+# If blue is active (port 8000):
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
+
+# If green is active (port 8001):
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
+```
+
+### 3. Verify service is healthy
+```bash
+# Check container status
+ssh production "docker ps | grep visa_bulletin"
+
+# Check health
+ssh production "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
+
+# Test the endpoint
+curl -I http://production-ip/
+
+# Check logs if issues
+ssh production "docker logs visa_bulletin_web_blue --tail 50"
+```
+
+### If containers aren't running (like I just broke):
+```bash
+# Start the blue environment
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
+
+# Monitor startup
+ssh production "docker logs -f visa_bulletin_web_blue"
+```
+
+### Cache clearing:
+- **Django cache:** Automatically cleared on container restart
+- **Browser cache:** Users may need hard refresh (Ctrl+Shift+R)
+- **Nginx cache:** Not used in current setup, but if configured: `nginx -s reload`
+
+**Why this matters:**
+- Development server (runserver) is single-threaded, not production-ready
+- Gunicorn in Docker provides proper process management, logging, and resource limits
+- Docker restart is graceful and maintains service availability
+- restart_server.sh assumes bazel/runserver environment, not Docker
+
+**Common mistakes:**
+- ❌ Using `restart_server.sh` on production → Breaks service
+- ❌ Running `bazel run //:runserver` on production → Wrong server type
+- ❌ Killing gunicorn manually → Docker restart policy will fight you
+- ❌ Not checking which environment is active → Restart wrong container
+
+**Rationale:**
+- Clear separation between dev and production workflows
+- Prevents production outages from using dev tools
+- Docker provides proper service management (health checks, restart policies, resource limits)
+
 ## Pre-Deployment Checklist (MANDATORY)
 
 **Before ANY version tag or deployment, verify:**
