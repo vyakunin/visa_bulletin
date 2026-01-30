@@ -270,6 +270,70 @@ ssh lightsail "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.te
 # Monitor for 10-15 minutes for errors
 ```
 
+## Rule: Always Verify and Update Pipeline Scripts When Fixing Bugs
+
+**🚨 CRITICAL: When fixing ANY bug in data processing, ALWAYS check if pipeline/refresh/setup scripts need to be updated.**
+
+**Why:**
+- Bug fixes must not only fix current data but also prevent future occurrences
+- Automated pipelines must include the fix to prevent regression
+- New deployments must work correctly from the start
+- Reduces operational burden (don't manually fix same issue repeatedly)
+
+**After fixing a bug, ALWAYS check these scripts:**
+
+1. **`scripts/cron/refresh_data.sh`** - Does it run the fixed code?
+   - If bug was in a script, does refresh_data.sh call it?
+   - If bug was in function logic, is it called during refresh?
+   - Check lines 315-328 for post-processing steps
+
+2. **`scripts/cron/build_all.sh`** - Does it build the fixed binary?
+   - Add new scripts to REQUIRED_BINARIES if needed
+
+3. **Setup/bootstrap scripts** - Do they initialize correctly?
+   - `scripts/setup_new_instance.sh`
+   - `scripts/bootstrap_initial_data.sh`
+
+**Decision tree:**
+```
+Bug fixed in a script → Check if refresh_data.sh runs it → If not, add it
+Bug fixed in a library → Check callers are in pipeline → Verify integration
+Bug requires data fix → Run fix script on production → Schedule in pipeline
+```
+
+**✅ GOOD - Complete fix workflow:**
+```
+1. Fix the bug in source code
+2. Test fix locally
+3. Check: Is fixed code/script called in refresh_data.sh?
+4. If NO: Add it to the pipeline
+5. If YES: Verify the fix will apply to future runs
+6. Run fix on production to correct existing data
+7. Verify fix prevents future occurrences
+8. Commit all changes together
+```
+
+**❌ BAD - Incomplete fix:**
+```
+1. Fix the bug in source code
+2. Manually run fix on production
+3. Commit and celebrate
+[Bug returns on next refresh because pipeline wasn't updated]
+```
+
+**Example: Job Title Clustering Bug Fix**
+- Bug: cluster_job_titles.py only matched exact strings, missing 86% of records
+- Fix: Updated script to use normalized matching
+- Pipeline check: ✅ refresh_data.sh already calls cluster_job_titles (line 322)
+- Action needed: Run script once to fix existing data, future runs will work
+- Result: Both current data and future data are correct
+
+**Rationale:**
+- Prevents bug from reoccurring in future pipeline runs
+- Reduces operational burden (no manual fixes after each refresh)
+- Ensures new deployments work correctly
+- Makes fixes persistent and maintainable
+
 ## Rule: Sync Setup Scripts When Fixing Data Ingestion Issues
 
 **CRITICAL: When you fix data ingestion, processing, or database issues, you MUST update the corresponding setup scripts immediately.**

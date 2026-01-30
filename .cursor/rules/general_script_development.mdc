@@ -136,6 +136,108 @@ tail -40 /tmp/validate.log
 2. Monitor: `tail -f /tmp/log.log`
 3. View last N lines: `tail -N /tmp/log.log` (on the log file, NOT in the pipe)
 
+## 🚨 CRITICAL: "Monitor" Means Active Analysis and Action, Not Passive Reporting
+
+**When user asks to "monitor" something, they mean: actively check, analyze, and fix issues - NOT just report stats periodically.**
+
+**❌ BAD - Passive monitoring script:**
+```bash
+# ❌ This just reports stats in a loop - doesn't analyze or act
+while true; do
+    echo "=== Check $((++i)) ==="
+    tail -5 /tmp/log.log
+    free -h | grep Mem
+    sleep 30
+done
+```
+
+**✅ GOOD - Active monitoring with analysis and action:**
+```bash
+# Check stats at reasonable intervals
+ssh remote "tail -50 /tmp/cluster.log"
+
+# Analyze: Is progress reasonable?
+# - Script stuck? (no new output in 2 minutes)
+# - Memory issues? (swap usage increasing)
+# - Errors? (ERROR/Exception in logs)
+
+# Act based on analysis:
+# - If stuck → investigate, kill if needed, fix issue
+# - If memory spike → check query efficiency, add limits
+# - If errors → read full error, fix root cause
+# - If healthy → continue with longer intervals
+
+# Next check in 1-2 minutes (based on expected runtime)
+sleep 120
+ssh remote "tail -50 /tmp/cluster.log"
+
+# Repeat: check → analyze → act → adjust interval
+```
+
+**What "monitor" means:**
+- ✅ **Check periodically** at reasonable intervals (not every second)
+- ✅ **Analyze metrics** - Is progress normal? Any issues?
+- ✅ **Take action** - Fix issues immediately when found
+- ✅ **Adjust intervals** - Check more/less frequently based on what you see
+- ✅ **Stop when done** - Process completed or failed
+
+**What "monitor" does NOT mean:**
+- ❌ Write a loop that prints stats forever
+- ❌ Just report numbers without analysis
+- ❌ Wait for user to interpret and act
+- ❌ Fixed intervals regardless of what's happening
+
+**Monitoring checklist:**
+1. **Check current state** - Read logs, check process status
+2. **Analyze** - Is progress normal? Expected rate? Any issues?
+3. **Act if needed:**
+   - Issue found → Fix it immediately
+   - Memory spike → Investigate and optimize
+   - Process stuck → Kill and restart with fixes
+   - Errors → Read full error, fix root cause
+4. **Determine next check** - Based on:
+   - Expected runtime (longer scripts = longer intervals)
+   - Current health (issues = check more often)
+   - Phase (initialization = frequent, steady state = less frequent)
+5. **Repeat until complete**
+
+**Example - Good monitoring:**
+```bash
+# Initial check (frequent - startup is critical)
+ssh remote "tail -20 /tmp/process.log"
+# Analysis: Started correctly? Any immediate errors?
+
+sleep 30  # Short interval for startup
+
+# Second check
+ssh remote "tail -20 /tmp/process.log && free -h"
+# Analysis: Making progress? Memory stable?
+
+# If healthy, increase interval
+sleep 120  # 2 minutes
+
+# Third check
+ssh remote "tail -30 /tmp/process.log && free -h"
+# Analysis: Progress rate? Any warnings?
+
+# If stuck or issues:
+if grep -q "ERROR" /tmp/process.log; then
+    # ACT: Read full error and fix
+    ssh remote "grep -A 20 'ERROR' /tmp/process.log"
+    # Fix the issue...
+    # Restart if needed
+fi
+
+# Continue until completion
+```
+
+**Rationale:**
+- User wants you to be proactive and fix issues
+- Passive monitoring wastes time (user has to interpret and instruct)
+- Active monitoring catches issues early
+- Intelligent intervals optimize time (not too frequent, not too sparse)
+- Taking action immediately prevents cascading failures
+
 ## Script Naming Conventions
 
 **Scripts that evaluate, analyze, or test should NOT be named `test_*.py` to avoid confusion with unit tests.**
