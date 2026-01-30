@@ -355,9 +355,10 @@ def _build_employer_profile_charts(stats, employer_name):
     
     # Chart 1: Salary Distribution Histogram
     if stats.get('salary_histogram'):
-        charts['salary_histogram'] = _build_salary_histogram(
+        charts['salary_histogram'] = build_salary_histogram_chart(
             stats['salary_histogram'],
-            employer_name,
+            f"Salary Distribution - {employer_name}",
+            label="All Filings",
         )
     
     # Chart 2: Filings by State (Bar Chart)
