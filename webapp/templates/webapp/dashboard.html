@@ -95,12 +95,11 @@
                     <li><strong>Action Type:</strong> {{ action_type_display }}</li>
                 </ul>
                 <hr>
-                <p class="mb-1"><strong>Suggestions:</strong></p>
+                <p class="mb-1"><strong>Try these options:</strong></p>
                 <ul class="mb-0">
-                    <li>Try selecting "Other Countries" for the country filter</li>
+                    <li>Select "Other Countries" for the country filter</li>
                     <li>Try a different visa category</li>
-                    <li>Some older bulletins may not have data for all categories</li>
-                    <li>Make sure you have imported bulletin data: <code>bazel run //:refresh_data -- --save-to-db</code></li>
+                    <li>Note: Some older bulletins may not have data for all categories</li>
                 </ul>
             </div>
         {% endif %}
