@@ -1,5 +1,14 @@
 # AWS Lightsail Deployment - Step-by-Step Guide
 
+> **⚠️ LEGACY DOCUMENT:** This beginner-friendly guide is outdated. For current deployment instructions, see:
+> - **NEW_INSTANCE_SETUP.md** - Living document for production setup
+> - **ROLLOUT_FLOW.md** - Complete deployment process
+>
+> Key differences from this guide:
+> - Use **4GB RAM instance** (not $5 plan) - required for Bazel
+> - Use **Bazel** for all operations (not `docker-compose exec python`)
+> - Use **blue-green deployment** with `refresh_data.sh`
+
 ## 🚀 Your Deployment Plan (40 minutes)
 
 Follow these steps in order. I'll guide you through each one.

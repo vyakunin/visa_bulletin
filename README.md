@@ -340,33 +340,39 @@ Old standalone scripts may still exist in `scripts/bulletin/` and `scripts/salar
 
 ### Local vs Production Architecture
 
-This project uses **different tooling** for local development vs production deployment:
-
-**Local Development (Your Machine):**
-- ✅ **Bazel** for building, testing, and running
+**Local Development:**
+- ✅ Bazel for building, testing, and running
+- ✅ `bazel run //:runserver` for development
 - ✅ Hermetic builds with caching
-- ✅ Fast iteration with `bazel run //:runserver`
-- ✅ Reproducible test environment
-- 💻 **Why**: Bazel's toolchain (~500MB) and build cache provide excellent DX
 
-**Production (AWS Lightsail $5/month):**
-- ✅ **Raw Python** with venv
-- ✅ Gunicorn as WSGI server
-- ✅ Direct `python` commands
-- ✅ Minimal resource footprint
-- 🚀 **Why**: Fits 1GB RAM constraint; Bazel requires ~1-2GB RAM for builds
+**Production (AWS Lightsail 2GB):**
+- ✅ Docker + Gunicorn
+- ✅ PostgreSQL with blue-green deployment
+- ✅ Pre-built Bazel binaries (reduced memory)
+- ✅ Nginx reverse proxy with SSL
 
-**Quick Deploy:**
+### New Instance Setup
+
 ```bash
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
+# Clone and run automated setup
+git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
+cd /opt/visa_bulletin
+./scripts/setup_new_instance.sh
 ```
 
-**Full deployment guide:** See [deployment/README.md](deployment/README.md) for:
-- AWS Lightsail setup ($5/month)
-- Nginx reverse proxy
-- SSL/HTTPS with Let's Encrypt
-- Systemd service management
-- Daily cron job for data refresh
+The setup script configures:
+- Swap (2GB, swappiness=60)
+- Docker and PostgreSQL
+- Memory limits for Bazel and PostgreSQL
+- Monitoring tools (sysstat, atop)
+
+### Zero-Downtime Deployment
+
+```bash
+./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
+```
+
+**Full deployment guide:** See [deployment/README.md](deployment/README.md) and [docs/deployment/NEW_INSTANCE_SETUP.md](docs/deployment/NEW_INSTANCE_SETUP.md)
 
 ## Project Structure
 

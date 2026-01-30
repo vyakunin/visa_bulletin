@@ -1,0 +1,1 @@
+2025-12-28 16:18:40 - {"timestamp": "2025-12-28T16:18:40.071912", "script": "/private/var/tmp/_bazel_vyakunin/c11e7c4a7a663c4f29287067808714fc/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/scripts/salary/reset_clustering.runfiles/_main/scripts/salary/reset_clustering.py", "args": {"force": true, "keep_reviews": false}, "context": "Resetting employer clustering"}

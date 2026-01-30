@@ -1,19 +1,15 @@
-# PostgreSQL Setup and Discovery Guide
+# PostgreSQL Setup and Discovery Guide (Local Development)
 
-## PostgreSQL Physical Storage Location
+> **Note:** This guide is for **local macOS development**. For production PostgreSQL setup, see `deployment/NEW_INSTANCE_SETUP.md`.
 
-### Local (macOS with Homebrew)
+## PostgreSQL Physical Storage Location (macOS)
+
 - **Data Directory**: `/opt/homebrew/var/postgresql@15`
 - **Current Size**: ~8.2 GB (as of Jan 2026)
 - **Main Database**: 7.2 GB (OID 16384)
 - **Installed via**: Homebrew (`brew install postgresql@15`)
 
-### Production (AWS Lightsail)
-- **Data Directory**: `/var/lib/postgresql/14/main`
-- **Version**: PostgreSQL 14
-- **Status**: Installed but NOT currently used by app (app still uses SQLite)
-
-## How to Discover PostgreSQL Locally
+## How to Discover PostgreSQL (macOS)
 
 ### 1. Check if PostgreSQL is Running
 
@@ -218,10 +214,10 @@ brew services list | grep postgresql
 |--------|--------------|------------------------|
 | **Version** | PostgreSQL 15 | PostgreSQL 14 |
 | **Data Location** | `/opt/homebrew/var/postgresql@15` | `/var/lib/postgresql/14/main` |
-| **Status** | ✅ Running and used | ⚠️ Running but NOT used (app uses SQLite) |
-| **Database Size** | ~8.2 GB | N/A (not used) |
 | **Install Method** | Homebrew | APT package manager |
 | **Service Manager** | Homebrew Services | systemd |
+
+> **Note:** For production setup details, see `deployment/NEW_INSTANCE_SETUP.md`.
 
 ## Bazel Integration
 
@@ -248,21 +244,9 @@ bazel run //:check_migrations
 bazel run //:migrate
 ```
 
-## Next Steps: Migrating Production to PostgreSQL
+## Production Setup
 
-**Current State:**
-- ✅ Local development uses PostgreSQL (8.2 GB data)
-- ❌ Production still uses SQLite (6.2 MB data)
-- ⚠️ **CRITICAL**: Do NOT pull git changes that removed SQLite until production is migrated
-
-**Migration Plan:**
-1. Backup production SQLite database
-2. Export data from SQLite
-3. Configure production PostgreSQL credentials
-4. Import data to PostgreSQL
-5. Update production Docker environment variables
-6. Deploy new code that uses PostgreSQL
-7. Only then remove SQLite from git
-
-See `docs/deployment/POSTGRESQL_MIGRATION.md` (TODO) for detailed migration guide.
+Production uses PostgreSQL 14 on AWS Lightsail. For production setup details, see:
+- `deployment/NEW_INSTANCE_SETUP.md` - Instance setup including PostgreSQL
+- `DATA_REFRESH_STRATEGY.md` - Blue-green database architecture
 

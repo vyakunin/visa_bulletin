@@ -420,6 +420,41 @@ class BatchedUpdates:
         for cluster in created_clusters:
             normalized_key = normalize_canonical_name(cluster.canonical_name)
             self._cluster_cache[normalized_key] = cluster
+        
+        # ✅ FIX PART 3: Generate slugs for newly created clusters (bulk_create bypasses save())
+        # bulk_create doesn't call save(), so slugs aren't auto-generated
+        # We need to explicitly generate them after creation
+        clusters_needing_slugs = [c for c in created_clusters if not c.slug]
+        if clusters_needing_slugs:
+            from django.utils.text import slugify
+            
+            # Track used slugs to ensure uniqueness
+            used_slugs = set(
+                EmployerCluster.objects
+                .filter(slug__isnull=False)
+                .values_list('slug', flat=True)
+            )
+            
+            for cluster in clusters_needing_slugs:
+                if cluster.canonical_name:
+                    # Generate unique slug using same logic as model's generate_slug()
+                    base_slug = slugify(cluster.canonical_name)
+                    slug = base_slug
+                    counter = 1
+                    
+                    while slug in used_slugs:
+                        slug = f"{base_slug}-{counter}"
+                        counter += 1
+                    
+                    cluster.slug = slug
+                    used_slugs.add(slug)
+            
+            # Bulk update slugs
+            EmployerCluster.objects.bulk_update(
+                clusters_needing_slugs,
+                ['slug'],
+                batch_size=self.batch_size
+            )
             
             # Update original unsaved instance in-place (this is the KEY fix)
             # Employers hold references to these instances, so we need to copy the DB values into them

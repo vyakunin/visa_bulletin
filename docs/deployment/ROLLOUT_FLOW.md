@@ -80,7 +80,7 @@ source ~/.shrc && gh run list --workflow=docker-build-push.yml --limit 1
 #### Option A: Using deploy.sh (Recommended)
 
 ```bash
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.3
 ```
 
 This script:
@@ -154,7 +154,7 @@ If issues are detected:
 
 ```bash
 # Deploy previous version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.2
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.2
 
 # Or via GitHub Actions
 source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.2
@@ -216,7 +216,7 @@ git tag -a v1.0.1 -m "Hotfix: Fix critical bug X"
 git push origin v1.0.1
 
 # 3. Fast deploy
-./scripts/deploy.sh ~/ssh-key.pem v1.0.1
+./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.0.1
 
 # 4. Monitor closely
 ssh lightsail 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
@@ -233,7 +233,7 @@ git tag -a v1.1.0 -m "Release 1.1.0: User dashboard"
 git push origin v1.1.0
 
 # 3. Deploy during low traffic time
-./scripts/deploy.sh ~/ssh-key.pem v1.1.0
+./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.1.0
 
 # 4. Extended monitoring (30+ minutes)
 ```
@@ -242,7 +242,7 @@ git push origin v1.1.0
 
 ```bash
 # Deploy whatever is currently tagged as 'latest'
-./scripts/deploy.sh ~/ssh-key.pem latest
+./scripts/deploy-zero-downtime.sh ~/ssh-key.pem latest
 
 # Note: This is less traceable, use versions when possible
 ```
@@ -270,7 +270,7 @@ source ~/.shrc && act -W .github/workflows/docker-build-push.yml
 
 ```bash
 # Check deploy.sh output
-./scripts/deploy.sh ~/ssh-key.pem v1.2.3
+./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.3
 
 # Check SSH access
 ssh lightsail 'uptime'
@@ -283,7 +283,7 @@ ssh lightsail 'sudo docker ps'
 
 ```bash
 # Quick rollback
-./scripts/deploy.sh ~/ssh-key.pem v1.2.2
+./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.2
 
 # Or emergency rollback to systemd
 ssh lightsail 'sudo systemctl start visa-bulletin'
@@ -306,9 +306,8 @@ ssh lightsail 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml
 
 ## Additional Resources
 
-- **Docker Deployment Guide**: `DOCKER_DEPLOYMENT.md`
-- **Quick Reference**: `DOCKER_QUICKSTART.md`
-- **Deployment Scripts**: `scripts/deploy.sh`
+- **New Instance Setup**: `NEW_INSTANCE_SETUP.md`
+- **Deployment Scripts**: `scripts/deploy-zero-downtime.sh`
 - **GitHub Actions**: `.github/workflows/`
 
 ---

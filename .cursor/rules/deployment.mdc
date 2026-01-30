@@ -2,7 +2,35 @@
 alwaysApply: true
 ---
 
+---
+alwaysApply: true
+---
+
 # Deployment and Rollout Rules
+
+## Rule: Always Verify Target Instance Before SSH Commands
+
+**CRITICAL: NEVER blindly use 'lightsail' SSH alias. Always verify which instance you're targeting based on conversation context.**
+
+**When user mentions a specific IP or instance:**
+- ✅ Use the specific IP: `ssh ubuntu@44.209.204.255`
+- ✅ Verify with user: "Working with 44.209.204.255 (new 2GB instance), correct?"
+- ❌ Don't assume "lightsail" alias points to the instance being discussed
+
+**SSH aliases in ~/.ssh/config:**
+- `lightsail` or `lightsail-visa-bulletin` → May point to OLD production (3.227.71.176)
+- Always check context before using aliases
+
+**When debugging production issues:**
+- Ask user: "Which instance should I work with?"
+- Use explicit IPs in commands when context is ambiguous
+- Verify instance in first command before making changes
+
+**Rationale:**
+- Multiple instances exist (old prod, new instances, staging)
+- SSH aliases may be outdated or ambiguous
+- Wrong instance = data corruption or service disruption
+- Always be explicit when making changes
 
 ## Pre-Deployment Checklist (MANDATORY)
 
@@ -25,9 +53,9 @@ alwaysApply: true
 **Before any deployment or rollout, ask:**
 ```
 Do you want to tag this as a new version before deploying?
-  1. Yes, create new version tag (e.g., v1.2.3)
-  2. No, deploy current latest
-  3. Deploy specific existing version (specify which)
+ 1. Yes, create new version tag (e.g., v1.2.3)
+ 2. No, deploy current latest
+ 3. Deploy specific existing version (specify which)
 ```
 
 **Rationale:**
@@ -94,26 +122,26 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 **How It Works:**
 
 1. **Active Detection:**
-   - Script checks Nginx config to see which port is active
-   - Blue (8000) or Green (8001)
+ - Script checks Nginx config to see which port is active
+ - Blue (8000) or Green (8001)
 
 2. **Deploy to Inactive:**
-   - Pulls new image
-   - Starts containers in inactive environment
-   - Uses separate container names (no conflicts)
+ - Pulls new image
+ - Starts containers in inactive environment
+ - Uses separate container names (no conflicts)
 
 3. **Health Checks:**
-   - Waits up to 60 seconds for healthy status
-   - Rolls back if health checks fail
+ - Waits up to 60 seconds for healthy status
+ - Rolls back if health checks fail
 
 4. **Atomic Switch:**
-   - Updates Nginx proxy configuration
-   - Reloads Nginx (zero dropped connections)
-   - Traffic now flows to new version
+ - Updates Nginx proxy configuration
+ - Reloads Nginx (zero dropped connections)
+ - Traffic now flows to new version
 
 5. **Cleanup:**
-   - Stops old environment
-   - Frees resources
+ - Stops old environment
+ - Frees resources
 
 **Resource Usage:**
 - During deployment: 2x web containers (both running briefly)
@@ -157,8 +185,8 @@ If deployment fails or issues arise:
 ### Emergency Rollback (Docker → Systemd)
 ```bash
 ssh lightsail 'cd /opt/visa_bulletin && \
-  sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
-  sudo nginx -t && sudo systemctl reload nginx'
+ sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
+ sudo nginx -t && sudo systemctl reload nginx'
 ```
 
 ## Common Deployment Issues
@@ -167,7 +195,7 @@ ssh lightsail 'cd /opt/visa_bulletin && \
 
 **Symptoms:**
 ```
-ERROR: for web  'ContainerConfig'
+ERROR: for web 'ContainerConfig'
 KeyError: 'ContainerConfig'
 ```
 
@@ -241,3 +269,109 @@ ssh lightsail "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.te
 
 # Monitor for 10-15 minutes for errors
 ```
+
+## Rule: Sync Setup Scripts When Fixing Data Ingestion Issues
+
+**CRITICAL: When you fix data ingestion, processing, or database issues, you MUST update the corresponding setup scripts immediately.**
+
+**Why:**
+- New instances deployed from setup scripts must work correctly
+- Cron jobs must reflect latest ingestion logic
+- Bootstrap scripts must load data properly
+- Prevents regression when setting up new servers
+
+**When you fix ingestion/processing, update these files:**
+
+### 1. Setup Scripts
+- `scripts/setup_new_instance.sh` - Initial instance setup
+- `scripts/bootstrap_initial_data.sh` - Initial data loading
+
+**What to check/update:**
+- Environment variables needed for fix
+- Database initialization steps
+- Data loading commands
+- Migration requirements
+- Dependencies or packages needed
+
+### 2. Cron Job Scripts
+- `scripts/cron/refresh_data.sh` - Periodic data refresh
+- `deployment/cron/setup-ingest-cron.sh` - Cron schedule configuration
+
+**What to check/update:**
+- Ingestion command flags
+- Data source paths
+- Environment variables
+- Error handling
+- Retry logic
+
+### 3. Documentation
+- `docs/deployment/NEW_INSTANCE_SETUP.md` - Setup instructions
+- `docs/INGESTION_PLAYBOOK.md` - Data ingestion guide
+- `docs/DEPLOYMENT_COMPLETE.md` - Deployment checklist
+
+**What to check/update:**
+- Setup steps
+- Troubleshooting sections
+- Known issues
+- Configuration examples
+
+### Workflow When Fixing Ingestion Issues
+
+**✅ GOOD - Complete fix workflow:**
+```
+1. Identify and fix the ingestion issue in source code
+2. Test fix locally
+3. Update setup_new_instance.sh with any new requirements
+4. Update bootstrap_initial_data.sh if data loading changed
+5. Update refresh_data.sh if periodic refresh changed
+6. Update documentation with new steps/gotchas
+7. Test setup script changes (if possible)
+8. Commit all changes together
+```
+
+**❌ BAD - Incomplete fix:**
+```
+1. Fix ingestion issue in source code
+2. Commit and deploy
+[Setup scripts now outdated, new instances will fail]
+```
+
+### Common Scenarios and Required Updates
+
+**Scenario 1: Add new ingestion flag**
+- Update: `refresh_data.sh` (add flag to cron command)
+- Update: `bootstrap_initial_data.sh` (add flag to initial load)
+- Update: `INGESTION_PLAYBOOK.md` (document new flag)
+
+**Scenario 2: Add environment variable**
+- Update: `setup_new_instance.sh` (add to .env creation)
+- Update: `NEW_INSTANCE_SETUP.md` (document variable)
+
+**Scenario 3: Change data source paths**
+- Update: `bootstrap_initial_data.sh` (update paths)
+- Update: `refresh_data.sh` (update paths)
+
+**Scenario 4: Add database migration**
+- Update: `setup_new_instance.sh` (run migration)
+- Update: `NEW_INSTANCE_SETUP.md` (document migration)
+
+**Scenario 5: Fix salary data processing**
+- Update: `refresh_data.sh` (if processing logic changed)
+- Update: `INGESTION_PLAYBOOK.md` (document new behavior)
+
+### Verification Checklist
+
+**Before committing ingestion fixes, verify:**
+- [ ] Setup scripts include all new environment variables
+- [ ] Bootstrap script includes all new initialization steps
+- [ ] Cron scripts include all new flags/options
+- [ ] Documentation reflects new behavior
+- [ ] Error messages mention new requirements
+- [ ] Known issues section updated if applicable
+
+**Rationale:**
+- Setup scripts are the source of truth for deployment
+- Out-of-sync scripts cause hard-to-debug production issues
+- New instances must work correctly on first try
+- Cron jobs must reflect latest ingestion logic
+- Documentation prevents setup confusion

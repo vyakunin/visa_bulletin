@@ -21,6 +21,27 @@ py_library(
 )
 
 py_test(
+    name = "test_copy_schema",
+    size = "small",
+    srcs = ["django_setup.py", "test_copy_schema.py"],
+    main = "test_copy_schema.py",
+    deps = [
+        "//lib/ingest:schema",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
     srcs = ["test_worksite_record_copy_bug.py"],

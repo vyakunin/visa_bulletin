@@ -35,7 +35,7 @@ class VisaCutoffDate(models.Model):
     )
     
     visa_class = models.CharField(
-        max_length=50,
+        max_length=100,
         help_text="F1, F2A, EB1, EB2, etc."
     )
     

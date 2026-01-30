@@ -39,7 +39,6 @@ RUN mkdir -p /app/dist && \
     cp -r bazel-bin/* /app/dist/ && \
     cp -r lib /app/dist/ && \
     cp -r models /app/dist/ && \
-    cp -r extractors /app/dist/ && \
     cp -r webapp /app/dist/ && \
     cp -r django_config /app/dist/ && \
     cp -r scripts /app/dist/ && \
@@ -54,6 +53,7 @@ RUN groupadd -r visabulletin && useradd -r -g visabulletin visabulletin
 # Install runtime dependencies only
 # Note: PostgreSQL client libraries are included in psycopg2-binary Python package
 RUN apt-get update && apt-get install -y \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -78,7 +78,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000').read()" || exit 1
+    CMD curl -f --max-time 5 http://localhost:8000/ || exit 1
 
 # Default command: run migrations then start server with gunicorn
 # Using 2 workers for 1GB RAM instance (reduced from 3 to prevent OOM)

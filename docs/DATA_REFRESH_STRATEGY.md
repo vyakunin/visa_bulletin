@@ -54,14 +54,14 @@ This document describes the blue-green database deployment strategy for automate
 - **Linux/Unix instances:** https://aws.amazon.com/lightsail/pricing/#Linux_Unix
 - **Note:** Pricing and storage vary by region and instance type. Check the official page for current pricing in your region.
 
-**Current instance (verified via SSH):**
-- **512MB RAM, 20 GB SSD** - Actual specs from production server
-- **Cost:** Check your AWS Lightsail console or billing for exact monthly cost
-- **Storage:** 20 GB total, ~13 GB used (68%), ~6.3 GB available
+**Current instance:**
+- **4GB RAM, 80 GB SSD** - Production server (upgraded Jan 2026)
+- **Cost:** $20/month (check your AWS Lightsail console for exact billing)
+- **Storage:** 80 GB total, plenty of headroom for blue-green databases
 
 **Recommendation:** Use instance-local PostgreSQL (current setup)
 - Storage is included with instance (no separate storage cost)
-- See "Storage Management" section below for detailed storage analysis and upgrade recommendations
+- 4GB RAM is sufficient for Bazel builds and data refresh operations
 
 #### Option B: Schema Swap
 
@@ -542,17 +542,16 @@ systemctl show visa-bulletin -p Environment | grep DATABASE_URL
 **With 3 archives:**
 - ~28-32 GB total
 
-**Lightsail instance storage:**
-- **512MB RAM:** $3.50-5/month with **20 GB SSD** ⚠️ **CURRENT INSTANCE - TIGHT FIT**
+**Lightsail instance storage options:**
+- **512MB RAM:** $3.50-5/month with **20 GB SSD** ❌ Too small for Bazel
 - **1GB RAM:** $5/month with **40 GB SSD** (minimal for blue-green)
 - **2GB RAM:** $10/month with **60 GB SSD** (comfortable for blue-green)
-- **4GB RAM:** $20/month with **80 GB SSD** (plenty of headroom)
+- **4GB RAM:** $20/month with **80 GB SSD** ✅ **CURRENT INSTANCE** (plenty of headroom)
 
-**Current usage (512MB/20GB instance):**
-- Total disk: **20 GB**
-- Currently used: **~13 GB (68%)**
-- Available: **~6.3 GB**
-- PostgreSQL data: **~5-6 GB estimated**
+**Current usage (4GB/80GB instance):**
+- Total disk: **80 GB**
+- PostgreSQL data: **~5-6 GB estimated** per database
+- Plenty of headroom for blue-green + archives
 
 **Storage breakdown for blue-green approach:**
 - Blue database (active): **~6 GB**
@@ -560,15 +559,7 @@ systemctl show visa-bulletin -p Environment | grep DATABASE_URL
 - Archives (compressed, 3 kept): **~1.5 GB** × 3 = **~4.5 GB**
 - OS + app + logs: **~2 GB**
 - **Total needed during refresh: ~18.5 GB**
-- **Available on 20GB instance: only ~1.5 GB headroom!**
-
-**During refresh peak usage:**
-- Both databases active: 12 GB
-- 3 archives: 4.5 GB
-- OS/app: 2 GB
-- **Total: 18.5 GB → 92% disk usage** ⚠️
-
-**⚠️ CRITICAL: Current 20GB instance is too tight!**
+- **Available on 80GB instance: ~60 GB headroom** ✅
 
 ### Instance Details
 
@@ -607,7 +598,7 @@ systemctl show visa-bulletin -p Environment | grep DATABASE_URL
    Then connect with: `ssh lightsail-new`
 
 **Previous instance (512MB RAM / 20 GB SSD):**
-- **Status:** Old instance - to be decommissioned after migration
+- **Status:** Decommissioned (upgraded to 4GB in Jan 2026)
 
 ### Operating System Selection
 
@@ -685,46 +676,23 @@ When setting up a new Lightsail instance, choose:
 
 ### Bazel Memory Requirements
 
-**Problem:** The automated refresh pipeline runs `bazel run` commands (e.g., `bazel run //scripts/ingest:run_pipeline`), which requires Bazel to be installed and functional on the production server.
+**Bazel is required** for the automated refresh pipeline (`scripts/cron/refresh_data.sh`). All data refresh operations use `bazel run` commands.
 
 **Bazel memory requirements:**
 - **Minimum JVM heap:** 2 GB (`-Xmx2g` flag)
-- **Realistic minimum total RAM:** 4-6 GB for small projects
-- **Current instance:** 512 MB RAM ❌ **Cannot run Bazel**
+- **Realistic minimum total RAM:** 4 GB for comfortable operation
+- **Current instance:** 4 GB RAM ✅ **Runs Bazel well**
 
-**Why 512MB fails:**
-- Bazel is a Java application (JVM-based)
-- JVM needs ~2GB heap minimum
-- OS + PostgreSQL + Django need additional RAM
-- 512MB total is insufficient for Bazel JVM alone
+**Current configuration:**
+- 4GB RAM instance ($20/month, 80 GB SSD) ✅ **CURRENT INSTANCE**
+- Comfortable RAM for Bazel + clustering operations
+- Plenty of storage for blue-green + archives
+- Good clustering performance
 
-**Bazel configuration (`.bazelrc`):**
-```bash
-build --local_resources=memory=HOST_RAM*.5  # Uses 50% of available RAM
-```
-With 512MB total, Bazel would try to use ~256MB, but the JVM itself needs 2GB minimum.
-
-**Cheapest Lightsail option that can run Bazel:**
-- **2GB RAM instance: $10/month with 60 GB SSD** ⭐
-  - ✅ Enough RAM for Bazel (2GB JVM + headroom)
-  - ✅ Enough storage for blue-green approach
-  - ✅ Can run clustering operations (though may be slow)
-
-**Note:** If you're using Docker deployment (builds in CI), you might not need Bazel on production. However, the refresh pipeline script (`scripts/cron/refresh_data.sh`) runs Bazel commands directly, so Bazel is required for automated data refresh.
-
-**Recommended upgrade paths:**
-1. **Minimum for Bazel:** 2GB instance ($10/month, 60 GB SSD) ⭐ **CHEAPEST OPTION**
-   - ✅ Can run Bazel (2GB JVM + headroom)
-   - ✅ Enough storage for blue-green + archives
-   - ✅ Can run clustering (may be slow with large datasets)
-   - ⚠️ Still tight on RAM during clustering operations
-2. **Recommended:** 4GB instance ($20/month, 80 GB SSD)
-   - ✅ Comfortable RAM for Bazel + clustering
-   - ✅ Plenty of storage for growth
-   - ✅ Much faster clustering performance
-3. **Future-proof:** 8GB instance ($40/month, 160 GB SSD)
-   - ✅ Best for long-term growth
-   - ✅ Fastest clustering and builds
+**Important:** Always use Bazel for both local development and production. Never use plain `python` commands - use `bazel run` targets instead. This ensures:
+- Consistent environment between local and production
+- Proper dependency management
+- Reproducible builds
 
 ### Monitoring Disk Space
 
@@ -777,7 +745,7 @@ echo "Using $USED_GB GB of $TOTAL_GB GB available"
 
 - **Ingestion Playbook:** `docs/INGESTION_PLAYBOOK.md`
 - **Database Design:** `docs/department_of_labor/SALARY_DATABASE_DESIGN.md`
-- **Deployment Guide:** `docs/DEPLOYMENT.md` (to be updated)
+- **Rollout Flow:** `docs/deployment/ROLLOUT_FLOW.md`
 - **Rollback Procedures:** This document (Rollback Strategy section)
 
 ---

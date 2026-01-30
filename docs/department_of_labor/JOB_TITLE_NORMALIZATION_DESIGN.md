@@ -1204,7 +1204,7 @@ This follows industry best practice of spending 25-40% of development time on te
 
 - [ ] **Test migrations:** `bazel run //:migrate` (on test database)
   - [ ] Verify tables created successfully
-  - [ ] Check indexes exist: `python manage.py dbshell` → `\d salary_job_title`
+  - [ ] Check indexes exist: `bazel run //:explore_db -- --query "\d salary_job_title"`
   - [ ] If errors, fix models/migrations before proceeding
 
 #### Step 2.2: Normalization Logic + Tests First (TDD)

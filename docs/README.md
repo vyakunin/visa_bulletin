@@ -5,13 +5,24 @@ This directory contains all project documentation organized by topic.
 ## Directory Structure
 
 ### Core Documentation (Root Level)
+
+**Operations & Data:**
+- **INGESTION_PLAYBOOK.md** - Step-by-step guide for running DOL data ingestion (development)
+- **DATA_REFRESH_STRATEGY.md** - Blue-green database architecture for production data refresh
+
+**Development Setup:**
+- **DEV_SETUP.md** - Local development environment setup (macOS)
+- **POSTGRESQL_SETUP.md** - Local PostgreSQL setup for development
+- **ANALYTICS_QUICKSTART.md** - Analytics integration quickstart
+
+**Build System:**
 - **BAZEL.md** - Bazel build system guide (dependencies, targets, runfiles)
 - **BAZEL_DEPENDENCIES.md** - Managing Bazel dependencies
-- **BAZEL_RUNFILES_IMPLEMENTATION.md** - Runfiles implementation details
 - **BAZEL_RUNFILES.md** - Working with Bazel runfiles
-- **DEV_SETUP.md** - Development environment setup
-- **ANALYTICS_QUICKSTART.md** - Analytics integration quickstart
-- **PAGESPEED_OPTIMIZATIONS.md** - Performance and PageSpeed optimizations
+- **BAZEL_RUNFILES_IMPLEMENTATION.md** - Runfiles implementation details
+
+**Reference:**
+- **PAGESPEED_OPTIMIZATIONS.md** - Performance optimization decisions and rationale
 - **FEATURE_IDEAS.md** - Feature ideas and proposals
 
 ### Organized by Topic
@@ -56,12 +67,9 @@ Documentation for the unified ingest pipeline framework (download → parse → 
 #### [deployment/](deployment/)
 Documentation for deployment, infrastructure, and operations.
 
-**Key Files:**
-- DEPLOYMENT.md - Deployment overview
-- DOCKER_DEPLOYMENT.md - Docker-based deployment guide
-- DEPLOYMENT_ZERO_DOWNTIME.md - Blue-green deployment strategy
-- ROLLOUT_FLOW.md - Complete rollout process
-- SSH_COMMANDS.md - Common SSH operations
+**Start Here:**
+- **NEW_INSTANCE_SETUP.md** - Living document for production instance setup (most current)
+- **ROLLOUT_FLOW.md** - Complete rollout process for new deployments
 
 **Related Code:** `deployment/`, `scripts/deploy-zero-downtime.sh`
 
@@ -91,9 +99,14 @@ Design documents for features that are planned but not yet implemented.
 
 ### By Task
 
-**Setting up development environment:**
-- Start with: `DEV_SETUP.md`
-- Then: `BAZEL.md` for build system
+**Setting up local development environment:**
+- Start with: `DEV_SETUP.md` (developer tools)
+- Database: `POSTGRESQL_SETUP.md` (local PostgreSQL)
+- Build system: `BAZEL.md`
+
+**Running data ingestion (development):**
+- Step-by-step guide: `INGESTION_PLAYBOOK.md`
+- Pipeline design: `ingest/PIPELINE_DESIGN.md`
 
 **Working with DOL salary data:**
 - Overview: `department_of_labor/README.md`
@@ -109,10 +122,13 @@ Design documents for features that are planned but not yet implemented.
 - Pipeline design: `ingest/PIPELINE_DESIGN.md`
 - Create plugin: See `lib/ingest/plugins/` for examples
 
-**Deploying to production:**
-- Overview: `deployment/DEPLOYMENT.md`
-- Zero-downtime: `deployment/DEPLOYMENT_ZERO_DOWNTIME.md`
-- Rollout flow: `deployment/ROLLOUT_FLOW.md`
+**Setting up new production instance:**
+- **Start here:** `deployment/NEW_INSTANCE_SETUP.md` (living document)
+- Rollout process: `deployment/ROLLOUT_FLOW.md`
+
+**Understanding production data refresh:**
+- Architecture: `DATA_REFRESH_STRATEGY.md` (blue-green DB swap)
+- Manual ingestion: `INGESTION_PLAYBOOK.md` (for testing/dev only)
 
 ### By Component
 

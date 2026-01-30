@@ -77,6 +77,7 @@ REQUIRED_BINARIES=(
     "scripts/salary/backfill_source_file_date"
     "scripts/salary/cluster_job_titles"
     "scripts/salary/cluster_existing_employers"
+    "scripts/salary/populate_missing_slugs"
     "scripts/salary/update_job_title_cluster_stats"
 )
 
@@ -323,6 +324,9 @@ run_bin "scripts/salary/cluster_job_titles" 2>&1
 
 log "--- Post-processing: Cluster employers (long-running) ---"
 run_bin "scripts/salary/cluster_existing_employers" 2>&1
+
+log "--- Post-processing: Populate missing slugs (after clustering) ---"
+run_bin "scripts/salary/populate_missing_slugs" 2>&1
 
 log "--- Post-processing: Update job title stats ---"
 run_bin "scripts/salary/update_job_title_cluster_stats" 2>&1

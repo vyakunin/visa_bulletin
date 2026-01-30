@@ -15,11 +15,14 @@ This directory contains all project scripts organized by functionality. All scri
 2. [Data Ingestion](#data-ingestion)
 3. [Data Fixes](#data-fixes)
 4. [Employer Clustering](#employer-clustering)
-5. [Database Management](#database-management)
-6. [Deployment](#deployment)
-7. [Development Utilities](#development-utilities)
-8. [Performance Benchmarking](#performance-benchmarking)
-9. [Investigation/Debugging](#investigationdebugging)
+5. [Job Title Management](#job-title-management)
+6. [Database Management](#database-management)
+7. [Deployment](#deployment)
+8. [Development Utilities](#development-utilities)
+9. [Performance Benchmarking](#performance-benchmarking)
+10. [Golden Test Data Management](#golden-test-data-management)
+11. [Testing and Verification Utilities](#testing-and-verification-utilities)
+12. [Investigation/Debugging](#investigationdebugging)
 
 ---
 
@@ -163,17 +166,17 @@ These scripts have been deleted and their functionality is available via flags i
 
 **Usage:**
 ```bash
-# Download data
-bazel run //scripts/ingest:run_pipeline -- download --domain dol
+# Discover sources
+bazel run //scripts/ingest:run_pipeline -- discover --domain dol
 
-# List available sources
-bazel run //scripts/ingest:run_pipeline -- download --list-available
+# Ingest pending sources
+bazel run //scripts/ingest:run_pipeline -- run --all-pending --domain dol
 
-# Ingest data
-bazel run //scripts/ingest:run_pipeline -- ingest --source-type lca
+# Discover and ingest all domains
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 
-# Full pipeline (download + ingest)
-bazel run //scripts/ingest:run_pipeline -- full --domain dol
+# Cleanup old ingest run metadata
+bazel run //scripts/ingest:run_pipeline -- cleanup --days 30
 
 # Re-ingest specific local files (drops non-unique indexes first, recreates after)
 bazel run //scripts/ingest:run_pipeline -- reingest-files -- \
@@ -409,6 +412,26 @@ bazel run //scripts/salary:reimport_perm_salary_data -- --fix
 bazel run //scripts/salary:reimport_i200_files -- --fix
 ```
 
+**`scripts/salary/delete_incomplete_records.py`** - Delete records with missing critical data
+
+Deletes SalaryRecord/WorksiteRecord entries that have missing wage_annual and cannot be fixed.
+
+```bash
+# Dry-run (analyze only)
+bazel run //scripts/salary:delete_incomplete_records
+
+# Actually delete
+bazel run //scripts/salary:delete_incomplete_records -- --fix
+```
+
+**`scripts/salary/investigate_missing_salary.py`** - Detailed investigation of missing salary data
+
+Provides detailed breakdown of missing salary data by source file, visa program, and fiscal year.
+
+```bash
+bazel run //scripts/salary:investigate_missing_salary
+```
+
 ---
 
 ## Employer Clustering
@@ -605,11 +628,6 @@ bazel run //scripts/salary:merge_duplicate_clusters
 bazel run //scripts/salary:merge_duplicate_clusters -- --debug
 ```
 
-**`scripts/salary/test_normalization.py`** - Test name normalization
-```bash
-bazel run //scripts/salary:test_normalization
-```
-
 **`scripts/salary/review_golden_set.py`** - Review golden set examples
 ```bash
 bazel run //scripts/salary:review_golden_set
@@ -618,6 +636,68 @@ bazel run //scripts/salary:review_golden_set
 **`scripts/salary/fix_ground_truth_labels.py`** - Fix ground truth labels in golden set
 ```bash
 bazel run //scripts/salary:fix_ground_truth_labels -- --fix
+```
+
+---
+
+## Job Title Management
+
+Scripts for managing job title clustering, slugs, and SEO features.
+
+### Job Title Clustering
+
+**`scripts/salary/cluster_job_titles.py`** - Cluster job titles by similarity
+```bash
+bazel run //scripts/salary:cluster_job_titles
+```
+
+**`scripts/salary/update_job_title_cluster_stats.py`** - Update statistics for job title clusters
+```bash
+bazel run //scripts/salary:update_job_title_cluster_stats
+```
+
+**`scripts/salary/analyze_job_title_normalization.py`** - Analyze job title normalization results
+```bash
+bazel run //scripts/salary:analyze_job_title_normalization
+```
+
+**`scripts/salary/fix_job_title_normalization.py`** - Fix job title normalization issues
+```bash
+bazel run //scripts/salary:fix_job_title_normalization
+```
+
+### Job Title Backfill and Setup
+
+**`scripts/salary/backfill_job_title_links.py`** - Backfill job_title FK links on SalaryRecords
+```bash
+bazel run //scripts/salary:backfill_job_title_links
+```
+
+**`scripts/salary/populate_job_title_slugs.py`** - Populate URL-friendly slugs for job titles
+```bash
+bazel run //scripts/salary:populate_job_title_slugs
+```
+
+### Job Title Debugging and Verification
+
+**`scripts/salary/check_job_title_status.py`** - Check status of job title data
+```bash
+bazel run //scripts/salary:check_job_title_status
+```
+
+**`scripts/salary/debug_job_title_data.py`** - Debug job title data issues
+```bash
+bazel run //scripts/salary:debug_job_title_data
+```
+
+**`scripts/salary/find_valid_job_title_slug.py`** - Find valid job title by slug
+```bash
+bazel run //scripts/salary:find_valid_job_title_slug -- --slug software-engineer
+```
+
+**`scripts/salary/check_sitemap_eligibility.py`** - Check which job titles are eligible for sitemap
+```bash
+bazel run //scripts/salary:check_sitemap_eligibility
 ```
 
 ---
@@ -671,7 +751,37 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 ./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
 ```
 
-### Setup Scripts
+### Instance Setup Scripts
+
+**`scripts/setup_new_instance.sh`** - **MASTER SETUP SCRIPT** for new Lightsail instances
+
+Sets up a complete production environment including:
+- System prerequisites (curl, nginx, python3, etc.)
+- Swap configuration (2GB, swappiness=60)
+- Docker and docker-compose
+- PostgreSQL with bulk operation optimizations
+- Blue-green databases
+- Monitoring tools (sysstat, atop, health_check.sh)
+- Bazel memory limits
+
+```bash
+# On new Lightsail instance:
+git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
+cd /opt/visa_bulletin
+./scripts/setup_new_instance.sh
+```
+
+**`scripts/setup_postgresql_production.sh`** - PostgreSQL-only setup (standalone)
+```bash
+./scripts/setup_postgresql_production.sh
+```
+
+**`scripts/cron/build_all.sh`** - Pre-build all Bazel binaries (reduces runtime memory)
+```bash
+./scripts/cron/build_all.sh
+```
+
+### Development Setup Scripts
 
 **`scripts/setup_dev_environment.sh`** - Set up development environment
 ```bash
@@ -686,11 +796,6 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 **`scripts/setup_postgresql_local.sh`** - Set up local PostgreSQL
 ```bash
 ./scripts/setup_postgresql_local.sh
-```
-
-**`scripts/setup_postgresql_production.sh`** - Set up production PostgreSQL
-```bash
-./scripts/setup_postgresql_production.sh
 ```
 
 **`scripts/setup_lightsail_ssh.sh`** - Set up SSH access to Lightsail
@@ -789,39 +894,96 @@ bazel run //scripts/salary:update_wage_thresholds
 bazel run //scripts:benchmark_db_ingest
 ```
 
-**`scripts/benchmark_db_serving.py`** - Benchmark database serving performance
+**Note:** The following benchmarking scripts exist but don't have BUILD targets yet. They were used during development for performance optimization:
+- `scripts/benchmark_db_serving.py` - Database serving performance
+- `scripts/benchmark_excel_standalone.py` - Excel parsing (standalone)
+- `scripts/benchmark_parsing.py` - Parsing performance
+- `scripts/test_excel_performance.py` - Excel performance
+- `scripts/test_streaming_performance.py` - Streaming performance
+- `scripts/run_performance_benchmarks.py` - Run all benchmarks
+- `scripts/show_performance_comparison.py` - Show comparison
+
+If you need to use these scripts, add BUILD targets following the pattern in `scripts/BUILD`.
+
+---
+
+## Golden Test Data Management
+
+Scripts for managing golden test data for DOL plugin transforms.
+
+### Golden Test Data Collection
+
+**`scripts/salary/collect_dol_golden_test_data.py`** - Collect golden test data for DOL plugin transforms
+
+Samples random rows from all PERM and LCA files for golden testing of transform() methods.
+
+**Usage:**
 ```bash
-bazel run //scripts:benchmark_db_serving
+# Collect 10 samples per file (default)
+bazel run //scripts/salary:collect_dol_golden_test_data
+
+# Customize output and sample size
+bazel run //scripts/salary:collect_dol_golden_test_data -- \
+  --output tests/data/dol_golden_test_data.yaml \
+  --samples-per-file 20 \
+  --random-seed 42
 ```
 
-**`scripts/benchmark_excel_standalone.py`** - Benchmark Excel parsing (standalone)
+**`scripts/ingest/extract_smoke_test_samples.py`** - Extract one sample row from each DOL file
 ```bash
-bazel run //scripts:benchmark_excel_standalone
+bazel run //scripts/ingest:extract_smoke_test_samples > tests/data/dol_smoke_test_samples.yaml
 ```
 
-**`scripts/benchmark_parsing.py`** - Benchmark parsing performance
+### Golden Test Data Annotation
+
+**`scripts/salary/annotate_golden_test_data.py`** - Manually annotate golden test data
 ```bash
-bazel run //scripts:benchmark_parsing
+bazel run //scripts/salary:annotate_golden_test_data
 ```
 
-**`scripts/test_excel_performance.py`** - Test Excel performance
+**`scripts/salary/auto_annotate_golden_test_data.py`** - Auto-annotate golden test data using plugins
 ```bash
-bazel run //scripts:test_excel_performance
+bazel run //scripts/salary:auto_annotate_golden_test_data
 ```
 
-**`scripts/test_streaming_performance.py`** - Test streaming performance
+**`scripts/salary/fix_yaml_enums.py`** - Fix YAML enum serialization issues in test data
 ```bash
-bazel run //scripts:test_streaming_performance
+bazel run //scripts/salary:fix_yaml_enums
 ```
 
-**`scripts/run_performance_benchmarks.py`** - Run all performance benchmarks
+---
+
+## Testing and Verification Utilities
+
+Development utilities for testing file detection and data quality.
+
+### File Detection Testing
+
+**`scripts/salary/verify_file_discovery.py`** - Verify all DOL files are correctly detected
 ```bash
-bazel run //scripts:run_performance_benchmarks
+bazel run //scripts/salary:verify_file_discovery
 ```
 
-**`scripts/show_performance_comparison.py`** - Show performance comparison
+**`scripts/salary/test_detection_logic.py`** - Test file type detection on specific files
 ```bash
-bazel run //scripts:show_performance_comparison
+bazel run //scripts/salary:test_detection_logic
+```
+
+**`scripts/salary/test_worksite_detection.py`** - Test worksite file detection specifically
+```bash
+bazel run //scripts/salary:test_worksite_detection
+```
+
+### Data Verification
+
+**`scripts/salary/verify_filtered_cases.py`** - Verify filtered-out cases are correctly annotated
+```bash
+bazel run //scripts/salary:verify_filtered_cases
+```
+
+**`scripts/salary/examine_unknown_files.py`** - Examine files with unknown format
+```bash
+bazel run //scripts/salary:examine_unknown_files
 ```
 
 ---

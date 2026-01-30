@@ -28,3 +28,6 @@ Thumbs.db
 
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/
+
+# DOL salary data files (large Excel files)
+data/salary/dol_data/*.xlsx

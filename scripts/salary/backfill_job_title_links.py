@@ -43,6 +43,10 @@ def backfill_job_title_links(dry_run: bool = False):
     logger.info(f"Already linked: {already_linked:,}")
     logger.info(f"To link: {unlinked_records:,}")
     
+    if unlinked_records == 0:
+        logger.info("No unlinked records found. Skipping backfill.")
+        return
+
     if dry_run:
         logger.info("DRY RUN MODE - No changes will be saved")
     

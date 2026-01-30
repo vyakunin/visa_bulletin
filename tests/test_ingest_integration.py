@@ -18,7 +18,7 @@ from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
 from lib.ingest.registry import PluginRegistry
 from lib.ingest.orchestrator import PipelineOrchestrator
-from lib.ingest.registry import PluginRegistry
+from lib.ingest.base import ValidationResult
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin
@@ -28,6 +28,37 @@ from django.db import connection
 @pytest.mark.django_db
 class TestIngestPipelineIntegration:
     """Integration tests for full pipeline"""
+
+    def test_pipeline_handles_missing_record_estimate(self, tmp_path):
+        """Pipeline should not crash if row count cannot be estimated."""
+        source = DataSource.objects.create(
+            url="file://missing.html",
+            domain=DataDomain.VISA_BULLETIN,
+            source_type=SourceType.BULLETIN,
+            format_version=FormatVersion.MODERN,
+        )
+
+        plugin = MagicMock()
+        plugin.set_rejection_tracker = Mock()
+
+        orchestrator = PipelineOrchestrator()
+        orchestrator.update_mode = True  # Skip versioning logic for unit-style test
+
+        dummy_file = tmp_path / "dummy.html"
+        dummy_file.write_text("test")
+
+        with patch("lib.ingest.orchestrator.PluginRegistry.get_plugin", return_value=plugin), \
+             patch("lib.ingest.orchestrator.get_data_source_filepath", return_value=None), \
+             patch("lib.ingest.orchestrator.RejectionTracker") as rejection_tracker, \
+             patch.object(orchestrator, "_download_stage", return_value=dummy_file), \
+             patch.object(orchestrator, "_parse_stage", return_value=[]), \
+             patch.object(orchestrator, "_transform_stage", return_value=[]), \
+             patch.object(orchestrator, "_load_to_db_stage", return_value=None), \
+             patch.object(orchestrator, "_validate_post_ingest", return_value=ValidationResult(passed=True)):
+            rejection_tracker.return_value.save_to_db = Mock()
+            run = orchestrator.run(source, resume=False)
+
+        assert run.status == IngestStatus.COMPLETED
     
     def test_full_pipeline_with_excel(self, tmp_path):
         """Test full pipeline: discover -> download -> parse -> transform -> load"""

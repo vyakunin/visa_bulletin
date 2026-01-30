@@ -152,10 +152,14 @@ class TestBulletinParser(unittest.TestCase):
                 f1_row = row
                 break
         
-        # Mexico should be in position 4 (0=category, 1=All, 2=China, 3=India, 4=Mexico)
+        headers_lower = [header.lower() for header in family_final.headers]
+        mexico_index = headers_lower.index('mexico')
         # Fixed to expect correct date
-        self.assertEqual(f1_row[4], date(2001, 4, 1), 
-                        f"F1 Mexico should be April 1, 2001, got {f1_row[4]}")
+        self.assertEqual(
+            f1_row[mexico_index],
+            date(2001, 4, 1),
+            f"F1 Mexico should be April 1, 2001, got {f1_row[mexico_index]}"
+        )
 
 
 if __name__ == '__main__':

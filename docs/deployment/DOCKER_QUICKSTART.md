@@ -14,10 +14,10 @@ bazel run //:runserver
 **For Production Deployment:**
 ```bash
 # Deploy latest version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem
 
 # Deploy specific version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.3
 ```
 
 **For Releases:**
@@ -71,7 +71,7 @@ Prod:   docker pull → docker-compose up
 1. **Dockerfile** - Now uses gunicorn instead of dev server
 2. **docker-compose.yml** - Pulls from GHCR instead of building locally
 3. **docker-compose.dev.yml** - New file for local development
-4. **scripts/deploy.sh** - Updated for Docker deployment
+4. **scripts/deploy-zero-downtime.sh** - Zero-downtime Docker deployment
 5. **.github/workflows/** - New CI/CD workflows
 
 ## Documentation
@@ -94,10 +94,10 @@ bazel test //tests:...
 ### Deployment
 ```bash
 # Deploy latest
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem
 
 # Deploy specific version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
+./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.3
 ```
 
 ### On Production
@@ -179,30 +179,17 @@ Two workflows are configured:
 1. **docker-build-push.yml** - Builds on push/tag
 2. **deploy-production.yml** - Deploys to prod (manual trigger)
 
-## Migration Status
+## Current Status
 
-- [x] Dockerfile updated
-- [x] GitHub Actions workflows created
-- [x] docker-compose.yml configured
-- [x] deploy.sh updated
-- [x] Documentation written
-- [ ] First Docker image built (requires push to trigger CI)
-- [ ] Production migration completed
+✅ **Docker deployment is live** (migrated Jan 2026)
 
-## Next Steps
+- Docker images built via GitHub Actions
+- Production uses blue-green deployment
+- Data refresh via `scripts/cron/refresh_data.sh` (uses Bazel)
 
-1. **Push to GitHub** - Trigger first Docker build
-2. **Verify image** - Check GHCR for built image
-3. **Test deployment** - Run deploy.sh to test server
-4. **Monitor** - Watch logs for 1 week
-5. **Retire systemd** - Follow MIGRATION_TO_DOCKER.md
+## Related Documentation
 
-## Questions?
-
-See full documentation:
-- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Complete guide
-
-Or check existing deployment docs:
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Current deployment (systemd)
-- [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md) - AWS setup guide
+- [NEW_INSTANCE_SETUP.md](NEW_INSTANCE_SETUP.md) - Current production setup (living document)
+- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Complete Docker guide
+- [ROLLOUT_FLOW.md](ROLLOUT_FLOW.md) - Deployment process
 

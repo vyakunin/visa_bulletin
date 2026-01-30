@@ -22,6 +22,7 @@ from lib.utils.data_source_utils import (
     get_fiscal_year_from_filename,
     get_fiscal_year_from_datasource,
 )
+from lib.utils.location_utils import normalize_state_code
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +522,9 @@ def _create_salary_record(
         soc_code=get_column_value(row, column_mappings['soc_code']) or '',
         soc_title=get_column_value(row, column_mappings['soc_title']) or '',
         worksite_city=get_column_value(row, column_mappings['worksite_city']) or '',
-        worksite_state=get_column_value(row, column_mappings['worksite_state']) or '',
+        worksite_state=normalize_state_code(
+            get_column_value(row, column_mappings['worksite_state']) or ''
+        ),
         wage_from=wage_from,  # Allow None - records without wage data should be skipped
         wage_to=wage_to,
         wage_unit=wage_unit,
@@ -590,7 +593,9 @@ def _process_row(
             return RowProcessResult.rejected("Missing employer name - record skipped")
         employer_name = employer_name_raw.strip()
         employer_city = get_column_value(row, column_mappings['employer_city']) or ''
-        employer_state = get_column_value(row, column_mappings['employer_state']) or ''
+        employer_state = normalize_state_code(
+            get_column_value(row, column_mappings['employer_state']) or ''
+        )
         
         employer = _get_or_create_employer(employer_name, employer_city, employer_state, employers_cache)
 
