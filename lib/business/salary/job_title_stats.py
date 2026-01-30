@@ -28,6 +28,11 @@ from lib.business.salary.common_stats import (
 
 GROWTH_PARTIAL_YEAR_MIN_RATIO = 0.6
 
+# Salary validation bounds (annual)
+# These filter out clearly incorrect data (data entry errors, unrealistic values)
+MIN_REASONABLE_SALARY = 30000  # $30k/year minimum (below this is likely hourly wage miscoded as annual)
+MAX_REASONABLE_SALARY = 1000000  # $1M/year maximum (above this is likely data error)
+
 
 def get_job_title_statistics(
     cluster: JobTitleCluster,
@@ -68,12 +73,15 @@ def get_job_title_statistics(
     # Calculate start year
     current_year = datetime.now().year
     start_year = current_year - years
+    original_years = years
+    auto_expanded = False
     
     # Build base queryset - use normalized title when aggregating across levels
     base_filters = {
         'fiscal_year__gte': start_year,
         'wage_annual__isnull': False,
-        'wage_annual__gt': 0,
+        'wage_annual__gte': MIN_REASONABLE_SALARY,  # Filter out suspiciously low values
+        'wage_annual__lte': MAX_REASONABLE_SALARY,  # Filter out suspiciously high values
     }
     if normalized_title:
         base_filters['job_title_entity__title_normalized'] = normalized_title
@@ -87,7 +95,7 @@ def get_job_title_statistics(
     if experience_level is not None:
         records = records.filter(job_title_entity__experience_level=experience_level)
     
-    # A. Market Overview
+    # A. Market Overview - Check if we got any results
     basic_stats = records.aggregate(
         total_filings=Count('id'),
         median_salary=Avg('wage_annual'),
@@ -95,6 +103,57 @@ def get_job_title_statistics(
         max_salary=Max('wage_annual'),
         std_salary=StdDev('wage_annual'),
     )
+    
+    # Auto-expand to all available years if no data in requested window
+    if not basic_stats['total_filings'] or basic_stats['total_filings'] == 0:
+        # Remove fiscal_year filter to get all available data (keep salary bounds)
+        base_filters_all_years = {k: v for k, v in base_filters.items() if k != 'fiscal_year__gte'}
+        base_filters_all_years['wage_annual__isnull'] = False
+        base_filters_all_years['wage_annual__gte'] = MIN_REASONABLE_SALARY
+        base_filters_all_years['wage_annual__lte'] = MAX_REASONABLE_SALARY
+        
+        if normalized_title:
+            base_filters_all_years['job_title_entity__title_normalized'] = normalized_title
+        else:
+            base_filters_all_years['job_title_entity__canonical_cluster'] = cluster
+        
+        records_all_years = SalaryRecord.objects.filter(**base_filters_all_years)
+        records_all_years = apply_program_filter(records_all_years, program_filter)
+        
+        if experience_level is not None:
+            records_all_years = records_all_years.filter(job_title_entity__experience_level=experience_level)
+        
+        # Check if we have any data at all
+        basic_stats_all_years = records_all_years.aggregate(
+            total_filings=Count('id'),
+        )
+        
+        if basic_stats_all_years['total_filings'] and basic_stats_all_years['total_filings'] > 0:
+            # We have data in other years - expand window and recalculate
+            auto_expanded = True
+            years = 20  # Expand to maximum
+            
+            # Get the actual min/max fiscal years for accurate display
+            year_range = records_all_years.aggregate(
+                min_year=Min('fiscal_year'),
+                max_year=Max('fiscal_year'),
+            )
+            start_year = year_range['min_year'] or (current_year - 20)
+            
+            # Use the expanded queryset
+            records = records_all_years
+            
+            # Recalculate basic stats with expanded data
+            basic_stats = records.aggregate(
+                total_filings=Count('id'),
+                median_salary=Avg('wage_annual'),
+                min_salary=Min('wage_annual'),
+                max_salary=Max('wage_annual'),
+                std_salary=StdDev('wage_annual'),
+            )
+            
+            # Update cache key to reflect expansion
+            cache_key = f"job_title_stats:{base_key}:{program_filter}:all:{level_cache_key}"
     
     # Top 3 employers by filing count
     top_employers_brief = list(
@@ -273,6 +332,10 @@ def get_job_title_statistics(
         'related_titles': related_titles,
         'yoy_trends': yoy_trends,
         'company_comparison': company_comparison,
+        'auto_expanded': auto_expanded,
+        'original_years': original_years,
+        'actual_years': years,
+        'start_year': start_year,
     }
     
     # Cache for 6 hours

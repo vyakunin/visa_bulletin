@@ -565,3 +565,88 @@ py_library(
 - ❌ Don't use just `'ModelName'` (only works if model is in same file)
 
 **See:** `docs/DJANGO_MODEL_RESOLUTION_ISSUE.md` for complete troubleshooting guide.
+
+## Rule: Django Model Names vs PostgreSQL Table Names
+
+**CRITICAL: Django model names are NOT the same as PostgreSQL table names. Always verify table names before querying.**
+
+**Naming Convention:**
+- **Django models**: `CamelCase` class names (e.g., `JobTitle`, `SalaryRecord`)
+- **PostgreSQL tables**: `app_label_modelname` in snake_case (e.g., `salary_job_title`, `salary_record`)
+
+**How Django generates table names:**
+1. Takes the app label (e.g., `salary`, `bulletin`)
+2. Converts model name to snake_case (e.g., `JobTitle` → `job_title`)
+3. Combines: `{app_label}_{model_name_snake_case}`
+
+**✅ GOOD - Verify table names first:**
+```python
+# Use explore_db to list tables
+bazel run //:explore_db -- --query \
+  "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+
+# Or query specific pattern
+bazel run //:explore_db -- --query \
+  "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE '%job%'"
+```
+
+**❌ BAD - Assume model name is table name:**
+```python
+# Wrong: Using Django model name directly
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM JobTitle"  # ❌ Table doesn't exist
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"  # ❌ Wrong pattern
+
+# Correct: Using actual PostgreSQL table name
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"  # ✅ Works
+```
+
+**Common table mappings in this project:**
+
+| Django Model | File | PostgreSQL Table |
+|-------------|------|------------------|
+| `JobTitle` | `models/salary.py` | `salary_job_title` |
+| `JobTitleCluster` | `models/salary.py` | `salary_job_title_cluster` |
+| `JobTitleClusteringReview` | `models/salary.py` | `salary_job_title_clustering_review` |
+| `SalaryRecord` | `models/salary.py` | `salary_record` |
+| `Employer` | `models/salary.py` | `salary_employer` |
+| `EmployerCluster` | `models/salary.py` | `salary_employer_cluster` |
+| `Bulletin` | `models/bulletin.py` | `bulletin` |
+| `VisaCutoffDate` | `models/bulletin.py` | `visa_cutoff_date` |
+| `IngestRun` | `models/ingest/ingest_run.py` | `models_ingestrun` |
+| `IngestVersion` | `models/ingest/ingest_version.py` | `models_ingestversion` |
+
+**How to find table names when in doubt:**
+
+1. **Query pg_tables (fastest):**
+   ```sql
+   SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;
+   ```
+
+2. **Check Django migrations:**
+   ```bash
+   grep "CREATE TABLE" models/migrations/*.py
+   ```
+
+3. **Use Django shell (if available):**
+   ```python
+   from models.salary import JobTitle
+   print(JobTitle._meta.db_table)  # Prints: salary_job_title
+   ```
+
+**Why this matters:**
+- Wrong table names cause confusing `relation does not exist` errors
+- Wastes time debugging queries
+- Pattern is consistent: always `app_label_model_name_snake_case`
+- Some models have custom `db_table` in Meta class (rare but possible)
+
+**When writing raw SQL:**
+- ✅ Always use PostgreSQL table names (lowercase, underscores)
+- ✅ Query `pg_tables` first if unsure
+- ✅ Check Django model's `_meta.db_table` attribute if needed
+- ❌ Never assume Django model name matches table name
+
+**Rationale:**
+- Django's naming convention is automatic but not obvious
+- Raw SQL queries need actual table names, not model names
+- Querying wrong table wastes time with cryptic errors
+- Always verify table names first - saves debugging time

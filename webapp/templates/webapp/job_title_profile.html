@@ -118,6 +118,14 @@
                 </div>
             </div>
             
+            <!-- Auto-expand notice -->
+            {% if stats.auto_expanded %}
+            <div class="alert alert-info mb-4">
+                <i class="fas fa-info-circle"></i>
+                <strong>Note:</strong> No data found for the last {{ stats.original_years }} years. Automatically expanded to show all available years ({{ stats.actual_years }} years total, starting from FY{{ stats.start_year }}).
+            </div>
+            {% endif %}
+            
             <!-- Filter Controls -->
             <div class="card mb-4">
                 <div class="card-body">
@@ -652,6 +660,59 @@ document.addEventListener('DOMContentLoaded', function() {
                 {responsive: true, displayModeBar: false}
             );
             console.log('Chart rendered:', elementId);
+            
+            // Add interactive legend click handler for salary histogram
+            if (elementId === 'chart-salary-histogram') {
+                element.on('plotly_legendclick', function(data) {
+                    // Get the current visibility state of all traces
+                    var fullData = element.data;
+                    var clickedTraceIndex = data.curveNumber;
+                    
+                    // Predict new visibility state after click
+                    // Plotly toggles between true, 'legendonly', and back to true
+                    var newVisibility = [];
+                    for (var i = 0; i < fullData.length; i++) {
+                        if (i === clickedTraceIndex) {
+                            // Toggle clicked trace
+                            if (fullData[i].visible === 'legendonly') {
+                                newVisibility[i] = true;
+                            } else {
+                                newVisibility[i] = 'legendonly';
+                            }
+                        } else {
+                            // Keep other traces as-is
+                            newVisibility[i] = fullData[i].visible === 'legendonly' ? 'legendonly' : true;
+                        }
+                    }
+                    
+                    // Calculate new y-axis range based on visible traces
+                    var maxY = 0;
+                    for (var i = 0; i < fullData.length; i++) {
+                        if (newVisibility[i] !== 'legendonly' && fullData[i].y) {
+                            var traceMax = Math.max.apply(null, fullData[i].y);
+                            if (traceMax > maxY) {
+                                maxY = traceMax;
+                            }
+                        }
+                    }
+                    
+                    // Add 10% padding to max for better visualization
+                    var newYMax = Math.ceil(maxY * 1.1);
+                    
+                    // Update layout with new y-axis range
+                    var update = {
+                        'yaxis.range': [0, newYMax]
+                    };
+                    
+                    // Use setTimeout to apply the range update after Plotly's default toggle
+                    setTimeout(function() {
+                        Plotly.relayout(elementId, update);
+                    }, 0);
+                    
+                    // Return true to allow Plotly's default legend click behavior
+                    return true;
+                });
+            }
         } catch (e) {
             console.error('Error rendering chart:', elementId, e);
             element.innerHTML = '<p class="text-muted text-center py-4">Chart failed to load</p>';

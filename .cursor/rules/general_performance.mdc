@@ -6,6 +6,75 @@ alwaysApply: true
 
 These are general performance rules that apply across all projects.
 
+## Rule: Always Consider Memory Usage When Loading Data
+
+**CRITICAL: When loading data from the database, always consider memory usage and use the most efficient approach.**
+
+**Memory-efficient patterns:**
+
+**✅ GOOD - Use .values() for lookup tables:**
+```python
+# Load only the fields you need, not full objects
+# Memory: ~10-20MB for 100k records
+lookup = {}
+for data in MyModel.objects.values('id', 'key_field', 'other_field'):
+    lookup[data['key_field']] = data['id']
+```
+
+**❌ BAD - Load full objects for lookup:**
+```python
+# Loads full Django model instances with all overhead
+# Memory: ~50-100MB for 100k records (5-10x more!)
+lookup = {}
+for obj in MyModel.objects.all():  # ❌ Loads all into memory
+    lookup[obj.key_field] = obj
+```
+
+**✅ GOOD - Use .iterator() for large querysets:**
+```python
+# Process in chunks, memory stays bounded
+for record in MyModel.objects.iterator(chunk_size=10000):
+    process(record)
+```
+
+**❌ BAD - Load all objects at once:**
+```python
+# Loads ALL objects into memory at once
+for record in MyModel.objects.all():  # ❌ No .iterator()
+    process(record)
+```
+
+**✅ GOOD - Set foreign keys by ID:**
+```python
+# Use _id field directly, no object loading
+record.foreign_key_id = lookup[key]  # Just the ID
+batch.append(record)
+```
+
+**❌ BAD - Set foreign keys by object:**
+```python
+# Forces loading/creating object instance
+record.foreign_key = MyModel.objects.get(id=lookup[key])  # ❌ Extra query or object creation
+batch.append(record)
+```
+
+**Memory estimation guide:**
+- Full Django model object: ~500-1000 bytes + field data
+- Dict from .values(): ~100-200 bytes + field data
+- Integer ID only: ~8 bytes
+
+**When to optimize:**
+- ✅ Processing > 10,000 records
+- ✅ Building lookup tables/indexes
+- ✅ Large batch operations
+- ✅ Scripts that run on production servers with limited RAM
+
+**Rationale:**
+- Memory-efficient code is more scalable
+- Prevents OOM errors on production servers
+- Faster (less GC overhead, better cache locality)
+- Good habit for all database operations
+
 ## Database Operations and Batching
 
 **ALWAYS use batched operations for database queries, especially in loops processing multiple records.**

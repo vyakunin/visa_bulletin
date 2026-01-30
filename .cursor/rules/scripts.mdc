@@ -28,6 +28,180 @@ bazel run //:runserver                   # Doesn't stop existing server
 - Consistent behavior across team
 - Self-documenting workflows
 
+## Rule: Use explore_db Tool for Database Queries (Never Raw psql)
+
+**🚨 CRITICAL: ALWAYS use `bazel run //:explore_db` for database queries. NEVER fall back to raw `psql` or manual PostgreSQL commands when the tool doesn't work immediately.**
+
+**Why this matters:**
+- `explore_db` handles Django setup, database connections, and environment variables automatically
+- Raw `psql` bypasses Django ORM and doesn't respect application configuration
+- When `explore_db` fails, it's a fixable issue - debug the tool, don't abandon it
+- Fixes to `explore_db` benefit future queries and other developers
+
+**✅ GOOD - Use explore_db (local):**
+```bash
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"
+```
+
+**✅ GOOD - Use explore_db (remote VM):**
+```bash
+# Correct way to run on remote VM
+ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@44.209.204.255 \
+  "cd /opt/visa_bulletin && set -a && source .env && set +a && \
+   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+```
+
+**❌ BAD - Raw psql (circumvents tool):**
+```bash
+# DON'T do this - bypasses Django and tool infrastructure
+ssh ubuntu@44.209.204.255 "psql -U visa_bulletin_user -d visa_bulletin_blue -c 'SELECT COUNT(*) FROM salary_job_title'"
+```
+
+**When explore_db fails, debug it systematically:**
+
+1. **Check environment variables:**
+   ```bash
+   ssh ubuntu@44.209.204.255 "cat /opt/visa_bulletin/.env | grep DB_"
+   ```
+
+2. **Verify environment export:**
+   - Use `set -a && source .env && set +a` (not just `source .env`)
+   - This exports all variables for the subprocess
+
+3. **Check table names:**
+   ```bash
+   # List available tables
+   bazel run //:explore_db -- --query \
+     "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+   ```
+
+4. **Test connection:**
+   ```bash
+   # Simple query to verify connection works
+   bazel run //:explore_db -- --query "SELECT 1"
+   ```
+
+**Common issues and fixes:**
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Password authentication failed | Environment variables not exported | Use `set -a && source .env && set +a` |
+| Table "models_*" doesn't exist | Wrong table name (Django model vs PostgreSQL table) | Query `pg_tables` to find actual table names |
+| Connection refused | Wrong DB_HOST | Check `.env` file, ensure `DB_HOST=localhost` for local PostgreSQL |
+| Permission denied | Wrong database user | Verify `DB_USER` and `DB_PASSWORD` in `.env` |
+
+**Rationale:**
+- Tools are infrastructure - fix them when broken, don't bypass them
+- Raw `psql` creates technical debt and inconsistency
+- Debugging the tool improves it for everyone
+- Pattern of "tool failed → use raw command" leads to unmaintained tools
+
+## Rule: Database Table Naming Convention
+
+**Django model names differ from PostgreSQL table names - ALWAYS query actual table names first.**
+
+**Pattern:**
+- Django models: `models/salary.py` → `class JobTitle(models.Model)`
+- PostgreSQL tables: `salary_job_title` (app_label + model_name in snake_case)
+
+**✅ GOOD - Query actual table names:**
+```bash
+# List all tables
+bazel run //:explore_db -- --query \
+  "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+
+# List tables matching pattern
+bazel run //:explore_db -- --query \
+  "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE '%job%'"
+```
+
+**✅ GOOD - Use correct table names:**
+```bash
+# Correct: salary_job_title (PostgreSQL table name)
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"
+```
+
+**❌ BAD - Assume Django model names:**
+```bash
+# Wrong: models_jobtitle (doesn't exist)
+bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"
+```
+
+**Common table name patterns in this project:**
+
+| Django Model | PostgreSQL Table | Location |
+|-------------|------------------|----------|
+| `JobTitle` | `salary_job_title` | `models/salary.py` |
+| `JobTitleCluster` | `salary_job_title_cluster` | `models/salary.py` |
+| `SalaryRecord` | `salary_record` | `models/salary.py` |
+| `Employer` | `salary_employer` | `models/salary.py` |
+| `Bulletin` | `bulletin` | `models/bulletin.py` |
+| `VisaCutoffDate` | `visa_cutoff_date` | `models/bulletin.py` |
+
+**How to find table names:**
+1. Query `pg_tables` first (always fastest)
+2. Check Django migrations for `CREATE TABLE` statements
+3. Connect to database and use `\dt` in psql (only if explore_db unavailable)
+
+**Rationale:**
+- PostgreSQL table names are lowercase with underscores
+- Django automatically prefixes with app label (`salary_`, `bulletin_`, etc.)
+- Querying wrong table name wastes time with confusing errors
+- Always verify table names first - saves debugging time
+
+## Rule: Remote VM Database Query Pattern
+
+**When querying databases on remote VMs, ALWAYS use this exact pattern:**
+
+```bash
+ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@IP_ADDRESS \
+  "cd /opt/visa_bulletin && set -a && source .env && set +a && \
+   bazel run //:explore_db -- --query 'YOUR_QUERY_HERE'"
+```
+
+**Critical components:**
+1. **`cd /opt/visa_bulletin`** - Change to project directory (required for Bazel)
+2. **`set -a`** - Enable auto-export of variables
+3. **`source .env`** - Load environment variables from .env file
+4. **`set +a`** - Disable auto-export (cleanup)
+5. **`bazel run //:explore_db`** - Run the tool (not raw psql)
+6. **Single quotes around query** - Prevents local shell expansion
+
+**Why this exact order matters:**
+- `cd` first: Bazel needs to find WORKSPACE file
+- `set -a` before source: Exports variables for subprocess (explore_db)
+- `set +a` after source: Prevents polluting environment
+- Single quotes: Query passes through SSH without local expansion
+
+**✅ GOOD - Complete pattern:**
+```bash
+ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@44.209.204.255 \
+  "cd /opt/visa_bulletin && set -a && source .env && set +a && \
+   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+```
+
+**❌ BAD - Missing set -a (variables not exported):**
+```bash
+# Variables loaded but not exported - explore_db can't see them
+ssh ubuntu@44.209.204.255 \
+  "cd /opt/visa_bulletin && source .env && \
+   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+```
+
+**❌ BAD - Using DB_HOST override incorrectly:**
+```bash
+# DB_HOST override doesn't help if other variables not exported
+ssh ubuntu@44.209.204.255 \
+  "cd /opt/visa_bulletin && source .env && DB_HOST=localhost \
+   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+```
+
+**Rationale:**
+- `set -a` is required for subprocess to inherit environment variables
+- Pattern is tested and works reliably
+- Single command prevents environment inconsistency
+- Easier to copy-paste and modify for different queries
+
 ## Rule: Run restart_server.sh with --background Flag
 
 **AI assistants should use the `--background` flag when restarting the development server.**

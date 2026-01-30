@@ -6,6 +6,26 @@ exports_files([
     "llm_prompt_template.txt",
 ])
 
+py_binary(
+    name = "check_suspicious_salaries",
+    srcs = ["check_suspicious_salaries.py"],
+    main = "check_suspicious_salaries.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//models:salary",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
 # Note: download_data.py removed - use unified ingest pipeline instead:
 # bazel run //scripts/ingest:run_pipeline -- download --domain dol
 # bazel run //scripts/ingest:run_pipeline -- download --list-available

@@ -179,25 +179,53 @@ def cluster_job_titles(dry_run: bool = False):
         logger.info(f"Total JobTitle entities to process: {total_job_titles:,}")
         
         linked_count = 0
+        
+        # Build a lightweight mapping of (normalized_title, experience_level) -> JobTitle ID
+        # Using .values() to avoid loading full model objects into memory
+        logger.info("Building JobTitle lookup index...")
+        job_title_lookup = {}
+        for jt_data in JobTitle.objects.values('id', 'title_normalized', 'experience_level'):
+            key = (jt_data['title_normalized'], jt_data['experience_level'])
+            job_title_lookup[key] = jt_data['id']
+        
+        logger.info(f"Built index with {len(job_title_lookup):,} JobTitle entities")
+        
+        # Process unlinked salary records in batches
+        total_unlinked = SalaryRecord.objects.filter(job_title_entity__isnull=True).count()
+        logger.info(f"Processing {total_unlinked:,} unlinked salary records...")
+        
         processed_count = 0
-        for job_title in JobTitle.objects.select_related('canonical_cluster').iterator(chunk_size=1000):
-            processed_count += 1
+        batch = []
+        batch_size = 10000
+        
+        for record in SalaryRecord.objects.filter(job_title_entity__isnull=True).iterator(chunk_size=10000):
+            # Normalize and extract experience level for this record
+            normalized = JobTitle.normalize_title(record.job_title)
+            experience_level = JobTitle.extract_experience_level(record.job_title)
             
-            # Log progress every 1k job titles initially, then 10k (for early visibility)
-            if processed_count <= 5000 and processed_count % 1000 == 0:
-                logger.info(f"  Processed {processed_count:,}/{total_job_titles:,} job titles ({processed_count/total_job_titles*100:.1f}%) - Linked: {linked_count:,}")
-            elif processed_count % 10000 == 0:
-                logger.info(f"  Processed {processed_count:,}/{total_job_titles:,} job titles ({processed_count/total_job_titles*100:.1f}%) - Linked: {linked_count:,}")
-            
-            # Update all SalaryRecords with this job title (exact match)
-            salary_records = SalaryRecord.objects.filter(
-                job_title=job_title.title,
-                job_title_entity__isnull=True
-            )
-            
-            count = salary_records.update(job_title_entity=job_title)
-            if count > 0:
-                linked_count += count
+            # Look up matching JobTitle entity ID
+            key = (normalized, experience_level)
+            if key in job_title_lookup:
+                record.job_title_entity_id = job_title_lookup[key]  # Set ID directly, not full object
+                batch.append(record)
+                
+                if len(batch) >= batch_size:
+                    # Bulk update - use _id field name since we set the ID directly
+                    SalaryRecord.objects.bulk_update(batch, ['job_title_entity_id'], batch_size=batch_size)
+                    linked_count += len(batch)
+                    processed_count += len(batch)
+                    
+                    logger.info(f"  Processed {processed_count:,}/{total_unlinked:,} salary records ({processed_count/total_unlinked*100:.1f}%) - Linked: {linked_count:,}")
+                    
+                    batch = []
+        
+        # Final batch
+        if batch:
+            SalaryRecord.objects.bulk_update(batch, ['job_title_entity_id'], batch_size=batch_size)
+            linked_count += len(batch)
+            processed_count += len(batch)
+        
+        logger.info(f"Processing complete: Processed {processed_count:,} records - Linked: {linked_count:,}")
         
         logger.info(f"Linked {linked_count:,} SalaryRecords to JobTitle entities")
         logger.info("Note: Run update_job_title_cluster_stats to update statistics (don't do it here - too slow)")
