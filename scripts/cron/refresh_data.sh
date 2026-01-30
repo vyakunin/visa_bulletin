@@ -71,7 +71,6 @@ run_bin() {
 log "Checking for pre-built binaries..."
 REQUIRED_BINARIES=(
     "scripts/ingest/run_pipeline"
-    "migrate"
     "scripts/salary/manage_salary_indexes"
     "scripts/salary/backfill_job_title_links"
     "scripts/salary/backfill_source_file_date"
@@ -270,7 +269,8 @@ log "Configured DB_NAME: $INACTIVE_DB"
 
 # 5b. Run migrations on the inactive database
 log "--- Running migrations on $INACTIVE_DB ---"
-run_bin "migrate" 2>&1
+# Use python3 manage.py directly (bazel-bin/migrate wrapper doesn't work in production)
+python3 manage.py migrate --noinput 2>&1
 
 # 6. Run complete ingestion pipeline
 log "======================================================================="
