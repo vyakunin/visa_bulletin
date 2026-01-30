@@ -53,17 +53,15 @@ def main():
     logger.info("")
     
     # Check if any have completed runs
-    sources_with_runs = bad_sources.filter(runs__isnull=False).distinct()
-    runs_count = sources_with_runs.count()
+    from models.ingest.ingest_run import IngestRun
+    affected_runs = IngestRun.objects.filter(source__in=bad_sources)
+    runs_count = affected_runs.count()
     
     if runs_count > 0:
-        logger.warning(f"⚠️  {runs_count} of these sources have associated IngestRun records")
+        logger.warning(f"⚠️  These sources have {runs_count} associated IngestRun records")
         logger.warning("  These runs will also be deleted (CASCADE)")
         
         # Show which runs will be affected
-        from models.ingest.ingest_run import IngestRun
-        affected_runs = IngestRun.objects.filter(data_source__in=bad_sources)
-        logger.warning(f"  Affected runs: {affected_runs.count()}")
         for run in affected_runs[:5]:
             logger.warning(f"    Run {run.id}: status={run.status}, started={run.started_at}")
     
@@ -72,7 +70,7 @@ def main():
     logger.info("This will DELETE:")
     logger.info(f"  - {count} DataSource records with malformed URLs")
     if runs_count > 0:
-        logger.info(f"  - {affected_runs.count()} associated IngestRun records (CASCADE)")
+        logger.info(f"  - {runs_count} associated IngestRun records (CASCADE)")
     logger.info("")
     
     response = input("Proceed with deletion? (yes/no): ")
