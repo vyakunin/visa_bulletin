@@ -412,37 +412,65 @@ Follow `docs/POSTGRESQL_SETUP.md` and note any deviations here:
 
 **⚠️ IMPORTANT: NEVER use Django dev server (`runserver`) in production!**
 
-Production web server runs in Docker containers with Nginx reverse proxy.
+Production web server uses **Gunicorn** (WSGI server) managed by **systemd**, with Nginx as a reverse proxy.
 
-### Option 1: Docker-Based Production (Recommended)
+### Production Web Server (Systemd + Gunicorn)
 
 **For production instances with public web access:**
 
 ```bash
-cd /opt/visa_bulletin/deployment
+cd /opt/visa_bulletin
 
-# Pull pre-built image from GitHub Container Registry
-export IMAGE_TAG=latest  # Or specific version like v1.2.3
-docker-compose pull
+# Ensure .env has correct DB_HOST
+grep DB_HOST .env  # Should be: DB_HOST=localhost
 
-# Start web service
-docker-compose up -d
+# Start production web server
+sudo systemctl start visa-bulletin-web
 
-# Verify container is running
-docker-compose ps
-docker-compose logs --tail=50 web
+# Verify service is running
+sudo systemctl status visa-bulletin-web
+
+# Check logs
+sudo journalctl -u visa-bulletin-web -f
 
 # Check web service responds
-curl -I http://localhost:8000
+curl -I http://localhost:8000  # Gunicorn
+curl -I http://localhost/      # Nginx (proxies to Gunicorn)
 ```
 
-**Container details:**
-- Uses pre-built image from `ghcr.io/vyakunin/visa_bulletin`
-- Runs Gunicorn WSGI server (production-ready)
+**Service management:**
+```bash
+# Start service
+sudo systemctl start visa-bulletin-web
+
+# Stop service
+sudo systemctl stop visa-bulletin-web
+
+# Restart service
+sudo systemctl restart visa-bulletin-web
+
+# View logs
+sudo journalctl -u visa-bulletin-web -f
+
+# View recent logs
+sudo journalctl -u visa-bulletin-web --since "10 minutes ago"
+```
+
+**Service details:**
+- Service file: `/etc/systemd/system/visa-bulletin-web.service`
+- Uses Gunicorn WSGI server (production-ready)
+- 2 workers, 2 threads per worker (optimized for 2GB instance)
+- Runs Django migrations before starting (`ExecStartPre`)
 - Exposes port 8000 for Nginx reverse proxy
 - Auto-restarts on failure
+- Memory limit: 500MB (prevents OOM)
 
-### Option 2: Development Server (Testing Only)
+**Configuration:**
+- Environment: `/opt/visa_bulletin/.env`
+- Must have `DB_HOST=localhost` for host-based PostgreSQL connection
+- `ALLOWED_HOSTS` must include public IP and domain
+
+### Development Server (Testing Only)
 
 **For non-production instances or development:**
 
@@ -463,7 +491,7 @@ cd /opt/visa_bulletin
 - No auto-restart on crash
 - Security warnings in Django
 
-### Option 3: Ingestion-Only Instance (No Web Server)
+### Ingestion-Only Instance (No Web Server)
 
 **For dedicated ingestion instances (like this one):**
 

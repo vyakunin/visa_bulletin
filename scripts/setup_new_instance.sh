@@ -55,7 +55,7 @@ fi
 # Step 1: System Update and Prerequisites
 # =============================================================================
 echo ""
-echo "[1/8] Installing system prerequisites..."
+echo "[1/9] Installing system prerequisites..."
 echo "--------------------------------------------------------------"
 
 sudo apt update
@@ -80,11 +80,17 @@ sudo apt install -y \
 
 echo "✅ System prerequisites installed"
 
+# Install Python dependencies for production web server
+echo "Installing Python dependencies..."
+cd "$PROJECT_ROOT"
+pip3 install -r requirements.txt
+echo "✅ Python dependencies installed (including gunicorn)"
+
 # =============================================================================
 # Step 2: Configure Swap
 # =============================================================================
 echo ""
-echo "[2/8] Configuring swap..."
+echo "[2/9] Configuring swap..."
 echo "--------------------------------------------------------------"
 
 SWAP_SIZE=$((INSTANCE_RAM_GB * 1024))  # Match RAM size in MB
@@ -121,7 +127,7 @@ echo "✅ Swap configured"
 # Step 3: Install Docker
 # =============================================================================
 echo ""
-echo "[3/8] Installing Docker..."
+echo "[3/9] Installing Docker..."
 echo "--------------------------------------------------------------"
 
 if ! command -v docker &> /dev/null; then
@@ -147,7 +153,7 @@ fi
 # Step 4: Install PostgreSQL
 # =============================================================================
 echo ""
-echo "[4/8] Installing and configuring PostgreSQL..."
+echo "[4/9] Installing and configuring PostgreSQL..."
 echo "--------------------------------------------------------------"
 
 sudo apt install -y postgresql postgresql-contrib
@@ -209,7 +215,7 @@ echo "✅ PostgreSQL configured"
 # Step 5: Create Database User and Databases
 # =============================================================================
 echo ""
-echo "[5/8] Creating database user and databases..."
+echo "[5/9] Creating database user and databases..."
 echo "--------------------------------------------------------------"
 
 DB_USER="visa_bulletin_user"
@@ -253,7 +259,7 @@ echo "✅ Databases created"
 # Step 6: Configure Monitoring
 # =============================================================================
 echo ""
-echo "[6/8] Setting up monitoring..."
+echo "[6/9] Setting up monitoring..."
 echo "--------------------------------------------------------------"
 
 # Enable sysstat
@@ -292,7 +298,7 @@ echo "✅ Monitoring configured"
 # Step 7: Configure Bazel Memory Limits
 # =============================================================================
 echo ""
-echo "[7/8] Configuring Bazel memory limits..."
+echo "[7/9] Configuring Bazel memory limits..."
 echo "--------------------------------------------------------------"
 
 BAZELRC="$PROJECT_ROOT/.bazelrc"
@@ -317,7 +323,7 @@ fi
 # Step 8: Create Environment File Template
 # =============================================================================
 echo ""
-echo "[8/8] Creating environment file..."
+echo "[8/9] Creating environment file..."
 echo "--------------------------------------------------------------"
 
 ENV_FILE="$PROJECT_ROOT/.env"
@@ -328,9 +334,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 DB_NAME=$DB_BLUE
 DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
-# host.docker.internal: Docker containers use this to access host's PostgreSQL
-# Bazel scripts running on host automatically convert to localhost (see scripts/cron/refresh_data.sh)
-DB_HOST=host.docker.internal
+# localhost: Host-based services (Gunicorn, Bazel scripts) connect to PostgreSQL on localhost
+DB_HOST=localhost
 DB_PORT=5432
 
 # Django Settings
@@ -349,13 +354,11 @@ else
 fi
 
 # =============================================================================
-# Step 7: Configure Nginx
+# Step 9: Configure Nginx and Production Web Server
 # =============================================================================
 echo ""
-echo "[7/9] Configuring Nginx..."
+echo "[9/9] Configuring Nginx and production web server..."
 echo "--------------------------------------------------------------"
-
-sudo apt install -y nginx
 
 # Copy nginx configuration
 sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
@@ -376,36 +379,12 @@ else
     exit 1
 fi
 
-# =============================================================================
-# Step 8: Build Docker Image or Pull from Registry
-# =============================================================================
-echo ""
-echo "[8/9] Docker image setup..."
-echo "--------------------------------------------------------------"
-echo "Choose Docker image option:"
-echo "  1. Pull from GitHub Container Registry (recommended for production)"
-echo "  2. Build locally (for development/testing)"
-echo ""
-echo "For production, it's recommended to:"
-echo "  - Build images in GitHub Actions"
-echo "  - Pull pre-built images on production servers"
-echo ""
-echo "Skipping automatic image setup. To start web server:"
-echo "  Production: cd deployment && docker-compose up -d"
-echo "  Dev: Use bazel run //:runserver for development"
-
-# =============================================================================
-# Step 9: Setup SSL with Certbot (optional)
-# =============================================================================
-echo ""
-echo "[9/9] SSL Certificate Setup (optional)..."
-echo "--------------------------------------------------------------"
-echo "To enable HTTPS, run after updating your domain DNS:"
-echo "  sudo snap install --classic certbot"
-echo "  sudo ln -s /snap/bin/certbot /usr/bin/certbot"
-echo "  sudo certbot --nginx -d your-domain.com -d www.your-domain.com"
-echo ""
-echo "Certbot will automatically configure Nginx for HTTPS."
+# Create systemd service for Gunicorn
+echo "Creating systemd service for production web server..."
+sudo cp deployment/systemd/visa-bulletin-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable visa-bulletin-web
+echo "✅ Systemd service configured (not started yet - see next steps)"
 
 # =============================================================================
 # Summary
@@ -417,6 +396,7 @@ echo "=============================================================="
 echo ""
 echo "What was configured:"
 echo "  ✅ System packages and prerequisites"
+echo "  ✅ Python dependencies (including gunicorn)"
 echo "  ✅ ${SWAP_SIZE}MB swap file (swappiness=60)"
 echo "  ✅ Docker and docker-compose"
 echo "  ✅ PostgreSQL (optimized for bulk operations)"
@@ -424,6 +404,7 @@ echo "  ✅ Blue-green databases: $DB_BLUE, $DB_GREEN"
 echo "  ✅ Monitoring: sysstat, atop, health_check.sh"
 echo "  ✅ Bazel memory limits"
 echo "  ✅ Nginx reverse proxy"
+echo "  ✅ Systemd service for production web server"
 echo ""
 echo "Database credentials:"
 echo "  User: $DB_USER"
@@ -431,15 +412,22 @@ echo "  Password: $DB_PASSWORD"
 echo ""
 echo "Next steps:"
 echo "  1. Log out and back in (for docker group)"
-echo "  2. Update .env with your domain/static IP"
+echo "  2. Update .env with your domain/static IP in ALLOWED_HOSTS"
 echo "  3. Update deployment/nginx/visa-bulletin-nginx.conf with your domain"
 echo "  4. Run: ./scripts/cron/build_all.sh  (pre-build Bazel binaries)"
 echo "  5. Run: bazel run //:migrate  (apply database migrations)"
-echo "  6. Start web server:"
-echo "     Production: cd deployment && docker-compose up -d"
-echo "     Dev: Use ./scripts/start_dev_server.sh for development"
-echo "  7. Setup SSL: sudo certbot --nginx -d your-domain.com"
-echo "  8. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
+echo "  6. Start web server: sudo systemctl start visa-bulletin-web"
+echo "  7. Verify web server: curl -I http://localhost/"
+echo "  8. Setup SSL: sudo certbot --nginx -d your-domain.com"
+echo "  9. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
+echo "  10. Open AWS firewall ports 80 and 443 (see PRODUCTION_READY_STATUS.md)"
+echo ""
+echo "Web server management:"
+echo "  Start:   sudo systemctl start visa-bulletin-web"
+echo "  Stop:    sudo systemctl stop visa-bulletin-web"
+echo "  Restart: sudo systemctl restart visa-bulletin-web"
+echo "  Status:  sudo systemctl status visa-bulletin-web"
+echo "  Logs:    sudo journalctl -u visa-bulletin-web -f"
 echo ""
 echo "For detailed instructions, see: docs/deployment/NEW_INSTANCE_SETUP.md"
 echo ""
