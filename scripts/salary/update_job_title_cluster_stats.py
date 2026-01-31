@@ -16,13 +16,17 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 django.setup()
 
 import argparse
+import logging
 from django.db.models import Count, Avg
 from models.job_title import JobTitleCluster, JobTitle
 from models.salary import SalaryRecord
 from lib.utils.db_utils import BatchedUpdateCollector
 from lib.utils.logging_utils import ScriptLogger
+from django_config.logging_config import setup_logging
 
-logger = ScriptLogger(__file__)
+setup_logging()
+script_logger = ScriptLogger(__file__)
+logger = logging.getLogger(__name__)
 
 # Salary bounds for filtering out absurd values (same as job_title_stats.py)
 MIN_REASONABLE_SALARY = 30000  # $30k/year minimum
@@ -34,22 +38,22 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
     args = parser.parse_args()
     
-    logger.log_call(
+    script_logger.log_call(
         args={'dry_run': args.dry_run},
         context='Update JobTitleCluster aggregated statistics from SalaryRecords'
     )
     
-    print("Updating JobTitleCluster statistics...")
-    print("=" * 80)
+    logger.info("Updating JobTitleCluster statistics...")
+    logger.info("=" * 80)
     
     # Get all clusters
     clusters = JobTitleCluster.objects.all()
     total_clusters = clusters.count()
     
-    print(f"Total clusters to process: {total_clusters:,}")
+    logger.info("Total clusters to process: %s", f"{total_clusters:,}")
     
     if args.dry_run:
-        print("\n🔍 DRY RUN - Showing first 10 clusters that would be updated:")
+        logger.info("DRY RUN - Showing first 10 clusters that would be updated:")
         for cluster in clusters[:10]:
             job_titles = JobTitle.objects.filter(canonical_cluster=cluster)
             stats = SalaryRecord.objects.filter(
@@ -62,12 +66,12 @@ def main():
                 avg_sal=Avg('wage_annual')
             )
             avg_sal_str = f"${stats['avg_sal']:,.0f}" if stats['avg_sal'] else "$0"
-            print(f"  {cluster.canonical_title}: {stats['total']} filings, {avg_sal_str} avg")
-        print(f"\n... and {max(0, total_clusters - 10)} more")
+            logger.info("  %s: %s filings, %s avg", cluster.canonical_title, stats['total'], avg_sal_str)
+        logger.info("... and %s more", max(0, total_clusters - 10))
         return
     
     # Update clusters in batches
-    print("\n📝 Calculating and updating statistics...")
+    logger.info("Calculating and updating statistics...")
     
     collector = BatchedUpdateCollector(
         fields=['total_filings', 'avg_salary', 'canonical_title'],
@@ -118,14 +122,16 @@ def main():
             updated += 1
         
         if processed % 1000 == 0:
-            print(f"  Processed {processed:,}/{total_clusters:,} clusters...")
+            logger.info("  Processed %s/%s clusters (%s%%)", 
+                       f"{processed:,}", f"{total_clusters:,}", 
+                       f"{(processed/total_clusters*100):.1f}")
     
     collector.flush()
     
-    print(f"\n✅ Successfully processed {processed:,} clusters")
-    print(f"   Updated {updated:,} clusters with non-zero filings")
-    print(f"   {processed - updated:,} clusters have no linked salary records")
-    print(f"   Updated {representative_updated:,} cluster representatives to most frequent title")
+    logger.info("Successfully processed %s clusters", f"{processed:,}")
+    logger.info("   Updated %s clusters with non-zero filings", f"{updated:,}")
+    logger.info("   %s clusters have no linked salary records", f"{processed - updated:,}")
+    logger.info("   Updated %s cluster representatives to most frequent title", f"{representative_updated:,}")
 
 
 if __name__ == '__main__':
