@@ -399,6 +399,51 @@
             margin-right: 6px;
         }
         
+        /* Autocomplete styles */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+        
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 0 0 0.25rem 0.25rem;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .autocomplete-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        
+        .autocomplete-item:hover,
+        .autocomplete-item.active {
+            background-color: #f8f9fa;
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
+        .autocomplete-item strong {
+            color: var(--gov-navy);
+        }
+
+        .autocomplete-count {
+            color: #6c757d;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+        
         /* Navigation Colors */
         :root {
             --nav-inactive-text: #4a5568;      /* Medium gray for inactive links */
@@ -650,6 +695,9 @@
             }
         });
     </script>
+    
+    <!-- Autocomplete functionality -->
+    <script src="{% static 'js/autocomplete.js' %}" defer></script>
     
     {% block extra_scripts %}{% endblock %}
 </body>

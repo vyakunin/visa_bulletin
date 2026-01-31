@@ -4,6 +4,7 @@ import json
 
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.db.models import Count, Exists, F, OuterRef, Q
 
@@ -168,6 +169,9 @@ def employer_directory_view(request):
         
         # Filter options
         'states': US_STATES,
+        
+        # Autocomplete URL
+        'company_autocomplete_url': reverse('company_autocomplete'),
         
         # Results
         'employers': employers,

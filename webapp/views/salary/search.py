@@ -1,6 +1,7 @@
 """Salary and worksite search views."""
 
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.core.cache import cache
 from django.db.models import Avg, Min, Max
@@ -255,6 +256,9 @@ def salary_search_view(request):
         # SEO
         'page_title': 'H-1B & PERM Salary Database - Visa Bulletin Dashboard',
         'page_description': 'Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by job title, employer, and location.',
+        
+        # Autocomplete URL
+        'company_autocomplete_url': reverse('company_autocomplete'),
     }
     
     return render(request, 'webapp/salary_search.html', context)

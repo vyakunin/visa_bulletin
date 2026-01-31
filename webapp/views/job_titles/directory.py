@@ -4,6 +4,7 @@ import json
 
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.db.models import Avg, Case, Count, F, IntegerField, OuterRef, Subquery, Sum, Value, When
 
@@ -158,6 +159,8 @@ def job_title_directory_view(request):
         'page_range': pagination['page_range'],
         'page_title': 'Job Title Directory - Salary Data by Role | Visa Bulletin Dashboard',
         'page_description': 'Explore salary and sponsorship data by job title. Browse top roles, view average salaries, and jump to detailed job title profiles.',
+        # Autocomplete URL
+        'job_title_autocomplete_url': reverse('job_title_autocomplete'),
     }
     
     return render(request, 'webapp/job_title_directory.html', context)

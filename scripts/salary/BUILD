@@ -1277,6 +1277,29 @@ py_binary(
 )
 
 py_binary(
+    name = "update_employer_stats",
+    srcs = ["update_employer_stats.py"],
+    main = "update_employer_stats.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:db_utils",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "update_job_title_cluster_stats",
     srcs = ["update_job_title_cluster_stats.py"],
     main = "update_job_title_cluster_stats.py",

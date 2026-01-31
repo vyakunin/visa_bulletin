@@ -9,6 +9,7 @@ sh_binary(
         "//scripts/salary:backfill_job_title_links",
         "//scripts/salary:backfill_source_file_date",
         "//scripts/salary:cluster_job_titles",
+        "//scripts/salary:update_employer_stats",
         "//scripts/salary:cluster_existing_employers",
         "//scripts/salary:update_job_title_cluster_stats",
     ],

@@ -75,6 +75,7 @@ REQUIRED_BINARIES=(
     "scripts/salary/backfill_job_title_links"
     "scripts/salary/backfill_source_file_date"
     "scripts/salary/cluster_job_titles"
+    "scripts/salary/update_employer_stats"
     "scripts/salary/cluster_existing_employers"
     "scripts/salary/update_job_title_cluster_stats"
 )
@@ -320,6 +321,9 @@ run_bin "scripts/salary/backfill_source_file_date" 2>&1
 
 log "--- Post-processing: Cluster job titles ---"
 run_bin "scripts/salary/cluster_job_titles" 2>&1
+
+log "--- Post-processing: Update employer stats (before clustering) ---"
+run_bin "scripts/salary/update_employer_stats" 2>&1
 
 log "--- Post-processing: Cluster employers (long-running) ---"
 run_bin "scripts/salary/cluster_existing_employers" 2>&1

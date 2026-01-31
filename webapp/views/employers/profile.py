@@ -6,6 +6,7 @@ from django.core.cache import cache
 from django.db.models import Avg, Count, Exists, F, Max, Min, OuterRef, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.cache import cache_page
 
 from lib.business.salary.common_stats import (
@@ -334,6 +335,8 @@ def employer_profile_view(request, slug):
         'start_year': start_year,
         'similar_employers': similar_employers,
         'top_state': top_state,
+        # Autocomplete URL
+        'company_autocomplete_url': reverse('company_autocomplete'),
     }
     
     return render(request, 'webapp/employer_profile.html', context)
