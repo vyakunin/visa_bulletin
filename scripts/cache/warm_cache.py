@@ -144,12 +144,48 @@ def warm_directory_caches(verbose: bool = False):
     logger.info(f"  Directory caches warmed in {elapsed:.1f}s")
 
 
+def warm_page_caches(base_url: str = "http://localhost:8000", verbose: bool = False):
+    """Warm page-level caches by making HTTP requests."""
+    import urllib.request
+    import urllib.error
+    
+    logger.info("Warming page caches via HTTP requests...")
+    start = time.time()
+    
+    pages = [
+        "/salaries/",
+        "/job-titles/",
+        "/employers/",
+    ]
+    
+    for page in pages:
+        url = f"{base_url}{page}"
+        try:
+            page_start = time.time()
+            req = urllib.request.Request(url, headers={'User-Agent': 'CacheWarmer/1.0'})
+            with urllib.request.urlopen(req, timeout=60) as response:
+                _ = response.read()  # Read full response to ensure cache is populated
+                elapsed = time.time() - page_start
+                logger.info(f"  {page}: {response.status} in {elapsed:.1f}s")
+        except urllib.error.URLError as e:
+            logger.warning(f"  {page}: Failed - {e}")
+        except Exception as e:
+            logger.warning(f"  {page}: Error - {e}")
+    
+    elapsed = time.time() - start
+    logger.info(f"  Page caches warmed in {elapsed:.1f}s")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Warm up Django cache')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Show detailed cache contents')
     parser.add_argument('--market-only', action='store_true',
                        help='Only warm market overview cache')
+    parser.add_argument('--base-url', type=str, default='http://localhost:8000',
+                       help='Base URL for page cache warming (default: http://localhost:8000)')
+    parser.add_argument('--skip-pages', action='store_true',
+                       help='Skip page-level cache warming (HTTP requests)')
     args = parser.parse_args()
     
     logging.basicConfig(
@@ -170,6 +206,10 @@ def main():
         warm_fiscal_years_cache(args.verbose)
         warm_count_caches(args.verbose)
         warm_directory_caches(args.verbose)
+        
+        # Warm page caches via HTTP requests (optional)
+        if not args.skip_pages:
+            warm_page_caches(args.base_url, args.verbose)
     
     total_elapsed = time.time() - total_start
     logger.info("=" * 60)
