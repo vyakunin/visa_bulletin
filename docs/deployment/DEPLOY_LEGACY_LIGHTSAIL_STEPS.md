@@ -1,3 +1,16 @@
+# AWS Lightsail Deployment (Legacy Guide)
+
+> **Legacy document:** This guide is outdated. Use:
+> - `NEW_INSTANCE_SETUP.md` for current setup
+> - `ROLLOUT_FLOW.md` for current deployment process
+
+## Why this is legacy
+- Uses older, manual steps
+- Assumes smaller instance sizes
+- Does not reflect current blue/green deployment
+
+## If you must reference legacy steps
+Use this only for historical context. Do not follow these instructions for new deployments.
 # AWS Lightsail Deployment - Step-by-Step Guide
 
 > **⚠️ LEGACY DOCUMENT:** This beginner-friendly guide is outdated. For current deployment instructions, see:
@@ -441,4 +454,3 @@ You've successfully deployed a production-grade web application!
 **Your Visa Bulletin Dashboard is now helping track immigration priority dates! 🇺🇸**
 
 Need help? Issues? Let me know!
-

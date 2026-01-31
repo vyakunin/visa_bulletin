@@ -35,14 +35,15 @@ py_binary(
 
 
 py_binary(
-    name = "explore_db",
-    srcs = ["explore_db.py"],
+    name = "run_sql",
+    srcs = ["run_sql.py"],
     visibility = ["//visibility:public"],
     deps = [
         "//lib/utils:logging_utils",
         "//models:salary",
         "//models:bulletin",
         "//django_config:settings",
+        "//django_config:logging_config",
         "//webapp:apps",
         requirement("Django"),
         requirement("asgiref"),

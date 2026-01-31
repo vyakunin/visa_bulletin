@@ -7,7 +7,7 @@ This directory contains all project scripts organized by functionality. All scri
 - **Data Validation**: `bazel run //scripts/salary:validate_data`
 - **Data Ingestion**: `bazel run //scripts/ingest:run_pipeline`
 - **Employer Clustering**: `bazel run //scripts/salary:cluster_existing_employers`
-- **Database Exploration**: `bazel run //scripts:explore_db`
+- **Database Exploration**: `bazel run //scripts:run_sql`
 
 ## Table of Contents
 
@@ -713,9 +713,9 @@ bazel run //:makemigrations_wrapper
 
 ### Database Utilities
 
-**`scripts/explore_db.py`** - Interactive database exploration tool
+**`scripts/run_sql.py`** - Database query tool (SELECT and mutations)
 ```bash
-bazel run //scripts:explore_db -- --query "SELECT COUNT(*) FROM salary_record"
+bazel run //scripts:run_sql -- --query "SELECT COUNT(*) FROM salary_record"
 ```
 
 **`scripts/clear_cache.py`** - Clear Django cache
@@ -1024,7 +1024,7 @@ Every script must include:
 - **Validation scripts**: `validate_*.py`, `check_*.py`
 - **Fix scripts**: `fix_*.py`
 - **Investigation scripts**: `investigate_*.py`, `debug_*.py`
-- **Utility scripts**: Descriptive names (e.g., `explore_db.py`, `clear_cache.py`)
+- **Utility scripts**: Descriptive names (e.g., `run_sql.py`, `clear_cache.py`)
 - **Avoid**: `test_*.py` for non-unit-test scripts (use `check_*.py` or `evaluate_*.py`)
 
 ### Running Scripts
@@ -1032,7 +1032,7 @@ Every script must include:
 **Always use Bazel:**
 ```bash
 bazel run //scripts/salary:validate_data
-bazel run //scripts:explore_db
+bazel run //scripts:run_sql
 ```
 
 **Never run Python directly:**

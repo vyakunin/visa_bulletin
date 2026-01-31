@@ -131,7 +131,7 @@ def call_external_api(url: str) -> str | None:
 import argparse
 from lib.utils.logging_utils import ScriptLogger
 
-# Initialize logger (creates logs/explore_db.log)
+# Initialize logger (creates logs/run_sql.log)
 logger = ScriptLogger(__file__)
 
 def main():
@@ -159,7 +159,7 @@ if __name__ == '__main__':
 
 **Example log entry:**
 ```
-2025-12-05 14:30:15 - {"timestamp": "2025-12-05T14:30:15.123456", "script": "/path/to/explore_db.py", "args": {"query": "SELECT COUNT(*) FROM salary_record"}, "context": "Database exploration for debugging"}
+2025-12-05 14:30:15 - {"timestamp": "2025-12-05T14:30:15.123456", "script": "/path/to/run_sql.py", "args": {"query": "SELECT COUNT(*) FROM salary_record"}, "context": "Database query for debugging"}
 ```
 
 ### 2. Throwaway Scripts (One-off Debugging)
@@ -213,14 +213,14 @@ log_context("Debugging salary calculation issue - checking wage_annual values")
 
 **View permanent script logs:**
 ```bash
-# View all executions of explore_db
-cat logs/explore_db.log
+# View all executions of run_sql
+cat logs/run_sql.log
 
 # View recent executions (last 10 lines)
-tail -10 logs/explore_db.log
+tail -10 logs/run_sql.log
 
 # Search for specific context
-grep "salary calculation" logs/explore_db.log
+grep "salary calculation" logs/run_sql.log
 ```
 
 **View throwaway script logs:**

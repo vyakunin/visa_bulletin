@@ -362,7 +362,7 @@ bazel run //scripts/ingest:run_pipeline -- check-completeness
 
 ```bash
 # Check records for specific fiscal year
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT 
     fiscal_year,
     COUNT(*) as records,
@@ -394,7 +394,7 @@ curl -s "http://localhost:8000/salaries/?job_title=software+engineer&fiscal_year
 ### 4. Verify Job Title Links
 
 ```bash
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT 
     COUNT(*) as total_records,
     COUNT(job_title_entity_id) as linked_records,
@@ -409,7 +409,7 @@ bazel run //:explore_db -- --query "
 ### 5. Check Employer Clustering
 
 ```bash
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT 
     COUNT(DISTINCT canonical_cluster_id) as unique_clusters,
     COUNT(*) as total_employers,
@@ -607,7 +607,7 @@ bazel run //scripts/salary:update_job_title_cluster_stats
 bazel run //scripts/ingest:run_pipeline -- check-completeness
 
 # Check record counts
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT fiscal_year, COUNT(*) 
   FROM salary_record 
   GROUP BY fiscal_year 
@@ -615,7 +615,7 @@ bazel run //:explore_db -- --query "
 "
 
 # Check job title links
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT 
     COUNT(*) as total,
     COUNT(job_title_entity_id) as linked,
@@ -624,7 +624,7 @@ bazel run //:explore_db -- --query "
 "
 
 # Check employer clusters
-bazel run //:explore_db -- --query "
+bazel run //:run_sql -- --query "
   SELECT 
     COUNT(DISTINCT canonical_cluster_id) as clusters,
     COUNT(*) as employers

@@ -124,10 +124,10 @@ alias(
 
 # check_migrations: No alias needed - not referenced anywhere, use //scripts/oneoff:check_migrations directly
 
-# Actual target: scripts/BUILD:explore_db (line 58)
+# Actual target: scripts/BUILD:run_sql
 alias(
-    name = "explore_db",
-    actual = "//scripts:explore_db",
+    name = "run_sql",
+    actual = "//scripts:run_sql",
 )
 
 # fix_calculation deleted - use fix_high_wage_records instead

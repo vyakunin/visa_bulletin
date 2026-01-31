@@ -581,23 +581,23 @@ py_library(
 
 **✅ GOOD - Verify table names first:**
 ```python
-# Use explore_db to list tables
-bazel run //:explore_db -- --query \
+# Use run_sql to list tables
+bazel run //:run_sql -- --query \
   "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
 
 # Or query specific pattern
-bazel run //:explore_db -- --query \
+bazel run //:run_sql -- --query \
   "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE '%job%'"
 ```
 
 **❌ BAD - Assume model name is table name:**
 ```python
 # Wrong: Using Django model name directly
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM JobTitle"  # ❌ Table doesn't exist
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"  # ❌ Wrong pattern
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM JobTitle"  # ❌ Table doesn't exist
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM models_jobtitle"  # ❌ Wrong pattern
 
 # Correct: Using actual PostgreSQL table name
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"  # ✅ Works
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"  # ✅ Works
 ```
 
 **Common table mappings in this project:**

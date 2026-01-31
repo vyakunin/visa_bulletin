@@ -19,7 +19,7 @@
 set -e
 
 # Configuration
-AWS_HOST="3.227.71.176"
+AWS_HOST="prod_0.5Gb_vm"
 AWS_USER="ubuntu"
 DEFAULT_KEY="$HOME/.ssh/lightsail_visa_bulletin"
 DEPLOY_DIR="/opt/visa_bulletin"

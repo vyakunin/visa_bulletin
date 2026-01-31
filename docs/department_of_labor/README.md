@@ -67,7 +67,7 @@ bazel run //scripts/salary:validate_data -- --check-missing-wages
 ### Query Data
 ```bash
 # Explore database interactively
-bazel run //:explore_db
+bazel run //:run_sql
 ```
 
 For ingest pipeline documentation, see `docs/ingest/`.

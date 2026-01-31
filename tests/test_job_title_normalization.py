@@ -107,11 +107,11 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('Software Engineer II', 'software engineer ii', 'ii'),  # Roman numeral kept verbatim
             ('Software Engineer III', 'software engineer iii', 'iii'),  # Roman numeral kept verbatim
             ('Manager II, Supply Chain', 'manager supply chain', 'ii'),
-            ('Manager 2, Supply Chain', 'manager supply chain', 'ii'),
-            ('Director 3, Engineering', 'director engineering', 'iii'),
+            ('Manager 2, Supply Chain', 'manager supply chain', 'ii'),  # Level marker detected before digit removal
+            ('Director 3, Engineering', 'director engineering', 'iii'),  # Level marker detected before digit removal
             ('Lead IV, Product', 'lead product', 'iv'),
             ('Manager I, Supply Chain', 'manager supply chain', 'i'),
-            ('Manager 1, Supply Chain', 'manager supply chain', 'i'),
+            ('Manager 1, Supply Chain', 'manager supply chain', 'i'),  # Level marker detected before digit removal
             ('Database Administrator', 'database administrator', ''),
             ('Principal Data Scientist', 'data scientist', 'principal'),
             ('Engineering Manager', 'engineering', 'manager'),
@@ -177,7 +177,7 @@ class TestJobTitleNormalization(unittest.TestCase):
     def test_special_characters_removed(self):
         """Special characters should be removed or normalized."""
         test_cases = [
-            ('Software Engineer (Full Stack)', 'software engineer'),  # Parentheticals removed
+            ('Software Engineer (Full Stack)', 'software engineer full stack'),  # Meaningful parentheticals kept
             ('Data Scientist - ML', 'data scientist ml'),  # ml NOT expanded (only as complete title)
             ('Product Manager, Growth', 'product growth'),  # manager → level
             ('Senior Engineer & Architect', 'engineer and architect'),

@@ -101,7 +101,7 @@ The following sections document the manual setup steps for reference and trouble
 
 ### 1) Confirm instance + SSH
 ```bash
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255
+ssh staging_2Gb_vm
 ```
 
 ### 2) Confirm PostgreSQL is up
@@ -158,7 +158,7 @@ tail -40 /var/log/visa-bulletin/retry_failed.log
 **Each check must verify:**
 ```bash
 # Check status, memory, and progress in one command
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 "
+ssh staging_2Gb_vm "
   echo '=== Memory ===' && free -m | grep -E 'Mem:|Swap:' &&
   echo '=== PostgreSQL ===' && pg_isready -h localhost &&
   echo '=== Process ===' && ps -o pid,etime,cmd -C python3 | grep run_pipeline | head -2 &&
@@ -196,7 +196,7 @@ If any missing files/years are reported, re-run step 5 and repeat this check.
 
 ```bash
 # Check index count
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "sudo -u postgres psql -d visa_bulletin_blue -t -c \
   \"SELECT COUNT(*) FROM pg_indexes WHERE tablename='salary_record';\""
 
@@ -207,14 +207,14 @@ ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
 **If indexes missing, create clustering indexes:**
 ```bash
 # Create minimal indexes required for clustering
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "cd /opt/visa_bulletin && \
    bazel build //scripts/salary:manage_salary_indexes && bazel shutdown && \
    set -a && source .env && set +a && \
    DB_HOST=localhost ./bazel-bin/scripts/salary/manage_salary_indexes --create-clustering-indexes"
 
 # Verify indexes created (should show 8+ indexes now)
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "sudo -u postgres psql -d visa_bulletin_blue -t -c \
   \"SELECT COUNT(*) FROM pg_indexes WHERE tablename='salary_record';\""
 ```
@@ -349,7 +349,7 @@ psql -d visa_bulletin_blue -c "\d+ salary_record"
 ## SSH Setup
 
 ```bash
-ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@44.209.204.255
+ssh staging_2Gb_vm
 ```
 
 **Note:** Update IP if instance was stopped/started (check AWS CLI: `aws lightsail get-instance --instance-name VisaBulletin2GB --query 'instance.publicIpAddress'`)

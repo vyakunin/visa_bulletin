@@ -70,7 +70,7 @@ def main():
     print("\n📝 Calculating and updating statistics...")
     
     collector = BatchedUpdateCollector(
-        fields=['total_filings', 'avg_salary'],
+        fields=['total_filings', 'avg_salary', 'canonical_title'],
         batch_size=500,
         dry_run=False,
         use_transaction=True
@@ -78,6 +78,7 @@ def main():
     
     processed = 0
     updated = 0
+    representative_updated = 0
     
     for cluster in clusters.iterator(chunk_size=500):
         # Get all job titles in this cluster
@@ -98,6 +99,18 @@ def main():
         cluster.total_filings = stats['total'] or 0
         cluster.avg_salary = stats['avg_sal']
         
+        # Update canonical_title to the most frequent job title in the cluster
+        most_frequent = (
+            job_titles
+            .filter(total_filings__gt=0)
+            .order_by('-total_filings')
+            .values_list('title', flat=True)
+            .first()
+        )
+        if most_frequent and most_frequent != cluster.canonical_title:
+            cluster.canonical_title = most_frequent
+            representative_updated += 1
+        
         collector.add(cluster)
         processed += 1
         
@@ -112,6 +125,7 @@ def main():
     print(f"\n✅ Successfully processed {processed:,} clusters")
     print(f"   Updated {updated:,} clusters with non-zero filings")
     print(f"   {processed - updated:,} clusters have no linked salary records")
+    print(f"   Updated {representative_updated:,} cluster representatives to most frequent title")
 
 
 if __name__ == '__main__':

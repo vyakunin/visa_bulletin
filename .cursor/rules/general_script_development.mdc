@@ -281,7 +281,7 @@ test_data_quality.py  # Should be: evaluate_data_quality.py
 ```bash
 # Always run from project root directory
 cd /path/to/project
-bazel run //:explore_db -- --query "SELECT ..."
+bazel run //:run_sql -- --query "SELECT ..."
 bazel run //scripts/salary:validate_data
 bazel run //scripts/salary:collect_dol_golden_test_data -- --limit-files 5
 ```
@@ -289,7 +289,7 @@ bazel run //scripts/salary:collect_dol_golden_test_data -- --limit-files 5
 **❌ BAD - Direct Python:**
 ```bash
 python3 -c "import django; ..."  # Fails: ModuleNotFoundError
-python explore_db.py  # Fails: Django not in system Python
+python run_sql.py  # Fails: Django not in system Python
 ```
 
 **❌ BAD - Running Bazel from wrong directory:**
@@ -843,6 +843,7 @@ while ps -p $PID > /dev/null; do
   
   echo "=== Check $ITERATION (interval: ${INTERVAL}s) ==="
   tail -10 /tmp/script.log
+  free -h  # Memory check (Linux). On macOS use: vm_stat
   
   # Check for errors
   if grep -q "ERROR\|Exception" /tmp/script.log; then
@@ -853,9 +854,9 @@ while ps -p $PID > /dev/null; do
   fi
   
   # Slow exponential backoff: multiply by ~1.5 each iteration
-  # Pattern: 10s -> 15s -> 23s -> 35s -> 53s -> 80s -> 120s -> 180s -> 270s -> 405s
-  # Cap at 5 minutes (300s) to avoid too long between checks
-  if [ $INTERVAL -lt 300 ]; then
+  # Pattern: 10s -> 15s -> 23s -> 35s -> 53s -> 80s -> 120s -> 180s -> 270s -> 405s -> 600s
+  # Cap at 10 minutes (600s) to avoid too long between checks
+  if [ $INTERVAL -lt 600 ]; then
     INTERVAL=$((INTERVAL * 3 / 2))  # Multiply by 1.5 (integer math)
   fi
 done
@@ -887,14 +888,18 @@ done
 - Balance between responsiveness and resource usage
 
 **Backoff pattern:**
-- ✅ **Good:** 10s → 15s → 23s → 35s → 53s → 80s → 120s → 180s → 270s → 405s
+- ✅ **Good:** 10s → 15s → 23s → 35s → 53s → 80s → 120s → 180s → 270s → 405s → 600s
 - ❌ **Bad:** 10s → 300s → 900s (too dramatic, misses intermediate issues)
 
 **Implementation:**
 - Start with 10-15 seconds for first few checks
 - Multiply interval by ~1.5 each iteration (use integer math: `INTERVAL=$((INTERVAL * 3 / 2))`)
-- Cap maximum interval at 5 minutes (300s) to ensure regular checks
+- Cap maximum interval at 10 minutes (600s) to ensure regular checks
 - Reset interval if errors detected (back to frequent checking)
+
+**Memory monitoring (required during babysitting):**
+- ✅ Check memory each interval (`free -h` on Linux, `vm_stat` on macOS)
+- ✅ If swap grows or memory is exhausted, pause and investigate before continuing
 
 **When to use:**
 - ✅ Long-running scripts (> 10 minutes expected)

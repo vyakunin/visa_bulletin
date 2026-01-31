@@ -31,7 +31,7 @@ bazel run //scripts/salary:validate_data -- --test-homepage-queries
 
 ```bash
 # SSH to production
-ssh lightsail
+ssh prod_0.5Gb_vm
 
 # Navigate to project
 cd /opt/visa_bulletin
@@ -212,7 +212,7 @@ bazel run //scripts/salary:validate_data
 
 ```bash
 # SSH to production server
-ssh lightsail
+ssh prod_0.5Gb_vm
 
 # Navigate to project
 cd /opt/visa_bulletin
@@ -250,7 +250,7 @@ If issues found:
 1. **Check ingestion logs:**
    ```bash
    # View recent runs
-   bazel run //:explore_db
+   bazel run //:run_sql
    # Or query directly:
    python3 -c "
    import django

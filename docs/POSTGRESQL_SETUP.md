@@ -64,7 +64,7 @@ bazel run //:migrate -- --check
 bazel run //:migrate
 
 # Test with Django shell
-bazel run //scripts:explore_db
+bazel run //scripts:run_sql
 ```
 
 **What to expect:**
@@ -95,7 +95,7 @@ models/BUILD:requirement("psycopg2_binary"),
 ### Method 3: Django DB Connection Test
 
 ```python
-# In scripts/explore_db or any Django script
+# In scripts/run_sql or any Django script
 from django.db import connection
 
 # Test connection

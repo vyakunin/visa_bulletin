@@ -100,7 +100,7 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 #### Option C: Manual Deployment
 
 ```bash
-ssh lightsail << 'ENDSSH'
+ssh prod_0.5Gb_vm << 'ENDSSH'
 cd /opt/visa_bulletin
 git pull origin main
 export IMAGE_TAG=v1.2.3
@@ -118,10 +118,10 @@ curl -I https://visa-bulletin.us/about/
 curl -I https://visa-bulletin.us/faq/
 
 # Check deployed version
-ssh lightsail 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
+ssh prod_0.5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
 
 # Check logs
-ssh lightsail 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50'
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50'
 ```
 
 ### Step 8: Monitor (15-30 minutes)
@@ -130,13 +130,13 @@ Watch for issues:
 
 ```bash
 # Monitor logs
-ssh lightsail 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
 
 # Check error logs
-ssh lightsail 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs | grep -i error'
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs | grep -i error'
 
 # Monitor resource usage
-ssh lightsail 'free -h && df -h'
+ssh prod_0.5Gb_vm 'free -h && df -h'
 ```
 
 ### Step 9: Document (If Major Release)
@@ -165,7 +165,7 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.2
 If Docker is completely broken:
 
 ```bash
-ssh lightsail << 'ENDSSH'
+ssh prod_0.5Gb_vm << 'ENDSSH'
 cd /opt/visa_bulletin
 # Stop Docker
 sudo docker-compose -f docker-compose.test.yml down
@@ -219,7 +219,7 @@ git push origin v1.0.1
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.0.1
 
 # 4. Monitor closely
-ssh lightsail 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
 ```
 
 ### Scenario 2: Feature Deployment
@@ -273,10 +273,10 @@ source ~/.shrc && act -W .github/workflows/docker-build-push.yml
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.3
 
 # Check SSH access
-ssh lightsail 'uptime'
+ssh prod_0.5Gb_vm 'uptime'
 
 # Check Docker status
-ssh lightsail 'sudo docker ps'
+ssh prod_0.5Gb_vm 'sudo docker ps'
 ```
 
 ### Site Down After Deployment
@@ -286,7 +286,7 @@ ssh lightsail 'sudo docker ps'
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.2
 
 # Or emergency rollback to systemd
-ssh lightsail 'sudo systemctl start visa-bulletin'
+ssh prod_0.5Gb_vm 'sudo systemctl start visa-bulletin'
 ```
 
 ## Version History
@@ -301,7 +301,7 @@ git tag -l -n
 # https://github.com/vyakunin/visa_bulletin/releases
 
 # Check what's deployed
-ssh lightsail 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
+ssh prod_0.5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
 ```
 
 ## Additional Resources

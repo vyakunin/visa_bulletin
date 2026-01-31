@@ -8,27 +8,41 @@ alwaysApply: true
 
 # Deployment and Rollout Rules
 
+## Production Instances
+
+**Current Production Instances:**
+- **44.209.204.255** - Next production instance (being set up to become main prod)
+- **3.227.71.176** - Old production (may be deprecated)
+
+**When deploying, always verify:**
+- Which instance is the target
+- What's running there (Docker vs direct gunicorn)
+- Database being used (blue vs green)
+
 ## Rule: Always Verify Target Instance Before SSH Commands
 
-**CRITICAL: NEVER blindly use 'lightsail' SSH alias. Always verify which instance you're targeting based on conversation context.**
+**CRITICAL: Always use the correct SSH alias based on the target instance.**
 
-**When user mentions a specific IP or instance:**
-- ✅ Use the specific IP: `ssh ubuntu@44.209.204.255`
-- ✅ Verify with user: "Working with 44.209.204.255 (new 2GB instance), correct?"
-- ❌ Don't assume "lightsail" alias points to the instance being discussed
+**SSH aliases in `~/.ssh/config`:**
 
-**SSH aliases in ~/.ssh/config:**
-- `lightsail` or `lightsail-visa-bulletin` → May point to OLD production (3.227.71.176)
-- Always check context before using aliases
+| Alias | IP | RAM | Purpose |
+|-------|----|-----|---------|
+| `staging_2Gb_vm` | 44.209.204.255 | 2GB | Staging / next production |
+| `prod_0.5Gb_vm` | 3.227.71.176 | 0.5GB | Legacy production |
+
+**When user mentions a specific instance:**
+- ✅ Use the matching alias: `ssh staging_2Gb_vm` or `ssh prod_0.5Gb_vm`
+- ✅ Verify with user: "Working with staging_2Gb_vm (44.209.204.255), correct?"
+- ❌ Don't use raw IPs or the old `lightsail` aliases
 
 **When debugging production issues:**
 - Ask user: "Which instance should I work with?"
-- Use explicit IPs in commands when context is ambiguous
+- Use the correct alias in commands
 - Verify instance in first command before making changes
 
 **Rationale:**
 - Multiple instances exist (old prod, new instances, staging)
-- SSH aliases may be outdated or ambiguous
+- Wrong alias = wrong instance
 - Wrong instance = data corruption or service disruption
 - Always be explicit when making changes
 
@@ -271,7 +285,7 @@ If deployment fails or issues arise:
 
 ### Emergency Rollback (Docker → Systemd)
 ```bash
-ssh lightsail 'cd /opt/visa_bulletin && \
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && \
  sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
  sudo nginx -t && sudo systemctl reload nginx'
 ```
@@ -301,7 +315,7 @@ Use `./scripts/deploy-zero-downtime.sh` which:
 
 **Manual Fix (if error occurs outside deployment script):**
 ```bash
-ssh lightsail
+ssh prod_0.5Gb_vm
 cd /opt/visa_bulletin
 sudo docker-compose down
 sudo docker-compose up -d
@@ -352,7 +366,7 @@ After any deployment:
 curl -I https://visa-bulletin.us
 
 # Check Docker logs
-ssh lightsail "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
+ssh prod_0.5Gb_vm "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
 
 # Monitor for 10-15 minutes for errors
 ```

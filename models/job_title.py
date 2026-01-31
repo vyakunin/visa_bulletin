@@ -198,17 +198,68 @@ class JobTitle(models.Model):
         
         normalized = title.lower().strip()
         
-        # Seniority patterns (to be removed)
-        # Note: Roman numerals (I, II, III, IV, V) are NOT removed as they mean different things at different companies
+        # Standard normalization (from employer patterns)
+        normalized = re.sub(r'\s*&\s*', ' and ', normalized)
+        
+        # Handle parentheticals:
+        # - Remove noise: job codes, multiple openings, ACWIA, level markers
+        # - Keep meaningful specializations: technologies, position levels, etc.
+        
+        # Patterns to REMOVE completely (noise)
+        noise_parenthetical_patterns = [
+            r'\(multiple\s*(openings?|positions?)?\)',  # (Multiple Openings), (multiple positions)
+            r'\(acwia[^)]*\)',  # (ACWIA Only)
+            r'\(job\s*[#\w\s]*\)',  # (Job # 336212), (Job Code 001)
+            r'\(\d+[-\d]*\)',  # (15-1132), (4), (3) - pure numbers
+            r'\(level\s*[ivx\d]+\)',  # (Level II)
+            r'\(s\)',  # (s) - typo/noise
+            r'\(degree\)',  # (Degree)
+            r'\(senior\)',  # (Senior) - already extracted as experience level
+            r'\(lead\)',  # (Lead) - already extracted as experience level
+        ]
+        for pattern in noise_parenthetical_patterns:
+            normalized = re.sub(pattern, ' ', normalized, flags=re.IGNORECASE)
+        
+        # For ALL remaining parentheticals, extract content with markers to protect from seniority removal
+        # This keeps specializations like (Java/J2EE), (Game Development), (.NET), (Manager), (Full Stack)
+        parenthetical_contents = []
+        def extract_parenthetical(match):
+            content = match.group(1).strip()
+            # Clean up the content
+            content = re.sub(r'[/\\]', ' ', content)  # Replace / and \ with space
+            content = re.sub(r'[^\w\s]', ' ', content)  # Remove special chars
+            content = re.sub(r'\s+', ' ', content).strip()
+            if content:
+                idx = len(parenthetical_contents)
+                parenthetical_contents.append(content)
+                # Use alphanumeric placeholder (no underscores) to survive cleanup
+                return f' XPARENX{idx}XPARENX '
+            return ' '
+        
+        normalized = re.sub(r'\(([^)]+)\)', extract_parenthetical, normalized)
+        
+        normalized = re.sub(r'[-_]', ' ', normalized)
+        normalized = re.sub(r'[^\w\s]', ' ', normalized)
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # Detect level markers BEFORE removing digits
+        # This ensures "Manager 2, Supply Chain" keeps "manager" because of the "2"
         level_marker_pattern = r'\b(i{1,3}|iv|v|[1-5])\b(?!\w)'
         has_level_marker = bool(re.search(level_marker_pattern, normalized))
+        
+        # NOW remove standalone digits (but level marker detection already happened)
+        normalized = re.sub(r'\s+\d+\s+', ' ', normalized)
+        normalized = re.sub(r'\s+\d+$', '', normalized)
+        normalized = re.sub(r'^\d+\s+', '', normalized)
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # Apply seniority removal (parenthetical content is protected by placeholders)
         seniority_patterns = [
             r'\bentry[ -]level\b', r'\bentry\b', r'\bjunior\b', r'\bjr\.?\b',
             r'\bsenior\b', r'\bsr\.?\b', r'\blead\b', r'\bleading\b',
             r'\bstaff\b', r'\bprincipal\b',
             r'\bmanager\b', r'\bmgr\.?\b', r'\bmanaging\b',
             r'\bdirector\b', r'\bdir\.?\b',
-            # Note: We keep level markers like "II", "III" etc. as they're company-specific
             r'\blevel\s*[i1234v5]\b',  # Remove "Level II", "Level 3" etc.
         ]
 
@@ -235,14 +286,11 @@ class JobTitle(models.Model):
         if has_level_marker and has_role_word:
             normalized = re.sub(level_marker_pattern, ' ', normalized)
         
-        # Standard normalization (from employer patterns)
-        normalized = re.sub(r'\s*&\s*', ' and ', normalized)
-        normalized = re.sub(r'\([^)]*\)', ' ', normalized)  # Remove parentheticals (certifications)
-        normalized = re.sub(r'[-_]', ' ', normalized)
-        normalized = re.sub(r'[^\w\s]', ' ', normalized)
-        normalized = re.sub(r'\s+\d+\s+', ' ', normalized)
-        normalized = re.sub(r'\s+\d+$', '', normalized)
-        normalized = re.sub(r'^\d+\s+', '', normalized)
+        # Restore parenthetical content
+        for idx, content in enumerate(parenthetical_contents):
+            normalized = normalized.replace(f'XPARENX{idx}XPARENX', content)
+        
+        # Clean up whitespace again after seniority removal and restoration
         normalized = re.sub(r'\s+', ' ', normalized).strip()
         
         # Title standardization

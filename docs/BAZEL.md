@@ -240,17 +240,17 @@ bazel run //:update_requirements_lock
 
 ### Database Exploration
 
-Use `explore_db` for database queries and debugging:
+Use `run_sql` for database queries and debugging:
 
 ```bash
 # Count records
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_record"
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_record"
 
 # Find high salaries
-bazel run //:explore_db -- --query "SELECT employer_name, wage_annual FROM salary_record WHERE wage_annual > 1000000 LIMIT 5"
+bazel run //:run_sql -- --query "SELECT employer_name, wage_annual FROM salary_record WHERE wage_annual > 1000000 LIMIT 5"
 
 # Show table structure
-bazel run //:explore_db -- --table salary_record
+bazel run //:run_sql -- --table salary_record
 ```
 
 **Why use Bazel:**

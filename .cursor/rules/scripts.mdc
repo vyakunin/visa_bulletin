@@ -28,36 +28,36 @@ bazel run //:runserver                   # Doesn't stop existing server
 - Consistent behavior across team
 - Self-documenting workflows
 
-## Rule: Use explore_db Tool for Database Queries (Never Raw psql)
+## Rule: Use run_sql Tool for Database Queries (Never Raw psql)
 
-**🚨 CRITICAL: ALWAYS use `bazel run //:explore_db` for database queries. NEVER fall back to raw `psql` or manual PostgreSQL commands when the tool doesn't work immediately.**
+**🚨 CRITICAL: ALWAYS use `bazel run //:run_sql` for database queries. There are NO exceptions. NEVER fall back to raw `psql` or manual PostgreSQL commands when the tool doesn't work immediately.**
 
 **Why this matters:**
-- `explore_db` handles Django setup, database connections, and environment variables automatically
+- `run_sql` handles Django setup, database connections, and environment variables automatically
 - Raw `psql` bypasses Django ORM and doesn't respect application configuration
-- When `explore_db` fails, it's a fixable issue - debug the tool, don't abandon it
-- Fixes to `explore_db` benefit future queries and other developers
+- When `run_sql` fails, it's a fixable issue - debug the tool, don't abandon it
+- Fixes to `run_sql` benefit future queries and other developers
 
-**✅ GOOD - Use explore_db (local):**
+**✅ GOOD - Use run_sql (local):**
 ```bash
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"
 ```
 
-**✅ GOOD - Use explore_db (remote VM):**
+**✅ GOOD - Use run_sql (remote VM):**
 ```bash
 # Correct way to run on remote VM
-ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "cd /opt/visa_bulletin && set -a && source .env && set +a && \
-   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+   bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
 **❌ BAD - Raw psql (circumvents tool):**
 ```bash
 # DON'T do this - bypasses Django and tool infrastructure
-ssh ubuntu@44.209.204.255 "psql -U visa_bulletin_user -d visa_bulletin_blue -c 'SELECT COUNT(*) FROM salary_job_title'"
+ssh staging_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin_blue -c 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
-**When explore_db fails, debug it systematically:**
+**When run_sql fails, debug it systematically:**
 
 1. **Check environment variables:**
    ```bash
@@ -71,14 +71,14 @@ ssh ubuntu@44.209.204.255 "psql -U visa_bulletin_user -d visa_bulletin_blue -c '
 3. **Check table names:**
    ```bash
    # List available tables
-   bazel run //:explore_db -- --query \
+   bazel run //:run_sql -- --query \
      "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
    ```
 
 4. **Test connection:**
    ```bash
    # Simple query to verify connection works
-   bazel run //:explore_db -- --query "SELECT 1"
+   bazel run //:run_sql -- --query "SELECT 1"
    ```
 
 **Common issues and fixes:**
@@ -107,24 +107,24 @@ ssh ubuntu@44.209.204.255 "psql -U visa_bulletin_user -d visa_bulletin_blue -c '
 **✅ GOOD - Query actual table names:**
 ```bash
 # List all tables
-bazel run //:explore_db -- --query \
+bazel run //:run_sql -- --query \
   "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
 
 # List tables matching pattern
-bazel run //:explore_db -- --query \
+bazel run //:run_sql -- --query \
   "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE '%job%'"
 ```
 
 **✅ GOOD - Use correct table names:**
 ```bash
 # Correct: salary_job_title (PostgreSQL table name)
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM salary_job_title"
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"
 ```
 
 **❌ BAD - Assume Django model names:**
 ```bash
 # Wrong: models_jobtitle (doesn't exist)
-bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"
+bazel run //:run_sql -- --query "SELECT COUNT(*) FROM models_jobtitle"
 ```
 
 **Common table name patterns in this project:**
@@ -141,7 +141,7 @@ bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"
 **How to find table names:**
 1. Query `pg_tables` first (always fastest)
 2. Check Django migrations for `CREATE TABLE` statements
-3. Connect to database and use `\dt` in psql (only if explore_db unavailable)
+3. Connect to database and use `\dt` in psql (only if run_sql unavailable)
 
 **Rationale:**
 - PostgreSQL table names are lowercase with underscores
@@ -156,7 +156,7 @@ bazel run //:explore_db -- --query "SELECT COUNT(*) FROM models_jobtitle"
 ```bash
 ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@IP_ADDRESS \
   "cd /opt/visa_bulletin && set -a && source .env && set +a && \
-   bazel run //:explore_db -- --query 'YOUR_QUERY_HERE'"
+   bazel run //:run_sql -- --query 'YOUR_QUERY_HERE'"
 ```
 
 **Critical components:**
@@ -164,36 +164,36 @@ ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@IP_ADDR
 2. **`set -a`** - Enable auto-export of variables
 3. **`source .env`** - Load environment variables from .env file
 4. **`set +a`** - Disable auto-export (cleanup)
-5. **`bazel run //:explore_db`** - Run the tool (not raw psql)
+5. **`bazel run //:run_sql`** - Run the tool (not raw psql)
 6. **Single quotes around query** - Prevents local shell expansion
 
 **Why this exact order matters:**
 - `cd` first: Bazel needs to find WORKSPACE file
-- `set -a` before source: Exports variables for subprocess (explore_db)
+- `set -a` before source: Exports variables for subprocess (run_sql)
 - `set +a` after source: Prevents polluting environment
 - Single quotes: Query passes through SSH without local expansion
 
 **✅ GOOD - Complete pattern:**
 ```bash
-ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "cd /opt/visa_bulletin && set -a && source .env && set +a && \
-   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+   bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
 **❌ BAD - Missing set -a (variables not exported):**
 ```bash
-# Variables loaded but not exported - explore_db can't see them
-ssh ubuntu@44.209.204.255 \
+# Variables loaded but not exported - run_sql can't see them
+ssh staging_2Gb_vm \
   "cd /opt/visa_bulletin && source .env && \
-   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+   bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
 **❌ BAD - Using DB_HOST override incorrectly:**
 ```bash
 # DB_HOST override doesn't help if other variables not exported
-ssh ubuntu@44.209.204.255 \
+ssh staging_2Gb_vm \
   "cd /opt/visa_bulletin && source .env && DB_HOST=localhost \
-   bazel run //:explore_db -- --query 'SELECT COUNT(*) FROM salary_job_title'"
+   bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
 **Rationale:**
@@ -256,21 +256,20 @@ ssh ubuntu@44.209.204.255 \
 
 ## SSH Access
 
-**SSH Alias for Lightsail:**
-- Use `ssh lightsail` to connect to production server
-- Configured in `~/.ssh/config` with proper key and settings
-- Alternative alias: `ssh lightsail-visa-bulletin`
+**SSH Aliases (from `~/.ssh/config`):**
+- `staging_2Gb_vm` - Staging / next production
+- `prod_0.5Gb_vm` - Legacy production
 
 **Common SSH Operations:**
 ```bash
-# Connect to server
-ssh lightsail
+# Connect to staging
+ssh staging_2Gb_vm
 
-# Run commands remotely
-ssh lightsail "cd /opt/visa_bulletin && docker-compose ps"
+# Run commands remotely (staging)
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose ps"
 
-# View logs
-ssh lightsail "cd /opt/visa_bulletin && docker-compose logs -f"
+# View logs (staging)
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose logs -f"
 
 # Deploy using script
 ./scripts/deploy.sh
