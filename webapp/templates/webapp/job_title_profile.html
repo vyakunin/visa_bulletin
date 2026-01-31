@@ -620,6 +620,8 @@
                 <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 
                 Data shown for fiscal years {{ start_year }} to present. 
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
+                <br><br>
+                <strong>Note on Salary Data:</strong> For data quality, we exclude salaries below $30,000 (likely data entry errors) and above $1,000,000 (lacking automated validation for ultra-high compensation packages). This may affect statistics for some executive and specialized positions.
             </div>
         </div>
     </div>
