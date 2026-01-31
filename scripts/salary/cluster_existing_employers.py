@@ -893,10 +893,20 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
     logger.info("Updating cluster statistics...")
     logger.info("="*60)
     
-    clusters = EmployerCluster.objects.prefetch_related('employers').all()
+    # Count total clusters first
+    total_clusters = EmployerCluster.objects.count()
+    logger.info(f"Total clusters to update: {total_clusters:,}")
+    
+    logger.info("Loading clusters with employers (prefetch)...")
+    start_time = time.time()
+    clusters = list(EmployerCluster.objects.prefetch_related('employers').all())
+    logger.info(f"Loaded {len(clusters):,} clusters in {time.time() - start_time:.1f}s")
+    
+    logger.info("Calculating statistics for each cluster...")
+    start_time = time.time()
     clusters_to_update = []
     
-    for cluster in clusters:
+    for i, cluster in enumerate(clusters):
         employers_list = list(cluster.employers.all())
         cluster.total_lca_count = sum(e.total_lca_count for e in employers_list)
         cluster.total_perm_count = sum(e.total_perm_count for e in employers_list)
@@ -908,13 +918,27 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
             cluster.avg_salary = None
         
         clusters_to_update.append(cluster)
+        
+        # Progress logging every 10,000 clusters
+        if (i + 1) % 10000 == 0:
+            elapsed = time.time() - start_time
+            rate = (i + 1) / elapsed if elapsed > 0 else 0
+            eta = (total_clusters - i - 1) / rate if rate > 0 else 0
+            logger.info(f"  Processed {i + 1:,}/{total_clusters:,} clusters "
+                       f"({(i + 1) / total_clusters * 100:.1f}%) - "
+                       f"Rate: {rate:.0f}/s - ETA: {eta:.0f}s")
+    
+    logger.info(f"Calculated stats for {len(clusters_to_update):,} clusters in {time.time() - start_time:.1f}s")
     
     if clusters_to_update:
+        logger.info("Bulk updating cluster statistics...")
+        start_time = time.time()
         bulk_update_batched(
             clusters_to_update,
             batch_size=batch_size,
             fields=['total_lca_count', 'total_perm_count', 'avg_salary']
         )
+        logger.info(f"Bulk update completed in {time.time() - start_time:.1f}s")
     
     logger.info(f"Updated statistics for {len(clusters_to_update):,} clusters")
 
