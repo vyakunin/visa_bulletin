@@ -94,7 +94,9 @@ def _get_job_title_directory_featured(titles):
             titles.order_by('-total_filings', 'canonical_title')[:12]
         ),
         'top_salary_titles': list(
-            titles.exclude(avg_salary__isnull=True).order_by('-avg_salary')[:6]
+            titles.exclude(avg_salary__isnull=True)
+            .filter(total_filings__gte=10)  # Require >= 10 filings for meaningful average
+            .order_by('-avg_salary')[:6]
         ),
     }
 
