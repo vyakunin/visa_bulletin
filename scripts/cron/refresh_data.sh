@@ -78,6 +78,7 @@ REQUIRED_BINARIES=(
     "scripts/salary/update_employer_stats"
     "scripts/salary/cluster_existing_employers"
     "scripts/salary/update_job_title_cluster_stats"
+    "scripts/cache/warm_cache"
 )
 
 MISSING_BINARIES=()
@@ -335,6 +336,10 @@ run_bin "scripts/salary/update_job_title_cluster_stats" 2>&1
 log "--- Running VACUUM ANALYZE (cleans up and updates statistics) ---"
 psql -h localhost -U "$DB_USER" -d "$INACTIVE_DB" -c "VACUUM ANALYZE;" 2>&1
 log "VACUUM ANALYZE complete"
+
+# 6f. Warm cache for fast page loads
+log "--- Post-processing: Warm cache ---"
+run_bin "scripts/cache/warm_cache" 2>&1
 
 # 7. Run smoke tests
 log "======================================================================="
