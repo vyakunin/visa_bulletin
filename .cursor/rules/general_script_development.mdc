@@ -827,7 +827,7 @@ echo "Script completed. Final output:"
 tail -50 /tmp/cluster.log
 ```
 
-**✅ GOOD - Slow exponential backoff for long-running scripts:**
+**✅ GOOD - Slow exponential backoff for long-running scripts (LOCAL):**
 ```bash
 # Start script
 bazel run //:long_running_script > /tmp/script.log 2>&1 &
@@ -854,7 +854,7 @@ while ps -p $PID > /dev/null; do
   fi
   
   # Slow exponential backoff: multiply by ~1.5 each iteration
-  # Pattern: 10s -> 15s -> 23s -> 35s -> 53s -> 80s -> 120s -> 180s -> 270s -> 405s -> 600s
+  # Pattern: 10s -> 15s -> 23s -> 35s -> 80s -> 120s -> 180s -> 270s -> 405s -> 600s
   # Cap at 10 minutes (600s) to avoid too long between checks
   if [ $INTERVAL -lt 600 ]; then
     INTERVAL=$((INTERVAL * 3 / 2))  # Multiply by 1.5 (integer math)
@@ -863,6 +863,78 @@ done
 
 echo "Script completed. Final output:"
 tail -50 /tmp/script.log
+```
+
+**✅ GOOD - Monitoring remote processes via SSH (CRITICAL PATTERN):**
+```bash
+# Start remote script in background
+ssh remote "cd /path && nohup ./script > /tmp/script.log 2>&1 &"
+
+# Monitor with SYNCHRONOUS remote sleep (not local sleep!)
+# Each check is a single SSH command that sleeps remotely, then checks
+ssh remote "bash -c 'sleep 30; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
+
+# Next check after 2 minutes (remote sleep)
+ssh remote "bash -c 'sleep 120; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
+
+# Next check after 3 minutes (remote sleep)
+ssh remote "bash -c 'sleep 180; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
+
+# Continue with increasing intervals: 5m, 8m, 10m, 10m...
+```
+
+**❌ BAD - Local sleep with remote checks (DEFEATS THE PURPOSE):**
+```bash
+# ❌ WRONG: Sleeping locally doesn't space out SSH commands
+ssh remote "cd /path && nohup ./script > /tmp/script.log 2>&1 &"
+
+# ❌ This sleeps locally, not remotely - checks happen immediately!
+sleep 60  # Local sleep - doesn't help
+ssh remote "tail -20 /tmp/script.log"  # Immediate check
+
+sleep 120  # Local sleep - doesn't help
+ssh remote "tail -20 /tmp/script.log"  # Immediate check
+
+# Result: SSH commands execute back-to-back, spamming the remote server
+```
+
+**❌ BAD - Backgrounding sleep commands:**
+```bash
+# ❌ WRONG: Backgrounding sleep defeats the purpose
+sleep 300 &  # Backgrounded - doesn't block
+ssh remote "tail -20 /tmp/script.log"  # Executes immediately
+
+# Result: All checks happen at once, no spacing
+```
+
+**Why remote sleep is critical:**
+- ✅ Each SSH command is independent (agent can't maintain sessions)
+- ✅ Remote sleep spaces out the checks properly
+- ✅ Single command: connect → sleep → check → disconnect
+- ✅ Prevents spamming remote server with rapid SSH connections
+- ❌ Local sleep doesn't help - SSH commands execute immediately after sleep completes
+
+**Pattern for AI agents monitoring remote processes:**
+```bash
+# Initial check (after 10-15 seconds)
+ssh remote "bash -c 'sleep 15; tail -30 /tmp/script.log; ps aux | grep script'"
+
+# Check after 1 minute
+ssh remote "bash -c 'sleep 60; tail -20 /tmp/script.log; free -h'"
+
+# Check after 2 minutes
+ssh remote "bash -c 'sleep 120; tail -20 /tmp/script.log; free -h'"
+
+# Check after 3 minutes
+ssh remote "bash -c 'sleep 180; tail -20 /tmp/script.log; free -h'"
+
+# Check after 5 minutes
+ssh remote "bash -c 'sleep 300; tail -20 /tmp/script.log; free -h'"
+
+# Check after 10 minutes (cap at 10 minutes)
+ssh remote "bash -c 'sleep 600; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
+
+# Continue with 10-minute intervals until completion
 ```
 
 **❌ BAD - Dramatic backoff (too aggressive):**
@@ -888,18 +960,24 @@ done
 - Balance between responsiveness and resource usage
 
 **Backoff pattern:**
-- ✅ **Good:** 10s → 15s → 23s → 35s → 53s → 80s → 120s → 180s → 270s → 405s → 600s
+- ✅ **Good:** 10s → 15s → 30s → 60s → 120s → 180s → 300s → 600s (cap at 10 minutes)
 - ❌ **Bad:** 10s → 300s → 900s (too dramatic, misses intermediate issues)
 
 **Implementation:**
 - Start with 10-15 seconds for first few checks
-- Multiply interval by ~1.5 each iteration (use integer math: `INTERVAL=$((INTERVAL * 3 / 2))`)
+- Multiply interval by ~1.5-2x each iteration
 - Cap maximum interval at 10 minutes (600s) to ensure regular checks
 - Reset interval if errors detected (back to frequent checking)
 
 **Memory monitoring (required during babysitting):**
 - ✅ Check memory each interval (`free -h` on Linux, `vm_stat` on macOS)
 - ✅ If swap grows or memory is exhausted, pause and investigate before continuing
+
+**CRITICAL for remote monitoring:**
+- ✅ **Use SYNCHRONOUS remote sleep** - sleep happens on remote server before check
+- ✅ **Use `block_until_ms` parameter** - wait for SSH command to complete
+- ❌ **NEVER use local sleep** - doesn't space out SSH commands
+- ❌ **NEVER background sleep commands** - defeats the purpose
 
 **When to use:**
 - ✅ Long-running scripts (> 10 minutes expected)
