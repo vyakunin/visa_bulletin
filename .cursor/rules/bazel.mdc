@@ -39,6 +39,38 @@ bazel build //scripts/salary:cluster_job_titles && ./bazel-bin/scripts/salary/cl
 - `scripts/cron/build_all.sh`: Pre-builds all binaries, then shuts down
 - Cron jobs: Run pre-built binaries (no Bazel server)
 
+## Rule: Running Scripts on Remote Servers (Production/Staging)
+
+**On remote servers, ALWAYS use the build-shutdown-run pattern. NEVER run Python directly.**
+
+**✅ GOOD - Build, shutdown, run pre-built binary:**
+```bash
+# Step 1: Build the binary
+ssh server 'cd /opt/visa_bulletin && bazel build //scripts/salary:update_employer_stats && bazel shutdown'
+
+# Step 2: Run the pre-built binary with environment
+ssh server 'cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/salary/update_employer_stats'
+
+# Or combined (for background execution):
+ssh server 'cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost nohup ./bazel-bin/scripts/salary/update_employer_stats > /tmp/script.log 2>&1 &'
+```
+
+**❌ BAD - Running Python directly (will fail with ModuleNotFoundError):**
+```bash
+# NEVER do this - Python can't find project modules
+ssh server 'cd /opt/visa_bulletin && python3 scripts/salary/update_employer_stats.py'
+# Error: ModuleNotFoundError: No module named 'django_config'
+```
+
+**Why Python direct execution fails:**
+- Bazel sets up the correct `PYTHONPATH` and runfiles
+- Python direct execution doesn't have access to project modules
+- Dependencies are managed by Bazel, not system Python
+
+**Environment variables on remote:**
+- `set -a && source .env && set +a` - Load environment variables
+- `DB_HOST=localhost` - Override for direct host access (not Docker)
+
 ## Rule: Always Use Bazel for Testing and Running
 **NEVER run Python or pytest directly. ALWAYS use Bazel.**
 

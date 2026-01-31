@@ -1064,6 +1064,8 @@ def main():
     parser.add_argument('--reset-clustering', action='store_true',
                        help='Reset all clustering state before starting (removes all clusters and assignments)')
     parser.add_argument('--limit-employers', type=int, help='Limit number of employers to process (for fast debugging)')
+    parser.add_argument('--stats-only', action='store_true',
+                       help='Only update cluster statistics (skip clustering)')
     
     args = parser.parse_args()
     
@@ -1100,6 +1102,13 @@ def main():
         args=vars(args),
         context='Cluster existing employers'
     )
+    
+    # Stats-only mode: just update cluster statistics without clustering
+    if args.stats_only:
+        logger.info("Running in stats-only mode - updating cluster statistics...")
+        _update_cluster_statistics(batch_size=args.batch_size, dry_run=args.dry_run)
+        logger.info("Stats update complete!")
+        return
     
     cluster_existing_employers(
         auto_approve_threshold=args.threshold,
