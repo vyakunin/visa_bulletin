@@ -12,6 +12,7 @@ Usage:
 
 import os
 import logging
+import time
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -42,7 +43,7 @@ def main():
     logger.info("=" * 80)
     
     total_employers = Employer.objects.count()
-    logger.info(f"Total employers to process: {total_employers:,}")
+    logger.info(f"Total employers in database: {total_employers:,}")
     
     if args.dry_run:
         logger.info("DRY RUN - Showing sample of what would be updated:")
@@ -73,101 +74,139 @@ def main():
         
         return
     
+    # Pre-load all employer IDs for O(1) lookup (avoids N+1 queries)
+    logger.info("Pre-loading employer IDs...")
+    start_time = time.time()
+    employer_ids = set(Employer.objects.values_list('id', flat=True))
+    logger.info(f"Loaded {len(employer_ids):,} employer IDs in {time.time() - start_time:.1f}s")
+    
     # Update LCA counts
     logger.info("Updating LCA counts...")
-    lca_counts = (
+    start_time = time.time()
+    lca_counts = list(
         SalaryRecord.objects
         .filter(visa_program__in=[VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3])
         .values('employer_id')
         .annotate(count=Count('id'))
     )
+    logger.info(f"  Aggregated {len(lca_counts):,} employer LCA counts in {time.time() - start_time:.1f}s")
     
-    lca_collector = BatchedUpdateCollector(
-        fields=['total_lca_count'],
-        batch_size=1000,
-        dry_run=False,
-        use_transaction=True
-    )
-    
-    lca_updated = 0
+    start_time = time.time()
+    lca_updates = []
+    skipped = 0
     for item in lca_counts:
-        if item['employer_id']:
-            try:
-                employer = Employer.objects.get(id=item['employer_id'])
-                employer.total_lca_count = item['count']
-                lca_collector.add(employer)
-                lca_updated += 1
-            except Employer.DoesNotExist:
-                pass
+        emp_id = item['employer_id']
+        if emp_id and emp_id in employer_ids:
+            lca_updates.append((emp_id, item['count']))
+        else:
+            skipped += 1
     
-    lca_collector.flush()
-    logger.info(f"Updated LCA counts for {lca_updated:,} employers")
+    # Bulk update using raw SQL for speed
+    if lca_updates:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            # Update in batches of 1000
+            batch_size = 1000
+            for i in range(0, len(lca_updates), batch_size):
+                batch = lca_updates[i:i + batch_size]
+                # Build CASE statement for batch update
+                case_sql = " ".join(f"WHEN {emp_id} THEN {count}" for emp_id, count in batch)
+                ids = ",".join(str(emp_id) for emp_id, _ in batch)
+                cursor.execute(f"""
+                    UPDATE salary_employer 
+                    SET total_lca_count = CASE id {case_sql} END
+                    WHERE id IN ({ids})
+                """)
+                if (i + batch_size) % 10000 == 0 or i + batch_size >= len(lca_updates):
+                    logger.info(f"  Updated {min(i + batch_size, len(lca_updates)):,}/{len(lca_updates):,} LCA counts...")
+    
+    logger.info(f"Updated LCA counts for {len(lca_updates):,} employers in {time.time() - start_time:.1f}s (skipped {skipped})")
     
     # Update PERM counts
     logger.info("Updating PERM counts...")
-    perm_counts = (
+    start_time = time.time()
+    perm_counts = list(
         SalaryRecord.objects
         .filter(visa_program=VisaProgram.PERM)
         .values('employer_id')
         .annotate(count=Count('id'))
     )
+    logger.info(f"  Aggregated {len(perm_counts):,} employer PERM counts in {time.time() - start_time:.1f}s")
     
-    perm_collector = BatchedUpdateCollector(
-        fields=['total_perm_count'],
-        batch_size=1000,
-        dry_run=False,
-        use_transaction=True
-    )
-    
-    perm_updated = 0
+    start_time = time.time()
+    perm_updates = []
+    skipped = 0
     for item in perm_counts:
-        if item['employer_id']:
-            try:
-                employer = Employer.objects.get(id=item['employer_id'])
-                employer.total_perm_count = item['count']
-                perm_collector.add(employer)
-                perm_updated += 1
-            except Employer.DoesNotExist:
-                pass
+        emp_id = item['employer_id']
+        if emp_id and emp_id in employer_ids:
+            perm_updates.append((emp_id, item['count']))
+        else:
+            skipped += 1
     
-    perm_collector.flush()
-    logger.info(f"Updated PERM counts for {perm_updated:,} employers")
+    # Bulk update using raw SQL for speed
+    if perm_updates:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            batch_size = 1000
+            for i in range(0, len(perm_updates), batch_size):
+                batch = perm_updates[i:i + batch_size]
+                case_sql = " ".join(f"WHEN {emp_id} THEN {count}" for emp_id, count in batch)
+                ids = ",".join(str(emp_id) for emp_id, _ in batch)
+                cursor.execute(f"""
+                    UPDATE salary_employer 
+                    SET total_perm_count = CASE id {case_sql} END
+                    WHERE id IN ({ids})
+                """)
+                if (i + batch_size) % 10000 == 0 or i + batch_size >= len(perm_updates):
+                    logger.info(f"  Updated {min(i + batch_size, len(perm_updates)):,}/{len(perm_updates):,} PERM counts...")
+    
+    logger.info(f"Updated PERM counts for {len(perm_updates):,} employers in {time.time() - start_time:.1f}s (skipped {skipped})")
     
     # Update average salary
     logger.info("Updating average salaries...")
-    avg_salaries = (
+    start_time = time.time()
+    avg_salaries = list(
         SalaryRecord.objects
         .filter(wage_annual__isnull=False, wage_annual__gt=0)
         .values('employer_id')
         .annotate(avg=Avg('wage_annual'))
     )
+    logger.info(f"  Aggregated {len(avg_salaries):,} employer avg salaries in {time.time() - start_time:.1f}s")
     
-    salary_collector = BatchedUpdateCollector(
-        fields=['avg_salary'],
-        batch_size=1000,
-        dry_run=False,
-        use_transaction=True
-    )
-    
-    salary_updated = 0
+    start_time = time.time()
+    salary_updates = []
+    skipped = 0
     for item in avg_salaries:
-        if item['employer_id']:
-            try:
-                employer = Employer.objects.get(id=item['employer_id'])
-                employer.avg_salary = item['avg']
-                salary_collector.add(employer)
-                salary_updated += 1
-            except Employer.DoesNotExist:
-                pass
+        emp_id = item['employer_id']
+        if emp_id and emp_id in employer_ids:
+            salary_updates.append((emp_id, float(item['avg'])))
+        else:
+            skipped += 1
     
-    salary_collector.flush()
-    logger.info(f"Updated average salaries for {salary_updated:,} employers")
+    # Bulk update using raw SQL for speed
+    if salary_updates:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            batch_size = 1000
+            for i in range(0, len(salary_updates), batch_size):
+                batch = salary_updates[i:i + batch_size]
+                case_sql = " ".join(f"WHEN {emp_id} THEN {avg:.2f}" for emp_id, avg in batch)
+                ids = ",".join(str(emp_id) for emp_id, _ in batch)
+                cursor.execute(f"""
+                    UPDATE salary_employer 
+                    SET avg_salary = CASE id {case_sql} END
+                    WHERE id IN ({ids})
+                """)
+                if (i + batch_size) % 10000 == 0 or i + batch_size >= len(salary_updates):
+                    logger.info(f"  Updated {min(i + batch_size, len(salary_updates)):,}/{len(salary_updates):,} avg salaries...")
+    
+    logger.info(f"Updated avg salaries for {len(salary_updates):,} employers in {time.time() - start_time:.1f}s (skipped {skipped})")
     
     logger.info("=" * 80)
     logger.info("Employer statistics updated successfully!")
-    logger.info(f"  LCA counts: {lca_updated:,} employers")
-    logger.info(f"  PERM counts: {perm_updated:,} employers")
-    logger.info(f"  Avg salaries: {salary_updated:,} employers")
+    logger.info(f"  LCA counts: {len(lca_updates):,} employers")
+    logger.info(f"  PERM counts: {len(perm_updates):,} employers")
+    logger.info(f"  Avg salaries: {len(salary_updates):,} employers")
 
 
 if __name__ == '__main__':
