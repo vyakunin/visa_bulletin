@@ -13,12 +13,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 
 # Database configuration - PostgreSQL only
+# When RUNNING_TESTS=1, use test-friendly defaults so Django can create ephemeral test DB
+# (test_<NAME>) without requiring visa_bulletin_user; .env can still override.
+_running_tests = os.environ.get('RUNNING_TESTS') == '1'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'visa_bulletin_dev'),
-        'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'dev_password'),
+        'NAME': os.environ.get('DB_NAME', 'postgres' if _running_tests else 'visa_bulletin_dev'),
+        'USER': os.environ.get('DB_USER', os.environ.get('USER', 'postgres') if _running_tests else 'visa_bulletin_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', '' if _running_tests else 'dev_password'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
         'OPTIONS': {

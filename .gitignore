@@ -29,6 +29,9 @@ Thumbs.db
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/
 
+# Downloaded/generated data (avoid wiping with git clean)
+data/**
+
 # DOL salary data files (large Excel files)
 data/salary/dol_data/*.xlsx
 

@@ -8,16 +8,11 @@ different casing variations and returning unsaved cluster instances.
 Fix: Use normalized keys consistently in both lookups and cache updates.
 """
 
-import os
-import django
-from django.conf import settings
-
-# Setup Django before importing models
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-if not settings.configured:
-    django.setup()
-
 import unittest
+
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
+
 from django.test import TestCase
 from models.salary import Employer, EmployerCluster
 from lib.utils.db_utils import BatchedUpdates

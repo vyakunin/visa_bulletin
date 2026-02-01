@@ -113,6 +113,12 @@ git commit -n -m "message"
 - Pre-commit exists to catch errors before they enter the repo
 - Fixing failures is always the correct response, not skipping checks
 
+**When commit times out (pre-commit runs full test suite):**
+- **NEVER** use `--no-verify` to "get the commit through."
+- **DO** run `git commit` with a **longer timeout** (e.g. 5+ minutes) so the hook can finish.
+- If the environment times out, run tests first (`bazel test //tests/...`), then commit once they pass so the hook reuses cache and finishes quickly.
+- Bypassing the hook in this scenario is still forbidden.
+
 ## Rule: Ask Before Installing Tools or Using Workarounds
 
 **When a tool is not installed, ALWAYS ask the user before:**

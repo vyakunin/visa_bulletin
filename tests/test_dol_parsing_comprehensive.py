@@ -9,16 +9,11 @@ Unlike test_dol_parsing_smoke.py which tests actual files, this test uses hardco
 sample data so it can run in CI without requiring the full data directory.
 """
 
-import os
+from tests.django_setup import setup_django_for_tests
+setup_django_for_tests()
+
 import unittest
 from enum import Enum
-
-# Setup Django
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-import django
-django.setup()
 
 from lib.ingest.registry import PluginRegistry
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
@@ -36,12 +31,15 @@ class ExpectedOutputType(Enum):
     NONE = 'none'  # Supplemental data that returns None
 
 
-class TestDolParsingComprehensive(unittest.TestCase):
+from django.test import TestCase
+
+
+class TestDolParsingComprehensive(TestCase):
     """Comprehensive smoke test covering all DoL file format variations"""
 
     @classmethod
     def setUpClass(cls):
-        """Register plugins once for all tests"""
+        super().setUpClass()
         PluginRegistry.register(H1BSalaryDataSourcePlugin(skip_clustering=True))
         PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
 

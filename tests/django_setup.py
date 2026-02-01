@@ -64,17 +64,17 @@ def setup_django_for_tests():
         except ImportError:
             _test_db_created = True
         else:
-            try:
-                from tests.ensure_test_db import grant_createdb
-                grant_createdb()
-                from django.db import connection
-                # Bazel runs tests in parallel; each process needs its own DB to avoid "already exists".
-                base_name = connection.settings_dict['NAME']
-                if base_name == 'postgres':
-                    connection.settings_dict['NAME'] = f'postgres_{os.getpid()}'
-                connection.creation.create_test_db(verbosity=0, autoclobber=True)
-            except Exception:
-                pass
+            from tests.ensure_test_db import grant_createdb
+            grant_createdb()
+            from django.db import connection
+            from django.core.management import call_command
+            # Bazel runs tests in parallel; each process needs its own DB to avoid "already exists".
+            base_name = connection.settings_dict['NAME']
+            if base_name == 'postgres':
+                connection.settings_dict['NAME'] = f'postgres_{os.getpid()}'
+            connection.creation.create_test_db(verbosity=0, autoclobber=True)
+            # Apply migrations so test DB has all tables (salary_employer, etc.).
+            call_command('migrate', verbosity=0)
             _test_db_created = True
 
 

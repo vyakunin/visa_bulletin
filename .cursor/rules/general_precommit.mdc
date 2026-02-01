@@ -188,6 +188,29 @@ Pre-Commit Check Results:
 - Preserves important information in permanent docs
 - Gives user control over when to commit
 
+## Rule: Amend and Re-Push Without Skipping Hooks
+
+**When the user asks to "amend and re-push" or to fix/update the last commit and push again:**
+
+- **NEVER** use `--no-verify` (or `-n`) on `git commit --amend` or on any commit.
+- **ALWAYS** let the pre-commit hook run. Run `git commit --amend` with no flags; if the hook times out, run `bazel build //...` and `bazel test //tests:...` first, then amend so the hook reuses cache and finishes.
+- After a successful amend, push with `git push --force-with-lease` (no skip flags).
+
+**✅ GOOD:**
+```bash
+git add .cursor/rules/general_precommit.mdc
+git commit --amend --no-edit   # Hook runs; fix any failures, then amend again
+git push --force-with-lease
+```
+
+**❌ BAD:**
+```bash
+git commit --amend --no-verify --no-edit
+git push --force
+```
+
+**Rationale:** Amending and re-pushing must not bypass checks. Skipping hooks in this scenario was the mistake; the correct response is to run checks (with longer timeout or after pre-running tests) and then amend and push without skipping.
+
 
 
 

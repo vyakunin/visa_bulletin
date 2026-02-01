@@ -6,7 +6,7 @@ setup_django_for_tests()
 import sys
 import unittest
 import json
-from django.test import TestCase, Client, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.db import connection
 from models.job_title import JobTitle, JobTitleCluster

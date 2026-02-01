@@ -17,9 +17,12 @@ setup_django_for_tests()
 @pytest.fixture(scope='session')
 def django_db_setup(django_db_setup, django_db_blocker):
     """Create database tables once per test session"""
-    # Mark tables as already created to prevent handler from trying
-    from extractors import bulletin_handler
-    bulletin_handler._TABLES_CREATED = True
+    # Mark tables as already created to prevent handler from trying (optional dep)
+    try:
+        from extractors import bulletin_handler
+        bulletin_handler._TABLES_CREATED = True
+    except ImportError:
+        pass
     
     with django_db_blocker.unblock():
         from django.db import connection

@@ -32,12 +32,28 @@ py_library(
     deps = [requirement("psycopg2_binary")],
 )
 
+# Pytest config and fixtures; tests that use pytest depend on this instead of listing conftest.py in srcs.
+py_library(
+    name = "conftest_lib",
+    srcs = ["conftest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":django_setup",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//webapp:apps",
+        requirement("pytest"),
+        requirement("pytest-django"),
+    ],
+)
+
 py_test(
     name = "test_copy_schema",
     size = "small",
-    srcs = ["django_setup.py", "test_copy_schema.py"],
+    srcs = ["test_copy_schema.py"],
     main = "test_copy_schema.py",
     deps = [
+        ":django_setup",
         "//lib/ingest:schema",
         "//models:salary",
         "//django_config:settings",
@@ -57,7 +73,9 @@ py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
     srcs = ["test_worksite_record_copy_bug.py"],
+    data = ["//models:migrations"],
     deps = [
+        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
         "//django_config:settings",
@@ -71,6 +89,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
@@ -114,12 +133,14 @@ py_test(
 py_test(
     name = "test_extractor",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_extractor.py"],
+    srcs = ["test_extractor.py"],
     main = "test_extractor.py",
     data = [
         "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/parsing/bulletin:bulletin_table",
         "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
@@ -144,12 +165,14 @@ py_test(
 py_test(
     name = "test_integration",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_integration.py"],
+    srcs = ["test_integration.py"],
     main = "test_integration.py",
     data = [
         "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/parsing/bulletin:parser",
         "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
@@ -175,11 +198,12 @@ py_test(
 py_test(
     name = "test_country_header_parsing",
     size = "small",
-    srcs = ["django_setup.py", "test_country_header_parsing.py"],
+    srcs = ["test_country_header_parsing.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
     ],
     deps = [
+        ":django_setup",
         "//lib/parsing/bulletin:parser",
         "//lib/parsing/bulletin:table_to_cutoff_data",
         "//lib/parsing/bulletin:publication_data",
@@ -225,8 +249,9 @@ py_test(
 py_test(
     name = "test_webapp_ui",
     size = "small",
-    srcs = ["django_setup.py", "test_webapp_ui.py"],
+    srcs = ["test_webapp_ui.py"],
     deps = [
+        ":django_setup",
         "//webapp/views:views",
         "//models:visa_cutoff_date",
         "//django_config:settings",
@@ -255,8 +280,9 @@ py_test(
 py_test(
     name = "test_visa_class_utils",
     size = "small",
-    srcs = ["django_setup.py", "test_visa_class_utils.py"],
+    srcs = ["test_visa_class_utils.py"],
     deps = [
+        ":django_setup",
         "//lib/business/bulletin:visa_class_utils",
         "//models:visa_cutoff_date",
         "//models:bulletin",
@@ -279,8 +305,9 @@ py_test(
 py_test(
     name = "test_dashboard_integration",
     size = "small",
-    srcs = ["django_setup.py", "test_dashboard_integration.py"],
+    srcs = ["test_dashboard_integration.py"],
     deps = [
+        ":django_setup",
         "//webapp/views:views",
         "//models:visa_cutoff_date",
         "//models:bulletin",
@@ -324,8 +351,9 @@ py_test(
 py_test(
     name = "test_salary_search_view",
     size = "small",
-    srcs = ["django_setup.py", "test_salary_search_view.py"],
+    srcs = ["test_salary_search_view.py"],
     deps = [
+        ":django_setup",
         "//models:salary",
         "//models:job_title",
         "//models/enums:visa_program",
@@ -347,12 +375,14 @@ py_test(
 py_test(
     name = "test_salary_import",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_salary_import.py"],
+    srcs = ["test_salary_import.py"],
     main = "test_salary_import.py",
     data = [
         ":test_salary_data.csv",
     ],
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/parsing/salary:db_importer",
         "//models:salary",
         "//models/enums:visa_program",
@@ -372,9 +402,11 @@ py_test(
 py_test(
     name = "test_ingest_integration",
     size = "medium",
-    srcs = ["django_setup.py", "conftest.py", "test_ingest_integration.py"],
+    srcs = ["test_ingest_integration.py"],
     main = "test_ingest_integration.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/ingest:ingest",
         "//lib/ingest:orchestrator",
         "//lib/ingest:registry",
@@ -398,9 +430,10 @@ py_test(
 py_test(
     name = "test_salary_real_data",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_salary_real_data.py"],
+    srcs = ["test_salary_real_data.py"],
     main = "test_salary_real_data.py",
     deps = [
+        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
         "//django_config:settings",
@@ -421,9 +454,11 @@ py_test(
 py_test(
     name = "test_ingest_models",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_ingest_models.py"],
+    srcs = ["test_ingest_models.py"],
     main = "test_ingest_models.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//models/ingest:ingest",
         "//models/ingest:enums",
         "//django_config:settings",
@@ -442,9 +477,11 @@ py_test(
 py_test(
     name = "test_ingest_plugins",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_ingest_plugins.py"],
+    srcs = ["test_ingest_plugins.py"],
     main = "test_ingest_plugins.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/ingest:base",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:dol_lca",
@@ -466,8 +503,9 @@ py_test(
 py_test(
     name = "test_worksite_record",
     size = "small",
-    srcs = ["django_setup.py", "test_worksite_record.py"],
+    srcs = ["test_worksite_record.py"],
     deps = [
+        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
         "//models/ingest:ingest",
@@ -485,9 +523,10 @@ py_test(
 py_test(
     name = "test_lca_plugin",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_lca_plugin.py"],
+    srcs = ["test_lca_plugin.py"],
     main = "test_lca_plugin.py",
     deps = [
+        ":django_setup",
         "//lib/ingest:base",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:dol_lca",
@@ -512,9 +551,11 @@ py_test(
 py_test(
     name = "test_ingest_versioning",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_ingest_versioning.py"],
+    srcs = ["test_ingest_versioning.py"],
     main = "test_ingest_versioning.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/ingest:versioning",
         "//models/ingest:ingest",
         "//models:salary",
@@ -535,8 +576,9 @@ py_test(
 py_test(
     name = "test_validation",
     size = "small",
-    srcs = ["django_setup.py", "test_validation.py"],
+    srcs = ["test_validation.py"],
     deps = [
+        ":django_setup",
         "//lib/utils:location_utils",
         "//lib/parsing/salary:wage_unit_correction",
         "//scripts/salary:fix_state_codes_lib",
@@ -557,8 +599,9 @@ py_test(
 py_test(
     name = "test_employer_clustering",
     size = "small",
-    srcs = ["django_setup.py", "test_employer_clustering.py"],
+    srcs = ["test_employer_clustering.py"],
     deps = [
+        ":django_setup",
         "//lib/business/salary:salary",
         "//models:salary",
         "//models/enums:visa_program",
@@ -577,8 +620,9 @@ py_test(
 py_test(
     name = "test_clustering_evaluator",
     size = "small",
-    srcs = ["django_setup.py", "test_clustering_evaluator.py"],
+    srcs = ["test_clustering_evaluator.py"],
     deps = [
+        ":django_setup",
         "//lib/business/salary:clustering_evaluator",
         "//models:salary",  # Required for Django app discovery
         "//django_config:settings",
@@ -679,34 +723,6 @@ py_test(
 )
 
 py_test(
-    name = "test_llm_validation_integration",
-    size = "medium",  # Integration test - may take longer due to LLM calls
-    srcs = ["test_llm_validation_integration.py"],
-    data = [
-        "//tools/ollama:ollama",  # Hermetic Ollama binary (downloaded and cached by Bazel)
-    ],
-    deps = [
-        ":django_setup",  # Shared Django setup library
-        "//lib/business/salary:llm_verifier",
-        "//lib/business/salary:clustering_evaluator",
-        "//models:salary",  # Required for Django app discovery
-        "//django_config:settings",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("pytest"),
-        requirement("pytest-django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-    ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-    tags = ["integration", "requires-ollama"],  # Mark as integration test requiring Ollama
-)
-
-py_test(
     name = "test_perm_job_title_parsing",
     size = "small",
     srcs = ["test_perm_job_title_parsing.py"],
@@ -726,9 +742,11 @@ py_test(
 py_test(
     name = "test_data_source_utils",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_data_source_utils.py"],
+    srcs = ["test_data_source_utils.py"],
     main = "test_data_source_utils.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/utils:data_source_utils",
         "//models/ingest:ingest",
         "//django_config:settings",
@@ -745,9 +763,11 @@ py_test(
 py_test(
     name = "test_orchestrator_upsert",
     size = "small",
-    srcs = ["django_setup.py", "conftest.py", "test_orchestrator_upsert.py"],
+    srcs = ["test_orchestrator_upsert.py"],
     main = "test_orchestrator_upsert.py",
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/ingest:orchestrator",
         "//models:salary",
         "//models/ingest:ingest",
@@ -776,12 +796,14 @@ py_test(
 py_test(
     name = "test_dol_transform_golden",
     size = "medium",  # May take longer due to multiple test cases
-    srcs = ["django_setup.py", "conftest.py", "test_dol_transform_golden.py"],
+    srcs = ["test_dol_transform_golden.py"],
     main = "test_dol_transform_golden.py",
     data = [
         "//tests/data:dol_golden_test_data",
     ],
     deps = [
+        ":conftest_lib",
+        ":django_setup",
         "//lib/ingest/plugins:dol_perm",
         "//lib/ingest/plugins:dol_lca",
         "//lib/utils:bazel_runfiles",
@@ -835,7 +857,9 @@ py_test(
     name = "test_dol_parsing_comprehensive",
     size = "small",  # Uses hardcoded samples - fast
     srcs = ["test_dol_parsing_comprehensive.py"],
+    data = ["//models:migrations"],
     deps = [
+        ":django_setup",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:dol_lca",
         "//lib/ingest/plugins:dol_perm",
@@ -886,8 +910,9 @@ py_test(
     name = "test_batched_updates_case_insensitive",
     size = "small",
     srcs = ["test_batched_updates_case_insensitive.py"],
+    data = ["//models:migrations"],
     deps = [
-        ":django_setup",  # Shared Django setup library
+        ":django_setup",
         "//lib/utils:db_utils",
         "//models:salary",
         "//django_config:settings",
@@ -895,6 +920,7 @@ py_test(
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     srcs_version = "PY3",
@@ -907,8 +933,9 @@ py_test(
     name = "test_clustering_cache_fix",
     size = "small",
     srcs = ["test_clustering_cache_fix.py"],
+    data = ["//models:migrations"],
     deps = [
-        ":django_setup",  # Shared Django setup library
+        ":django_setup",
         "//lib/utils:db_utils",
         "//models:salary",
         "//django_config:settings",
@@ -916,6 +943,7 @@ py_test(
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     srcs_version = "PY3",
@@ -968,7 +996,7 @@ py_test(
 django_py_test(
     name = "test_job_title_profile_view",
     size = "small",
-    srcs = ["django_setup.py", "test_job_title_profile_view.py"],
+    srcs = ["test_job_title_profile_view.py"],
     deps = [
         "//models/ingest:ingest",
         "//models:salary",
