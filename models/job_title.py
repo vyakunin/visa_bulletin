@@ -295,7 +295,7 @@ class JobTitle(models.Model):
         # Clean up whitespace again after seniority removal and restoration
         normalized = re.sub(r'\s+', ' ', normalized).strip()
         
-        # Title standardization
+        # Title standardization: map common variants to a canonical form for matching.
         title_equivalents = {
             'software developer': 'software engineer',
             'software dev': 'software engineer',
@@ -308,12 +308,12 @@ class JobTitle(models.Model):
             'physician': 'doctor',
             'md': 'doctor',
         }
-        
+
         for variant, canonical in title_equivalents.items():
             if normalized == variant:
                 normalized = canonical
                 break
-        
+
         # Deduplicate words while preserving order
         # This handles cases like "software engineer software" or "director executive director"
         words = normalized.split()
@@ -324,9 +324,9 @@ class JobTitle(models.Model):
                 seen.add(word)
                 deduped_words.append(word)
         normalized = ' '.join(deduped_words)
-        
+
         return normalized
-    
+
     @staticmethod
     def extract_experience_level(title: str) -> str:
         """

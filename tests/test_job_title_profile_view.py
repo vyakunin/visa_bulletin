@@ -820,7 +820,7 @@ class TestJobTitleCoherenceE2E(TestCase):
     """
     End-to-end coherence: update_job_title_cluster_stats sets canonical_title to the
     most frequent raw title among records whose normalized title equals the cluster's
-    most frequent normalized form (then no comma, shorter); autocomplete and profile use it.
+    most frequent normalized form (count first, then shorter length); autocomplete and profile use it.
     """
 
     def setUp(self):
@@ -839,7 +839,7 @@ class TestJobTitleCoherenceE2E(TestCase):
             },
         )
         # Cluster: most frequent normalized = "software engineer" (10), so canonical_title
-        # is chosen among raw titles with that normalized; "Software Engineer" (no comma, shorter) wins.
+        # is chosen among raw titles with that normalized; "Software Engineer" (count 10) wins.
         self.cluster = JobTitleCluster.objects.create(
             canonical_title="Software Developers, Applications",
             total_filings=15,
@@ -900,9 +900,8 @@ class TestJobTitleCoherenceE2E(TestCase):
             )
             wage += 1000
 
-    def test_canonical_title_selection_prefers_no_comma_shorter(self):
-        """_most_frequent_raw_title_per_cluster returns best raw for mode normalized (no comma, shorter)."""
-        # Call only the cluster representative query (no PostgreSQL-specific SQL).
+    def test_canonical_title_selection_count_first(self):
+        """_most_frequent_raw_title_per_cluster picks raw title by count DESC, then shorter length."""
         result = dict(_most_frequent_raw_title_per_cluster())
         self.assertIn(
             self.cluster.id,
@@ -912,10 +911,10 @@ class TestJobTitleCoherenceE2E(TestCase):
         self.assertEqual(
             result[self.cluster.id],
             "Software Engineer",
-            msg="Representative should be 'Software Engineer' (no comma, shorter), not SOC-style.",
+            msg="Representative should be 'Software Engineer' (count 10), not SOC-style (count 5).",
         )
 
-    def test_canonical_title_prefers_no_comma_shorter_full_script(self):
+    def test_canonical_title_count_first_full_script(self):
         """update_job_title_cluster_stats (full script) sets cluster canonical_title from mode normalized."""
         old_argv = sys.argv
         try:
@@ -927,8 +926,163 @@ class TestJobTitleCoherenceE2E(TestCase):
         self.assertEqual(
             self.cluster.canonical_title,
             "Software Engineer",
-            msg="Cluster canonical_title should be 'Software Engineer' (no comma, shorter), not SOC-style.",
+            msg="Cluster canonical_title should be 'Software Engineer' (count first), not SOC-style.",
         )
+
+    def test_canonical_title_selection_count_wins_over_shorter(self):
+        """When same normalized form has two raw titles, higher count wins (not shorter length)."""
+        from django.core.cache import cache
+        cache.clear()
+        ec, _ = EmployerCluster.objects.get_or_create(
+            slug="e2e-count-test",
+            defaults={'canonical_name': "E2E Count Test"},
+        )
+        emp, _ = Employer.objects.get_or_create(
+            name="E2E Count Test",
+            defaults={'name_normalized': "e2e count test", 'canonical_cluster': ec},
+        )
+        cluster = JobTitleCluster.objects.create(
+            canonical_title="Placeholder",
+            total_filings=0,
+            avg_salary=Decimal('100000.00'),
+        )
+        cluster.slug = cluster.generate_slug()
+        cluster.save()
+        jt, _ = JobTitle.objects.get_or_create(
+            title_normalized="software engineer",
+            experience_level="",
+            defaults={'title': "Software Engineer", 'canonical_cluster': cluster},
+        )
+        old_cluster_id = jt.canonical_cluster_id
+        jt.canonical_cluster = cluster
+        jt.save(update_fields=['canonical_cluster'])
+        try:
+            SalaryRecord.objects.filter(case_number__startswith="E2E-COUNT-").delete()
+            base_wage = 90000
+            # "Programmer" (shorter) x 5, "Software Engineer" (longer) x 20 → count wins, so "Software Engineer"
+            for i in range(5):
+                SalaryRecord.objects.create(
+                    case_number=f"E2E-COUNT-P-{i}",
+                    employer_name="E2E Count Test",
+                    employer=emp,
+                    job_title="Programmer",
+                    job_title_entity=jt,
+                    worksite_city="NYC",
+                    worksite_state="NY",
+                    wage_from=Decimal(base_wage),
+                    wage_unit=WageUnit.YEAR,
+                    wage_annual=Decimal(base_wage),
+                    visa_program=VisaProgram.H1B,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=2024,
+                    source_file="test.xlsx",
+                    is_worksite=False,
+                )
+            for i in range(20):
+                SalaryRecord.objects.create(
+                    case_number=f"E2E-COUNT-SE-{i}",
+                    employer_name="E2E Count Test",
+                    employer=emp,
+                    job_title="Software Engineer",
+                    job_title_entity=jt,
+                    worksite_city="NYC",
+                    worksite_state="NY",
+                    wage_from=Decimal(base_wage),
+                    wage_unit=WageUnit.YEAR,
+                    wage_annual=Decimal(base_wage),
+                    visa_program=VisaProgram.H1B,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=2024,
+                    source_file="test.xlsx",
+                    is_worksite=False,
+                )
+            result = dict(_most_frequent_raw_title_per_cluster())
+            self.assertEqual(
+                result[cluster.id],
+                "Software Engineer",
+                msg="Count wins: 'Software Engineer' (20) must beat 'Programmer' (5) despite being longer.",
+            )
+        finally:
+            SalaryRecord.objects.filter(case_number__startswith="E2E-COUNT-").delete()
+            if old_cluster_id != cluster.id:
+                jt.canonical_cluster_id = old_cluster_id
+                jt.save(update_fields=['canonical_cluster'])
+
+    def test_canonical_title_selection_shorter_tiebreaker(self):
+        """When two raw titles have the same count, shorter length wins."""
+        from django.core.cache import cache
+        cache.clear()
+        ec, _ = EmployerCluster.objects.get_or_create(
+            slug="e2e-tie-test",
+            defaults={'canonical_name': "E2E Tie Test"},
+        )
+        emp, _ = Employer.objects.get_or_create(
+            name="E2E Tie Test",
+            defaults={'name_normalized': "e2e tie test", 'canonical_cluster': ec},
+        )
+        cluster = JobTitleCluster.objects.create(
+            canonical_title="Placeholder",
+            total_filings=0,
+            avg_salary=Decimal('100000.00'),
+        )
+        cluster.slug = cluster.generate_slug()
+        cluster.save()
+        # Use unique title_normalized so this cluster has no other JobTitles/records from other tests
+        jt = JobTitle.objects.create(
+            title="Software Engineer",
+            title_normalized="software engineer tiebreaker test",
+            experience_level="",
+            canonical_cluster=cluster,
+        )
+        SalaryRecord.objects.filter(case_number__startswith="E2E-TIE-").delete()
+        base_wage = 90000
+        # Same count (3 each): "Dev" (3 chars) vs "Software Engineer" (18 chars) → shorter wins
+        for i in range(3):
+            SalaryRecord.objects.create(
+                case_number=f"E2E-TIE-D-{i}",
+                employer_name="E2E Tie Test",
+                employer=emp,
+                job_title="Dev",
+                job_title_entity=jt,
+                worksite_city="NYC",
+                worksite_state="NY",
+                wage_from=Decimal(base_wage),
+                wage_unit=WageUnit.YEAR,
+                wage_annual=Decimal(base_wage),
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=2024,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+        for i in range(3):
+            SalaryRecord.objects.create(
+                case_number=f"E2E-TIE-SE-{i}",
+                employer_name="E2E Tie Test",
+                employer=emp,
+                job_title="Software Engineer",
+                job_title_entity=jt,
+                worksite_city="NYC",
+                worksite_state="NY",
+                wage_from=Decimal(base_wage),
+                wage_unit=WageUnit.YEAR,
+                wage_annual=Decimal(base_wage),
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=2024,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+        try:
+            result = dict(_most_frequent_raw_title_per_cluster())
+            self.assertEqual(
+                result[cluster.id],
+                "Dev",
+                msg="Tiebreaker: same count (3) → shorter 'Dev' (3 chars) beats 'Software Engineer' (18 chars).",
+            )
+        finally:
+            SalaryRecord.objects.filter(case_number__startswith="E2E-TIE-").delete()
+            jt.delete()
 
 
 if __name__ == '__main__':

@@ -85,11 +85,8 @@ def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
 
     Picks the most frequent raw title among records whose normalized title
     (JobTitle.title_normalized) equals the cluster's most frequent normalized form.
-    Among those raw titles, prefers (1) no comma, (2) shorter length, (3) count.
-    So "Software Developers, Applications" (180k) and "Software Developer Applications"
-    (110) both normalize to the same form; we use the cluster's mode normalized form
-    then pick the best raw variant (e.g. "Software Developers, Applications" if
-    we prefer count, or the no-comma variant if we prefer no comma).
+    Order: (1) count DESC so the dominant raw title wins, (2) shorter length as
+    tiebreaker. So "Software Engineer" (47k) wins over "Programmer" (666).
     """
     sql = """
     WITH cluster_top_normalized AS (
@@ -116,9 +113,8 @@ def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
             ROW_NUMBER() OVER (
                 PARTITION BY jt.canonical_cluster_id
                 ORDER BY
-                    (CASE WHEN sr.job_title NOT LIKE '%,%' THEN 0 ELSE 1 END),
-                    LENGTH(TRIM(sr.job_title)) ASC,
-                    COUNT(*) DESC
+                    COUNT(*) DESC,
+                    LENGTH(TRIM(sr.job_title)) ASC
             ) AS rn
         FROM salary_record sr
         JOIN salary_job_title jt ON sr.job_title_entity_id = jt.id
