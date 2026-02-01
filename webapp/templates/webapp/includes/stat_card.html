@@ -1,0 +1,11 @@
+<div class="{{ col_class|default:'col-md-3' }}">
+    <div class="card text-center h-100">
+        <div class="card-body">
+            <h3 class="{{ value_class|default:'' }}">{{ prefix|default:'' }}{{ value }}{{ suffix|default:'' }}</h3>
+            <p class="text-muted mb-0">{{ label }}</p>
+            {% if subtext %}
+            <small class="text-muted">{{ subtext }}</small>
+            {% endif %}
+        </div>
+    </div>
+</div>

@@ -12,34 +12,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Workspace directory for Bazel compatibility
 WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 
-# Database
+# Database configuration - PostgreSQL only
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': WORKSPACE_DIR / 'visa_bulletin.db',
-        # Enable WAL mode for concurrent reads during writes
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'visa_bulletin_dev'),
+        'USER': os.environ.get('DB_USER', 'visa_bulletin_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'dev_password'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
         'OPTIONS': {
-            'timeout': 20,  # Wait up to 20 seconds for locks
+            'connect_timeout': 10,
         },
     }
 }
-
-# Database connection initialization
-def setup_sqlite_wal(sender, connection, **kwargs):
-    """Enable WAL mode for SQLite to allow concurrent reads/writes"""
-    if connection.vendor == 'sqlite':
-        cursor = connection.cursor()
-        cursor.execute('PRAGMA journal_mode=WAL;')
-        cursor.execute('PRAGMA synchronous=NORMAL;')  # Faster writes
-        cursor.execute('PRAGMA cache_size=-64000;')   # 64MB cache
-
-from django.db.backends.signals import connection_created
-connection_created.connect(setup_sqlite_wal)
+# Connection pooling for better performance (disabled in tests for isolation)
+DATABASES['default']['CONN_MAX_AGE'] = 0 if os.environ.get('RUNNING_TESTS') == '1' else 600
 
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',  # For intcomma and other human-readable filters
     'models',  # Our models app
     'webapp',  # Web dashboard
 ]
@@ -81,7 +75,8 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     'testserver',  # For Django tests
-    '3.227.71.176',  # AWS Lightsail static IP
+    '3.227.71.176',  # AWS Lightsail static IP (old production)
+    '44.209.204.255',  # AWS Lightsail static IP (new 2GB instance)
     'visa-bulletin.us',
     'www.visa-bulletin.us',
 ]
@@ -90,13 +85,25 @@ ALLOWED_HOSTS = [
 ROOT_URLCONF = 'django_config.urls'
 
 # Caching configuration
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
-        'TIMEOUT': 60 * 60 * 3,  # Cache for 3 hours
+# Use Redis when REDIS_URL is set (production/staging); otherwise LocMem (dev, single-worker).
+REDIS_URL = os.environ.get('REDIS_URL', '')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'visa_bulletin',
+            'TIMEOUT': 60 * 60 * 6,  # 6 hours
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': 60 * 60 * 3,  # 3 hours
+        }
+    }
 
 # Analytics Configuration
 # Flexible analytics support (GoatCounter, Umami, Plausible, etc.)

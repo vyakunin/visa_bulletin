@@ -1,0 +1,42 @@
+{% load humanize %}
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">{{ title|default:"Year-over-Year Statistics" }}</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
+                <thead>
+                    <tr>
+                        <th data-sort-col="0" data-sort-type="text">Fiscal Year</th>
+                        <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
+                        <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
+                        {% if show_approval_rate|default:True %}
+                        <th class="text-end" data-sort-col="3" data-sort-type="number">Approval Rate</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trend in yoy_trends %}
+                    <tr>
+                        <td><strong>FY {{ trend.fiscal_year }}</strong></td>
+                        <td class="text-end">{{ trend.count|intcomma }}</td>
+                        <td class="text-end">${{ trend.median_salary|floatformat:0|intcomma }}</td>
+                        {% if show_approval_rate|default:True %}
+                        <td class="text-end">{{ trend.approval_rate|floatformat:1 }}%</td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if show_approval_rate|default:True %}4{% else %}3{% endif %}"
+                            class="text-center text-muted py-3">
+                            No year-over-year data available
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

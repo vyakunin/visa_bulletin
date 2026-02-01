@@ -1,0 +1,286 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .employer-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .employer-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .employer-name {
+        color: var(--gov-navy);
+        font-weight: 600;
+        font-size: 1.1rem;
+        text-decoration: none;
+    }
+    
+    .employer-name:hover {
+        text-decoration: underline;
+    }
+    
+    .stat-badge {
+        background: linear-gradient(135deg, var(--gov-navy) 0%, #004080 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+    
+    .stat-badge strong {
+        font-size: 1.2rem;
+        display: block;
+    }
+    
+    .search-card {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .search-card .card-header {
+        background: var(--gov-navy) !important;
+        color: white;
+        border-bottom: 2px solid var(--gov-red);
+    }
+    
+    .filter-tag {
+        display: inline-flex;
+        align-items: center;
+        background: #e8f4f8;
+        border: 1px solid var(--gov-navy);
+        border-radius: 20px;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+        font-size: 0.85rem;
+    }
+    
+    .filter-tag .bi-x {
+        cursor: pointer;
+        margin-left: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main>
+    <div class="row">
+        <div class="col-12">
+            <!-- Page Header -->
+            <div class="mb-4">
+                <h1><i class="bi bi-building"></i> Employer Directory</h1>
+                <p class="text-muted">Browse top employers sponsoring H-1B and PERM visas</p>
+            </div>
+            
+            <!-- Search & Filter Card -->
+            <div class="card search-card mb-4">
+                <div class="card-header">
+                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search Employers</h2>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="" id="searchForm">
+                        <div class="row g-2">
+                            <!-- Employer Name Search -->
+                            <div class="col-md-6">
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="q" input_name="q" input_value=query placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" slug_field="slug" navigate_url_pattern="/employer/__slug__/" label="Employer Name" %}
+                            </div>
+                            
+                            <!-- Visa Program -->
+                            <div class="col-md-3">
+                                <label for="program" class="form-label">Visa Program</label>
+                                <select class="form-select" id="program" name="program">
+                                    <option value="all" {% if program_filter == 'all' %}selected{% endif %}>All Programs</option>
+                                    <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                </select>
+                            </div>
+                            
+                            <!-- State -->
+                            <div class="col-md-3">
+                                <label for="state" class="form-label">State</label>
+                                <select class="form-select" id="state" name="state">
+                                    <option value="">All States</option>
+                                    {% for code, name in states %}
+                                    <option value="{{ code }}" {% if code == state_filter %}selected{% endif %}>
+                                        {{ name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Search Button -->
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search"></i> Search
+                                </button>
+                                {% if query or program_filter != 'all' or state_filter %}
+                                <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="bi bi-x-circle"></i> Clear Filters
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Active Filters -->
+            {% if query or program_filter != 'all' or state_filter %}
+            <div class="mb-3">
+                <span class="text-muted me-2">Active filters:</span>
+                {% if query %}
+                <span class="filter-tag">
+                    Name: {{ query }}
+                    <a href="?{% if program_filter != 'all' %}program={{ program_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if program_filter != 'all' %}
+                <span class="filter-tag">
+                    Program: {{ program_filter|upper }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if state_filter %}state={{ state_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if state_filter %}
+                <span class="filter-tag">
+                    State: {{ state_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if program_filter != 'all' %}program={{ program_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Results Summary -->
+            <div class="mb-3">
+                <p class="text-muted">
+                    <strong>{{ total_results|intcomma }}</strong> employer{{ total_results|pluralize }} found
+                    {% if page_start > 0 %}
+                    (showing {{ page_start }}-{{ page_end }})
+                    {% endif %}
+                </p>
+            </div>
+            
+            <!-- Employer Cards -->
+            <div class="row">
+                {% for employer in employers %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card employer-card h-100">
+                        <div class="card-body">
+                            <a href="{% url 'employer_profile' slug=employer.slug %}" class="employer-name">
+                                {{ employer.canonical_name }}
+                            </a>
+                            
+                            <div class="mt-3 d-flex justify-content-between">
+                                <div class="stat-badge text-center flex-fill me-2">
+                                    <strong>{{ employer.actual_lca_count|default:employer.total_lca_count|intcomma }}</strong>
+                                    <small>H-1B</small>
+                                </div>
+                                <div class="stat-badge text-center flex-fill">
+                                    <strong>{{ employer.actual_perm_count|default:employer.total_perm_count|intcomma }}</strong>
+                                    <small>PERM</small>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <a href="{% url 'employer_profile' slug=employer.slug %}" class="btn btn-sm btn-outline-primary w-100">
+                                    <i class="bi bi-bar-chart"></i> View Profile
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-body text-center py-5">
+                            <i class="bi bi-building" style="font-size: 4rem; color: var(--gov-navy);"></i>
+                            <h3 class="mt-3">No Employers Found</h3>
+                            {% if has_employers_without_slugs %}
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Employers matching your search exist, but don't have profile pages yet.</strong>
+                                <br>
+                                Try searching with a different name variation (e.g., "Google LLC" instead of "GOOGLE INC.") 
+                                or browse all employers to find what you're looking for.
+                            </div>
+                            {% else %}
+                            <p class="text-muted">
+                                Try adjusting your search criteria or clearing filters.
+                                <br>
+                                <small>Tip: Search is case-insensitive. Try different name variations (e.g., "Google LLC" vs "Google Inc.").</small>
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Pagination -->
+            {% if has_pagination %}
+            <nav aria-label="Employer directory pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if page > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}">&laquo; Prev</a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for p in page_range %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% endfor %}
+                    
+                    {% if page < total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}">Next &raquo;</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+            
+            <!-- Info Card -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Directory</h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        This directory lists employers who have filed <strong>H-1B Labor Condition Applications (LCA)</strong> 
+                        and <strong>PERM (Permanent Employment Certification)</strong> applications with the U.S. Department of Labor.
+                    </p>
+                    
+                    <h6>What You Can Find</h6>
+                    <ul>
+                        <li><strong>Sponsorship Activity:</strong> See how many H-1B and PERM applications each employer has filed</li>
+                        <li><strong>Employer Profiles:</strong> View detailed statistics, salary data, and trends for each employer</li>
+                        <li><strong>Compare Employers:</strong> Filter by state and visa program to find relevant sponsors</li>
+                    </ul>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-lightbulb"></i>
+                        <strong>Tip:</strong> Click on any employer to see their detailed profile with salary statistics, 
+                        top job titles, geographic distribution, and year-over-year trends.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+{% endblock %}

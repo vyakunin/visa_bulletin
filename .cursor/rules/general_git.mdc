@@ -1,0 +1,79 @@
+---
+alwaysApply: true
+---
+
+# General Git Workflow Rules
+
+These are general git workflow rules that apply across all projects.
+
+## Commit Rules
+
+- **ONLY commit when user explicitly requests it** (see critical rules in AGENTS.md)
+- Write clear, descriptive commit messages
+- Tests and ruff run automatically via pre-commit hook — **NEVER use `--no-verify`** (see AGENTS.md)
+- Keep commits focused and atomic
+
+## Commit Message Format
+
+**Good commit messages:**
+```
+Add Docker deployment infrastructure
+
+- Update Dockerfile to use gunicorn for production
+- Add GitHub Actions workflows for build and deploy
+- Update docker-compose.yml to pull from GHCR
+- Add comprehensive documentation
+
+This solves memory constraints on Lightsail by building images
+in GitHub Actions instead of on production servers.
+```
+
+**Bad commit messages:**
+```
+fix stuff
+update files
+changes
+WIP
+```
+
+## Branch Strategy
+
+- Work on feature branches when appropriate
+- Keep main/master stable
+- Merge only after tests pass
+- Use pull requests for team projects
+
+### Rule: Add Files Individually to Commits
+
+**ALWAYS use explicit file paths, NEVER use directories or wildcards.**
+
+**✅ GOOD:**
+```bash
+git add file1.py
+git add file2.py
+git add src/module.py
+```
+
+**❌ BAD:**
+```bash
+git add .                    # Adds everything
+git add src/                 # Adds entire directory
+git add *.py                 # Wildcard
+git add -A                   # Adds all changes
+```
+
+**Rationale:**
+- Prevents accidentally committing unwanted files
+- Makes commits more intentional and reviewable
+- Easier to see exactly what's being committed
+- Avoids committing build artifacts, temp files, etc.
+
+**Exception:**
+Only use `git add .` or `git add -A` when explicitly asked by user.
+
+## Git Best Practices
+
+- Review changes before committing (`git diff`)
+- Use `.gitignore` appropriately
+- Don't commit sensitive data (tokens, passwords, private keys)
+- Keep repository clean (no build artifacts, temp files)

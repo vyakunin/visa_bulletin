@@ -1,0 +1,79 @@
+---
+alwaysApply: true
+---
+
+# General Testing Rules
+
+These are general testing rules that apply across all projects.
+
+## Test Quality Rules
+
+**Do NOT write trivial tests** that only check if code exists:
+- ❌ BAD: Testing if an enum has a specific value (e.g., `assertEqual(MyEnum.VALUE, "value")`)
+- ❌ BAD: Testing if a class exists or can be imported
+- ❌ BAD: Testing simple getters/setters with no logic
+- ❌ BAD: Testing that a constant equals itself
+
+**DO write meaningful behavioral tests**:
+- ✅ GOOD: Testing business logic and transformations
+- ✅ GOOD: Testing edge cases and error handling
+- ✅ GOOD: Testing integration between components
+- ✅ GOOD: Testing data validation and constraints
+- ✅ GOOD: Testing complex parsing or extraction logic
+
+**Example:**
+```python
+# ❌ Trivial - just checks if value exists
+def test_has_value(self):
+    self.assertEqual(MyEnum.FOO.value, "foo")
+
+# ✅ Meaningful - tests behavior
+def test_parse_table_header_to_country_enum(self):
+    self.assertEqual(parse_country("CHINA-mainland born"), Country.CHINA)
+    self.assertEqual(parse_country("All Chargeability Areas"), Country.ALL)
+```
+
+## Test Requirements
+
+- All new features must include meaningful behavioral tests
+- Run tests before committing (pre-commit hook handles this)
+- Aim for meaningful test coverage, not just high percentages
+- Each test should verify actual behavior, not just existence
+
+## Rule: Write Tests for Bug Fixes
+
+**ALWAYS write a test that reproduces the bug before fixing it, then verify the fix.**
+
+**Process:**
+1. ✅ **Reproduce the bug** - Write a test that fails due to the bug
+2. ✅ **Fix the bug** - Implement the fix
+3. ✅ **Verify the fix** - Run the test to confirm it passes
+4. ✅ **Add regression test** - Keep the test to prevent future regressions
+
+**✅ GOOD - Test-first approach:**
+```python
+def test_cluster_cache_consistency_with_case_variations(self):
+    """Test that cache uses normalized keys consistently (bug fix test)"""
+    batched = BatchedUpdates(batch_size=1000, dry_run=False)
+    
+    # Create cluster with one casing
+    cluster1 = batched.get_or_queue_cluster("BBC RETAIL")
+    batched.flush_clusters()
+    
+    # Lookup with different casing should return SAVED cluster (not unsaved)
+    cluster2 = batched.get_or_queue_cluster("bbc retail")
+    assert cluster2.pk is not None, "Cluster should have ID (was returning unsaved instance)"
+    assert cluster1.pk == cluster2.pk, "Same cluster regardless of casing"
+```
+
+**When to write tests for fixes:**
+- ✅ All bugs that caused production issues
+- ✅ All bugs that caused data inconsistencies
+- ✅ All bugs that required code changes to fix
+- ✅ Edge cases that weren't covered before
+
+**Rationale:**
+- Prevents regression (same bug won't happen again)
+- Verifies the fix actually works
+- Documents the expected behavior
+- Builds confidence in the codebase

@@ -9,6 +9,7 @@ urllib3>=1.21.1
 Django==4.2.8
 asgiref>=3.6.0
 sqlparse>=0.4.4
+psycopg2-binary>=2.9.0  # PostgreSQL adapter for Django
 pytest>=7.4.0
 pytest-django>=4.5.0
 iniconfig>=2.0.0
@@ -21,3 +22,14 @@ tenacity>=8.2.0
 packaging>=23.0
 narwhals>=2.0.0
 gunicorn==23.0.0
+pandas>=2.0.0
+numpy>=1.24.0  # Required for statistical calculations (pandas dependency, but explicit for clarity)
+openpyxl>=3.1.0
+et-xmlfile>=1.1.0
+ruff>=0.1.0
+pip-tools>=7.0.0  # Build tool for generating requirements.lock
+pyyaml>=6.0.0  # YAML parser for configuration files
+datasketch>=1.6.0  # Locality-Sensitive Hashing for fast similarity search
+ollama>=0.1.0  # Ollama Python library for HTTP API (async support for parallel LLM calls)
+tqdm>=4.66.0  # Progress bar for long-running operations
+redis>=4.5.0  # Redis cache backend for Django (shared cache across gunicorn workers)

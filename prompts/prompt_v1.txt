@@ -1,0 +1,17 @@
+Are these two employer names referring to the same company?
+
+Name 1: {emp1_name}
+Location 1: {emp1_city}, {emp1_state}
+
+Name 2: {emp2_name}
+Location 2: {emp2_city}, {emp2_state}
+
+Answer with only "YES" or "NO" followed by a brief explanation.
+
+
+
+
+
+
+
+

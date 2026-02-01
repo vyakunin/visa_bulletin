@@ -5,286 +5,217 @@ This directory contains production deployment configurations for the Visa Bullet
 ## 🎉 Production Status
 
 **LIVE:** https://visa-bulletin.us  
-**Deployment Date:** December 1, 2025  
-**Performance:** 0.15-0.45s page loads  
-**Uptime:** 24/7 with auto-restart on failure  
+**Platform:** AWS Lightsail (2GB RAM)  
+**Database:** PostgreSQL with blue-green deployment  
+**Container:** Docker with Gunicorn  
 
 ## 📁 Directory Structure
 
 ```
 deployment/
-├── systemd/           # Systemd service files
-│   └── visa-bulletin.service
-├── nginx/             # Nginx reverse proxy configs
-│   └── visa-bulletin-nginx.conf
-├── cron/              # Cron job setup
-│   └── setup-cron.sh
-└── README.md          # This file
+├── docker-compose.blue.yml    # Blue environment (port 8000)
+├── docker-compose.green.yml   # Green environment (port 8001)
+├── nginx/                     # Nginx reverse proxy configs
+│   ├── visa-bulletin-nginx.conf
+│   └── visa-bulletin-locations.conf
+├── cron/                      # Cron job setup
+│   └── setup-ingest-cron.sh
+└── README.md                  # This file
 ```
 
-## 🚀 Production Deployment Stack
+## 🚀 Production Architecture
 
 ### Components
 
-1. **Application Server**: Gunicorn (1 worker, 2 threads)
-2. **Reverse Proxy**: Nginx
-3. **Process Management**: Systemd
-4. **Data Refresh**: Cron (daily at 9 AM UTC)
-5. **Database**: SQLite with WAL mode
-6. **Caching**: Django LocMemCache (3 hours)
-
-### Architecture: Why Raw Python on AWS?
-
-**Local Development** uses Bazel:
-- ✅ Fast builds with caching
-- ✅ Hermetic test environment
-- ✅ Excellent developer experience
-
-**Production** uses raw Python (no Bazel):
-- ✅ **Minimal RAM usage**: Bazel requires 1-2GB for builds
-- ✅ **Lightweight deployment**: No JVM, no build system overhead
-- ✅ **Fits $5/month budget**: AWS Lightsail 1GB RAM instance
-- ✅ **Faster startup**: No Bazel analysis phase
-- ⚠️ Trade-off: Manual dependency management via `requirements.txt`
+1. **Application Server**: Docker + Gunicorn
+2. **Reverse Proxy**: Nginx with SSL
+3. **Database**: PostgreSQL (blue-green)
+4. **Data Refresh**: Cron (weekly, pre-built binaries)
+5. **Caching**: Django LocMemCache
 
 ### Server Specs
 
-- **AWS Lightsail**: $5/month
-- **RAM**: 1GB (416 MB + 2GB swap)
-- **CPU**: 1 vCPU
-- **Disk**: 20 GB SSD
+- **AWS Lightsail**: 2GB RAM / 60GB SSD
 - **OS**: Ubuntu 22.04 LTS
+- **Static IP**: Attached (survives reboots)
 
-### Quick Deployment
+### Memory Optimizations
+
+The 2GB instance requires careful memory management:
+
+| Component | Limit | Purpose |
+|-----------|-------|---------|
+| Swap | 2GB | Prevent OOM kills |
+| Swappiness | 60 | Swap before OOM |
+| Bazel | 1GB RAM, 2 jobs | Limit build memory |
+| PostgreSQL | Tuned for bulk ops | Reduce autovacuum spikes |
+
+## 🚀 Quick Deployment
+
+### New Instance Setup
+
+```bash
+# Clone repo and run automated setup
+git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
+cd /opt/visa_bulletin
+./scripts/setup_new_instance.sh
+```
+
+The setup script configures:
+- System packages
+- Swap (2GB, swappiness=60)
+- Docker
+- PostgreSQL (optimized for bulk operations)
+- Blue-green databases
+- Monitoring (sysstat, atop, health_check.sh)
+- Bazel memory limits
+
+### Zero-Downtime Deployment
 
 ```bash
 # From your local machine
-./scripts/deploy.sh ~/path/to/ssh-key.pem
+./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
 ```
 
-This script automatically:
-1. Pulls latest code from GitHub main
-2. Clears Python cache
-3. Restarts the service
-4. Tests the site
-5. Shows recent logs
+This script:
+1. Deploys to inactive environment (blue or green)
+2. Waits for health checks
+3. Atomically switches Nginx proxy
+4. Stops old environment
 
-## 📋 Installation Steps
+## 📋 Manual Setup Steps
 
-### 1. Install System Dependencies
+If not using the automated script, see `docs/deployment/NEW_INSTANCE_SETUP.md` for detailed manual steps.
 
-```bash
-sudo apt update
-sudo apt install -y python3.10 python3.10-venv python3-pip nginx
-```
+### Key Files to Configure
 
-### 2. Clone Repository
-
-```bash
-sudo mkdir -p /opt/visa_bulletin
-sudo chown ubuntu:ubuntu /opt/visa_bulletin
-cd /opt
-git clone https://github.com/your-repo/visa_bulletin.git
-cd visa_bulletin
-```
-
-### 3. Setup Python Environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 4. Configure Django
-
-```bash
-# Set production secret key
-export DJANGO_SECRET_KEY="your-secret-key-here"
-
-# Run migrations
-python manage.py migrate
-```
-
-### 5. Setup Systemd Service
-
-```bash
-sudo cp deployment/systemd/visa-bulletin.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable visa-bulletin
-sudo systemctl start visa-bulletin
-sudo systemctl status visa-bulletin
-```
-
-### 6. Configure Nginx
-
-```bash
-sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
-sudo ln -s /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 7. Setup Cron Job
-
-```bash
-bash deployment/cron/setup-cron.sh
-```
-
-### 8. Initial Data Load
-
-```bash
-source venv/bin/activate
-python refresh_data.py --save-to-db
-```
+1. **`.env`** - Database credentials, Django settings
+2. **`.bazelrc`** - Memory limits for builds
+3. **`/etc/postgresql/14/main/conf.d/custom.conf`** - PostgreSQL tuning
 
 ## 🔧 Management Commands
 
 ### Service Management
 
 ```bash
-# Start/Stop/Restart
-sudo systemctl start visa-bulletin
-sudo systemctl stop visa-bulletin
-sudo systemctl restart visa-bulletin
-
-# View status
-sudo systemctl status visa-bulletin
+# Check running containers
+docker ps
 
 # View logs
-sudo journalctl -u visa-bulletin -f
+docker-compose -f deployment/docker-compose.blue.yml logs -f
+
+# Restart service
+docker-compose -f deployment/docker-compose.blue.yml restart web-blue
 ```
 
-### Manual Data Refresh
+### Database Operations
 
 ```bash
-cd /opt/visa_bulletin
-source venv/bin/activate
-python refresh_data_incremental.py --save-to-db
+# Connect to PostgreSQL
+sudo -u postgres psql -d visa_bulletin_blue
+
+# Check database size
+sudo -u postgres psql -c "SELECT pg_size_pretty(pg_database_size('visa_bulletin_blue'));"
+
+# Run VACUUM ANALYZE after bulk operations
+sudo -u postgres psql -d visa_bulletin_blue -c "VACUUM ANALYZE;"
 ```
 
-### Monitor Cron Jobs
+### Data Refresh
 
 ```bash
-# View cron log
-tail -f /opt/visa_bulletin/logs/cron.log
+# Manual refresh (uses pre-built binaries)
+/opt/visa_bulletin/scripts/cron/refresh_data.sh
 
-# List cron jobs
-crontab -l
+# Pre-build binaries (run once after setup)
+/opt/visa_bulletin/scripts/cron/build_all.sh
 ```
 
-## 🔒 Security Notes
+## 📊 Monitoring
 
-1. **Secret Key**: Store in environment variable, not in code
-2. **DEBUG Mode**: Always `False` in production
-3. **Allowed Hosts**: Configure specific domains
-4. **Firewall**: Only ports 22 (SSH), 80 (HTTP), 443 (HTTPS)
-5. **SSL**: Use Let's Encrypt (commented nginx config included)
-
-## 📊 Performance Tuning
-
-### Current Settings
-
-- **Gunicorn Workers**: 1 (for 416 MB RAM)
-- **Threads per Worker**: 2
-- **Max Requests**: 100 (worker recycling)
-- **Cache Duration**: 3 hours
-- **Request Timeout**: 120 seconds
-
-### For Larger Instances
-
-If you upgrade to a larger instance (e.g., $10/month with 1GB RAM):
+### Health Check Log
 
 ```bash
-# Edit /etc/systemd/system/visa-bulletin.service
-# Change: --workers 1 → --workers 2
-# Or calculate: (2 * CPU_CORES) + 1
+# View health metrics (CPU, MEM, SWAP, LOAD)
+cat /var/log/health_check.log | tail -20
+```
 
-sudo systemctl daemon-reload
-sudo systemctl restart visa-bulletin
+### System Metrics (sar)
+
+```bash
+# Memory usage
+sar -r
+
+# CPU usage
+sar -u
+
+# Swap activity
+sar -W
+```
+
+### Process Monitoring (atop)
+
+```bash
+# Replay historical data
+atop -r /var/log/atop/atop_$(date +%Y%m%d)
+```
+
+### PostgreSQL
+
+```bash
+# Check active queries
+sudo -u postgres psql -c "SELECT * FROM pg_stat_activity WHERE state = 'active';"
+
+# Check autovacuum
+sudo -u postgres psql -c "SELECT * FROM pg_stat_user_tables ORDER BY last_autovacuum DESC LIMIT 5;"
 ```
 
 ## 🐛 Troubleshooting
 
-### Site is slow
+### SSH Timeout / Instance Freeze
 
-1. Check load: `cat /proc/loadavg`
-2. Check memory: `free -m`
-3. Check processes: `ps aux | grep -E "(gunicorn|python|bazel)"`
-4. Kill Bazel if running: `pkill -9 bazel`
+1. Check AWS CloudWatch metrics for CPU/memory spikes
+2. Review `/var/log/health_check.log` for trends before freeze
+3. Check `atop` logs for process-level activity
+4. If OOM suspected, review `dmesg | grep -i oom`
 
-### Service won't start
-
-```bash
-# Check logs
-sudo journalctl -u visa-bulletin -n 50
-
-# Test manually
-cd /opt/visa_bulletin
-source venv/bin/activate
-python manage.py check
-gunicorn --check-config django_config.wsgi:application
-```
-
-### Database locked errors
+### High Memory Usage
 
 ```bash
-# Verify WAL mode is enabled
-cd /opt/visa_bulletin
-source venv/bin/activate
-python -c "import django; django.setup(); from django.db import connection; print(connection.cursor().execute('PRAGMA journal_mode;').fetchone())"
+# Check memory
+free -h
 
-# Should output: ('wal',)
+# Check swap
+swapon --show
+
+# Check PostgreSQL memory
+sudo -u postgres psql -c "SHOW shared_buffers; SHOW work_mem;"
 ```
 
-## 📈 Monitoring
-
-### Key Metrics to Monitor
-
-- **Page Load Time**: Should be < 1 second
-- **Memory Usage**: Should stay < 350 MB
-- **Load Average**: Should be < 2.0
-- **Disk Usage**: Monitor `/opt/visa_bulletin/visa_bulletin.db`
-
-### Useful Commands
+### Slow Performance
 
 ```bash
-# Server stats
-free -m && cat /proc/loadavg && df -h
+# Check load average
+cat /proc/loadavg
 
-# Application stats
-sudo systemctl status visa-bulletin
-ps aux | grep gunicorn
+# Check disk I/O
+sar -d
 
-# Database stats
-ls -lh /opt/visa_bulletin/visa_bulletin.db
-sqlite3 /opt/visa_bulletin/visa_bulletin.db "SELECT COUNT(*) FROM bulletin;"
+# Check PostgreSQL locks
+sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 ```
 
-## 🔄 Updates
+## 🔒 Security
 
-### Deploying Code Updates
+- **Secret Key**: Store in `.env`, never in code
+- **DEBUG**: Always `False` in production
+- **ALLOWED_HOSTS**: Configure specific domains + static IP
+- **Firewall**: Only ports 22, 80, 443
+- **SSL**: Let's Encrypt via Certbot
 
-```bash
-cd /opt/visa_bulletin
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-sudo systemctl restart visa-bulletin
-```
+## 📞 Documentation
 
-### Database Backups
-
-```bash
-# Manual backup
-cp /opt/visa_bulletin/visa_bulletin.db /opt/visa_bulletin/backups/visa_bulletin_$(date +%Y%m%d).db
-
-# Automated (add to crontab)
-# 0 2 * * * cp /opt/visa_bulletin/visa_bulletin.db /opt/visa_bulletin/backups/visa_bulletin_$(date +\%Y\%m\%d).db
-```
-
-## 📞 Support
-
-For issues or questions, see the main project README.
-
+- **Setup Guide**: `docs/deployment/NEW_INSTANCE_SETUP.md`
+- **Rollout Flow**: `docs/deployment/ROLLOUT_FLOW.md`
+- **Data Refresh**: `docs/DATA_REFRESH_STRATEGY.md`
+- **Scripts**: `scripts/README.md`

@@ -6,6 +6,10 @@ from .enums.visa_category import VisaCategory
 from .enums.action_type import ActionType
 from .enums.country import Country
 
+# Import IngestVersion to ensure it's registered in Django's app registry
+# This is needed because Django's system check runs before AppConfig.ready()
+from .ingest.ingest_version import IngestVersion  # noqa: F401
+
 
 class VisaCutoffDate(models.Model):
     """
@@ -31,7 +35,7 @@ class VisaCutoffDate(models.Model):
     )
     
     visa_class = models.CharField(
-        max_length=50,
+        max_length=100,
         help_text="F1, F2A, EB1, EB2, etc."
     )
     
@@ -41,8 +45,7 @@ class VisaCutoffDate(models.Model):
         help_text="Final Action or Dates for Filing"
     )
     
-    country = models.CharField(
-        max_length=50,
+    country = models.IntegerField(
         choices=Country.choices,
         help_text="Country/region for chargeability"
     )
@@ -66,6 +69,19 @@ class VisaCutoffDate(models.Model):
     is_unavailable = models.BooleanField(
         default=False,
         help_text="True if cutoff is 'U' (Unavailable)"
+    )
+    
+    # Ingest version tracking (for rollback)
+    # String reference - Django resolves after all models loaded
+    # No circular dependency: IngestVersion doesn't import from visa_cutoff_date
+    # null=True allows None without explicit default (Django's default behavior)
+    ingest_version = models.ForeignKey(
+        'models.IngestVersion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cutoff_dates',
+        help_text="Ingest version this record belongs to (for rollback)"
     )
     
     class Meta:

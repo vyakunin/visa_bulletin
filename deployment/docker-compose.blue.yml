@@ -1,0 +1,46 @@
+version: '3.8'
+
+# Blue environment - runs on port 8000
+# Used for blue-green zero-downtime deployments
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: visa_bulletin_redis
+    restart: unless-stopped
+    # Shared cache for employer profile and salary pages (no external port needed)
+
+  web-blue:
+    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_web_blue
+    ports:
+      - "8000:8000"
+    volumes:
+      # PostgreSQL is used for database (no SQLite volume needed)
+      - ./saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/1
+    env_file:
+      - ../.env
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    # Memory limit: 200MB for web container (prevents OOM on 1GB instance)
+    # System needs ~200MB, Nginx ~20MB, data-refresh ~50MB, leaving ~200MB for web
+    mem_limit: 200m
+    memswap_limit: 200m
+    # Override CMD to use optimized gunicorn settings (2 workers, 60s timeout)
+    # This allows updating without rebuilding Docker image
+    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 django_config.wsgi:application"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "--max-time", "5", "http://localhost:8000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    

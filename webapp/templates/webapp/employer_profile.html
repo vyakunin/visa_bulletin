@@ -1,0 +1,428 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ seo.title }}{% endblock %}
+
+{% block head_extra %}
+<!-- SEO Meta Tags -->
+<meta name="description" content="{{ seo.description }}">
+<link rel="canonical" href="{{ seo.canonical_url }}">
+
+<!-- Open Graph -->
+<meta property="og:title" content="{{ cluster.canonical_name }} Visa Sponsorship Data">
+<meta property="og:description" content="{{ stats.basic.total_filings }} H-1B/PERM filings, {{ stats.approval_rate|floatformat:1 }}% approval rate, ${{ stats.basic.median_salary|floatformat:0 }} median salary">
+<meta property="og:url" content="{{ request.build_absolute_uri }}">
+<meta property="og:type" content="website">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ cluster.canonical_name }} Visa Sponsorship Data">
+<meta name="twitter:description" content="{{ stats.basic.total_filings }} filings, {{ stats.approval_rate|floatformat:1 }}% approval, ${{ stats.basic.median_salary|floatformat:0 }} median">
+
+<!-- Structured Data (Schema.org) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "{{ cluster.canonical_name }}",
+  "url": "{{ request.build_absolute_uri }}",
+  "description": "Visa sponsorship data for {{ cluster.canonical_name }}",
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "{{ stats.approval_rate|floatformat:1 }}",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "{{ stats.basic.total_filings }}"
+  }
+}
+</script>
+
+<!-- Plotly.js - Load directly since charts are always present on this page -->
+<script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="mb-4">
+                <h1>{{ cluster.canonical_name }}</h1>
+                <p class="text-muted">H-1B & PERM Sponsorship Data</p>
+                <a href="{% url 'salary_search' %}?employer={{ cluster.canonical_name|urlencode }}" 
+                   class="btn btn-outline-primary">
+                    <i class="bi bi-search"></i> View All Salary Records
+                </a>
+            </div>
+            
+            <!-- Employer Search -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    {% include "webapp/includes/autocomplete_input.html" with input_id="employer-search" input_name="employer-search" placeholder="Type employer name..." endpoint_url=company_autocomplete_url display_field="name" count_field="count" slug_field="slug" navigate_url_pattern="/employer/__slug__/" label="Search for another employer" %}
+                </div>
+            </div>
+            
+            <!-- Filter Controls -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-4">
+                            <label for="years" class="form-label">Years of Data</label>
+                            <select name="years" id="years" class="form-select" onchange="this.form.submit()">
+                                <option value="3" {% if years == 3 %}selected{% endif %}>Last 3 Years</option>
+                                <option value="5" {% if years == 5 %}selected{% endif %}>Last 5 Years</option>
+                                <option value="10" {% if years == 10 %}selected{% endif %}>Last 10 Years</option>
+                                <option value="20" {% if years == 20 %}selected{% endif %}>All Available Years</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="program" class="form-label">Visa Program</label>
+                            <select name="program" id="program" class="form-select" onchange="this.form.submit()">
+                                <option value="all" {% if program_filter == 'all' %}selected{% endif %}>All Programs</option>
+                                <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B Only</option>
+                                <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM Only</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Overview Stats Cards -->
+            <div class="row mb-4">
+                {% with start_year_str=start_year|stringformat:"s" %}
+                    {% with filings_subtext="FY"|add:start_year_str|add:"-Present" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
+                    {% endwith %}
+                {% endwith %}
+                {% if stats.approval_rate >= 90 %}
+                    {% with approval_class="text-success" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.approval_rate|floatformat:1 value_class=approval_class label="Approval Rate" subtext="Certified Cases" suffix="%" %}
+                    {% endwith %}
+                {% elif stats.approval_rate >= 70 %}
+                    {% with approval_class="text-warning" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.approval_rate|floatformat:1 value_class=approval_class label="Approval Rate" subtext="Certified Cases" suffix="%" %}
+                    {% endwith %}
+                {% else %}
+                    {% with approval_class="text-danger" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.approval_rate|floatformat:1 value_class=approval_class label="Approval Rate" subtext="Certified Cases" suffix="%" %}
+                    {% endwith %}
+                {% endif %}
+                {% include "webapp/includes/stat_card.html" with value=stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="Across All Roles" prefix="$" %}
+                {% if stats.yoy_growth >= 10 %}
+                    {% with growth_class="text-success" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
+                    {% endwith %}
+                {% elif stats.yoy_growth >= 0 %}
+                    {% with growth_class="text-info" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
+                    {% endwith %}
+                {% else %}
+                    {% with growth_class="text-danger" %}
+                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" %}
+                    {% endwith %}
+                {% endif %}
+            </div>
+            
+            <!-- Top Job Titles -->
+            {% if stats.top_titles %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Top Job Titles by Filings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
+                            <thead>
+                                <tr>
+                                    <th data-sort-col="0" data-sort-type="text">Job Title</th>
+                                    <th class="text-end" data-sort-col="1" data-sort-type="number">Count</th>
+                                    <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
+                                    <th class="text-end" data-sort-col="3" data-sort-type="number">Min</th>
+                                    <th class="text-end" data-sort-col="4" data-sort-type="number">Max</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for title in stats.top_titles %}
+                                <tr>
+                                    <td>
+                                        {% if title.job_title_entity__canonical_cluster__slug %}
+                                        <a href="{% url 'job_title_profile' slug=title.job_title_entity__canonical_cluster__slug %}" class="text-decoration-none">
+                                            <strong>{{ title.job_title_entity__canonical_cluster__canonical_title }}</strong>
+                                        </a>
+                                        {% else %}
+                                        <strong>{{ title.job_title_entity__canonical_cluster__canonical_title }}</strong>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ title.count|intcomma }}</td>
+                                    <td class="text-end">${{ title.median_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-muted">${{ title.min_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-muted">${{ title.max_salary|floatformat:0|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Salary Distribution -->
+            {% if stats.salary_percentiles or chart_data.salary_histogram %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Salary Distribution (All Filings + Job Title Overlays)</h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.salary_percentiles %}
+                    {% include "webapp/includes/percentiles_row.html" with percentiles=stats.salary_percentiles %}
+                    {% endif %}
+                    {% if chart_data.salary_histogram %}
+                    {% include "webapp/includes/chart_loading_container.html" with element_id="chart-salary-histogram" %}
+                    {% else %}
+                    <p class="text-muted text-center py-4">Chart data not available</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Geographic Distribution -->
+            {% if chart_data.state_filings or chart_data.state_median_salary %}
+            <div class="row mb-4">
+                {% if chart_data.state_filings %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Filings by State (Chart)</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-state-filings" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if chart_data.state_median_salary %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Median Salary by State (Chart)</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-state-median-salary" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Year-over-Year Trends -->
+            {% if chart_data.filing_volume or chart_data.salary_trend %}
+            <div class="row mb-4">
+                {% if chart_data.filing_volume %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Filing Volume Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-filing-volume" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if chart_data.salary_trend %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Median Salary Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-salary-trend" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Year-over-Year Trends Table -->
+            {% if stats.yoy_trends %}
+            {% include "webapp/includes/yoy_trends_table.html" with yoy_trends=stats.yoy_trends %}
+            {% endif %}
+            
+            <!-- Similar Employers -->
+            {% if similar_employers %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Similar Employers{% if top_state %} in {{ top_state }}{% endif %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for employer in similar_employers %}
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex justify-content-between align-items-center p-3 border rounded">
+                                <div>
+                                    <a href="{% url 'employer_profile' slug=employer.slug %}" class="text-decoration-none">
+                                        <strong>{{ employer.canonical_name }}</strong>
+                                    </a>
+                                    <div class="text-muted small">
+                                        {{ employer.actual_lca_count|default:employer.total_lca_count|intcomma }} H-1B | {{ employer.actual_perm_count|default:employer.total_perm_count|intcomma }} PERM
+                                    </div>
+                                </div>
+                                <a href="{% url 'employer_profile' slug=employer.slug %}" class="btn btn-sm btn-outline-primary">
+                                    View
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Data Source Disclaimer -->
+            <div class="alert alert-info">
+                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 
+                Data shown for fiscal years {{ start_year }} to present. 
+                Last updated: {{ cluster.updated_at|date:"F j, Y" }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Plotly Chart Rendering -->
+{% if chart_data %}
+<script>
+function initEmployerCharts() {
+    console.log('Employer profile chart init start');
+
+    function ensurePlotlyLoaded(callback) {
+        if (typeof Plotly !== 'undefined') {
+            callback();
+            return;
+        }
+        setTimeout(function() {
+            ensurePlotlyLoaded(callback);
+        }, 50);
+    }
+
+    function renderChart(elementId, chartData) {
+        var element = document.getElementById(elementId);
+        if (!element) {
+            console.warn('Chart container not found:', elementId);
+            return;
+        }
+        if (!chartData || !chartData.data || chartData.data.length === 0) {
+            console.warn('Chart data missing or empty:', elementId);
+            element.innerHTML = '<p class="text-muted text-center py-4">Chart data not available</p>';
+            return;
+        }
+        var loadingEl = element.querySelector('.chart-loading');
+        if (loadingEl) {
+            loadingEl.remove();
+        }
+        element.innerHTML = '';
+        try {
+            Plotly.newPlot(
+                elementId,
+                chartData.data,
+                chartData.layout,
+                {responsive: true, displayModeBar: false}
+            ).then(function() {
+                console.log('Chart rendered:', elementId);
+                Plotly.Plots.resize(elementId);
+            }).catch(function(e) {
+                console.error('Error rendering chart:', elementId, e);
+                element.innerHTML = '<p class="text-muted text-center py-4">Chart failed to load</p>';
+            });
+        } catch (e) {
+            console.error('Error rendering chart:', elementId, e);
+            element.innerHTML = '<p class="text-muted text-center py-4">Chart failed to load</p>';
+        }
+    }
+
+    const startRender = function() {
+        console.log('Plotly loaded, rendering employer charts');
+            console.log('Chart data available:', {
+            salary_histogram: {% if chart_data.salary_histogram %}true{% else %}false{% endif %},
+            state_filings: {% if chart_data.state_filings %}true{% else %}false{% endif %},
+            state_median_salary: {% if chart_data.state_median_salary %}true{% else %}false{% endif %},
+            filing_volume: {% if chart_data.filing_volume %}true{% else %}false{% endif %},
+            salary_trend: {% if chart_data.salary_trend %}true{% else %}false{% endif %}
+        });
+
+        {% if chart_data.salary_histogram %}
+        var salaryHistogramData = {{ chart_data.salary_histogram|safe }};
+        renderChart('chart-salary-histogram', salaryHistogramData);
+        {% endif %}
+
+        {% if chart_data.state_filings %}
+        var stateFilingsData = {{ chart_data.state_filings|safe }};
+        renderChart('chart-state-filings', stateFilingsData);
+        {% endif %}
+
+        {% if chart_data.state_median_salary %}
+        var stateMedianSalaryData = {{ chart_data.state_median_salary|safe }};
+        renderChart('chart-state-median-salary', stateMedianSalaryData);
+        {% endif %}
+
+        {% if chart_data.filing_volume %}
+        var filingVolumeData = {{ chart_data.filing_volume|safe }};
+        renderChart('chart-filing-volume', filingVolumeData);
+        {% endif %}
+
+        {% if chart_data.salary_trend %}
+        var salaryTrendData = {{ chart_data.salary_trend|safe }};
+        renderChart('chart-salary-trend', salaryTrendData);
+        {% endif %}
+
+        console.log('Employer profile chart init complete');
+    };
+
+    if (typeof loadPlotly === 'function') {
+        loadPlotly(startRender);
+    } else {
+        ensurePlotlyLoaded(startRender);
+    }
+
+    window.addEventListener('resize', function() {
+        if (typeof Plotly === 'undefined') {
+            console.warn('Plotly not available on resize');
+            return;
+        }
+        {% if chart_data.salary_histogram %}
+        var el = document.getElementById('chart-salary-histogram');
+        if (el) Plotly.Plots.resize('chart-salary-histogram');
+        {% endif %}
+        {% if chart_data.state_filings %}
+        var el = document.getElementById('chart-state-filings');
+        if (el) Plotly.Plots.resize('chart-state-filings');
+        {% endif %}
+        {% if chart_data.state_median_salary %}
+        var el = document.getElementById('chart-state-median-salary');
+        if (el) Plotly.Plots.resize('chart-state-median-salary');
+        {% endif %}
+        {% if chart_data.filing_volume %}
+        var el = document.getElementById('chart-filing-volume');
+        if (el) Plotly.Plots.resize('chart-filing-volume');
+        {% endif %}
+        {% if chart_data.salary_trend %}
+        var el = document.getElementById('chart-salary-trend');
+        if (el) Plotly.Plots.resize('chart-salary-trend');
+        {% endif %}
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEmployerCharts);
+} else {
+    initEmployerCharts();
+}
+</script>
+{% endif %}
+
+<!-- Employer Search Autocomplete -->
+{% endblock %}
+

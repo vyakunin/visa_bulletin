@@ -1,0 +1,209 @@
+---
+alwaysApply: true
+---
+
+# General Code Health and Complexity Rules
+
+These are general code health rules that apply across all projects.
+
+## Function Length and Complexity
+
+**Functions must be focused and maintainable.**
+
+**Function length limits:**
+- **Maximum 50 lines** - Functions longer than 50 lines must be refactored
+- **Maximum 100 lines** - Hard limit (code review blocker)
+- **Cyclomatic complexity < 10** - Use early returns, extract helper functions
+
+**When to refactor:**
+- Function does multiple things (violates single responsibility)
+- Function has deeply nested conditionals (> 3 levels)
+- Function has repetitive code blocks
+- Function is hard to test in isolation
+- Function requires extensive comments to understand
+
+**Refactoring strategies:**
+- Extract helper functions for distinct operations
+- Use early returns to reduce nesting
+- Break complex conditionals into named functions
+- Separate data parsing from business logic
+- Extract validation into separate functions
+
+**✅ GOOD - Focused functions:**
+```python
+def parse_wage_info(row, column_mappings):
+    """Extract and validate wage information from row"""
+    wage_from = parse_decimal(get_column_value(row, column_mappings['wage_from']))
+    wage_unit = WageUnit.from_dol_value(get_column_value(row, column_mappings['wage_unit']))
+    wage_unit = correct_wage_unit_if_needed(wage_from, wage_unit)
+    wage_annual = calculate_annual_wage(wage_from, wage_unit)
+    return wage_from, wage_unit, wage_annual
+
+def correct_wage_unit_if_needed(wage_from, wage_unit):
+    """Fix incorrect wage units based on value ranges"""
+    if not wage_from or not (30000 <= float(wage_from) <= 1000000):
+        return wage_unit
+    
+    if wage_unit == WageUnit.HOUR and float(wage_from) > 5000:
+        return WageUnit.YEAR
+    # ... other checks
+    return wage_unit
+```
+
+**❌ BAD - Monolithic function:**
+```python
+def import_csv_file(...):  # 200+ lines doing everything
+    # Setup mappings
+    # Load existing cases
+    # Read file
+    # For each row:
+    #   Parse employer
+    #   Parse wage
+    #   Validate wage unit
+    #   Calculate annual
+    #   Parse dates
+    #   Create record
+    #   Batch insert
+    # Return results
+```
+
+**Rationale:**
+- Easier to test individual pieces
+- Easier to understand and maintain
+- Easier to reuse logic
+- Easier to debug issues
+- Reduces cognitive load
+
+## Code Reuse and DRY Principle
+
+**ALWAYS check for existing code before implementing new functionality.**
+
+**Before writing new code:**
+1. ✅ **Check for standard/open-source libraries** - Search PyPI and common libraries before implementing utilities
+2. ✅ Search codebase for similar functionality
+3. ✅ Check `lib/` directory for reusable utilities
+4. ✅ Look for existing patterns in similar scripts
+5. ✅ Extract common code to shared libraries when duplicated
+
+**Rule: Check Standard Libraries Before Implementing Utilities**
+
+**BEFORE implementing a utility or constant set, search for existing standard libraries:**
+
+**✅ GOOD - Use standard library when appropriate:**
+```python
+# For simple utilities, check PyPI first
+# Examples:
+# - US state codes → check 'us' library (pypi.org/project/us)
+# - Country codes → check 'pycountry' or 'country-list'
+# - Date parsing → use 'dateutil' (already common)
+# - URL parsing → use 'urllib.parse' (stdlib)
+```
+
+**When to use a standard library:**
+- ✅ Well-maintained, popular library (>1k stars on GitHub, >100k downloads/month)
+- ✅ Provides more than just the basic functionality needed
+- ✅ Actively maintained (recent commits/updates)
+- ✅ Small dependency footprint
+- ✅ Fits the project's dependency philosophy
+
+**When NOT to use a standard library:**
+- ❌ Simple constant set (like 50 state codes) - may be overkill
+- ❌ Library adds significant dependency overhead for minimal benefit
+- ❌ Library is unmaintained or has security issues
+- ❌ Project already has a working implementation that's sufficient
+- ❌ Only need basic functionality and library brings unnecessary complexity
+
+**Decision process:**
+1. Search PyPI/GitHub for relevant libraries
+2. Evaluate maintenance status and popularity
+3. Consider dependency footprint vs. benefit
+4. If adding a dependency seems excessive, implement a simple utility
+5. **Document the decision** - Add comment in code or README explaining why library was used or not used
+
+**Example:**
+```python
+# Note: Considered 'us' library (pypi.org/project/us) but chose simple 
+# implementation since we only need basic state code validation
+VALID_STATES = {'AL', 'AK', ...}
+```
+
+**✅ GOOD - Reuse existing code:**
+```python
+# Use shared utilities
+from lib.utils.http_utils import get_workspace_dir, fetch_page, download_file
+from django_config.logging_config import setup_logging
+
+# Reuse workspace directory pattern
+WORKSPACE_DIR = get_workspace_dir()
+DATA_DIR = WORKSPACE_DIR / 'data'
+```
+
+**❌ BAD - Duplicate code:**
+```python
+# Don't duplicate workspace directory logic
+WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent))
+
+# Don't duplicate HTTP fetching
+def fetch_page(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
+
+# Don't duplicate logging setup
+logging.basicConfig(level=logging.INFO, format='...')
+```
+
+**When to extract to shared library:**
+- Same code appears in 2+ files
+- Functionality is reusable across scripts
+- Pattern is used consistently (e.g., workspace dir, HTTP fetching)
+
+**Shared utilities location:**
+- `lib/` - Reusable business logic and utilities (see `lib/README.md` for reference)
+- `django_config/` - Django-specific shared config (logging, settings)
+
+**Library documentation requirement:**
+- All modules in `lib/` must be documented in `lib/README.md`
+- Documentation must be concise (1-3 sentences per module)
+- Must list key functions/classes and their purpose
+- Must include "Quick Reference by Use Case" section
+- Goal: Developers can find functionality without scanning code
+
+**Rationale:**
+- Reduces maintenance burden (fix bugs once)
+- Ensures consistent behavior across scripts
+- Makes codebase easier to understand
+- Prevents inconsistencies from copy-paste errors
+
+## Rule: No Fallbacks That Hide Root Cause
+
+**Do NOT introduce fallbacks that allow the system to succeed while the primary mechanism is broken or never run.**
+
+**❌ BAD - Fallback hides the real problem:**
+```python
+# Primary path: JobTitleCluster (populated by pipeline)
+clusters = JobTitleCluster.objects.filter(...)
+if not clusters:
+    # Fallback: query SalaryRecord so autocomplete "works"
+    # This hides that cluster_job_titles or update_job_title_cluster_stats never ran
+    clusters = SalaryRecord.objects.values('job_title').annotate(...)
+```
+
+**✅ GOOD - Fix the root cause:**
+```python
+# Rely only on JobTitleCluster. If empty, autocomplete returns [].
+# Ensure pipeline runs: cluster_job_titles → update_job_title_cluster_stats → populate_job_title_slugs.
+clusters = JobTitleCluster.objects.filter(...)
+return [{'title': c.canonical_title, ...} for c in clusters]
+```
+
+**When something is broken:**
+1. Investigate why the primary path fails (pipeline not run, step failed, missing step, bad data).
+2. Fix that (add missing step to pipeline, fix failure, fix data).
+3. Do not add a fallback that masks the failure.
+
+**Exception:** Fallbacks that are intentional product behavior (e.g. optional feature with graceful degradation) and are documented as such are acceptable.
+
+**Rationale:**
+- Fallbacks that hide failures let broken pipelines or missing steps go unnoticed.
+- Root-cause fixes (e.g. adding populate_job_title_slugs to refresh_data.sh) ensure the real mechanism works everywhere.

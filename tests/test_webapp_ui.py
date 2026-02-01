@@ -27,7 +27,7 @@ class TestDashboardUIBehavior(unittest.TestCase):
         2. User presses Enter in the date field
         3. User changes a dropdown (which auto-submits)
         """
-        from webapp.views import dashboard_view
+        from webapp.views.bulletin.dashboard import dashboard_view
         
         # Create a proper Django request
         request = self.factory.get('/dashboard/', {
@@ -38,9 +38,9 @@ class TestDashboardUIBehavior(unittest.TestCase):
             'submission_date': '2024-01-01'
         })
         
-        with patch('webapp.views.render') as mock_render:
+        with patch('webapp.views.bulletin.dashboard.render') as mock_render:
             # Mock the dashboard service to return empty data
-            with patch('webapp.views.get_aggregated_visa_class_data') as mock_service:
+            with patch('webapp.views.bulletin.dashboard.get_aggregated_visa_class_data') as mock_service:
                 # Return empty visa class data and has_any_data=False
                 mock_service.return_value = ([], False)
                 
@@ -81,7 +81,7 @@ class TestDashboardUIBehavior(unittest.TestCase):
     
     def test_date_validation_with_invalid_format(self):
         """Test that invalid date formats are handled gracefully"""
-        from webapp.views import dashboard_view
+        from webapp.views.bulletin.dashboard import dashboard_view
         
         # Create a proper Django request with invalid date
         request = self.factory.get('/dashboard/', {
@@ -92,8 +92,8 @@ class TestDashboardUIBehavior(unittest.TestCase):
             'submission_date': 'invalid-date'  # Bad format
         })
         
-        with patch('webapp.views.render') as mock_render:
-            with patch('webapp.views.get_aggregated_visa_class_data') as mock_service:
+        with patch('webapp.views.bulletin.dashboard.render') as mock_render:
+            with patch('webapp.views.bulletin.dashboard.get_aggregated_visa_class_data') as mock_service:
                 # Return empty visa class data
                 mock_service.return_value = ([], False)
                 

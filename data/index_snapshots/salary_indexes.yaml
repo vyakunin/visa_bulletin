@@ -1,0 +1,299 @@
+generated_at: '2026-01-19T09:26:17.774765'
+tables:
+- salary_record
+- worksite_record
+indexes:
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_decisio_e82d25_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_decisio_e82d25_idx ON public.salary_record
+    USING btree (decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_employe_c93e9a_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_employe_c93e9a_idx ON public.salary_record
+    USING btree (employer_name, job_title)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_fiscal__f811a2_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_fiscal__f811a2_idx ON public.salary_record
+    USING btree (fiscal_year, decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_job_tit_7b8349_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_job_tit_7b8349_idx ON public.salary_record
+    USING btree (job_title, worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_soc_cod_8cdf26_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_soc_cod_8cdf26_idx ON public.salary_record
+    USING btree (soc_code, worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_visa_pr_044b05_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_visa_pr_044b05_idx ON public.salary_record
+    USING btree (visa_program, fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_wage_an_95e1ea_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_wage_an_95e1ea_idx ON public.salary_record
+    USING btree (wage_annual, visa_program)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_reco_worksit_fe8724_idx
+  indexdef: CREATE INDEX idx_17262_salary_reco_worksit_fe8724_idx ON public.salary_record
+    USING btree (worksite_state, fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_case_submitted_c9bce5e9
+  indexdef: CREATE INDEX idx_17262_salary_record_case_submitted_c9bce5e9 ON public.salary_record
+    USING btree (case_submitted)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_decision_date_097e55e4
+  indexdef: CREATE INDEX idx_17262_salary_record_decision_date_097e55e4 ON public.salary_record
+    USING btree (decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_employer_id_63308928
+  indexdef: CREATE INDEX idx_17262_salary_record_employer_id_63308928 ON public.salary_record
+    USING btree (employer_id)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_employer_name_e42fa6a7
+  indexdef: CREATE INDEX idx_17262_salary_record_employer_name_e42fa6a7 ON public.salary_record
+    USING btree (employer_name)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_fiscal_year_87da0cd4
+  indexdef: CREATE INDEX idx_17262_salary_record_fiscal_year_87da0cd4 ON public.salary_record
+    USING btree (fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_ingest_version_id_ad9dc99b
+  indexdef: CREATE INDEX idx_17262_salary_record_ingest_version_id_ad9dc99b ON public.salary_record
+    USING btree (ingest_version_id)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_is_worksite_765953d5
+  indexdef: CREATE INDEX idx_17262_salary_record_is_worksite_765953d5 ON public.salary_record
+    USING btree (is_worksite)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_job_title_89d21c95
+  indexdef: CREATE INDEX idx_17262_salary_record_job_title_89d21c95 ON public.salary_record
+    USING btree (job_title)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_soc_code_1b8d83ff
+  indexdef: CREATE INDEX idx_17262_salary_record_soc_code_1b8d83ff ON public.salary_record
+    USING btree (soc_code)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_source_file_a0692cee
+  indexdef: CREATE INDEX idx_17262_salary_record_source_file_a0692cee ON public.salary_record
+    USING btree (source_file)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_visa_program_95ddcb2a
+  indexdef: CREATE INDEX idx_17262_salary_record_visa_program_95ddcb2a ON public.salary_record
+    USING btree (visa_program)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_wage_annual_c97f6e19
+  indexdef: CREATE INDEX idx_17262_salary_record_wage_annual_c97f6e19 ON public.salary_record
+    USING btree (wage_annual)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: idx_17262_salary_record_worksite_state_2cc7675a
+  indexdef: CREATE INDEX idx_17262_salary_record_worksite_state_2cc7675a ON public.salary_record
+    USING btree (worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: salary_reco_employe_892342_idx
+  indexdef: CREATE INDEX salary_reco_employe_892342_idx ON public.salary_record USING
+    btree (employer_id, is_worksite)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: salary_record_job_title_entity_id_8010b272
+  indexdef: CREATE INDEX salary_record_job_title_entity_id_8010b272 ON public.salary_record
+    USING btree (job_title_entity_id)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: salary_record
+  name: salary_record_source_file_date_436fb5ad
+  indexdef: CREATE INDEX salary_record_source_file_date_436fb5ad ON public.salary_record
+    USING btree (source_file_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_decisio_5b41ac_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_decisio_5b41ac_idx ON public.worksite_record
+    USING btree (decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_fiscal__7acf8d_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_fiscal__7acf8d_idx ON public.worksite_record
+    USING btree (fiscal_year, decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_job_tit_d51008_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_job_tit_d51008_idx ON public.worksite_record
+    USING btree (job_title, worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_soc_cod_75b493_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_soc_cod_75b493_idx ON public.worksite_record
+    USING btree (soc_code, worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_visa_pr_152de9_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_visa_pr_152de9_idx ON public.worksite_record
+    USING btree (visa_program, fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_wage_an_60805a_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_wage_an_60805a_idx ON public.worksite_record
+    USING btree (wage_annual)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_worksit_d61437_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_worksit_d61437_idx ON public.worksite_record
+    USING btree (worksite_city, worksite_state)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_re_worksit_e32810_idx
+  indexdef: CREATE INDEX idx_17255_worksite_re_worksit_e32810_idx ON public.worksite_record
+    USING btree (worksite_state, fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_case_submitted_a2117253
+  indexdef: CREATE INDEX idx_17255_worksite_record_case_submitted_a2117253 ON public.worksite_record
+    USING btree (case_submitted)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_decision_date_e351e221
+  indexdef: CREATE INDEX idx_17255_worksite_record_decision_date_e351e221 ON public.worksite_record
+    USING btree (decision_date)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_fiscal_year_fa0fc580
+  indexdef: CREATE INDEX idx_17255_worksite_record_fiscal_year_fa0fc580 ON public.worksite_record
+    USING btree (fiscal_year)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_ingest_version_id_f6aa661b
+  indexdef: CREATE INDEX idx_17255_worksite_record_ingest_version_id_f6aa661b ON public.worksite_record
+    USING btree (ingest_version_id)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_job_title_75f7d209
+  indexdef: CREATE INDEX idx_17255_worksite_record_job_title_75f7d209 ON public.worksite_record
+    USING btree (job_title)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_soc_code_f9bc9537
+  indexdef: CREATE INDEX idx_17255_worksite_record_soc_code_f9bc9537 ON public.worksite_record
+    USING btree (soc_code)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_visa_program_18c14e65
+  indexdef: CREATE INDEX idx_17255_worksite_record_visa_program_18c14e65 ON public.worksite_record
+    USING btree (visa_program)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_wage_annual_284ea7d6
+  indexdef: CREATE INDEX idx_17255_worksite_record_wage_annual_284ea7d6 ON public.worksite_record
+    USING btree (wage_annual)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_worksite_city_f6e314b8
+  indexdef: CREATE INDEX idx_17255_worksite_record_worksite_city_f6e314b8 ON public.worksite_record
+    USING btree (worksite_city)
+  is_unique: false
+  is_primary: false
+- schema: public
+  table: worksite_record
+  name: idx_17255_worksite_record_worksite_state_bd1bb702
+  indexdef: CREATE INDEX idx_17255_worksite_record_worksite_state_bd1bb702 ON public.worksite_record
+    USING btree (worksite_state)
+  is_unique: false
+  is_primary: false

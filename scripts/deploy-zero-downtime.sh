@@ -19,14 +19,15 @@
 set -e
 
 # Configuration
-AWS_HOST="3.227.71.176"
 AWS_USER="ubuntu"
 DEFAULT_KEY="$HOME/.ssh/lightsail_visa_bulletin"
 DEPLOY_DIR="/opt/visa_bulletin"
 
-# Parse arguments
+# Parse arguments: [ssh-key-path] [image-tag] [host]
+# host defaults to prod_0.5Gb_vm; use staging_2Gb_vm for staging
 SSH_KEY="${1:-$DEFAULT_KEY}"
 IMAGE_TAG="${2:-latest}"
+AWS_HOST="${3:-prod_0.5Gb_vm}"
 
 if [ ! -f "$SSH_KEY" ]; then
     echo "❌ SSH key not found: $SSH_KEY"
@@ -46,29 +47,28 @@ echo ""
 SSH_CMD="ssh -i $SSH_KEY ${AWS_USER}@${AWS_HOST}"
 
 echo "📥 Pulling latest configs from GitHub..."
-$SSH_CMD "cd $DEPLOY_DIR && git pull origin main"
+$SSH_CMD "cd $DEPLOY_DIR && git fetch origin main && git merge --ff-only origin/main || git reset --hard origin/main"
 
 echo ""
 echo "🔍 Detecting active environment..."
 
 # Detect which environment is currently active by checking Nginx config
-# Extract port number from proxy_pass lines (handles semicolon)
-ACTIVE_ENV=$($SSH_CMD "grep -oP '127\\.0\\.0\\.1:\\K\\d+' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf | head -1")
+ACTIVE_ENV=$($SSH_CMD "grep -oP 'proxy_pass.*127\\.0\\.0\\.1:\\K\\d+' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf | head -1")
 
 if [ "$ACTIVE_ENV" = "8000" ]; then
     ACTIVE_COLOR="blue"
     NEW_COLOR="green"
     NEW_PORT="8001"
     OLD_PORT="8000"
-    NEW_COMPOSE="docker-compose.green.yml"
-    OLD_COMPOSE="docker-compose.blue.yml"
+    NEW_COMPOSE="deployment/docker-compose.green.yml"
+    OLD_COMPOSE="deployment/docker-compose.blue.yml"
 elif [ "$ACTIVE_ENV" = "8001" ]; then
     ACTIVE_COLOR="green"
     NEW_COLOR="blue"
     NEW_PORT="8000"
     OLD_PORT="8001"
-    NEW_COMPOSE="docker-compose.blue.yml"
-    OLD_COMPOSE="docker-compose.green.yml"
+    NEW_COMPOSE="deployment/docker-compose.blue.yml"
+    OLD_COMPOSE="deployment/docker-compose.green.yml"
 else
     # No active environment or unknown port - default to deploying blue
     echo "⚠️  No active environment detected (Nginx points to port $ACTIVE_ENV)"
@@ -77,7 +77,7 @@ else
     NEW_COLOR="blue"
     NEW_PORT="8000"
     OLD_PORT=""
-    NEW_COMPOSE="docker-compose.blue.yml"
+    NEW_COMPOSE="deployment/docker-compose.blue.yml"
     OLD_COMPOSE=""
 fi
 
@@ -88,11 +88,22 @@ echo "🐳 Pulling Docker image on remote server..."
 $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE pull"
 
 echo ""
-echo "🧹 Stopping existing $NEW_COLOR environment (if any)..."
-$SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE down 2>/dev/null || true"
-
 echo "🚀 Starting $NEW_COLOR environment on port $NEW_PORT..."
-$SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+
+# Load environment variables for green environment (PostgreSQL) if .env.green exists
+if [ "$NEW_COLOR" = "green" ]; then
+    # Check if .env.green exists and load it
+    ENV_FILE_EXISTS=$($SSH_CMD "test -f $DEPLOY_DIR/.env.green && echo 'yes' || echo 'no'")
+    if [ "$ENV_FILE_EXISTS" = "yes" ]; then
+        echo "   Loading PostgreSQL config from .env.green..."
+        $SSH_CMD "cd $DEPLOY_DIR && export \$(cat .env.green | xargs) && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+    else
+        echo "   No .env.green found, using default (SQLite)"
+        $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+    fi
+else
+    $SSH_CMD "cd $DEPLOY_DIR && IMAGE_TAG=$IMAGE_TAG docker-compose -f $NEW_COMPOSE up -d"
+fi
 
 echo ""
 echo "⏳ Waiting for health checks (max 60s)..."
@@ -103,8 +114,8 @@ while [ $HEALTH_CHECK_COUNT -lt $MAX_HEALTH_CHECKS ]; do
     sleep 5
     HEALTH_CHECK_COUNT=$((HEALTH_CHECK_COUNT + 1))
     
-    # Check container health - only check web container (data-refresh doesn't have healthcheck)
-    HEALTH_STATUS=$($SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE ps web-$NEW_COLOR | grep -i healthy" || echo "")
+    # Check container health
+    HEALTH_STATUS=$($SSH_CMD "cd $DEPLOY_DIR && docker-compose -f $NEW_COMPOSE ps | grep -i healthy" || echo "")
     
     if [ -n "$HEALTH_STATUS" ]; then
         echo "✅ $NEW_COLOR environment is healthy!"
@@ -133,8 +144,7 @@ echo ""
 echo "🔄 Switching Nginx proxy: $OLD_PORT → $NEW_PORT"
 
 # Update Nginx configuration atomically
-# Update ALL instances of the port in the locations config file (handles semicolon)
-$SSH_CMD "sudo sed -i 's/127\\.0\\.0\\.1:$OLD_PORT/127.0.0.1:$NEW_PORT/g' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf"
+$SSH_CMD "sudo sed -i 's/proxy_pass http:\\/\\/127\\.0\\.0\\.1:$OLD_PORT/proxy_pass http:\\/\\/127.0.0.1:$NEW_PORT/g' $DEPLOY_DIR/deployment/nginx/visa-bulletin-locations.conf"
 
 # Test Nginx configuration
 echo "   Testing Nginx configuration..."
@@ -169,12 +179,17 @@ echo "Image deployed: ghcr.io/vyakunin/visa_bulletin:$IMAGE_TAG"
 echo ""
 echo "🔍 Verifying deployment..."
 
-# Check site is responding
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us)
-if [ "$HTTP_STATUS" = "200" ]; then
-    echo "✅ Site is responding: https://visa-bulletin.us (HTTP $HTTP_STATUS)"
+# Check site is responding (staging uses IP, prod uses domain)
+if [ "$AWS_HOST" = "staging_2Gb_vm" ]; then
+  VERIFY_URL="http://44.209.204.255"
 else
-    echo "⚠️  Site returned HTTP $HTTP_STATUS"
+  VERIFY_URL="https://visa-bulletin.us"
+fi
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$VERIFY_URL" || echo "000")
+if [ "$HTTP_STATUS" = "200" ]; then
+    echo "✅ Site is responding: $VERIFY_URL (HTTP $HTTP_STATUS)"
+else
+    echo "⚠️  Site returned HTTP $HTTP_STATUS at $VERIFY_URL"
 fi
 
 echo ""

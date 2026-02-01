@@ -6,7 +6,7 @@ from unittest.mock import patch, Mock
 # Django setup (shared utility for both Bazel and pytest)
 from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
-from lib.visa_class_utils import get_deduplicated_employment_classes
+from lib.business.bulletin.visa_class_utils import get_deduplicated_employment_classes
 
 
 class TestVisaClassUtils(unittest.TestCase):

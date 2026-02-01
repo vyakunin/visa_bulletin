@@ -1,0 +1,34 @@
+version: '3.8'
+
+# Development docker-compose that builds locally
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  web:
+    # Build locally for development
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist cached pages and logs (PostgreSQL is used for database)
+      - ../data/bulletin/saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    
+  # Daily data refresh (cron-like service)
+  data-refresh:
+    build: .
+    command: sh -c "while true; do python3 scripts/ingest/run_pipeline.py discover-and-ingest --all-domains; sleep 86400; done"
+    volumes:
+      - ../data/bulletin/saved_pages:/app/saved_pages
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_config.settings
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - web
+

@@ -10,6 +10,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
 )
 
@@ -19,6 +20,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
 )
 
@@ -28,7 +30,41 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bulletin",
+        "//models/ingest:ingest_version",
         requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
 )
+
+py_library(
+    name = "salary",
+    srcs = ["salary.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":job_title",
+        "//lib/business/salary:generic_words",
+        "//models/enums:visa_program",
+        "//models/ingest:ingest_version",
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+py_library(
+    name = "job_title",
+    srcs = ["job_title.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+filegroup(
+    name = "migrations",
+    srcs = glob(["migrations/*.py"]) + ["//models/ingest:migrations"],
+    visibility = ["//visibility:public"],
+)
+
+# Ingest models (targets are in models/ingest/BUILD)
 

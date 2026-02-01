@@ -1,0 +1,665 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block container_class %}salary-container{% endblock %}
+
+{% block extra_head %}
+<style>
+    .salary-container {
+        min-height: 400px;
+    }
+    
+    .search-card {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+    }
+    
+    .search-card .card-header {
+        background: var(--gov-navy) !important;
+        color: white;
+        border-bottom: 2px solid var(--gov-red);
+    }
+    
+    .results-table {
+        font-size: 0.9rem;
+    }
+    
+    .results-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .results-table td {
+        vertical-align: middle;
+    }
+    
+    .salary-highlight {
+        font-weight: 600;
+        color: var(--gov-green);
+    }
+    
+    .employer-link {
+        color: var(--gov-navy);
+        text-decoration: none;
+    }
+    
+    .employer-link:hover {
+        text-decoration: underline;
+    }
+    
+    .badge-h1b {
+        background-color: #0d6efd;
+    }
+    
+    .badge-perm {
+        background-color: var(--gov-green);
+    }
+    
+    .filter-tag {
+        display: inline-flex;
+        align-items: center;
+        background: #e8f4f8;
+        border: 1px solid var(--gov-navy);
+        border-radius: 20px;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+        font-size: 0.85rem;
+    }
+    
+    .filter-tag .bi-x {
+        cursor: pointer;
+        margin-left: 0.5rem;
+    }
+    
+    .stats-card {
+        background: linear-gradient(135deg, var(--gov-navy) 0%, #004080 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .stats-card h3 {
+        font-size: 2rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .stats-card p {
+        margin-bottom: 0;
+        opacity: 0.9;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    @media (max-width: 768px) {
+        .results-table {
+            font-size: 0.8rem;
+        }
+        
+        .results-table th, .results-table td {
+            padding: 0.5rem;
+        }
+        
+        .stats-card {
+            padding: 1rem;
+        }
+        
+        .stats-card h3 {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+<script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<main>
+    <div class="row">
+        <div class="col-12">
+            <!-- Search Card -->
+            <div class="card search-card mb-4">
+                <div class="card-header">
+                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search H-1B & PERM Salary Data</h2>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="" id="searchForm">
+                        <div class="row g-2">
+                            <!-- Job Title / Keywords (shared autocomplete - submits form on select) -->
+                            <div class="col-md-6">
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="q" input_name="q" input_value=query placeholder="e.g., Software Engineer, Data Scientist" endpoint_url=job_title_autocomplete_url display_field="title" count_field="total_filings" label="Job Title / Keywords" submit_on_select=True %}
+                            </div>
+                            
+                            <!-- Employer Name (shared autocomplete - submits form on select) -->
+                            <div class="col-md-6">
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="employer" input_name="employer" input_value=employer_filter placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" label="Employer Name" submit_on_select=True %}
+                            </div>
+                            
+                            <!-- State -->
+                            <div class="col-md-4">
+                                <label for="state" class="form-label">State</label>
+                                <select class="form-select" id="state" name="state">
+                                    <option value="">All States</option>
+                                    {% for code, name in states %}
+                                    <option value="{{ code }}" {% if code == state_filter %}selected{% endif %}>
+                                        {{ name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Visa Program -->
+                            <div class="col-md-4">
+                                <label for="program" class="form-label">Visa Program</label>
+                                <select class="form-select" id="program" name="program">
+                                    <option value="">All Programs</option>
+                                    <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Fiscal Year -->
+                            <div class="col-md-4">
+                                <label for="year" class="form-label">Fiscal Year</label>
+                                <select class="form-select" id="year" name="year">
+                                    <option value="">All Years</option>
+                                    {% for year in fiscal_years %}
+                                    <option value="{{ year }}" {% if year == year_filter %}selected{% endif %}>
+                                        FY {{ year }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Search Button -->
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search"></i> Search
+                                </button>
+                                {% if query or employer_filter or state_filter or program_filter or year_filter %}
+                                <a href="{% url 'salary_search' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="bi bi-x-circle"></i> Clear Filters
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            {% if has_data %}
+            {% if not has_filters and market_stats %}
+            <div class="mb-4">
+                <h2 class="h4">Salary Market Overview</h2>
+                <p class="text-muted">Top-level trends across H-1B and PERM filings.</p>
+            </div>
+            
+            <div class="row mb-4">
+                {% with start_year_str=market_stats.start_year|stringformat:"s" %}
+                    {% with filings_subtext="FY"|add:start_year_str|add:"-Present" %}
+                        {% include "webapp/includes/stat_card.html" with value=market_stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
+                    {% endwith %}
+                {% endwith %}
+                {% include "webapp/includes/stat_card.html" with value=market_stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="All Employers" prefix="$" %}
+                {% if market_stats.yoy_growth >= 10 %}
+                    {% with growth_class="text-success" %}
+                        {% include "webapp/includes/stat_card.html" with value=market_stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
+                    {% endwith %}
+                {% elif market_stats.yoy_growth >= 0 %}
+                    {% with growth_class="text-info" %}
+                        {% include "webapp/includes/stat_card.html" with value=market_stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
+                    {% endwith %}
+                {% else %}
+                    {% with growth_class="text-danger" %}
+                        {% include "webapp/includes/stat_card.html" with value=market_stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" %}
+                    {% endwith %}
+                {% endif %}
+                {% include "webapp/includes/stat_card.html" with value=market_stats.top_employers|length value_class="text-info" label="Top Employers" subtext="By Filings" %}
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Top Employers</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Employer</th>
+                                            <th class="text-end">Filings</th>
+                                            <th class="text-end">Median Salary</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for employer in market_stats.top_employers %}
+                                        <tr>
+                                            <td>
+                                                {% if employer.employer__canonical_cluster__slug %}
+                                                <a href="{% url 'employer_profile' slug=employer.employer__canonical_cluster__slug %}">
+                                                    <strong>{{ employer.employer__canonical_cluster__canonical_name }}</strong>
+                                                </a>
+                                                {% else %}
+                                                <strong>{{ employer.employer__canonical_cluster__canonical_name }}</strong>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-end">{{ employer.count|intcomma }}</td>
+                                            <td class="text-end">${{ employer.median_salary|floatformat:0|intcomma }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="3" class="text-center text-muted py-3">No employer data available</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Top Job Titles</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Job Title</th>
+                                            <th class="text-end">Filings</th>
+                                            <th class="text-end">Median Salary</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for title in market_stats.top_job_titles %}
+                                        <tr>
+                                            <td>
+                                                {% if title.job_title_entity__canonical_cluster__slug %}
+                                                <a href="{% url 'job_title_profile' slug=title.job_title_entity__canonical_cluster__slug %}">
+                                                    <strong>{{ title.job_title_entity__canonical_cluster__canonical_title }}</strong>
+                                                </a>
+                                                {% else %}
+                                                <strong>{{ title.job_title_entity__canonical_cluster__canonical_title }}</strong>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-end">{{ title.count|intcomma }}</td>
+                                            <td class="text-end">${{ title.median_salary|floatformat:0|intcomma }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="3" class="text-center text-muted py-3">No job title data available</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {% if market_chart_data.state_filings or market_chart_data.state_median_salary %}
+            <div class="row mb-4">
+                {% if market_chart_data.state_filings %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Filings by State</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-market-state-filings" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if market_chart_data.state_median_salary %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Median Salary by State</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-market-state-median" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            {% if market_chart_data.filing_volume or market_chart_data.salary_trend %}
+            <div class="row mb-4">
+                {% if market_chart_data.filing_volume %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Filing Volume Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-market-filing-volume" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if market_chart_data.salary_trend %}
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Median Salary Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-market-salary-trend" %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            {% if market_stats.yoy_trends %}
+                {% include "webapp/includes/yoy_trends_table.html" with yoy_trends=market_stats.yoy_trends title="Year-over-Year Salary Statistics" %}
+            {% endif %}
+            {% endif %}
+            
+            <!-- Statistics Cards -->
+            {% if has_filters %}
+            <div class="row mb-4">
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>{{ total_results|default:"0" }}</h3>
+                        <p>Results Found</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ avg_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Average Salary</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ min_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Minimum</p>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stats-card">
+                        <h3>${{ max_salary|floatformat:0|default:"--" }}</h3>
+                        <p>Maximum</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Active Filters -->
+            {% if query or employer_filter or state_filter or program_filter or year_filter %}
+            <div class="mb-3">
+                <span class="text-muted me-2">Active filters:</span>
+                {% if query %}
+                <span class="filter-tag">
+                    Job: {{ query }}
+                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if employer_filter %}
+                <span class="filter-tag">
+                    Employer: {{ employer_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if state_filter %}
+                <span class="filter-tag">
+                    State: {{ state_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if program_filter %}
+                <span class="filter-tag">
+                    Program: {{ program_filter|upper }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if year_filter %}
+                <span class="filter-tag">
+                    Year: FY{{ year_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Results Table -->
+            {% if has_filters %}
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover results-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Employer</th>
+                                    <th>Job Title</th>
+                                    <th>Location</th>
+                                    <th>Salary</th>
+                                    <th>Program</th>
+                                    <th>Year</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for record in records %}
+                                <tr>
+                                    <td>
+                                        {% if record.employer.canonical_cluster.slug %}
+                                        <a href="{% url 'employer_profile' slug=record.employer.canonical_cluster.slug %}" class="employer-link">
+                                            {{ record.employer_name|truncatechars:40 }}
+                                        </a>
+                                        {% else %}
+                                        <a href="?employer={{ record.employer_name|urlencode }}" class="employer-link">
+                                            {{ record.employer_name|truncatechars:40 }}
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if record.job_title_entity and record.job_title_entity.canonical_cluster and record.job_title_entity.canonical_cluster.slug %}
+                                        <a href="{% url 'job_title_profile' slug=record.job_title_entity.canonical_cluster.slug %}" class="job-title-link">
+                                            {{ record.job_title|truncatechars:50 }}
+                                        </a>
+                                        {% else %}
+                                        {{ record.job_title|truncatechars:50 }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if record.worksite_city %}{{ record.worksite_city }}, {% endif %}{{ record.worksite_state }}
+                                    </td>
+                                    <td class="salary-highlight">
+                                        ${{ record.wage_annual|floatformat:0|default:"--" }}
+                                        {% if record.wage_to and record.wage_to != record.wage_from %}
+                                        - ${{ record.wage_to|floatformat:0 }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if record.visa_program == 1 %}
+                                        <span class="badge badge-h1b">H-1B</span>
+                                        {% elif record.visa_program == 4 %}
+                                        <span class="badge badge-perm">PERM</span>
+                                        {% elif record.visa_program == 2 %}
+                                        <span class="badge bg-secondary">H-1B1</span>
+                                        {% elif record.visa_program == 3 %}
+                                        <span class="badge bg-secondary">E-3</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ record.get_visa_program_display }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ record.fiscal_year }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">
+                                        No records found matching your search criteria.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                {% if records %}
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <span class="pagination-info">
+                        Showing {{ page_start }}-{{ page_end }} of {{ total_results }} results
+                    </span>
+                    
+                    {% if has_pagination %}
+                    <nav aria-label="Search results pagination">
+                        <ul class="pagination mb-0">
+                            {% if page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}">&laquo; Prev</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for p in page_range %}
+                            <li class="page-item {% if p == page %}active{% endif %}">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ p }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+                            
+                            {% if page < total_pages %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}">Next &raquo;</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <!-- No Data / Welcome Message -->
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-database" style="font-size: 4rem; color: var(--gov-navy);"></i>
+                    <h3 class="mt-3">Search H-1B & PERM Salary Data</h3>
+                    <p class="text-muted mb-4">
+                        Search through thousands of salary records from official DOL disclosure data.
+                        <br>Find out what companies pay for specific job titles and locations.
+                    </p>
+                    
+                    {% if no_data_yet %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>No salary data imported yet.</strong>
+                        <br>
+                        Run <code>bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain dol</code> to import DOL disclosure data.
+                    </div>
+                    {% else %}
+                    <p class="text-muted">
+                        Enter a job title, employer name, or location above to search.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Data Source Info -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Data</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Data Source</h6>
+                    <p>
+                        This data comes from the U.S. Department of Labor's public disclosure files for 
+                        <strong>Labor Condition Applications (LCA)</strong> and 
+                        <strong>Permanent Employment Certification (PERM)</strong> applications.
+                    </p>
+                    
+                    <h6>What You Can Find</h6>
+                    <ul>
+                        <li><strong>H-1B Salaries:</strong> Wages offered to H-1B specialty occupation workers</li>
+                        <li><strong>PERM Salaries:</strong> Wages offered for green card sponsorship positions</li>
+                        <li><strong>Employer Information:</strong> Which companies sponsor most workers</li>
+                        <li><strong>Location Data:</strong> Salary differences by state and city</li>
+                    </ul>
+                    
+                    <h6>How to Use This Data</h6>
+                    <ul>
+                        <li>Research salaries for your job title at specific companies</li>
+                        <li>Compare offers across different locations</li>
+                        <li>Find companies that actively sponsor green cards</li>
+                        <li>Understand market rates for salary negotiations</li>
+                    </ul>
+                    
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>Note:</strong> This data shows wages from official DOL filings. 
+                        Actual compensation may include additional benefits, bonuses, and equity not reflected here.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+{% if market_chart_data %}
+<script>
+function initMarketCharts() {
+    function renderChart(elementId, chartData) {
+        const element = document.getElementById(elementId);
+        if (!element || !chartData || !chartData.data || chartData.data.length === 0) {
+            return;
+        }
+        try {
+            element.innerHTML = "";
+            Plotly.newPlot(elementId, chartData.data, chartData.layout, {responsive: true, displayModeBar: false});
+        } catch (e) {
+            console.error("Failed to render chart:", elementId, e);
+        }
+    }
+
+    {% if market_chart_data.state_filings %}
+    renderChart("chart-market-state-filings", {{ market_chart_data.state_filings|safe }});
+    {% endif %}
+    {% if market_chart_data.state_median_salary %}
+    renderChart("chart-market-state-median", {{ market_chart_data.state_median_salary|safe }});
+    {% endif %}
+    {% if market_chart_data.filing_volume %}
+    renderChart("chart-market-filing-volume", {{ market_chart_data.filing_volume|safe }});
+    {% endif %}
+    {% if market_chart_data.salary_trend %}
+    renderChart("chart-market-salary-trend", {{ market_chart_data.salary_trend|safe }});
+    {% endif %}
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initMarketCharts);
+} else {
+    initMarketCharts();
+}
+</script>
+{% endif %}
+
+{% endblock %}

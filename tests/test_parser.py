@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from lib.bulletin_parser import extract_tables, extract_table, normalize
+from lib.parsing.bulletin.parser import extract_tables, extract_table, normalize
 from bs4 import BeautifulSoup
 
 
@@ -13,9 +13,9 @@ class TestBulletinParser(unittest.TestCase):
     def setUp(self):
         """Load 3 random test HTML files"""
         self.test_files = [
-            'saved_pages/visa-bulletin-for-february-2017.html',
-            'saved_pages/visa-bulletin-for-march-2023.html',
-            'saved_pages/visa-bulletin-for-october-2021.html'
+            'data/bulletin/saved_pages/visa-bulletin-for-february-2017.html',
+            'data/bulletin/saved_pages/visa-bulletin-for-march-2023.html',
+            'data/bulletin/saved_pages/visa-bulletin-for-october-2021.html'
         ]
         
         self.test_htmls = []
@@ -152,10 +152,14 @@ class TestBulletinParser(unittest.TestCase):
                 f1_row = row
                 break
         
-        # Mexico should be in position 4 (0=category, 1=All, 2=China, 3=India, 4=Mexico)
+        headers_lower = [header.lower() for header in family_final.headers]
+        mexico_index = headers_lower.index('mexico')
         # Fixed to expect correct date
-        self.assertEqual(f1_row[4], date(2001, 4, 1), 
-                        f"F1 Mexico should be April 1, 2001, got {f1_row[4]}")
+        self.assertEqual(
+            f1_row[mexico_index],
+            date(2001, 4, 1),
+            f"F1 Mexico should be April 1, 2001, got {f1_row[mexico_index]}"
+        )
 
 
 if __name__ == '__main__':

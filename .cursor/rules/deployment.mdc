@@ -4,6 +4,153 @@ alwaysApply: true
 
 # Deployment and Rollout Rules
 
+## Production Instances
+
+**Current Production Instances:**
+- **44.209.204.255** - Next production instance (being set up to become main prod)
+- **3.227.71.176** - Old production (may be deprecated)
+
+**When deploying, always verify:**
+- Which instance is the target
+- What's running there (Docker vs direct gunicorn)
+- Database being used (blue vs green)
+
+## Rule: Always Verify Target Instance Before SSH Commands
+
+**CRITICAL: Always use the correct SSH alias based on the target instance.**
+
+**SSH aliases in `~/.ssh/config`:**
+
+| Alias | IP | RAM | Purpose |
+|-------|----|-----|---------|
+| `staging_2Gb_vm` | 44.209.204.255 | 2GB | Staging / next production |
+| `prod_0.5Gb_vm` | 3.227.71.176 | 0.5GB | Legacy production |
+
+**When user mentions a specific instance:**
+- ✅ Use the matching alias: `ssh staging_2Gb_vm` or `ssh prod_0.5Gb_vm`
+- ✅ Verify with user: "Working with staging_2Gb_vm (44.209.204.255), correct?"
+- ❌ Don't use raw IPs or the old `lightsail` aliases
+
+**When debugging production issues:**
+- Ask user: "Which instance should I work with?"
+- Use the correct alias in commands
+- Verify instance in first command before making changes
+
+**Rationale:**
+- Multiple instances exist (old prod, new instances, staging)
+- Wrong alias = wrong instance
+- Wrong instance = data corruption or service disruption
+- Always be explicit when making changes
+
+## Rule: Deploy to Staging After Implementing User-Requested Changes
+
+**When the user asks to change something (code, UI, feature, fix), also deploy the changes to staging after implementing.**
+
+**Workflow:**
+1. Implement the requested change locally.
+2. Run relevant tests (e.g. `bazel test //tests:...`).
+3. Deploy to staging using the "Deploy from source" flow:
+   - `scp` the changed files to `staging_2Gb_vm:/opt/visa_bulletin/...`
+   - Reload gunicorn: `ssh staging_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
+4. Optionally verify (curl the affected URL, check HTML/API).
+
+**Do not deploy to staging when:**
+- User explicitly says "don't deploy" or "local only".
+- Change is documentation-only and has no runtime effect.
+- User only asked to "plan" or "document" (no code change).
+
+**Rationale:**
+- User expects to see changes on staging without asking again.
+- Reduces back-and-forth ("can you deploy that?").
+- Staging is for validation; deploy there by default after code changes.
+
+## Rule: Never Use Development Scripts on Production
+
+**🚨 CRITICAL: NEVER use development scripts like `restart_server.sh` on production instances.**
+
+**Development vs Production:**
+
+**Development (local machine):**
+- ✅ Use `./scripts/restart_server.sh` (manages Django runserver)
+- ✅ Run `bazel run //:runserver` directly
+- ✅ Kill processes with `pkill -f runserver`
+- ✅ Uses Django development server (runserver)
+
+**Production (deployed instances):**
+- ✅ Use Docker Compose to manage services
+- ✅ Use `docker-compose restart` for specific environment
+- ❌ **NEVER** use `restart_server.sh` (breaks production)
+- ❌ **NEVER** kill gunicorn processes manually
+- ❌ **NEVER** run `bazel run //:runserver` on production
+- Uses Gunicorn in Docker containers
+
+**How to properly restart/clear cache on production:**
+
+### 1. Check which environment is active (blue or green)
+```bash
+# Check nginx config to see which port is active
+ssh production "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
+# Port 8000 = blue, Port 8001 = green
+
+# Or check running containers
+ssh production "docker ps --format '{{.Names}}'"
+```
+
+### 2. Restart the active environment
+```bash
+# If blue is active (port 8000):
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
+
+# If green is active (port 8001):
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
+```
+
+### 3. Verify service is healthy
+```bash
+# Check container status
+ssh production "docker ps | grep visa_bulletin"
+
+# Check health
+ssh production "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
+
+# Test the endpoint
+curl -I http://production-ip/
+
+# Check logs if issues
+ssh production "docker logs visa_bulletin_web_blue --tail 50"
+```
+
+### If containers aren't running (like I just broke):
+```bash
+# Start the blue environment
+ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
+
+# Monitor startup
+ssh production "docker logs -f visa_bulletin_web_blue"
+```
+
+### Cache clearing:
+- **Django cache:** Automatically cleared on container restart
+- **Browser cache:** Users may need hard refresh (Ctrl+Shift+R)
+- **Nginx cache:** Not used in current setup, but if configured: `nginx -s reload`
+
+**Why this matters:**
+- Development server (runserver) is single-threaded, not production-ready
+- Gunicorn in Docker provides proper process management, logging, and resource limits
+- Docker restart is graceful and maintains service availability
+- restart_server.sh assumes bazel/runserver environment, not Docker
+
+**Common mistakes:**
+- ❌ Using `restart_server.sh` on production → Breaks service
+- ❌ Running `bazel run //:runserver` on production → Wrong server type
+- ❌ Killing gunicorn manually → Docker restart policy will fight you
+- ❌ Not checking which environment is active → Restart wrong container
+
+**Rationale:**
+- Clear separation between dev and production workflows
+- Prevents production outages from using dev tools
+- Docker provides proper service management (health checks, restart policies, resource limits)
+
 ## Pre-Deployment Checklist (MANDATORY)
 
 **Before ANY version tag or deployment, verify:**
@@ -13,6 +160,8 @@ alwaysApply: true
 - [ ] **IF workflow changed:** Test with `act --dryrun` ⚠️ 
 - [ ] Version number decided (ask user)
 - [ ] Release notes written for tag message
+- [ ] **IF enum migrations:** Database will be swapped atomically during rollout (no complex migrations needed)
+- [ ] **Cron jobs updated:** Verify `deployment/cron/setup-ingest-cron.sh` is configured on production
 
 **Critical:** If `.github/workflows/*.yml` modified, **MUST** run `act` before tagging!
 
@@ -23,9 +172,9 @@ alwaysApply: true
 **Before any deployment or rollout, ask:**
 ```
 Do you want to tag this as a new version before deploying?
-  1. Yes, create new version tag (e.g., v1.2.3)
-  2. No, deploy current latest
-  3. Deploy specific existing version (specify which)
+ 1. Yes, create new version tag (e.g., v1.2.3)
+ 2. No, deploy current latest
+ 3. Deploy specific existing version (specify which)
 ```
 
 **Rationale:**
@@ -85,33 +234,33 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 ## Blue-Green Deployment Architecture
 
 **Files:**
-- `docker-compose.blue.yml` - Blue environment (port 8000)
-- `docker-compose.green.yml` - Green environment (port 8001)
+- `deployment/docker-compose.blue.yml` - Blue environment (port 8000)
+- `deployment/docker-compose.green.yml` - Green environment (port 8001)
 - `scripts/deploy-zero-downtime.sh` - Blue-green deployment orchestrator
 
 **How It Works:**
 
 1. **Active Detection:**
-   - Script checks Nginx config to see which port is active
-   - Blue (8000) or Green (8001)
+ - Script checks Nginx config to see which port is active
+ - Blue (8000) or Green (8001)
 
 2. **Deploy to Inactive:**
-   - Pulls new image
-   - Starts containers in inactive environment
-   - Uses separate container names (no conflicts)
+ - Pulls new image
+ - Starts containers in inactive environment
+ - Uses separate container names (no conflicts)
 
 3. **Health Checks:**
-   - Waits up to 60 seconds for healthy status
-   - Rolls back if health checks fail
+ - Waits up to 60 seconds for healthy status
+ - Rolls back if health checks fail
 
 4. **Atomic Switch:**
-   - Updates Nginx proxy configuration
-   - Reloads Nginx (zero dropped connections)
-   - Traffic now flows to new version
+ - Updates Nginx proxy configuration
+ - Reloads Nginx (zero dropped connections)
+ - Traffic now flows to new version
 
 5. **Cleanup:**
-   - Stops old environment
-   - Frees resources
+ - Stops old environment
+ - Frees resources
 
 **Resource Usage:**
 - During deployment: 2x web containers (both running briefly)
@@ -154,9 +303,9 @@ If deployment fails or issues arise:
 
 ### Emergency Rollback (Docker → Systemd)
 ```bash
-ssh lightsail 'cd /opt/visa_bulletin && \
-  sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
-  sudo nginx -t && sudo systemctl reload nginx'
+ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && \
+ sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
+ sudo nginx -t && sudo systemctl reload nginx'
 ```
 
 ## Common Deployment Issues
@@ -165,7 +314,7 @@ ssh lightsail 'cd /opt/visa_bulletin && \
 
 **Symptoms:**
 ```
-ERROR: for web  'ContainerConfig'
+ERROR: for web 'ContainerConfig'
 KeyError: 'ContainerConfig'
 ```
 
@@ -184,7 +333,7 @@ Use `./scripts/deploy-zero-downtime.sh` which:
 
 **Manual Fix (if error occurs outside deployment script):**
 ```bash
-ssh lightsail
+ssh prod_0.5Gb_vm
 cd /opt/visa_bulletin
 sudo docker-compose down
 sudo docker-compose up -d
@@ -235,7 +384,177 @@ After any deployment:
 curl -I https://visa-bulletin.us
 
 # Check Docker logs
-ssh lightsail "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
+ssh prod_0.5Gb_vm "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
 
 # Monitor for 10-15 minutes for errors
 ```
+
+## Rule: Always Verify and Update Pipeline Scripts When Fixing Bugs
+
+**🚨 CRITICAL: When fixing ANY bug in data processing, ALWAYS check if pipeline/refresh/setup scripts need to be updated.**
+
+**Why:**
+- Bug fixes must not only fix current data but also prevent future occurrences
+- Automated pipelines must include the fix to prevent regression
+- New deployments must work correctly from the start
+- Reduces operational burden (don't manually fix same issue repeatedly)
+
+**After fixing a bug, ALWAYS check these scripts:**
+
+1. **`scripts/cron/refresh_data.sh`** - Does it run the fixed code?
+   - If bug was in a script, does refresh_data.sh call it?
+   - If bug was in function logic, is it called during refresh?
+   - Check lines 315-328 for post-processing steps
+
+2. **`scripts/cron/build_all.sh`** - Does it build the fixed binary?
+   - Add new scripts to REQUIRED_BINARIES if needed
+
+3. **Setup/bootstrap scripts** - Do they initialize correctly?
+   - `scripts/setup_new_instance.sh`
+   - `scripts/bootstrap_initial_data.sh`
+
+**Decision tree:**
+```
+Bug fixed in a script → Check if refresh_data.sh runs it → If not, add it
+Bug fixed in a library → Check callers are in pipeline → Verify integration
+Bug requires data fix → Run fix script on production → Schedule in pipeline
+```
+
+**✅ GOOD - Complete fix workflow:**
+```
+1. Fix the bug in source code
+2. Test fix locally
+3. Check: Is fixed code/script called in refresh_data.sh?
+4. If NO: Add it to the pipeline
+5. If YES: Verify the fix will apply to future runs
+6. Run fix on production to correct existing data
+7. Verify fix prevents future occurrences
+8. Commit all changes together
+```
+
+**❌ BAD - Incomplete fix:**
+```
+1. Fix the bug in source code
+2. Manually run fix on production
+3. Commit and celebrate
+[Bug returns on next refresh because pipeline wasn't updated]
+```
+
+**Example: Job Title Clustering Bug Fix**
+- Bug: cluster_job_titles.py only matched exact strings, missing 86% of records
+- Fix: Updated script to use normalized matching
+- Pipeline check: ✅ refresh_data.sh already calls cluster_job_titles (line 322)
+- Action needed: Run script once to fix existing data, future runs will work
+- Result: Both current data and future data are correct
+
+**Rationale:**
+- Prevents bug from reoccurring in future pipeline runs
+- Reduces operational burden (no manual fixes after each refresh)
+- Ensures new deployments work correctly
+- Makes fixes persistent and maintainable
+
+## Rule: Sync Setup Scripts When Fixing Data Ingestion Issues
+
+**CRITICAL: When you fix data ingestion, processing, or database issues, you MUST update the corresponding setup scripts immediately.**
+
+**Why:**
+- New instances deployed from setup scripts must work correctly
+- Cron jobs must reflect latest ingestion logic
+- Bootstrap scripts must load data properly
+- Prevents regression when setting up new servers
+
+**When you fix ingestion/processing, update these files:**
+
+### 1. Setup Scripts
+- `scripts/setup_new_instance.sh` - Initial instance setup
+- `scripts/bootstrap_initial_data.sh` - Initial data loading
+
+**What to check/update:**
+- Environment variables needed for fix
+- Database initialization steps
+- Data loading commands
+- Migration requirements
+- Dependencies or packages needed
+
+### 2. Cron Job Scripts
+- `scripts/cron/refresh_data.sh` - Periodic data refresh
+- `deployment/cron/setup-ingest-cron.sh` - Cron schedule configuration
+
+**What to check/update:**
+- Ingestion command flags
+- Data source paths
+- Environment variables
+- Error handling
+- Retry logic
+
+### 3. Documentation
+- `docs/deployment/NEW_INSTANCE_SETUP.md` - Setup instructions
+- `docs/INGESTION_PLAYBOOK.md` - Data ingestion guide
+- `docs/DEPLOYMENT_COMPLETE.md` - Deployment checklist
+
+**What to check/update:**
+- Setup steps
+- Troubleshooting sections
+- Known issues
+- Configuration examples
+
+### Workflow When Fixing Ingestion Issues
+
+**✅ GOOD - Complete fix workflow:**
+```
+1. Identify and fix the ingestion issue in source code
+2. Test fix locally
+3. Update setup_new_instance.sh with any new requirements
+4. Update bootstrap_initial_data.sh if data loading changed
+5. Update refresh_data.sh if periodic refresh changed
+6. Update documentation with new steps/gotchas
+7. Test setup script changes (if possible)
+8. Commit all changes together
+```
+
+**❌ BAD - Incomplete fix:**
+```
+1. Fix ingestion issue in source code
+2. Commit and deploy
+[Setup scripts now outdated, new instances will fail]
+```
+
+### Common Scenarios and Required Updates
+
+**Scenario 1: Add new ingestion flag**
+- Update: `refresh_data.sh` (add flag to cron command)
+- Update: `bootstrap_initial_data.sh` (add flag to initial load)
+- Update: `INGESTION_PLAYBOOK.md` (document new flag)
+
+**Scenario 2: Add environment variable**
+- Update: `setup_new_instance.sh` (add to .env creation)
+- Update: `NEW_INSTANCE_SETUP.md` (document variable)
+
+**Scenario 3: Change data source paths**
+- Update: `bootstrap_initial_data.sh` (update paths)
+- Update: `refresh_data.sh` (update paths)
+
+**Scenario 4: Add database migration**
+- Update: `setup_new_instance.sh` (run migration)
+- Update: `NEW_INSTANCE_SETUP.md` (document migration)
+
+**Scenario 5: Fix salary data processing**
+- Update: `refresh_data.sh` (if processing logic changed)
+- Update: `INGESTION_PLAYBOOK.md` (document new behavior)
+
+### Verification Checklist
+
+**Before committing ingestion fixes, verify:**
+- [ ] Setup scripts include all new environment variables
+- [ ] Bootstrap script includes all new initialization steps
+- [ ] Cron scripts include all new flags/options
+- [ ] Documentation reflects new behavior
+- [ ] Error messages mention new requirements
+- [ ] Known issues section updated if applicable
+
+**Rationale:**
+- Setup scripts are the source of truth for deployment
+- Out-of-sync scripts cause hard-to-debug production issues
+- New instances must work correctly on first try
+- Cron jobs must reflect latest ingestion logic
+- Documentation prevents setup confusion

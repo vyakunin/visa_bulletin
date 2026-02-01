@@ -1,0 +1,39 @@
+{% comment %}
+Reusable form field includes for search forms.
+
+Usage:
+  {% include "webapp/includes/search_form_fields.html" with form=form %}
+{% endcomment %}
+
+<!-- Job Title / Keywords -->
+<div class="col-md-6">
+    <label for="{{ form.q.id_for_label }}" class="form-label">{{ form.q.label }}</label>
+    {{ form.q }}
+</div>
+
+<!-- State -->
+<div class="col-md-4">
+    <label for="{{ form.state.id_for_label }}" class="form-label">{{ form.state.label }}</label>
+    {{ form.state }}
+</div>
+
+<!-- Visa Program -->
+<div class="col-md-4">
+    <label for="{{ form.program.id_for_label }}" class="form-label">{{ form.program.label }}</label>
+    {{ form.program }}
+</div>
+
+<!-- Fiscal Year -->
+<div class="col-md-4">
+    <label for="{{ form.year.id_for_label }}" class="form-label">{{ form.year.label }}</label>
+    {{ form.year }}
+</div>
+
+
+
+
+
+
+
+
+

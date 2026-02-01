@@ -26,15 +26,20 @@ def django_db_setup(django_db_setup, django_db_blocker):
         from models.bulletin import Bulletin
         from models.visa_cutoff_date import VisaCutoffDate
         
+        import logging
+        logger = logging.getLogger(__name__)
+        
         with connection.schema_editor() as schema_editor:
             try:
                 schema_editor.create_model(Bulletin)
-            except Exception:
-                pass  # Table already exists
+            except Exception as e:
+                # Table already exists - expected in test setup
+                logger.error(f"Failed to create model Bulletin (may already exist): {e}", exc_info=True)
             try:
                 schema_editor.create_model(VisaCutoffDate)
-            except Exception:
-                pass  # Table already exists
+            except Exception as e:
+                # Table already exists - expected in test setup
+                logger.error(f"Failed to create model VisaCutoffDate (may already exist): {e}", exc_info=True)
 
 
 @pytest.fixture

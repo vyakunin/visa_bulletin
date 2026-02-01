@@ -6,7 +6,7 @@
 
 1. Run the setup script (installs Bazel if needed):
 ```bash
-./setup.sh
+./scripts/setup_dev_environment.sh
 ```
 
 2. Verify Bazel is installed:
@@ -14,17 +14,40 @@
 bazel --version
 ```
 
-3. Activate the virtual environment (for running refresh_data.py):
+3. Activate the virtual environment (for running scripts):
 ```bash
 source ~/visa-bulletin-venv/bin/activate
 ```
 
+**Note:** Old `refresh_data.py` scripts have been replaced by the unified ingest pipeline. 
+
+**IMPORTANT: Always use the ingest framework for data operations:**
+
+```bash
+# Discover and ingest all domains (bulletin + salary)
+bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
+
+# For one-off scripts, use ingest framework utilities (see README.md)
+```
+
+**Why use the ingest framework:**
+- Automatic discovery, validation, and error handling
+- Resume support for interrupted operations
+- Consistent logging and progress tracking
+- Works across all data sources (bulletin, salary, worksite)
+- **Avoid creating custom download/import scripts** - use framework utilities instead
+
 ### Running Tests
+
+Tests use **PostgreSQL** (no SQLite). Have PostgreSQL running. When `DB_NAME` is unset, tests use `postgres` and Django creates `test_postgres`; never set `DB_NAME` to a production database. See `tests/README.md` for details.
 
 This project uses **Bazel** for building and testing. Before making changes, ensure all tests pass:
 
 ```bash
-# Quick test run
+# Run all tests
+bazel test //tests/...
+
+# Quick test run (single target)
 bazel test //tests:test_parser
 
 # Detailed output
@@ -32,11 +55,6 @@ bazel test //tests:test_parser --test_output=all
 
 # Only show errors
 bazel test //tests:test_parser --test_output=errors
-```
-
-**Legacy method** (without Bazel):
-```bash
-python -m unittest discover -s tests -v
 ```
 
 ### Making Changes
@@ -48,7 +66,10 @@ git checkout -b feature-name
 
 2. Make your changes to the code
 
-3. If you modify dependencies, update `requirements.txt`
+3. If you modify dependencies:
+   - Update `requirements.txt` with the new package
+   - Run `bazel run //:update_requirements_lock` to regenerate `requirements.lock`
+   - Commit both files
 
 4. If you add new Python files, update the appropriate `BUILD` file:
    - `lib/BUILD` for library code
@@ -86,10 +107,7 @@ The `.git/hooks/pre-commit` script runs automatically before each commit and:
 - Blocks the commit if any tests fail
 - Provides fast execution through Bazel's caching
 
-To bypass the hook (not recommended):
-```bash
-git commit --no-verify
-```
+**Do not bypass the hook.** Never use `git commit --no-verify`. If the hook fails, fix the issues (ruff or tests) then commit again.
 
 ### Working with Bazel
 

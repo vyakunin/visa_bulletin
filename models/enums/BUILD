@@ -33,3 +33,25 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "wage_unit",
+    srcs = ["wage_unit.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "case_status",
+    srcs = ["case_status.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "visa_program",
+    srcs = ["visa_program.py"],
+    deps = [
+        ":wage_unit",
+        ":case_status",
+    ],
+    visibility = ["//visibility:public"],
+)
+

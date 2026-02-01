@@ -1,0 +1,332 @@
+---
+alwaysApply: true
+---
+
+# General Logging Rules
+
+These are general logging rules that apply across all projects.
+
+## Two Types of Logging
+
+**There are TWO types of logging in scripts - use both appropriately:**
+
+1. **Application Logging** - For script output, debugging, errors (what the script does)
+2. **Script Usage Logging** - For tracking which scripts are run and why (script execution metadata)
+
+## Application Logging (Script Output)
+
+**ALWAYS use proper logging instead of print() statements for script output.**
+
+**✅ GOOD - Use logging:**
+```python
+import logging
+from django_config.logging_config import setup_logging
+
+setup_logging(debug=False)
+logger = logging.getLogger(__name__)
+
+logger.info("Processing file...")
+logger.warning("File not found, using default")
+logger.error("Failed to connect")
+logger.debug("Debug details...")
+```
+
+**❌ BAD - Don't use print:**
+```python
+print("Processing file...")  # Use logger.info()
+print(f"Error: {error}")     # Use logger.error()
+```
+
+**Application logging setup:**
+- Django scripts: Use `django_config.logging_config.setup_logging()`
+- Standalone scripts: Use `logging.basicConfig()` with proper format
+- Always use `logger = logging.getLogger(__name__)` for module-level logger
+
+**Log levels:**
+- `logger.debug()` - Detailed debugging info
+- `logger.info()` - General informational messages
+- `logger.warning()` - Warning messages (non-critical issues)
+- `logger.error()` - Error messages (failures that don't stop execution)
+- `logger.critical()` - Critical errors (may stop execution)
+
+**Rationale:**
+- Logging can be configured per environment (dev vs production)
+- Can filter by log level without code changes
+- Can redirect to files, syslog, etc.
+- Print statements can't be disabled or filtered
+- Professional code uses logging, not print
+
+## Rule: Never Fail Silently - Always Log Errors
+
+**ALWAYS log errors when operations fail. Never return None or False without logging why.**
+
+**✅ GOOD - Log errors:**
+```python
+def call_external_api(url: str) -> str | None:
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code != 200:
+            logger.warning(f"API call failed (status {response.status_code}): {url}")
+            if response.text:
+                logger.warning(f"Response: {response.text[:200]}")
+            return None
+        return response.text
+    except requests.Timeout:
+        logger.warning(f"API call timed out after 30s: {url}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error calling API: {e}", exc_info=True)
+        return None
+```
+
+**❌ BAD - Silent failures:**
+```python
+def call_external_api(url: str) -> str | None:
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code != 200:
+            return None  # ❌ No logging - why did it fail?
+        return response.text
+    except Exception:
+        return None  # ❌ Silent failure - no error details
+```
+
+**When to log:**
+- ✅ External API calls fail
+- ✅ File operations fail (read, write, delete)
+- ✅ Database operations fail
+- ✅ Validation fails
+- ✅ Any operation that returns None/False on error
+
+**Log levels:**
+- `logger.warning()` - Expected failures (timeouts, 404s, validation failures)
+- `logger.error()` - Unexpected failures (exceptions, system errors)
+- Include context: URLs, file paths, record IDs, error codes
+- Include error details: stderr, response text, exception messages
+
+**Rationale:**
+- Silent failures make debugging impossible
+- Logs are the only way to diagnose production issues
+- Error context helps identify patterns and root causes
+- Logging failures is standard practice in production code
+
+## Script Usage Logging (Execution Tracking)
+
+**ALWAYS log script executions to track usage and effectiveness. This applies to BOTH permanent and throwaway scripts.**
+
+**Purpose:** Track which scripts are executed, with what arguments, and why. This helps identify useful tools, debug issues, and build institutional knowledge.
+
+**⚠️ CRITICAL: Script usage logging is MANDATORY for ALL scripts, including throwaway/debugging scripts.**
+
+**Two types of scripts:**
+
+### 1. Permanent Scripts (Reusable Tools)
+
+**Location:** `logs/<script_name>.log` (one file per script)
+
+**Usage:**
+```python
+#!/usr/bin/env python3
+"""Example permanent script"""
+import argparse
+from lib.utils.logging_utils import ScriptLogger
+
+# Initialize logger (creates logs/run_sql.log)
+logger = ScriptLogger(__file__)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--query', required=True)
+    args = parser.parse_args()
+    
+    # Log the execution with args and context
+    logger.log_call(
+        args={'query': args.query},
+        context='Database exploration for debugging'
+    )
+    
+    # ... rest of script logic ...
+    # IMPORTANT: Also use application logging for script output:
+    import logging
+    app_logger = logging.getLogger(__name__)
+    app_logger.info("Starting database exploration...")
+
+if __name__ == '__main__':
+    main()
+```
+
+**Log format:** `YYYY-MM-DD HH:MM:SS - {"timestamp": "...", "script": "...", "args": {...}, "context": "..."}`
+
+**Example log entry:**
+```
+2025-12-05 14:30:15 - {"timestamp": "2025-12-05T14:30:15.123456", "script": "/path/to/run_sql.py", "args": {"query": "SELECT COUNT(*) FROM salary_record"}, "context": "Database query for debugging"}
+```
+
+### 2. Throwaway Scripts (One-off Debugging)
+
+**Location:** `logs/throwaway_calls.log` (shared file for all throwaway scripts)
+
+**⚠️ MANDATORY: ALL throwaway scripts MUST include script usage logging.**
+
+**Usage:**
+```python
+#!/usr/bin/env python3
+"""Example throwaway script"""
+# REQUIRED: Auto-logs on import (captures script path and sys.argv)
+from lib.utils.logging_utils import log_context
+
+# REQUIRED: Add context (explains why script was run)
+log_context("Debugging salary calculation issue - checking wage_annual values")
+
+# ... rest of script logic ...
+# IMPORTANT: Also use application logging for script output if needed:
+# import logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+# logger.info("Checking wage_annual values...")
+```
+
+**Auto-logging:** Just importing `log_context` automatically logs:
+- Script path
+- Command-line arguments (parsed from `sys.argv`)
+- Timestamp
+
+**Why mandatory:**
+- Even throwaway scripts provide valuable usage data
+- Helps identify which throwaway scripts should become permanent
+- Tracks debugging patterns and recurring issues
+- Builds institutional knowledge about tool usage
+
+**Log format:** JSON lines (one JSON object per line)
+```json
+{"timestamp": "2025-12-05T14:30:15.123456", "script": "debug_salary.py", "script_path": "/path/to/debug_salary.py", "args": {"--query": "SELECT ..."}, "context": "Debugging salary calculation issue"}
+```
+
+**When to add context:**
+- ✅ **ALWAYS** - Context is required for all throwaway scripts
+- ✅ Script purpose is not obvious from name/args
+- ✅ Debugging a specific issue
+- ✅ Testing a hypothesis
+- ✅ Even if script name and args are self-explanatory (helps with pattern analysis)
+
+### Reading and Analyzing Script Logs
+
+**View permanent script logs:**
+```bash
+# View all executions of run_sql
+cat logs/run_sql.log
+
+# View recent executions (last 10 lines)
+tail -10 logs/run_sql.log
+
+# Search for specific context
+grep "salary calculation" logs/run_sql.log
+```
+
+**View throwaway script logs:**
+```bash
+# View all throwaway script executions
+cat logs/throwaway_calls.log
+
+# Parse JSON and filter
+cat logs/throwaway_calls.log | jq 'select(.context | contains("salary"))'
+
+# Count executions per script
+cat logs/throwaway_calls.log | jq -r '.script' | sort | uniq -c
+
+# Find frequently used throwaway scripts (candidates for permanent scripts)
+cat logs/throwaway_calls.log | jq -r '.script' | sort | uniq -c | sort -rn
+```
+
+**Analyzing script usage:**
+- **Frequent throwaway scripts** → Consider making permanent
+- **Scripts with same context** → May indicate recurring issues
+- **Scripts with errors** → Check if fixes are needed
+- **Unused permanent scripts** → Consider deprecating
+
+**Rationale:**
+- Track which tools are actually useful
+- Identify patterns (frequent throwaway → make permanent)
+- Debug issues with script context
+- Build institutional knowledge
+- Make data-driven decisions about tooling
+
+## Rule: Use RateLimitedLogger for Frequent Logging
+
+**ALWAYS use `RateLimitedLogger` from `lib.utils.rate_limited_logger` when logging frequently in loops or during long-running operations.**
+
+**Why:**
+- Prevents log spam while maintaining visibility
+- Consistent rate-limiting pattern across codebase
+- Easy to configure (initial count, interval)
+- Reduces log file size and improves readability
+
+**✅ GOOD - Use RateLimitedLogger:**
+```python
+from lib.utils.rate_limited_logger import RateLimitedLogger
+
+# Initialize once
+rate_logger = RateLimitedLogger(
+    initial_count=5,
+    min_interval_seconds=5.0,
+    logger=logger,
+    log_level=logging.INFO
+)
+
+# Use in loop
+for item in items:
+    rate_logger.log(f"Processing item {item}")
+
+# Or with suppressed count (useful for warnings)
+rate_logger.log(
+    f"Warning: {message}",
+    include_suppressed_count=True  # Automatically adds "(and X more similar messages)"
+)
+```
+
+**❌ BAD - Manual rate limiting:**
+```python
+# Don't manually track counts and times
+log_count = 0
+last_log_time = time.time()
+for item in items:
+    current_time = time.time()
+    if log_count < 5 or current_time - last_log_time >= 5.0:
+        logger.info(f"Processing item {item}")
+        log_count += 1
+        last_log_time = current_time
+```
+
+**When to use:**
+- ✅ Logging in loops that process many items
+- ✅ Progress updates during long-running operations
+- ✅ Warning messages that might occur frequently
+- ✅ Any logging that could generate >10 messages per second
+
+**Configuration:**
+- `initial_count=5` - Log first 5 times to confirm it's working
+- `min_interval_seconds=5.0` - Then log at most once per 5 seconds
+- Adjust based on expected frequency and importance
+
+**Example patterns:**
+- **Prefilter logging**: Log first 5 batches, then every 5 seconds
+- **Progress updates**: Log first 5 milestones, then periodically
+- **Warning messages**: Log first 5 warnings, then rate-limited
+
+**Rationale:**
+- Consistent pattern across codebase
+- Easier to maintain (change logic in one place)
+- Prevents log spam while maintaining visibility
+- Self-documenting (clear intent: rate-limited logging)
+
+**Quick Reference:**
+
+| Type | Use For | Import | Log Location |
+|------|---------|--------|--------------|
+| **Application Logging** | Script output, errors, debugging | `logging.getLogger(__name__)` | stdout/stderr or configured handlers |
+| **Script Usage Logging (Permanent)** | Track reusable tool executions | `ScriptLogger(__file__)` | `logs/<script_name>.log` |
+| **Script Usage Logging (Throwaway)** | Track one-off debugging scripts | `log_context()` | `logs/throwaway_calls.log` |
+
+**Remember:** Use BOTH types of logging:
+- **Application logging** → What the script does (output, errors, progress)
+- **Script usage logging** → That the script ran (metadata, args, context)

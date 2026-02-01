@@ -1,0 +1,47 @@
+[Unit]
+Description=Visa Bulletin Web Service (Gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/visa_bulletin
+
+# Load environment variables
+EnvironmentFile=/opt/visa_bulletin/.env
+Environment="DB_HOST=localhost"
+Environment="DJANGO_SETTINGS_MODULE=django_config.settings"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Run migrations before starting
+ExecStartPre=/usr/bin/python3 manage.py migrate --noinput
+
+# Start gunicorn (production WSGI server)
+ExecStart=/home/ubuntu/.local/bin/gunicorn \
+    --workers 2 \
+    --threads 2 \
+    --bind 0.0.0.0:8000 \
+    --timeout 60 \
+    --max-requests 500 \
+    --max-requests-jitter 50 \
+    --access-logfile - \
+    --error-logfile - \
+    django_config.wsgi:application
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5s
+
+# Resource limits (important for 2GB instance)
+MemoryMax=500M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=visa-bulletin-web
+
+[Install]
+WantedBy=multi-user.target

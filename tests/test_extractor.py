@@ -10,11 +10,11 @@ from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
 
 from datetime import date, datetime
-from lib.table import Table
-from lib.publication_data import PublicationData
+from lib.parsing.bulletin.bulletin_table import BulletinTable
+from lib.parsing.bulletin.publication_data import PublicationData
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
-from extractors.bulletin_extractor import BulletinExtractor
+from lib.parsing.bulletin.table_to_cutoff_data import TableToCutoffData
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
@@ -30,10 +30,10 @@ def test_extract_family_sponsored_final_action_table():
          date(2006, 3, 1), date(2013, 1, 22)),
         ('F2A', 'C', 'C', 'C', 'C', 'C'),
     ]
-    table = Table('family_sponsored_final_actions', headers, rows)
+    table = BulletinTable('family_sponsored_final_actions', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     # Verify F1 extraction (using enum values, not hardcoded strings)
@@ -51,10 +51,10 @@ def test_handle_current_status():
     """Test that 'C' (Current) is handled correctly - sets cutoff to bulletin date"""
     headers = ('Family- Sponsored', 'All Chargeability Areas Except Those Listed')
     rows = [('F2A', 'C')]
-    table = Table('family_sponsored_final_actions', headers, rows)
+    table = BulletinTable('family_sponsored_final_actions', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     f2a = results[0]
@@ -69,10 +69,10 @@ def test_handle_unavailable_status():
     """Test that 'U' (Unavailable) is handled correctly"""
     headers = ('Employment- based', 'All Chargeability Areas Except Those Listed')
     rows = [('Certain Religious Workers', 'U')]
-    table = Table('employment_based_final_action', headers, rows)
+    table = BulletinTable('employment_based_final_action', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     religious = results[0]
@@ -97,9 +97,9 @@ def test_map_table_title_to_category_and_action():
     for title, expected_category, expected_action in test_cases:
         headers = ('Test', 'All Chargeability Areas Except Those Listed')
         rows = [('F1', date(2020, 1, 1))]
-        table = Table(title, headers, rows)
+        table = BulletinTable(title, headers, rows)
         
-        extractor = BulletinExtractor(pub_data)
+        extractor = TableToCutoffData(pub_data)
         results = extractor.extract_from_table(table)
         
         assert results[0]['visa_category'] == expected_category, f"Failed for {title}"
@@ -112,10 +112,10 @@ def test_map_header_to_country_enum():
               'CHINA-mainland born', 'INDIA', 'MEXICO', 'PHILIPPINES')
     rows = [('F1', date(2020, 1, 1), date(2020, 1, 1), date(2020, 1, 1),
             date(2020, 1, 1), date(2020, 1, 1))]
-    table = Table('family_sponsored_final_actions', headers, rows)
+    table = BulletinTable('family_sponsored_final_actions', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     countries = {r['country'] for r in results}
@@ -133,10 +133,10 @@ def test_save_to_database(sample_bulletin):
     
     headers = ('Family- Sponsored', 'All Chargeability Areas Except Those Listed')
     rows = [('F1', date(2016, 11, 8))]
-    table = Table('family_sponsored_final_actions', headers, rows)
+    table = BulletinTable('family_sponsored_final_actions', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     # Save to DB
@@ -162,10 +162,10 @@ def test_idempotent_save(sample_bulletin):
     
     headers = ('Family- Sponsored', 'All Chargeability Areas Except Those Listed')
     rows = [('F1', date(2016, 11, 8))]
-    table = Table('family_sponsored_final_actions', headers, rows)
+    table = BulletinTable('family_sponsored_final_actions', headers, rows)
     
     pub_data = PublicationData('/test-url', '<html></html>', datetime(2025, 12, 1))
-    extractor = BulletinExtractor(pub_data)
+    extractor = TableToCutoffData(pub_data)
     results = extractor.extract_from_table(table)
     
     # Save once

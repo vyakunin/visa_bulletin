@@ -1,17 +1,91 @@
+---
+alwaysApply: true
+---
+
 # Bazel Build System Rules
+
+## Rule: Always Shut Down Bazel Server After Builds on Memory-Constrained Instances
+
+**On instances with <4GB RAM, ALWAYS run `bazel shutdown` after building to free ~400-500MB.**
+
+**✅ GOOD - Shutdown after build:**
+```bash
+# Build, then shutdown to free memory, then run
+bazel build //scripts/salary:cluster_job_titles && bazel shutdown && cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/salary/cluster_job_titles
+```
+
+**❌ BAD - Leave server running:**
+```bash
+# Bazel server stays running, consuming 400-500MB RAM
+bazel build //scripts/salary:cluster_job_titles && ./bazel-bin/scripts/salary/cluster_job_titles
+```
+
+**When to use:**
+- ✅ Production instances with <4GB RAM (2GB Lightsail)
+- ✅ After building binaries that will run for hours (ingest, clustering)
+- ✅ Before running memory-intensive scripts
+
+**When NOT needed:**
+- ✅ Development machines with plenty of RAM
+- ✅ CI/CD builds (ephemeral environments)
+- ✅ Rapid iteration (rebuilding frequently)
+
+**Why:**
+- Bazel server daemon: ~400-500MB RAM
+- On 2GB instance with swap: critical to free this memory
+- Scripts like clustering need all available RAM
+
+**Pattern in this project:**
+- `scripts/cron/build_all.sh`: Pre-builds all binaries, then shuts down
+- Cron jobs: Run pre-built binaries (no Bazel server)
+
+## Rule: Running Scripts on Remote Servers (Production/Staging)
+
+**On remote servers, ALWAYS use the build-shutdown-run pattern. NEVER run Python directly.**
+
+**✅ GOOD - Build, shutdown, run pre-built binary:**
+```bash
+# Step 1: Build the binary
+ssh server 'cd /opt/visa_bulletin && bazel build //scripts/salary:update_employer_stats && bazel shutdown'
+
+# Step 2: Run the pre-built binary with environment
+ssh server 'cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/salary/update_employer_stats'
+
+# Or combined (for background execution):
+ssh server 'cd /opt/visa_bulletin && set -a && source .env && set +a && DB_HOST=localhost nohup ./bazel-bin/scripts/salary/update_employer_stats > /tmp/script.log 2>&1 &'
+```
+
+**❌ BAD - Running Python directly (will fail with ModuleNotFoundError):**
+```bash
+# NEVER do this - Python can't find project modules
+ssh server 'cd /opt/visa_bulletin && python3 scripts/salary/update_employer_stats.py'
+# Error: ModuleNotFoundError: No module named 'django_config'
+```
+
+**Why Python direct execution fails:**
+- Bazel sets up the correct `PYTHONPATH` and runfiles
+- Python direct execution doesn't have access to project modules
+- Dependencies are managed by Bazel, not system Python
+
+**Environment variables on remote:**
+- `set -a && source .env && set +a` - Load environment variables
+- `DB_HOST=localhost` - Override for direct host access (not Docker)
 
 ## Rule: Always Use Bazel for Testing and Running
 **NEVER run Python or pytest directly. ALWAYS use Bazel.**
 
-**✅ GOOD:**
+**✅ GOOD - Run from project root:**
 ```bash
+# Always run from project root directory
+cd /path/to/project
 bazel test //tests:test_extractor
 bazel run //:refresh_data
 bazel test //tests:test_parser //tests:test_extractor //tests:test_integration
+bazel run //scripts/salary:collect_dol_golden_test_data -- --limit-files 5
 ./scripts/restart_server.sh              # Restart dev server (preferred)
 ```
 
-**❌ BAD:**
+**❌ BAD - Direct Python:**
 ```bash
 python refresh_data.py                    # Use: bazel run //:refresh_data
 pytest tests/                             # Use: bazel test //tests:...
@@ -21,11 +95,392 @@ pkill -f "runserver"                     # Use: ./scripts/restart_server.sh
 bazel run //:runserver                   # Use: ./scripts/restart_server.sh (handles cleanup)
 ```
 
+**❌ BAD - Running Bazel from wrong directory:**
+```bash
+cd data/salary/dol_data  # ❌ Wrong directory
+bazel run //scripts/salary:collect_dol_golden_test_data  # May fail or behave unexpectedly
+```
+
+**CRITICAL: Always run Bazel commands from the project root:**
+- Bazel needs to find the `WORKSPACE` or `MODULE.bazel` file in the root
+- Relative paths in scripts assume project root as working directory
+- Bazel's sandbox and runfiles work correctly only from root
+- Workspace detection fails from subdirectories
+
 **Rationale:**
 - Hermetic builds (reproducible)
 - Intelligent caching (faster)
 - Consistent with pre-commit hook
 - Single source of truth for dependencies
+- Correct path resolution and workspace detection
+
+## Rule: BUILD Files Must Be Co-Located with Code
+
+**BUILD files and their rules (py_binary, py_library, etc.) must be in the same directory as the code they define.**
+
+**✅ GOOD - BUILD file co-located with code:**
+```python
+# scripts/salary/BUILD
+py_binary(
+    name = "fix_calculation",
+    srcs = ["fix_calculation.py"],
+    main = "fix_calculation.py",
+    deps = [...],
+)
+```
+
+**❌ BAD - BUILD rule in root for subdirectory code:**
+```python
+# Root BUILD file
+py_binary(
+    name = "fix_salary_calculation",
+    srcs = ["scripts/salary/fix_calculation.py"],  # ❌ Code in subdirectory, rule in root
+    main = "scripts/salary/fix_calculation.py",
+    deps = [...],
+)
+```
+
+**Root BUILD file should only contain:**
+- Top-level targets (e.g., `//:migrate`, `//:runserver`)
+- Exports (e.g., `exports_files(["requirements.txt"])`)
+- Aliases to other targets
+- **NOT** rules for code in subdirectories
+
+**Rationale:**
+- Better organization (BUILD file next to code it builds)
+- Easier to find and maintain
+- Follows Bazel best practices
+- Reduces root BUILD file size
+- Clear ownership (each directory manages its own build rules)
+
+## Rule: Cross-Platform External Binaries with Multiple http_archive/http_file + select()
+
+**For cross-platform external binaries/tools, declare multiple platform-specific repositories in MODULE.bazel and use `select()` in BUILD files to choose the correct one.**
+
+**Key Principle:** This approach leverages Bazel's lazy repository fetching - only repositories that are actually depended upon are downloaded. When building on Linux, macOS repositories are never fetched (and vice versa).
+
+**Quick Reference:**
+- **Tarballs** (tar.gz, zip) → Use `http_archive`
+- **Single binaries** → Use `http_file`
+- **Platform selection** → Use `select()` in BUILD files
+- **Architecture detection** → Use `config_setting` with `@platforms//os:*` and `@platforms//cpu:*`
+- **Wrapper scripts** → Use `find` for dynamic repository resolution when using `select()`
+
+### Pattern for Tarballs (http_archive)
+
+**✅ GOOD - Multiple http_archive declarations for cross-platform support:**
+```python
+# MODULE.bazel
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Platform-specific repositories
+http_archive(
+    name = "tool_macos_arm64",
+    urls = ["https://github.com/tool/releases/download/v1.0/tool-aarch64-apple-darwin.tar.gz"],
+    sha256 = "...",
+    type = "tar.gz",
+    strip_prefix = "tool-aarch64-apple-darwin",
+    build_file_content = "filegroup(name = \"tool_binary\", srcs = [\"tool\"], visibility = [\"//visibility:public\"])",
+)
+
+http_archive(
+    name = "tool_linux_x86_64",
+    urls = ["https://github.com/tool/releases/download/v1.0/tool-x86_64-linux.tar.gz"],
+    sha256 = "...",
+    type = "tar.gz",
+    strip_prefix = "tool-x86_64-linux",
+    build_file_content = "filegroup(name = \"tool_binary\", srcs = [\"tool\"], visibility = [\"//visibility:public\"])",
+)
+```
+
+**Then use select() in BUILD files:**
+```python
+# tools/BUILD
+sh_binary(
+    name = "tool",
+    srcs = [":tool_wrapper"],
+    data = select({
+        "@platforms//os:macos": ["@tool_macos_arm64//:tool_binary"],
+        "@platforms//os:linux": ["@tool_linux_x86_64//:tool_binary"],
+        "//conditions:default": ["@tool_linux_x86_64//:tool_binary"],
+    }),
+    visibility = ["//visibility:public"],
+)
+```
+
+### Pattern for Single Binaries (http_file)
+
+**✅ GOOD - Multiple http_file declarations for single binary files:**
+```python
+# MODULE.bazel
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Platform-specific repositories
+http_file(
+    name = "tool_macos_arm64",
+    urls = ["https://github.com/tool/releases/download/v1.0/tool-darwin"],
+    sha256 = "...",
+    downloaded_file_path = "tool_bin",
+    executable = True,
+)
+
+http_file(
+    name = "tool_linux_x86_64",
+    urls = ["https://github.com/tool/releases/download/v1.0/tool-linux-amd64"],
+    sha256 = "...",
+    downloaded_file_path = "tool_bin",
+    executable = True,
+)
+```
+
+**Then use select() in BUILD files:**
+```python
+# tools/tool/BUILD
+sh_binary(
+    name = "tool",
+    srcs = [":tool_wrapper"],
+    data = select({
+        "@platforms//os:macos": ["@tool_macos_arm64//file"],
+        "@platforms//os:linux": ["@tool_linux_x86_64//file"],
+        "//conditions:default": ["@tool_linux_x86_64//file"],
+    }),
+    visibility = ["//visibility:public"],
+)
+```
+
+**Note:** `http_file` creates a target named `//file` (not `//:file`), so reference it as `@repo_name//file`.
+
+### Architecture-Specific Selection
+
+**For more precise architecture detection, use config_setting:**
+
+```python
+# tools/tool/BUILD
+config_setting(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+sh_binary(
+    name = "tool",
+    srcs = [":tool_wrapper"],
+    data = select({
+        "//tools/tool:macos_arm64": ["@tool_macos_arm64//file"],
+        "//tools/tool:linux_x86_64": ["@tool_linux_x86_64//file"],
+        "//conditions:default": ["@tool_linux_x86_64//file"],
+    }),
+)
+```
+
+### Benefits
+
+✅ **Lazy fetching**: Only downloads repositories for the current platform
+✅ **Cross-platform support**: Works on macOS (ARM64/x86_64) and Linux (x86_64/ARM64)
+✅ **Standard Bazel pattern**: Uses `select()` which is well-supported
+✅ **No custom .bzl files**: Uses standard Bazel repository rules
+✅ **Bzlmod compatible**: Works with MODULE.bazel (Bzlmod)
+
+**❌ BAD - Module extension for simple cross-platform downloads:**
+```python
+# tools/tool_hermetic.bzl - Don't create this for simple downloads!
+def _tool_extension_impl(module_ctx):
+    # Platform detection logic
+    ...
+tool_extension = module_extension(implementation = _tool_extension_impl)
+```
+
+**Rationale:**
+- Module extensions add unnecessary complexity for simple downloads
+- Multiple repositories + select() is the standard Bazel pattern
+- Explicit and clear which binaries are for which platform
+- Easier to understand and maintain
+
+### When to Use Each Approach
+
+**Use multiple http_archive/http_file + select():**
+- ✅ Cross-platform binaries (different files per platform)
+- ✅ Simple downloads with platform-specific URLs
+- ✅ Want explicit control over platform selection
+- ✅ Standard Bazel pattern (recommended)
+
+**Use module extensions:**
+- ✅ Complex setup beyond simple download
+- ✅ Need conditional logic based on module tags
+- ✅ Dynamic platform detection with complex logic
+- ❌ Avoid for simple cross-platform downloads (overkill)
+
+### Real Examples in This Project
+
+**Ollama** (single binaries → uses `http_file`):
+```python
+# MODULE.bazel - Multiple platform-specific repositories
+http_file(name = "ollama_macos_arm64", ...)
+http_file(name = "ollama_linux_x86_64", ...)
+http_file(name = "ollama_linux_arm64", ...)
+
+# tools/ollama/BUILD - Uses select() to choose correct repository
+sh_binary(
+    name = "ollama",
+    data = select({
+        "//tools/ollama:macos_arm64": ["@ollama_macos_arm64//file"],
+        "//tools/ollama:linux_x86_64": ["@ollama_linux_x86_64//file"],
+        "//tools/ollama:linux_arm64": ["@ollama_linux_arm64//file"],
+        "//conditions:default": ["@ollama_linux_x86_64//file"],
+    }),
+)
+```
+
+**Ruff** (tarballs → uses `http_archive`, should be updated to cross-platform):
+```python
+# MODULE.bazel - Currently single platform, should add:
+# http_archive(name = "ruff_macos_arm64", ...)
+# http_archive(name = "ruff_linux_x86_64", ...)
+# http_archive(name = "ruff_linux_arm64", ...)
+
+# tools/BUILD - Should use select() like Ollama
+sh_binary(
+    name = "ruff",
+    data = select({
+        "@platforms//os:macos": ["@ruff_macos_arm64//:ruff_binary"],
+        "@platforms//os:linux": ["@ruff_linux_x86_64//:ruff_binary"],
+        "//conditions:default": ["@ruff_linux_x86_64//:ruff_binary"],
+    }),
+)
+```
+
+**Reference:** See `docs/CROSS_PLATFORM_RUFF_ANALYSIS.md` for detailed implementation guide.
+
+## Rule: Use genrule for Minimal Wrapper Scripts
+
+**When exposing external binaries, use genrule to generate wrapper scripts instead of maintaining separate .sh files.**
+
+### Single Platform (Simple)
+
+**✅ GOOD - Generate wrapper with genrule (single repository):**
+```python
+# tools/BUILD
+genrule(
+    name = "ruff_wrapper",
+    outs = ["ruff.sh"],
+    cmd = "echo '#!/bin/bash' > $@ && echo 'exec \"$${0}.runfiles/+_repo_rules+ruff/ruff\" \"$$@\"' >> $@",
+    executable = True,
+)
+
+sh_binary(
+    name = "ruff",
+    srcs = [":ruff_wrapper"],
+    data = ["@ruff//:ruff_binary"],
+    visibility = ["//visibility:public"],
+)
+```
+
+### Cross-Platform (Dynamic Repository Selection)
+
+**✅ GOOD - Use `find` to locate binary dynamically (multiple repositories with select()):**
+```python
+# tools/BUILD
+genrule(
+    name = "tool_wrapper",
+    outs = ["tool.sh"],
+    cmd = """cat > $@ <<'EOF'
+#!/bin/bash
+# Find binary in runfiles (works regardless of repository name)
+set -e
+TOOL_BINARY="$$(find "$${0}.runfiles" -name "tool" -type f | head -1)"
+if [ -z "$$TOOL_BINARY" ]; then
+    echo "Error: Could not find tool binary in runfiles" >&2
+    exit 1
+fi
+exec "$${TOOL_BINARY}" "$$@"
+EOF
+chmod +x $@""",
+    executable = True,
+)
+
+sh_binary(
+    name = "tool",
+    srcs = [":tool_wrapper"],
+    data = select({
+        "@platforms//os:macos": ["@tool_macos_arm64//:tool_binary"],
+        "@platforms//os:linux": ["@tool_linux_x86_64//:tool_binary"],
+        "//conditions:default": ["@tool_linux_x86_64//:tool_binary"],
+    }),
+    visibility = ["//visibility:public"],
+)
+```
+
+**Why `find` for cross-platform:**
+- Repository names differ per platform (`@tool_macos_arm64`, `@tool_linux_x86_64`)
+- Hardcoded paths like `+_repo_rules+ruff` won't work
+- `find` locates binary regardless of repository name
+- Works with `select()` since only one repository is included per build
+
+**❌ BAD - Separate wrapper file:**
+```python
+# tools/BUILD
+sh_binary(
+    name = "tool",
+    srcs = ["tool.sh"],  # ❌ Separate file to maintain
+    data = ["@tool//:tool_binary"],
+)
+```
+
+**Rationale:**
+- No separate files to maintain
+- Wrapper logic visible in BUILD file
+- Simpler project structure
+- Standard Bazel pattern
+- Dynamic repository resolution for cross-platform support
+
+## Rule: Pattern for Downloading External Binaries
+
+**Complete pattern for downloading and exposing external binaries:**
+
+1. **MODULE.bazel**: Use `use_repo_rule` to call `http_archive` directly
+   ```python
+   http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+   http_archive(
+       name = "tool_name",
+       urls = ["https://.../tool.tar.gz"],
+       sha256 = "...",
+       type = "tar.gz",
+       strip_prefix = "tool-version",
+       build_file_content = "filegroup(name = \"tool_binary\", srcs = [\"tool\"], visibility = [\"//visibility:public\"])",
+   )
+   ```
+
+2. **BUILD file**: Use `genrule` to create wrapper, then `sh_binary` to expose it
+   ```python
+   genrule(
+       name = "tool_wrapper",
+       outs = ["tool.sh"],
+       cmd = "echo '#!/bin/bash' > $@ && echo 'exec \"$${0}.runfiles/+_repo_rules+tool/tool\" \"$$@\"' >> $@",
+       executable = True,
+   )
+   sh_binary(
+       name = "tool",
+       srcs = [":tool_wrapper"],
+       data = ["@tool//:tool_binary"],
+       visibility = ["//visibility:public"],
+   )
+   ```
+
+**Key learnings:**
+- ✅ No custom .bzl files needed for simple downloads
+- ✅ No separate .sh files needed (use genrule)
+- ✅ Standard Bazel rules only (no extra dependencies)
+- ✅ Module extensions only needed for platform detection
 
 ## Rule: One Bazel Target Per File
 Always create one `py_library` or `py_binary` target per Python file unless it's impossible due to circular dependencies.
@@ -72,6 +527,44 @@ Only bundle multiple files into one target when:
 
 - **ALWAYS use Bazel to run tests**: `bazel test //tests:test_name`
 - **NEVER use pytest or python directly**
+
+## Rule: One-Off Django Scripts Template
+
+**When creating BUILD rules for one-off scripts that need Django dependencies, use this template.**
+
+**Template for creating one-off scripts with Django dependencies:**
+```python
+py_binary(
+    name = "script_name",
+    srcs = ["script_name.py"],
+    main = "script_name.py",  # Or "scripts/path/to/script.py" if in subdir
+    deps = [
+        "//django_config:settings",  # Required for Django setup
+        "//webapp:apps",              # Required for Django apps
+        # Add model dependencies as needed:
+        "//models:salary",             # If using SalaryRecord, Employer
+        "//models:bulletin",           # If using Bulletin, VisaCutoffDate
+        "//models/ingest:ingest",      # If using IngestRun, IngestVersion, etc.
+        # Add utility dependencies as needed:
+        "//lib/utils:logging_utils",   # For script logging
+        "//lib/utils:http_utils",      # For HTTP utilities
+        # Standard Django dependencies:
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),  # Only if using PostgreSQL
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+```
+
+**Rationale:**
+- Standardizes one-off script structure
+- Ensures all scripts have required Django dependencies
+- Makes it easy to add new one-off scripts
 - Run tests before committing (pre-commit hook handles this)
 
 ## Dependencies

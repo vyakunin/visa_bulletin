@@ -25,14 +25,12 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
-*.db-shm
-*.db-wal
-
-# Mockups (not for production)
-mockups/
-
-# Logs
-*.log
 
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/
+
+# DOL salary data files (large Excel files)
+data/salary/dol_data/*.xlsx
+
+# Log files
+logs/*.log
