@@ -95,6 +95,24 @@ These are the most important rules that should never be violated.
 - User may want to make more changes
 - Commits are permanent and public
 
+## Rule: Never Use git commit --no-verify
+**🚫 NEVER use `git commit --no-verify` or bypass the pre-commit hook. 🚫**
+
+**Pre-commit runs ruff (lint) and all tests.** If the hook fails, fix the failures and commit again. Do not skip the hook.
+
+**❌ FORBIDDEN:**
+```bash
+git commit --no-verify -m "message"
+git commit -n -m "message"
+```
+
+**✅ REQUIRED:** Run `git commit` (no flags). Let the hook run. If it fails, fix the issues (lint or tests) then commit again.
+
+**Rationale:**
+- Bypassing the hook allows broken or untested code to be committed
+- Pre-commit exists to catch errors before they enter the repo
+- Fixing failures is always the correct response, not skipping checks
+
 ## Rule: Ask Before Installing Tools or Using Workarounds
 
 **When a tool is not installed, ALWAYS ask the user before:**

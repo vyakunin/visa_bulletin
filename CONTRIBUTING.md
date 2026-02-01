@@ -39,10 +39,15 @@ bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 
 ### Running Tests
 
+Tests use **PostgreSQL** (no SQLite). Have PostgreSQL running. When `DB_NAME` is unset, tests use `postgres` and Django creates `test_postgres`; never set `DB_NAME` to a production database. See `tests/README.md` for details.
+
 This project uses **Bazel** for building and testing. Before making changes, ensure all tests pass:
 
 ```bash
-# Quick test run
+# Run all tests
+bazel test //tests/...
+
+# Quick test run (single target)
 bazel test //tests:test_parser
 
 # Detailed output
@@ -50,11 +55,6 @@ bazel test //tests:test_parser --test_output=all
 
 # Only show errors
 bazel test //tests:test_parser --test_output=errors
-```
-
-**Legacy method** (without Bazel):
-```bash
-python -m unittest discover -s tests -v
 ```
 
 ### Making Changes
@@ -107,10 +107,7 @@ The `.git/hooks/pre-commit` script runs automatically before each commit and:
 - Blocks the commit if any tests fail
 - Provides fast execution through Bazel's caching
 
-To bypass the hook (not recommended):
-```bash
-git commit --no-verify
-```
+**Do not bypass the hook.** Never use `git commit --no-verify`. If the hook fails, fix the issues (ruff or tests) then commit again.
 
 ### Working with Bazel
 

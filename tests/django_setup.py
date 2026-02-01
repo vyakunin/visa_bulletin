@@ -1,55 +1,81 @@
 """
-Shared Django setup for tests
+Shared Django setup for tests.
 
-This module provides Django configuration for both pytest and Bazel tests.
-Import this at the top of test files to ensure Django is properly configured.
+Tests use PostgreSQL only. We connect to DB_NAME (default postgres) only to
+create a separate database test_<DB_NAME> (e.g. test_postgres). All test data
+lives in test_postgres; the real postgres DB is never written to.
+
+CREATEDB grant: If PG_SUPERUSER_USER and PG_SUPERUSER_PASSWORD are set (e.g. in
+.env), the test runner calls ensure_test_db.grant_createdb() on first use.
 """
 
 import os
-import sys
+from pathlib import Path
+
 import django
 from django.apps import apps
-from django.conf import settings
+
+_test_db_created = False
+
+
+def _load_env_file():
+    """Load workspace .env into os.environ (setdefault only) so tests get DB_* and PG_SUPERUSER_*."""
+    workspace = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', os.getcwd()))
+    env_file = workspace / '.env'
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' not in line:
+            continue
+        key, _, value = line.partition('=')
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def setup_django_for_tests():
-    """Configure Django for test environment if not already configured"""
+    """Configure Django for test environment and ensure test DB exists with migrations."""
+    global _test_db_created
+    _load_env_file()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-    
-    # Check if already configured (by pytest or another test)
+    # Connect to postgres only to create test_postgres; we never write to postgres.
+    os.environ.setdefault('DB_NAME', 'postgres')
+    # Default DB_USER to current user (Homebrew/macOS often creates this role); CI sets postgres.
+    if 'DB_USER' not in os.environ:
+        os.environ.setdefault('DB_USER', os.environ.get('USER', 'postgres'))
+    os.environ.setdefault('DB_PASSWORD', '')
+    os.environ.setdefault('DB_HOST', 'localhost')
+    os.environ.setdefault('DB_PORT', '5432')
+    os.environ['RUNNING_TESTS'] = '1'
+
     if not apps.ready:
-        # If running Django TestCase (not pytest), configure test database
-        if 'pytest' not in sys.modules and not settings.configured:
-            # Override database settings for tests
-            from django_config import settings as prod_settings
-            
-            # Use in-memory database for tests
-            test_settings = {
-                'DATABASES': {
-                    'default': {
-                        'ENGINE': 'django.db.backends.sqlite3',
-                        'NAME': ':memory:',
-                    }
-                },
-                'INSTALLED_APPS': prod_settings.INSTALLED_APPS,
-                'SECRET_KEY': 'test-secret-key',
-                'USE_TZ': prod_settings.USE_TZ,
-                'DEFAULT_AUTO_FIELD': prod_settings.DEFAULT_AUTO_FIELD,
-                'ALLOWED_HOSTS': prod_settings.ALLOWED_HOSTS,
-                'STATIC_URL': '/static/',
-                'TEMPLATES': prod_settings.TEMPLATES,
-                'ROOT_URLCONF': prod_settings.ROOT_URLCONF,
-                'ANALYTICS_SCRIPT': '',
-                'CACHES': {
-                    'default': {
-                        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-                    }
-                },
-            }
-            
-            settings.configure(**test_settings)
-        
         django.setup()
+
+    # When run via unittest (not manage.py test), the test DB is never created.
+    # Optionally ensure DB_USER has CREATEDB, then create test_postgres and run migrations.
+    # Only run if this test uses the DB (psycopg2 loadable); skip if test has no DB deps.
+    if not _test_db_created and os.environ.get('RUNNING_TESTS') == '1':
+        try:
+            import psycopg2  # noqa: F401
+        except ImportError:
+            _test_db_created = True
+        else:
+            try:
+                from tests.ensure_test_db import grant_createdb
+                grant_createdb()
+                from django.db import connection
+                # Bazel runs tests in parallel; each process needs its own DB to avoid "already exists".
+                base_name = connection.settings_dict['NAME']
+                if base_name == 'postgres':
+                    connection.settings_dict['NAME'] = f'postgres_{os.getpid()}'
+                connection.creation.create_test_db(verbosity=0, autoclobber=True)
+            except Exception:
+                pass
+            _test_db_created = True
 
 
 

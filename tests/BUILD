@@ -1,23 +1,35 @@
 # Build file for tests
 # Following rule: One Bazel target per file
 # Tests use pytest format but work with Bazel py_test
+# DB-using tests: use django_py_test() from django_test.bzl for common deps and CREATEDB flow.
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
+load(":django_test.bzl", "django_py_test")
 
 exports_files([
     "test_salary_data.csv",
 ])
 
-# Shared Django setup library - used by multiple test targets
+# Shared Django setup library - used by multiple test targets.
+# Calls ensure_test_db.grant_createdb() on first DB test when PG_SUPERUSER_* is set (no manual step).
 py_library(
     name = "django_setup",
     srcs = ["django_setup.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":ensure_test_db_lib",
         requirement("Django"),
         "//django_config:settings",
     ],
+)
+
+# Grant CREATEDB logic: used by django_setup on first DB test when PG_SUPERUSER_* set (or .env).
+py_library(
+    name = "ensure_test_db_lib",
+    srcs = ["ensure_test_db.py"],
+    visibility = ["//visibility:public"],
+    deps = [requirement("psycopg2_binary")],
 )
 
 py_test(
@@ -953,7 +965,7 @@ py_test(
     },
 )
 
-py_test(
+django_py_test(
     name = "test_job_title_profile_view",
     size = "small",
     srcs = ["django_setup.py", "test_job_title_profile_view.py"],
@@ -965,21 +977,11 @@ py_test(
         "//models/ingest:ingest_version",
         "//lib/business/salary:job_title_stats",
         "//lib/business/salary:job_title_chart_builder",
-        "//django_config:settings",
+        "//scripts/salary:update_job_title_cluster_stats_lib",
         "//django_config:urls",
         "//django_config:context_processors",
-        "//webapp:apps",
         "//webapp:urls",
         "//webapp/views:views",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),
         requirement("plotly"),
     ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
 )

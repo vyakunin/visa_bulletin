@@ -493,10 +493,7 @@ The repository includes an automated Bazel-based pre-commit hook that runs all t
 - Code quality standards are maintained
 - Fast test execution with Bazel's caching
 
-The hook will automatically block commits if tests fail. To bypass (not recommended):
-```bash
-git commit --no-verify
-```
+The hook will automatically block commits if tests fail. **Do not bypass:** never use `git commit --no-verify`; fix the failures and commit again.
 
 ## Data Extracted
 
@@ -636,10 +633,7 @@ If tests fail, the commit is blocked and you'll see which tests failed.
 
 ### Bypassing Tests (Not Recommended)
 
-Only use when necessary (e.g., documentation-only changes):
-```bash
-git commit --no-verify
-```
+Do not use `--no-verify`. Fix lint or test failures and commit normally.
 
 ## Legal Notice
 

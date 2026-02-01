@@ -10,8 +10,7 @@ These are general git workflow rules that apply across all projects.
 
 - **ONLY commit when user explicitly requests it** (see critical rules in AGENTS.md)
 - Write clear, descriptive commit messages
-- Tests run automatically via pre-commit hook
-- Don't bypass hooks unless absolutely necessary
+- Tests and ruff run automatically via pre-commit hook — **NEVER use `--no-verify`** (see AGENTS.md)
 - Keep commits focused and atomic
 
 ## Commit Message Format
