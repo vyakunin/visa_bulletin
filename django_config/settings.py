@@ -13,15 +13,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 
 # Database configuration - PostgreSQL only
-# When RUNNING_TESTS=1, use test-friendly defaults so Django can create ephemeral test DB
-# (test_<NAME>) without requiring visa_bulletin_user; .env can still override.
+# When RUNNING_TESTS=1, use test-only defaults so Django can create ephemeral test DB
+# (test_<name>). Do not read DB_NAME/DB_USER/DB_PASSWORD from env so that "source .env && bazel test"
+# on staging/CI does not use app credentials (which often fail in sandbox or for test DB).
 _running_tests = os.environ.get('RUNNING_TESTS') == '1'
+if _running_tests:
+    _db_name = 'postgres'
+    _db_user = os.environ.get('USER', 'postgres')
+    _db_password = ''
+else:
+    _db_name = os.environ.get('DB_NAME', 'visa_bulletin_dev')
+    _db_user = os.environ.get('DB_USER', 'visa_bulletin_user')
+    _db_password = os.environ.get('DB_PASSWORD', 'dev_password')
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'postgres' if _running_tests else 'visa_bulletin_dev'),
-        'USER': os.environ.get('DB_USER', os.environ.get('USER', 'postgres') if _running_tests else 'visa_bulletin_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', '' if _running_tests else 'dev_password'),
+        'NAME': _db_name,
+        'USER': _db_user,
+        'PASSWORD': _db_password,
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
         'OPTIONS': {
