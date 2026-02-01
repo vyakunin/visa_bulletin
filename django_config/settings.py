@@ -15,12 +15,17 @@ WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', BASE_DIR))
 # Database configuration - PostgreSQL only
 # When RUNNING_TESTS=1, use test-only defaults so Django can create ephemeral test DB
 # (test_<name>). Do not read DB_NAME/DB_USER/DB_PASSWORD from env so that "source .env && bazel test"
-# on staging/CI does not use app credentials (which often fail in sandbox or for test DB).
+# on staging/CI does not use app credentials by default. If TEST_DB_USER is set (e.g. on staging
+# where postgres requires a password), use TEST_DB_USER and TEST_DB_PASSWORD for tests.
 _running_tests = os.environ.get('RUNNING_TESTS') == '1'
 if _running_tests:
     _db_name = 'postgres'
-    _db_user = os.environ.get('USER', 'postgres')
-    _db_password = ''
+    if os.environ.get('TEST_DB_USER'):
+        _db_user = os.environ.get('TEST_DB_USER')
+        _db_password = os.environ.get('TEST_DB_PASSWORD', '')
+    else:
+        _db_user = os.environ.get('USER', 'postgres')
+        _db_password = ''
 else:
     _db_name = os.environ.get('DB_NAME', 'visa_bulletin_dev')
     _db_user = os.environ.get('DB_USER', 'visa_bulletin_user')
