@@ -8,8 +8,10 @@ This script does three things in a single pass with bulk SQL (no per-record scan
    - total_filings / avg_salary: from SalaryRecords per cluster (sum over JobTitles in
      that cluster, wage_annual in reasonable bounds). Each cluster gets its true count
      so directory "Popular Job Titles" and profile "Total Filings" align.
-   - canonical_title: the most frequent raw title in the cluster, preferring titles
-     without a comma (so "Software Engineer" over SOC-style "Software Developers, Applications").
+   - canonical_title: the most frequent raw title among records whose normalized title
+     (JobTitle.title_normalized) equals the cluster's most frequent normalized form;
+     among those, prefers no comma then shorter (so "Software Engineers, Applications"
+     → cluster's mode normalized → most frequent raw with that normalized form).
 
 2. **JobTitle**: Sets title to the most frequent raw title (SalaryRecord.job_title) among
    records pointing at this entity, so both the entity and the cluster have a meaningful
@@ -81,16 +83,36 @@ def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
     """
     Return [(cluster_id, display_title), ...] using one query.
 
-    Picks the most frequent raw title per cluster, preferring (1) no comma (SOC format
-    is "X, Y"), then (2) shorter length, so "Software Engineer" beats "Software
-    Developers Applications" for autocomplete and directory.
+    Picks the most frequent raw title among records whose normalized title
+    (JobTitle.title_normalized) equals the cluster's most frequent normalized form.
+    Among those raw titles, prefers (1) no comma, (2) shorter length, (3) count.
+    So "Software Developers, Applications" (180k) and "Software Developer Applications"
+    (110) both normalize to the same form; we use the cluster's mode normalized form
+    then pick the best raw variant (e.g. "Software Developers, Applications" if
+    we prefer count, or the no-comma variant if we prefer no comma).
     """
     sql = """
-    WITH ranked AS (
+    WITH cluster_top_normalized AS (
+        SELECT
+            jt.canonical_cluster_id AS id,
+            jt.title_normalized,
+            COUNT(*) AS cnt,
+            ROW_NUMBER() OVER (
+                PARTITION BY jt.canonical_cluster_id
+                ORDER BY COUNT(*) DESC
+            ) AS rn
+        FROM salary_record sr
+        JOIN salary_job_title jt ON sr.job_title_entity_id = jt.id
+        WHERE jt.canonical_cluster_id IS NOT NULL
+        GROUP BY jt.canonical_cluster_id, jt.title_normalized
+    ),
+    cluster_mode_normalized AS (
+        SELECT id, title_normalized FROM cluster_top_normalized WHERE rn = 1
+    ),
+    ranked_raw AS (
         SELECT
             jt.canonical_cluster_id AS id,
             sr.job_title,
-            COUNT(*) AS cnt,
             ROW_NUMBER() OVER (
                 PARTITION BY jt.canonical_cluster_id
                 ORDER BY
@@ -100,10 +122,12 @@ def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
             ) AS rn
         FROM salary_record sr
         JOIN salary_job_title jt ON sr.job_title_entity_id = jt.id
+        JOIN cluster_mode_normalized c
+            ON jt.canonical_cluster_id = c.id AND jt.title_normalized = c.title_normalized
         WHERE jt.canonical_cluster_id IS NOT NULL
         GROUP BY jt.canonical_cluster_id, sr.job_title
     )
-    SELECT id, job_title FROM ranked WHERE rn = 1
+    SELECT id, job_title FROM ranked_raw WHERE rn = 1
     """
     with connection.cursor() as cursor:
         cursor.execute(sql)

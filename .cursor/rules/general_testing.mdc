@@ -40,6 +40,29 @@ def test_parse_table_header_to_country_enum(self):
 - Aim for meaningful test coverage, not just high percentages
 - Each test should verify actual behavior, not just existence
 
+## Rule: Quicker Iteration – One Test First, Then Full Suite
+
+**When fixing a failing test or iterating on a feature, run the relevant test(s) first, then the full suite.**
+
+**✅ GOOD – Iteration workflow:**
+```bash
+# 1. Run the one test (or test target) you're fixing
+bazel test //tests:test_job_title_profile_view
+# Or on staging:
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests:test_job_title_profile_view --test_env=TEST_DB_USER=visa_bulletin_user --test_env=TEST_DB_PASSWORD=\$DB_PASSWORD"
+
+# 2. Fix until it passes
+
+# 3. Then run full suite before commit
+bazel test //tests:...
+```
+
+**❌ BAD – Running full suite every iteration:**
+- Running `bazel test //tests:...` on every small change slows feedback
+- Run the specific test target first; use full suite for final verification
+
+**Rationale:** Faster feedback during iteration; full suite confirms nothing else broke before commit.
+
 ## Rule: Write Tests for Bug Fixes
 
 **ALWAYS write a test that reproduces the bug before fixing it, then verify the fix.**

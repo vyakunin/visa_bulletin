@@ -21,10 +21,10 @@ Rules for job title clustering, representative titles, and end-to-end coherence 
 
 **update_job_title_cluster_stats** chooses the representative title:
 
-- **JobTitleCluster.canonical_title:** Most frequent raw `SalaryRecord.job_title` in the cluster, with **preference**: (1) no comma (so "Software Engineer" over "Software Developers, Applications"), (2) shorter length, (3) then count.
+- **JobTitleCluster.canonical_title:** Most frequent raw `SalaryRecord.job_title` among records whose **normalized** title (`JobTitle.title_normalized`) equals the cluster's **most frequent normalized form**. Among those raw titles, preference: (1) no comma, (2) shorter length, (3) count. So the displayed title is the most frequent salary entry's raw title for that normalized form.
 - **JobTitle.title:** Most frequent raw `job_title` among records for that entity (no comma preference for entity-level title).
 
-**Rationale:** Autocomplete and "Popular Job Titles" show `canonical_title`; Similar Job Titles shows other clusters’ `canonical_title`. User-facing titles should be concise and readable, not SOC-style with commas.
+**Rationale:** The cluster groups by normalized title; the displayed title should match the most frequent salary entry's raw title for that normalized form. Among ties we prefer no-comma and shorter for readability.
 
 ## Rule: Check Job Title Coherence on Deployment
 

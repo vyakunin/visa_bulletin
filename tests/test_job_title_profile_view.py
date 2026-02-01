@@ -818,8 +818,9 @@ class TestJobTitleDataCoherence(TestCase):
 )
 class TestJobTitleCoherenceE2E(TestCase):
     """
-    End-to-end coherence: update_job_title_cluster_stats sets representative title
-    (prefer no comma, shorter) for cluster; autocomplete and profile use it.
+    End-to-end coherence: update_job_title_cluster_stats sets canonical_title to the
+    most frequent raw title among records whose normalized title equals the cluster's
+    most frequent normalized form (then no comma, shorter); autocomplete and profile use it.
     """
 
     def setUp(self):
@@ -837,7 +838,8 @@ class TestJobTitleCoherenceE2E(TestCase):
                 'canonical_cluster': ec,
             },
         )
-        # Cluster with two raw titles: "Software Developers, Applications" (10) and "Software Engineer" (5)
+        # Cluster: most frequent normalized = "software engineer" (10), so canonical_title
+        # is chosen among raw titles with that normalized; "Software Engineer" (no comma, shorter) wins.
         self.cluster = JobTitleCluster.objects.create(
             canonical_title="Software Developers, Applications",
             total_filings=15,
@@ -859,7 +861,7 @@ class TestJobTitleCoherenceE2E(TestCase):
         )
         SalaryRecord.objects.filter(case_number__startswith="E2E-JT-").delete()
         wage = 80000
-        for i in range(10):
+        for i in range(5):
             SalaryRecord.objects.create(
                 case_number=f"E2E-JT-SOC-{i}",
                 employer_name="E2E Employer",
@@ -878,7 +880,7 @@ class TestJobTitleCoherenceE2E(TestCase):
                 is_worksite=False,
             )
             wage += 1000
-        for i in range(5):
+        for i in range(10):
             SalaryRecord.objects.create(
                 case_number=f"E2E-JT-ENG-{i}",
                 employer_name="E2E Employer",
@@ -899,7 +901,7 @@ class TestJobTitleCoherenceE2E(TestCase):
             wage += 1000
 
     def test_canonical_title_selection_prefers_no_comma_shorter(self):
-        """_most_frequent_raw_title_per_cluster returns representative title (no comma, shorter)."""
+        """_most_frequent_raw_title_per_cluster returns best raw for mode normalized (no comma, shorter)."""
         # Call only the cluster representative query (no PostgreSQL-specific SQL).
         result = dict(_most_frequent_raw_title_per_cluster())
         self.assertIn(
@@ -914,7 +916,7 @@ class TestJobTitleCoherenceE2E(TestCase):
         )
 
     def test_canonical_title_prefers_no_comma_shorter_full_script(self):
-        """update_job_title_cluster_stats (full script) sets cluster canonical_title to representative."""
+        """update_job_title_cluster_stats (full script) sets cluster canonical_title from mode normalized."""
         old_argv = sys.argv
         try:
             sys.argv = ['update_job_title_cluster_stats']
