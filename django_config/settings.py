@@ -26,8 +26,8 @@ DATABASES = {
         },
     }
 }
-# Connection pooling for better performance
-DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
+# Connection pooling for better performance (disabled in tests for isolation)
+DATABASES['default']['CONN_MAX_AGE'] = 0 if os.environ.get('RUNNING_TESTS') == '1' else 600
 
 # Application definition
 INSTALLED_APPS = [
@@ -85,13 +85,25 @@ ALLOWED_HOSTS = [
 ROOT_URLCONF = 'django_config.urls'
 
 # Caching configuration
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
-        'TIMEOUT': 60 * 60 * 3,  # Cache for 3 hours
+# Use Redis when REDIS_URL is set (production/staging); otherwise LocMem (dev, single-worker).
+REDIS_URL = os.environ.get('REDIS_URL', '')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'visa_bulletin',
+            'TIMEOUT': 60 * 60 * 6,  # 6 hours
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': 60 * 60 * 3,  # 3 hours
+        }
+    }
 
 # Analytics Configuration
 # Flexible analytics support (GoatCounter, Umami, Plausible, etc.)

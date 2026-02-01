@@ -5,6 +5,7 @@ from datetime import datetime
 from django.http import Http404
 from django.conf import settings
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.db.models import F
 
@@ -14,8 +15,9 @@ from models.job_title import JobTitle, JobTitleCluster
 
 
 def _cache_profile_view(timeout_seconds: int):
-    """Cache profile pages unless running with in-memory test DB."""
-    if settings.DATABASES.get("default", {}).get("NAME") == ":memory:":
+    """Cache profile pages unless running tests (test DB name starts with test_)."""
+    db_name = settings.DATABASES.get("default", {}).get("NAME") or ""
+    if db_name.startswith("test_"):
         def _decorator(view_func):
             return view_func
         return _decorator
@@ -85,30 +87,22 @@ def job_title_profile_view(request, slug: str):
     # Calculate start year
     current_year = datetime.now().year
     start_year = current_year - years
-    
-    normalized_title = (
-        JobTitle.objects
-        .filter(canonical_cluster=cluster)
-        .values_list('title_normalized', flat=True)
-        .first()
-    )
-    if not normalized_title:
-        normalized_title = JobTitle.normalize_title(cluster.canonical_title)
 
-    # Get comprehensive statistics
+    # Use cluster-level stats (normalized_title=None) so total_filings matches
+    # JobTitleCluster.total_filings and directory "Popular Job Titles".
     stats = get_job_title_statistics(
         cluster,
         years,
         program_filter,
         experience_level=experience_level,
-        normalized_title=normalized_title,
+        normalized_title=None,
     )
-    
-    # Get related job titles
+
+    # Related job titles for this cluster (all titles in cluster)
     related = get_related_job_titles(
         cluster,
         limit=20,
-        normalized_title=normalized_title,
+        normalized_title=None,
     )
     
     # Build chart data
@@ -127,8 +121,8 @@ def job_title_profile_view(request, slug: str):
             .order_by('-total_count')[:5]
         )
 
-    # Build SEO metadata
-    total_filings = stats['basic'].get('total_filings') or 0
+    # Build SEO metadata (use cluster.total_filings so it matches directory)
+    total_filings = cluster.total_filings or 0
     median_salary = stats['basic'].get('median_salary') or 0
     seo = {
         'title': f"{cluster.canonical_title} Salary Data & Market Analysis | Visa Bulletin",
@@ -148,6 +142,7 @@ def job_title_profile_view(request, slug: str):
         'level_choices': level_choices,
         'start_year': start_year,
         'similar_clusters': similar_clusters,
+        'job_title_autocomplete_url': request.build_absolute_uri(reverse('job_title_autocomplete')),
         # Base template variables for SEO
         'page_title': seo['title'],
         'page_description': seo['description'],

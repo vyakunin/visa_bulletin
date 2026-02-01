@@ -37,6 +37,7 @@ class VisaClassData:
             'cutoff_dates': self.cutoff_dates,
             'bulletin_urls': self.bulletin_urls,
             'projection': self.projection,
+            'last_bulletin_date': self.dates[-1] if self.dates else None,
         }
 
 

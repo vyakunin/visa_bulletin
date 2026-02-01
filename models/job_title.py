@@ -13,7 +13,8 @@ class JobTitleCluster(models.Model):
     canonical_title = models.CharField(
         max_length=500,
         db_index=True,
-        help_text="Canonical job title (e.g., 'Software Engineer')"
+        help_text="Representative title for the cluster (e.g., 'Software Engineer'). "
+        "Set by update_job_title_cluster_stats to the most frequent SalaryRecord.job_title in the cluster.",
     )
     
     slug = models.SlugField(
@@ -90,7 +91,8 @@ class JobTitle(models.Model):
     # Original and normalized title
     title = models.CharField(
         max_length=500,
-        help_text="Original job title from filing"
+        help_text="Representative job title: initially the first raw title seen; "
+        "update_job_title_cluster_stats sets it to the most frequent SalaryRecord.job_title for this entity.",
     )
     
     title_normalized = models.CharField(

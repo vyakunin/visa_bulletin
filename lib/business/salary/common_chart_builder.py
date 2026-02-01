@@ -8,6 +8,54 @@ import plotly.graph_objs as go
 import plotly.utils
 
 
+# Bins with count below this fraction of max are treated as "empty" for trim (so we keep exactly one padding bucket on each side).
+# 0.01 (1%) yields one small bucket on the left; 0.005 gave two (9 and 52).
+_SIGNIFICANT_BIN_FRACTION = 0.01
+
+def _trim_histogram_to_data_range(
+    labels: list[str],
+    counts: list[int],
+    overlay_counts_list: list[list[int]],
+    keep_one_bucket_padding: bool = True,
+) -> tuple[list[str], list[int], list[list[int]]]:
+    """
+    Trim histogram to the range where significant data exists, leaving one empty
+    (or near-empty) bucket on each side so the chart doesn't look cut off.
+
+    "Significant" = count >= 1% of max; smaller bins are treated as padding.
+    Always keeps the last bin (server provides a real empty bin on the right).
+    Returns (trimmed_labels, trimmed_counts, trimmed_overlay_counts_list).
+    """
+    if not labels or not counts:
+        return labels, counts, overlay_counts_list
+
+    n = len(labels)
+    max_count = max(counts) if counts else 0
+    threshold = max_count * _SIGNIFICANT_BIN_FRACTION if max_count else 0
+
+    first_significant = next(
+        (i for i in range(n) if counts[i] >= threshold),
+        0,
+    )
+    last_significant = next(
+        (i for i in range(n - 1, -1, -1) if counts[i] >= threshold),
+        n - 1,
+    )
+
+    if keep_one_bucket_padding:
+        left = max(0, first_significant - 1)
+        # Always include last bin: server provides a real empty bin on the right.
+        right = n - 1
+    else:
+        left, right = first_significant, last_significant
+
+    slice_end = right + 1
+    trimmed_labels = labels[left:slice_end]
+    trimmed_counts = counts[left:slice_end]
+    trimmed_overlays = [oc[left:slice_end] for oc in overlay_counts_list]
+    return trimmed_labels, trimmed_counts, trimmed_overlays
+
+
 def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | None = None) -> str:
     """Build salary distribution histogram with overlays."""
     bins = histogram_data.get("bins", [])
@@ -29,6 +77,11 @@ def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | 
         )
         return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
+    overlay_counts_list = [o.get("counts", []) for o in overlays if o.get("counts")]
+    labels, counts, overlay_counts_list = _trim_histogram_to_data_range(
+        labels, counts, overlay_counts_list
+    )
+
     max_count = max(counts) if counts else 0
     y_max = max_count * 1.2 if max_count else 1
 
@@ -43,10 +96,9 @@ def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | 
         )
     ]
 
-    for overlay in overlays:
-        overlay_counts = overlay.get("counts", [])
-        if not overlay_counts:
-            continue
+    for overlay, overlay_counts in zip(
+        [o for o in overlays if o.get("counts")], overlay_counts_list
+    ):
         data.append(
             go.Scatter(
                 x=labels,
@@ -58,6 +110,7 @@ def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | 
         )
 
     fig = go.Figure(data=data)
+    n = len(labels)
     fig.update_layout(
         title=title,
         xaxis_title="Salary Range",
@@ -65,7 +118,11 @@ def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | 
         height=450,
         template="plotly_white",
         showlegend=True,
-        xaxis={"tickangle": -45},
+        xaxis={
+            "tickangle": -45,
+            "range": [-0.5, n - 0.5],
+            "autorange": False,
+        },
         yaxis={"range": [0, y_max]},
         margin=dict(t=60, b=90, l=60, r=20),
     )
@@ -92,6 +149,11 @@ def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
         )
         return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
+    overlay_counts_list = [o.get("counts", []) for o in overlays if o.get("counts")]
+    labels, counts, overlay_counts_list = _trim_histogram_to_data_range(
+        labels, counts, overlay_counts_list
+    )
+
     max_count = max(counts) if counts else 0
     y_max = max_count * 1.2 if max_count else 1
 
@@ -106,10 +168,9 @@ def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
         )
     ]
 
-    for overlay in overlays:
-        overlay_counts = overlay.get("counts", [])
-        if not overlay_counts:
-            continue
+    for overlay, overlay_counts in zip(
+        [o for o in overlays if o.get("counts")], overlay_counts_list
+    ):
         data.append(
             go.Scatter(
                 x=labels,
@@ -121,6 +182,7 @@ def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
         )
 
     fig = go.Figure(data=data)
+    n = len(labels)
     fig.update_layout(
         title=title,
         xaxis_title="Salary Range",
@@ -128,7 +190,11 @@ def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
         height=450,
         template="plotly_white",
         showlegend=True,
-        xaxis={"tickangle": -45},
+        xaxis={
+            "tickangle": -45,
+            "range": [-0.5, n - 0.5],
+            "autorange": False,
+        },
         yaxis={"range": [0, y_max]},
         margin=dict(t=60, b=90, l=60, r=20),
     )

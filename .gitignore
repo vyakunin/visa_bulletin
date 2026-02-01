@@ -31,3 +31,6 @@ Thumbs.db
 
 # DOL salary data files (large Excel files)
 data/salary/dol_data/*.xlsx
+
+# Log files
+logs/*.log

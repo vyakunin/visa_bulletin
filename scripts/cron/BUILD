@@ -12,6 +12,7 @@ sh_binary(
         "//scripts/salary:update_employer_stats",
         "//scripts/salary:cluster_existing_employers",
         "//scripts/salary:update_job_title_cluster_stats",
+        "//scripts/salary:populate_job_title_slugs",
         "//scripts/cache:warm_cache",
     ],
     visibility = ["//visibility:public"],

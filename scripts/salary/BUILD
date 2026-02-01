@@ -1299,22 +1299,31 @@ py_binary(
     },
 )
 
-py_binary(
-    name = "update_job_title_cluster_stats",
+py_library(
+    name = "update_job_title_cluster_stats_lib",
     srcs = ["update_job_title_cluster_stats.py"],
-    main = "update_job_title_cluster_stats.py",
-    visibility = ["//visibility:public"],
+    visibility = ["//tests:__pkg__"],
     deps = [
         "//lib/utils:logging_utils",
         "//lib/utils:db_utils",
-        "//models:salary",
         "//models:job_title",
+        "//models:salary",
         "//django_config:settings",
         "//webapp:apps",
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),
+    ],
+)
+
+py_binary(
+    name = "update_job_title_cluster_stats",
+    srcs = ["update_job_title_cluster_stats.py"],
+    main = "update_job_title_cluster_stats.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":update_job_title_cluster_stats_lib",
     ],
     python_version = "PY3",
     env = {

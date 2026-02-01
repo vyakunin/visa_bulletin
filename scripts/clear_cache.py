@@ -13,7 +13,6 @@ import django
 django.setup()
 
 from django.core.cache import cache
-from django.core.cache.utils import make_template_fragment_key
 from lib.utils.logging_utils import ScriptLogger
 from django_config.logging_config import setup_logging
 
@@ -31,8 +30,13 @@ def main():
     
     cache.clear()
     logger.info("✓ Django cache cleared")
-    logger.info("Note: Restart the server to ensure @cache_page decorator cache is cleared")
-    logger.info("      Run: ./scripts/restart_server.sh --background")
+    logger.info(
+        "With Redis: cache is shared; no restart needed. "
+        "After data refresh or deploy that changes cached payloads, run this script (or see docs for cache cleansing)."
+    )
+    logger.info(
+        "On memory-constrained instances (e.g. 2GB): run 'bazel shutdown' after this to free ~400-500MB."
+    )
 
 if __name__ == '__main__':
     main()

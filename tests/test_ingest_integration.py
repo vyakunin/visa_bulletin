@@ -247,11 +247,11 @@ class TestIngestPipelineIntegration:
         
         # Temporarily rename bulletin table to simulate missing table error
         with connection.cursor() as cursor:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bulletin'")
+            cursor.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'bulletin'"
+            )
             table_exists = cursor.fetchone()
-            
             if table_exists:
-                # Rename table to simulate missing table
                 cursor.execute("ALTER TABLE bulletin RENAME TO bulletin_backup")
         
         orchestrator = PipelineOrchestrator(
@@ -266,8 +266,14 @@ class TestIngestPipelineIntegration:
             # Should not reach here, but if it does, verify it failed
             assert run.status == IngestStatus.FAILED, "Expected run to fail with missing table"
         except Exception as e:
-            # Expected - database error
-            assert "no such table" in str(e).lower() or "bulletin" in str(e).lower()
+            # Expected - database error (SQLite: "no such table"; PostgreSQL: "does not exist" / "relation")
+            err = str(e).lower()
+            assert (
+                "no such table" in err
+                or "does not exist" in err
+                or "relation" in err
+                or "bulletin" in err
+            ), f"Expected DB error, got: {e}"
             # Get the run that was created
             run = source.runs.order_by('-started_at').first()
             assert run is not None
@@ -280,7 +286,9 @@ class TestIngestPipelineIntegration:
         
         # Restore table (fix the database issue)
         with connection.cursor() as cursor:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bulletin_backup'")
+            cursor.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'bulletin_backup'"
+            )
             if cursor.fetchone():
                 cursor.execute("ALTER TABLE bulletin_backup RENAME TO bulletin")
         

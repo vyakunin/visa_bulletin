@@ -20,12 +20,10 @@ bazel test //tests/...
 
 ## Staging
 
-Run the full test suite on the staging VM (uses `.env` there; DB user must have CREATEDB or use `postgres` for tests):
+Run the full test suite on the staging VM manually (uses `.env` there; DB user must have CREATEDB or use `postgres` for tests):
 
 ```bash
-./scripts/run_tests_on_staging.sh
-# Or with a specific SSH alias:
-./scripts/run_tests_on_staging.sh staging_2Gb_vm
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests/... --test_output=errors"
 ```
 
 Tests on staging create and use `test_postgres` on the staging DB server; they do not touch the real app database.

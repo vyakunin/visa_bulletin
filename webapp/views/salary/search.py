@@ -204,10 +204,14 @@ def salary_search_view(request):
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
     
-    # Use select_related to include employer cluster slug for profile links
+    # Use select_related for employer and job title cluster slugs (profile links)
     # Use only() to reduce data loaded - we only need these fields for the list view
-    records = records.select_related('employer__canonical_cluster').only(
-        'id', 'employer_name', 'job_title', 'worksite_city', 'worksite_state',
+    records = records.select_related(
+        'employer__canonical_cluster',
+        'job_title_entity__canonical_cluster',
+    ).only(
+        'id', 'employer_name', 'job_title', 'job_title_entity_id',
+        'worksite_city', 'worksite_state',
         'wage_annual', 'wage_to', 'visa_program', 'fiscal_year',
         'employer__canonical_cluster__slug',
     ).order_by('-wage_annual', '-fiscal_year')[
@@ -254,11 +258,12 @@ def salary_search_view(request):
         'page_range': pagination['page_range'],
         
         # SEO
-        'page_title': 'H-1B & PERM Salary Database - Visa Bulletin Dashboard',
+        'page_title': 'H-1B & PERM Salary Database | U.S. Immigration Data',
         'page_description': 'Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by job title, employer, and location.',
         
-        # Autocomplete URL
-        'company_autocomplete_url': reverse('company_autocomplete'),
+        # Autocomplete URLs (shared component used for both Job Title and Employer)
+        'company_autocomplete_url': request.build_absolute_uri(reverse('company_autocomplete')),
+        'job_title_autocomplete_url': request.build_absolute_uri(reverse('job_title_autocomplete')),
     }
     
     return render(request, 'webapp/salary_search.html', context)
@@ -404,7 +409,7 @@ def worksite_search_view(request):
         'page_range': pagination['page_range'],
         
         # SEO
-        'page_title': 'Worksite Location Data - Visa Bulletin Dashboard',
+        'page_title': 'Worksite Location Data | U.S. Immigration Data',
         'page_description': 'Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and job title.',
     }
     

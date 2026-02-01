@@ -1,0 +1,49 @@
+# Run tests with PostgreSQL (no SQLite). Test DB is test_<DB_NAME>; prod is never touched.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DJANGO_SETTINGS_MODULE: django_config.settings
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.8.1
+        with:
+          bazelisk-cache: true
+
+      - name: Run tests
+        run: |
+          # CI uses postgres user (has CREATEDB). Tests create test_postgres and run there; real postgres DB is never written to.
+          # Pass DB_* to tests so they use the service and create test_postgres.
+          bazel test //tests/... --test_output=errors \
+            --test_env=DB_NAME --test_env=DB_USER --test_env=DB_PASSWORD --test_env=DB_HOST --test_env=DB_PORT

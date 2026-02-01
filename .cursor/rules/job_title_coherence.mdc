@@ -1,0 +1,85 @@
+---
+alwaysApply: true
+---
+# Job Title Data Coherence Rules
+
+Rules for job title clustering, representative titles, and end-to-end coherence (autocomplete, directory, profile, Similar Job Titles).
+
+## Rule: Pipeline Order for Job Title Data
+
+**Job title stats and slugs must be updated in this order:**
+
+1. **cluster_job_titles** – clusters raw job titles into `JobTitle` / `JobTitleCluster`
+2. **update_job_title_cluster_stats** – sets `total_filings`, `avg_salary`, and **canonical_title** per cluster; sets **title** per `JobTitle` to the most frequent raw title (cluster: prefer no comma, then shorter, then frequency)
+3. **populate_job_title_slugs** – backfills `slug` for clusters that have none (slug is derived from `canonical_title`)
+
+**Scripts:** `scripts/cron/refresh_data.sh` runs them in this order. Do not reorder or skip.
+
+**Rationale:** Autocomplete and directory use `JobTitleCluster` with `canonical_title`, `total_filings`, and `slug`. Profile page uses `cluster.total_filings` and `cluster.canonical_title`. Similar Job Titles uses other clusters’ `canonical_title`. All must come from the same pipeline run.
+
+## Rule: Representative Title Selection
+
+**update_job_title_cluster_stats** chooses the representative title:
+
+- **JobTitleCluster.canonical_title:** Most frequent raw `SalaryRecord.job_title` in the cluster, with **preference**: (1) no comma (so "Software Engineer" over "Software Developers, Applications"), (2) shorter length, (3) then count.
+- **JobTitle.title:** Most frequent raw `job_title` among records for that entity (no comma preference for entity-level title).
+
+**Rationale:** Autocomplete and "Popular Job Titles" show `canonical_title`; Similar Job Titles shows other clusters’ `canonical_title`. User-facing titles should be concise and readable, not SOC-style with commas.
+
+## Rule: Check Job Title Coherence on Deployment
+
+**After deploying or after running refresh_data (including update_job_title_cluster_stats + populate_job_title_slugs), verify job title coherence on the deployment.**
+
+### 1. Run the pipeline on the deployment (if you changed data or code)
+
+```bash
+# On staging/production (use correct SSH alias and DB_HOST)
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && [ \"\$DB_HOST\" = 'host.docker.internal' ] && export DB_HOST=localhost; bazel build //scripts/salary:update_job_title_cluster_stats && bazel shutdown"
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/update_job_title_cluster_stats"
+# If any clusters had no slug, run populate_job_title_slugs
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/populate_job_title_slugs"
+```
+
+### 2. Smoke test on the live site
+
+Use the deployment base URL (e.g. `http://44.209.204.255` or `https://visa-bulletin.us`).
+
+**A. Autocomplete – fields and order**
+
+- `GET /api/job-title-autocomplete/?q=software&limit=5`
+- Response must be JSON array of objects with **title** (= `canonical_title`), **slug**, **total_filings**
+- Results must be ordered by **total_filings descending**, then **canonical_title**
+
+**B. Profile count matches autocomplete**
+
+- Pick a slug from autocomplete (e.g. `software-development-engineer-ii`) and note its **total_filings**
+- `GET /job-title/<slug>/`
+- Page must show the same **Total Filings** number (e.g. in the overview card and in meta description)
+
+**C. Generated URLs resolve**
+
+- URLs must be `/job-title/<slug>/` with slug derived from `canonical_title` (lowercase, hyphenated)
+- Visiting the URL must return 200 and show the cluster’s canonical_title and total_filings
+
+**D. Similar Job Titles section**
+
+- On a job title profile (e.g. `/job-title/software-development-engineer-ii/`), open the **Similar Job Titles** block
+- Listed titles must be **canonical_title** (representative) for other clusters, not raw SOC-style variants (e.g. "Software Engineer", "Software Developer", not "Software Developers, Applications" unless that is the cluster’s canonical_title)
+
+### 3. Run the integration test (local or CI)
+
+```bash
+bazel test //tests:test_job_title_profile_view
+```
+
+This test suite covers:
+
+- Most frequent representative saved for cluster (and selection prefers no comma, shorter)
+- Autocomplete uses **title** (= canonical_title), **total_filings**, **slug** in correct order
+- Profile page Total Filings matches cluster.total_filings (and thus autocomplete total_filings for that slug)
+- Generated URLs resolve and show the same count
+- Similar Job Titles section shows canonical_title for similar clusters
+
+Tests use the default test DB (SQLite in-memory). The script uses portable SQL (`CAST(... AS INTEGER)`), so the full-script integration test runs without PostgreSQL.
+
+**Rationale:** Catching mismatches (e.g. profile count ≠ autocomplete, or Similar showing raw titles) early prevents user-facing inconsistencies and SEO issues.

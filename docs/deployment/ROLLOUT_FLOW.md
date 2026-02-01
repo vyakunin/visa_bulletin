@@ -4,9 +4,12 @@ This document describes the complete process for deploying changes to production
 
 ## Overview
 
+**Standard rollout (production):**
 ```
 Code Changes → Tag Version → Build Image → Deploy → Monitor
 ```
+
+**Staging / dev cycle / urgent fix:** Deploy from source without building an image — copy changed files with `scp` to staging, then reload gunicorn (`pkill -HUP gunicorn`). See [Deploy from source (staging / dev cycle or urgent fix)](#deploy-from-source-staging--dev-cycle-or-urgent-fix).
 
 ## Step-by-Step Rollout Process
 
@@ -200,6 +203,7 @@ After deployment:
 - [ ] Main pages load correctly
 - [ ] No errors in logs
 - [ ] Resource usage normal
+- [ ] **Optional:** If deploy changed cached payload structure or you ran a major data refresh, clear cache: `bazel run //scripts:clear_cache` (or on server: `cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache`). See *Cache cleansing* in `docs/EMPLOYER_PROFILE_QUERIES_AND_OPTIMIZATION.md`.
 - [ ] Monitored for 15+ minutes
 - [ ] Version tag noted in deployment log
 
@@ -246,6 +250,73 @@ git push origin v1.1.0
 
 # Note: This is less traceable, use versions when possible
 ```
+
+## Deploy from source (staging / dev cycle or urgent fix)
+
+Use this flow when you want to run **uncommitted or branch changes on staging** without building a Docker image. Staging runs **gunicorn** from the code on disk at `/opt/visa_bulletin`; updating files and reloading workers picks up changes immediately.
+
+**When to use:**
+- Dev cycle: iterate on UI or backend and verify on staging before committing.
+- Urgent fix: push a small fix to staging for validation before full tag/deploy.
+
+**Requirements:**
+- SSH alias `staging_2Gb_vm` (or use `ubuntu@44.209.204.255` with your key).
+- Staging app running under gunicorn (not Docker for the web process).
+
+### 1. Copy changed files to staging
+
+From the project root, `scp` only the files you changed (or a small set of dirs). Example for a single script and model:
+
+```bash
+cd /path/to/visa_bulletin
+
+# Example: one script + one model
+scp scripts/salary/update_job_title_cluster_stats.py staging_2Gb_vm:/opt/visa_bulletin/scripts/salary/
+scp models/job_title.py staging_2Gb_vm:/opt/visa_bulletin/models/
+```
+
+Example for webapp UI changes (templates, views, static):
+
+```bash
+cd /path/to/visa_bulletin
+
+scp webapp/views/job_titles/profile.py staging_2Gb_vm:/opt/visa_bulletin/webapp/views/job_titles/
+scp webapp/templates/webapp/job_title_profile.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/base.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/employer_profile.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/includes/chart_loading_container.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
+scp webapp/templates/webapp/includes/yoy_trends_table.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
+scp webapp/static/js/sortable_tables.js staging_2Gb_vm:/opt/visa_bulletin/webapp/static/js/
+```
+
+### 2. Reload gunicorn (pick up new code)
+
+```bash
+# See running gunicorn processes
+ssh staging_2Gb_vm "pgrep -af gunicorn"
+
+# Graceful reload (workers restart, no dropped connections)
+ssh staging_2Gb_vm "pkill -HUP gunicorn && echo 'Gunicorn workers reloaded (cache cleared)'"
+```
+
+If gunicorn is run via a wrapper (e.g. `django_config.wsgi`):
+
+```bash
+ssh staging_2Gb_vm "pkill -HUP -f 'gunicorn.*django_config' 2>/dev/null; sleep 1; ps aux | grep gunicorn | grep -v grep | head -3"
+```
+
+### 3. Verify
+
+```bash
+# Check app responds
+curl -s -o /dev/null -w "%{http_code}" http://44.209.204.255/job-title/software-engineer-161543223/
+curl -sI http://44.209.204.255/salaries/ | head -1
+```
+
+**Notes:**
+- No Docker image build or tag; changes are only on the staging server.
+- For production, use the normal flow: commit → tag → build image → deploy with `deploy-zero-downtime.sh`.
+- Staging `.env` and DB are unchanged; only code and static files are updated.
 
 ## Deployment Windows
 

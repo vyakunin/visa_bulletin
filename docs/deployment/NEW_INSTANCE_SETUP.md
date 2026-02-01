@@ -33,6 +33,7 @@ This script automates:
 - Swap configuration (2GB, swappiness=60)
 - Docker installation
 - PostgreSQL installation and tuning (bulk operation optimized)
+- Redis installation (shared cache for employer/salary pages; `REDIS_URL` in `.env`)
 - Blue-green database creation
 - Monitoring tools (sysstat, atop, health_check.sh)
 - Bazel memory limits

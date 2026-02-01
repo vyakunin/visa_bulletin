@@ -2,10 +2,6 @@
 alwaysApply: true
 ---
 
----
-alwaysApply: true
----
-
 # Deployment and Rollout Rules
 
 ## Production Instances
@@ -45,6 +41,28 @@ alwaysApply: true
 - Wrong alias = wrong instance
 - Wrong instance = data corruption or service disruption
 - Always be explicit when making changes
+
+## Rule: Deploy to Staging After Implementing User-Requested Changes
+
+**When the user asks to change something (code, UI, feature, fix), also deploy the changes to staging after implementing.**
+
+**Workflow:**
+1. Implement the requested change locally.
+2. Run relevant tests (e.g. `bazel test //tests:...`).
+3. Deploy to staging using the "Deploy from source" flow:
+   - `scp` the changed files to `staging_2Gb_vm:/opt/visa_bulletin/...`
+   - Reload gunicorn: `ssh staging_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
+4. Optionally verify (curl the affected URL, check HTML/API).
+
+**Do not deploy to staging when:**
+- User explicitly says "don't deploy" or "local only".
+- Change is documentation-only and has no runtime effect.
+- User only asked to "plan" or "document" (no code change).
+
+**Rationale:**
+- User expects to see changes on staging without asking again.
+- Reduces back-and-forth ("can you deploy that?").
+- Staging is for validation; deploy there by default after code changes.
 
 ## Rule: Never Use Development Scripts on Production
 

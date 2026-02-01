@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ page_title|default:"Visa Bulletin Dashboard" }}{% endblock %}</title>
+    <title>{% block title %}{{ page_title|default:"U.S. Immigration Data" }}{% endblock %}</title>
     
     <!-- Favicons (multiple formats for best compatibility) -->
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
@@ -21,9 +21,9 @@
     <link rel="preconnect" href="https://cdn.plot.ly" crossorigin>
     
     <!-- SEO Meta Tags -->
-    <meta name="description" content="{{ page_description|default:'Independent tracker for family-sponsored and employment-based immigration priority dates. View historical trends and future projections.' }}">
-    <meta name="keywords" content="visa bulletin, priority date tracker, EB2, EB3, green card, immigration, USCIS, employment based visa, family sponsored visa, India EB2, China EB3, visa retrogression">
-    <meta name="author" content="Visa Bulletin Dashboard">
+    <meta name="description" content="{{ page_description|default:'Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.' }}">
+    <meta name="keywords" content="visa bulletin, priority date tracker, EB2, EB3, green card, immigration, USCIS, employment based visa, family sponsored visa, India EB2, China EB3, visa retrogression, H-1B salary, PERM, DoL">
+    <meta name="author" content="U.S. Immigration Data">
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
@@ -31,32 +31,32 @@
     <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="{{ og_type|default:'website' }}">
     <meta property="og:url" content="{{ og_url|default:request.build_absolute_uri }}">
-    <meta property="og:title" content="{{ page_title|default:'Visa Bulletin Dashboard - Priority Date Tracker' }}">
-    <meta property="og:description" content="{{ page_description|default:'Track immigration priority dates with historical data and future projections. Free tool for employment-based and family-sponsored visa applicants.' }}">
+    <meta property="og:title" content="{{ page_title|default:'U.S. Immigration Data' }}">
+    <meta property="og:description" content="{{ page_description|default:'Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.' }}">
     <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Visa Bulletin Tracker - Priority Date Predictions">
-    <meta property="og:site_name" content="Visa Bulletin Dashboard">
+    <meta property="og:image:alt" content="U.S. Immigration Data - Priority dates and employment visa data">
+    <meta property="og:site_name" content="U.S. Immigration Data">
     <meta property="og:locale" content="en_US">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="{{ og_url|default:request.build_absolute_uri }}">
-    <meta name="twitter:title" content="{{ page_title|default:'Visa Bulletin Dashboard - Priority Date Tracker' }}">
-    <meta name="twitter:description" content="{{ page_description|default:'Track immigration priority dates with historical data and future projections.' }}">
+    <meta name="twitter:title" content="{{ page_title|default:'U.S. Immigration Data' }}">
+    <meta name="twitter:description" content="{{ page_description|default:'Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.' }}">
     <meta name="twitter:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}">
-    <meta name="twitter:image:alt" content="Visa Bulletin Tracker - Priority Date Predictions">
+    <meta name="twitter:image:alt" content="U.S. Immigration Data - Priority dates and employment visa data">
     
     <!-- Structured Data (JSON-LD) - Organization & Logo -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "Organization",
-        "name": "Visa Bulletin Dashboard",
+        "name": "U.S. Immigration Data",
         "url": "https://visa-bulletin.us",
         "logo": "{{ request.scheme }}://{{ request.get_host }}{% static 'og-image.png' %}",
-        "description": "Independent tracker for U.S. immigration priority dates with historical data and projections",
+        "description": "Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.",
         "contactPoint": {
             "@type": "ContactPoint",
             "email": "vyakunin@gmail.com",
@@ -73,9 +73,9 @@
     {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        "name": "Visa Bulletin Dashboard",
+        "name": "U.S. Immigration Data",
         "url": "https://visa-bulletin.us",
-        "description": "Track U.S. immigration priority dates for employment-based and family-sponsored visas",
+        "description": "Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.",
         "potentialAction": {
             "@type": "SearchAction",
             "target": {
@@ -443,6 +443,24 @@
             font-size: 0.8rem;
             margin-left: 0.5rem;
         }
+
+        /* Sortable table headers: clickable, sorted column highlighted */
+        .sortable-table thead th {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease;
+        }
+        .sortable-table thead th:hover {
+            background-color: rgba(0, 0, 0, 0.04);
+        }
+        .sortable-table thead th.sortable-sorted {
+            background-color: rgba(44, 82, 130, 0.12);
+            color: var(--gov-navy, #1a365d);
+        }
+        .sortable-table thead th.sortable-sorted .sort-indicator {
+            font-weight: bold;
+            color: var(--gov-navy, #1a365d);
+        }
         
         /* Navigation Colors */
         :root {
@@ -539,8 +557,8 @@
 <body>
     <div class="hero-section">
         <div class="container">
-            <h1 class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Visa Bulletin Dashboard</h1>
-            <p class="lead">Independent tracker for family-sponsored and employment-based immigration priority dates</p>
+            <h1 class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</h1>
+            <p class="lead">Priority dates, work visas, and labor market data</p>
         </div>
     </div>
     
@@ -550,7 +568,7 @@
             <ul class="nav nav-pills justify-content-center">
                 <li class="nav-item">
                     <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{% url 'dashboard' %}">
-                        <i class="bi bi-house-door"></i> Home
+                        <i class="bi bi-calendar-check"></i> Priority Dates
                     </a>
                 </li>
                 <li class="nav-item">
@@ -596,26 +614,26 @@
         
         <div class="text-center mb-3" style="color: #8FA3B8; font-size: 0.95rem;">
             <p class="mb-2">
-                <strong>Built to help the community</strong> — I created this tracker to make visa bulletin data easier to understand. 
+                <strong>Built to help the community</strong> — I created this site to make U.S. immigration and employment visa data easier to find. 
                 If you find it useful, please share it with others in the immigration community.
             </p>
             
             <!-- Share Buttons -->
             <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
                 <!-- WhatsApp -->
-                <a href="whatsapp://send?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates:%20https://visa-bulletin.us/" 
+                <a href="whatsapp://send?text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries:%20https://visa-bulletin.us/" 
                    class="btn btn-success btn-sm">
                     <i class="bi bi-whatsapp"></i> WhatsApp
                 </a>
                 
                 <!-- Telegram -->
-                <a href="https://t.me/share/url?url=https://visa-bulletin.us/&text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates" 
+                <a href="https://t.me/share/url?url=https://visa-bulletin.us/&text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries" 
                    class="btn btn-telegram btn-sm">
                     <i class="bi bi-telegram"></i> Telegram
                 </a>
                 
                 <!-- Bluesky -->
-                <a href="https://bsky.app/intent/compose?text=Check%20out%20this%20Visa%20Bulletin%20Dashboard%20to%20track%20priority%20dates%20https://visa-bulletin.us/" 
+                <a href="https://bsky.app/intent/compose?text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries%20https://visa-bulletin.us/" 
                    class="btn btn-bluesky btn-sm">
                     <i class="bi bi-cloud"></i> Bluesky
                 </a>
@@ -698,6 +716,7 @@
     
     <!-- Autocomplete functionality -->
     <script src="{% static 'js/autocomplete.js' %}" defer></script>
+    <script src="{% static 'js/sortable_tables.js' %}" defer></script>
     
     {% block extra_scripts %}{% endblock %}
 </body>

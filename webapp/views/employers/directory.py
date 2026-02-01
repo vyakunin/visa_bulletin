@@ -171,7 +171,7 @@ def employer_directory_view(request):
         'states': US_STATES,
         
         # Autocomplete URL
-        'company_autocomplete_url': reverse('company_autocomplete'),
+        'company_autocomplete_url': request.build_absolute_uri(reverse('company_autocomplete')),
         
         # Results
         'employers': employers,
@@ -189,7 +189,7 @@ def employer_directory_view(request):
         'page_range': pagination['page_range'],
         
         # SEO
-        'page_title': 'Employer Directory - H-1B & PERM Sponsors | Visa Bulletin Dashboard',
+        'page_title': 'Employer Directory - H-1B & PERM Sponsors | U.S. Immigration Data',
         'page_description': 'Browse top employers sponsoring H-1B and PERM visas. Search by company name, filter by state and visa program.',
     }
     

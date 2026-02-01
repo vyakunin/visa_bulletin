@@ -4,6 +4,12 @@ version: '3.8'
 # Used for blue-green zero-downtime deployments
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: visa_bulletin_redis
+    restart: unless-stopped
+    # Shared cache for employer profile and salary pages (no external port needed)
+
   web-blue:
     image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
     container_name: visa_bulletin_web_blue
@@ -16,8 +22,11 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/1
     env_file:
       - ../.env
+    depends_on:
+      - redis
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

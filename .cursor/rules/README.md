@@ -10,6 +10,7 @@ This directory contains project-specific Cursor rules for the visa bulletin pars
 - **django.mdc**: Django patterns (TextChoices, settings)
 - **scripts.mdc**: Project scripts and workflows
 - **deployment.mdc**: Deployment and rollout rules (always ask about versions)
+- **job_title_coherence.mdc**: Job title data coherence (pipeline order, representative title, deployment smoke test)
 
 **Naming convention:**
 - Files prefixed with `general_` contain portable rules that apply across all projects

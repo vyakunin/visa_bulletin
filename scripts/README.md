@@ -651,9 +651,13 @@ Scripts for managing job title clustering, slugs, and SEO features.
 bazel run //scripts/salary:cluster_job_titles
 ```
 
-**`scripts/salary/update_job_title_cluster_stats.py`** - Update statistics for job title clusters
+**`scripts/salary/update_job_title_cluster_stats.py`** - Update statistics and representative titles for job title clusters
+
+Updates **JobTitleCluster** (total_filings, avg_salary, canonical_title) and **JobTitle** (title) from linked SalaryRecords. Both `canonical_title` and `JobTitle.title` are set to the **most frequent raw title** (SalaryRecord.job_title) among records in that cluster or entity, so users see e.g. "Software Engineer" instead of a rare typo. Uses bulk SQL (GROUP BY + window functions) and batched bulk_update; run after clustering.
+
 ```bash
 bazel run //scripts/salary:update_job_title_cluster_stats
+bazel run //scripts/salary:update_job_title_cluster_stats -- --dry-run
 ```
 
 **`scripts/salary/analyze_job_title_normalization.py`** - Analyze job title normalization results
@@ -718,9 +722,13 @@ bazel run //:makemigrations_wrapper
 bazel run //scripts:run_sql -- --query "SELECT COUNT(*) FROM salary_record"
 ```
 
-**`scripts/clear_cache.py`** - Clear Django cache
+**`scripts/clear_cache.py`** - Clear Django cache (employer profile, salary search, market overview). Use after a major data refresh or deploy that changes cached payloads. With Redis, no server restart needed. See *Cache cleansing* in `docs/EMPLOYER_PROFILE_QUERIES_AND_OPTIMIZATION.md`.
 ```bash
 bazel run //scripts:clear_cache
+```
+On memory-constrained instances (e.g. 2GB staging/production): run then shut down Bazel to free memory:
+```bash
+bazel run //scripts:clear_cache && bazel shutdown
 ```
 
 **`scripts/salary/drop_data.py`** - Drop all data (use with caution!)

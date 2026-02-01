@@ -902,6 +902,24 @@ bazel run //scripts/clustering:cluster_entities -- employer
 bazel run //scripts/clustering:cluster_entities -- job_title
 ```
 
+#### 3.3 Update Job Title and Cluster Representative Titles
+
+**File**: `scripts/salary/update_job_title_cluster_stats.py`
+
+After clustering, both **JobTitle.title** and **JobTitleCluster.canonical_title** are set to the **most frequent raw title** (i.e. the most frequent value of `SalaryRecord.job_title`) among the records that map to that entity or cluster. That way users see a meaningful label (e.g. "Software Engineer") instead of a rare or noisy one (e.g. "Software Engineer 1615.43223") that might have been stored first.
+
+- **JobTitle.title**: For each JobTitle entity, the script sets `title` to the raw title that appears most often among SalaryRecords with `job_title_entity_id` pointing at that entity.
+- **JobTitleCluster.canonical_title**: For each cluster, the script sets `canonical_title` to the raw title that appears most often among SalaryRecords whose job title entity belongs to that cluster.
+
+The script also updates cluster **total_filings** and **avg_salary** from linked SalaryRecords (with wage in a reasonable range). All of this is done in bulk via a small number of SQL queries (GROUP BY + window functions) and batched bulk_update; no per-record scans of unindexed fields and no loading the full table into memory.
+
+Run after clustering (and after any re-cluster):
+
+```bash
+bazel run //scripts/salary:update_job_title_cluster_stats
+bazel run //scripts/salary:update_job_title_cluster_stats -- --dry-run
+```
+
 ### 5. Migration Scripts
 
 **Create migrations**:

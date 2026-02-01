@@ -174,3 +174,36 @@ logging.basicConfig(level=logging.INFO, format='...')
 - Ensures consistent behavior across scripts
 - Makes codebase easier to understand
 - Prevents inconsistencies from copy-paste errors
+
+## Rule: No Fallbacks That Hide Root Cause
+
+**Do NOT introduce fallbacks that allow the system to succeed while the primary mechanism is broken or never run.**
+
+**❌ BAD - Fallback hides the real problem:**
+```python
+# Primary path: JobTitleCluster (populated by pipeline)
+clusters = JobTitleCluster.objects.filter(...)
+if not clusters:
+    # Fallback: query SalaryRecord so autocomplete "works"
+    # This hides that cluster_job_titles or update_job_title_cluster_stats never ran
+    clusters = SalaryRecord.objects.values('job_title').annotate(...)
+```
+
+**✅ GOOD - Fix the root cause:**
+```python
+# Rely only on JobTitleCluster. If empty, autocomplete returns [].
+# Ensure pipeline runs: cluster_job_titles → update_job_title_cluster_stats → populate_job_title_slugs.
+clusters = JobTitleCluster.objects.filter(...)
+return [{'title': c.canonical_title, ...} for c in clusters]
+```
+
+**When something is broken:**
+1. Investigate why the primary path fails (pipeline not run, step failed, missing step, bad data).
+2. Fix that (add missing step to pipeline, fix failure, fix data).
+3. Do not add a fallback that masks the failure.
+
+**Exception:** Fallbacks that are intentional product behavior (e.g. optional feature with graceful degradation) and are documented as such are acceptable.
+
+**Rationale:**
+- Fallbacks that hide failures let broken pipelines or missing steps go unnoticed.
+- Root-cause fixes (e.g. adding populate_job_title_slugs to refresh_data.sh) ensure the real mechanism works everywhere.

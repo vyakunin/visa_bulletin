@@ -19,14 +19,15 @@
 set -e
 
 # Configuration
-AWS_HOST="prod_0.5Gb_vm"
 AWS_USER="ubuntu"
 DEFAULT_KEY="$HOME/.ssh/lightsail_visa_bulletin"
 DEPLOY_DIR="/opt/visa_bulletin"
 
-# Parse arguments
+# Parse arguments: [ssh-key-path] [image-tag] [host]
+# host defaults to prod_0.5Gb_vm; use staging_2Gb_vm for staging
 SSH_KEY="${1:-$DEFAULT_KEY}"
 IMAGE_TAG="${2:-latest}"
+AWS_HOST="${3:-prod_0.5Gb_vm}"
 
 if [ ! -f "$SSH_KEY" ]; then
     echo "❌ SSH key not found: $SSH_KEY"
@@ -46,7 +47,7 @@ echo ""
 SSH_CMD="ssh -i $SSH_KEY ${AWS_USER}@${AWS_HOST}"
 
 echo "📥 Pulling latest configs from GitHub..."
-$SSH_CMD "cd $DEPLOY_DIR && git pull origin main"
+$SSH_CMD "cd $DEPLOY_DIR && git fetch origin main && git merge --ff-only origin/main || git reset --hard origin/main"
 
 echo ""
 echo "🔍 Detecting active environment..."
@@ -178,12 +179,17 @@ echo "Image deployed: ghcr.io/vyakunin/visa_bulletin:$IMAGE_TAG"
 echo ""
 echo "🔍 Verifying deployment..."
 
-# Check site is responding
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us)
-if [ "$HTTP_STATUS" = "200" ]; then
-    echo "✅ Site is responding: https://visa-bulletin.us (HTTP $HTTP_STATUS)"
+# Check site is responding (staging uses IP, prod uses domain)
+if [ "$AWS_HOST" = "staging_2Gb_vm" ]; then
+  VERIFY_URL="http://44.209.204.255"
 else
-    echo "⚠️  Site returned HTTP $HTTP_STATUS"
+  VERIFY_URL="https://visa-bulletin.us"
+fi
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$VERIFY_URL" || echo "000")
+if [ "$HTTP_STATUS" = "200" ]; then
+    echo "✅ Site is responding: $VERIFY_URL (HTTP $HTTP_STATUS)"
+else
+    echo "⚠️  Site returned HTTP $HTTP_STATUS at $VERIFY_URL"
 fi
 
 echo ""

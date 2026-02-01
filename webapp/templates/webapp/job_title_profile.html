@@ -10,14 +10,14 @@
 
 <!-- Open Graph -->
 <meta property="og:title" content="{{ cluster.canonical_title }} Salary Data">
-<meta property="og:description" content="{{ stats.basic.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median salary">
+<meta property="og:description" content="{{ cluster.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median salary">
 <meta property="og:url" content="{{ request.build_absolute_uri }}">
 <meta property="og:type" content="website">
 
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ cluster.canonical_title }} Salary Data">
-<meta name="twitter:description" content="{{ stats.basic.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median">
+<meta name="twitter:description" content="{{ cluster.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median">
 
 <!-- Structured Data (Schema.org) -->
 <script type="application/ld+json">
@@ -46,54 +46,6 @@
 
 <!-- Plotly.js -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-
-<!-- Autocomplete styles -->
-<style>
-    .autocomplete-wrapper {
-        position: relative;
-    }
-    
-    .autocomplete-dropdown {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: white;
-        border: 1px solid #ced4da;
-        border-top: none;
-        border-radius: 0 0 4px 4px;
-        max-height: 300px;
-        overflow-y: auto;
-        z-index: 1000;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    .autocomplete-item {
-        padding: 0.75rem 1rem;
-        cursor: pointer;
-        border-bottom: 1px solid #f0f0f0;
-        transition: background-color 0.2s;
-    }
-    
-    .autocomplete-item:hover,
-    .autocomplete-item.active {
-        background-color: #f8f9fa;
-    }
-    
-    .autocomplete-item:last-child {
-        border-bottom: none;
-    }
-    
-    .autocomplete-item strong {
-        color: var(--gov-navy);
-    }
-
-    .autocomplete-count {
-        color: #6c757d;
-        font-size: 0.8rem;
-        margin-left: 0.5rem;
-    }
-</style>
 {% endblock %}
 
 {% block content %}
@@ -106,15 +58,10 @@
                 <p class="text-muted">H-1B & PERM Salary Data and Market Analysis</p>
             </div>
 
-            <!-- Profession Search -->
+            <!-- Profession Search (shared autocomplete) -->
             <div class="card mb-4">
                 <div class="card-body">
-                    <label for="profession-search" class="form-label">Search for another profession</label>
-                    <div class="autocomplete-wrapper">
-                        <input type="text" class="form-control" id="profession-search" 
-                               placeholder="Type job title..." autocomplete="off">
-                        <div id="profession-autocomplete" class="autocomplete-dropdown" style="display: none;"></div>
-                    </div>
+                    {% include "webapp/includes/autocomplete_input.html" with input_id="profession-search" input_name="profession" placeholder="e.g., Software Engineer, Data Analyst" endpoint_url=job_title_autocomplete_url display_field="title" count_field="total_filings" slug_field="slug" navigate_url_pattern="/job-title/__slug__/" label="Search for another profession" %}
                 </div>
             </div>
             
@@ -166,11 +113,7 @@
             
             <!-- A. Market Overview Cards -->
             <div class="row mb-4">
-                {% with start_year_str=start_year|stringformat:"s" %}
-                    {% with filings_subtext="FY"|add:start_year_str|add:"-Present" %}
-                    {% include "webapp/includes/stat_card.html" with value=stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
-                    {% endwith %}
-                {% endwith %}
+                {% include "webapp/includes/stat_card.html" with value=cluster.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext="All time (charts below use selected years)" %}
                 {% include "webapp/includes/stat_card.html" with value=stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="National Average" prefix="$" %}
                 {% if stats.growth_period.start_year and stats.growth_period.end_year %}
                     {% with growth_start_str=stats.growth_period.start_year|stringformat:"s" %}
@@ -225,7 +168,7 @@
                         {% endwith %}
                     {% endif %}
                 {% endif %}
-                {% include "webapp/includes/stat_card.html" with value=stats.top_employers_brief|length value_class="text-info" label="Top Employers" subtext="Hiring This Role" %}
+                {% include "webapp/includes/stat_card.html" with value=stats.top_employers|length value_class="text-info" label="Top Employers" subtext="Hiring This Role" %}
             </div>
             
             <!-- B. Salary Distribution -->
@@ -254,14 +197,14 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped table-hover">
+                        <table class="table table-striped table-hover sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
                             <thead>
                                 <tr>
-                                    <th>Employer</th>
-                                    <th class="text-end">Filings</th>
-                                    <th class="text-end">Median Salary</th>
-                                    <th class="text-end">Salary Range</th>
-                                    <th class="text-end">Approval Rate</th>
+                                    <th data-sort-col="0" data-sort-type="text">Employer</th>
+                                    <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
+                                    <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
+                                    <th class="text-end" data-sort-col="3" data-sort-type="text">Salary Range</th>
+                                    <th class="text-end" data-sort-col="4" data-sort-type="number">Approval Rate</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -304,13 +247,13 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive mb-4">
-                        <table class="table table-striped">
+                        <table class="table table-striped table-hover sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
                             <thead>
                                 <tr>
-                                    <th>Experience Level</th>
-                                    <th class="text-end">Filings</th>
-                                    <th class="text-end">Median Salary</th>
-                                    <th class="text-end">Salary Range</th>
+                                    <th data-sort-col="0" data-sort-type="text">Experience Level</th>
+                                    <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
+                                    <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
+                                    <th class="text-end" data-sort-col="3" data-sort-type="text">Salary Range</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -334,14 +277,7 @@
                     
                     <!-- Experience Level Chart -->
                     {% if chart_data.experience_salary %}
-                    <div id="chart-experience-salary" style="min-height: 300px;">
-                        <div class="text-center text-muted py-5">
-                            <div class="spinner-border spinner-border-sm" role="status">
-                                <span class="visually-hidden">Loading chart...</span>
-                            </div>
-                            <div class="mt-2">Loading chart...</div>
-                        </div>
-                    </div>
+                    {% include "webapp/includes/chart_loading_container.html" with element_id="chart-experience-salary" %}
                     {% else %}
                     <p class="text-muted text-center py-4">Chart data not available</p>
                     {% endif %}
@@ -359,14 +295,7 @@
                             <h5 class="mb-0">Geographic Distribution</h5>
                         </div>
                         <div class="card-body">
-                            <div id="chart-geographic-dist" style="min-height: 300px;">
-                                <div class="text-center text-muted py-5">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">Loading chart...</span>
-                                    </div>
-                                    <div class="mt-2">Loading chart...</div>
-                                </div>
-                            </div>
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-geographic-dist" %}
                         </div>
                     </div>
                 </div>
@@ -378,14 +307,7 @@
                             <h5 class="mb-0">Median Salary by State</h5>
                         </div>
                         <div class="card-body">
-                            <div id="chart-geographic-dist-median" style="min-height: 300px;">
-                                <div class="text-center text-muted py-5">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">Loading chart...</span>
-                                    </div>
-                                    <div class="mt-2">Loading chart...</div>
-                                </div>
-                            </div>
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-geographic-dist-median" %}
                         </div>
                     </div>
                 </div>
@@ -401,13 +323,13 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table table-striped sortable-table" data-initial-sort-col="2" data-initial-sort-dir="desc">
                             <thead>
                                 <tr>
-                                    <th>City</th>
-                                    <th>State</th>
-                                    <th class="text-end">Filings</th>
-                                    <th class="text-end">Median Salary</th>
+                                    <th data-sort-col="0" data-sort-type="text">City</th>
+                                    <th data-sort-col="1" data-sort-type="text">State</th>
+                                    <th class="text-end" data-sort-col="2" data-sort-type="number">Filings</th>
+                                    <th class="text-end" data-sort-col="3" data-sort-type="number">Median Salary</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -492,14 +414,7 @@
                             <h5 class="mb-0">Filing Volume Trend</h5>
                         </div>
                         <div class="card-body">
-                            <div id="chart-filing-volume" style="min-height: 300px;">
-                                <div class="text-center text-muted py-5">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">Loading chart...</span>
-                                    </div>
-                                    <div class="mt-2">Loading chart...</div>
-                                </div>
-                            </div>
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-filing-volume" %}
                         </div>
                     </div>
                 </div>
@@ -512,14 +427,7 @@
                             <h5 class="mb-0">Median Salary Trend</h5>
                         </div>
                         <div class="card-body">
-                            <div id="chart-salary-trend" style="min-height: 300px;">
-                                <div class="text-center text-muted py-5">
-                                    <div class="spinner-border spinner-border-sm" role="status">
-                                        <span class="visually-hidden">Loading chart...</span>
-                                    </div>
-                                    <div class="mt-2">Loading chart...</div>
-                                </div>
-                            </div>
+                            {% include "webapp/includes/chart_loading_container.html" with element_id="chart-salary-trend" %}
                         </div>
                     </div>
                 </div>
@@ -544,13 +452,13 @@
                         Compare how top companies pay for this role.
                     </p>
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table table-striped table-hover sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
                             <thead>
                                 <tr>
-                                    <th>Company</th>
-                                    <th class="text-end">Filings</th>
-                                    <th class="text-end">Median Salary</th>
-                                    <th class="text-end">Approval Rate</th>
+                                    <th data-sort-col="0" data-sort-type="text">Company</th>
+                                    <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
+                                    <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
+                                    <th class="text-end" data-sort-col="3" data-sort-type="number">Approval Rate</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -783,165 +691,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 {% endif %}
 
-<!-- Profession Search Autocomplete -->
-<script>
-(function() {
-    'use strict';
-    
-    const professionInput = document.getElementById('profession-search');
-    const autocompleteDropdown = document.getElementById('profession-autocomplete');
-    const profileBaseUrl = "{% url 'job_title_profile' slug='__slug__' %}";
-    let autocompleteTimeout = null;
-    let currentSuggestions = [];
-    let selectedIndex = -1;
-    const countFormatter = new Intl.NumberFormat('en-US');
-    
-    if (!professionInput || !autocompleteDropdown) {
-        return;
-    }
-    
-    // Debounce function
-    function debounce(func, wait) {
-        return function(...args) {
-            clearTimeout(autocompleteTimeout);
-            autocompleteTimeout = setTimeout(() => func.apply(this, args), wait);
-        };
-    }
-    
-    // Fetch autocomplete suggestions
-    async function fetchSuggestions(query) {
-        if (query.length < 2) {
-            hideAutocomplete();
-            return;
-        }
-        
-        try {
-            const response = await fetch(`{% url 'job_title_autocomplete' %}?q=${encodeURIComponent(query)}`);
-            if (!response.ok) {
-                throw new Error('Failed to fetch suggestions');
-            }
-            const suggestions = await response.json();
-            currentSuggestions = suggestions;
-            displaySuggestions(suggestions, query);
-        } catch (error) {
-            console.error('Autocomplete error:', error);
-            hideAutocomplete();
-        }
-    }
-    
-    // Display suggestions in dropdown
-    function displaySuggestions(suggestions, query) {
-        if (suggestions.length === 0) {
-            hideAutocomplete();
-            return;
-        }
-        
-        const queryLower = query.toLowerCase();
-        const html = suggestions.map((suggestion, index) => {
-            const suggestionLower = suggestion.title.toLowerCase();
-            const matchIndex = suggestionLower.indexOf(queryLower);
-            const countLabel = suggestion.total_filings ? `${countFormatter.format(suggestion.total_filings)} filings` : '—';
-            
-            if (matchIndex === -1) {
-                return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(suggestion.title)}<span class="autocomplete-count">${countLabel}</span></div>`;
-            }
-            
-            const before = suggestion.title.substring(0, matchIndex);
-            const match = suggestion.title.substring(matchIndex, matchIndex + query.length);
-            const after = suggestion.title.substring(matchIndex + query.length);
-            
-            return `<div class="autocomplete-item" data-index="${index}">${escapeHtml(before)}<strong>${escapeHtml(match)}</strong>${escapeHtml(after)}<span class="autocomplete-count">${countLabel}</span></div>`;
-        }).join('');
-        
-        autocompleteDropdown.innerHTML = html;
-        autocompleteDropdown.style.display = 'block';
-        selectedIndex = -1;
-        
-        // Add click handlers
-        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-            item.addEventListener('click', function() {
-                const index = parseInt(this.dataset.index);
-                selectSuggestion(suggestions[index]);
-            });
-            
-            item.addEventListener('mouseenter', function() {
-                selectedIndex = parseInt(this.dataset.index);
-                updateHighlight();
-            });
-        });
-    }
-    
-    // Hide autocomplete dropdown
-    function hideAutocomplete() {
-        autocompleteDropdown.style.display = 'none';
-        currentSuggestions = [];
-        selectedIndex = -1;
-    }
-    
-    // Select a suggestion and navigate to job title profile
-    function selectSuggestion(suggestion) {
-        if (!suggestion || !suggestion.slug) {
-            return;
-        }
-        window.location.href = profileBaseUrl.replace('__slug__', suggestion.slug);
-    }
-    
-    // Update highlight for keyboard navigation
-    function updateHighlight() {
-        autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach((item, index) => {
-            if (index === selectedIndex) {
-                item.classList.add('active');
-            } else {
-                item.classList.remove('active');
-            }
-        });
-    }
-    
-    // Escape HTML to prevent XSS
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
-    // Debounced input handler
-    const debouncedFetch = debounce((query) => {
-        fetchSuggestions(query);
-    }, 300);
-    
-    // Event listeners
-    professionInput.addEventListener('input', function() {
-        const query = this.value.trim();
-        debouncedFetch(query);
-    });
-    
-    professionInput.addEventListener('keydown', function(e) {
-        if (autocompleteDropdown.style.display === 'none' || currentSuggestions.length === 0) {
-            return;
-        }
-        
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            selectedIndex = Math.min(selectedIndex + 1, currentSuggestions.length - 1);
-            updateHighlight();
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            selectedIndex = Math.max(selectedIndex - 1, -1);
-            updateHighlight();
-        } else if (e.key === 'Enter' && selectedIndex >= 0) {
-            e.preventDefault();
-            selectSuggestion(currentSuggestions[selectedIndex]);
-        } else if (e.key === 'Escape') {
-            hideAutocomplete();
-        }
-    });
-    
-    // Hide autocomplete when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!professionInput.contains(e.target) && !autocompleteDropdown.contains(e.target)) {
-            hideAutocomplete();
-        }
-    });
-})();
-</script>
 {% endblock %}

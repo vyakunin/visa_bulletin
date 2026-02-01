@@ -1,1 +1,0 @@
-2025-12-28 10:50:10 - {"timestamp": "2025-12-28T10:50:10.184687", "script": "/private/var/tmp/_bazel_vyakunin/c11e7c4a7a663c4f29287067808714fc/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/scripts/salary/apply_review_decisions.runfiles/_main/scripts/salary/apply_review_decisions.py", "args": {"decisions_count": 34}, "context": "Applying review decisions from dry run"}

@@ -212,6 +212,18 @@ sudo systemctl reload postgresql
 echo "✅ PostgreSQL configured"
 
 # =============================================================================
+# Step 4b: Install Redis (shared cache for employer profile and salary pages)
+# =============================================================================
+echo ""
+echo "[4b/9] Installing Redis..."
+echo "--------------------------------------------------------------"
+
+sudo apt install -y redis-server
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+echo "✅ Redis installed and enabled (redis://127.0.0.1:6379)"
+
+# =============================================================================
 # Step 5: Create Database User and Databases
 # =============================================================================
 echo ""
@@ -338,6 +350,9 @@ DB_PASSWORD=$DB_PASSWORD
 DB_HOST=localhost
 DB_PORT=5432
 
+# Shared cache (employer profile, salary search). Omit for local-only LocMem cache.
+REDIS_URL=redis://127.0.0.1:6379/1
+
 # Django Settings
 DEBUG=False
 SECRET_KEY=$(openssl rand -base64 32)
@@ -400,6 +415,7 @@ echo "  ✅ Python dependencies (including gunicorn)"
 echo "  ✅ ${SWAP_SIZE}MB swap file (swappiness=60)"
 echo "  ✅ Docker and docker-compose"
 echo "  ✅ PostgreSQL (optimized for bulk operations)"
+echo "  ✅ Redis (shared cache for employer/salary pages)"
 echo "  ✅ Blue-green databases: $DB_BLUE, $DB_GREEN"
 echo "  ✅ Monitoring: sysstat, atop, health_check.sh"
 echo "  ✅ Bazel memory limits"

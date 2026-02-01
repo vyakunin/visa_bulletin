@@ -78,6 +78,7 @@ REQUIRED_BINARIES=(
     "scripts/salary/update_employer_stats"
     "scripts/salary/cluster_existing_employers"
     "scripts/salary/update_job_title_cluster_stats"
+    "scripts/salary/populate_job_title_slugs"
     "scripts/cache/warm_cache"
 )
 
@@ -331,6 +332,9 @@ run_bin "scripts/salary/cluster_existing_employers" 2>&1
 
 log "--- Post-processing: Update job title stats ---"
 run_bin "scripts/salary/update_job_title_cluster_stats" 2>&1
+
+log "--- Post-processing: Populate job title slugs (ensures autocomplete works) ---"
+run_bin "scripts/salary/populate_job_title_slugs" 2>&1
 
 # 6e. Run VACUUM ANALYZE to update statistics after bulk operations
 log "--- Running VACUUM ANALYZE (cleans up and updates statistics) ---"

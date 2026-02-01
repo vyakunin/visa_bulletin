@@ -76,7 +76,9 @@ def get_job_title_statistics(
     original_years = years
     auto_expanded = False
     
-    # Build base queryset - use normalized title when aggregating across levels
+    # Build base queryset - use normalized title when aggregating across levels.
+    # When normalized_title is set, count matches JobTitleCluster.total_filings
+    # (stats script sets cluster total_filings by normalized title so autocomplete matches profile).
     base_filters = {
         'fiscal_year__gte': start_year,
         'wage_annual__isnull': False,
@@ -111,12 +113,12 @@ def get_job_title_statistics(
         base_filters_all_years['wage_annual__isnull'] = False
         base_filters_all_years['wage_annual__gte'] = MIN_REASONABLE_SALARY
         base_filters_all_years['wage_annual__lte'] = MAX_REASONABLE_SALARY
-        
+
         if normalized_title:
             base_filters_all_years['job_title_entity__title_normalized'] = normalized_title
         else:
             base_filters_all_years['job_title_entity__canonical_cluster'] = cluster
-        
+
         records_all_years = SalaryRecord.objects.filter(**base_filters_all_years)
         records_all_years = apply_program_filter(records_all_years, program_filter)
         
@@ -154,14 +156,6 @@ def get_job_title_statistics(
             
             # Update cache key to reflect expansion
             cache_key = f"job_title_stats:{base_key}:{program_filter}:all:{level_cache_key}"
-    
-    # Top 3 employers by filing count
-    top_employers_brief = list(
-        records
-        .values('employer__canonical_cluster__canonical_name', 'employer__canonical_cluster__slug')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:3]
-    )
     
     # B. Salary Distribution (percentiles)
     salary_percentiles = calculate_salary_percentiles(records)
@@ -210,6 +204,7 @@ def get_job_title_statistics(
         item['experience_level_display'] = JobTitle.format_experience_level(
             item.get('job_title_entity__experience_level')
         )
+    experience_analysis.sort(key=lambda x: x['count'], reverse=True)
     experience_levels = {
         item['job_title_entity__experience_level']
         for item in experience_analysis
@@ -313,7 +308,6 @@ def get_job_title_statistics(
     # Compile all stats
     stats = {
         'basic': basic_stats,
-        'top_employers_brief': top_employers_brief,
         'yoy_growth': yoy_growth,
         'growth_period': {
             'start_year': growth_start_year,

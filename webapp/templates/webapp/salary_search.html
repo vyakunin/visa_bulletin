@@ -131,17 +131,14 @@
                 <div class="card-body">
                     <form method="get" action="" id="searchForm">
                         <div class="row g-2">
-                            <!-- Job Title / Keywords -->
+                            <!-- Job Title / Keywords (shared autocomplete - submits form on select) -->
                             <div class="col-md-6">
-                                <label for="q" class="form-label">Job Title / Keywords</label>
-                                <input type="text" class="form-control" id="q" name="q" 
-                                       value="{{ query }}" 
-                                       placeholder="e.g., Software Engineer, Data Scientist">
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="q" input_name="q" input_value=query placeholder="e.g., Software Engineer, Data Scientist" endpoint_url=job_title_autocomplete_url display_field="title" count_field="total_filings" label="Job Title / Keywords" submit_on_select=True %}
                             </div>
                             
-                            <!-- Employer Name -->
+                            <!-- Employer Name (shared autocomplete - submits form on select) -->
                             <div class="col-md-6">
-                                {% include "webapp/includes/autocomplete_input.html" with input_id="employer" input_name="employer" input_value=employer_filter placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" label="Employer Name" %}
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="employer" input_name="employer" input_value=employer_filter placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" label="Employer Name" submit_on_select=True %}
                             </div>
                             
                             <!-- State -->
@@ -481,7 +478,15 @@
                                         </a>
                                         {% endif %}
                                     </td>
-                                    <td>{{ record.job_title|truncatechars:50 }}</td>
+                                    <td>
+                                        {% if record.job_title_entity and record.job_title_entity.canonical_cluster and record.job_title_entity.canonical_cluster.slug %}
+                                        <a href="{% url 'job_title_profile' slug=record.job_title_entity.canonical_cluster.slug %}" class="job-title-link">
+                                            {{ record.job_title|truncatechars:50 }}
+                                        </a>
+                                        {% else %}
+                                        {{ record.job_title|truncatechars:50 }}
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if record.worksite_city %}{{ record.worksite_city }}, {% endif %}{{ record.worksite_state }}
                                     </td>

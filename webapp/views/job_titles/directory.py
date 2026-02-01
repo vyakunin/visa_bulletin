@@ -6,71 +6,52 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.cache import cache_page
-from django.db.models import Avg, Case, Count, F, IntegerField, OuterRef, Subquery, Sum, Value, When
+from django.db.models import Avg, Count, Sum
 
 from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
-from models.job_title import JobTitle, JobTitleCluster
+from models.job_title import JobTitleCluster
 
 
 @cache_page(60 * 60)  # Cache for 1 hour
 def job_title_autocomplete_view(request):
     """
     API endpoint for job title autocomplete suggestions.
-    
+
+    Uses JobTitleCluster (same as directory). Clusters are populated by
+    cluster_job_titles and update_job_title_cluster_stats; slugs by
+    populate_job_title_slugs (run after update_job_title_cluster_stats in
+    refresh_data.sh).
+
     Query params:
         q: Search query (partial job title)
         limit: Maximum number of results (default: 20)
-    
-    Returns JSON array of objects with title and slug.
+
+    Returns JSON array of objects with title, slug, total_filings.
     """
     query = request.GET.get('q', '').strip()
     limit = int(request.GET.get('limit', 20))
-    
+
     if not query or len(query) < 2:
         return HttpResponse(json.dumps([]), content_type='application/json')
-    
-    normalized_query = JobTitle.normalize_title(query)
-    if not normalized_query:
-        return HttpResponse(json.dumps([]), content_type='application/json')
 
-    title_candidates = (
-        JobTitle.objects
-        .filter(
-            title_normalized=OuterRef('title_normalized'),
-            canonical_cluster__slug__isnull=False,
+    clusters = (
+        JobTitleCluster.objects.filter(
+            slug__isnull=False,
+            total_filings__gt=0,
+            canonical_title__icontains=query,
         )
-        .annotate(
-            has_level=Case(
-                When(experience_level='', then=Value(0)),
-                default=Value(1),
-                output_field=IntegerField(),
-            )
-        )
-        .order_by('has_level', '-total_filings', 'title')
+        .order_by('-total_filings', 'canonical_title')[:limit]
     )
 
-    matches = (
-        JobTitle.objects
-        .filter(title_normalized__icontains=normalized_query)
-        .exclude(total_filings=0)
-        .values('title_normalized')
-        .annotate(
-            total_filings=Sum('total_filings'),
-            slug=Subquery(title_candidates.values('canonical_cluster__slug')[:1]),
-            display_title=Subquery(title_candidates.values('title')[:1]),
-        )
-        .filter(slug__isnull=False)
-        .order_by('-total_filings', 'title_normalized')[:limit]
-    )
+    suggestions = [
+        {
+            'slug': c.slug,
+            'title': c.canonical_title,
+            'total_filings': c.total_filings,
+        }
+        for c in clusters
+    ]
 
-    suggestions = []
-    for match in matches:
-        title = match['display_title'] or match['title_normalized'].title()
-        suggestions.append({
-            'slug': match['slug'],
-            'title': title,
-            'total_filings': match['total_filings'],
-        })
     return HttpResponse(json.dumps(suggestions), content_type='application/json')
 
 
@@ -157,10 +138,10 @@ def job_title_directory_view(request):
         'has_pagination': pagination['total_pages'] > 1,
         'pagination_query': build_pagination_query_string(params),
         'page_range': pagination['page_range'],
-        'page_title': 'Job Title Directory - Salary Data by Role | Visa Bulletin Dashboard',
+        'page_title': 'Job Title Directory - Salary Data by Role | U.S. Immigration Data',
         'page_description': 'Explore salary and sponsorship data by job title. Browse top roles, view average salaries, and jump to detailed job title profiles.',
         # Autocomplete URL
-        'job_title_autocomplete_url': reverse('job_title_autocomplete'),
+        'job_title_autocomplete_url': request.build_absolute_uri(reverse('job_title_autocomplete')),
     }
     
     return render(request, 'webapp/job_title_directory.html', context)

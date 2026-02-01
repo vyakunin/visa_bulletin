@@ -105,48 +105,56 @@
         {% endif %}
         
         {% if has_data %}
-            <!-- Projection Results for Each Visa Class -->
+            <!-- Summary table: last update and current projection per visa type -->
             {% if visa_class_data %}
-            <div class="alert projection-alert alert-info" role="alert">
-                <h3 class="h5 alert-heading"><i class="bi bi-calendar-check"></i> Processing Estimates by Visa Class</h3>
-                <p class="mb-2 small text-muted">
-                    Hover over the projection lines in the chart below to see estimated dates for each visa class.
-                </p>
-                <div class="row">
-                    {% for data in visa_class_data %}
-                    {% with projection=data.projection %}
-                    {% if projection and projection.estimated_date %}
-                    <div class="col-md-6 col-lg-4 mb-2">
-                        <div class="card">
-                            <div class="card-body py-2 px-3">
-                                <h4 class="card-title mb-1 h6">{{ data.visa_class_label|default:data.visa_class }}</h4>
-                                {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
-                                <p class="mb-0 small">
-                                    <strong>Est. {{ projection.estimated_date|date:"F Y" }}</strong>
-                                </p>
-                                <p class="mb-0 small text-muted">
-                                    {{ projection.avg_progress_days_per_month }} days/month
-                                </p>
-                                {% elif projection.status == 'current' %}
-                                <p class="mb-0 small text-success"><i class="bi bi-check-circle-fill"></i> Current</p>
-                                {% elif projection.status == 'no_movement' %}
-                                <p class="mb-0 small text-warning"><i class="bi bi-exclamation-triangle"></i> No movement</p>
-                                {% endif %}
-                            </div>
-                        </div>
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <h3 class="h6 mb-2"><i class="bi bi-calendar-check"></i> Processing Estimates by Visa Class</h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 sortable-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Visa Type</th>
+                                    <th scope="col">Last Update</th>
+                                    <th scope="col">Current Projection</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for data in visa_class_data %}
+                                {% with projection=data.projection %}
+                                <tr>
+                                    <td>{{ data.visa_class_label|default:data.visa_class }}</td>
+                                    <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
+                                    <td>
+                                        {% if projection %}
+                                        {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
+                                        Est. {{ projection.estimated_date|date:"F Y" }} <span class="text-muted small">({{ projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
+                                        {% elif projection.status == 'current' %}
+                                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> Current</span>
+                                        {% elif projection.status == 'no_movement' %}
+                                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> No movement</span>
+                                        {% else %}
+                                        —
+                                        {% endif %}
+                                        {% else %}
+                                        —
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endwith %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    {% endif %}
-                    {% endwith %}
-                    {% endfor %}
                 </div>
-                <hr class="my-2">
-                <p class="mb-0 small">
-                    <i class="bi bi-exclamation-triangle"></i> <em>These are rough estimates based on historical trends. Actual processing times may vary significantly due to policy changes, backlogs, and other factors.</em>
-                    <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;" class="ms-1">How are projections calculated? →</a>
-                </p>
             </div>
             {% endif %}
-            
+
+            <p class="small text-muted mb-3">
+                <i class="bi bi-exclamation-triangle"></i> <em>Projections are rough estimates based on historical trends. Actual processing times may vary.</em>
+                <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
+            </p>
+
             <!-- Chart -->
             <div class="card" id="chart-container">
                 <div class="card-body">

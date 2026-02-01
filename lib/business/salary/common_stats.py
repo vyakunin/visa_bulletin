@@ -175,6 +175,27 @@ def calculate_salary_percentiles(queryset) -> dict:
     }
 
 
+# Cap histogram X-axis at this percentile so the chart focuses on where data is
+# (avoids long empty tail when a few outliers extend to e.g. $750k)
+HISTOGRAM_PERCENTILE_CAP = 95
+
+
+def _salary_percentile_value(salaries: list[float], p: float) -> float:
+    """Return the p-th percentile value (0 <= p <= 100)."""
+    if not salaries:
+        return 0.0
+    sorted_sal = sorted(salaries)
+    k = (len(sorted_sal) - 1) * (p / 100.0)
+    f = int(k)
+    if f < 0:
+        return float(sorted_sal[0])
+    if f >= len(sorted_sal) - 1:
+        return float(sorted_sal[-1])
+    d0 = float(sorted_sal[f])
+    d1 = float(sorted_sal[f + 1])
+    return d0 + (d1 - d0) * (k - f)
+
+
 def calculate_salary_histogram_with_overlays(
     queryset,
     overlay_values: list[str],
@@ -184,39 +205,57 @@ def calculate_salary_histogram_with_overlays(
     """
     Calculate salary histogram data for charting.
 
+    The X-axis range is capped at the 95th percentile so the chart adapts to the
+    data and does not show a long empty tail when a few salaries extend far right.
+    One extra bin [cap, cap+bin_width) holds the real count in that range; values
+    above that go in the last data bin.
+
     Returns dict with overall bins and overlay counts for selected values.
     """
-    salary_range = queryset.aggregate(min_sal=Min("wage_annual"), max_sal=Max("wage_annual"))
-    if not salary_range["min_sal"] or not salary_range["max_sal"]:
+    values_list = list(queryset.values_list("wage_annual", overlay_field))
+    wages = [float(w) for w, _ in values_list if w is not None]
+    if not wages:
         return {}
 
-    min_salary = float(salary_range["min_sal"])
-    max_salary = float(salary_range["max_sal"])
-    bin_width = (max_salary - min_salary) / num_bins
-    if bin_width == 0:
+    min_salary = min(wages)
+    max_salary = max(wages)
+    p98 = _salary_percentile_value(wages, HISTOGRAM_PERCENTILE_CAP)
+    cap_max = max(min_salary, min(max_salary, p98))
+    bin_width = (cap_max - min_salary) / num_bins
+    if bin_width <= 0:
         return {}
 
-    bins = []
     overall_counts = [0] * num_bins
     overlay_counts = {name: [0] * num_bins for name in overlay_values}
+    right_bin_end = cap_max + bin_width
+    right_bin_count = 0
+    right_bin_overlay = {name: 0 for name in overlay_values}
 
-    values = queryset.values_list("wage_annual", overlay_field)
-    for wage, overlay_value in values:
+    for wage, overlay_value in values_list:
         if wage is None:
             continue
         wage_value = float(wage)
-        index = int((wage_value - min_salary) / bin_width)
-        if index >= num_bins:
+        if wage_value >= right_bin_end:
             index = num_bins - 1
-        elif index < 0:
-            index = 0
+        elif wage_value >= cap_max:
+            right_bin_count += 1
+            if overlay_value in overlay_counts:
+                right_bin_overlay[overlay_value] += 1
+            continue
+        else:
+            index = int((wage_value - min_salary) / bin_width)
+            if index >= num_bins:
+                index = num_bins - 1
+            elif index < 0:
+                index = 0
         overall_counts[index] += 1
         if overlay_value in overlay_counts:
             overlay_counts[overlay_value][index] += 1
 
+    bins = []
     for i in range(num_bins):
         bin_start = min_salary + (i * bin_width)
-        bin_end = bin_start + bin_width
+        bin_end = bin_start + bin_width if i < num_bins - 1 else cap_max
         bins.append(
             {
                 "range_start": bin_start,
@@ -225,6 +264,17 @@ def calculate_salary_histogram_with_overlays(
                 "label": f"${bin_start:,.0f} - ${bin_end:,.0f}",
             }
         )
+    bins.append(
+        {
+            "range_start": cap_max,
+            "range_end": right_bin_end,
+            "count": right_bin_count,
+            "label": f"${cap_max:,.0f} - ${right_bin_end:,.0f}",
+        }
+    )
+    for name in overlay_values:
+        overlay_counts[name].append(right_bin_overlay[name])
+    overall_counts.append(right_bin_count)
 
     overlays = [
         {"employer_name": name, "counts": overlay_counts[name]} for name in overlay_values
@@ -242,43 +292,63 @@ def calculate_salary_histogram_with_experience_overlays(
     include_unspecified: bool,
     num_bins: int = 20,
 ) -> dict:
-    """Calculate salary histogram data with experience level overlays."""
-    salary_range = queryset.aggregate(min_sal=Min("wage_annual"), max_sal=Max("wage_annual"))
-    if not salary_range["min_sal"] or not salary_range["max_sal"]:
+    """
+    Calculate salary histogram data with experience level overlays.
+
+    X-axis range is capped at the 95th percentile. One extra bin [cap, cap+bin_width)
+    holds the real count in that range; values above that go in the last data bin.
+    """
+    values_list = list(
+        queryset.values_list("wage_annual", "job_title_entity__experience_level")
+    )
+    wages = [float(w) for w, _ in values_list if w is not None]
+    if not wages:
         return {}
 
-    min_salary = float(salary_range["min_sal"])
-    max_salary = float(salary_range["max_sal"])
-    bin_width = (max_salary - min_salary) / num_bins
-    if bin_width == 0:
+    min_salary = min(wages)
+    max_salary = max(wages)
+    p98 = _salary_percentile_value(wages, HISTOGRAM_PERCENTILE_CAP)
+    cap_max = max(min_salary, min(max_salary, p98))
+    bin_width = (cap_max - min_salary) / num_bins
+    if bin_width <= 0:
         return {}
 
     overlay_levels = list(experience_levels)
     if include_unspecified and "" not in overlay_levels:
         overlay_levels.append("")
 
-    bins = []
     overall_counts = [0] * num_bins
     overlay_counts = {level: [0] * num_bins for level in overlay_levels}
+    right_bin_end = cap_max + bin_width
+    right_bin_count = 0
+    right_bin_overlay = {level: 0 for level in overlay_levels}
 
-    values = queryset.values_list("wage_annual", "job_title_entity__experience_level")
-    for wage, level in values:
+    for wage, level in values_list:
         if wage is None:
             continue
         wage_value = float(wage)
-        index = int((wage_value - min_salary) / bin_width)
-        if index >= num_bins:
-            index = num_bins - 1
-        elif index < 0:
-            index = 0
-        overall_counts[index] += 1
         level_key = level or ""
+        if wage_value >= right_bin_end:
+            index = num_bins - 1
+        elif wage_value >= cap_max:
+            right_bin_count += 1
+            if level_key in overlay_counts:
+                right_bin_overlay[level_key] += 1
+            continue
+        else:
+            index = int((wage_value - min_salary) / bin_width)
+            if index >= num_bins:
+                index = num_bins - 1
+            elif index < 0:
+                index = 0
+        overall_counts[index] += 1
         if level_key in overlay_counts:
             overlay_counts[level_key][index] += 1
 
+    bins = []
     for i in range(num_bins):
         bin_start = min_salary + (i * bin_width)
-        bin_end = bin_start + bin_width
+        bin_end = bin_start + bin_width if i < num_bins - 1 else cap_max
         bins.append(
             {
                 "range_start": bin_start,
@@ -287,6 +357,17 @@ def calculate_salary_histogram_with_experience_overlays(
                 "label": f"${bin_start:,.0f} - ${bin_end:,.0f}",
             }
         )
+    bins.append(
+        {
+            "range_start": cap_max,
+            "range_end": right_bin_end,
+            "count": right_bin_count,
+            "label": f"${cap_max:,.0f} - ${right_bin_end:,.0f}",
+        }
+    )
+    for level in overlay_levels:
+        overlay_counts[level].append(right_bin_overlay[level])
+    overall_counts.append(right_bin_count)
 
     return {
         "bins": bins,

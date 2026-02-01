@@ -1,0 +1,88 @@
+# Cursor Indexing Exclusions
+# These files/directories are excluded from Cursor's indexing to improve performance
+# and reduce memory usage. This is separate from .gitignore.
+
+# =============================================================================
+# HIGH PRIORITY - Large data files causing memory issues
+# =============================================================================
+
+# DOL salary data files (5.8 GB of Excel files - main culprit!)
+data/salary/dol_data/
+
+# Visa bulletin HTML pages (215 files, 31 MB)
+data/bulletin/saved_pages/
+
+# All Excel/CSV data files (large, not source code)
+*.xlsx
+*.xls
+*.csv
+
+# =============================================================================
+# MEDIUM PRIORITY - Logs and generated files
+# =============================================================================
+
+# Log files (59 files)
+logs/
+*.log
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# =============================================================================
+# BUILD OUTPUTS - Not source code
+# =============================================================================
+
+# Bazel build outputs
+bazel-*/
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+.bazel_cache/
+.bazel/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# =============================================================================
+# OTHER EXCLUSIONS
+# =============================================================================
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE directories (Cursor handles its own, but exclude others)
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Lock files (large, generated)
+MODULE.bazel.lock
+
+# Data files that might be added
+data/salary/*.jsonl
+data/*.jsonl

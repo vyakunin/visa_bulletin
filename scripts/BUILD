@@ -177,9 +177,11 @@ py_binary(
         "//models:visa_cutoff_date",
         "//models:salary",
         "//lib/utils:logging_utils",
+        "//django_config:logging_config",
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+        requirement("redis"),  # Django Redis cache backend when REDIS_URL is set
     ],
     python_version = "PY3",
     env = {

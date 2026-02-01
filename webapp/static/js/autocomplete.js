@@ -90,6 +90,10 @@
                     throw new Error('Failed to fetch suggestions');
                 }
                 const suggestions = await response.json();
+                // Only apply suggestions if input still matches (avoid stale response overwriting correct highlight)
+                if (this.input.value !== query) {
+                    return;
+                }
                 this.currentSuggestions = suggestions;
                 this.showSuggestions(suggestions, query);
             } catch (error) {

@@ -1,0 +1,27 @@
+{
+  "exclude": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/bazel-*",
+    ".bazel_cache",
+    "data/salary/dol_data",
+    "data/bulletin/saved_pages",
+    "logs",
+    "venv",
+    "env",
+    "ENV",
+    ".venv",
+    "*.db",
+    "*.db-shm",
+    "*.db-wal"
+  ],
+  "ignore": [
+    "data/salary/dol_data/**",
+    "data/bulletin/saved_pages/**",
+    "logs/**"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Darwin"
+}
