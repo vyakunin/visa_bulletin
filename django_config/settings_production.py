@@ -61,8 +61,8 @@ else:
             },
         }
     }
-    # Connection pooling for better performance
-    DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
+    # Reuse connections briefly to avoid stale connections (SSL closed) from server idle timeout
+    DATABASES['default']['CONN_MAX_AGE'] = 60  # 1 minute
 
 # Application definition
 INSTALLED_APPS = [

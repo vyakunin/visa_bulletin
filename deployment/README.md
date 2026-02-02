@@ -205,6 +205,33 @@ sar -d
 sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 ```
 
+### Long-running requests (from prod logs)
+
+**Source:** `journalctl -u visa-bulletin-web.service --since '24 hours ago'` and gunicorn access logs.
+
+**Observed slow paths:**
+
+1. **Employer profile `similar_employers`** (cold cache)
+   - Single `SalaryRecord` aggregation by `worksite_state` → top 5 employer clusters by filing count.
+   - Observed **2–153s** depending on state size (e.g. nandos-restaurant-group 153s, coursera-inc 141s/82s, faurecia 117s, cleary-gottlieb 70s; smaller states 3–10s).
+   - Log line: `[employer_profile] similar_employers slug=... took Xs (single SalaryRecord aggregation)` and `page_total ... cache_hit=False took Xs`.
+
+2. **SSL connection closed (500s)**
+   - `django.db.utils.OperationalError: SSL connection has been closed unexpectedly` on job-title and employer views (e.g. GPTBot).
+   - Caused by reused Postgres connections (`CONN_MAX_AGE=600`) that were closed by server/idle timeout.
+
+3. **Large responses**
+   - `/employment-based/india/` and `/` returning 300–445 KB (first hit or cache miss).
+
+**Improvements:**
+
+| Area | Suggestion |
+|------|------------|
+| **similar_employers** | ✅ Implemented: (1) Limit to last 5 fiscal years. (2) Index `(worksite_state, employer)` added. (3) Cache per `(cluster_id, top_state)` 24h. (4) 15s statement timeout; return empty if exceeded. |
+| **Postgres SSL errors** | ✅ Implemented: `CONN_MAX_AGE = 60` in `django_config/settings_production.py`. |
+| **Nginx timing** | Add `$request_time` or `$upstream_response_time` to nginx `log_format` and `access_log` to analyze slow requests from access logs. |
+| **Gunicorn** | `--timeout 60` is set; ensure slow views complete or are aborted within that (employer cold path can exceed 60s; consider view-level timeout or async/cache-first). |
+
 ## 🔒 Security
 
 - **Secret Key**: Store in `.env`, never in code

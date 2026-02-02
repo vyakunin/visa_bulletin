@@ -2,11 +2,13 @@
 
 import logging
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import connection
 from django.db.models import Avg, Count, F, Max, Min, Q
+from django.db.utils import OperationalError
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -25,36 +27,15 @@ from models.salary import Employer, EmployerCluster, SalaryRecord
 
 logger = logging.getLogger(__name__)
 
+SIMILAR_EMPLOYERS_CACHE_TIMEOUT = 86400  # 24h
+SIMILAR_EMPLOYERS_QUERY_TIMEOUT_MS = 15000  # 15s
 
-@cache_page(settings.CACHE_TIMEOUT)
-def employer_profile_view(request, slug):
-    """
-    Employer profile page showing sponsorship statistics and trends.
-    
-    Args:
-        slug: Employer cluster slug (from URL)
-        
-    Query params:
-        years: Number of fiscal years to show (default: 5, max: 20)
-        program: Filter by visa program (h1b, perm, all) (default: all)
-        level: Filter by experience level (entry, junior, mid, senior, staff, principal,
-               lead, manager, director, unspecified, all) (default: all)
-        level: Filter by experience level (entry, junior, mid, senior, staff, principal,
-               lead, manager, director, unspecified, all) (default: all)
-        level: Filter by experience level (entry, junior, mid, senior, staff, principal,
-               lead, manager, director, unspecified, all) (default: all)
-    """
-    t_page_start = time.perf_counter()
 
-    # 1. Try to find cluster by slug
-    t0 = time.perf_counter()
+def _get_cluster_or_404(slug: str):
+    """Resolve employer cluster by slug; redirect if name match, else 404."""
     try:
         cluster = EmployerCluster.objects.get(slug=slug)
     except EmployerCluster.DoesNotExist:
-        elapsed = time.perf_counter() - t0
-        logger.info("[employer_profile] cluster_get_by_slug miss slug=%s took %.3fs", slug, elapsed)
-        # 2. Try to find by name variation and redirect
-        t0 = time.perf_counter()
         slug_normalized = slug.replace('-', ' ').lower()
         employers = Employer.objects.filter(
             name_normalized__icontains=slug_normalized
@@ -62,24 +43,19 @@ def employer_profile_view(request, slug):
         if employers.exists():
             canonical_cluster = employers.first().canonical_cluster
             if canonical_cluster and canonical_cluster.slug:
-                elapsed = time.perf_counter() - t0
-                logger.info("[employer_profile] redirect_lookup slug=%s took %.3fs", slug, elapsed)
                 return redirect('employer_profile', slug=canonical_cluster.slug, permanent=True)
-        elapsed = time.perf_counter() - t0
-        logger.info("[employer_profile] redirect_lookup no_match slug=%s took %.3fs", slug, elapsed)
         raise Http404("Employer not found")
-    elapsed = time.perf_counter() - t0
-    logger.info("[employer_profile] cluster_get_by_slug slug=%s cluster_id=%s took %.3fs", slug, cluster.id, elapsed)
-
     if cluster.canonical_name == "Unknown" or cluster.slug == "unknown":
         raise Http404("Employer not found")
-    
-    # Get query parameters
+    return cluster
+
+
+def _parse_employer_profile_params(request):
+    """Parse years, program, level from request; return dict with start_year, level_choices, etc."""
     try:
-        years = min(int(request.GET.get('years', 5)), 20)  # Max 20 years
+        years = min(int(request.GET.get('years', 5)), 20)
     except (ValueError, TypeError):
         years = 5
-    
     program_filter = request.GET.get('program', 'all').lower()
     level_param = request.GET.get('level', 'all').lower().strip()
     level_choices = list(JobTitle._meta.get_field('experience_level').choices)
@@ -93,284 +69,254 @@ def employer_profile_view(request, slug):
     else:
         experience_level = None
         level_filter = 'all'
-
-    level_param = request.GET.get('level', 'all').lower().strip()
-    level_choices = list(JobTitle._meta.get_field('experience_level').choices)
-    level_values = {value for value, _ in level_choices if value}
-    if level_param == 'unspecified':
-        experience_level = ''
-        level_filter = 'unspecified'
-    elif level_param in level_values:
-        experience_level = level_param
-        level_filter = level_param
-    else:
-        experience_level = None
-        level_filter = 'all'
-
-    level_param = request.GET.get('level', 'all').lower().strip()
-    level_choices = list(JobTitle._meta.get_field('experience_level').choices)
-    level_values = {value for value, _ in level_choices if value}
-    if level_param == 'unspecified':
-        experience_level = ''
-        level_filter = 'unspecified'
-    elif level_param in level_values:
-        experience_level = level_param
-        level_filter = level_param
-    else:
-        experience_level = None
-        level_filter = 'all'
-    
-    level_param = request.GET.get('level', 'all').lower().strip()
-    level_choices = list(JobTitle._meta.get_field('experience_level').choices)
-    level_values = {value for value, _ in level_choices if value}
-    if level_param == 'unspecified':
-        experience_level = ''
-        level_filter = 'unspecified'
-    elif level_param in level_values:
-        experience_level = level_param
-        level_filter = level_param
-    else:
-        experience_level = None
-        level_filter = 'all'
-    level_param = request.GET.get('level', 'all').lower().strip()
-    level_choices = list(JobTitle._meta.get_field('experience_level').choices)
-    level_values = {value for value, _ in level_choices if value}
-    if level_param == 'unspecified':
-        experience_level = ''
-        level_filter = 'unspecified'
-    elif level_param in level_values:
-        experience_level = level_param
-        level_filter = level_param
-    else:
-        experience_level = None
-        level_filter = 'all'
-    level_param = request.GET.get('level', 'all').lower().strip()
-    level_choices = list(JobTitle._meta.get_field('experience_level').choices)
-    level_values = {value for value, _ in level_choices if value}
-    if level_param == 'unspecified':
-        experience_level = ''
-        level_filter = 'unspecified'
-    elif level_param in level_values:
-        experience_level = level_param
-        level_filter = level_param
-    else:
-        experience_level = None
-        level_filter = 'all'
-    
-    # Calculate start year
     current_year = datetime.now().year
     start_year = current_year - years
-    
-    # Build base queryset for employer cluster records
+    return {
+        'years': years,
+        'program_filter': program_filter,
+        'level_filter': level_filter,
+        'level_choices': level_choices,
+        'experience_level': experience_level,
+        'start_year': start_year,
+    }
+
+
+def _get_employer_records_queryset(cluster, params):
+    """Base SalaryRecord queryset for this employer and filters."""
     records = SalaryRecord.objects.filter(
         employer__canonical_cluster=cluster,
-        fiscal_year__gte=start_year,
-        wage_annual__isnull=False,  # Only records with valid salary data
+        fiscal_year__gte=params['start_year'],
+        wage_annual__isnull=False,
         is_worksite=False,
     )
-    
-    # Apply program filter
-    if program_filter == 'h1b':
+    if params['program_filter'] == 'h1b':
         records = records.filter(visa_program=VisaProgram.H1B)
-    elif program_filter == 'perm':
+    elif params['program_filter'] == 'perm':
         records = records.filter(visa_program=VisaProgram.PERM)
-    
-    # Full-page cache: stats + chart_data + similar_employers so cache hit skips build_charts and similar_employers.
-    cache_key = f"employer_page_v5:{cluster.id}:{program_filter}:{years}"
+    return records
+
+
+def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
+    """Compute stats dict (basic, top_titles, state_dist, yoy_trends, etc.) for employer profile."""
     t0 = time.perf_counter()
-    page_payload = cache.get(cache_key)
-    cache_hit = page_payload is not None
-    elapsed = time.perf_counter() - t0
-    logger.info("[employer_profile] cache_get slug=%s cache_key=%s hit=%s took %.3fs", slug, cache_key, cache_hit, elapsed)
+    basic_stats = records.aggregate(
+        total_filings=Count('id'),
+        approved_filings=Count('id', filter=Q(case_status=1)),
+        median_salary=Avg('wage_annual'),
+        min_salary=Min('wage_annual'),
+        max_salary=Max('wage_annual'),
+    )
+    logger.info("[employer_profile] basic_stats slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    approval_rate = (basic_stats['approved_filings'] / basic_stats['total_filings'] * 100) if basic_stats['total_filings'] else 0
 
-    if cache_hit:
-        stats = page_payload["stats"]
-        chart_data = page_payload["chart_data"]
-        similar_employers = page_payload["similar_employers"]
-        top_state = page_payload.get("top_state")
-    else:
-        stats = None
-
-    if stats is None:
-        t_stats_start = time.perf_counter()
-        # Compute basic statistics
-        t0 = time.perf_counter()
-        basic_stats = records.aggregate(
-            total_filings=Count('id'),
-            approved_filings=Count('id', filter=Q(case_status=1)),  # CaseStatus.CERTIFIED = 1
+    t0 = time.perf_counter()
+    top_titles = list(
+        records
+        .filter(
+            job_title_entity__isnull=False,
+            job_title_entity__canonical_cluster__isnull=False,
+        )
+        .values(
+            'job_title_entity__canonical_cluster__canonical_title',
+            'job_title_entity__canonical_cluster__slug',
+            'job_title_entity__canonical_cluster__id',
+        )
+        .annotate(
+            count=Count('id'),
             median_salary=Avg('wage_annual'),
             min_salary=Min('wage_annual'),
             max_salary=Max('wage_annual'),
         )
-        logger.info("[employer_profile] basic_stats slug=%s took %.3fs", slug, time.perf_counter() - t0)
+        .order_by('-count', 'job_title_entity__canonical_cluster__canonical_title')[:10]
+    )
+    logger.info("[employer_profile] top_titles slug=%s took %.3fs", slug, time.perf_counter() - t0)
 
-        # Calculate approval rate
-        approval_rate = 0
-        if basic_stats['total_filings'] > 0:
-            approval_rate = (basic_stats['approved_filings'] / basic_stats['total_filings']) * 100
-        
-        # Top job titles with salary stats (include cluster slug for linking)
-        # Group by canonical cluster to avoid per-variation counts
-        t0 = time.perf_counter()
-        top_titles = list(
-            records
-            .filter(
-                job_title_entity__isnull=False,
-                job_title_entity__canonical_cluster__isnull=False,
-            )
-            .values(
-                'job_title_entity__canonical_cluster__canonical_title',
-                'job_title_entity__canonical_cluster__slug',
-                'job_title_entity__canonical_cluster__id',
-            )
-            .annotate(
-                count=Count('id'),
-                median_salary=Avg('wage_annual'),
-                min_salary=Min('wage_annual'),
-                max_salary=Max('wage_annual'),
-            )
-            .order_by(
-                '-count',
-                'job_title_entity__canonical_cluster__canonical_title',
-            )[:10]
+    t0 = time.perf_counter()
+    salary_percentiles = calculate_salary_percentiles(records)
+    logger.info("[employer_profile] salary_percentiles slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    t0 = time.perf_counter()
+    histogram_data, title_histograms = _build_employer_salary_histograms(
+        records, top_titles, basic_stats.get('min_salary'), basic_stats.get('max_salary'),
+    )
+    logger.info("[employer_profile] salary_histograms slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    if histogram_data and title_histograms:
+        histogram_data['overlays'] = _build_job_title_overlays(title_histograms, limit=6)
+
+    t0 = time.perf_counter()
+    state_dist = list(
+        records.values('worksite_state')
+        .annotate(count=Count('id'), median_salary=Avg('wage_annual'))
+        .order_by('-count')[:15]
+    )
+    logger.info("[employer_profile] state_dist slug=%s took %.3fs", slug, time.perf_counter() - t0)
+
+    t0 = time.perf_counter()
+    yoy_trends = calculate_yoy_trends(records)
+    logger.info("[employer_profile] yoy_trends slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    yoy_growth, _, _, _ = calculate_yoy_growth(yoy_trends, start_year)
+
+    return {
+        'basic': basic_stats,
+        'approval_rate': approval_rate,
+        'yoy_growth': yoy_growth,
+        'top_titles': top_titles,
+        'salary_percentiles': salary_percentiles,
+        'salary_histogram': histogram_data,
+        'job_title_histograms': title_histograms,
+        'state_dist': state_dist,
+        'yoy_trends': yoy_trends,
+    }
+
+
+def _build_employer_chart_data(stats: dict, cluster: EmployerCluster, slug: str) -> dict:
+    """Build Plotly chart_data from stats (salary histogram, state charts, job title histograms)."""
+    t0 = time.perf_counter()
+    chart_data = _build_employer_profile_charts(stats, cluster.canonical_name, slug=slug)
+    if stats.get('job_title_histograms'):
+        t_job = time.perf_counter()
+        job_title_charts = [
+            {
+                'id': i,
+                'title': item['title'],
+                'slug': item.get('slug'),
+                'chart': build_salary_histogram_chart(
+                    item["histogram"], f"Salary Distribution - {item['title']}", label="All Filings",
+                ),
+            }
+            for i, item in enumerate(stats['job_title_histograms'], start=1)
+        ]
+        chart_data['job_title_histograms'] = job_title_charts
+        logger.info("[employer_profile] build_chart job_title_histograms slug=%s count=%d took %.3fs", slug, len(job_title_charts), time.perf_counter() - t_job)
+    total_bytes = sum(len(v) for v in chart_data.values() if isinstance(v, str))
+    total_bytes += sum(len(item.get('chart', '')) for item in chart_data.get('job_title_histograms') or [])
+    logger.info("[employer_profile] build_charts slug=%s took %.3fs chart_payload_bytes=%d", slug, time.perf_counter() - t0, total_bytes)
+    return chart_data
+
+
+def _get_or_compute_page_payload(cluster, records, slug: str, cache_key: str, params: dict) -> tuple:
+    """
+    Return (stats, chart_data, similar_employers, top_state, cache_hit).
+    similar_employers is list of dicts (template-safe); uses cache.get_or_set for similar block.
+    """
+    page_payload = cache.get(cache_key)
+    if page_payload is not None:
+        return (
+            page_payload["stats"],
+            page_payload["chart_data"],
+            page_payload["similar_employers"],
+            page_payload.get("top_state"),
+            True,
         )
-        logger.info("[employer_profile] top_titles slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    t_stats = time.perf_counter()
+    stats = _compute_employer_stats(records, slug, params['start_year'])
+    logger.info("[employer_profile] stats_compute_total slug=%s took %.3fs", slug, time.perf_counter() - t_stats)
 
-        t0 = time.perf_counter()
-        salary_percentiles = calculate_salary_percentiles(records)
-        logger.info("[employer_profile] salary_percentiles slug=%s took %.3fs", slug, time.perf_counter() - t0)
-        t0 = time.perf_counter()
-        histogram_data, title_histograms = _build_employer_salary_histograms(
-            records,
-            top_titles,
-            basic_stats.get('min_salary'),
-            basic_stats.get('max_salary'),
+    chart_data = _build_employer_chart_data(stats, cluster, slug)
+
+    top_state = stats['state_dist'][0]['worksite_state'] if stats.get('state_dist') else None
+    if top_state:
+        similar_cache_key = f"employer_similar_v1:{cluster.id}:{top_state}"
+        similar_serialized = cache.get_or_set(
+            similar_cache_key,
+            lambda: _compute_similar_employers_serialized(cluster.id, cluster, top_state, slug),
+            timeout=SIMILAR_EMPLOYERS_CACHE_TIMEOUT,
         )
-        logger.info("[employer_profile] salary_histograms slug=%s took %.3fs", slug, time.perf_counter() - t0)
-        if histogram_data and title_histograms:
-            histogram_data['overlays'] = _build_job_title_overlays(title_histograms, limit=6)
-        
-        # Geographic distribution
-        t0 = time.perf_counter()
-        state_dist = list(
-            records
-            .values('worksite_state')
-            .annotate(
-                count=Count('id'),
-                median_salary=Avg('wage_annual'),
-            )
-            .order_by('-count')[:15]
-        )
-        logger.info("[employer_profile] state_dist slug=%s took %.3fs", slug, time.perf_counter() - t0)
+    else:
+        similar_serialized = []
 
-        # Year-over-year trends
-        t0 = time.perf_counter()
-        yoy_trends = calculate_yoy_trends(records)
-        logger.info("[employer_profile] yoy_trends slug=%s took %.3fs", slug, time.perf_counter() - t0)
-        yoy_growth, _, _, _ = calculate_yoy_growth(yoy_trends, start_year)
-        
-        stats = {
-            'basic': basic_stats,
-            'approval_rate': approval_rate,
-            'yoy_growth': yoy_growth,
-            'top_titles': top_titles,
-            'salary_percentiles': salary_percentiles,
-            'salary_histogram': histogram_data,
-            'job_title_histograms': title_histograms,
-            'state_dist': state_dist,
-            'yoy_trends': yoy_trends,
-        }
-        logger.info("[employer_profile] stats_compute_total slug=%s took %.3fs", slug, time.perf_counter() - t_stats_start)
+    payload = {
+        'stats': stats,
+        'chart_data': chart_data,
+        'similar_employers': similar_serialized,
+        'top_state': top_state,
+    }
+    cache.set(cache_key, payload)
+    return (stats, chart_data, similar_serialized, top_state, False)
 
-    if not cache_hit:
-        # Build chart data (Plotly format)
-        t0 = time.perf_counter()
-        chart_data = _build_employer_profile_charts(stats, cluster.canonical_name, slug=slug)
-        if stats.get('job_title_histograms'):
-            t_job = time.perf_counter()
-            job_title_charts = []
-            for index, item in enumerate(stats['job_title_histograms'], start=1):
-                chart_json = build_salary_histogram_chart(
-                    item["histogram"],
-                    f"Salary Distribution - {item['title']}",
-                    label="All Filings",
+
+def _compute_similar_employers_serialized(cluster_id: int, cluster: EmployerCluster, top_state: str, slug: str) -> list:
+    """
+    Compute top 5 similar employers (same state); 15s timeout; returns list of dicts for cache.
+    Returns [] on timeout or error.
+    """
+    min_fiscal_year = date.today().year - 5
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"SET statement_timeout = {SIMILAR_EMPLOYERS_QUERY_TIMEOUT_MS}")
+            try:
+                rows = list(
+                    SalaryRecord.objects.filter(
+                        worksite_state=top_state,
+                        fiscal_year__gte=min_fiscal_year,
+                        employer__canonical_cluster__isnull=False,
+                        employer__canonical_cluster__slug__isnull=False,
+                    )
+                    .exclude(employer__canonical_cluster_id=cluster_id)
+                    .values('employer__canonical_cluster_id')
+                    .annotate(
+                        lca_count=Count('id', filter=Q(visa_program=VisaProgram.H1B)),
+                        perm_count=Count('id', filter=Q(visa_program=VisaProgram.PERM)),
+                    )
+                    .annotate(total=F('lca_count') + F('perm_count'))
+                    .order_by('-total')[:5]
                 )
-                job_title_charts.append({
-                    'id': index,
-                    'title': item['title'],
-                    'slug': item.get('slug'),
-                    'chart': chart_json,
-                })
-            chart_data['job_title_histograms'] = job_title_charts
-            logger.info("[employer_profile] build_chart job_title_histograms slug=%s count=%d took %.3fs", slug, len(job_title_charts), time.perf_counter() - t_job)
-        total_chart_bytes = sum(len(v) for v in chart_data.values() if isinstance(v, str))
-        total_chart_bytes += sum(len(item.get('chart', '')) for item in chart_data.get('job_title_histograms') or [])
-        logger.info("[employer_profile] build_charts slug=%s took %.3fs chart_payload_bytes=%d", slug, time.perf_counter() - t0, total_chart_bytes)
-
-        # Get similar employers (top employers in same state)
-        # Single aggregation from SalaryRecord by worksite_state -> top 5 clusters by filing count.
-        top_state = None
-        if stats['state_dist']:
-            top_state = stats['state_dist'][0]['worksite_state']
-
-        similar_employers = []
-        if top_state:
-            t0 = time.perf_counter()
-            rows = (
-                SalaryRecord.objects.filter(
-                    worksite_state=top_state,
-                    employer__canonical_cluster__isnull=False,
-                    employer__canonical_cluster__slug__isnull=False,
-                )
-                .exclude(employer__canonical_cluster_id=cluster.id)
-                .values('employer__canonical_cluster_id')
-                .annotate(
-                    lca_count=Count('id', filter=Q(visa_program=VisaProgram.H1B)),
-                    perm_count=Count('id', filter=Q(visa_program=VisaProgram.PERM)),
-                )
-                .annotate(total=F('lca_count') + F('perm_count'))
-                .order_by('-total')[:5]
-            )
-            rows = list(rows)
-            if rows:
+                if not rows:
+                    return []
                 cluster_ids_ordered = [r['employer__canonical_cluster_id'] for r in rows]
                 clusters_by_id = {
                     c.id: c
                     for c in EmployerCluster.objects.filter(id__in=cluster_ids_ordered)
                 }
+                result = []
                 for r in rows:
                     c = clusters_by_id.get(r['employer__canonical_cluster_id'])
-                    if c:
-                        c.actual_lca_count = r['lca_count']
-                        c.actual_perm_count = r['perm_count']
-                similar_employers = [
-                    clusters_by_id[cid]
-                    for cid in cluster_ids_ordered
-                    if cid in clusters_by_id
-                ]
-            logger.info("[employer_profile] similar_employers slug=%s top_state=%s took %.3fs (single SalaryRecord aggregation)", slug, top_state, time.perf_counter() - t0)
+                    if not c:
+                        continue
+                    result.append({
+                        'slug': c.slug,
+                        'canonical_name': c.canonical_name,
+                        'actual_lca_count': r['lca_count'],
+                        'actual_perm_count': r['perm_count'],
+                        'total_lca_count': r['lca_count'],
+                        'total_perm_count': r['perm_count'],
+                    })
+                return result
+            finally:
+                cursor.execute("SET statement_timeout = 0")
+    except OperationalError as e:
+        if "statement timeout" in str(e).lower() or "canceling statement" in str(e).lower():
+            logger.warning("[employer_profile] similar_employers timeout (15s) slug=%s top_state=%s", slug, top_state)
+            return []
+        raise
 
-        # Cache full page payload so next request (any worker with shared cache) skips stats, build_charts, similar_employers
-        similar_serialized = [
-            {
-                'slug': c.slug,
-                'canonical_name': c.canonical_name,
-                'actual_lca_count': getattr(c, 'actual_lca_count', None) or c.total_lca_count,
-                'actual_perm_count': getattr(c, 'actual_perm_count', None) or c.total_perm_count,
-                'total_lca_count': getattr(c, 'actual_lca_count', None) or c.total_lca_count,
-                'total_perm_count': getattr(c, 'actual_perm_count', None) or c.total_perm_count,
-            }
-            for c in similar_employers
-        ]
-        payload = {
-            'stats': stats,
-            'chart_data': chart_data,
-            'similar_employers': similar_serialized,
-            'top_state': top_state,
-        }
-        t0 = time.perf_counter()
-        cache.set(cache_key, payload)
-        logger.info("[employer_profile] cache_set page_payload slug=%s took %.3fs", slug, time.perf_counter() - t0)
+
+@cache_page(settings.CACHE_TIMEOUT)
+def employer_profile_view(request, slug):
+    """
+    Employer profile page showing sponsorship statistics and trends.
+
+    Args:
+        slug: Employer cluster slug (from URL)
+
+    Query params:
+        years: Number of fiscal years to show (default: 5, max: 20)
+        program: Filter by visa program (h1b, perm, all) (default: all)
+        level: Filter by experience level (entry, junior, mid, senior, staff, principal,
+               lead, manager, director, unspecified, all) (default: all)
+    """
+    t_page_start = time.perf_counter()
+
+    result = _get_cluster_or_404(slug)
+    if hasattr(result, 'status_code'):
+        return result
+    cluster = result
+
+    params = _parse_employer_profile_params(request)
+    records = _get_employer_records_queryset(cluster, params)
+    cache_key = f"employer_page_v5:{cluster.id}:{params['program_filter']}:{params['years']}"
+    stats, chart_data, similar_employers, top_state, cache_hit = _get_or_compute_page_payload(
+        cluster, records, slug, cache_key, params
+    )
 
     # Build SEO metadata
     median_salary = stats["basic"].get("median_salary")
@@ -395,18 +341,13 @@ def employer_profile_view(request, slug):
         'stats': stats,
         'chart_data': chart_data,
         'seo': seo,
-        'years': years,
-        'program_filter': program_filter,
-        'level_filter': level_filter,
-        'level_choices': level_choices,
-        'level_filter': level_filter,
-        'level_choices': level_choices,
-        'level_filter': level_filter,
-        'level_choices': level_choices,
-        'start_year': start_year,
+        'years': params['years'],
+        'program_filter': params['program_filter'],
+        'level_filter': params['level_filter'],
+        'level_choices': params['level_choices'],
+        'start_year': params['start_year'],
         'similar_employers': similar_employers,
         'top_state': top_state,
-        # Autocomplete URL
         'company_autocomplete_url': request.build_absolute_uri(reverse('company_autocomplete')),
     }
 
