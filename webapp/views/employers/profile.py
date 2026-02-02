@@ -2,13 +2,11 @@
 
 import logging
 import time
-from datetime import date, datetime
+from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import connection
-from django.db.models import Avg, Count, F, Max, Min, Q
-from django.db.utils import OperationalError
+from django.db.models import Avg, Count, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -26,9 +24,6 @@ from models.job_title import JobTitle
 from models.salary import Employer, EmployerCluster, SalaryRecord
 
 logger = logging.getLogger(__name__)
-
-SIMILAR_EMPLOYERS_CACHE_TIMEOUT = 86400  # 24h
-SIMILAR_EMPLOYERS_QUERY_TIMEOUT_MS = 15000  # 15s
 
 
 def _get_cluster_or_404(slug: str):
@@ -195,16 +190,13 @@ def _build_employer_chart_data(stats: dict, cluster: EmployerCluster, slug: str)
 
 def _get_or_compute_page_payload(cluster, records, slug: str, cache_key: str, params: dict) -> tuple:
     """
-    Return (stats, chart_data, similar_employers, top_state, cache_hit).
-    similar_employers is list of dicts (template-safe); uses cache.get_or_set for similar block.
+    Return (stats, chart_data, cache_hit).
     """
     page_payload = cache.get(cache_key)
     if page_payload is not None:
         return (
             page_payload["stats"],
             page_payload["chart_data"],
-            page_payload["similar_employers"],
-            page_payload.get("top_state"),
             True,
         )
     t_stats = time.perf_counter()
@@ -213,81 +205,12 @@ def _get_or_compute_page_payload(cluster, records, slug: str, cache_key: str, pa
 
     chart_data = _build_employer_chart_data(stats, cluster, slug)
 
-    top_state = stats['state_dist'][0]['worksite_state'] if stats.get('state_dist') else None
-    if top_state:
-        similar_cache_key = f"employer_similar_v1:{cluster.id}:{top_state}"
-        similar_serialized = cache.get_or_set(
-            similar_cache_key,
-            lambda: _compute_similar_employers_serialized(cluster.id, cluster, top_state, slug),
-            timeout=SIMILAR_EMPLOYERS_CACHE_TIMEOUT,
-        )
-    else:
-        similar_serialized = []
-
     payload = {
         'stats': stats,
         'chart_data': chart_data,
-        'similar_employers': similar_serialized,
-        'top_state': top_state,
     }
     cache.set(cache_key, payload)
-    return (stats, chart_data, similar_serialized, top_state, False)
-
-
-def _compute_similar_employers_serialized(cluster_id: int, cluster: EmployerCluster, top_state: str, slug: str) -> list:
-    """
-    Compute top 5 similar employers (same state); 15s timeout; returns list of dicts for cache.
-    Returns [] on timeout or error.
-    """
-    min_fiscal_year = date.today().year - 5
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(f"SET statement_timeout = {SIMILAR_EMPLOYERS_QUERY_TIMEOUT_MS}")
-            try:
-                rows = list(
-                    SalaryRecord.objects.filter(
-                        worksite_state=top_state,
-                        fiscal_year__gte=min_fiscal_year,
-                        employer__canonical_cluster__isnull=False,
-                        employer__canonical_cluster__slug__isnull=False,
-                    )
-                    .exclude(employer__canonical_cluster_id=cluster_id)
-                    .values('employer__canonical_cluster_id')
-                    .annotate(
-                        lca_count=Count('id', filter=Q(visa_program=VisaProgram.H1B)),
-                        perm_count=Count('id', filter=Q(visa_program=VisaProgram.PERM)),
-                    )
-                    .annotate(total=F('lca_count') + F('perm_count'))
-                    .order_by('-total')[:5]
-                )
-                if not rows:
-                    return []
-                cluster_ids_ordered = [r['employer__canonical_cluster_id'] for r in rows]
-                clusters_by_id = {
-                    c.id: c
-                    for c in EmployerCluster.objects.filter(id__in=cluster_ids_ordered)
-                }
-                result = []
-                for r in rows:
-                    c = clusters_by_id.get(r['employer__canonical_cluster_id'])
-                    if not c:
-                        continue
-                    result.append({
-                        'slug': c.slug,
-                        'canonical_name': c.canonical_name,
-                        'actual_lca_count': r['lca_count'],
-                        'actual_perm_count': r['perm_count'],
-                        'total_lca_count': r['lca_count'],
-                        'total_perm_count': r['perm_count'],
-                    })
-                return result
-            finally:
-                cursor.execute("SET statement_timeout = 0")
-    except OperationalError as e:
-        if "statement timeout" in str(e).lower() or "canceling statement" in str(e).lower():
-            logger.warning("[employer_profile] similar_employers timeout (15s) slug=%s top_state=%s", slug, top_state)
-            return []
-        raise
+    return (stats, chart_data, False)
 
 
 @cache_page(settings.CACHE_TIMEOUT)
@@ -314,7 +237,7 @@ def employer_profile_view(request, slug):
     params = _parse_employer_profile_params(request)
     records = _get_employer_records_queryset(cluster, params)
     cache_key = f"employer_page_v5:{cluster.id}:{params['program_filter']}:{params['years']}"
-    stats, chart_data, similar_employers, top_state, cache_hit = _get_or_compute_page_payload(
+    stats, chart_data, cache_hit = _get_or_compute_page_payload(
         cluster, records, slug, cache_key, params
     )
 
@@ -346,8 +269,6 @@ def employer_profile_view(request, slug):
         'level_filter': params['level_filter'],
         'level_choices': params['level_choices'],
         'start_year': params['start_year'],
-        'similar_employers': similar_employers,
-        'top_state': top_state,
         'company_autocomplete_url': request.build_absolute_uri(reverse('company_autocomplete')),
     }
 

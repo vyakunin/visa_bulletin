@@ -252,36 +252,6 @@
             {% include "webapp/includes/yoy_trends_table.html" with yoy_trends=stats.yoy_trends %}
             {% endif %}
             
-            <!-- Similar Employers -->
-            {% if similar_employers %}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">Similar Employers{% if top_state %} in {{ top_state }}{% endif %}</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for employer in similar_employers %}
-                        <div class="col-md-6 mb-3">
-                            <div class="d-flex justify-content-between align-items-center p-3 border rounded">
-                                <div>
-                                    <a href="{% url 'employer_profile' slug=employer.slug %}" class="text-decoration-none">
-                                        <strong>{{ employer.canonical_name }}</strong>
-                                    </a>
-                                    <div class="text-muted small">
-                                        {{ employer.actual_lca_count|default:employer.total_lca_count|intcomma }} H-1B | {{ employer.actual_perm_count|default:employer.total_perm_count|intcomma }} PERM
-                                    </div>
-                                </div>
-                                <a href="{% url 'employer_profile' slug=employer.slug %}" class="btn btn-sm btn-outline-primary">
-                                    View
-                                </a>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
                 <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 

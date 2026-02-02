@@ -28,7 +28,6 @@ The view logs timing for each major step. Look for log lines prefixed with `[emp
 | `build_chart job_title_histograms` | Time and count for per–job-title histogram charts (loop). |
 | `build_charts_total` | Total charts bytes (main charts only, before job_title_histograms). |
 | `build_charts` | Total time and `chart_payload_bytes` (all charts including job_title_histograms). |
-| `similar_employers` | Subquery + annotate for top 5 employers in same state; log notes "Exists+Count distinct over salary_records". |
 | `render` | Template render. |
 | `page_total` | Total request time; `cache_hit=True` means full page payload was served from cache. |
 
@@ -39,7 +38,6 @@ The view logs timing for each major step. Look for log lines prefixed with `[emp
 | Step | Typical range | Notes |
 |------|----------------|--------|
 | **build_charts** | **0.7–11 s** | Dominant cost on large employers (Microsoft 10.95s, Google 9.1s, Facebook 10.2s). Plotly JSON for salary histogram + state charts + YoY + per–job-title histograms. Scales with number of job title overlays. |
-| **similar_employers** | **2–7 s** | Second largest. Subquery + Count over employers/salary_records by state (e.g. CA, TX, WA, NY). |
 | **stats_compute_total** | **~3–4 s** | Sum of basic_stats, top_titles, salary_percentiles, salary_histograms, state_dist, yoy_trends. |
 | basic_stats | 0.4–0.9 s | Single aggregate. |
 | top_titles | 0.5–0.8 s | GROUP BY job title cluster + JOINs. |
@@ -51,15 +49,15 @@ The view logs timing for each major step. Look for log lines prefixed with `[emp
 | cache_get / cache_set | &lt;0.01 s | Negligible. |
 | render | &lt;0.04 s | Negligible. |
 
-**Conclusion:** Optimize (1) **build_charts** (fewer/simpler charts or lazy-load job title histograms), (2) **similar_employers** (cache or pre-aggregate), (3) stats block (composite index, DB-side percentiles, single-pass histogram).
+**Conclusion:** Optimize (1) **build_charts** (fewer/simpler charts or lazy-load job title histograms), (2) stats block (composite index, DB-side percentiles, single-pass histogram).
 
 ### Deploy check (prod, Feb 2026)
 
-Cold request (Microsoft, Google): **build_chart** granular logs show **salary_histogram** ~0.3–0.4s and ~12k bytes; **state_filings / state_median_salary / filing_volume / salary_trend** each ~0.02–0.03s and ~7k bytes; **job_title_histograms** count=10 ~0.2s; **chart_payload_bytes** ~125k. **similar_employers** Google/CA 4.1s, Microsoft/WA 2.3s. **Cache hit:** Second request to same URL on the **same worker** gave `cache_hit=True` and `page_total ... took 0.012s`; when a different worker gets the request, cache miss and page is slow again unless the backend is shared (e.g. Redis).
+Cold request (Microsoft, Google): **build_chart** granular logs show **salary_histogram** ~0.3–0.4s and ~12k bytes; **state_filings / state_median_salary / filing_volume / salary_trend** each ~0.02–0.03s and ~7k bytes; **job_title_histograms** count=10 ~0.2s; **chart_payload_bytes** ~125k. **Cache hit:** Second request to same URL on the **same worker** gave `cache_hit=True` and `page_total ... took 0.012s`; when a different worker gets the request, cache miss and page is slow again unless the backend is shared (e.g. Redis).
 
 ### Cache: why the second request can still be slow
 
-- **Full-page cache:** The view now caches a single payload: `stats`, `chart_data`, and `similar_employers` under `employer_page_v5:{cluster_id}:{program}:{years}`. On cache hit, the view skips stats computation, `build_charts`, and the `similar_employers` query; it only builds context and renders.
+- **Full-page cache:** The view caches a single payload: `stats` and `chart_data` under `employer_page_v5:{cluster_id}:{program}:{years}`. On cache hit, the view skips stats computation and `build_charts`; it only builds context and renders.
 - **Backend must be shared:** Django’s default `LocMemCache` is **per-process**. With multiple gunicorn workers, each worker has its own cache. So a second request to the same URL can hit a different worker and get a cache miss, and the page will be slow again.
 - **Fix for “second time fast”:** Use a **shared cache backend** in production (e.g. Redis or memcached). Configure `CACHES` in settings so `cache_page` and the employer page payload use the same shared backend; then any worker can serve a cached response. Example (Redis):
 
@@ -133,14 +131,6 @@ No view or cache key changes: `cache.get` / `cache.set` and `@cache_page` keep w
 
 **After clearing:** Next request to an employer or salary page will be a cold path (cache miss); subsequent requests will repopulate the cache. No need to restart gunicorn when using Redis.
 
-### Why similar_employers is slow
-
-- The query does:
-  1. **Exists(subquery):** For each candidate `EmployerCluster`, check that there exists an `Employer` in that cluster with at least one `SalaryRecord` in `top_state`. That’s a correlated subquery over `employer` → `salary_record`.
-  2. **Two Count(..., distinct=True):** For each cluster that passes the Exists filter, count H-1B and PERM salary records via `employers__salary_records__id` with filters. That joins cluster → employers → salary_records and counts distinct IDs.
-- So we scan many clusters, run a correlated subquery per cluster, then do two distinct counts over `salary_record` per cluster. No single index covers this path; the planner ends up doing a lot of joins and distinct aggregates.
-- **Possible optimizations:** Cache the result per `(cluster_id, top_state)` (now done in the full-page payload when using a shared cache), or pre-aggregate “top employers per state” in a summary table updated by the pipeline so the view does a simple lookup.
-
 ### build_charts: what takes time and how much we send
 
 - Use the new logs to see per-chart time and size:
@@ -199,12 +189,7 @@ So effectively:
 6. **yoy_trends** – One query:
    - `records.values('fiscal_year').annotate(count=Count('id'), median_salary=Avg('wage_annual'), approval_rate=...) order_by('fiscal_year')`.
 
-7. **similar_employers** – One query (only when `top_state` is set):
-   - Subquery: employers in cluster with `salary_records.worksite_state = top_state`.
-   - Main: `EmployerCluster` with `Exists(employers_in_state)`, exclude current cluster, annotate `actual_lca_count` / `actual_perm_count` (Count on `employers__salary_records` with filters), order by total, `[:5]`.
-   - Heavy: multiple JOINs and counts across employer → salary_records.
-
-So on a cold request we have **at least 6–7 DB round-trips** (plus possibly 2 full scans of the same record set for percentiles and histograms).
+So on a cold request we have **at least 6 DB round-trips** (plus possibly 2 full scans of the same record set for percentiles and histograms).
 
 ---
 
@@ -272,23 +257,14 @@ Because the filter is on `employer__canonical_cluster`, the join is `salary_reco
 - **Single pass:** Build histogram and, if needed, per-title counts in one query (e.g. raw SQL with width_bucket or CASE bins) so we don’t iterate all rows in Python.
 - **Reuse percentiles result:** If percentiles are computed in DB, consider one query that returns both percentile values and binned counts (e.g. with conditional aggregation), so we avoid a second full scan.
 
-### 4. Similar employers
-
-**Current:** Complex subquery + Exists + two Count annotations over `employers__salary_records`.
-
-**Options:**
-
-- **Pre-aggregate:** Store per-cluster, per-state filing counts (or similar) in a summary table updated by pipeline; then “similar employers” becomes a lookup + order by that column.
-- **Simplify query:** If we only need “top employers in this state,” a simpler query (e.g. aggregate by cluster and state once, cache or materialize) can replace the current annotate/Exists pattern.
-- **Cache:** Cache the “similar employers” list per (cluster_id, top_state) with a shorter TTL so repeated visits don’t re-run this query.
-
-### 5. Consolidate aggregates (optional)
+### 4. Consolidate aggregates (optional)
 
 **Current:** basic_stats, state_dist, yoy_trends are separate queries.
 
+
 **Option:** One or two queries using conditional aggregation (e.g. `Case/When` for state, fiscal_year) could return multiple aggregates in a single round-trip. This reduces number of queries and may allow one index scan to be shared. Worth measuring with instrumentation before/after.
 
-### 6. Redirect lookup
+### 5. Redirect lookup
 
 **Current:** On slug miss, `Employer.objects.filter(name_normalized__icontains=slug_normalized)` – `icontains` cannot use a B-tree index for the leading wildcard.
 
@@ -301,6 +277,5 @@ Because the filter is on `employer__canonical_cluster`, the join is `salary_reco
 1. **Add composite index** `(employer_id, is_worksite, fiscal_year)` (or similar) on `salary_record` and re-measure `basic_stats`, `top_titles`, `state_dist`, `yoy_trends` with the new logs.
 2. **Replace in-memory percentiles** with a single DB aggregate (e.g. `percentile_cont`) to remove one full scan and large transfer.
 3. **Single-pass histogram** (DB-side bins or one values_list that feeds both overall and per-title histograms) to remove the second full scan.
-4. **Cache or pre-aggregate similar_employers** to avoid the heavy subquery on every cold request.
 
 After each change, trigger a cold load (e.g. new slug or cache clear) and compare `[employer_profile]` timings to confirm improvements.

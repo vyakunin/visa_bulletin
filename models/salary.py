@@ -529,7 +529,6 @@ class SalaryRecord(models.Model):
             # Filter indexes
             models.Index(fields=['visa_program', 'fiscal_year']),
             models.Index(fields=['worksite_state', 'fiscal_year']),
-            # Employer profile similar_employers: filter by worksite_state then group by employer
             models.Index(fields=['worksite_state', 'employer'], name='sr_worksite_employer'),
             models.Index(fields=['wage_annual', 'visa_program']),
             # Date-based indexes
