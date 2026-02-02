@@ -10,7 +10,7 @@ from datetime import date
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
-from lib.publication_data import PublicationData
+from lib.parsing.bulletin.publication_data import PublicationData
 
 
 class BulletinExtractor:
@@ -34,7 +34,7 @@ class BulletinExtractor:
         Extract structured data from a parsed Table object
         
         Args:
-            table: Table object from lib.table
+            table: BulletinTable from lib.parsing.bulletin.bulletin_table
             
         Returns:
             List of dicts ready for VisaCutoffDate model creation

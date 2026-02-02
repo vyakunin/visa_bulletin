@@ -4,6 +4,15 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
-# Build file for lib package
-# Main BUILD file - subdirectories have their own BUILD files
-# All library code has been moved to subdirectories (parsing/, business/, utils/)
+# Top-level bulletin_parser (imports from lib.parsing.bulletin)
+
+py_library(
+    name = "bulletin_parser",
+    srcs = ["bulletin_parser.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/parsing/bulletin:bulletin_table",
+        requirement("beautifulsoup4"),
+        requirement("soupsieve"),
+    ],
+)

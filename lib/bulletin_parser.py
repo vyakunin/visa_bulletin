@@ -4,7 +4,7 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup
 
-from lib.table import Table
+from lib.parsing.bulletin.bulletin_table import BulletinTable as Table
 
 AVAILABLE_TABLES = {'family_sponsored_final_actions': 'FINAL ACTION DATES FOR FAMILY-SPONSORED PREFERENCE CASES',
                     'family_sponsored_dates_for_filing': 'DATES FOR FILING FAMILY-SPONSORED VISA APPLICATIONS',

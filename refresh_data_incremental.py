@@ -38,7 +38,7 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     django.setup()
 
 from lib.bulletin_parser import parse_publication_links, extract_tables
-from lib.publication_data import PublicationData
+from lib.parsing.bulletin.publication_data import PublicationData
 from extractors.bulletin_handler import save_bulletin_to_db
 from models.bulletin import Bulletin
 

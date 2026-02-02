@@ -9,7 +9,7 @@ py_library(
     srcs = ["bulletin_extractor.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//lib:publication_data",
+        "//lib/parsing/bulletin:publication_data",
         "//models/enums:visa_category",
         "//models/enums:action_type",
         "//models/enums:country",
@@ -23,7 +23,7 @@ py_library(
     deps = [
         ":bulletin_extractor",
         "//lib:bulletin_parser",
-        "//lib:publication_data",
+        "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//django_config:settings",

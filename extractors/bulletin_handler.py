@@ -21,7 +21,7 @@ if not django_apps.ready:
 
 from extractors.bulletin_extractor import BulletinExtractor
 from lib.bulletin_parser import extract_tables
-from lib.publication_data import PublicationData
+from lib.parsing.bulletin.publication_data import PublicationData
 
 # Track whether tables have been created
 _TABLES_CREATED = False

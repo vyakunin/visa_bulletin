@@ -73,7 +73,7 @@ bazel build //lib:lib
 
 # Build individual modules
 bazel build //lib:bulletin_parser
-bazel build //lib:publication_data
+bazel build //lib/parsing/bulletin:publication_data
 bazel build //lib:table
 ```
 
