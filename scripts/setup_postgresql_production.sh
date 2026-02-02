@@ -144,9 +144,16 @@ sudo tee "$CUSTOM_CONF" > /dev/null << 'EOF'
 # Memory Settings (tuned for 2GB RAM)
 # -----------------------------------------------------------------------------
 shared_buffers = 128MB           # 6% of RAM (conservative for bulk ops)
-work_mem = 4MB                   # Per-operation memory
-maintenance_work_mem = 64MB      # For VACUUM, CREATE INDEX
+work_mem = 2MB                   # Per-operation memory (reduced for memory pressure)
+maintenance_work_mem = 32MB      # For VACUUM, CREATE INDEX (reduced for 2GB)
 effective_cache_size = 512MB     # Planner hint (conservative)
+
+# -----------------------------------------------------------------------------
+# Parallel Workers (reduced to relieve memory pressure on 2GB)
+# -----------------------------------------------------------------------------
+max_parallel_workers_per_gather = 1   # Was 2; limits workers per query
+max_parallel_workers = 2              # Was 8; total parallel workers
+max_parallel_maintenance_workers = 1   # Was 2; for VACUUM, CREATE INDEX
 
 # -----------------------------------------------------------------------------
 # Connection Limits (reduced for memory savings)
@@ -194,8 +201,8 @@ if ! grep -q "include_dir = 'conf.d'" "$PG_CONF"; then
     echo "include_dir = 'conf.d'" | sudo tee -a "$PG_CONF"
 fi
 
-# Reload configuration
-sudo systemctl reload postgresql
+# Restart PostgreSQL so parallel worker and memory settings take effect
+sudo systemctl restart postgresql
 
 # =============================================================================
 # Step 7: Create Health Check Script

@@ -91,7 +91,7 @@ If not using the automated script, see `docs/deployment/NEW_INSTANCE_SETUP.md` f
 
 1. **`.env`** - Database credentials, Django settings
 2. **`.bazelrc`** - Memory limits for builds
-3. **`/etc/postgresql/14/main/conf.d/custom.conf`** - PostgreSQL tuning
+3. **`/etc/postgresql/14/main/conf.d/custom.conf`** - PostgreSQL tuning (source: `deployment/postgres/conf.d/custom.conf`; copy then `sudo systemctl restart postgresql`)
 
 ## 🔧 Management Commands
 

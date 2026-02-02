@@ -170,11 +170,16 @@ sudo tee "$CUSTOM_CONF" > /dev/null << 'EOF'
 # PostgreSQL Configuration for 2GB Lightsail Instance
 # Optimized for bulk ingest operations
 
-# Memory Settings
+# Memory Settings (tuned for 2GB, reduced to relieve memory pressure)
 shared_buffers = 128MB
-work_mem = 4MB
-maintenance_work_mem = 64MB
+work_mem = 2MB
+maintenance_work_mem = 32MB
 effective_cache_size = 512MB
+
+# Parallel Workers (reduced for 2GB instance)
+max_parallel_workers_per_gather = 1
+max_parallel_workers = 2
+max_parallel_maintenance_workers = 1
 
 # Connection Limits
 max_connections = 20
@@ -207,7 +212,7 @@ if ! grep -q "include_dir = 'conf.d'" "$PG_CONF"; then
     echo "include_dir = 'conf.d'" | sudo tee -a "$PG_CONF"
 fi
 
-sudo systemctl reload postgresql
+sudo systemctl restart postgresql
 
 echo "✅ PostgreSQL configured"
 

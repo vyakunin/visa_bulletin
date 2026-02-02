@@ -770,13 +770,16 @@ Record any manual fixes or deviations here:
        build --jobs=2
        build --worker_max_instances=1
        ```
-    3. Tuned PostgreSQL memory to reduce OOM risk:
+    3. Tuned PostgreSQL memory and parallel workers to reduce OOM risk:
        ```
        shared_buffers = 128MB
-       work_mem = 4MB
-       maintenance_work_mem = 64MB
+       work_mem = 2MB
+       maintenance_work_mem = 32MB
+       max_parallel_workers_per_gather = 1
+       max_parallel_workers = 2
+       max_parallel_maintenance_workers = 1
        effective_cache_size = 512MB
-       max_connections = 50
+       max_connections = 20
        ```
     3. Attached static IP: `44.209.204.255` (`VisaBulletin-StaticIP`)
     4. Enabled `sysstat` for memory monitoring: `sar -r` shows historical memory usage
