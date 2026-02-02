@@ -32,21 +32,26 @@ def company_autocomplete_view(request):
     if not query or len(query) < 2:
         return HttpResponse(json.dumps([]), content_type='application/json')
     
-    # Get cluster canonical names that match the query
+    # Get cluster canonical names and slugs that match the query
     # Order by total record count (LCA + PERM) for relevance
     matching_companies = (
         EmployerCluster.objects
         .filter(canonical_name__icontains=query)
         .exclude(canonical_name="Unknown")
+        .exclude(slug__isnull=True)
         .exclude(slug="unknown")
         .annotate(total_count=F('total_lca_count') + F('total_perm_count'))
         .order_by('-total_count', 'canonical_name')
-        .values('canonical_name', 'total_count')
+        .values('canonical_name', 'slug', 'total_count')
         [:limit]
     )
     
     suggestions = [
-        {'name': company['canonical_name'], 'count': company['total_count']}
+        {
+            'name': company['canonical_name'],
+            'slug': company['slug'],
+            'count': company['total_count'],
+        }
         for company in matching_companies
     ]
     return HttpResponse(json.dumps(suggestions), content_type='application/json')
