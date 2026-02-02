@@ -763,6 +763,14 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 ./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
 ```
 
+**`scripts/smoke_check_production.py`** - Production smoke check (status + content)
+Verifies key pages return 200 and expected content (titles, key strings). Use after deploy or to validate prod.
+```bash
+bazel run //scripts:smoke_check_production
+bazel run //scripts:smoke_check_production -- --base https://visa-bulletin.us --timeout 60
+bazel run //scripts:smoke_check_production -- --base http://localhost:8000 --timeout 15
+```
+
 ### Instance Setup Scripts
 
 **`scripts/setup_new_instance.sh`** - **MASTER SETUP SCRIPT** for new Lightsail instances

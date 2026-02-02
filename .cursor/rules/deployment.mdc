@@ -420,13 +420,16 @@ act -W .github/workflows/docker-build-push.yml -j build-and-push
 
 ## Monitoring After Deployment
 
-After any deployment:
+After any deployment, run a **thorough smoke check** (status + content, not just return codes):
 ```bash
-# Check site is up
+# Smoke check: key pages return 200 and expected content (titles, key strings)
+bazel run //scripts:smoke_check_production -- --base https://visa-bulletin.us --timeout 60
+
+# Check site is up (quick)
 curl -I https://visa-bulletin.us
 
-# Check Docker logs
-ssh backup_0_5Gb_vm "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
+# Check Docker logs (if using Docker)
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml logs --tail=50"
 
 # Monitor for 10-15 minutes for errors
 ```

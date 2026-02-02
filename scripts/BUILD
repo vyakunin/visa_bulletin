@@ -209,6 +209,15 @@ py_binary(
     },
 )
 
+py_binary(
+    name = "smoke_check_production",
+    srcs = ["smoke_check_production.py"],
+    main = "smoke_check_production.py",
+    visibility = ["//visibility:public"],
+    deps = [],
+    python_version = "PY3",
+)
+
 # investigate_salary_issues target removed - functionality merged into //scripts/salary:validate_data
 # Use: bazel run //scripts/salary:validate_data
 
