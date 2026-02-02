@@ -24,7 +24,7 @@ def _cache_profile_view(timeout_seconds: int):
     return cache_page(timeout_seconds)
 
 
-@_cache_profile_view(60 * 60 * 6)  # Cache for 6 hours
+@_cache_profile_view(settings.CACHE_TIMEOUT)
 def job_title_profile_view(request, slug: str):
     """
     Job title profile page - comprehensive market analysis for a specific job title.

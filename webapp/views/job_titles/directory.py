@@ -5,6 +5,7 @@ import json
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.conf import settings
 from django.views.decorators.cache import cache_page
 from django.db.models import Avg, Count, Sum
 
@@ -15,7 +16,7 @@ from models.job_title import JobTitleCluster
 AUTOCOMPLETE_YEARS = 5
 
 
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def job_title_autocomplete_view(request):
     """
     API endpoint for job title autocomplete suggestions.
@@ -85,7 +86,7 @@ def _get_job_title_directory_featured(titles):
     }
 
 
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def job_title_directory_view(request):
     """
     Job title directory page with search and top roles.

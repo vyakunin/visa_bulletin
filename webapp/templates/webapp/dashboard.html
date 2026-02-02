@@ -246,21 +246,41 @@
 </main>
 
 <script>
+// Slug mappings for readable URLs (e.g. /family-sponsored/india/ instead of ?country=3)
+const categorySlugs = {{ category_slugs_json|safe }};
+const countrySlugs = {{ country_slugs_json|safe }};
+
 // Save scroll position before form submit
 function saveScrollPosition() {
     sessionStorage.setItem('scrollPosition', window.scrollY || window.pageYOffset);
 }
 
-// Auto-submit for dropdowns (but not for date input)
-function autoSubmitForm() {
-    saveScrollPosition();
-    document.getElementById('filterForm').submit();
+// Build readable dashboard URL from form values and navigate (keeps path in sync with filters)
+function buildDashboardUrl() {
+    const category = document.getElementById('category').value;
+    const country = document.getElementById('country').value;
+    const actionType = document.getElementById('action_type').value;
+    const submissionDate = document.getElementById('submission_date').value;
+    const catSlug = categorySlugs[category] || 'family-sponsored';
+    const countrySlug = countrySlugs[country] || 'all';
+    const path = '/' + catSlug + '/' + countrySlug + '/';
+    const params = new URLSearchParams();
+    if (actionType) params.set('action_type', actionType);
+    if (submissionDate && submissionDate.trim()) params.set('submission_date', submissionDate.trim());
+    const query = params.toString();
+    return query ? path + '?' + query : path;
 }
 
-// Category change needs to update visa classes AND submit
+// Auto-submit for dropdowns: navigate to readable URL so path updates (e.g. /family-sponsored/india/)
+function autoSubmitForm() {
+    saveScrollPosition();
+    window.location.href = buildDashboardUrl();
+}
+
+// Category change: navigate to readable URL so path updates
 function updateVisaClasses() {
     saveScrollPosition();
-    document.getElementById('filterForm').submit();
+    window.location.href = buildDashboardUrl();
 }
 
 // Restore scroll position after page load

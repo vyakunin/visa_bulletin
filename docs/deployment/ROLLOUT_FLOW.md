@@ -9,7 +9,7 @@ This document describes the complete process for deploying changes to production
 Code Changes → Tag Version → Build Image → Deploy → Monitor
 ```
 
-**Staging / dev cycle / urgent fix:** Deploy from source without building an image — copy changed files with `scp` to staging, then reload gunicorn (`pkill -HUP gunicorn`). See [Deploy from source (staging / dev cycle or urgent fix)](#deploy-from-source-staging--dev-cycle-or-urgent-fix).
+**Deploy from source (dev cycle / urgent fix):** Deploy without building an image — copy changed files with `scp` to prod, then reload gunicorn (`pkill -HUP gunicorn`). See [Deploy from source (dev cycle or urgent fix)](#deploy-from-source-dev-cycle-or-urgent-fix).
 
 ## Step-by-Step Rollout Process
 
@@ -103,7 +103,7 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
 #### Option C: Manual Deployment
 
 ```bash
-ssh prod_0.5Gb_vm << 'ENDSSH'
+ssh backup_0_5Gb_vm << 'ENDSSH'
 cd /opt/visa_bulletin
 git pull origin main
 export IMAGE_TAG=v1.2.3
@@ -121,10 +121,10 @@ curl -I https://visa-bulletin.us/about/
 curl -I https://visa-bulletin.us/faq/
 
 # Check deployed version
-ssh prod_0.5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
+ssh backup_0_5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
 
 # Check logs
-ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50'
+ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50'
 ```
 
 ### Step 8: Monitor (15-30 minutes)
@@ -133,13 +133,13 @@ Watch for issues:
 
 ```bash
 # Monitor logs
-ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
+ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
 
 # Check error logs
-ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs | grep -i error'
+ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs | grep -i error'
 
 # Monitor resource usage
-ssh prod_0.5Gb_vm 'free -h && df -h'
+ssh backup_0_5Gb_vm 'free -h && df -h'
 ```
 
 ### Step 9: Document (If Major Release)
@@ -168,7 +168,7 @@ source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.2
 If Docker is completely broken:
 
 ```bash
-ssh prod_0.5Gb_vm << 'ENDSSH'
+ssh backup_0_5Gb_vm << 'ENDSSH'
 cd /opt/visa_bulletin
 # Stop Docker
 sudo docker-compose -f docker-compose.test.yml down
@@ -223,7 +223,7 @@ git push origin v1.0.1
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.0.1
 
 # 4. Monitor closely
-ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
+ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs -f'
 ```
 
 ### Scenario 2: Feature Deployment
@@ -251,19 +251,19 @@ git push origin v1.1.0
 # Note: This is less traceable, use versions when possible
 ```
 
-## Deploy from source (staging / dev cycle or urgent fix)
+## Deploy from source (dev cycle or urgent fix)
 
-Use this flow when you want to run **uncommitted or branch changes on staging** without building a Docker image. Staging runs **gunicorn** from the code on disk at `/opt/visa_bulletin`; updating files and reloading workers picks up changes immediately.
+Use this flow when you want to run **uncommitted or branch changes on production** without building a Docker image. Production runs **gunicorn** from the code on disk at `/opt/visa_bulletin`; updating files and reloading workers picks up changes immediately.
 
 **When to use:**
-- Dev cycle: iterate on UI or backend and verify on staging before committing.
-- Urgent fix: push a small fix to staging for validation before full tag/deploy.
+- Dev cycle: iterate on UI or backend and verify on prod before committing.
+- Urgent fix: push a small fix to prod for validation before full tag/deploy.
 
 **Requirements:**
-- SSH alias `staging_2Gb_vm` (or use `ubuntu@44.209.204.255` with your key).
-- Staging app running under gunicorn (not Docker for the web process).
+- SSH alias `prod_2Gb_vm` (or use `ubuntu@44.209.204.255` with your key).
+- Prod app running under gunicorn (not Docker for the web process).
 
-### 1. Copy changed files to staging
+### 1. Copy changed files to production
 
 From the project root, `scp` only the files you changed (or a small set of dirs). Example for a single script and model:
 
@@ -271,8 +271,8 @@ From the project root, `scp` only the files you changed (or a small set of dirs)
 cd /path/to/visa_bulletin
 
 # Example: one script + one model
-scp scripts/salary/update_job_title_cluster_stats.py staging_2Gb_vm:/opt/visa_bulletin/scripts/salary/
-scp models/job_title.py staging_2Gb_vm:/opt/visa_bulletin/models/
+scp scripts/salary/update_job_title_cluster_stats.py prod_2Gb_vm:/opt/visa_bulletin/scripts/salary/
+scp models/job_title.py prod_2Gb_vm:/opt/visa_bulletin/models/
 ```
 
 Example for webapp UI changes (templates, views, static):
@@ -280,29 +280,29 @@ Example for webapp UI changes (templates, views, static):
 ```bash
 cd /path/to/visa_bulletin
 
-scp webapp/views/job_titles/profile.py staging_2Gb_vm:/opt/visa_bulletin/webapp/views/job_titles/
-scp webapp/templates/webapp/job_title_profile.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
-scp webapp/templates/webapp/base.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
-scp webapp/templates/webapp/employer_profile.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
-scp webapp/templates/webapp/includes/chart_loading_container.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
-scp webapp/templates/webapp/includes/yoy_trends_table.html staging_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
-scp webapp/static/js/sortable_tables.js staging_2Gb_vm:/opt/visa_bulletin/webapp/static/js/
+scp webapp/views/job_titles/profile.py prod_2Gb_vm:/opt/visa_bulletin/webapp/views/job_titles/
+scp webapp/templates/webapp/job_title_profile.html prod_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/base.html prod_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/employer_profile.html prod_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/
+scp webapp/templates/webapp/includes/chart_loading_container.html prod_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
+scp webapp/templates/webapp/includes/yoy_trends_table.html prod_2Gb_vm:/opt/visa_bulletin/webapp/templates/webapp/includes/
+scp webapp/static/js/sortable_tables.js prod_2Gb_vm:/opt/visa_bulletin/webapp/static/js/
 ```
 
 ### 2. Reload gunicorn (pick up new code)
 
 ```bash
 # See running gunicorn processes
-ssh staging_2Gb_vm "pgrep -af gunicorn"
+ssh prod_2Gb_vm "pgrep -af gunicorn"
 
 # Graceful reload (workers restart, no dropped connections)
-ssh staging_2Gb_vm "pkill -HUP gunicorn && echo 'Gunicorn workers reloaded (cache cleared)'"
+ssh prod_2Gb_vm "pkill -HUP gunicorn && echo 'Gunicorn workers reloaded (cache cleared)'"
 ```
 
 If gunicorn is run via a wrapper (e.g. `django_config.wsgi`):
 
 ```bash
-ssh staging_2Gb_vm "pkill -HUP -f 'gunicorn.*django_config' 2>/dev/null; sleep 1; ps aux | grep gunicorn | grep -v grep | head -3"
+ssh prod_2Gb_vm "pkill -HUP -f 'gunicorn.*django_config' 2>/dev/null; sleep 1; ps aux | grep gunicorn | grep -v grep | head -3"
 ```
 
 ### 3. Verify
@@ -314,9 +314,9 @@ curl -sI http://44.209.204.255/salaries/ | head -1
 ```
 
 **Notes:**
-- No Docker image build or tag; changes are only on the staging server.
-- For production, use the normal flow: commit → tag → build image → deploy with `deploy-zero-downtime.sh`.
-- Staging `.env` and DB are unchanged; only code and static files are updated.
+- No Docker image build or tag; changes are only on the prod server.
+- For full deployment, use the normal flow: commit → tag → build image → deploy with `deploy-zero-downtime.sh`.
+- Prod `.env` and DB are unchanged; only code and static files are updated.
 
 ## Deployment Windows
 
@@ -344,10 +344,10 @@ source ~/.shrc && act -W .github/workflows/docker-build-push.yml
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.3
 
 # Check SSH access
-ssh prod_0.5Gb_vm 'uptime'
+ssh backup_0_5Gb_vm 'uptime'
 
 # Check Docker status
-ssh prod_0.5Gb_vm 'sudo docker ps'
+ssh backup_0_5Gb_vm 'sudo docker ps'
 ```
 
 ### Site Down After Deployment
@@ -357,7 +357,7 @@ ssh prod_0.5Gb_vm 'sudo docker ps'
 ./scripts/deploy-zero-downtime.sh ~/ssh-key.pem v1.2.2
 
 # Or emergency rollback to systemd
-ssh prod_0.5Gb_vm 'sudo systemctl start visa-bulletin'
+ssh backup_0_5Gb_vm 'sudo systemctl start visa-bulletin'
 ```
 
 ## Version History
@@ -372,7 +372,7 @@ git tag -l -n
 # https://github.com/vyakunin/visa_bulletin/releases
 
 # Check what's deployed
-ssh prod_0.5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
+ssh backup_0_5Gb_vm 'sudo docker-compose -f /opt/visa_bulletin/docker-compose.test.yml images'
 ```
 
 ## Additional Resources

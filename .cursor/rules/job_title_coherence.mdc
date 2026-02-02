@@ -47,22 +47,22 @@ Set by `update_job_title_cluster_stats` in `_most_frequent_raw_title_per_cluster
 ### 1. Run the pipeline on the deployment (if you changed data or code)
 
 ```bash
-# On staging/production (use correct SSH alias and DB_HOST)
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && [ \"\$DB_HOST\" = 'host.docker.internal' ] && export DB_HOST=localhost; bazel build //scripts/salary:update_job_title_cluster_stats && bazel shutdown"
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/update_job_title_cluster_stats"
+# On production (use correct SSH alias and DB_HOST)
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && [ \"\$DB_HOST\" = 'host.docker.internal' ] && export DB_HOST=localhost; bazel build //scripts/salary:update_job_title_cluster_stats && bazel shutdown"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/update_job_title_cluster_stats"
 # If any clusters had no slug, run populate_job_title_slugs
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/populate_job_title_slugs"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/populate_job_title_slugs"
 ```
 
 ### 2. Clear cache and reload app (so autocomplete and directory show new canonical_title)
 
 ```bash
 # Clear Django cache (job title autocomplete, directory, employer/salary caches)
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
 # If using LocMem (no Redis), reload gunicorn so workers see cleared cache; with Redis, optional
-ssh staging_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
+ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
 # Reload nginx if it caches responses (optional, depends on config)
-ssh staging_2Gb_vm "sudo nginx -s reload"
+ssh prod_2Gb_vm "sudo nginx -s reload"
 ```
 
 ### 3. Smoke test on the live site

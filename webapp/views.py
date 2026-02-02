@@ -7,6 +7,7 @@ from datetime import date, datetime
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.urls import reverse
+from django.conf import settings
 from django.views.decorators.cache import cache_page
 
 from models.enums.visa_category import VisaCategory
@@ -40,7 +41,7 @@ def _parse_submission_date(date_str: str) -> date:
         return date.today()
 
 
-@cache_page(60 * 60 * 3)  # Cache for 3 hours (bulletins update monthly)
+@cache_page(settings.CACHE_TIMEOUT)
 def dashboard_view(request, category=None, country=None):
     """
     Main dashboard view with filters and time-series chart
@@ -108,7 +109,7 @@ def dashboard_view(request, category=None, country=None):
     return render(request, 'webapp/dashboard.html', context)
 
 
-@cache_page(60 * 60 * 24)
+@cache_page(settings.CACHE_TIMEOUT)
 def robots_view(request):
     """Generate robots.txt"""
     lines = [
@@ -119,7 +120,7 @@ def robots_view(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
-@cache_page(60 * 60 * 24)
+@cache_page(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap"""
     base_url = request.build_absolute_uri('/')[:-1]

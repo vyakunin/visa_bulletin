@@ -103,6 +103,8 @@ ROOT_URLCONF = 'django_config.urls'
 
 # Caching configuration
 # Use Redis when REDIS_URL is set (production/staging); otherwise LocMem (dev, single-worker).
+# Single default timeout (24h) for all cache_page and cache.set; no per-call overrides.
+CACHE_TIMEOUT = 60 * 60 * 24  # 24 hours
 REDIS_URL = os.environ.get('REDIS_URL', '')
 if REDIS_URL:
     CACHES = {
@@ -110,7 +112,7 @@ if REDIS_URL:
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': REDIS_URL,
             'KEY_PREFIX': 'visa_bulletin',
-            'TIMEOUT': 60 * 60 * 6,  # 6 hours
+            'TIMEOUT': CACHE_TIMEOUT,
         }
     }
 else:
@@ -118,7 +120,7 @@ else:
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
             'LOCATION': 'unique-snowflake',
-            'TIMEOUT': 60 * 60 * 3,  # 3 hours
+            'TIMEOUT': CACHE_TIMEOUT,
         }
     }
 

@@ -92,5 +92,5 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
         "start_year": start_year,
     }
 
-    cache.set(cache_key, stats, timeout=60 * 60 * 6)
+    cache.set(cache_key, stats)
     return stats

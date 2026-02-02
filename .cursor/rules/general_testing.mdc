@@ -48,8 +48,8 @@ def test_parse_table_header_to_country_enum(self):
 ```bash
 # 1. Run the one test (or test target) you're fixing
 bazel test //tests:test_job_title_profile_view
-# Or on staging:
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests:test_job_title_profile_view --test_env=TEST_DB_USER=visa_bulletin_user --test_env=TEST_DB_PASSWORD=\$DB_PASSWORD"
+# Or on production:
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests:test_job_title_profile_view --test_env=TEST_DB_USER=visa_bulletin_user --test_env=TEST_DB_PASSWORD=\$DB_PASSWORD"
 
 # 2. Fix until it passes
 

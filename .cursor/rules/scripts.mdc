@@ -46,7 +46,7 @@ bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"
 **✅ GOOD - Use run_sql (remote VM):**
 ```bash
 # Correct way to run on remote VM
-ssh staging_2Gb_vm \
+ssh prod_2Gb_vm \
   "cd /opt/visa_bulletin && set -a && source .env && set +a && \
    bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
@@ -54,7 +54,7 @@ ssh staging_2Gb_vm \
 **❌ BAD - Raw psql (circumvents tool):**
 ```bash
 # DON'T do this - bypasses Django and tool infrastructure
-ssh staging_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin_blue -c 'SELECT COUNT(*) FROM salary_job_title'"
+ssh prod_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin_blue -c 'SELECT COUNT(*) FROM salary_job_title'"
 ```
 
 **When run_sql fails, debug it systematically:**
@@ -175,7 +175,7 @@ ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no ubuntu@IP_ADDR
 
 **✅ GOOD - Complete pattern:**
 ```bash
-ssh staging_2Gb_vm \
+ssh prod_2Gb_vm \
   "cd /opt/visa_bulletin && set -a && source .env && set +a && \
    bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
@@ -183,7 +183,7 @@ ssh staging_2Gb_vm \
 **❌ BAD - Missing set -a (variables not exported):**
 ```bash
 # Variables loaded but not exported - run_sql can't see them
-ssh staging_2Gb_vm \
+ssh prod_2Gb_vm \
   "cd /opt/visa_bulletin && source .env && \
    bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
@@ -191,7 +191,7 @@ ssh staging_2Gb_vm \
 **❌ BAD - Using DB_HOST override incorrectly:**
 ```bash
 # DB_HOST override doesn't help if other variables not exported
-ssh staging_2Gb_vm \
+ssh prod_2Gb_vm \
   "cd /opt/visa_bulletin && source .env && DB_HOST=localhost \
    bazel run //:run_sql -- --query 'SELECT COUNT(*) FROM salary_job_title'"
 ```
@@ -257,19 +257,19 @@ ssh staging_2Gb_vm \
 ## SSH Access
 
 **SSH Aliases (from `~/.ssh/config`):**
-- `staging_2Gb_vm` - Staging / next production
-- `prod_0.5Gb_vm` - Legacy production
+- `prod_2Gb_vm` - Production
+- `backup_0_5Gb_vm` - Backup
 
 **Common SSH Operations:**
 ```bash
-# Connect to staging
-ssh staging_2Gb_vm
+# Connect to production
+ssh prod_2Gb_vm
 
-# Run commands remotely (staging)
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose ps"
+# Run commands remotely (production)
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose ps"
 
-# View logs (staging)
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose logs -f"
+# View logs (production)
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose logs -f"
 
 # Deploy using script
 ./scripts/deploy.sh

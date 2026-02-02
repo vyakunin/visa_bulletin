@@ -15,6 +15,8 @@ Environment="DB_HOST=localhost"
 Environment="DJANGO_SETTINGS_MODULE=django_config.settings"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+# GoatCounter analytics (optional: can also set in .env)
+Environment="ANALYTICS_SCRIPT=<script data-goatcounter=\"https://vyakunin.goatcounter.com/count\" async src=\"https://gc.zgo.at/count.js\"></script>"
 
 # Run migrations before starting
 ExecStartPre=/usr/bin/python3 manage.py migrate --noinput

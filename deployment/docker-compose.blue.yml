@@ -8,7 +8,8 @@ services:
     image: redis:7-alpine
     container_name: visa_bulletin_redis
     restart: unless-stopped
-    # Shared cache for employer profile and salary pages (no external port needed)
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # Limit memory so Redis doesn't crash the instance; evict least-recently-used keys when full
 
   web-blue:
     image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}

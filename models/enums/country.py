@@ -57,10 +57,15 @@ class Country(models.IntegerChoices):
         }
         
         return exact_mappings.get(normalized)
-    
+
+    @classmethod
+    def slug_for_value(cls, value: int) -> str | None:
+        """Return URL slug for a country value, or None for invalid."""
+        return _VALUE_TO_SLUG.get(value)
+
     @classmethod
     def from_string(cls, value: str):
-        """Convert string value to enum (for migration compatibility)"""
+        """Convert string value to enum (for migration compatibility and URL slug parsing)."""
         if not value:
             return None
         mappings = {
@@ -72,4 +77,15 @@ class Country(models.IntegerChoices):
             'el_salvador_guatemala_honduras': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
         }
         return mappings.get(value.lower())
+
+
+# URL slug per country value (outside class so IntegerChoices doesn't treat the dict as a member)
+_VALUE_TO_SLUG = {
+    1: "all",
+    2: "china",
+    3: "india",
+    4: "mexico",
+    5: "philippines",
+    6: "el_salvador_guatemala_honduras",
+}
 

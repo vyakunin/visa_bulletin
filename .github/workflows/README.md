@@ -261,7 +261,7 @@ If GitHub Actions deploy fails, you can always deploy manually:
 Possible improvements:
 
 1. **Automatic deployment**: Deploy after successful build on tags
-2. **Staging environment**: Deploy to staging first, then prod
+2. **Deploy**: Deploy to prod (or backup for rollback)
 3. **Slack notifications**: Alert on deploy success/failure
 4. **Automated testing**: Run tests in CI before building
 5. **Multi-arch builds**: Build for ARM64 and AMD64

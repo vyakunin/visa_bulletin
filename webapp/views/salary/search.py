@@ -1,5 +1,6 @@
 """Salary and worksite search views."""
 
+from django.conf import settings
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.cache import cache_page
@@ -42,14 +43,14 @@ def _get_cached_fiscal_years() -> list[int]:
             .distinct()
             .order_by('-fiscal_year')
         )
-        cache.set(cache_key, fiscal_years, 60 * 60 * 24)  # Cache for 24 hours
+        cache.set(cache_key, fiscal_years)
     
     return fiscal_years
 
 
 # Note: @cache_page automatically varies by query parameters, so different searches have different cache keys
 # Cache is cleared when server restarts or via: bazel run //scripts:clear_cache
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def salary_search_view(request):
     """
     Search H-1B and PERM salary data from DOL disclosure files.
@@ -99,7 +100,7 @@ def salary_search_view(request):
     no_data_yet = cache.get(cache_key_no_data)
     if no_data_yet is None:
         no_data_yet = SalaryRecord.objects.count() == 0
-        cache.set(cache_key_no_data, no_data_yet, 60 * 60)  # Cache for 1 hour
+        cache.set(cache_key_no_data, no_data_yet)
     
     # Build and apply filters FIRST (before expensive exclude)
     # This reduces the dataset size before the expensive exclude operation
@@ -196,7 +197,7 @@ def salary_search_view(request):
         total_results = cache.get(cache_key_count)
         if total_results is None:
             total_results = records.count()
-            cache.set(cache_key_count, total_results, 60 * 60)  # Cache for 1 hour
+            cache.set(cache_key_count, total_results)
     else:
         # For complex filters, calculate count (but this will be slow)
         total_results = records.count()
@@ -282,12 +283,12 @@ def _get_cached_worksite_fiscal_years() -> list[int]:
             .distinct()
             .order_by('-fiscal_year')
         )
-        cache.set(cache_key, fiscal_years, 60 * 60 * 24)  # Cache for 24 hours
+        cache.set(cache_key, fiscal_years)
     
     return fiscal_years
 
 
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def worksite_search_view(request):
     """
     Search worksite location data from DOL Worksites disclosure files.
@@ -333,7 +334,7 @@ def worksite_search_view(request):
     no_data_yet = cache.get(cache_key_no_data)
     if no_data_yet is None:
         no_data_yet = WorksiteRecord.objects.count() == 0
-        cache.set(cache_key_no_data, no_data_yet, 60 * 60)  # Cache for 1 hour
+        cache.set(cache_key_no_data, no_data_yet)
     
     # Build and apply filters
     records = WorksiteRecord.objects.all()

@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime
 
 from django.shortcuts import render
+from django.conf import settings
 from django.views.decorators.cache import cache_page
 
 from models.enums.visa_category import VisaCategory
@@ -38,7 +39,7 @@ def _parse_submission_date(date_str: str) -> date:
         return date.today()
 
 
-@cache_page(60 * 60 * 3)  # Cache for 3 hours (bulletins update monthly)
+@cache_page(settings.CACHE_TIMEOUT)
 def dashboard_view(request, category=None, country=None):
     """
     Main dashboard view with filters and time-series chart.
@@ -51,7 +52,20 @@ def dashboard_view(request, category=None, country=None):
     """
     # Parse request parameters
     category = category or request.GET.get('category', VisaCategory.FAMILY_SPONSORED.value)
-    country = country or request.GET.get('country', Country.ALL.value)
+    country_raw = country or request.GET.get('country', Country.ALL.value)
+    # Normalize country to int so template selected option matches
+    # URL path can be slug (philippines, india) or numeric; GET params are strings
+    if isinstance(country_raw, str) and country_raw.isdigit():
+        country = int(country_raw)
+    elif isinstance(country_raw, str):
+        # Readable URL slug (e.g. /family-sponsored/philippines/)
+        country_enum = Country.from_string(country_raw)
+        country = country_enum.value if country_enum else Country.ALL.value
+    else:
+        country = country_raw
+    valid_country_values = [c.value for c in Country]
+    if country not in valid_country_values:
+        country = Country.ALL.value
     action_type = request.GET.get('action_type', ActionType.FINAL_ACTION.value)
     submission_date = _parse_submission_date(request.GET.get('submission_date', ''))
     
@@ -71,7 +85,18 @@ def dashboard_view(request, category=None, country=None):
     # Build SEO metadata
     seo = build_seo_metadata(category, country, request.build_absolute_uri())
     action_type_display = ActionType(action_type).label if action_type in [c.value for c in ActionType] else action_type
-    
+
+    # URL slug mappings for readable dashboard URLs (JS builds path when user changes filters)
+    category_slugs = {
+        VisaCategory.FAMILY_SPONSORED.value: "family-sponsored",
+        VisaCategory.EMPLOYMENT_BASED.value: "employment-based",
+    }
+    country_slugs = {
+        str(c.value): Country.slug_for_value(c.value)
+        for c in Country
+        if c.value != Country.INVALID and Country.slug_for_value(c.value)
+    }
+
     context = {
         # Filter state
         'category': category,
@@ -101,6 +126,8 @@ def dashboard_view(request, category=None, country=None):
         'canonical_url': request.build_absolute_uri(),
         'og_url': request.build_absolute_uri(),
         'og_type': 'website',
+        'category_slugs_json': json.dumps(category_slugs),
+        'country_slugs_json': json.dumps(country_slugs),
     }
     
     return render(request, 'webapp/dashboard.html', context)

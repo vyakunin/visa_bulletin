@@ -128,6 +128,41 @@ See `.cursor/rules/employer_clustering.mdc` for detailed workflow rules.
 - Handle bucket mismatches (names that normalize differently)
 - Improve handling of corporate suffixes and abbreviations
 
+## Company = None on Job Title Profile
+
+On job title profile pages, "Compare how top companies pay" and "Top Employers" are built by grouping `SalaryRecord` by `employer__canonical_cluster__canonical_name`. Records that have **no employer cluster** form one group with `canonical_name = None`, which the UI used to show as "None".
+
+**Two root causes (trace to raw data):**
+
+1. **`SalaryRecord.employer_id` is NULL**  
+   - Raw data: `employer_name` is present on the record (from DOL), but the employer FK was never set.  
+   - Typical causes: legacy import path that didn’t set employer, or bulk load that skipped employer linking.  
+   - Fix: run `scripts/salary/fix_missing_employers.py` (with `--fix`) to create/link `Employer` from `employer_name` + worksite city/state, then run employer clustering.
+
+2. **`SalaryRecord.employer_id` set but `Employer.canonical_cluster_id` is NULL**  
+   - Raw data: employer name was ingested and an `Employer` row exists, but that employer was never assigned to a cluster.  
+   - Typical causes: ingest with `skip_clustering=True` and `cluster_existing_employers` not run; or `fix_missing_employers` creates new employers but does not call `assign_to_cluster`.  
+   - Fix: run `scripts/salary/cluster_existing_employers.py` so every employer gets a cluster (or create a single-employer cluster).
+
+**How to verify on the DB (for a given job title cluster):**
+
+```sql
+-- Replace :cluster_id with the JobTitleCluster id for the slug (e.g. software-development-engineer-ii)
+SELECT
+  CASE WHEN sr.employer_id IS NULL THEN 'employer_id NULL'
+       WHEN e.canonical_cluster_id IS NULL THEN 'canonical_cluster NULL'
+       ELSE 'has cluster' END AS bucket,
+  COUNT(*)
+FROM salary_record sr
+LEFT JOIN salary_employer e ON e.id = sr.employer_id
+JOIN salary_job_title jt ON jt.id = sr.job_title_entity_id
+WHERE jt.canonical_cluster_id = :cluster_id
+  AND sr.wage_annual IS NOT NULL AND sr.wage_annual >= 30000 AND sr.wage_annual <= 1000000
+GROUP BY 1;
+```
+
+The UI now excludes the "None" group from the Company Comparison and Top Employers tables so "None" is not shown as a company name; totals and other sections still include those records.
+
 ## Related Files
 
 - `models/salary.py` - `Employer.normalize_name()` - Name normalization logic

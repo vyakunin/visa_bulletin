@@ -535,6 +535,15 @@ class SalaryRecord(models.Model):
             models.Index(fields=['fiscal_year', 'decision_date']),
             # Performance: Composite index for employer filtering with worksite exclusion
             models.Index(fields=['employer', 'is_worksite']),
+            # Employer-profile percentile/histogram: (employer, is_worksite, fiscal_year) + INCLUDE(wage_annual)
+            # so SELECT wage_annual WHERE employer_id IN (...) AND is_worksite=false AND fiscal_year>=?
+            # can use index-only scan and avoid 30k+ heap fetches (scan was ~6s, Python 0s).
+            # name= required and must be ≤30 chars (Django E034; auto-generated name would exceed limit).
+            models.Index(
+                fields=['employer', 'is_worksite', 'fiscal_year'],
+                include=['wage_annual'],
+                name='sr_emp_wk_fy_inc_wage',
+            ),
             # Clustering: Index for job title entity lookups (prevents slow COUNTs during clustering)
             models.Index(fields=['job_title_entity']),
         ]

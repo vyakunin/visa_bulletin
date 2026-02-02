@@ -9,7 +9,7 @@
 set -e
 
 # Configuration
-AWS_HOST="prod_0.5Gb_vm"
+AWS_HOST="prod_2Gb_vm"
 AWS_USER="ubuntu"
 DEFAULT_KEY="$HOME/.ssh/lightsail_visa_bulletin"
 

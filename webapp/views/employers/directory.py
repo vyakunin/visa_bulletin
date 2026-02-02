@@ -5,6 +5,7 @@ import json
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.conf import settings
 from django.views.decorators.cache import cache_page
 from django.db.models import Count, Exists, F, OuterRef, Q
 
@@ -14,7 +15,7 @@ from lib.utils.pagination import calculate_pagination_info, build_pagination_que
 from lib.utils.location_utils import US_STATES
 
 
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def company_autocomplete_view(request):
     """
     API endpoint for company name autocomplete suggestions.
@@ -51,7 +52,7 @@ def company_autocomplete_view(request):
     return HttpResponse(json.dumps(suggestions), content_type='application/json')
 
 
-@cache_page(60 * 60)  # Cache for 1 hour
+@cache_page(settings.CACHE_TIMEOUT)
 def employer_directory_view(request):
     """
     Employer directory page showing list of top employers with search and filters.

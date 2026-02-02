@@ -48,7 +48,7 @@ EOF
     echo ""
     echo "🧪 Testing new key..."
     if ssh -i ~/.ssh/lightsail_visa_bulletin -o StrictHostKeyChecking=no "${LIGHTSAIL_USER}@${LIGHTSAIL_IP}" "echo 'Connection successful!'" 2>/dev/null; then
-        echo "✅ New key works! You can now use: ssh staging_2Gb_vm"
+        echo "✅ New key works! You can now use: ssh prod_2Gb_vm"
     else
         echo "⚠️  Connection test failed. The key may need a moment to propagate."
     fi

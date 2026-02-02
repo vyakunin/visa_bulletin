@@ -67,15 +67,15 @@ if [ -f "$SSH_CONFIG" ]; then
 fi
 
 # Check if entry already exists
-if grep -q "Host staging_2Gb_vm" "$SSH_CONFIG" 2>/dev/null; then
-    echo "⚠️  Staging entry already exists in SSH config"
+if grep -q "Host prod_2Gb_vm" "$SSH_CONFIG" 2>/dev/null; then
+    echo "⚠️  Production entry already exists in SSH config"
     echo "   Edit $SSH_CONFIG manually to update if needed"
 else
     # Add new entry
     cat >> "$SSH_CONFIG" << EOF
 
-# AWS Lightsail - Visa Bulletin Project (staging)
-Host staging_2Gb_vm
+# AWS Lightsail - Visa Bulletin Project (production)
+Host prod_2Gb_vm
     HostName $LIGHTSAIL_IP
     User $LIGHTSAIL_USER
     IdentityFile $SSH_KEY
@@ -83,7 +83,7 @@ Host staging_2Gb_vm
     UserKnownHostsFile /dev/null
 EOF
     chmod 600 "$SSH_CONFIG"
-    echo "✅ Added staging_2Gb_vm configuration to SSH config"
+    echo "✅ Added prod_2Gb_vm configuration to SSH config"
 fi
 
 echo ""
@@ -92,7 +92,7 @@ if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i "$SSH_KEY" "${LIGHTSAI
     echo "✅ SSH connection successful!"
     echo ""
     echo "You can now connect using:"
-    echo "  ssh staging_2Gb_vm"
+    echo "  ssh prod_2Gb_vm"
     echo "  or"
     echo "  ssh -i $SSH_KEY ${LIGHTSAIL_USER}@${LIGHTSAIL_IP}"
 else

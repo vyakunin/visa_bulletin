@@ -4,8 +4,9 @@ import logging
 import time
 from datetime import datetime
 
+from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, Count, Exists, F, Max, Min, OuterRef, Q
+from django.db.models import Avg, Count, F, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -25,7 +26,7 @@ from models.salary import Employer, EmployerCluster, SalaryRecord
 logger = logging.getLogger(__name__)
 
 
-@cache_page(60 * 60 * 6)  # Cache for 6 hours
+@cache_page(settings.CACHE_TIMEOUT)
 def employer_profile_view(request, slug):
     """
     Employer profile page showing sponsorship statistics and trends.
@@ -307,7 +308,7 @@ def employer_profile_view(request, slug):
         logger.info("[employer_profile] build_charts slug=%s took %.3fs chart_payload_bytes=%d", slug, time.perf_counter() - t0, total_chart_bytes)
 
         # Get similar employers (top employers in same state)
-        # Slow: Exists(subquery) + Count(employers__salary_records, distinct=True) over many clusters; no index covers this path.
+        # Single aggregation from SalaryRecord by worksite_state -> top 5 clusters by filing count.
         top_state = None
         if stats['state_dist']:
             top_state = stats['state_dist'][0]['worksite_state']
@@ -315,32 +316,39 @@ def employer_profile_view(request, slug):
         similar_employers = []
         if top_state:
             t0 = time.perf_counter()
-            employers_in_state = Employer.objects.filter(
-                canonical_cluster=OuterRef('pk'),
-                salary_records__worksite_state=top_state,
-            )
-            similar_employers_qs = (
-                EmployerCluster.objects
-                .filter(slug__isnull=False)
-                .exclude(id=cluster.id)
-                .filter(Exists(employers_in_state))
-                .annotate(
-                    actual_lca_count=Count(
-                        'employers__salary_records__id',
-                        filter=Q(employers__salary_records__visa_program=VisaProgram.H1B),
-                        distinct=True,
-                    ),
-                    actual_perm_count=Count(
-                        'employers__salary_records__id',
-                        filter=Q(employers__salary_records__visa_program=VisaProgram.PERM),
-                        distinct=True,
-                    ),
+            rows = (
+                SalaryRecord.objects.filter(
+                    worksite_state=top_state,
+                    employer__canonical_cluster__isnull=False,
+                    employer__canonical_cluster__slug__isnull=False,
                 )
-                .annotate(total_count=F('actual_lca_count') + F('actual_perm_count'))
-                .order_by('-total_count')[:5]
+                .exclude(employer__canonical_cluster_id=cluster.id)
+                .values('employer__canonical_cluster_id')
+                .annotate(
+                    lca_count=Count('id', filter=Q(visa_program=VisaProgram.H1B)),
+                    perm_count=Count('id', filter=Q(visa_program=VisaProgram.PERM)),
+                )
+                .annotate(total=F('lca_count') + F('perm_count'))
+                .order_by('-total')[:5]
             )
-            similar_employers = list(similar_employers_qs)
-            logger.info("[employer_profile] similar_employers slug=%s top_state=%s took %.3fs (Exists+Count distinct over salary_records)", slug, top_state, time.perf_counter() - t0)
+            rows = list(rows)
+            if rows:
+                cluster_ids_ordered = [r['employer__canonical_cluster_id'] for r in rows]
+                clusters_by_id = {
+                    c.id: c
+                    for c in EmployerCluster.objects.filter(id__in=cluster_ids_ordered)
+                }
+                for r in rows:
+                    c = clusters_by_id.get(r['employer__canonical_cluster_id'])
+                    if c:
+                        c.actual_lca_count = r['lca_count']
+                        c.actual_perm_count = r['perm_count']
+                similar_employers = [
+                    clusters_by_id[cid]
+                    for cid in cluster_ids_ordered
+                    if cid in clusters_by_id
+                ]
+            logger.info("[employer_profile] similar_employers slug=%s top_state=%s took %.3fs (single SalaryRecord aggregation)", slug, top_state, time.perf_counter() - t0)
 
         # Cache full page payload so next request (any worker with shared cache) skips stats, build_charts, similar_employers
         similar_serialized = [
@@ -361,7 +369,7 @@ def employer_profile_view(request, slug):
             'top_state': top_state,
         }
         t0 = time.perf_counter()
-        cache.set(cache_key, payload, timeout=60 * 60 * 6)
+        cache.set(cache_key, payload)
         logger.info("[employer_profile] cache_set page_payload slug=%s took %.3fs", slug, time.perf_counter() - t0)
 
     # Build SEO metadata

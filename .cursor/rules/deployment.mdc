@@ -7,8 +7,8 @@ alwaysApply: true
 ## Production Instances
 
 **Current Production Instances:**
-- **44.209.204.255** - Next production instance (being set up to become main prod)
-- **3.227.71.176** - Old production (may be deprecated)
+- **44.209.204.255** - Production (`prod_2Gb_vm`)
+- **3.227.71.176** - Backup (`backup_0_5Gb_vm`)
 
 **When deploying, always verify:**
 - Which instance is the target
@@ -23,12 +23,12 @@ alwaysApply: true
 
 | Alias | IP | RAM | Purpose |
 |-------|----|-----|---------|
-| `staging_2Gb_vm` | 44.209.204.255 | 2GB | Staging / next production |
-| `prod_0.5Gb_vm` | 3.227.71.176 | 0.5GB | Legacy production |
+| `prod_2Gb_vm` | 44.209.204.255 | 2GB | Production |
+| `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup |
 
 **When user mentions a specific instance:**
-- ✅ Use the matching alias: `ssh staging_2Gb_vm` or `ssh prod_0.5Gb_vm`
-- ✅ Verify with user: "Working with staging_2Gb_vm (44.209.204.255), correct?"
+- ✅ Use the matching alias: `ssh prod_2Gb_vm` or `ssh backup_0_5Gb_vm`
+- ✅ Verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?"
 - ❌ Don't use raw IPs or the old `lightsail` aliases
 
 **When debugging production issues:**
@@ -37,32 +37,48 @@ alwaysApply: true
 - Verify instance in first command before making changes
 
 **Rationale:**
-- Multiple instances exist (old prod, new instances, staging)
+- Multiple instances exist (prod, backup)
 - Wrong alias = wrong instance
 - Wrong instance = data corruption or service disruption
 - Always be explicit when making changes
 
-## Rule: Deploy to Staging After Implementing User-Requested Changes
+## Rule: Verify Locally Before Deploying to Production
 
-**When the user asks to change something (code, UI, feature, fix), also deploy the changes to staging after implementing.**
+**CRITICAL: When working with production, first verify changes locally, only then deploy to prod.**
+
+**Workflow:**
+1. Implement the change locally.
+2. Run relevant tests (e.g. `bazel test //tests:...`).
+3. **Verify locally** (run dev server, open the affected URL, confirm behavior).
+4. Only then deploy to production (scp, reload, or zero-downtime script).
+
+**Rationale:**
+- Prevents broken or untested code from reaching production (e.g. IntegerChoices crash from class-level dict).
+- Catches bugs before users see them.
+- Reduces rollbacks and hotfixes.
+
+## Rule: Deploy to Production After Implementing User-Requested Changes
+
+**When the user asks to change something (code, UI, feature, fix), also deploy the changes to production after implementing.**
 
 **Workflow:**
 1. Implement the requested change locally.
 2. Run relevant tests (e.g. `bazel test //tests:...`).
-3. Deploy to staging using the "Deploy from source" flow:
-   - `scp` the changed files to `staging_2Gb_vm:/opt/visa_bulletin/...`
-   - Reload gunicorn: `ssh staging_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
+3. Verify locally (see rule above).
+4. Deploy to production using the "Deploy from source" flow:
+   - `scp` the changed files to `prod_2Gb_vm:/opt/visa_bulletin/...`
+   - Reload gunicorn: `ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
 4. Optionally verify (curl the affected URL, check HTML/API).
 
-**Do not deploy to staging when:**
+**Do not deploy to production when:**
 - User explicitly says "don't deploy" or "local only".
 - Change is documentation-only and has no runtime effect.
 - User only asked to "plan" or "document" (no code change).
 
 **Rationale:**
-- User expects to see changes on staging without asking again.
+- User expects to see changes on production without asking again.
 - Reduces back-and-forth ("can you deploy that?").
-- Staging is for validation; deploy there by default after code changes.
+- Deploy to production by default after code changes.
 
 ## Rule: Never Use Development Scripts on Production
 
@@ -89,44 +105,44 @@ alwaysApply: true
 ### 1. Check which environment is active (blue or green)
 ```bash
 # Check nginx config to see which port is active
-ssh production "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
+ssh prod_2Gb_vm "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
 # Port 8000 = blue, Port 8001 = green
 
 # Or check running containers
-ssh production "docker ps --format '{{.Names}}'"
+ssh prod_2Gb_vm "docker ps --format '{{.Names}}'"
 ```
 
 ### 2. Restart the active environment
 ```bash
 # If blue is active (port 8000):
-ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
 
 # If green is active (port 8001):
-ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
 ```
 
 ### 3. Verify service is healthy
 ```bash
 # Check container status
-ssh production "docker ps | grep visa_bulletin"
+ssh prod_2Gb_vm "docker ps | grep visa_bulletin"
 
 # Check health
-ssh production "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
+ssh prod_2Gb_vm "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
 
 # Test the endpoint
 curl -I http://production-ip/
 
 # Check logs if issues
-ssh production "docker logs visa_bulletin_web_blue --tail 50"
+ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail 50"
 ```
 
 ### If containers aren't running (like I just broke):
 ```bash
 # Start the blue environment
-ssh production "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
 
 # Monitor startup
-ssh production "docker logs -f visa_bulletin_web_blue"
+ssh prod_2Gb_vm "docker logs -f visa_bulletin_web_blue"
 ```
 
 ### Cache clearing:
@@ -291,6 +307,32 @@ See `ROLLOUT_FLOW.md` for the complete step-by-step process.
 
 **If checks fail:** Follow the suggested fixes before proceeding with deployment.
 
+## Cache reset (clear_cache script)
+
+**When to run:** After data refresh or deploy that changes cached payloads (e.g. job title canonical_title, employer/salary stats). Ensures autocomplete, directory, and profile pages show fresh data.
+
+**What it resets:** All Django default cache keys, including:
+- Job title autocomplete (`/api/job-title-autocomplete/`) and directory (`/job-titles/`)
+- Employer directory and profile pages
+- Salary search results
+- Market overview, fiscal years, count caches
+- Sitemaps, dashboard, other `@cache_page` views
+
+**How to run:**
+```bash
+# On production
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
+# If using LocMem (no Redis), reload gunicorn so workers see cleared cache
+ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
+# Optional: reload nginx if it caches responses
+ssh prod_2Gb_vm "sudo nginx -s reload"
+```
+
+**With Redis:** Cache is shared; `clear_cache` is enough; no app restart needed.  
+**With LocMem:** Reload gunicorn after `clear_cache` so workers pick up empty cache.
+
+**Script:** `scripts/clear_cache.py` — docstring lists all affected caches. See also job title coherence rule (clear cache after update_job_title_cluster_stats).
+
 ## Rollback Procedure
 
 If deployment fails or issues arise:
@@ -303,7 +345,7 @@ If deployment fails or issues arise:
 
 ### Emergency Rollback (Docker → Systemd)
 ```bash
-ssh prod_0.5Gb_vm 'cd /opt/visa_bulletin && \
+ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && \
  sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
  sudo nginx -t && sudo systemctl reload nginx'
 ```
@@ -333,7 +375,7 @@ Use `./scripts/deploy-zero-downtime.sh` which:
 
 **Manual Fix (if error occurs outside deployment script):**
 ```bash
-ssh prod_0.5Gb_vm
+ssh backup_0_5Gb_vm
 cd /opt/visa_bulletin
 sudo docker-compose down
 sudo docker-compose up -d
@@ -384,7 +426,7 @@ After any deployment:
 curl -I https://visa-bulletin.us
 
 # Check Docker logs
-ssh prod_0.5Gb_vm "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
+ssh backup_0_5Gb_vm "cd /opt/visa_bulletin && sudo docker-compose -f docker-compose.test.yml logs --tail=50"
 
 # Monitor for 10-15 minutes for errors
 ```

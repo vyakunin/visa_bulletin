@@ -2,8 +2,109 @@
 
 ## Domain: visa-bulletin.us
 
-**Server IP:** 3.227.71.176 (static)
-**IPv6:** 2600:1f18:7441:2700:b30b:7030:f8a3:fec1
+**Production IP:** 44.209.204.255 (static, `prod_2Gb_vm`)  
+**Backup IP:** 3.227.71.176 (static, `backup_0_5Gb_vm`)  
+**IPv6 (backup):** 2600:1f18:7441:2700:b30b:7030:f8a3:fec1
+
+**Analytics (GoatCounter):** No special setup on prod. The app injects `ANALYTICS_SCRIPT` from the environment; Docker Compose and systemd already set it to `https://vyakunin.goatcounter.com/count`. As long as the site is served with that env, page views appear at https://vyakunin.goatcounter.com/.
+
+**Redis memory limit (systemd prod):** When the app runs with systemd and Redis on the host (`REDIS_URL=redis://127.0.0.1:6379/1`), set a maxmemory so Redis doesn't use unbounded RAM. Copy `deployment/redis/redis-maxmemory.conf` to the Redis config dir (e.g. `/etc/redis/redis.conf.d/99-maxmemory.conf`) and restart Redis. See `deployment/redis/redis-maxmemory.conf` for details.
+
+---
+
+## Flip DNS to production (44.209.204.255)
+
+Use this when you want visa-bulletin.us to point at the production (2GB) instance.
+
+### 1. Pre-check on prod (before DNS change)
+
+```bash
+ssh prod_2Gb_vm "grep ALLOWED_HOSTS /opt/visa_bulletin/.env"
+# Must include: visa-bulletin.us, www.visa-bulletin.us, 44.209.204.255
+
+ssh prod_2Gb_vm "curl -sI http://localhost:8000/ | head -1"
+# Expect: HTTP/1.1 200
+
+ssh prod_2Gb_vm "sudo nginx -t && curl -sI http://localhost/ | head -1"
+# Nginx OK, and 200 or 302 from Nginx
+```
+
+Ensure Lightsail firewall allows 80 and 443 (Network tab → IPv4 firewall).
+
+### 2. Update DNS at registrar
+
+Set A records to **44.209.204.255**:
+
+| Type | Name | Value        | TTL  |
+|------|------|--------------|------|
+| A    | @    | 44.209.204.255 | 300 |
+| A    | www  | 44.209.204.255 | 300 |
+
+(Optional) If you use AAAA, either point them to prod's IPv6 or remove them until prod has a static IPv6.
+
+Verify after 5–30 min:
+
+```bash
+dig visa-bulletin.us +short   # should show 44.209.204.255
+```
+
+### 3. HTTPS on prod (after DNS points to 44.209.204.255)
+
+```bash
+ssh prod_2Gb_vm
+
+# Install Certbot if not already
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+
+# Obtain certificate (Nginx must be serving the domain on port 80)
+sudo certbot --nginx -d visa-bulletin.us -d www.visa-bulletin.us
+# Choose: Redirect HTTP to HTTPS (recommended)
+
+# Verify
+sudo certbot certificates
+curl -I https://visa-bulletin.us
+sudo certbot renew --dry-run
+```
+
+### 4. Monitoring
+
+- **UptimeRobot** (https://uptimerobot.com): Add HTTP(S) monitor for `https://visa-bulletin.us`, interval 5 min, alert on non-200 or timeout.
+- **Certificate expiry:** UptimeRobot “Keyword” monitor or a dedicated SSL monitor; alert ~30 days before expiry (Certbot auto-renews; this catches failures).
+- Optional: second monitor for `https://www.visa-bulletin.us` or a key page (e.g. `/salaries/`).
+
+### 5. Post–DNS flip verification
+
+```bash
+curl -I https://visa-bulletin.us
+curl -I https://www.visa-bulletin.us
+curl -I http://visa-bulletin.us
+# HTTP should 301/302 to HTTPS; HTTPS should 200
+```
+
+### 6. If https://visa-bulletin.us doesn’t load in the browser
+
+**Symptom:** Page never loads, or “connection timed out” for `https://visa-bulletin.us`.
+
+**Cause:** Port **443** is not open in the **Lightsail firewall** (Nginx is listening on the server, but traffic is blocked before it reaches the instance).
+
+**Fix (console):** In AWS Lightsail → your instance (44.209.204.255) → **Networking** tab → **IPv4 firewall** → **+ Add rule**:
+
+- Application: **Custom**
+- Protocol: **TCP**
+- Port: **443**
+- Source: **Anywhere** (0.0.0.0/0) or restrict to your IP
+
+**Fix (AWS CLI):** After `aws login` (or with valid AWS credentials):
+
+```bash
+aws lightsail open-instance-public-ports \
+  --instance-name VisaBulletin2GB \
+  --port-info fromPort=443,toPort=443,protocol=tcp \
+  --region us-east-1
+```
+
+This only opens 443; existing ports (e.g. 80, 22) stay open. Then retry `https://visa-bulletin.us/` in the browser.
 
 ---
 

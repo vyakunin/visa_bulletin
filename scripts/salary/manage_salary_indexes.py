@@ -197,7 +197,7 @@ def recreate_indexes(snapshot_path: Path) -> None:
 
 
 def create_clustering_indexes() -> None:
-    """Create minimal indexes required for clustering (job titles and employers)."""
+    """Create minimal indexes required for clustering and employer profile performance."""
     _ensure_no_running_ingests()
     
     clustering_indexes = [
@@ -206,6 +206,8 @@ def create_clustering_indexes() -> None:
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program)",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title)",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state)",
+        # Covering index for employer profile percentiles/histogram (index-only scan, no heap fetches)
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS sr_emp_wk_fy_inc_wage ON salary_record(employer_id, is_worksite, fiscal_year) INCLUDE (wage_annual)",
     ]
     
     logger.info("Creating %d clustering indexes...", len(clustering_indexes))

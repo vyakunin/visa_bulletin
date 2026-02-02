@@ -66,7 +66,7 @@ def warm_fiscal_years_cache(verbose: bool = False):
         .distinct()
         .order_by('-fiscal_year')
     )
-    cache.set('salary_fiscal_years', fiscal_years, 60 * 60 * 24)
+    cache.set('salary_fiscal_years', fiscal_years)
     
     elapsed = time.time() - start
     logger.info(f"  Fiscal years cache warmed in {elapsed:.1f}s")
@@ -91,7 +91,7 @@ def warm_count_caches(verbose: bool = False):
     # Total non-worksite count
     cache.delete('salary_non_worksite_count')
     total_count = base_qs.count()
-    cache.set('salary_non_worksite_count', total_count, 60 * 60)
+    cache.set('salary_non_worksite_count', total_count)
     logger.info(f"  Total non-worksite count: {total_count:,}")
     
     # H1B count
@@ -100,19 +100,19 @@ def warm_count_caches(verbose: bool = False):
     h1b_count = base_qs.filter(
         visa_program__in=[VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3]
     ).count()
-    cache.set('salary_h1b_non_worksite_count', h1b_count, 60 * 60)
+    cache.set('salary_h1b_non_worksite_count', h1b_count)
     logger.info(f"  H1B non-worksite count: {h1b_count:,}")
     
     # PERM count
     cache.delete('salary_perm_non_worksite_count')
     perm_count = base_qs.filter(visa_program=VisaProgram.PERM).count()
-    cache.set('salary_perm_non_worksite_count', perm_count, 60 * 60)
+    cache.set('salary_perm_non_worksite_count', perm_count)
     logger.info(f"  PERM non-worksite count: {perm_count:,}")
     
     # Has data flag
     cache.delete('salary_has_data')
     has_data = SalaryRecord.objects.exists()
-    cache.set('salary_has_data', not has_data, 60 * 60)
+    cache.set('salary_has_data', not has_data)
     
     elapsed = time.time() - start
     logger.info(f"  Count caches warmed in {elapsed:.1f}s")

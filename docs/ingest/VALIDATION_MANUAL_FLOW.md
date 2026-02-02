@@ -31,7 +31,7 @@ bazel run //scripts/salary:validate_data -- --test-homepage-queries
 
 ```bash
 # SSH to production
-ssh prod_0.5Gb_vm
+ssh backup_0_5Gb_vm
 
 # Navigate to project
 cd /opt/visa_bulletin
@@ -212,7 +212,7 @@ bazel run //scripts/salary:validate_data
 
 ```bash
 # SSH to production server
-ssh prod_0.5Gb_vm
+ssh backup_0_5Gb_vm
 
 # Navigate to project
 cd /opt/visa_bulletin

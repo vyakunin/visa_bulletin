@@ -34,7 +34,7 @@ The view logs timing for each major step. Look for log lines prefixed with `[emp
 
 **Where to see logs:** Application logs (e.g. gunicorn/stdout, or `journalctl -u visa-bulletin-web.service` when run via systemd). Filter by `[employer_profile]` or logger name to analyze a specific request.
 
-### Observed bottlenecks (staging, top 10 employers by filings, cold load)
+### Observed bottlenecks (prod, top 10 employers by filings, cold load)
 
 | Step | Typical range | Notes |
 |------|----------------|--------|
@@ -53,7 +53,7 @@ The view logs timing for each major step. Look for log lines prefixed with `[emp
 
 **Conclusion:** Optimize (1) **build_charts** (fewer/simpler charts or lazy-load job title histograms), (2) **similar_employers** (cache or pre-aggregate), (3) stats block (composite index, DB-side percentiles, single-pass histogram).
 
-### Deploy check (staging, Feb 2026)
+### Deploy check (prod, Feb 2026)
 
 Cold request (Microsoft, Google): **build_chart** granular logs show **salary_histogram** ~0.3–0.4s and ~12k bytes; **state_filings / state_median_salary / filing_volume / salary_trend** each ~0.02–0.03s and ~7k bytes; **job_title_histograms** count=10 ~0.2s; **chart_payload_bytes** ~125k. **similar_employers** Google/CA 4.1s, Microsoft/WA 2.3s. **Cache hit:** Second request to same URL on the **same worker** gave `cache_hit=True` and `page_total ... took 0.012s`; when a different worker gets the request, cache miss and page is slow again unless the backend is shared (e.g. Redis).
 

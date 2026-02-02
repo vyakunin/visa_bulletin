@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.cache import cache_page
@@ -14,7 +15,7 @@ from models.job_title import JobTitleCluster
 logger = logging.getLogger(__name__)
 
 
-@cache_page(60 * 60 * 24)
+@cache_page(settings.CACHE_TIMEOUT)
 def robots_view(request):
     """Generate robots.txt."""
     lines = [
@@ -25,7 +26,7 @@ def robots_view(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
-@cache_page(60 * 60 * 24)
+@cache_page(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap."""
     base_url = request.build_absolute_uri('/')[:-1]
@@ -33,7 +34,9 @@ def sitemap_view(request):
     urls = [
         f"{base_url}/",
         f"{base_url}/salaries/",
+        f"{base_url}/worksites/",
         f"{base_url}/employers/",
+        f"{base_url}/job-titles/",
         f"{base_url}/faq/",
         f"{base_url}/about/",
         f"{base_url}/contact/",
@@ -48,8 +51,11 @@ def sitemap_view(request):
     for _, cat_slug in categories:
         urls.append(f"{base_url}/{cat_slug}/")
         for c in Country:
-            if c.value != Country.ALL.value:
-                urls.append(f"{base_url}/{cat_slug}/{c.value}/")
+            if c.value == Country.INVALID:
+                continue
+            slug = Country.slug_for_value(c.value)
+            if slug:
+                urls.append(f"{base_url}/{cat_slug}/{slug}/")
     
     # Employer profile pages (only include employers with 5+ filings)
     try:
@@ -66,13 +72,13 @@ def sitemap_view(request):
     for cluster in employer_clusters:
         urls.append(f"{base_url}/employer/{cluster.slug}/")
     
-    # Job title profile pages (top 5000 by filing count)
+    # Job title profile pages (top 10,000 by filing count)
     try:
         job_title_clusters = list(
             JobTitleCluster.objects.filter(
                 slug__isnull=False,
                 total_filings__gte=10,
-            ).order_by('-total_filings')[:5000]
+            ).order_by('-total_filings')[:10000]
         )
     except (OperationalError, ProgrammingError) as exc:
         logger.error("Failed to load job title clusters for sitemap", exc_info=True)

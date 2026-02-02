@@ -2,11 +2,14 @@
 Shared salary statistics utilities for profile and landing pages.
 """
 
+import logging
 from datetime import datetime
 
 from django.db.models import Avg, Count, Max, Min, Q, StdDev
 
 from models.enums.visa_program import VisaProgram
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_market_overview_stats(queryset) -> dict:
@@ -143,7 +146,11 @@ def calculate_salary_percentiles(queryset) -> dict:
 
     Uses a simple list-based percentile calculation.
     """
+    import time
+
+    t0 = time.perf_counter()
     salaries = list(queryset.values_list("wage_annual", flat=True).order_by("wage_annual"))
+    query_sec = time.perf_counter() - t0
 
     if not salaries:
         return {
@@ -166,13 +173,22 @@ def calculate_salary_percentiles(queryset) -> dict:
         d1 = float(data[c])
         return d0 + (d1 - d0) * (k - f)
 
-    return {
+    t1 = time.perf_counter()
+    result = {
         "p10": percentile(salaries, 10),
         "p25": percentile(salaries, 25),
         "p50": percentile(salaries, 50),
         "p75": percentile(salaries, 75),
         "p90": percentile(salaries, 90),
     }
+    python_sec = time.perf_counter() - t1
+    logger.info(
+        "[salary_percentiles] rows=%d query_sec=%.3f python_sec=%.3f",
+        len(salaries),
+        query_sec,
+        python_sec,
+    )
+    return result
 
 
 # Cap histogram X-axis at this percentile so the chart focuses on where data is

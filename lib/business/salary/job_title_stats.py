@@ -161,7 +161,10 @@ def get_job_title_statistics(
     salary_percentiles = calculate_salary_percentiles(records)
     
     # C. Top Employers for This Role
-    top_employers = list(
+    # Note: Records with employer=None or employer.canonical_cluster=None group under
+    # canonical_name=None (displayed as "None"). We exclude that group so we don't show
+    # "None" as a company name (see company_comparison for root-cause trace).
+    top_employers_raw = list(
         records
         .values(
             'employer__canonical_cluster__canonical_name',
@@ -174,8 +177,9 @@ def get_job_title_statistics(
             max_salary=Max('wage_annual'),
             approval_rate=Count('id', filter=Q(case_status=1)) * 100.0 / Count('id'),
         )
-        .order_by('-count')[:15]
+        .order_by('-count')
     )
+    top_employers = [e for e in top_employers_raw if e.get('employer__canonical_cluster__canonical_name')][:15]
 
     # Salary histogram data (overall + top employer overlays)
     overlay_employers = [
@@ -291,6 +295,12 @@ def get_job_title_statistics(
     )
     
     # H. Company Comparison (top 5 employers with detailed stats)
+    # "None" row: records where employer_id is NULL or employer.canonical_cluster_id is NULL.
+    # Raw-data trace: (1) employer_id NULL → employer_name present but FK never set (e.g. legacy
+    # import or fix_missing_employers not run); (2) canonical_cluster NULL → employer exists but
+    # clustering not run (e.g. fix_missing_employers creates employer without assign_to_cluster,
+    # or ingest with skip_clustering and cluster_existing_employers not run). Exclude the None
+    # group from display so we don't show "None" as a company name.
     company_comparison = list(
         records
         .values(
@@ -302,8 +312,10 @@ def get_job_title_statistics(
             median_salary=Avg('wage_annual'),
             approval_rate=Count('id', filter=Q(case_status=1)) * 100.0 / Count('id'),
         )
-        .order_by('-count')[:5]
+        .order_by('-count')
     )
+    # Drop the group with no company name (employer null or unclustered), then take top 5
+    company_comparison = [c for c in company_comparison if c.get('employer__canonical_cluster__canonical_name')][:5]
     
     # Compile all stats
     stats = {
@@ -333,7 +345,7 @@ def get_job_title_statistics(
     }
     
     # Cache for 6 hours
-    cache.set(cache_key, stats, timeout=60*60*6)
+    cache.set(cache_key, stats)
     
     return stats
 
@@ -403,6 +415,6 @@ def get_related_job_titles(
     }
     
     # Cache for 6 hours
-    cache.set(cache_key, related, timeout=60*60*6)
+    cache.set(cache_key, related)
     
     return related

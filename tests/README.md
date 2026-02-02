@@ -18,15 +18,15 @@ bazel test //tests/...
 
 `.github/workflows/test.yml` runs tests with a PostgreSQL 15 service. It sets `DB_NAME=postgres`, `DB_USER=postgres`, `DB_PASSWORD=postgres`. The `postgres` user has CREATEDB, so we create `test_postgres` and run migrations there. The real `postgres` database is never written to; only `test_postgres` is used for test data.
 
-## Staging
+## Production VM
 
-Run the full test suite on the staging VM manually (uses `.env` there; DB user must have CREATEDB or use `postgres` for tests):
+Run the full test suite on the production VM manually (uses `.env` there; DB user must have CREATEDB or use `postgres` for tests):
 
 ```bash
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests/... --test_output=errors"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel test //tests/... --test_output=errors"
 ```
 
-Tests on staging create and use `test_postgres` on the staging DB server; they do not touch the real app database.
+Tests on prod create and use `test_postgres` on the prod DB server; they do not touch the real app database.
 
 ## Macro for DB tests
 

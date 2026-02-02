@@ -24,10 +24,10 @@ DEFAULT_KEY="$HOME/.ssh/lightsail_visa_bulletin"
 DEPLOY_DIR="/opt/visa_bulletin"
 
 # Parse arguments: [ssh-key-path] [image-tag] [host]
-# host defaults to prod_0.5Gb_vm; use staging_2Gb_vm for staging
+# host defaults to prod_2Gb_vm (production); use backup_0_5Gb_vm for backup
 SSH_KEY="${1:-$DEFAULT_KEY}"
 IMAGE_TAG="${2:-latest}"
-AWS_HOST="${3:-prod_0.5Gb_vm}"
+AWS_HOST="${3:-prod_2Gb_vm}"
 
 if [ ! -f "$SSH_KEY" ]; then
     echo "❌ SSH key not found: $SSH_KEY"
@@ -179,11 +179,11 @@ echo "Image deployed: ghcr.io/vyakunin/visa_bulletin:$IMAGE_TAG"
 echo ""
 echo "🔍 Verifying deployment..."
 
-# Check site is responding (staging uses IP, prod uses domain)
-if [ "$AWS_HOST" = "staging_2Gb_vm" ]; then
-  VERIFY_URL="http://44.209.204.255"
-else
+# Check site is responding (prod uses domain, backup uses IP)
+if [ "$AWS_HOST" = "prod_2Gb_vm" ]; then
   VERIFY_URL="https://visa-bulletin.us"
+else
+  VERIFY_URL="http://3.227.71.176"
 fi
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$VERIFY_URL" || echo "000")
 if [ "$HTTP_STATUS" = "200" ]; then

@@ -190,15 +190,21 @@ def _append_records_to_data(data: VisaClassData, records) -> None:
             data.cutoff_dates.append(record.cutoff_date)
 
 
+# Minimum bulletin date to show a visa class (only show classes with updates after 2012)
+_MIN_BULLETIN_DATE = date(2013, 1, 1)
+
+
 def _finalize_aggregated_data(
     normalized_data: dict[str, VisaClassData],
     submission_date: date
 ) -> list[dict]:
-    """Sort data by date, calculate projections, and convert to dicts"""
+    """Sort data by date, calculate projections, and convert to dicts. Only includes visa classes with at least one bulletin date on or after 2013-01-01."""
     result = []
     
     for data in normalized_data.values():
         if not data.dates:
+            continue
+        if max(data.dates) < _MIN_BULLETIN_DATE:
             continue
         
         # Sort all lists by date

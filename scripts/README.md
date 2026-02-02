@@ -722,11 +722,15 @@ bazel run //:makemigrations_wrapper
 bazel run //scripts:run_sql -- --query "SELECT COUNT(*) FROM salary_record"
 ```
 
-**`scripts/clear_cache.py`** - Clear Django cache (employer profile, salary search, market overview). Use after a major data refresh or deploy that changes cached payloads. With Redis, no server restart needed. See *Cache cleansing* in `docs/EMPLOYER_PROFILE_QUERIES_AND_OPTIMIZATION.md`.
+**`scripts/clear_cache.py`** - Clear Django cache (job title autocomplete and directory, employer profile, salary search, market overview, sitemaps, etc.). Use after update_job_title_cluster_stats, refresh_data, or any deploy that changes cached payloads. With Redis, no server restart needed; with LocMem, reload gunicorn after. See `.cursor/rules/deployment.mdc` (Cache reset) and job title coherence rule.
 ```bash
 bazel run //scripts:clear_cache
+# Clear only sitemap.xml and robots.txt cache (no full clear):
+bazel run //scripts:clear_cache -- --sitemap-only
+# On production, set SITE_DOMAIN so the key matches:
+SITE_DOMAIN=visa-bulletin.us bazel run //scripts:clear_cache -- --sitemap-only
 ```
-On memory-constrained instances (e.g. 2GB staging/production): run then shut down Bazel to free memory:
+On memory-constrained instances (e.g. 2GB production): run then shut down Bazel to free memory:
 ```bash
 bazel run //scripts:clear_cache && bazel shutdown
 ```
