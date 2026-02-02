@@ -385,11 +385,12 @@ class TestJobTitleSlugGeneration(TestCase):
     }
 )
 class TestJobTitleAutocompleteView(TestCase):
-    """Test job title autocomplete sorting and grouping."""
+    """Test job title autocomplete sorting and grouping (ranks by recent-year filings)."""
 
     def setUp(self):
         """Set up test data for autocomplete."""
         from django.core.cache import cache
+        from datetime import datetime
         cache.clear()
 
         self.cluster_software = JobTitleCluster.objects.create(
@@ -413,28 +414,28 @@ class TestJobTitleAutocompleteView(TestCase):
             total_filings=35,
         )
 
-        JobTitle.objects.create(
+        jt_se = JobTitle.objects.create(
             title="Software Engineer",
             title_normalized="software engineer",
             experience_level="",
             canonical_cluster=self.cluster_software,
             total_filings=120,
         )
-        JobTitle.objects.create(
+        jt_net = JobTitle.objects.create(
             title=".NET Software Engineer",
             title_normalized="net software engineer",
             experience_level="",
             canonical_cluster=self.cluster_net_base,
             total_filings=10,
         )
-        JobTitle.objects.create(
+        jt_net_2 = JobTitle.objects.create(
             title=".NET Software Engineer 2",
             title_normalized="net software engineer",
             experience_level="ii",
             canonical_cluster=self.cluster_net_level_2,
             total_filings=25,
         )
-        JobTitle.objects.create(
+        jt_net_3 = JobTitle.objects.create(
             title=".NET Software Engineer 3",
             title_normalized="net software engineer",
             experience_level="iii",
@@ -442,8 +443,60 @@ class TestJobTitleAutocompleteView(TestCase):
             total_filings=35,
         )
 
+        # Autocomplete ranks by filings in last AUTOCOMPLETE_YEARS; create recent records.
+        recent_fy = datetime.now().year - 2  # Within last 5 years
+        for i in range(120):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-AC-SE-{i}",
+                employer_name="Test Co",
+                job_title="Software Engineer",
+                job_title_entity=jt_se,
+                visa_program=VisaProgram.H1B,
+                fiscal_year=recent_fy,
+                wage_annual=Decimal("120000"),
+            )
+        for i in range(10):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-AC-NET-{i}",
+                employer_name="Test Co",
+                job_title=".NET Software Engineer",
+                job_title_entity=jt_net,
+                visa_program=VisaProgram.H1B,
+                fiscal_year=recent_fy,
+                wage_annual=Decimal("110000"),
+            )
+        for i in range(25):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-AC-NET2-{i}",
+                employer_name="Test Co",
+                job_title=".NET Software Engineer 2",
+                job_title_entity=jt_net_2,
+                visa_program=VisaProgram.H1B,
+                fiscal_year=recent_fy,
+                wage_annual=Decimal("115000"),
+            )
+        for i in range(35):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-AC-NET3-{i}",
+                employer_name="Test Co",
+                job_title=".NET Software Engineer 3",
+                job_title_entity=jt_net_3,
+                visa_program=VisaProgram.H1B,
+                fiscal_year=recent_fy,
+                wage_annual=Decimal("125000"),
+            )
+        # Autocomplete uses precomputed total_filings_recent; set it so we don't run stats script
+        self.cluster_software.total_filings_recent = 120
+        self.cluster_software.save()
+        self.cluster_net_base.total_filings_recent = 10
+        self.cluster_net_base.save()
+        self.cluster_net_level_2.total_filings_recent = 25
+        self.cluster_net_level_2.save()
+        self.cluster_net_level_3.total_filings_recent = 35
+        self.cluster_net_level_3.save()
+
     def test_autocomplete_orders_by_normalized_popularity(self):
-        """Autocomplete returns clusters matching query, ordered by total_filings desc."""
+        """Autocomplete returns clusters matching query, ordered by recent filings desc."""
         client = Client()
         response = client.get(
             reverse('job_title_autocomplete'),
@@ -647,6 +700,7 @@ class TestJobTitleDataCoherence(TestCase):
 
     def setUp(self):
         from django.core.cache import cache
+        from datetime import datetime
         cache.clear()
         # Cluster A: representative title "Data Analyst", slug data-analyst-coherence
         self.cluster_a, _ = JobTitleCluster.objects.get_or_create(
@@ -673,8 +727,62 @@ class TestJobTitleDataCoherence(TestCase):
         self.cluster_b.canonical_title = "Data Scientist"
         self.cluster_b.save()
 
+        # Autocomplete ranks by recent-year filings; create JobTitles + recent SalaryRecords.
+        recent_fy = datetime.now().year - 2
+        jt_a, _ = JobTitle.objects.get_or_create(
+            title_normalized="data analyst",
+            experience_level="",
+            defaults={
+                'title': "Data Analyst",
+                'canonical_cluster': self.cluster_a,
+                'total_filings': 500,
+            },
+        )
+        jt_a.canonical_cluster = self.cluster_a
+        jt_a.save()
+        jt_b, _ = JobTitle.objects.get_or_create(
+            title_normalized="data scientist",
+            experience_level="",
+            defaults={
+                'title': "Data Scientist",
+                'canonical_cluster': self.cluster_b,
+                'total_filings': 300,
+            },
+        )
+        jt_b.canonical_cluster = self.cluster_b
+        jt_b.save()
+        for i in range(50):
+            SalaryRecord.objects.get_or_create(
+                case_number=f"TEST-COH-A-{i}",
+                defaults={
+                    'employer_name': "Test Co",
+                    'job_title': "Data Analyst",
+                    'job_title_entity': jt_a,
+                    'visa_program': VisaProgram.H1B,
+                    'fiscal_year': recent_fy,
+                    'wage_annual': Decimal("95000"),
+                },
+            )
+        for i in range(30):
+            SalaryRecord.objects.get_or_create(
+                case_number=f"TEST-COH-B-{i}",
+                defaults={
+                    'employer_name': "Test Co",
+                    'job_title': "Data Scientist",
+                    'job_title_entity': jt_b,
+                    'visa_program': VisaProgram.H1B,
+                    'fiscal_year': recent_fy,
+                    'wage_annual': Decimal("120000"),
+                },
+            )
+        # Autocomplete uses precomputed total_filings_recent; set it so we don't run stats script
+        self.cluster_a.total_filings_recent = 50
+        self.cluster_a.save()
+        self.cluster_b.total_filings_recent = 30
+        self.cluster_b.save()
+
     def test_autocomplete_returns_canonical_title_total_filings_slug(self):
-        """Autocomplete API returns title=canonical_title, total_filings, slug."""
+        """Autocomplete API returns title=canonical_title, total_filings (recent count), slug."""
         client = Client()
         response = client.get(
             reverse('job_title_autocomplete'),
@@ -686,11 +794,11 @@ class TestJobTitleDataCoherence(TestCase):
         first = next((x for x in data if x.get('slug') == 'data-analyst-coherence'), None)
         self.assertIsNotNone(first, f"Expected slug data-analyst-coherence in {data}")
         self.assertEqual(first['title'], "Data Analyst")
-        self.assertEqual(first['total_filings'], 500)
+        self.assertEqual(first['total_filings'], 50)  # Recent-year count, not all-time 500
         self.assertEqual(first['slug'], "data-analyst-coherence")
 
     def test_autocomplete_order_by_total_filings_desc(self):
-        """Autocomplete results are ordered by total_filings descending."""
+        """Autocomplete results are ordered by recent filings descending."""
         client = Client()
         response = client.get(
             reverse('job_title_autocomplete'),
@@ -705,7 +813,7 @@ class TestJobTitleDataCoherence(TestCase):
             self.assertGreater(
                 data[idx_a]['total_filings'],
                 data[idx_b]['total_filings'],
-                msg="Higher total_filings cluster should appear first",
+                msg="Higher recent filings cluster should appear first",
             )
 
     def test_profile_total_filings_matches_cluster(self):
@@ -742,8 +850,8 @@ class TestJobTitleDataCoherence(TestCase):
                 self.assertIsNotNone(getattr(similar, 'slug', None))
                 self.assertIsNotNone(getattr(similar, 'total_filings', None))
 
-    def test_autocomplete_and_profile_count_match(self):
-        """Autocomplete total_filings for a slug matches profile page Total Filings."""
+    def test_autocomplete_recent_profile_all_time(self):
+        """Autocomplete shows recent-year filing count; profile shows all-time total."""
         client = Client()
         response_ac = client.get(
             reverse('job_title_autocomplete'),
@@ -753,16 +861,12 @@ class TestJobTitleDataCoherence(TestCase):
         data = json.loads(response_ac.content)
         item = next((x for x in data if x.get('slug') == 'data-analyst-coherence'), None)
         self.assertIsNotNone(item, f"Expected slug data-analyst-coherence in autocomplete: {data}")
-        expected_count = item['total_filings']
+        self.assertEqual(item['total_filings'], 50)  # Recent-year count
         response_profile = client.get(
             reverse('job_title_profile', kwargs={'slug': 'data-analyst-coherence'}),
         )
         self.assertEqual(response_profile.status_code, 200)
-        self.assertContains(
-            response_profile,
-            str(expected_count),
-            msg_prefix=f"Profile should show same count as autocomplete ({expected_count})",
-        )
+        self.assertContains(response_profile, "500", msg_prefix="Profile shows all-time total (500)")
 
     def test_generated_url_resolves_and_shows_data(self):
         """Generated URL /job-title/<slug>/ resolves and shows cluster data with correct count."""

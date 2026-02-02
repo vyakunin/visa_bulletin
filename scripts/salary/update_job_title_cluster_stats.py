@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 MIN_REASONABLE_SALARY = 30000
 MAX_REASONABLE_SALARY = 1000000
 
+# Years for "recent" filings (autocomplete ranking); must match webapp/views/job_titles/directory.AUTOCOMPLETE_YEARS
+RECENT_YEARS = 5
+
 # Batch sizes for bulk updates (avoid loading full tables into memory)
 JOB_TITLE_BATCH_SIZE = 2000
 CLUSTER_BATCH_SIZE = 500
@@ -156,6 +159,30 @@ def _stats_by_cluster() -> list[tuple[int, int, Decimal | None]]:
         return [(row[0], row[1], row[2]) for row in cursor.fetchall()]
 
 
+def _recent_filings_by_cluster() -> list[tuple[int, int]]:
+    """
+    Return [(cluster_id, total_filings_recent), ...] using one query.
+
+    Counts SalaryRecords in each cluster with fiscal_year >= (current_year - RECENT_YEARS).
+    Used for autocomplete ranking so recent titles rank higher.
+    """
+    from datetime import datetime
+    start_year = datetime.now().year - RECENT_YEARS
+    sql = """
+    SELECT
+        jt.canonical_cluster_id AS cluster_id,
+        CAST(COUNT(*) AS INTEGER) AS total_filings_recent
+    FROM salary_record sr
+    JOIN salary_job_title jt ON sr.job_title_entity_id = jt.id
+    WHERE jt.canonical_cluster_id IS NOT NULL
+      AND sr.fiscal_year >= %s
+    GROUP BY jt.canonical_cluster_id
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [start_year])
+        return [(row[0], row[1]) for row in cursor.fetchall()]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Update JobTitleCluster and JobTitle stats and representative titles'
@@ -176,13 +203,15 @@ def main():
     logger.info("=" * 80)
 
     if args.dry_run:
-        logger.info("DRY RUN: would run 3 bulk SQL queries then batch-update JobTitle and JobTitleCluster")
+        logger.info("DRY RUN: would run 4 bulk SQL queries then batch-update JobTitle and JobTitleCluster")
         n_jt = _most_frequent_raw_title_per_job_title()
         n_cl = _most_frequent_raw_title_per_cluster()
         n_st = _stats_by_cluster()
+        n_recent = _recent_filings_by_cluster()
         logger.info("  JobTitle representative titles: %s rows", f"{len(n_jt):,}")
         logger.info("  JobTitleCluster representative titles: %s rows", f"{len(n_cl):,}")
         logger.info("  Stats by cluster: %s rows", f"{len(n_st):,}")
+        logger.info("  Recent filings by cluster (last %s years): %s rows", RECENT_YEARS, f"{len(n_recent):,}")
         if n_jt:
             logger.info("  Sample JobTitle update: id=%s -> %s", n_jt[0][0], n_jt[0][1][:50])
         if n_cl:
@@ -190,21 +219,27 @@ def main():
         return
 
     # 1) Bulk SQL: most frequent raw title per JobTitle
-    logger.info("Query 1/3: Most frequent raw title per JobTitle...")
+    logger.info("Query 1/4: Most frequent raw title per JobTitle...")
     job_title_updates = _most_frequent_raw_title_per_job_title()
     logger.info("  Got %s JobTitle representative titles", f"{len(job_title_updates):,}")
 
     # 2) Bulk SQL: most frequent raw title per cluster
-    logger.info("Query 2/3: Most frequent raw title per cluster...")
+    logger.info("Query 2/4: Most frequent raw title per cluster...")
     cluster_canonical = dict(_most_frequent_raw_title_per_cluster())
     logger.info("  Got %s cluster representative titles", f"{len(cluster_canonical):,}")
 
     # 3) Bulk SQL: stats by cluster (total_filings, avg_salary)
     # Each cluster gets its true total so directory and profile counts match.
-    logger.info("Query 3/3: Stats by cluster (total_filings, avg_salary)...")
+    logger.info("Query 3/4: Stats by cluster (total_filings, avg_salary)...")
     stats_by_cluster_list = _stats_by_cluster()
     stats_by_cluster = {row[0]: (row[1], row[2]) for row in stats_by_cluster_list}
     logger.info("  Got stats for %s clusters", f"{len(stats_by_cluster):,}")
+
+    # 4) Bulk SQL: recent filings by cluster (last RECENT_YEARS years, for autocomplete)
+    logger.info("Query 4/4: Recent filings by cluster (last %s years)...", RECENT_YEARS)
+    recent_by_cluster_list = _recent_filings_by_cluster()
+    recent_by_cluster = {row[0]: row[1] for row in recent_by_cluster_list}
+    logger.info("  Got recent filings for %s clusters", f"{len(recent_by_cluster):,}")
 
     # 4) Batch-update JobTitle.title (only set where different; bulk_update sends full batch)
     logger.info("Updating JobTitle.title to most frequent raw title...")
@@ -225,9 +260,9 @@ def main():
             logger.info("  Processed %s/%s JobTitle batches", f"{(i + JOB_TITLE_BATCH_SIZE):,}", f"{len(job_title_updates):,}")
     logger.info("  Updated %s JobTitle titles to most frequent raw title", f"{title_updated_count:,}")
 
-    # 5) Batch-update JobTitleCluster (total_filings, avg_salary, canonical_title)
-    # total_filings/avg_salary from stats_by_cluster so each cluster has its true count.
-    logger.info("Updating JobTitleCluster (total_filings, avg_salary, canonical_title)...")
+    # 5) Batch-update JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)
+    # total_filings/avg_salary from stats_by_cluster; total_filings_recent for autocomplete ranking.
+    logger.info("Updating JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)...")
     all_cluster_ids = list(
         JobTitleCluster.objects.order_by("id").values_list("id", flat=True)
     )
@@ -240,6 +275,7 @@ def main():
             total, avg_sal = stats_by_cluster.get(c.id, (0, None))
             c.total_filings = total
             c.avg_salary = avg_sal
+            c.total_filings_recent = recent_by_cluster.get(c.id, 0)
             new_canonical = cluster_canonical.get(c.id)
             if new_canonical and new_canonical != c.canonical_title:
                 c.canonical_title = new_canonical
@@ -248,7 +284,7 @@ def main():
             bulk_update_batched(
                 clusters,
                 batch_size=CLUSTER_BATCH_SIZE,
-                fields=['total_filings', 'avg_salary', 'canonical_title'],
+                fields=['total_filings', 'avg_salary', 'canonical_title', 'total_filings_recent'],
             )
         processed += len(clusters)
         if processed % 5000 == 0 or processed == len(all_cluster_ids):

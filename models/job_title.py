@@ -32,6 +32,12 @@ class JobTitleCluster(models.Model):
         help_text="Total filings across all job titles in cluster"
     )
     
+    total_filings_recent = models.IntegerField(
+        default=0,
+        db_index=True,
+        help_text="Filings in last N years (for autocomplete ranking); set by update_job_title_cluster_stats"
+    )
+    
     avg_salary = models.DecimalField(
         max_digits=12,
         decimal_places=2,

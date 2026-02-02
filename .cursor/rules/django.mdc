@@ -451,6 +451,11 @@ psql -c "ALTER TABLE salary_record ALTER COLUMN field DROP NOT NULL;"
 - Can be avoided with: `sudo -u postgres psql -d dbname` (no cd needed)
 - Not an error, just a warning
 
+**Issue: SystemCheckError E034 - "The index name '...' cannot be longer than 30 characters"**
+- **Root cause:** Django limits index names to 30 chars (Oracle compatibility). Indexes with `include=` or many fields get an auto-generated name (e.g. `salary_record_emp_worksite_fy_inc_wage`, 35 chars) when `name=` is omitted.
+- **Fix:** Always set an explicit short `name=` (≤30 chars) on `models.Index` when using `include=` or many fields. Example: `name='sr_emp_wk_fy_inc_wage'`.
+- **If a concurrent migration added the same index without name=:** Edit that migration's `AddIndex` to add `name='sr_emp_wk_fy_inc_wage'` (or another short name) to the Index, or remove the duplicate AddIndex if 0029 already adds it.
+
 **Rationale:**
 - Migrations are the single source of truth for database schema
 - Bypassing migrations creates technical debt and confusion

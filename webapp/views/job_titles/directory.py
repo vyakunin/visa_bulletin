@@ -11,22 +11,24 @@ from django.db.models import Avg, Count, Sum
 from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
 from models.job_title import JobTitleCluster
 
+# Years for "recent" filings; must match scripts/salary/update_job_title_cluster_stats.RECENT_YEARS
+AUTOCOMPLETE_YEARS = 5
+
 
 @cache_page(60 * 60)  # Cache for 1 hour
 def job_title_autocomplete_view(request):
     """
     API endpoint for job title autocomplete suggestions.
 
-    Uses JobTitleCluster (same as directory). Clusters are populated by
-    cluster_job_titles and update_job_title_cluster_stats; slugs by
-    populate_job_title_slugs (run after update_job_title_cluster_stats in
-    refresh_data.sh).
+    Uses JobTitleCluster.total_filings_recent (precomputed by update_job_title_cluster_stats
+    for the last AUTOCOMPLETE_YEARS years). No live JOIN to salary_record; fast lookup.
+    Ranks by recent filings so stale titles don't dominate.
 
     Query params:
         q: Search query (partial job title)
         limit: Maximum number of results (default: 20)
 
-    Returns JSON array of objects with title, slug, total_filings.
+    Returns JSON array of objects with title, slug, total_filings (recent count).
     """
     query = request.GET.get('q', '').strip()
     limit = int(request.GET.get('limit', 20))
@@ -37,17 +39,17 @@ def job_title_autocomplete_view(request):
     clusters = (
         JobTitleCluster.objects.filter(
             slug__isnull=False,
-            total_filings__gt=0,
+            total_filings_recent__gt=0,
             canonical_title__icontains=query,
         )
-        .order_by('-total_filings', 'canonical_title')[:limit]
+        .order_by('-total_filings_recent', 'canonical_title')[:limit]
     )
 
     suggestions = [
         {
             'slug': c.slug,
             'title': c.canonical_title,
-            'total_filings': c.total_filings,
+            'total_filings': c.total_filings_recent,
         }
         for c in clusters
     ]

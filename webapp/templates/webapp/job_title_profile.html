@@ -285,7 +285,7 @@
             </div>
             {% endif %}
             
-            <!-- E. Geographic Distribution -->
+            <!-- E. Geographic Distribution (uses filtered stats: years/program/level) -->
             {% if chart_data.geographic_dist or chart_data.geographic_dist_median %}
             <div class="row mb-4">
                 {% if chart_data.geographic_dist %}
@@ -293,6 +293,7 @@
                     <div class="card h-100">
                         <div class="card-header">
                             <h5 class="mb-0">Geographic Distribution</h5>
+                            <small class="text-muted">Based on {{ stats.basic.total_filings|intcomma }} filings in selected period (charts use selected years, not all-time total)</small>
                         </div>
                         <div class="card-body">
                             {% include "webapp/includes/chart_loading_container.html" with element_id="chart-geographic-dist" %}
@@ -305,6 +306,7 @@
                     <div class="card h-100">
                         <div class="card-header">
                             <h5 class="mb-0">Median Salary by State</h5>
+                            <small class="text-muted">Based on selected period (same {{ stats.basic.total_filings|intcomma }} filings as above)</small>
                         </div>
                         <div class="card-body">
                             {% include "webapp/includes/chart_loading_container.html" with element_id="chart-geographic-dist-median" %}
