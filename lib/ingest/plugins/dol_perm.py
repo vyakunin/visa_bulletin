@@ -28,6 +28,7 @@ from lib.parsing.salary.db_importer import (
     _parse_case_info,
     _create_salary_record,
 )
+from lib.parsing.salary.wage_unit_correction import validate_wage_annual
 from lib.utils.data_source_utils import get_fiscal_year_from_datasource
 from lib.utils.http_utils import download_file, get_workspace_dir, fetch_page
 from lib.utils.location_utils import normalize_state_code
@@ -315,6 +316,13 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         if not wage_from and not wage_annual:
             logger.debug(f"Skipping record {case_number_value}: missing salary data (no wage_from or wage_annual)")
             return None
+        
+        # Skip records with wage_annual outside valid range (typos, wrong unit, data errors)
+        if wage_annual is not None:
+            is_valid, _ = validate_wage_annual(wage_annual, 0)
+            if not is_valid:
+                logger.debug(f"Skipping record {case_number_value}: wage_annual outside valid range")
+                return None
         
         case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit = _parse_case_info(
             record, column_mappings

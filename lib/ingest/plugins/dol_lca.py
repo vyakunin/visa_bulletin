@@ -36,6 +36,7 @@ from lib.parsing.salary.db_importer import (
 from lib.parsing.salary.wage_unit_correction import (
     correct_wage_unit,
     calculate_annual_wage,
+    validate_wage_annual,
 )
 from lib.parsing.salary.file_detection import WORKSITE_COLUMN_MAPPINGS
 from lib.utils.http_utils import download_file, get_workspace_dir, fetch_page
@@ -513,6 +514,15 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
                 self._rejection_tracker.record_rejection('missing_wage_data', case_number_value)
             return None
         
+        # Skip records with wage_annual outside valid range (typos, wrong unit, data errors)
+        if wage_annual is not None:
+            is_valid, _ = validate_wage_annual(wage_annual, 0)
+            if not is_valid:
+                logger.debug(f"Skipping record {case_number_value}: wage_annual outside valid range")
+                if self._rejection_tracker:
+                    self._rejection_tracker.record_rejection('invalid_wage_range', case_number_value)
+                return None
+        
         # Parse case info
         case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit = _parse_case_info(
             record, column_mappings
@@ -552,6 +562,13 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(
             record, column_mappings, 0
         )
+        
+        # Skip worksite records with wage_annual outside valid range (typos, wrong unit, data errors)
+        if wage_annual is not None:
+            is_valid, _ = validate_wage_annual(wage_annual, 0)
+            if not is_valid:
+                logger.debug(f"Skipping worksite record {case_number_value}: wage_annual outside valid range")
+                return None
         
         # Parse case info
         case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit = _parse_case_info(
