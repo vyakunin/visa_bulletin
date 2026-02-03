@@ -993,6 +993,30 @@ py_test(
     },
 )
 
+py_test(
+    name = "test_employer_directory_view",
+    size = "small",
+    srcs = ["test_employer_directory_view.py"],
+    deps = [
+        ":django_setup",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        "//webapp:urls",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
 django_py_test(
     name = "test_job_title_profile_view",
     size = "small",

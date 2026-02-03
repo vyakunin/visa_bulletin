@@ -1,7 +1,48 @@
 """Pagination utilities for Django views
 
 Provides reusable pagination calculation and query string building.
+Keyset (cursor) pagination uses opaque cursor strings; format is internal.
 """
+
+import base64
+
+
+def encode_keyset_cursor(order_value: int, pk: int, direction: str = "next") -> str:
+    """
+    Encode a keyset cursor for pagination. Opaque to callers.
+    
+    Args:
+        order_value: Value used for ordering (e.g. total count or total_lca_count).
+        pk: Primary key of the row (for tiebreaker).
+        direction: "next" or "prev" so the view knows how to apply the cursor.
+    
+    Returns:
+        Opaque cursor string (base64-encoded "direction:order_value:pk").
+    """
+    raw = f"{direction}:{order_value}:{pk}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def decode_keyset_cursor(cursor: str) -> tuple[str, int, int] | None:
+    """
+    Decode a keyset cursor. Returns None if invalid.
+    
+    Returns:
+        (direction, order_value, pk) or None. direction is "next" or "prev".
+    """
+    if not cursor or not cursor.strip():
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        parts = raw.split(":", 2)
+        if len(parts) != 3:
+            return None
+        direction, order_value_str, pk_str = parts
+        if direction not in ("next", "prev"):
+            return None
+        return (direction, int(order_value_str), int(pk_str))
+    except (ValueError, UnicodeDecodeError):
+        return None
 
 
 def calculate_pagination_info(total_results: int, page: int, per_page: int) -> dict:

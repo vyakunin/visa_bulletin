@@ -188,8 +188,8 @@
                                         {{ employer.canonical_name }}
                                     </a>
                                 </td>
-                                <td class="text-end">{{ employer.actual_lca_count|default:employer.total_lca_count|intcomma }}</td>
-                                <td class="text-end">{{ employer.actual_perm_count|default:employer.total_perm_count|intcomma }}</td>
+                                <td class="text-end">{{ employer.total_lca_count|intcomma }}</td>
+                                <td class="text-end">{{ employer.total_perm_count|intcomma }}</td>
                                 <td class="text-end">
                                     <a href="{% url 'employer_profile' slug=employer.slug %}" class="btn btn-sm btn-outline-primary">
                                         <i class="bi bi-bar-chart"></i> View Profile
@@ -229,21 +229,27 @@
             {% if has_pagination %}
             <nav aria-label="Employer directory pagination" class="mt-4">
                 <ul class="pagination justify-content-center">
-                    {% if page > 1 %}
+                    {% if has_prev %}
                     <li class="page-item">
+                        {% if prev_cursor %}
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}&cursor={{ prev_cursor }}">&laquo; Prev</a>
+                        {% else %}
                         <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:-1 }}">&laquo; Prev</a>
+                        {% endif %}
                     </li>
                     {% endif %}
                     
-                    {% for p in page_range %}
-                    <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="?{{ pagination_query }}&page={{ p }}">{{ p }}</a>
+                    <li class="page-item disabled">
+                        <span class="page-link">Page {{ page }} of {{ total_pages }}</span>
                     </li>
-                    {% endfor %}
                     
-                    {% if page < total_pages %}
+                    {% if has_next %}
                     <li class="page-item">
+                        {% if next_cursor %}
+                        <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}&cursor={{ next_cursor }}">Next &raquo;</a>
+                        {% else %}
                         <a class="page-link" href="?{{ pagination_query }}&page={{ page|add:1 }}">Next &raquo;</a>
+                        {% endif %}
                     </li>
                     {% endif %}
                 </ul>
