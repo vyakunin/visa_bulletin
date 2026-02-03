@@ -16,8 +16,11 @@ deployment/
 ├── docker-compose.blue.yml    # Blue environment (port 8000)
 ├── docker-compose.green.yml   # Green environment (port 8001)
 ├── nginx/                     # Nginx reverse proxy configs
-│   ├── visa-bulletin-nginx.conf
-│   └── visa-bulletin-locations.conf
+│   ├── visa-bulletin-nginx.conf      # Site block; uses main_timed + locations
+│   ├── visa-bulletin-locations.conf  # Location blocks; GPTBot limit_req
+│   ├── visa-bulletin-log-format.conf # Log format with $request_time (→ conf.d)
+│   ├── gptbot-rate-limit.conf        # GPTBot 0.5 qps per IP (→ conf.d)
+│   └── rate-limiting.conf            # Optional general rate limits
 ├── cron/                      # Cron job setup
 │   └── setup-ingest-cron.sh
 └── README.md                  # This file
@@ -205,26 +208,56 @@ sar -d
 sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 ```
 
-### Long-running requests (from prod logs)
+### Analyzing slow requests (prod logs)
 
-**Source:** `journalctl -u visa-bulletin-web.service --since '24 hours ago'` and gunicorn access logs.
+**What “slow” means:** Sub-second times (e.g. 0.5–0.7s) are **not** slow. We treat **>5s** as slow and **>8s** as worth careful investigation (build_charts or stats bottleneck; see `docs/EMPLOYER_PROFILE_QUERIES_AND_OPTIMIZATION.md`).
 
-**Observed slow paths:**
+**Which views have app-level timing:** Only the **employer profile** view (`/employer/<slug>/`) logs request timing under the `[employer_profile]` prefix (e.g. `page_total`, `build_charts`, `stats_compute_total`). Job title profile, salary search, homepage, employment-based, directories, and APIs do **not** have similar instrumentation. For those, use **Nginx** access logs (see below) if `main_timed` is enabled, or add timing logs to the view.
 
-1. **SSL connection closed (500s)**
-   - `django.db.utils.OperationalError: SSL connection has been closed unexpectedly` on job-title and employer views (e.g. GPTBot).
-   - Caused by reused Postgres connections (`CONN_MAX_AGE=600`) that were closed by server/idle timeout.
+**Fetch app logs:**
 
-2. **Large responses**
-   - `/employment-based/india/` and `/` returning 300–445 KB (first hit or cache miss).
+- **Systemd (current prod):** `ssh prod_2Gb_vm "journalctl -u visa-bulletin-web.service --no-pager -n 3000"`
+- **Docker (if using blue/green):** `ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail=3000"` or `docker-compose -f deployment/docker-compose.blue.yml logs --tail=3000 web-blue`
+
+**Find slow requests:**
+
+1. **Application timing (employer profile only):** Filter by `[employer_profile]` and `page_total`:
+   ```bash
+   ssh prod_2Gb_vm "journalctl -u visa-bulletin-web.service --no-pager -n 5000" | grep -E "\[employer_profile\] page_total"
+   ```
+   Lines show `slug=... cache_hit=... took X.XXXs`. Sort by time to see slowest: `grep ... | grep -oE 'took [0-9.]+s' | sort -t' ' -k2 -rn`.
+
+2. **All views (Nginx access log with response time):** If Nginx uses `main_timed` (see `deployment/nginx/visa-bulletin-log-format.conf`), `access.log` has `$request_time` as the 6th field. Sort by it to find slow requests for any path (homepage, salary search, job-title, employment-based, etc.):
+   ```bash
+   ssh prod_2Gb_vm "sudo awk '{print \$6, \$0}' /var/log/nginx/access.log | sort -rn | head -50"
+   ```
+   Or filter by path then sort: `sudo grep 'GET /salaries/' /var/log/nginx/access.log | awk '{print $6, $0}' | sort -rn | head -20`.
+
+3. **Gunicorn access log (if response time in format):** When gunicorn is started with `--access-log-format` including `%(L)s`, the last column is response time in seconds. Systemd prod currently uses default format (no `%(L)s`), so response time is not in app logs; use Nginx `main_timed` for per-request time for all views.
+
+4. **Django request log:** 500s and long requests:
+   ```bash
+   ssh prod_2Gb_vm "journalctl -u visa-bulletin-web.service --no-pager -n 5000" | grep -E "django.request|ERROR|Exception"
+   ```
+
+**Known reasons for slow requests:**
+
+| Cause | Where | Fix |
+|-------|--------|-----|
+| **Employer/job-title profile cold path** | `build_charts` 0.7–11s, `stats_compute_total` ~3–4s | Use Redis (shared cache) so second request hits cache; see `docs/EMPLOYER_PROFILE_QUERIES_AND_OPTIMIZATION.md`. |
+| **LocMemCache + 2 workers** | Same URL can hit different worker → cache miss every time | Redis in docker-compose already; ensure `REDIS_URL` and `CACHES` use it. |
+| **Postgres SSL closed** | 500 on views after idle; was `CONN_MAX_AGE=600` | ✅ `CONN_MAX_AGE = 60` in production settings. |
+| **Large responses** | `/`, `/employment-based/india/` 300–445 KB on cache miss | Cache warming or CDN; first hit remains heavy. |
 
 **Improvements:**
 
 | Area | Suggestion |
 |------|------------|
 | **Postgres SSL errors** | ✅ Implemented: `CONN_MAX_AGE = 60` in `django_config/settings_production.py`. |
-| **Nginx timing** | Add `$request_time` or `$upstream_response_time` to nginx `log_format` and `access_log` to analyze slow requests from access logs. |
-| **Gunicorn** | `--timeout 60` is set; ensure slow views complete or are aborted within that (employer cold path can exceed 60s; consider view-level timeout or async/cache-first). |
+| **Gunicorn access log** | ✅ `--access-log-format` includes `%(L)s` (response time) for slow-request analysis. |
+| **Nginx timing** | ✅ Implemented: `main_timed` log format with `$request_time`; see `deployment/nginx/visa-bulletin-log-format.conf`. |
+| **GPTBot throttle** | ✅ Implemented: 0.5 qps per IP via `gptbot-rate-limit.conf`; see `docs/PRODUCTION_TRAFFIC_PATTERNS_RESEARCH.md`. |
+| **Gunicorn timeout** | `--timeout 60`; employer cold path can exceed 60s on large employers; consider Redis so cache hits are fast. |
 
 ## 🔒 Security
 

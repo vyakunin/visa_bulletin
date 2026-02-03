@@ -24,6 +24,7 @@ services:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/1
+      - ANALYTICS_SCRIPT=<script data-goatcounter="https://vyakunin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
     env_file:
       - ../.env
     depends_on:
@@ -37,7 +38,8 @@ services:
     memswap_limit: 200m
     # Override CMD to use optimized gunicorn settings (2 workers, 60s timeout)
     # This allows updating without rebuilding Docker image
-    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 django_config.wsgi:application"
+    # access-log-format: %(L)s = response time in decimal seconds (for slow-request analysis)
+    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-log-format '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"
     healthcheck:
       test: ["CMD", "curl", "-f", "--max-time", "5", "http://localhost:8000/"]
       interval: 10s

@@ -384,6 +384,9 @@ echo "--------------------------------------------------------------"
 sudo cp deployment/nginx/visa-bulletin-nginx.conf /etc/nginx/sites-available/visa-bulletin
 sudo cp deployment/nginx/visa-bulletin-locations.conf /opt/visa_bulletin/deployment/nginx/
 sudo cp deployment/nginx/rate-limiting.conf /opt/visa_bulletin/deployment/nginx/
+# Log format (response time) and GPTBot rate limit (http context)
+sudo cp deployment/nginx/visa-bulletin-log-format.conf /etc/nginx/conf.d/
+sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/
 
 # Enable site
 sudo ln -sf /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/

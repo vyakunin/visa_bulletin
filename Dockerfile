@@ -85,5 +85,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
 # 2 threads per worker for concurrency (4 total concurrent requests)
 # Reduced timeout to 60s to fail faster and prevent memory buildup
 # max-requests recycles workers to prevent memory leaks
-CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 django_config.wsgi:application"]
+# access-log-format: %(L)s = response time in decimal seconds (for slow-request analysis)
+CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-log-format '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"]
 

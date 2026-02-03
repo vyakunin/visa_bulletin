@@ -120,10 +120,11 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# Convenience target that includes all salary business logic modules
+# Convenience target that includes all salary business logic modules.
+# Do not add __init__.py (see .cursor/rules).
 py_library(
     name = "salary",
-    srcs = ["__init__.py"],
+    srcs = ["_package.py"],
     deps = [
         ":employer_clustering",
         ":clustering_evaluator",

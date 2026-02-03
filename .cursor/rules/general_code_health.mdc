@@ -207,3 +207,27 @@ return [{'title': c.canonical_title, ...} for c in clusters]
 **Rationale:**
 - Fallbacks that hide failures let broken pipelines or missing steps go unnoticed.
 - Root-cause fixes (e.g. adding populate_job_title_slugs to refresh_data.sh) ensure the real mechanism works everywhere.
+
+## Rule: No __init__.py in Designated Code Directories
+
+**NEVER create or add `__init__.py` in the designated "no-init" code directories.**
+
+**Designated directories** (see `tests/test_no_init_in_code_dirs.py` for the canonical list):
+- `lib/business/salary/`
+- (Add more here when adopting this pattern elsewhere.)
+
+**Why:**
+- Avoids empty package markers that add no behavior.
+- Forces explicit imports from concrete modules (e.g. `from lib.business.salary.employer_clustering import ...`).
+- The test `test_no_init_in_code_dirs` scans these directories and fails if any `__init__.py` is present.
+
+**✅ GOOD - No __init__.py in lib/business/salary:**
+- Use `_package.py` or similar non-init module only if a Bazel aggregate target needs a single source file.
+- Import from submodules: `from lib.business.salary.employer_clustering import match_employers`.
+
+**❌ BAD - Adding __init__.py in a designated directory:**
+- Do not add `lib/business/salary/__init__.py` or any new `__init__.py` in directories listed in the test.
+
+**Rationale:**
+- Single source of truth: the test defines and enforces which dirs are init-free.
+- Prevents accidental reintroduction of __init__.py.

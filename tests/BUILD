@@ -1017,6 +1017,14 @@ py_test(
     },
 )
 
+py_test(
+    name = "test_no_init_in_code_dirs",
+    size = "small",
+    srcs = ["test_no_init_in_code_dirs.py"],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
 django_py_test(
     name = "test_job_title_profile_view",
     size = "small",
