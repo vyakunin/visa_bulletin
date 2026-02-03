@@ -454,9 +454,9 @@ ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-co
 2. **`scripts/cron/build_all.sh`** - Does it build the fixed binary?
    - Add new scripts to REQUIRED_BINARIES if needed
 
-3. **Setup/bootstrap scripts** - Do they initialize correctly?
+3. **Setup scripts** - Do they initialize correctly?
    - `scripts/setup_new_instance.sh`
-   - `scripts/bootstrap_initial_data.sh`
+   - `scripts/cron/refresh_data.sh` (initial data load + weekly refresh)
 
 **Decision tree:**
 ```
@@ -505,14 +505,14 @@ Bug requires data fix → Run fix script on production → Schedule in pipeline
 **Why:**
 - New instances deployed from setup scripts must work correctly
 - Cron jobs must reflect latest ingestion logic
-- Bootstrap scripts must load data properly
+- refresh_data.sh must load data properly (initial + weekly)
 - Prevents regression when setting up new servers
 
 **When you fix ingestion/processing, update these files:**
 
 ### 1. Setup Scripts
 - `scripts/setup_new_instance.sh` - Initial instance setup
-- `scripts/bootstrap_initial_data.sh` - Initial data loading
+- `scripts/cron/refresh_data.sh` - Initial data load + weekly refresh
 
 **What to check/update:**
 - Environment variables needed for fix
@@ -550,7 +550,7 @@ Bug requires data fix → Run fix script on production → Schedule in pipeline
 1. Identify and fix the ingestion issue in source code
 2. Test fix locally
 3. Update setup_new_instance.sh with any new requirements
-4. Update bootstrap_initial_data.sh if data loading changed
+4. Update refresh_data.sh if data loading changed
 5. Update refresh_data.sh if periodic refresh changed
 6. Update documentation with new steps/gotchas
 7. Test setup script changes (if possible)
@@ -568,7 +568,7 @@ Bug requires data fix → Run fix script on production → Schedule in pipeline
 
 **Scenario 1: Add new ingestion flag**
 - Update: `refresh_data.sh` (add flag to cron command)
-- Update: `bootstrap_initial_data.sh` (add flag to initial load)
+- Update: `refresh_data.sh` (add flag to pipeline)
 - Update: `INGESTION_PLAYBOOK.md` (document new flag)
 
 **Scenario 2: Add environment variable**
@@ -576,7 +576,7 @@ Bug requires data fix → Run fix script on production → Schedule in pipeline
 - Update: `NEW_INSTANCE_SETUP.md` (document variable)
 
 **Scenario 3: Change data source paths**
-- Update: `bootstrap_initial_data.sh` (update paths)
+- Update: `refresh_data.sh` (update paths)
 - Update: `refresh_data.sh` (update paths)
 
 **Scenario 4: Add database migration**
@@ -591,7 +591,7 @@ Bug requires data fix → Run fix script on production → Schedule in pipeline
 
 **Before committing ingestion fixes, verify:**
 - [ ] Setup scripts include all new environment variables
-- [ ] Bootstrap script includes all new initialization steps
+- [ ] refresh_data.sh includes all new initialization steps
 - [ ] Cron scripts include all new flags/options
 - [ ] Documentation reflects new behavior
 - [ ] Error messages mention new requirements

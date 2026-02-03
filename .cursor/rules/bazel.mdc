@@ -523,6 +523,42 @@ Only bundle multiple files into one target when:
 - Files are tightly coupled and always used together
 - Performance measurements show significant benefit
 
+## Rule: Include What You Use (IWYU) — No Aggregate Targets
+
+**ALWAYS depend on the specific library targets you actually import. Do NOT use convenience/aggregate targets that bundle multiple modules.**
+
+**Why:**
+- Makes the build graph explicit: each target declares only what it uses.
+- Reduces unnecessary rebuilds when unrelated modules in the same package change.
+- Matches "include what you use": deps list reflects actual imports.
+
+**✅ GOOD - Explicit deps:**
+```python
+# Script only imports employer_clustering
+deps = [
+    "//lib/business/salary:employer_clustering",
+    ...
+]
+```
+
+**❌ BAD - Aggregate target:**
+```python
+# Pulls in employer_clustering, clustering_evaluator, llm_verifier even if only one is used
+deps = [
+    "//lib/business/salary:salary",  # ❌ Do not use convenience targets
+    ...
+]
+```
+
+**When adding or changing deps:**
+- Look at the file's imports (e.g. `from lib.business.salary.employer_clustering import ...`).
+- Add exactly those targets (e.g. `//lib/business/salary:employer_clustering`).
+- Do not add or keep aggregate targets like `//lib/business/salary:salary`.
+
+**Rationale:**
+- IWYU keeps the build graph accurate and reduces coupling.
+- Avoids "convenience" targets that hide real dependencies and cause over-rebuilding.
+
 ## Testing with Bazel
 
 - **ALWAYS use Bazel to run tests**: `bazel test //tests:test_name`

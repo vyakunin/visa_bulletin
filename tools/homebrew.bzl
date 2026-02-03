@@ -19,17 +19,22 @@ def _homebrew_repository_impl(repository_ctx):
     )
     
     if brew_check.return_code != 0:
-        # Homebrew not found - try to install it
-        print("Homebrew not found. Attempting to install...")
-        
-        # Detect OS - Homebrew only works on macOS and Linux
-        os_name = repository_ctx.os.name.lower()
+        # Homebrew not found - on Linux (e.g. Docker/CI) create empty repo; on macOS try to install
         uname_result = repository_ctx.execute(["uname", "-s"], quiet = True, timeout = 5)
         uname_output = uname_result.stdout.strip().lower() if uname_result.return_code == 0 else ""
-        
+        os_name = repository_ctx.os.name.lower()
+
+        if "linux" in os_name or "linux" in uname_output:
+            # Linux (Docker/CI): skip Homebrew - create empty repo so build can proceed
+            repository_ctx.file("BUILD", """
+# Empty Homebrew repo for Linux/Docker - Homebrew not used in container builds
+filegroup(name = "empty", srcs = [], visibility = ["//visibility:public"])
+""")
+            repository_ctx.file("prefix.txt", "")
+            return
         if "mac" in os_name or "darwin" in os_name or "darwin" in uname_output:
-            # macOS - install Homebrew
-            print("Installing Homebrew (this may take several minutes)...")
+            # macOS - try to install Homebrew
+            print("Homebrew not found. Attempting to install...")
             install_result = repository_ctx.execute(
                 ["bash", "-c", '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
                 quiet = False,
@@ -41,26 +46,12 @@ def _homebrew_repository_impl(repository_ctx):
                     "Error: " + install_result.stderr + "\n" +
                     "Please install Homebrew manually: /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
                 )
-        elif "linux" in os_name or "linux" in uname_output:
-            # Linux - install Homebrew for Linux
-            print("Installing Homebrew for Linux (this may take several minutes)...")
-            install_result = repository_ctx.execute(
-                ["bash", "-c", '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
-                quiet = False,
-                timeout = 900
-            )
-            if install_result.return_code != 0:
-                fail(
-                    "Failed to install Homebrew for Linux.\n" +
-                    "Error: " + install_result.stderr + "\n" +
-                    "Please install Homebrew manually: /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-                )
         else:
             fail(
                 "Homebrew is not installed and automatic installation is not supported for this OS.\n" +
                 "Please install Homebrew manually: visit https://brew.sh/"
             )
-    
+
     # Verify Homebrew is now available
     verify_check = repository_ctx.execute(["which", "brew"], quiet = True, timeout = 5)
     if verify_check.return_code != 0:

@@ -602,7 +602,7 @@ py_test(
     srcs = ["test_employer_clustering.py"],
     deps = [
         ":django_setup",
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",
         "//models/enums:visa_program",
         "//models/ingest:ingest",
@@ -665,7 +665,7 @@ py_test(
     srcs = ["test_clustering_regression.py"],
     deps = [
         ":django_setup",  # Shared Django setup library
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",  # Required for Django app discovery
         "//django_config:settings",
         "//webapp:apps",
@@ -686,7 +686,7 @@ py_test(
     srcs = ["test_clustering_precision.py"],
     deps = [
         ":django_setup",  # Shared Django setup library
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",  # Required for Django app discovery
         "//django_config:settings",
         "//webapp:apps",
@@ -707,7 +707,7 @@ py_test(
     srcs = ["test_clustering_recall.py"],
     deps = [
         ":django_setup",  # Shared Django setup library
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",  # Required for Django app discovery
         "//django_config:settings",
         "//webapp:apps",
@@ -1017,10 +1017,12 @@ py_test(
     },
 )
 
+# Depends on no_init_check genrule: build fails if lib/business/salary/__init__.py exists.
 py_test(
     name = "test_no_init_in_code_dirs",
     size = "small",
     srcs = ["test_no_init_in_code_dirs.py"],
+    data = ["//lib/business/salary:no_init_check"],
     python_version = "PY3",
     srcs_version = "PY3",
 )

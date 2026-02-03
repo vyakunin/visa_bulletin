@@ -347,7 +347,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/utils:logging_utils",
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",
         "//django_config:settings",
         "//django_config:logging_config",
@@ -372,7 +372,7 @@ py_binary(
         "//lib/utils:logging_utils",
         "//lib/utils:rate_limited_logger",
         "//lib/utils:db_utils",
-        "//lib/business/salary:salary",
+        "//lib/business/salary:employer_clustering",
         "//models:salary",
         "//django_config:settings",
         "//django_config:logging_config",
@@ -538,7 +538,7 @@ py_binary(
         "//lib/ingest/plugins:dol_perm",
         "//lib/ingest/plugins:dol_lca",  # Added: Support LCA files
         "//lib/parsing/salary:db_importer",  # Added: For source file checking
-        "//lib/business/salary:salary",  # Needed by PERM plugin transform() (includes employer_clustering)
+        "//lib/business/salary:employer_clustering",  # Needed by PERM plugin transform() (includes employer_clustering)
         "//models:salary",
         "//models/ingest:ingest",
         "//models/enums:visa_program",

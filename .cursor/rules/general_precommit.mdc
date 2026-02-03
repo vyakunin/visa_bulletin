@@ -39,7 +39,7 @@ bazel build //...
 
 **✅ Check that all tests pass:**
 ```bash
-# Run all tests
+# Run all tests (Bazel sets BUILD_WORKSPACE_DIRECTORY for test processes)
 bazel test //tests:...
 
 # If tests fail, report failures and stop (do not commit)

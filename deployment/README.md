@@ -53,6 +53,36 @@ The 2GB instance requires careful memory management:
 | Bazel | 1GB RAM, 2 jobs | Limit build memory |
 | PostgreSQL | Tuned for bulk ops | Reduce autovacuum spikes |
 
+## 🐳 Building the Docker Image
+
+The image is built in **GitHub Actions** on push to `main` or on version tags. Local build is optional.
+
+### Option A: Build in CI (recommended)
+
+1. **Trigger on push to main** (tag: `main-<sha>`):
+   ```bash
+   git push origin main
+   ```
+2. **Trigger on version tag** (tags: `v1.2.3`, `v1.2`, `v1`, `latest`):
+   ```bash
+   git tag -a v1.2.3 -m "Release 1.2.3"
+   git push origin v1.2.3
+   ```
+3. In GitHub: **Actions** → **Build and Push Docker Image** → confirm the run and that the image was pushed to GHCR.
+
+### Option B: Build locally
+
+Requires Docker daemon running.
+
+```bash
+cd /opt/visa_bulletin   # or your repo root
+docker build -t visa-bulletin:local .
+```
+
+To test the image locally: `docker run -p 8000:8000 -e DB_HOST=host.docker.internal -e ... visa-bulletin:local` (set required env vars or use a `.env` file).
+
+**Note:** The Dockerfile runs Bazel inside the container; the first build can take ~10–15 minutes. Linux hosts (and CI) use a Linux Bazel build; `tools/homebrew.bzl` is skipped in Docker/CI so the image builds without Homebrew.
+
 ## 🚀 Quick Deployment
 
 ### New Instance Setup

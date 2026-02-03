@@ -219,10 +219,10 @@ return [{'title': c.canonical_title, ...} for c in clusters]
 **Why:**
 - Avoids empty package markers that add no behavior.
 - Forces explicit imports from concrete modules (e.g. `from lib.business.salary.employer_clustering import ...`).
-- The test `test_no_init_in_code_dirs` scans these directories and fails if any `__init__.py` is present.
+- The genrule `//lib/business/salary:no_init_check` fails the build if `__init__.py` exists in that directory. The test `test_no_init_in_code_dirs` depends on it, so adding `__init__.py` causes the test target to fail to build.
 
 **✅ GOOD - No __init__.py in lib/business/salary:**
-- Use `_package.py` or similar non-init module only if a Bazel aggregate target needs a single source file.
+- Do not add aggregate targets that need a single source file; depend on specific targets (IWYU).
 - Import from submodules: `from lib.business.salary.employer_clustering import match_employers`.
 
 **❌ BAD - Adding __init__.py in a designated directory:**

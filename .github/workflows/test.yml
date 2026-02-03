@@ -45,5 +45,7 @@ jobs:
         run: |
           # CI uses postgres user (has CREATEDB). Tests create test_postgres and run there; real postgres DB is never written to.
           # Pass DB_* to tests so they use the service and create test_postgres.
+          # BUILD_WORKSPACE_DIRECTORY so test_no_init_in_code_dirs can check the source tree.
           bazel test //tests/... --test_output=errors \
-            --test_env=DB_NAME --test_env=DB_USER --test_env=DB_PASSWORD --test_env=DB_HOST --test_env=DB_PORT
+            --test_env=DB_NAME --test_env=DB_USER --test_env=DB_PASSWORD --test_env=DB_HOST --test_env=DB_PORT \
+            --test_env=BUILD_WORKSPACE_DIRECTORY=${{ github.workspace }}

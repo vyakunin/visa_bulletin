@@ -27,34 +27,14 @@ This document summarizes **currently implemented** features for Department of La
   - Filings by state (chart)
   - Median salary by state (chart)
 - **When filters are applied:** Aggregate stats (avg, min, max salary) for the filtered set.
-- **Autocomplete:** Job title and company autocomplete endpoints used by the search form (see 1.5).
+- **Autocomplete:** Job title and company autocomplete endpoints used by the search form (see 1.6).
 - **SEO:** Title “H-1B & PERM Salary Database | U.S. Immigration Data”, description for search engines.
 
 **Data scope:** Non-worksite salary records only; excludes `employer_name='Unknown'` and records without a valid annual wage.
 
 ---
 
-### 1.2 Worksite Search (`/worksites/`)
-
-**Purpose:** Search worksite location data from DOL Worksites disclosure files.
-
-**Implemented capabilities:**
-
-- **Filters**
-  - **q** – Job title / keyword (job_title, soc_title, worksite_city)
-  - **state** – Worksite state (2-letter code)
-  - **city** – Worksite city (substring match)
-  - **program** – `h1b`, `perm`, or all
-  - **year** – Fiscal year or all
-- **Results:** Paginated list with worksite city/state, job title, wage, program, year.
-- **Stats:** When any filter is applied, shows total count and avg/min/max salary for the filtered set.
-- **SEO:** Title “Worksite Location Data | U.S. Immigration Data”, description for search engines.
-
-**Data scope:** `WorksiteRecord` model (separate from employer-centric salary records).
-
----
-
-### 1.3 Employer Directory (`/employers/`)
+### 1.2 Employer Directory (`/employers/`)
 
 **Purpose:** Browse employers that have sponsored H-1B or PERM (by name and optionally by state).
 
@@ -68,7 +48,7 @@ This document summarizes **currently implemented** features for Department of La
 
 ---
 
-### 1.4 Employer Profile (`/employer/<slug>/`)
+### 1.3 Employer Profile (`/employer/<slug>/`)
 
 **Purpose:** Single-employer view of sponsorship and salary statistics.
 
@@ -95,7 +75,7 @@ This document summarizes **currently implemented** features for Department of La
 
 ---
 
-### 1.5 Job Title Directory (`/job-titles/`)
+### 1.4 Job Title Directory (`/job-titles/`)
 
 **Purpose:** Browse job titles by popularity (filing count).
 
@@ -109,7 +89,7 @@ This document summarizes **currently implemented** features for Department of La
 
 ---
 
-### 1.6 Job Title Profile (`/job-title/<slug>/`)
+### 1.5 Job Title Profile (`/job-title/<slug>/`)
 
 **Purpose:** Market analysis for a single job title (cluster).
 
@@ -120,8 +100,7 @@ This document summarizes **currently implemented** features for Department of La
   - Total filings (uses cluster-level total so it matches directory “Popular Job Titles”)
   - Median salary, percentiles
   - Top employers for this role (with links to employer profiles)
-  - Experience vs salary (when experience_level data exists)
-  - Geographic salary distribution
+  - **Experience vs salary** – When any salary records in the cluster are linked to a `JobTitle` with a non-empty `experience_level`, the profile shows a breakdown by level (count and median salary per level, plus an optional histogram overlay). Data comes from `JobTitle.experience_level` (extracted from raw title, e.g. “Senior”, “II”, “Manager”). In practice, many clusters have only one distinct level (or only “Unspecified”), so the section often shows a single segment; clusters with multiple levels (e.g. Senior + Junior + Unspecified) would show a multi-segment comparison.
 - **Charts:** Salary distribution, geography, trends (built by `build_job_title_profile_charts`).
 - **Related job titles:** Other titles in the same cluster (raw title variants).
 - **Similar job titles:** Other clusters whose canonical title shares the first word (e.g. “Software” → “Software Engineer”, “Software Developer”); limited (e.g. top 5 by filing count).
@@ -132,9 +111,21 @@ This document summarizes **currently implemented** features for Department of La
 - **SEO:** Dynamic title “{Job Title} Salary Data & Market Analysis | Visa Bulletin”, description with total filings and median salary. Canonical URL set.
 - **Performance:** Cached per cluster/filters; cache timeout from settings.
 
+**Experience vs salary – data and examples (checked against local DB; prod may differ):**
+
+- **JobTitle** has an `experience_level` field (extracted from raw title: entry, junior, mid, senior, staff, principal, lead, manager, director, or roman i–v). In a recent local DB: ~56K `salary_job_title` rows had a non-empty `experience_level`; ~202K `salary_record` rows were linked to those job titles.
+- **Where it shows:** The “Experience vs salary” section appears when the cluster’s salary records include at least one linked to a job title with a non-empty level (or only “Unspecified”). In the same local DB, no cluster had **multiple** distinct experience levels among its records—each cluster had either all Unspecified or a single level (e.g. all “Senior” or all “II”). So the section often renders with **one segment** (e.g. “Senior”, “II”, or “Unspecified”) rather than a multi-bar comparison.
+- **Example job title profiles that show the section (one segment):**
+  - **Senior Software Engineer** – `https://visa-bulletin.us/job-title/senior-software-engineer/` — one level: Senior (~8.9K records, ~\$143K avg in sample).
+  - **Software Development Engineer II** – `https://visa-bulletin.us/job-title/software-development-engineer-ii/` — one level: II (~12K records, ~\$119K avg in sample).
+- **To verify on production:** Run `bazel run //:run_sql` (or the same query on prod DB) and use:
+  - Experience-level counts: `SELECT experience_level, COUNT(*) FROM salary_job_title WHERE COALESCE(experience_level, '') != '' GROUP BY experience_level ORDER BY COUNT(*) DESC;`
+  - Clusters with at least one non-empty level and their breakdown:  
+    `SELECT jtc.slug, jt.experience_level, COUNT(sr.id), ROUND(AVG(sr.wage_annual)::numeric,0) FROM salary_record sr JOIN salary_job_title jt ON sr.job_title_entity_id = jt.id JOIN salary_job_title_cluster jtc ON jt.canonical_cluster_id = jtc.id WHERE jtc.slug IS NOT NULL AND sr.wage_annual > 0 GROUP BY jtc.slug, jt.experience_level ORDER BY jtc.slug, COUNT(sr.id) DESC LIMIT 30;`
+
 ---
 
-### 1.7 Autocomplete APIs
+### 1.6 Autocomplete APIs
 
 **Company autocomplete** – `GET /api/company-autocomplete/?q=<query>&limit=20`
 
@@ -144,17 +135,17 @@ This document summarizes **currently implemented** features for Department of La
 
 - Returns JSON array of `{ title, slug, total_filings }` for job title clusters whose `canonical_title` contains the query. Uses precomputed `total_filings_recent` (e.g. last 5 years). Minimum 2 characters for `q`.
 
-Both are used by the salary search form and can be reused for other UI (e.g. employer directory, future comparison tools).
+**Company autocomplete** is used by the salary search form (employer filter), the employer directory search box, and the employer profile “Search for another employer” box. **Job title autocomplete** is used by the salary search form (job title/keywords), the job title directory search box, and the job title profile “Search for another profession” box. Both can be reused for future UI (e.g. comparison tools).
 
 ---
 
-### 1.8 Sitemaps & Robots
+### 1.7 Sitemaps & Robots
 
 **Robots:** `robots.txt` allows all crawlers and points to the sitemap URL.
 
 **Sitemap:** Single XML sitemap listing:
 
-- Static: `/`, `/salaries/`, `/worksites/`, `/employers/`, `/job-titles/`, `/faq/`, `/about/`, `/contact/`
+- Static: `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/about/`, `/contact/`
 - Category landing pages: `/employment-based/`, `/family-sponsored/`, and per-country under each
 - Employer profile URLs: `/employer/<slug>/` for clusters with slug and `total_lca_count >= 5`, ordered by LCA count, capped at 10,000
 - Job title profile URLs: `/job-title/<slug>/` for clusters with slug and `total_filings >= 10`, ordered by filing count, capped at 10,000
@@ -163,7 +154,7 @@ This supports SEO and discovery of employer/job title pages by search engines.
 
 ---
 
-### 1.9 Static & Supporting Pages
+### 1.8 Static & Supporting Pages
 
 - **FAQ** – `/faq/`
 - **About** – `/about/`
@@ -174,7 +165,7 @@ These are linked from the main site and included in the sitemap.
 
 ---
 
-### 1.10 Data & Backend (Relevant to “What’s Implemented”)
+### 1.9 Data & Backend (Relevant to “What’s Implemented”)
 
 - **Models:** `SalaryRecord`, `WorksiteRecord`, `Employer`, `EmployerCluster`, `JobTitle`, `JobTitleCluster` (see `models/salary.py`, `models/job_title.py`).
 - **Employer clustering:** Canonical employer names and slugs; profile pages use cluster-level stats.
@@ -185,7 +176,7 @@ These are linked from the main site and included in the sitemap.
 
 ## Part 2: Step-by-Step Promotion Strategy (What’s Already Live)
 
-The following sequence promotes **only** what exists today: salary search, worksite search, employer directory and profiles, job title directory and profiles, autocomplete, and sitemaps. Use the drafts as-is or adapt to your voice and current numbers.
+The following sequence promotes **only** what exists today: salary search, employer directory and profiles, job title directory and profiles, autocomplete, and sitemaps. (Worksite search exists but is not linked from the main site and is not promoted; see Appendix A.) Use the drafts as-is or adapt to your voice and current numbers.
 
 **Assumptions:** You have approximate record counts (e.g. “500K+ salary records”, “10K+ employers”) and a few concrete examples (e.g. top employers, a striking salary comparison). Replace placeholders before sending.
 
@@ -210,7 +201,6 @@ What you can do:
 • Search salaries by job title, company, state, visa program (H-1B vs PERM), and year: https://visa-bulletin.us/salaries/
 • Browse employers and open a profile per company (filings, approval rate, median salary, top roles, by state, trends): https://visa-bulletin.us/employers/
 • Browse job titles and open a profile per role (total filings, median salary, top employers, geography, similar titles): https://visa-bulletin.us/job-titles/
-• Worksite search (by city/state/job title): https://visa-bulletin.us/worksites/
 
 Data comes from official DOL LCA and PERM disclosures. No paywall, no signup. I run it as a side project for the immigration community.
 
@@ -220,7 +210,7 @@ If you’re negotiating an offer or comparing companies, the employer and job ti
 **Checklist before posting:**
 
 - [ ] Replace “500K+” with your actual approximate salary record count if different.
-- [ ] Confirm all four links return 200 and show data.
+- [ ] Confirm all three links return 200 and show data.
 - [ ] Read subreddit rules; ensure “no self-promotion” or “self-promo” rules allow one clear, useful post; add disclaimer if required (e.g. “I built this”).
 
 ---
@@ -296,7 +286,6 @@ If you find it useful, bookmark it or share with someone job hunting or negotiat
 • Salary search: https://visa-bulletin.us/salaries/
 • Employers: https://visa-bulletin.us/employers/
 • Job titles: https://visa-bulletin.us/job-titles/
-• Worksites: https://visa-bulletin.us/worksites/
 
 7/ [Optional – add one concrete fact from your data, e.g.]
 Example: In the last 5 years, [Company X] had [N] H-1B/PERM filings with a median salary of $[X]. Top role: [Job Title]. (From https://visa-bulletin.us/employer/[slug]/)
@@ -404,7 +393,6 @@ I built a site that indexes public DOL LCA and PERM data so you can search and b
 • Search: https://visa-bulletin.us/salaries/ — by job title, company, state, program (H-1B/PERM), year
 • Employer profiles: https://visa-bulletin.us/employers/ — per-company stats (filings, approval rate, median salary, top roles, by state)
 • Job title profiles: https://visa-bulletin.us/job-titles/ — per-role stats (filings, median salary, top employers)
-• Worksite search: https://visa-bulletin.us/worksites/ — by city/state/title
 
 Stack: Django, Postgres, employer/job title clustering to dedupe names. Data is refreshed from DOL files periodically. No login, no ads.
 
@@ -442,7 +430,6 @@ I run it for the immigration community; feedback from HN would be valuable.
 | Page            | URL                                      |
 |-----------------|-------------------------------------------|
 | Salary search   | https://visa-bulletin.us/salaries/        |
-| Worksite search | https://visa-bulletin.us/worksites/       |
 | Employers       | https://visa-bulletin.us/employers/       |
 | Employer profile| https://visa-bulletin.us/employer/<slug>/ |
 | Job titles      | https://visa-bulletin.us/job-titles/      |
@@ -465,7 +452,41 @@ The following are **not** built yet; do not promise them in promo:
 - Cost-of-living adjusted salary views
 - Demographics (country of chargeability, education) on profile pages
 
-Stick to: search, employer profiles, job title profiles, directories, worksite search, autocomplete, and sitemaps.
+Stick to: search, employer profiles, job title profiles, directories, autocomplete, and sitemaps.
+
+---
+
+## Appendix A: Worksite Search (`/worksites/`)
+
+**Status:** Implemented but **not reachable from the main site** (no nav or footer link) and **not actively supported**. Do not promote it in launch materials. The URL exists and the view works if you know it; it is **not** included in the sitemap.
+
+### Implemented capabilities (for reference)
+
+**Purpose:** Search worksite location data from DOL Worksites disclosure files.
+
+- **Filters**
+  - **q** – Job title / keyword (job_title, soc_title, worksite_city)
+  - **state** – Worksite state (2-letter code)
+  - **city** – Worksite city (substring match)
+  - **program** – `h1b`, `perm`, or all
+  - **year** – Fiscal year or all
+- **Results:** Paginated list with worksite city/state, job title, wage, program, year.
+- **Stats:** When any filter is applied, shows total count and avg/min/max salary for the filtered set.
+- **SEO:** Title “Worksite Location Data | U.S. Immigration Data”, description for search engines.
+
+**Data scope:** `WorksiteRecord` model (separate table from employer-centric `SalaryRecord`).
+
+**URL:** https://visa-bulletin.us/worksites/
+
+---
+
+### How worksite data differs from salary records, and eventual use case
+
+**Salary records** (LCA/PERM employer files) are **employer-centric**: each row has employer name, job title, worksite city/state, wage, etc. Use case: “Which companies sponsor? What do they pay? Where do they hire?” — i.e. search by company, analyze employer patterns, and power employer/job title profiles.
+
+**Worksite records** come from **separate DOL Worksites disclosure files** with a **different structure**: they focus on **worksite location** (city, state, zip) and job title, and do **not** carry meaningful employer information (worksite files use a different case-number prefix and no employer columns in the same format). So you cannot search or filter worksite data by employer; it is purely location + role. See **`docs/department_of_labor/WORKSITE_FILES_DESIGN.md`** for the full design: data model, file format, and why worksite data was split into `WorksiteRecord` instead of mixing with `SalaryRecord`.
+
+The **eventual unique use case** for worksite data is **location-first analytics**: e.g. “How many H-1B/PERM filings for [job title] in [city] or [state]?” and “What’s the salary distribution by metro or region?” without an employer dimension — useful for relocation decisions, regional job market analysis, and geographic salary comparisons. Today’s `/worksites/` view is a basic implementation of that idea; it is not linked from the main page and is not part of the supported product surface until the design in `WORKSITE_FILES_DESIGN.md` is fully adopted and the UI is promoted.
 
 ---
 

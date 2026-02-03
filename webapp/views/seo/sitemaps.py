@@ -34,7 +34,6 @@ def sitemap_view(request):
     urls = [
         f"{base_url}/",
         f"{base_url}/salaries/",
-        f"{base_url}/worksites/",
         f"{base_url}/employers/",
         f"{base_url}/job-titles/",
         f"{base_url}/faq/",

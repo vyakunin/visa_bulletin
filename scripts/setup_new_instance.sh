@@ -279,14 +279,14 @@ echo ""
 echo "[6/9] Setting up monitoring..."
 echo "--------------------------------------------------------------"
 
-# Enable sysstat
+# Enable sysstat (enable/start can hang in non-interactive - use timeout)
 sudo sed -i 's/ENABLED="false"/ENABLED="true"/' /etc/default/sysstat
-sudo systemctl enable sysstat
-sudo systemctl start sysstat
+timeout 20 sudo systemctl enable sysstat 2>/dev/null || true
+timeout 10 sudo systemctl start sysstat 2>/dev/null || true
 
-# Enable atop
-sudo systemctl enable atop
-sudo systemctl start atop
+# Enable and start atop (can hang in non-interactive/no-TTY - use timeout)
+timeout 20 sudo systemctl enable atop 2>/dev/null || true
+timeout 15 sudo systemctl start atop 2>/dev/null || true
 
 # Create health check script
 HEALTH_SCRIPT="$PROJECT_ROOT/scripts/health_check.sh"
@@ -339,6 +339,8 @@ fi
 # =============================================================================
 # Step 8: Create Environment File Template
 # =============================================================================
+# DB_PASSWORD from step 5 is written here so .env is the single source of truth.
+# No need to save the password elsewhere unless you want a backup (e.g. password manager).
 echo ""
 echo "[8/9] Creating environment file..."
 echo "--------------------------------------------------------------"
@@ -366,7 +368,7 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # Add your domain and static IP here after setup:
 # ALLOWED_HOSTS=localhost,127.0.0.1,your-domain.com,your-static-ip
 ENV_EOF
-    echo "✅ Created .env file"
+    echo "✅ Created .env file (DB password from step 5 saved here)"
     echo ""
     echo "⚠️  IMPORTANT: Update ALLOWED_HOSTS in .env with your domain/IP"
 else
@@ -439,23 +441,20 @@ echo "  1. Log out and back in (for docker group)"
 echo "  2. Update .env with your domain/static IP in ALLOWED_HOSTS"
 echo "  3. Update deployment/nginx/visa-bulletin-nginx.conf with your domain"
 echo "  4. Run: ./scripts/cron/build_all.sh  (pre-build Bazel binaries)"
-echo "  5. Run: ./scripts/bootstrap_initial_data.sh  (migrations + visa bulletin data)"
-echo "  6. Start web server: sudo systemctl start visa-bulletin-web"
-echo "  7. Verify web server: curl -I http://localhost/"
+echo "  5. Run: ./scripts/cron/refresh_data.sh  (migrations + full data ingest; first run loads everything)"
+echo "  6. Start app with Docker: docker-compose -f deployment/docker-compose.blue.yml up -d"
+echo "  7. Verify: curl -I http://localhost/"
 echo "  8. Setup SSL: sudo certbot --nginx -d your-domain.com"
 echo "  9. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
-echo "  10. Open AWS firewall ports 80 and 443 (see PRODUCTION_READY_STATUS.md)"
+echo "  10. Open AWS firewall ports 80 and 443 (Lightsail: instance Networking)"
 echo ""
 echo "Data loading:"
-echo "  - bootstrap_initial_data.sh: Loads visa bulletin data (required for web UI)"
-echo "  - DOL salary data: Automatically ingested by weekly cron job"
+echo "  - refresh_data.sh: Migrations + visa bulletin + DOL data (run once for initial load, then weekly via cron)"
 echo ""
-echo "Web server management:"
-echo "  Start:   sudo systemctl start visa-bulletin-web"
-echo "  Stop:    sudo systemctl stop visa-bulletin-web"
-echo "  Restart: sudo systemctl restart visa-bulletin-web"
-echo "  Status:  sudo systemctl status visa-bulletin-web"
-echo "  Logs:    sudo journalctl -u visa-bulletin-web -f"
+echo "Web server (Docker):"
+echo "  Start:   docker-compose -f deployment/docker-compose.blue.yml up -d"
+echo "  Stop:    docker-compose -f deployment/docker-compose.blue.yml down"
+echo "  Logs:    docker-compose -f deployment/docker-compose.blue.yml logs -f"
 echo ""
 echo "For detailed instructions, see: docs/deployment/NEW_INSTANCE_SETUP.md"
 echo ""

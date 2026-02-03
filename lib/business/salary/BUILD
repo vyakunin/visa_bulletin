@@ -3,6 +3,22 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
+# All .py files in this dir. If __init__.py is added, no_init_check fails the build.
+filegroup(
+    name = "all_py",
+    srcs = glob(["*.py"]),
+    visibility = ["//tests:__pkg__"],
+)
+
+# Fails the build if __init__.py is in this directory (enforces no __init__.py rule).
+genrule(
+    name = "no_init_check",
+    srcs = [":all_py"],
+    outs = ["no_init_ok.txt"],
+    cmd = "for f in $(SRCS); do if [ \"$$(basename $$f)\" = \"__init__.py\" ]; then echo '__init__.py must not exist in lib/business/salary. See .cursor/rules/general_code_health.mdc' >&2; exit 1; fi; done; touch $(OUTS)",
+    visibility = ["//tests:__pkg__"],
+)
+
 py_library(
     name = "generic_words",
     srcs = ["generic_words.py"],
@@ -119,17 +135,3 @@ py_library(
     ],
     visibility = ["//visibility:public"],
 )
-
-# Convenience target that includes all salary business logic modules.
-# Do not add __init__.py (see .cursor/rules).
-py_library(
-    name = "salary",
-    srcs = ["_package.py"],
-    deps = [
-        ":employer_clustering",
-        ":clustering_evaluator",
-        ":llm_verifier",
-    ],
-    visibility = ["//visibility:public"],
-)
-
