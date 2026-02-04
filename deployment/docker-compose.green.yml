@@ -26,6 +26,7 @@ services:
       - REDIS_URL=redis://redis:6379/1
       - DB_HOST=host.docker.internal
       - ANALYTICS_SCRIPT=<script data-goatcounter="https://vyakunin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,54.196.241.197,44.209.204.255,visa-bulletin.us,www.visa-bulletin.us}
     env_file:
       - ../.env
     depends_on:

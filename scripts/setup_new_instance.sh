@@ -357,6 +357,17 @@ echo "--------------------------------------------------------------"
 ENV_FILE="$PROJECT_ROOT/.env"
 
 if [[ ! -f "$ENV_FILE" ]]; then
+    # Include instance public IP in ALLOWED_HOSTS so external access works (Docker/nginx)
+    PUBLIC_IP=""
+    if command -v curl &>/dev/null; then
+        PUBLIC_IP=$(timeout 3 curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)
+        [[ -z "$PUBLIC_IP" ]] && PUBLIC_IP=$(timeout 3 curl -s --connect-timeout 2 https://ifconfig.me 2>/dev/null || true)
+    fi
+    ALLOWED_HOSTS_VALUE="localhost,127.0.0.1"
+    if [[ -n "$PUBLIC_IP" ]]; then
+        ALLOWED_HOSTS_VALUE="$ALLOWED_HOSTS_VALUE,$PUBLIC_IP"
+        echo "   Detected public IP: $PUBLIC_IP (added to ALLOWED_HOSTS)"
+    fi
     cat > "$ENV_FILE" << ENV_EOF
 # Database Configuration
 DB_NAME=$DB_BLUE
@@ -372,14 +383,14 @@ REDIS_URL=redis://127.0.0.1:6379/1
 # Django Settings
 DEBUG=False
 SECRET_KEY=$(openssl rand -base64 32)
-ALLOWED_HOSTS=localhost,127.0.0.1
+ALLOWED_HOSTS=$ALLOWED_HOSTS_VALUE
 
-# Add your domain and static IP here after setup:
-# ALLOWED_HOSTS=localhost,127.0.0.1,your-domain.com,your-static-ip
+# Add your domain here after setup: append to ALLOWED_HOSTS (e.g. visa-bulletin.us)
 ENV_EOF
     echo "✅ Created .env file (DB password from step 5 saved here)"
-    echo ""
-    echo "⚠️  IMPORTANT: Update ALLOWED_HOSTS in .env with your domain/IP"
+    if [[ -z "$PUBLIC_IP" ]]; then
+        echo "⚠️  Update ALLOWED_HOSTS in .env with this instance's public IP for external access"
+    fi
 else
     echo "✅ .env file already exists"
 fi
@@ -447,7 +458,7 @@ echo "  Password: $DB_PASSWORD"
 echo ""
 echo "Next steps:"
 echo "  1. Log out and back in (for docker group)"
-echo "  2. Update .env with your domain/static IP in ALLOWED_HOSTS"
+echo "  2. If external access returns 400: ensure ALLOWED_HOSTS in .env includes this instance's public IP"
 echo "  3. Update deployment/nginx/visa-bulletin-nginx.conf with your domain"
 echo "  4. Run: ./scripts/cron/build_all.sh  (pre-build Bazel binaries)"
 echo "  5. Run: ./scripts/cron/refresh_data.sh  (migrations + full data ingest; first run loads everything)"

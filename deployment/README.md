@@ -17,9 +17,9 @@ deployment/
 ├── docker-compose.green.yml   # Green environment (port 8001)
 ├── nginx/                     # Nginx reverse proxy configs
 │   ├── visa-bulletin-nginx.conf      # Site block; uses main_timed + locations
-│   ├── visa-bulletin-locations.conf  # Location blocks; GPTBot limit_req
+│   ├── visa-bulletin-locations.conf  # Location blocks; bot limit_req
 │   ├── visa-bulletin-log-format.conf # Log format with $request_time (→ conf.d)
-│   ├── gptbot-rate-limit.conf        # GPTBot 0.5 qps per IP (→ conf.d)
+│   ├── gptbot-rate-limit.conf        # Bots 0.1 qps per IP (→ conf.d)
 │   └── rate-limiting.conf            # Optional general rate limits
 ├── cron/                      # Cron job setup
 │   └── setup-ingest-cron.sh
@@ -34,7 +34,7 @@ deployment/
 2. **Reverse Proxy**: Nginx with SSL
 3. **Database**: PostgreSQL (blue-green)
 4. **Data Refresh**: Cron (weekly, pre-built binaries)
-5. **Caching**: Django LocMemCache
+5. **Caching**: Django default cache (Redis when `REDIS_URL` is set, else LocMem). Nginx adds `Cache-Control` for HTML.
 
 ### Server Specs
 
@@ -52,6 +52,62 @@ The 2GB instance requires careful memory management:
 | Swappiness | 60 | Swap before OOM |
 | Bazel | 1GB RAM, 2 jobs | Limit build memory |
 | PostgreSQL | Tuned for bulk ops | Reduce autovacuum spikes |
+
+## Caching (production)
+
+### Current setup
+
+| Layer | TTL | Where |
+|-------|-----|--------|
+| **Django @cache_page** | 24 h | `CACHE_TIMEOUT` in `django_config/settings.py`; backend Redis (if `REDIS_URL`) or LocMem |
+| **Nginx response header** | 3 h | `Cache-Control: public, max-age=10800` in `deployment/nginx/visa-bulletin-locations.conf` for `location /` |
+| **Static assets** | 30 d / 1 y | `/static/` 30d; versioned CSS/JS 1y immutable |
+
+So for a URL like **https://visa-bulletin.us/salaries/**:
+- **Client/browser** is told to cache the HTML for **3 hours** (max-age=10800).
+- **Server-side** (Django) caches the rendered page for **24 hours** (Redis or LocMem).
+
+### Seeing current state and TTL
+
+**1. HTTP cache headers (any URL)**  
+Shows what clients and CDNs see:
+
+```bash
+curl -sI "https://visa-bulletin.us/salaries/"
+```
+
+Look at `Cache-Control`, `Expires`, and optionally `Age` (if a CDN adds it).
+
+**2. Server-side cache (Django key existence + Redis TTL)**  
+For a specific path, see if the key exists and (with Redis) remaining TTL:
+
+```bash
+# Local (LocMem): key exists, no TTL shown
+bazel run //scripts/cache:inspect_cache -- /salaries/
+
+# Production: use domain so cache key matches nginx Host
+SITE_DOMAIN=visa-bulletin.us bazel run //scripts/cache:inspect_cache -- /salaries/
+# or
+bazel run //scripts/cache:inspect_cache -- /salaries/ --domain visa-bulletin.us
+```
+
+On production over SSH (with `.env` and Redis):
+
+```bash
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && \
+  bazel run //scripts/cache:inspect_cache -- /salaries/ --domain visa-bulletin.us"
+```
+
+Output: backend name, key exists (yes/no), and for Redis: TTL in seconds and human-readable (e.g. `2h 15m left`).
+
+**3. Clear cache**  
+After data refresh or deploy that changes cached payloads:
+
+```bash
+bazel run //scripts:clear_cache
+```
+
+With LocMem, reload Gunicorn so workers see cleared cache; with Redis, no restart needed.
 
 ## 🐳 Building the Docker Image
 
@@ -205,6 +261,24 @@ sudo -u postgres psql -c "SELECT * FROM pg_stat_user_tables ORDER BY last_autova
 
 ## 🐛 Troubleshooting
 
+### External access returns 400 Bad Request (DisallowedHost)
+
+If `curl http://<instance-ip>/` returns **400** while `curl -H 'Host: localhost' http://127.0.0.1:8000/` returns **200**, Django is rejecting the request because the instance IP is not in `ALLOWED_HOSTS`.
+
+**Fix on existing instances:**
+
+1. Add the instance public IP to `.env`:
+   ```bash
+   # On the instance (replace with your static IP)
+   sed -i 's/^ALLOWED_HOSTS=.*/ALLOWED_HOSTS=localhost,127.0.0.1,54.196.241.197/' /opt/visa_bulletin/.env
+   ```
+2. Restart the web container so it picks up the env:
+   ```bash
+   cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d --force-recreate web-blue
+   ```
+
+**New setups:** `scripts/setup_new_instance.sh` now detects the instance public IP (AWS metadata or ifconfig.me) and adds it to `ALLOWED_HOSTS` when creating `.env`.
+
 ### SSH Timeout / Instance Freeze
 
 1. Check AWS CloudWatch metrics for CPU/memory spikes
@@ -286,7 +360,7 @@ sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 | **Postgres SSL errors** | ✅ Implemented: `CONN_MAX_AGE = 60` in `django_config/settings_production.py`. |
 | **Gunicorn access log** | ✅ `--access-log-format` includes `%(L)s` (response time) for slow-request analysis. |
 | **Nginx timing** | ✅ Implemented: `main_timed` log format with `$request_time`; see `deployment/nginx/visa-bulletin-log-format.conf`. |
-| **GPTBot throttle** | ✅ Implemented: 0.5 qps per IP via `gptbot-rate-limit.conf`; see `docs/PRODUCTION_TRAFFIC_PATTERNS_RESEARCH.md`. |
+| **Bot throttle** | ✅ Implemented: 0.1 qps per IP for common bots (GPTBot, Googlebot, etc.) via `gptbot-rate-limit.conf`; see `docs/PRODUCTION_TRAFFIC_PATTERNS_RESEARCH.md`. |
 | **Gunicorn timeout** | `--timeout 60`; employer cold path can exceed 60s on large employers; consider Redis so cache hits are fast. |
 
 ## 🔒 Security
