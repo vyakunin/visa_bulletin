@@ -88,15 +88,21 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-for-developmen
 IS_PRODUCTION = SECRET_KEY != 'django-insecure-for-development-only'
 DEBUG = not IS_PRODUCTION  # True locally, False in production (safe by default)
 
-ALLOWED_HOSTS = [
+_default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     'testserver',  # For Django tests
     '3.227.71.176',  # AWS Lightsail static IP (old production)
     '44.209.204.255',  # AWS Lightsail static IP (new 2GB instance)
+    '54.196.241.197',  # Staging
     'visa-bulletin.us',
     'www.visa-bulletin.us',
 ]
+ALLOWED_HOSTS = (
+    [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
+    if os.environ.get('ALLOWED_HOSTS')
+    else _default_allowed_hosts
+)
 
 # WSGI application
 ROOT_URLCONF = 'django_config.urls'

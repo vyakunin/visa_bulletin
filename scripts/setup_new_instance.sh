@@ -212,6 +212,15 @@ if ! grep -q "include_dir = 'conf.d'" "$PG_CONF"; then
     echo "include_dir = 'conf.d'" | sudo tee -a "$PG_CONF"
 fi
 
+# Allow Docker containers to connect (host.docker.internal; Docker uses 172.17.x and 172.18.x)
+echo "listen_addresses = '*'" | sudo tee /etc/postgresql/14/main/conf.d/docker_listen.conf
+PG_HBA="/etc/postgresql/14/main/pg_hba.conf"
+for net in 172.17.0.0/16 172.18.0.0/16; do
+    if ! sudo grep -q "$net" "$PG_HBA"; then
+        echo "host    all    all    $net    scram-sha-256" | sudo tee -a "$PG_HBA"
+    fi
+done
+
 sudo systemctl restart postgresql
 
 echo "✅ PostgreSQL configured"
@@ -457,4 +466,21 @@ echo "  Stop:    docker-compose -f deployment/docker-compose.blue.yml down"
 echo "  Logs:    docker-compose -f deployment/docker-compose.blue.yml logs -f"
 echo ""
 echo "For detailed instructions, see: docs/deployment/NEW_INSTANCE_SETUP.md"
+echo ""
+
+# =============================================================================
+# Step 10: Start application with Docker (no manual step required)
+# =============================================================================
+echo "--------------------------------------------------------------"
+echo "Starting application with Docker..."
+echo "--------------------------------------------------------------"
+cd "$PROJECT_ROOT"
+# Use sg docker so docker group is active without requiring logout
+if sg docker -c "docker-compose -f deployment/docker-compose.blue.yml pull && docker-compose -f deployment/docker-compose.blue.yml up -d" 2>/dev/null; then
+    echo "✅ Docker application started (blue on port 8000)"
+    echo "   Verify: curl -I http://localhost:8000/"
+else
+    echo "⚠️  Docker start failed (e.g. permission - need to log out and back in for docker group)"
+    echo "   After re-login, run: cd $PROJECT_ROOT && docker-compose -f deployment/docker-compose.blue.yml up -d"
+fi
 echo ""
