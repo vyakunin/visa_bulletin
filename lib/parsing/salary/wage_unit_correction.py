@@ -41,7 +41,7 @@ if _CONFIG_PATH is None:
 # Default thresholds (fallback if config file doesn't exist or is invalid)
 # Single unified range for both correction and validation
 _DEFAULT_MIN_ANNUAL = 5000      # Absolute minimum (filters obvious errors)
-_DEFAULT_MAX_ANNUAL = 500000    # 4σ upper bound (filters outliers)
+_DEFAULT_MAX_ANNUAL = 900000    # 4σ upper bound (filters outliers)
 
 
 def _load_thresholds_from_config():
@@ -106,6 +106,10 @@ MAX_VALID_ANNUAL = MAX_ANNUAL
 # Hours per year for hourly wage calculations
 HOURS_PER_YEAR = 2080
 
+# When annual is too low (unit YEAR, wage_from < MIN_ANNUAL), try these units in order.
+# First unit that yields annual in [MIN_ANNUAL, MAX_ANNUAL] is used (derived from yearly range).
+_UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW = (WageUnit.HOUR, WageUnit.WEEK, WageUnit.BI_WEEKLY, WageUnit.MONTH)
+
 
 def should_correct_wage_unit(
     wage_from: Decimal | None,
@@ -152,23 +156,52 @@ def correct_wage_unit(
     wage_annual: Decimal | None = None,
 ) -> WageUnit:
     """
-    Correct wage unit if value suggests it's actually an annual salary.
-    
+    Correct wage unit when implied annual is out of range (both directions).
+
+    Two directions (both derived from [MIN_ANNUAL, MAX_ANNUAL]):
+
+    1. Down (implied annual too high): Any unit → YEAR. If implied annual is above
+       MAX_ANNUAL but wage_from as annual is in range, treat as YEAR. Handled for
+       HOUR, WEEK, BI_WEEKLY, MONTH in should_correct_wage_unit.
+
+    2. Up (implied annual too low): YEAR → sub-annual. If unit is YEAR and wage_from
+       is below MIN_ANNUAL, try HOUR, WEEK, BI_WEEKLY, MONTH in order; use the first
+       unit for which wage_from yields annual in [MIN_ANNUAL, MAX_ANNUAL].
+
     This is the main function used during import to prevent incorrect wage units
     from being saved. It uses the same logic as the fix script to ensure consistency.
-    
+
     Args:
         wage_from: The wage_from value
         wage_unit: Current wage unit
         row_num: Optional row number for logging (used during import)
         wage_annual: Optional wage_annual value (ignored - kept for backward compatibility)
-    
+
     Returns:
-        Corrected wage_unit (YEAR if correction needed, otherwise original unit)
+        Corrected wage_unit (YEAR or first matching sub-annual unit, or original)
     """
+    if not wage_from:
+        return wage_unit
+
+    wage_from_float = float(wage_from)
+
+    # Up: unit YEAR but wage_from tiny — try sub-annual units (HOUR, WEEK, BI_WEEKLY, MONTH)
+    if wage_unit == WageUnit.YEAR and wage_from_float < MIN_ANNUAL:
+        for candidate_unit in _UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW:
+            annual_if_candidate = float(calculate_annual_wage(wage_from, candidate_unit))
+            if MIN_ANNUAL <= annual_if_candidate <= MAX_ANNUAL:
+                if row_num is not None:
+                    unit_display = candidate_unit.value if hasattr(candidate_unit, "value") else candidate_unit
+                    _wage_correction_rate_logger.log(
+                        f"Row {row_num}: wage_from=${wage_from:,.0f} with unit=YEAR gives annual below ${MIN_ANNUAL:,} "
+                        f"- treating as {unit_display} (annual=${annual_if_candidate:,.0f})"
+                    )
+                return candidate_unit
+
+    # Down: implied annual too high — treat wage_from as annual (→ YEAR)
     if not should_correct_wage_unit(wage_from, wage_unit, wage_annual):
         return wage_unit
-    
+
     # Generate appropriate log message with rate limiting
     if row_num is not None:
         implied_annual = float(calculate_annual_wage(wage_from, wage_unit))
@@ -179,10 +212,10 @@ def correct_wage_unit(
             f"implies annual=${implied_annual:,.0f} (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range) "
             f"- treating as YEAR instead"
         )
-        
+
         # Log with rate limiting (automatically includes suppressed count if needed)
         _wage_correction_rate_logger.log(f"Row {row_num}: {message}")
-    
+
     return WageUnit.YEAR  # Return enum (consistent with input type)
 
 

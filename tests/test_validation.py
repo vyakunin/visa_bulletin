@@ -12,10 +12,12 @@ from models.enums.visa_program import VisaProgram, WageUnit, CaseStatus
 from lib.utils.location_utils import VALID_STATES, is_valid_state
 from lib.parsing.salary.wage_unit_correction import (
     should_correct_wage_unit,
+    correct_wage_unit,
     should_flag_for_review,
     calculate_annual_wage,
     MIN_ANNUAL,
     MAX_ANNUAL,
+    HOURS_PER_YEAR,
 )
 # Import from scripts - these will set up Django, but that's OK since we're in a test
 # Note: Django setup in these modules is idempotent
@@ -261,6 +263,32 @@ class TestWageUnitCorrectionEdgeCases(TestCase):
         self.assertTrue(flagged, "Wage > $1M should be flagged")
         self.assertIn('exceeds', reason.lower() if reason else '')
     
+    def test_low_annual_treated_as_hourly(self):
+        """Test that very low annual (e.g. $29/year) is auto-corrected to HOUR so row is kept"""
+        unit = correct_wage_unit(
+            wage_from=Decimal('29'),
+            wage_unit=WageUnit.YEAR,
+            row_num=0,
+        )
+        self.assertEqual(unit, WageUnit.HOUR, "29 with unit YEAR should be corrected to HOUR")
+        wage_annual = calculate_annual_wage(Decimal('29'), WageUnit.HOUR)
+        self.assertEqual(float(wage_annual), 29 * HOURS_PER_YEAR)
+        self.assertGreaterEqual(float(wage_annual), MIN_ANNUAL)
+        self.assertLessEqual(float(wage_annual), MAX_ANNUAL)
+
+    def test_low_annual_treated_as_weekly_when_hourly_exceeds_max(self):
+        """Test that when HOUR would exceed MAX_ANNUAL, next unit (WEEK) is used"""
+        # 1000/year invalid; 1000/hour = 2.08M > MAX_ANNUAL; 1000/week = 52k in range
+        unit = correct_wage_unit(
+            wage_from=Decimal('1000'),
+            wage_unit=WageUnit.YEAR,
+            row_num=0,
+        )
+        self.assertEqual(unit, WageUnit.WEEK, "1000 with unit YEAR should be corrected to WEEK (HOUR would exceed max)")
+        wage_annual = calculate_annual_wage(Decimal('1000'), WageUnit.WEEK)
+        self.assertGreaterEqual(float(wage_annual), MIN_ANNUAL)
+        self.assertLessEqual(float(wage_annual), MAX_ANNUAL)
+
     def test_should_flag_for_review_low_wage(self):
         """Test that extremely low wages are flagged for review"""
         flagged, reason = should_flag_for_review(
