@@ -321,6 +321,31 @@ chmod +x "$HEALTH_SCRIPT"
 echo "✅ Monitoring configured"
 
 # =============================================================================
+# Step 6b: Install Bazel (Bazelisk) if not present
+# =============================================================================
+if ! command -v bazel &>/dev/null; then
+    echo ""
+    echo "[6b/9] Installing Bazel (Bazelisk)..."
+    echo "--------------------------------------------------------------"
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64) BAZELISK_ARCH=amd64 ;;
+        aarch64|arm64) BAZELISK_ARCH=arm64 ;;
+        *) echo "⚠️  Unsupported arch $ARCH for Bazelisk; install Bazel manually"; BAZELISK_ARCH= ;;
+    esac
+    if [[ -n "$BAZELISK_ARCH" ]]; then
+        BAZELISK_VERSION="v1.19.0"
+        sudo wget -q -O /usr/local/bin/bazel "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${BAZELISK_ARCH}" || true
+        if [[ -f /usr/local/bin/bazel ]]; then
+            sudo chmod +x /usr/local/bin/bazel
+            echo "✅ Bazel (Bazelisk) installed at /usr/local/bin/bazel"
+        else
+            echo "⚠️  Bazelisk download failed; install Bazel manually for build_all.sh and refresh_data.sh"
+        fi
+    fi
+fi
+
+# =============================================================================
 # Step 7: Configure Bazel Memory Limits
 # =============================================================================
 echo ""
