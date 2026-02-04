@@ -2,8 +2,11 @@
 """
 Backfill SalaryRecords with JobTitle entity links.
 
-This links existing SalaryRecords to JobTitle entities based on exact job_title match.
-This can be run independently of clustering.
+This links existing SalaryRecords to JobTitle entities by normalizing each record's
+job_title (same logic as cluster_job_titles) and matching on (title_normalized,
+experience_level). Using exact raw-string match would miss most records because
+JobTitle rows are keyed by normalized form and only store one representative
+raw title per row.
 
 Usage:
     bazel run //scripts/salary:backfill_job_title_links [--dry-run]
@@ -50,13 +53,15 @@ def backfill_job_title_links(dry_run: bool = False):
     if dry_run:
         logger.info("DRY RUN MODE - No changes will be saved")
     
-    # Get all JobTitle entities indexed by title
-    logger.info("Loading JobTitle entities...")
-    job_titles_by_name = {}
+    # Index JobTitle by (title_normalized, experience_level) so we match the same
+    # way cluster_job_titles does — raw title variants map to one JobTitle row.
+    logger.info("Loading JobTitle entities (by normalized + experience_level)...")
+    job_titles_by_key = {}
     for jt in JobTitle.objects.all():
-        job_titles_by_name[jt.title] = jt
+        key = (jt.title_normalized or "", jt.experience_level or "")
+        job_titles_by_key[key] = jt
     
-    logger.info(f"Loaded {len(job_titles_by_name):,} JobTitle entities")
+    logger.info(f"Loaded {len(job_titles_by_key):,} JobTitle entities")
     
     # Process in batches
     collector = BatchedUpdateCollector(
@@ -69,11 +74,18 @@ def backfill_job_title_links(dry_run: bool = False):
     linked_count = 0
     not_found_count = 0
     
-    # Process unlinked records
+    # Process unlinked records — resolve each raw job_title via same normalization
+    # as cluster_job_titles so all variants link to the same JobTitle row.
     logger.info("Processing unlinked SalaryRecords...")
     for i, record in enumerate(SalaryRecord.objects.filter(job_title_entity__isnull=True).iterator(chunk_size=1000), 1):
-        if record.job_title in job_titles_by_name:
-            job_title = job_titles_by_name[record.job_title]
+        if not record.job_title:
+            not_found_count += 1
+            continue
+        normalized = JobTitle.normalize_title(record.job_title)
+        experience_level = JobTitle.extract_experience_level(record.job_title) or ""
+        key = (normalized, experience_level)
+        if key in job_titles_by_key:
+            job_title = job_titles_by_key[key]
             record.job_title_entity = job_title
             collector.add(record)
             linked_count += 1
