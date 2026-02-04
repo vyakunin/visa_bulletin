@@ -28,6 +28,9 @@ from .versioning import create_version, activate_version
 
 logger = logging.getLogger(__name__)
 
+# When upserting, don't overwrite existing non-null date with null (same case in two files with different completeness)
+MERGE_PRESERVE_FIELDS = frozenset({'case_submitted', 'decision_date'})
+
 
 def get_optimal_batch_size(model_class, current_count: int) -> int:
     """Calculate optimal batch size based on database size"""
@@ -916,14 +919,21 @@ class PipelineOrchestrator:
                         
                         if self._is_newer_than_existing(incoming_date, existing_date):
                             # Incoming is newer - update existing record with all fields from incoming
-                            # Skip auto fields (auto_now, auto_now_add) - Django handles these automatically
+                            # For merge-preserve fields (e.g. case_submitted, decision_date), keep existing
+                            # value if incoming is null so we don't lose data when the same case appears
+                            # in two files with different date completeness
                             for field in incoming_record._meta.fields:
                                 if field.name in ['id', 'pk'] or field.primary_key:
                                     continue
                                 # Skip auto timestamp fields - Django sets these automatically
                                 if isinstance(field, models.DateTimeField) and (field.auto_now or field.auto_now_add):
                                     continue
-                                setattr(existing_record, field.name, getattr(incoming_record, field.name, None))
+                                incoming_val = getattr(incoming_record, field.name, None)
+                                if field.name in MERGE_PRESERVE_FIELDS and incoming_val is None:
+                                    existing_val = getattr(existing_record, field.name, None)
+                                    setattr(existing_record, field.name, existing_val)
+                                else:
+                                    setattr(existing_record, field.name, incoming_val)
                             records_to_update[model_class].append(existing_record)
                         else:
                             # Existing is newer or equal - skip (keep existing)

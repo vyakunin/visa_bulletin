@@ -6,6 +6,22 @@ alwaysApply: true
 
 These are general performance rules that apply across all projects.
 
+## Rule: Assume Production for Performance Estimates
+
+**ALWAYS assume production constraints when estimating or designing for performance (batch sizes, memory, runtime, indexes).**
+
+**Production baseline (this project):**
+- **RAM:** 2GB (e.g. prod Lightsail)
+- **No option to skip** heavy operations (e.g. backfill) — design so they are feasible on prod or defer to full refresh / blue-green rotation
+
+**Implications:**
+- ✅ Size batches, chunking, and indexes for 2GB RAM and constrained I/O
+- ✅ Prefer "leave indexes on" unless you explicitly optimize for a one-off (e.g. drop → backfill → recreate) and document it
+- ✅ When something would be "slow in prod and no option to skip," defer to a suitable window (e.g. full refresh during blue-green DB rotation) rather than optimizing prematurely
+- ❌ Don't assume dev/large-instance resources when judging "fast enough"
+
+**Rationale:** Production is the bottleneck; estimates that assume prod avoid surprises and unnecessary rework.
+
 ## Rule: Always Consider Memory Usage When Loading Data
 
 **CRITICAL: When loading data from the database, always consider memory usage and use the most efficient approach.**
