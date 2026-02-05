@@ -421,6 +421,41 @@ else
 fi
 
 # =============================================================================
+# Step 8b: Orchestrator (blue-green refresh) optional setup
+# =============================================================================
+# For prod->staging refresh_and_switch: SSH key for staging + AWS credentials for Lightsail.
+echo ""
+echo "[8b/9] Orchestrator (blue-green refresh) optional setup..."
+echo "--------------------------------------------------------------"
+
+# Ensure .ssh exists for SSH key used by refresh_and_switch (REFRESH_SSH_KEY_PATH)
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh" 2>/dev/null || true
+
+# Append REFRESH_* and AWS placeholders to .env if not already present
+if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/null; then
+    cat >> "$ENV_FILE" << 'REFRESH_EOF'
+
+# Orchestrator (blue-green refresh): prod -> staging. Optional; uncomment and set for refresh_and_switch.py
+# REFRESH_ACTIVE_INSTANCE_NAME=VisaBulletin2GB
+# REFRESH_ACTIVE_INSTANCE_IP=44.209.204.255
+# REFRESH_INACTIVE_INSTANCE_NAME=VisaBulletinStaging
+# REFRESH_INACTIVE_INSTANCE_IP=54.196.241.197
+# REFRESH_MY_INSTANCE_NAME=VisaBulletin2GB
+# REFRESH_SSH_USER=ubuntu
+# REFRESH_SSH_KEY_PATH=/home/ubuntu/.ssh/lightsail_visa_bulletin
+# REFRESH_REMOTE_PROJECT_ROOT=/opt/visa_bulletin
+# REFRESH_REMOTE_DB_NAME=visa_bulletin
+# AWS: for Lightsail start/stop (if staging is stopped). Use profile or env vars.
+# AWS_PROFILE=visa-bulletin-deploy
+# Or: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1
+REFRESH_EOF
+    echo "✅ Added REFRESH_* and AWS placeholders to .env (commented); copy SSH key to REFRESH_SSH_KEY_PATH and set AWS credentials for orchestrator"
+else
+    echo "✅ Orchestrator env already present or .env not created by this run"
+fi
+
+# =============================================================================
 # Step 9: Configure Nginx and Production Web Server
 # =============================================================================
 echo ""

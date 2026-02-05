@@ -1,9 +1,32 @@
 # Cron jobs and automated maintenance scripts
 
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "refresh_data_py",
+    srcs = ["refresh_data.py"],
+    main = "refresh_data.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//scripts/cron/refresh:refresh",
+    ],
+)
+
+py_binary(
+    name = "refresh_and_switch_py",
+    srcs = ["refresh_and_switch.py"],
+    main = "refresh_and_switch.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//scripts/cron/refresh:refresh",
+    ],
+)
+
 sh_binary(
     name = "refresh_data",
     srcs = ["refresh_data.sh"],
     data = [
+        ":refresh_data_py",
         "//scripts/ingest:run_pipeline",
         "//scripts/salary:manage_salary_indexes",
         "//scripts/salary:backfill_job_title_links",

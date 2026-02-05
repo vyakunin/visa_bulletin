@@ -1047,3 +1047,74 @@ django_py_test(
         requirement("plotly"),
     ],
 )
+
+# Refresh pipeline (no Django)
+py_test(
+    name = "test_refresh_checkpoint",
+    size = "small",
+    srcs = ["test_refresh_checkpoint.py"],
+    main = "test_refresh_checkpoint.py",
+    deps = [
+        "//scripts/cron/refresh:checkpoint",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_refresh_config",
+    size = "small",
+    srcs = ["test_refresh_config.py"],
+    main = "test_refresh_config.py",
+    deps = [
+        "//scripts/cron/refresh:config",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_refresh_pipeline",
+    size = "small",
+    srcs = ["test_refresh_pipeline.py"],
+    main = "test_refresh_pipeline.py",
+    deps = [
+        "//scripts/cron/refresh:checkpoint",
+        "//scripts/cron/refresh:config",
+        "//scripts/cron/refresh:pipeline",
+        "//scripts/cron/refresh:runner",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_refresh_instance",
+    size = "small",
+    srcs = ["test_refresh_instance.py"],
+    main = "test_refresh_instance.py",
+    deps = [
+        "//scripts/cron/refresh:instance",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_refresh_orchestrate",
+    size = "small",
+    srcs = ["test_refresh_orchestrate.py"],
+    main = "test_refresh_orchestrate.py",
+    deps = [
+        "//scripts/cron/refresh:config",
+        "//scripts/cron/refresh:instance",
+        "//scripts/cron/refresh:orchestrate",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)

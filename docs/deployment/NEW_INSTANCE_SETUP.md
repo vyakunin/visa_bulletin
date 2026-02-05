@@ -355,6 +355,21 @@ ssh prod_2Gb_vm
 
 **Note:** Update IP if instance was stopped/started (check AWS CLI: `aws lightsail get-instance --instance-name VisaBulletin2GB --query 'instance.publicIpAddress'`)
 
+## Orchestrator (blue-green refresh) setup
+
+**For prod when running refresh_and_switch.py (prod → staging):**
+
+1. **SSH key for staging** – The orchestrator SSHs to the inactive (staging) instance to run the pipeline. Copy the private key that can SSH to staging to the path set in `REFRESH_SSH_KEY_PATH` (e.g. `/home/ubuntu/.ssh/lightsail_visa_bulletin`).
+   - On prod: ensure `~/.ssh` exists and has mode 700.
+   - Copy the key (e.g. from your laptop or a secure store): `scp -i <key-to-prod> lightsail_visa_bulletin ubuntu@<prod-ip>:~/.ssh/` then on prod: `chmod 600 ~/.ssh/lightsail_visa_bulletin`.
+   - In `.env`: set `REFRESH_SSH_KEY_PATH=/home/ubuntu/.ssh/lightsail_visa_bulletin` (and other `REFRESH_*` vars; see REFRESH_DATA_PYTHON_REFACTOR.md “Apply: First run”).
+
+2. **AWS credentials for Lightsail** – Used to start/stop the inactive instance if it is stopped. Either:
+   - **Profile:** Install AWS CLI and configure profile (e.g. `aws configure --profile visa-bulletin-deploy`). In `.env` set `AWS_PROFILE=visa-bulletin-deploy`.
+   - **Env vars:** Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION=us-east-1` in `.env` or export before running the orchestrator.
+
+`setup_new_instance.sh` adds commented REFRESH_* and AWS placeholders to `.env`; uncomment and set values for the instance that will run the orchestrator (prod).
+
 ## System Update
 
 ```bash
