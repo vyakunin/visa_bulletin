@@ -45,17 +45,21 @@ def run_orchestrate(
 
     logger.info("Active: %s (%s), Inactive: %s (%s)", active_info.name, active_info.ip, inactive_info.name, inactive_info.ip)
 
-    state = instance.get_instance_state(inactive_info.name)
-    if state != "running":
-        logger.info("Starting inactive instance %s", inactive_info.name)
-        if not instance.start_instance(inactive_info.name):
-            logger.error("Failed to start %s", inactive_info.name)
-            return 1
-        if not instance.wait_instance_running(inactive_info.name, timeout_sec=600):
-            logger.error("Instance %s did not reach running state", inactive_info.name)
-            return 1
+    assume_running = os.environ.get("REFRESH_ASSUME_INACTIVE_RUNNING", "").strip().lower() in ("1", "true", "yes")
+    if assume_running:
+        logger.info("REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)")
     else:
-        logger.info("Inactive instance %s already running", inactive_info.name)
+        state = instance.get_instance_state(inactive_info.name)
+        if state != "running":
+            logger.info("Starting inactive instance %s", inactive_info.name)
+            if not instance.start_instance(inactive_info.name):
+                logger.error("Failed to start %s", inactive_info.name)
+                return 1
+            if not instance.wait_instance_running(inactive_info.name, timeout_sec=600):
+                logger.error("Instance %s did not reach running state", inactive_info.name)
+                return 1
+        else:
+            logger.info("Inactive instance %s already running", inactive_info.name)
 
     if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=600):
         logger.error("Instance %s (%s) not healthy", inactive_info.name, inactive_info.ip)
