@@ -421,12 +421,21 @@ else
 fi
 
 # =============================================================================
-# Step 8b: Orchestrator (blue-green refresh) optional setup
+# Step 8b: Orchestrator (blue-green refresh) setup
 # =============================================================================
 # For prod->staging refresh_and_switch: SSH key for staging + AWS credentials for Lightsail.
 echo ""
-echo "[8b/9] Orchestrator (blue-green refresh) optional setup..."
+echo "[8b/9] Orchestrator (blue-green refresh) setup..."
 echo "--------------------------------------------------------------"
+
+# AWS CLI required for Lightsail (get_instance_state, start/stop instance)
+if ! command -v aws &>/dev/null; then
+    sudo apt-get update -qq
+    sudo apt-get install -y awscli
+    echo "✅ AWS CLI installed"
+else
+    echo "✅ AWS CLI already installed"
+fi
 
 # Ensure .ssh exists for SSH key used by refresh_and_switch (REFRESH_SSH_KEY_PATH)
 mkdir -p "$HOME/.ssh"
@@ -436,7 +445,7 @@ chmod 700 "$HOME/.ssh" 2>/dev/null || true
 if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/null; then
     cat >> "$ENV_FILE" << 'REFRESH_EOF'
 
-# Orchestrator (blue-green refresh): prod -> staging. Optional; uncomment and set for refresh_and_switch.py
+# Orchestrator (blue-green refresh): prod -> staging. Uncomment and set for refresh_and_switch.py
 # REFRESH_ACTIVE_INSTANCE_NAME=VisaBulletin2GB
 # REFRESH_ACTIVE_INSTANCE_IP=44.209.204.255
 # REFRESH_INACTIVE_INSTANCE_NAME=VisaBulletinStaging
@@ -446,11 +455,13 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/n
 # REFRESH_SSH_KEY_PATH=/home/ubuntu/.ssh/lightsail_visa_bulletin
 # REFRESH_REMOTE_PROJECT_ROOT=/opt/visa_bulletin
 # REFRESH_REMOTE_DB_NAME=visa_bulletin
-# AWS: for Lightsail start/stop (if staging is stopped). Use profile or env vars.
+# AWS: for Lightsail start/stop (if staging is stopped). Put credentials on this instance:
+#   - Copy from your machine: scp ~/.aws/credentials this-host:~/.aws/ (then set AWS_PROFILE below), or
+#   - On this instance: aws configure (or create IAM key and set AWS_ACCESS_KEY_ID/SECRET in .env).
 # AWS_PROFILE=visa-bulletin-deploy
 # Or: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1
 REFRESH_EOF
-    echo "✅ Added REFRESH_* and AWS placeholders to .env (commented); copy SSH key to REFRESH_SSH_KEY_PATH and set AWS credentials for orchestrator"
+    echo "✅ Added REFRESH_* and AWS placeholders to .env (commented); copy SSH key to REFRESH_SSH_KEY_PATH and put AWS credentials on this instance (copy from your machine or aws configure)"
 else
     echo "✅ Orchestrator env already present or .env not created by this run"
 fi
@@ -527,6 +538,7 @@ echo "  7. Verify: curl -I http://localhost/"
 echo "  8. Setup SSL: sudo certbot --nginx -d your-domain.com"
 echo "  9. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
 echo "  10. Open AWS firewall ports 80 and 443 (Lightsail: instance Networking)"
+echo "  11. For blue-green refresh: copy AWS credentials to this instance (e.g. scp ~/.aws/credentials from your machine to this host), uncomment REFRESH_* and AWS_* in .env, copy SSH key to REFRESH_SSH_KEY_PATH"
 echo ""
 echo "Data loading:"
 echo "  - refresh_data.sh: Migrations + visa bulletin + DOL data (run once for initial load, then weekly via cron)"
