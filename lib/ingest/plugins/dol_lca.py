@@ -252,7 +252,8 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         row_count = 0
         for row_num, record in enumerate(read_excel_streaming(filepath, start_row=start_row), start=start_row):
             row_count += 1
-            
+            record['_row_num'] = row_num
+
             # Update checkpoint periodically
             if row_count % 10000 == 0:
                 run.checkpoint['last_row'] = row_num - 1
@@ -285,7 +286,8 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             row_count = start_row
             for row in reader:
                 row_count += 1
-                
+                row['_row_num'] = row_count
+
                 # Update checkpoint periodically
                 if row_count % 10000 == 0:
                     run.checkpoint['last_row'] = row_count - 1
@@ -501,9 +503,9 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         
         job_title = job_title_raw.strip()
 
-        # Parse wage info (row_num not critical for wage parsing, use 0)
+        row_num = record.get('_row_num')
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(
-            record, column_mappings, 0
+            record, column_mappings, row_num if row_num is not None else 0
         )
 
         # REQUIRED: Salary records must have salary data (wage_from and wage_unit, or wage_annual)
@@ -516,7 +518,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         
         # Skip records with wage_annual outside valid range (typos, wrong unit, data errors)
         if wage_annual is not None:
-            is_valid, _ = validate_wage_annual(wage_annual, 0)
+            is_valid, _ = validate_wage_annual(wage_annual, row_num)
             if not is_valid:
                 logger.debug(f"Skipping record {case_number_value}: wage_annual outside valid range")
                 if self._rejection_tracker:
@@ -557,15 +559,15 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         if not case_number:
             return None
         case_number_value = str(case_number).strip().upper()
-        
-        # Parse wage info (row_num not critical for wage parsing, use 0)
+
+        row_num = record.get('_row_num')
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(
-            record, column_mappings, 0
+            record, column_mappings, row_num if row_num is not None else 0
         )
         
         # Skip worksite records with wage_annual outside valid range (typos, wrong unit, data errors)
         if wage_annual is not None:
-            is_valid, _ = validate_wage_annual(wage_annual, 0)
+            is_valid, _ = validate_wage_annual(wage_annual, row_num)
             if not is_valid:
                 logger.debug(f"Skipping worksite record {case_number_value}: wage_annual outside valid range")
                 return None

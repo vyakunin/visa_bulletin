@@ -21,12 +21,16 @@ class Runner(Protocol):
         """Run pre-built binary or bazel run. rel_path e.g. 'scripts/salary/cluster_job_titles'."""
         ...
 
+    def read_stage_log_tail(self, n: int = 200) -> str:
+        """Read last n lines of stage log (e.g. REFRESH_STAGE_LOG_PATH). Empty if not available."""
+        ...
+
     def run_psql(self, db_name: str, sql: str) -> str:
         """Run psql -t -c and return stdout."""
         ...
 
-    def run_sudo_psql(self, sql: str) -> subprocess.CompletedProcess[str]:
-        """Run sudo -u postgres psql -c."""
+    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+        """Run sudo -u postgres psql [-d db] -c sql."""
         ...
 
     def run_migrate(self, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -47,6 +51,10 @@ class Runner(Protocol):
 
     def write_checkpoint(self, path: Path, data: CheckpointData) -> None:
         """Write checkpoint JSON on target host (atomic)."""
+        ...
+
+    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+        """Run a shell command on the target host (SSH for remote, bash -c for local)."""
         ...
 
 
@@ -84,6 +92,17 @@ class LocalRunner:
             check=False,
         )
 
+    def read_stage_log_tail(self, n: int = 200) -> str:
+        """Read last n lines of stage log from local file if REFRESH_STAGE_LOG_PATH set."""
+        path = os.environ.get("REFRESH_STAGE_LOG_PATH")
+        if not path or not Path(path).exists():
+            return ""
+        try:
+            lines = Path(path).read_text().splitlines()
+            return "\n".join(lines[-n:]) if len(lines) > n else "\n".join(lines)
+        except OSError:
+            return ""
+
     def run_psql(self, db_name: str, sql: str) -> str:
         env = dict(self._env)
         if env.get("DB_PASSWORD"):
@@ -100,9 +119,13 @@ class LocalRunner:
         )
         return (result.stdout or "").strip() if result.returncode == 0 else ""
 
-    def run_sudo_psql(self, sql: str) -> subprocess.CompletedProcess[str]:
+    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+        cmd = ["sudo", "-u", "postgres", "psql"]
+        if db:
+            cmd.extend(["-d", db])
+        cmd.extend(["-c", sql])
         return subprocess.run(
-            ["sudo", "-u", "postgres", "psql", "-c", sql],
+            cmd,
             cwd=str(self.project_root),
             env=self._env,
             capture_output=True,
@@ -141,6 +164,18 @@ class LocalRunner:
     def write_checkpoint(self, path: Path, data: CheckpointData) -> None:
         write_checkpoint_file(Path(path), data)
 
+    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+        kwargs: dict[str, Any] = {
+            "cwd": str(self.project_root),
+            "env": self._env,
+            "capture_output": True,
+            "text": True,
+            "check": False,
+        }
+        if timeout_sec is not None:
+            kwargs["timeout"] = timeout_sec
+        return subprocess.run(["bash", "-c", command], **kwargs)
+
 
 class MockRunner:
     """Record runner calls for tests. Returns success by default."""
@@ -159,12 +194,16 @@ class MockRunner:
             return self.run_bin_return
         return subprocess.CompletedProcess(args=[rel_path, *args], returncode=0, stdout="", stderr="")
 
+    def read_stage_log_tail(self, n: int = 200) -> str:
+        self.calls.append(("read_stage_log_tail", (n,), {}))
+        return ""
+
     def run_psql(self, db_name: str, sql: str) -> str:
         self.calls.append(("run_psql", (db_name, sql), {}))
         return self.run_psql_return
 
-    def run_sudo_psql(self, sql: str) -> subprocess.CompletedProcess[str]:
-        self.calls.append(("run_sudo_psql", (sql,), {}))
+    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+        self.calls.append(("run_sudo_psql", (sql,), {"db": db}))
         if self.run_sudo_psql_return is not None:
             return self.run_sudo_psql_return
         return subprocess.CompletedProcess(args=["psql"], returncode=0, stdout="", stderr="")
@@ -190,6 +229,10 @@ class MockRunner:
         self.calls.append(("write_checkpoint", (str(path), data), {}))
         self._checkpoint = data
 
+    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+        self.calls.append(("run_shell", (command,), {"timeout_sec": timeout_sec}))
+        return subprocess.CompletedProcess(args=["run_shell"], returncode=0, stdout="", stderr="")
+
 
 class RemoteRunner:
     """Run commands on a remote host via SSH. Checkpoint read/write on remote."""
@@ -201,35 +244,74 @@ class RemoteRunner:
         ssh_user: str = "ubuntu",
         ssh_key_path: str | None = None,
         env_file: str | Path = ".env",
+        ssh_timeout_sec: int | None = None,
     ) -> None:
         self.host = host
         self.project_root = Path(project_root)
         self.ssh_user = ssh_user
         self.ssh_key_path = ssh_key_path
         self.env_file = Path(env_file) if isinstance(env_file, Path) else self.project_root / ".env"
+        if ssh_timeout_sec is not None:
+            self.ssh_timeout = ssh_timeout_sec
+        else:
+            self.ssh_timeout = int(os.environ.get("REFRESH_SSH_TIMEOUT", "14400"))
 
-    def _ssh(self, command: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    def _ssh(
+        self,
+        command: str,
+        stdin: str | None = None,
+        timeout_sec: int | None = None,
+        capture_output: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        timeout = timeout_sec if timeout_sec is not None else self.ssh_timeout
         cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
         if self.ssh_key_path:
             cmd.extend(["-i", self.ssh_key_path])
         cmd.append(f"{self.ssh_user}@{self.host}")
         cmd.append(command)
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            input=stdin,
-            timeout=3600,
-        )
+        kwargs: dict[str, Any] = {
+            "text": True,
+            "input": stdin,
+            "timeout": timeout,
+        }
+        if capture_output:
+            kwargs["capture_output"] = True
+        else:
+            kwargs["stdout"] = subprocess.DEVNULL
+            kwargs["stderr"] = subprocess.DEVNULL
+        result = subprocess.run(cmd, **kwargs)
+        return result
 
-    def run_bin(self, rel_path: str, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_bin(
+        self,
+        rel_path: str,
+        *args: str,
+        cwd: Path | None = None,
+        timeout_sec: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         root = str(cwd or self.project_root)
         bin_path = f"{root}/bazel-bin/{rel_path}"
         args_s = " ".join(shlex.quote(a) for a in args)
-        cmd = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
-        cmd += f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run //{rel_path} -- {args_s}; fi"
-        result = self._ssh(cmd)
-        return result
+        stage_log = os.environ.get("REFRESH_STAGE_LOG_PATH", "/tmp/refresh_stage.log")
+        inner = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
+        inner += f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run //{rel_path} -- {args_s}; fi"
+        inner += f" 2>&1 | tee {stage_log}; exit ${{PIPESTATUS[0]:-0}}"
+        cmd = f"bash -c {shlex.quote(inner)}"
+        # Don't capture: output goes only to stage log; we read tail via read_stage_log_tail.
+        # Avoids buffering hours of output on prod and keeps SSH pipe from blocking.
+        result = self._ssh(cmd, timeout_sec=timeout_sec, capture_output=False)
+        return subprocess.CompletedProcess(
+            args=[rel_path, *args],
+            returncode=result.returncode,
+            stdout="",
+            stderr="",
+        )
+
+    def read_stage_log_tail(self, n: int = 200) -> str:
+        """Read last n lines of stage log on remote host (no capture, so tail from file)."""
+        stage_log = os.environ.get("REFRESH_STAGE_LOG_PATH", "/tmp/refresh_stage.log")
+        result = self._ssh(f"tail -n {n} {shlex.quote(stage_log)} 2>/dev/null || true")
+        return (result.stdout or "").strip() if result.returncode == 0 else ""
 
     def run_psql(self, db_name: str, sql: str) -> str:
         sql_esc = sql.replace("'", "'\"'\"'")
@@ -237,8 +319,9 @@ class RemoteRunner:
         result = self._ssh(cmd)
         return (result.stdout or "").strip() if result.returncode == 0 else ""
 
-    def run_sudo_psql(self, sql: str) -> subprocess.CompletedProcess[str]:
-        cmd = f"cd {self.project_root} && sudo -u postgres psql -c {repr(sql)}"
+    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+        db_arg = f" -d {db}" if db else ""
+        cmd = f"cd {self.project_root} && sudo -u postgres psql{db_arg} -c {repr(sql)}"
         return self._ssh(cmd)
 
     def run_migrate(self, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -252,6 +335,10 @@ class RemoteRunner:
         key_esc = key.replace("'", "'\"'\"'")
         cmd = f"sed -i.bak 's/^{key_esc}=.*/{key_esc}={val_esc}/' {env_path} 2>/dev/null || echo '{key_esc}={val_esc}' >> {env_path}"
         self._ssh(cmd)
+
+    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+        """Run a shell command on the remote host via SSH."""
+        return self._ssh(command, timeout_sec=timeout_sec)
 
     def detect_active_env(self) -> str:
         nginx = self.project_root / "deployment" / "nginx" / "visa-bulletin-locations.conf"

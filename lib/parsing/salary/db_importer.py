@@ -57,8 +57,8 @@ LCA_COLUMN_MAPPINGS = {
     'wage_unit': ['WAGE_UNIT_OF_PAY', 'LCA_CASE_WAGE_RATE_UNIT', 'WAGE_UNIT_OF_PAY_1'],
     'prevailing_wage': ['PREVAILING_WAGE', 'PW_WAGE_LEVEL', 'PREVAILING_WAGE_1'],
     'prevailing_wage_unit': ['PW_UNIT_OF_PAY', 'PW_UNIT_OF_PAY_1'],
-    'case_submitted': ['RECEIVED_DATE', 'LCA_CASE_SUBMIT', 'CASE_SUBMITTED'],
-    'decision_date': ['DECISION_DATE', 'LCA_CASE_CERTIFICATION'],
+    'case_submitted': ['RECEIVED_DATE', 'LCA_CASE_SUBMIT', 'CASE_SUBMITTED', 'SUBMITTED_DATE'],
+    'decision_date': ['DECISION_DATE', 'LCA_CASE_CERTIFICATION', 'DOL_DECISION_DATE', 'Decision_Date'],
     'employment_start': ['BEGIN_DATE', 'LCA_CASE_EMPLOYMENT_START_DATE', 'EMPLOYMENT_START_DATE'],
     'employment_end': ['END_DATE', 'LCA_CASE_EMPLOYMENT_END_DATE', 'EMPLOYMENT_END_DATE'],
 }
@@ -139,8 +139,9 @@ def parse_date(date_str: str | None) -> datetime | None:
     if not date_str:
         return None
     
-    # Try common formats
+    # Try common formats (DOL Excel often exports as 'YYYY-MM-DD HH:MM:SS')
     formats = [
+        '%Y-%m-%d %H:%M:%S',
         '%Y-%m-%d',
         '%m/%d/%Y',
         '%m/%d/%y',

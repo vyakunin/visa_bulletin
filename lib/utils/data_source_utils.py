@@ -142,6 +142,10 @@ def _get_file_stats_impl(
             line_count = sum(1 for _ in reader)
             stats['row_count'] = line_count
             stats['columns'] = headers
+    elif filepath.suffix.lower() == '.html':
+        # HTML (e.g. visa bulletin): no generic row count; plugin parses content
+        stats['row_count'] = None
+        stats['columns'] = None
     else:
         raise ValueError(f"Unknown file type: {filepath.suffix}")
     

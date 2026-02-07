@@ -12,6 +12,7 @@ py_library(
     srcs = ["sitemaps.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//models/enums:country",
         "//models:job_title",
         "//models:salary",

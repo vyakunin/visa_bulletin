@@ -127,6 +127,12 @@ def _add_visa_class_traces(
         last_valid_cutoff = next((c for c in reversed(cutoff_dates) if c is not None), None)
         if last_valid_cutoff:
             projection_date = projection['estimated_date']
+            # When estimated month matches last historical month, link to that bulletin
+            last_url = bulletin_urls[-1] if bulletin_urls and len(bulletin_urls) == len(dates) else None
+            same_month = (
+                dates[-1].year == projection_date.year and dates[-1].month == projection_date.month
+            )
+            proj_customdata = [last_url, last_url if same_month else None]
             fig.add_trace(go.Scatter(
                 x=[dates[-1], projection_date],
                 y=[last_valid_cutoff, submission_date],
@@ -134,7 +140,12 @@ def _add_visa_class_traces(
                 name=f'{visa_class_label} (Projection)',
                 line=dict(color=color, width=2, dash='dash'),
                 marker=dict(size=6, symbol='star'),
-                hovertemplate=f'<b>{visa_class_label}</b><br><b>Estimated:</b> %{{x|%B %Y}}<extra></extra>'
+                customdata=proj_customdata,
+                hovertemplate=(
+                    f'<b>{visa_class_label}</b><br>'
+                    f'<b>{"Bulletin" if same_month else "Estimated"}:</b> %{{x|%B %Y}}<br>'
+                    + ('<i>Click to view bulletin</i><extra></extra>' if same_month else '<extra></extra>')
+                )
             ))
             trace_indices.append(current_idx)
             current_idx += 1

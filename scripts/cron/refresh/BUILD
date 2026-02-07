@@ -66,9 +66,15 @@ py_library(
 )
 
 py_library(
+    name = "services",
+    srcs = ["services.py"],
+    visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
+)
+
+py_library(
     name = "orchestrate",
     srcs = ["orchestrate.py"],
-    deps = [":config", ":instance", ":pipeline", ":runner", ":traffic_switch"],
+    deps = [":config", ":instance", ":pipeline", ":runner", ":services", ":traffic_switch"],
     visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
 )
 
@@ -85,6 +91,7 @@ py_library(
         ":orchestrate",
         ":pipeline",
         ":runner",
+        ":services",
         ":smoke",
         ":steps",
         ":traffic_switch",

@@ -117,14 +117,15 @@ def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | 
         yaxis_title="Number of Filings",
         height=450,
         template="plotly_white",
-        showlegend=True,
+        showlegend=False,
         xaxis={
             "tickangle": -45,
             "range": [-0.5, n - 0.5],
             "autorange": False,
         },
         yaxis={"range": [0, y_max]},
-        margin=dict(t=60, b=90, l=60, r=20),
+        margin=dict(t=30, r=10, b=90, l=45),
+        autosize=True,
     )
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
@@ -189,14 +190,15 @@ def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
         yaxis_title="Number of Filings",
         height=450,
         template="plotly_white",
-        showlegend=True,
+        showlegend=False,
         xaxis={
             "tickangle": -45,
             "range": [-0.5, n - 0.5],
             "autorange": False,
         },
         yaxis={"range": [0, y_max]},
-        margin=dict(t=60, b=90, l=60, r=20),
+        margin=dict(t=30, r=10, b=90, l=45),
+        autosize=True,
     )
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 

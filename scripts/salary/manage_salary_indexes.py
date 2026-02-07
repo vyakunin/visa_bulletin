@@ -152,8 +152,9 @@ def _read_snapshot(path: Path) -> list[dict]:
     return indexes
 
 
-def drop_indexes(snapshot_path: Path, overwrite: bool) -> None:
-    _ensure_no_running_ingests()
+def drop_indexes(snapshot_path: Path, overwrite: bool, force: bool = False) -> None:
+    if not force:
+        _ensure_no_running_ingests()
     indexes = _fetch_index_metadata()
     droppable = [
         index for index in indexes
@@ -183,8 +184,9 @@ def drop_indexes(snapshot_path: Path, overwrite: bool) -> None:
     logger.info("Dropped %d non-unique indexes.", len(droppable))
 
 
-def recreate_indexes(snapshot_path: Path) -> None:
-    _ensure_no_running_ingests()
+def recreate_indexes(snapshot_path: Path, force: bool = False) -> None:
+    if not force:
+        _ensure_no_running_ingests()
     indexes = _read_snapshot(snapshot_path)
 
     with connection.cursor() as cursor:
@@ -242,14 +244,19 @@ def main() -> None:
         action='store_true',
         help='Overwrite existing snapshot when dropping indexes',
     )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Skip check for running ingests (use only in controlled refresh pipeline)',
+    )
 
     args = parser.parse_args()
     snapshot_path = _snapshot_path(args.snapshot)
 
     script_logger.log_call(
-        args={'list': args.list, 'drop': args.drop, 'recreate': args.recreate, 
+        args={'list': args.list, 'drop': args.drop, 'recreate': args.recreate,
               'create_clustering_indexes': args.create_clustering_indexes,
-              'snapshot': str(snapshot_path), 'overwrite': args.overwrite},
+              'snapshot': str(snapshot_path), 'overwrite': args.overwrite, 'force': args.force},
         context='Manage salary/worksite indexes for bulk ingest',
     )
 
@@ -257,10 +264,10 @@ def main() -> None:
         list_indexes()
         return
     if args.drop:
-        drop_indexes(snapshot_path, args.overwrite)
+        drop_indexes(snapshot_path, args.overwrite, force=args.force)
         return
     if args.recreate:
-        recreate_indexes(snapshot_path)
+        recreate_indexes(snapshot_path, force=args.force)
         return
     if args.create_clustering_indexes:
         create_clustering_indexes()

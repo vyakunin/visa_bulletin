@@ -57,7 +57,7 @@ else:
             'HOST': os.environ.get('DB_HOST', 'localhost'),
             'PORT': os.environ.get('DB_PORT', '5432'),
             'OPTIONS': {
-                'connect_timeout': 10,
+                'connect_timeout': 120,
             },
         }
     }

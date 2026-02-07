@@ -39,6 +39,8 @@ bazel build //scripts/salary:cluster_job_titles && ./bazel-bin/scripts/salary/cl
 - `scripts/cron/build_all.sh`: Pre-builds all binaries, then shuts down
 - Cron jobs: Run pre-built binaries (no Bazel server)
 
+**After ad-hoc `bazel run` on remote (<4GB):** If you run a one-off command on a remote instance via `bazel run` (e.g. `bazel run //scripts/salary:manage_salary_indexes -- --list`), the Bazel server stays running and consumes ~400–500MB. **Always run `bazel shutdown`** in the same or next SSH session to free memory. Prefer using the **pre-built binary** on remote when possible (e.g. `./bazel-bin/scripts/salary/manage_salary_indexes --list`) so Bazel is never started.
+
 ## Rule: Running Scripts on Remote Servers (Production/Staging)
 
 **On remote servers, ALWAYS use the build-shutdown-run pattern. NEVER run Python directly.**

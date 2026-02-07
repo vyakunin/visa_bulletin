@@ -5,7 +5,7 @@ import logging
 from django.conf import settings
 from django.http import HttpResponse
 from django.urls import reverse
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 from django.db.utils import OperationalError, ProgrammingError
 
 from models.enums.country import Country
@@ -15,7 +15,7 @@ from models.job_title import JobTitleCluster
 logger = logging.getLogger(__name__)
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def robots_view(request):
     """Generate robots.txt."""
     lines = [
@@ -26,7 +26,7 @@ def robots_view(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap."""
     base_url = request.build_absolute_uri('/')[:-1]

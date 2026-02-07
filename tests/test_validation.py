@@ -13,7 +13,7 @@ from lib.utils.location_utils import VALID_STATES, is_valid_state
 from lib.parsing.salary.wage_unit_correction import (
     should_correct_wage_unit,
     correct_wage_unit,
-    should_flag_for_review,
+    validate_wage_annual,
     calculate_annual_wage,
     MIN_ANNUAL,
     MAX_ANNUAL,
@@ -254,15 +254,6 @@ class TestWageUnitCorrectionEdgeCases(TestCase):
         )
         self.assertFalse(should_correct, "Just below threshold should not trigger correction")
     
-    def test_should_flag_for_review_high_wage(self):
-        """Test that extremely high wages are flagged for review"""
-        flagged, reason = should_flag_for_review(
-            wage_annual=Decimal('2000000'),  # $2M
-            wage_unit=WageUnit.YEAR
-        )
-        self.assertTrue(flagged, "Wage > $1M should be flagged")
-        self.assertIn('exceeds', reason.lower() if reason else '')
-    
     def test_low_annual_treated_as_hourly(self):
         """Test that very low annual (e.g. $29/year) is auto-corrected to HOUR so row is kept"""
         unit = correct_wage_unit(
@@ -288,33 +279,6 @@ class TestWageUnitCorrectionEdgeCases(TestCase):
         wage_annual = calculate_annual_wage(Decimal('1000'), WageUnit.WEEK)
         self.assertGreaterEqual(float(wage_annual), MIN_ANNUAL)
         self.assertLessEqual(float(wage_annual), MAX_ANNUAL)
-
-    def test_should_flag_for_review_low_wage(self):
-        """Test that extremely low wages are flagged for review"""
-        flagged, reason = should_flag_for_review(
-            wage_annual=Decimal('15000'),  # $15K
-            wage_unit=WageUnit.YEAR
-        )
-        self.assertTrue(flagged, "Wage < $20K should be flagged")
-        self.assertIn('below', reason.lower() if reason else '')
-    
-    def test_should_flag_for_review_legitimate_wage(self):
-        """Test that legitimate wages are not flagged"""
-        flagged, reason = should_flag_for_review(
-            wage_annual=Decimal('100000'),  # $100K
-            wage_unit=WageUnit.YEAR
-        )
-        self.assertFalse(flagged, "Legitimate wage should not be flagged")
-    
-    def test_should_flag_for_review_hourly_unit(self):
-        """Test that hourly wages are handled correctly"""
-        # $50/hour * 2080 = $104K annual - legitimate
-        flagged, reason = should_flag_for_review(
-            wage_annual=Decimal('104000'),
-            wage_unit=WageUnit.HOUR
-        )
-        self.assertFalse(flagged, "Legitimate hourly wage should not be flagged")
-
 
 class TestValidationIntegration(TestCase):
     """Integration tests for validation logic"""
@@ -343,10 +307,11 @@ class TestValidationIntegration(TestCase):
             fiscal_year=2024,
         )
         
-        # Should be flagged for review
-        flagged, reason = should_flag_for_review(record.wage_annual, record.wage_unit)
-        self.assertTrue(flagged, "High wage record should be flagged")
-    
+        # Should fail validation (rejected at import)
+        is_valid, reason = validate_wage_annual(record.wage_annual)
+        self.assertFalse(is_valid, "High wage record should fail validation")
+        self.assertIn('exceeds', reason.lower() if reason else '')
+
     def test_low_wage_record_validation(self):
         """Test that low wage records are detected"""
         record = SalaryRecord.objects.create(
@@ -363,10 +328,11 @@ class TestValidationIntegration(TestCase):
             fiscal_year=2024,
         )
         
-        # Should be flagged for review
-        flagged, reason = should_flag_for_review(record.wage_annual, record.wage_unit)
-        self.assertTrue(flagged, "Low wage record should be flagged")
-    
+        # Should fail validation (rejected at import)
+        is_valid, reason = validate_wage_annual(record.wage_annual)
+        self.assertFalse(is_valid, "Low wage record should fail validation")
+        self.assertIn('below', reason.lower() if reason else '')
+
     def test_invalid_state_code_validation(self):
         """Test that invalid state codes are detected"""
         record = SalaryRecord.objects.create(

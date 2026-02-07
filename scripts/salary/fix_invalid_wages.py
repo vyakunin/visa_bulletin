@@ -18,6 +18,14 @@ This script categorizes invalid wages and applies appropriate fixes:
 
 All logic shared with ingest via `lib.parsing.salary.wage_unit_correction` module.
 
+Only needed for cleaning legacy data or one-off fixes. Ingest already rejects out-of-range
+wages at import; no need to run this after a normal ingest.
+
+Does not drop or recreate indexes; only filtered SELECT and batched UPDATEs. Safe on production.
+
+After running: Re-compute stats that depend on wage_annual (see scripts/README.md):
+  update_employer_stats, update_job_title_cluster_stats, then clear_cache.
+
 Usage:
     # Fix all invalid wages (both high and low)
     bazel run //scripts/salary:fix_invalid_wages

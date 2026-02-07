@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.conf import settings
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 from django.db.models import Exists, F, OuterRef, Q
 
 from models.salary import Employer, EmployerCluster
@@ -19,7 +19,7 @@ from lib.utils.pagination import (
 from lib.utils.location_utils import US_STATES
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def company_autocomplete_view(request):
     """
     API endpoint for company name autocomplete suggestions.
@@ -96,7 +96,7 @@ def _order_value_for_row(employer, program_filter: str):
     return employer.total_lca_count + employer.total_perm_count
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def employer_directory_view(request):
     """
     Employer directory page showing list of top employers with search and filters.

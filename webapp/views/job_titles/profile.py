@@ -6,7 +6,7 @@ from django.http import Http404
 from django.conf import settings
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 from django.db.models import F
 
 from lib.business.salary.job_title_stats import get_job_title_statistics, get_related_job_titles
@@ -21,7 +21,7 @@ def _cache_profile_view(timeout_seconds: int):
         def _decorator(view_func):
             return view_func
         return _decorator
-    return cache_page(timeout_seconds)
+    return cache_page_skip_bots(timeout_seconds)
 
 
 @_cache_profile_view(settings.CACHE_TIMEOUT)

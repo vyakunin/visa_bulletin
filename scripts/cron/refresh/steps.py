@@ -46,6 +46,9 @@ def step_indexes_dropped(
 ) -> str:
     """Drop indexes, save snapshot path. Returns snapshot path for context."""
     from datetime import datetime
+    db = context.db_name or config.db_name
+    # Clear stale RUNNING ingest runs so drop-index check passes (controlled refresh pipeline).
+    runner.run_sudo_psql("UPDATE ingest_run SET status = 4 WHERE status = 2", db=db)
     backup_dir = config.backup_dir
     backup_dir.mkdir(parents=True, exist_ok=True)
     snapshot = backup_dir / f"salary_indexes_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.yaml"
@@ -57,8 +60,35 @@ def step_indexes_dropped(
         cwd=config.project_root,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Drop indexes failed: {result.stderr}")
+        tail = _get_stage_tail(runner, result)
+        raise RuntimeError(f"Drop indexes failed: {tail[-2000:] if tail else 'no output'}")
     return str(snapshot)
+
+
+def _get_stage_tail(
+    runner: Runner, result: subprocess.CompletedProcess[str], n: int = 200
+) -> str:
+    """Get stage output tail: from stage log file (remote) or result.stdout/stderr (local)."""
+    if hasattr(runner, "read_stage_log_tail"):
+        return (runner.read_stage_log_tail(n) or "").strip()
+    out = (result.stdout or "").strip()
+    err = (result.stderr or "").strip()
+    return (out + "\n" + err).strip() if (out or err) else ""
+
+
+def _log_stage_tail_text(tail_text: str, step_name: str, last_n: int = 80) -> None:
+    """Log last N lines of stage output so orchestrator log has stage tail."""
+    if not tail_text:
+        return
+    lines = tail_text.splitlines()
+    tail = lines[-last_n:] if len(lines) > last_n else lines
+    logger.info("[%s] stage output (last %d lines):", step_name, len(tail))
+    for line in tail:
+        logger.info("  %s", line)
+
+
+# Ingest can take many hours (full LCA/PERM). Use 12h so SSH does not time out.
+INGEST_SSH_TIMEOUT_SEC = 43200
 
 
 def step_ingest_complete(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
@@ -68,32 +98,43 @@ def step_ingest_complete(config: RefreshConfig, runner: Runner, context: Pipelin
         "discover-and-ingest",
         "--all-domains",
         cwd=config.project_root,
+        timeout_sec=INGEST_SSH_TIMEOUT_SEC,
     )
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "ingest_complete", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Ingest failed: {result.stderr}")
+        raise RuntimeError(f"Ingest failed: {tail[-4000:] if tail else 'no output'}")
 
 
 def step_backfill_links_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/backfill_job_title_links", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "backfill_links_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Backfill job title links failed: {result.stderr}")
+        raise RuntimeError(f"Backfill job title links failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_backfill_dates_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/backfill_source_file_date", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "backfill_dates_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Backfill source file date failed: {result.stderr}")
+        raise RuntimeError(f"Backfill source file date failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_cluster_job_titles_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/cluster_job_titles", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "cluster_job_titles_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Cluster job titles failed: {result.stderr}")
+        raise RuntimeError(f"Cluster job titles failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_indexes_recreated(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:
+    db = context.db_name or config.db_name
+    runner.run_sudo_psql("UPDATE ingest_run SET status = 4 WHERE status = 2", db=db)
     snapshot = context.index_snapshot
     if not snapshot or not Path(snapshot).exists():
         raise RuntimeError(f"Index snapshot missing: {snapshot}")
@@ -103,32 +144,42 @@ def step_indexes_recreated(
         "--snapshot", snapshot,
         cwd=config.project_root,
     )
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "indexes_recreated", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Recreate indexes failed: {result.stderr}")
+        raise RuntimeError(f"Recreate indexes failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_employer_stats_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/update_employer_stats", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "employer_stats_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Update employer stats failed: {result.stderr}")
+        raise RuntimeError(f"Update employer stats failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_cluster_employers_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/cluster_existing_employers", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "cluster_employers_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Cluster employers failed: {result.stderr}")
+        raise RuntimeError(f"Cluster employers failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_job_title_stats_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/update_job_title_cluster_stats", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "job_title_stats_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Update job title cluster stats failed: {result.stderr}")
+        raise RuntimeError(f"Update job title cluster stats failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_slugs_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/populate_job_title_slugs", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "slugs_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Populate job title slugs failed: {result.stderr}")
+        raise RuntimeError(f"Populate job title slugs failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_vacuum_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
@@ -138,8 +189,10 @@ def step_vacuum_done(config: RefreshConfig, runner: Runner, context: PipelineCon
 
 def step_warm_cache_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/cache/warm_cache", cwd=config.project_root)
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "warm_cache_done", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Warm cache failed: {result.stderr}")
+        raise RuntimeError(f"Warm cache failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_smoke_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
@@ -154,7 +207,8 @@ def step_smoke_done(config: RefreshConfig, runner: Runner, context: PipelineCont
         cwd=config.project_root,
     )
     if result.returncode != 0:
-        logger.warning("Ingest cleanup failed: %s", result.stderr)
+        tail = _get_stage_tail(runner, result)
+        logger.warning("Ingest cleanup failed: %s", tail[-2000:] if tail else "no output")
 
 
 def step_swap_done(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:

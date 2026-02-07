@@ -52,7 +52,7 @@ This directory contains Django views, URL routing, templates, and forms for the 
 
 ## Caching Strategy
 
-- **Page-level cache:** `@cache_page(60 * 60 * 6)` for 6 hours
+- **Page-level cache:** `@cache_page_skip_bots(CACHE_TIMEOUT)` (24h); bot traffic is not cached so bots don't evict human cache (LRU).
 - **Data-level cache:** Keyed by entity ID and filters
 - **Cache duration:** 6 hours (salary data updates infrequently)
 - **Cache invalidation:** Manual after data imports, or TTL-based expiration

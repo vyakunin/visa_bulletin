@@ -14,11 +14,17 @@ logger = logging.getLogger(__name__)
 def get_workspace_dir() -> Path:
     """
     Get workspace directory from Bazel environment or fallback to script directory.
-    
-    Returns:
-        Path to workspace root directory
+
+    When running via Bazel py_binary directly (./bazel-bin/...), BUILD_WORKSPACE_DIRECTORY
+    is not set and __file__ is inside runfiles; use cwd so downloads persist in project root.
     """
-    return Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent.parent))
+    env_root = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if env_root:
+        return Path(env_root)
+    # Running from binary: __file__ is in runfiles; cwd is typically project root
+    if "runfiles" in str(Path(__file__).resolve()):
+        return Path(os.getcwd())
+    return Path(__file__).parent.parent
 
 
 def fetch_page(url: str, timeout: int = 30) -> str:

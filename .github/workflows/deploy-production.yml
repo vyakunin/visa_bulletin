@@ -1,5 +1,7 @@
 name: Deploy to Production
 
+# Manual only. Production deploys are done locally via scripts/deploy-zero-downtime.sh
+# so we don't need GitHub secrets (LIGHTSAIL_IP, LIGHTSAIL_SSH_KEY) in the repo.
 on:
   workflow_dispatch:
     inputs:
@@ -7,13 +9,6 @@ on:
         description: 'Version tag to deploy (e.g., v1.2.3 or latest)'
         required: true
         default: 'latest'
-  # Optionally auto-deploy on successful tag builds
-  workflow_run:
-    workflows: ["Build and Push Docker Image"]
-    types:
-      - completed
-    branches:
-      - main
 
 env:
   REGISTRY: ghcr.io
@@ -22,7 +17,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout code

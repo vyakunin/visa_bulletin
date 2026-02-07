@@ -9,6 +9,29 @@ This directory contains production deployment configurations for the Visa Bullet
 **Database:** PostgreSQL with blue-green deployment  
 **Container:** Docker with Gunicorn  
 
+### Instances and SSH
+
+| Alias | IP | Purpose |
+|-------|-----|---------|
+| `prod_2Gb_vm` | 44.209.204.255 | Production |
+| `backup_0_5Gb_vm` | 3.227.71.176 | Backup |
+| `staging_2Gb_vm` | 54.196.241.197 | Staging |
+
+Use `ssh staging_2Gb_vm` for babysitting or running refresh on staging.  
+
+### AWS IAM (Lightsail CLI)
+
+IAM user **`visa-bulletin-deploy`** has Lightsail full access (`lightsail:*`) for instances and static IPs. Use the named profile so you don’t rely on SSO login:
+
+```bash
+export AWS_PROFILE=visa-bulletin-deploy
+aws lightsail get-instances --region us-east-1
+aws lightsail get-static-ips --region us-east-1
+aws lightsail get-instance-metric-data --instance-name VisaBulletin2GB --metric-name CPUUtilization ...
+```
+
+Profile is configured in `~/.aws/credentials` as `[visa-bulletin-deploy]`. Policy source: `deployment/iam-lightsail-policy.json`.
+
 ## 📁 Directory Structure
 
 ```
@@ -23,6 +46,7 @@ deployment/
 │   └── rate-limiting.conf            # Optional general rate limits
 ├── cron/                      # Cron job setup
 │   └── setup-ingest-cron.sh
+├── iam-lightsail-policy.json  # IAM policy for visa-bulletin-deploy user (lightsail:*)
 └── README.md                  # This file
 ```
 
@@ -278,6 +302,8 @@ If `curl http://<instance-ip>/` returns **400** while `curl -H 'Host: localhost'
    ```
 
 **New setups:** `scripts/setup_new_instance.sh` now detects the instance public IP (AWS metadata or ifconfig.me) and adds it to `ALLOWED_HOSTS` when creating `.env`.
+
+**Blue-green rotation:** If `nginx -t` fails with "zero size shared memory zone gptbot", ensure the bot rate-limit config is present: `sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/` (setup_new_instance.sh does this; older instances may need it copied manually).
 
 ### SSH Timeout / Instance Freeze
 

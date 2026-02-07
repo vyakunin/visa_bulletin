@@ -541,6 +541,12 @@
             .plotly-graph-div {
                 max-width: 100vw !important;
             }
+            .multiline-chart-wrapper .plotly-graph-div {
+                max-width: 100% !important;
+            }
+            .multiline-chart-checkbox-list {
+                max-width: 100%;
+            }
             /* Reduce projection alert padding */
             .projection-alert {
                 padding: 0.75rem;
@@ -712,6 +718,116 @@
                 observer.observe(chartContainer);
             }
         });
+        
+        // Shared multi-line chart with checkboxes (same pattern as visa bulletin dashboard)
+        window.renderMultilineChartWithCheckboxes = function(elementId, chartData, options) {
+            options = options || {};
+            var resizeYAxisOnToggle = options.resizeYAxisOnToggle !== false;
+            var element = document.getElementById(elementId);
+            if (!element) return;
+            if (!chartData || !chartData.data || chartData.data.length === 0) {
+                element.innerHTML = '<p class="text-muted text-center py-4">Chart data not available</p>';
+                return;
+            }
+            var wrapper = element.closest('.multiline-chart-wrapper');
+            if (!wrapper) return;
+            var checkboxesRow = wrapper.querySelector('.multiline-chart-checkboxes');
+            var checkboxList = wrapper.querySelector('.multiline-chart-checkbox-list');
+            if (!checkboxesRow || !checkboxList) return;
+            var traces = chartData.data;
+            if (traces.length < 2) {
+                checkboxesRow.style.display = 'none';
+            } else {
+                checkboxesRow.style.display = 'block';
+                checkboxList.innerHTML = '';
+                traces.forEach(function(trace, idx) {
+                    var name = trace.name || ('Trace ' + (idx + 1));
+                    var id = elementId + '-toggle-' + idx;
+                    var div = document.createElement('div');
+                    div.className = 'form-check form-check-inline mb-0';
+                    div.innerHTML = '<input class="form-check-input multiline-chart-toggle" type="checkbox" id="' + id + '" data-trace-index="' + idx + '" data-mandatory="' + (idx === 0 ? '1' : '0') + '" checked aria-label="Toggle ' + name.replace(/"/g, '&quot;') + ' visibility">' +
+                        '<label class="form-check-label small" for="' + id + '">' + name + '</label>';
+                    checkboxList.appendChild(div);
+                });
+                var clearWrap = wrapper.querySelector('.multiline-chart-clear-wrap');
+                if (clearWrap && traces.length > 1) {
+                    var clearLink = document.createElement('button');
+                    clearLink.type = 'button';
+                    clearLink.className = 'btn btn-link btn-sm p-0 text-muted multiline-chart-clear-overlays';
+                    clearLink.style.fontSize = '0.875rem';
+                    clearLink.textContent = 'Clear overlays';
+                    clearLink.setAttribute('aria-label', 'Uncheck all overlays, show only baseline');
+                    clearWrap.innerHTML = '';
+                    clearWrap.appendChild(clearLink);
+                }
+            }
+            var loadingEl = element.querySelector('.chart-loading');
+            if (loadingEl) loadingEl.remove();
+            var layout = Object.assign({}, chartData.layout || {});
+            layout.showlegend = false;
+            layout.margin = layout.margin || {};
+            layout.margin.t = layout.margin.t !== undefined ? layout.margin.t : 30;
+            layout.margin.r = layout.margin.r !== undefined ? layout.margin.r : 10;
+            layout.margin.b = layout.margin.b !== undefined ? layout.margin.b : 90;
+            layout.margin.l = layout.margin.l !== undefined ? layout.margin.l : 45;
+            layout.autosize = true;
+            var config = { responsive: true, displayModeBar: false };
+            Plotly.newPlot(elementId, chartData.data, layout, config).then(function() {
+                if (typeof Plotly.Plots !== 'undefined' && Plotly.Plots.resize) {
+                    Plotly.Plots.resize(elementId);
+                }
+                wrapper.querySelectorAll('.multiline-chart-toggle').forEach(function(cb) {
+                    cb.addEventListener('change', function() {
+                        var idx = parseInt(this.dataset.traceIndex, 10);
+                        var visible = this.checked ? true : 'legendonly';
+                        Plotly.restyle(elementId, { visible: visible }, [idx]);
+                        if (resizeYAxisOnToggle) {
+                            var gd = document.getElementById(elementId);
+                            if (gd && gd.data) {
+                                var maxY = 0;
+                                gd.data.forEach(function(trace, i) {
+                                    var v = trace.visible;
+                                    if (v !== 'legendonly' && v !== false && trace.y && trace.y.length) {
+                                        var m = Math.max.apply(null, trace.y);
+                                        if (m > maxY) maxY = m;
+                                    }
+                                });
+                                var newYMax = Math.ceil(maxY * 1.1) || 1;
+                                Plotly.relayout(elementId, { 'yaxis.range': [0, newYMax] });
+                            }
+                        }
+                    });
+                });
+                var clearBtn = wrapper.querySelector('.multiline-chart-clear-overlays');
+                if (clearBtn && traces.length > 1) {
+                    clearBtn.addEventListener('click', function() {
+                        var toggles = wrapper.querySelectorAll('.multiline-chart-toggle');
+                        var visibility = [];
+                        toggles.forEach(function(cb, i) {
+                            var mandatory = cb.getAttribute('data-mandatory') === '1';
+                            if (mandatory) {
+                                cb.checked = true;
+                                visibility[i] = true;
+                            } else {
+                                cb.checked = false;
+                                visibility[i] = 'legendonly';
+                            }
+                        });
+                        for (var i = 0; i < visibility.length; i++) {
+                            Plotly.restyle(elementId, { visible: visibility[i] }, [i]);
+                        }
+                        if (resizeYAxisOnToggle && chartData.data[0] && chartData.data[0].y) {
+                            var maxY = Math.max.apply(null, chartData.data[0].y);
+                            var newYMax = Math.ceil(maxY * 1.1) || 1;
+                            Plotly.relayout(elementId, { 'yaxis.range': [0, newYMax] });
+                        }
+                    });
+                }
+            }).catch(function(e) {
+                console.error('Error rendering chart:', elementId, e);
+                element.innerHTML = '<p class="text-muted text-center py-4">Chart failed to load</p>';
+            });
+        };
     </script>
     
     <!-- Autocomplete functionality -->

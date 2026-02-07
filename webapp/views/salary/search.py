@@ -3,7 +3,7 @@
 from django.conf import settings
 from django.shortcuts import render
 from django.urls import reverse
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 from django.core.cache import cache
 from django.db.models import Avg, Min, Max
 
@@ -50,7 +50,7 @@ def _get_cached_fiscal_years() -> list[int]:
 
 # Note: @cache_page automatically varies by query parameters, so different searches have different cache keys
 # Cache is cleared when server restarts or via: bazel run //scripts:clear_cache
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def salary_search_view(request):
     """
     Search H-1B and PERM salary data from DOL disclosure files.
@@ -288,7 +288,7 @@ def _get_cached_worksite_fiscal_years() -> list[int]:
     return fiscal_years
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def worksite_search_view(request):
     """
     Search worksite location data from DOL Worksites disclosure files.

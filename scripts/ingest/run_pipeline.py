@@ -207,11 +207,13 @@ def run_pipeline(
         logger.error("Must specify --source-id, --url, --all-pending, --missing-only, or --retry-failed")
         sys.exit(1)
     
+    # VisaCutoffDate has no case_number; COPY path doesn't support ignore_conflicts, so use bulk_create for visa_bulletin
+    use_copy = domain != DataDomain.VISA_BULLETIN.value
     orchestrator = PipelineOrchestrator(
         batch_size=10000,
         adaptive_batch=True,
         prefilter_existing=True,
-        use_copy=True
+        use_copy=use_copy
     )
     
     # Add skip_records to pipeline context if specified
@@ -385,7 +387,7 @@ def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
     discovered = discover_sources(domain if not all_domains else None)
     
     logger.info("Running pipeline for all pending sources...")
-    run_pipeline(all_pending=True)
+    run_pipeline(all_pending=True, domain=domain)
 
 
 def cleanup_ingest_runs(days: int, dry_run: bool = False) -> None:

@@ -3,7 +3,7 @@ _source: Calculated from salary data distributions (without unit correction, fil
   <5000, >5000000)
 annual_wage_range:
   min: 5000
-  max: 480719
+  max: 1000000
 percentiles:
   p1: 25085.0
   p5: 41086.1

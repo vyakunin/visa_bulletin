@@ -12,6 +12,7 @@ py_library(
     srcs = ["search.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/business/salary:common_chart_builder",
         "//lib/business/salary:market_overview",
         "//lib/utils:filter_utils",

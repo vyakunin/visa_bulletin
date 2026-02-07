@@ -12,6 +12,7 @@ py_library(
     srcs = ["directory.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/utils:location_utils",
         "//lib/utils:pagination",
         "//models/enums:visa_program",
@@ -25,6 +26,7 @@ py_library(
     srcs = ["profile.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/business/salary:common_stats",
         "//lib/business/salary:common_chart_builder",
         "//models/enums:visa_program",

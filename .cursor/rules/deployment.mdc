@@ -9,6 +9,7 @@ alwaysApply: true
 **Current Production Instances:**
 - **44.209.204.255** - Production (`prod_2Gb_vm`)
 - **3.227.71.176** - Backup (`backup_0_5Gb_vm`)
+- **54.196.241.197** - Staging (`staging_2Gb_vm`)
 
 **When deploying, always verify:**
 - Which instance is the target
@@ -25,9 +26,10 @@ alwaysApply: true
 |-------|----|-----|---------|
 | `prod_2Gb_vm` | 44.209.204.255 | 2GB | Production |
 | `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup |
+| `staging_2Gb_vm` | 54.196.241.197 | 2GB | Staging |
 
 **When user mentions a specific instance:**
-- ✅ Use the matching alias: `ssh prod_2Gb_vm` or `ssh backup_0_5Gb_vm`
+- ✅ Use the matching alias: `ssh prod_2Gb_vm`, `ssh backup_0_5Gb_vm`, or `ssh staging_2Gb_vm` (staging)
 - ✅ Verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?"
 - ❌ Don't use raw IPs or the old `lightsail` aliases
 
@@ -41,6 +43,51 @@ alwaysApply: true
 - Wrong alias = wrong instance
 - Wrong instance = data corruption or service disruption
 - Always be explicit when making changes
+
+## AWS IAM and Lightsail CLI
+
+### IAM user for local/CI (visa-bulletin-deploy)
+
+**IAM user:** `visa-bulletin-deploy` with Lightsail full access (`lightsail:*`). Use the named profile so you don't rely on SSO login.
+
+**Profile:** `visa-bulletin-deploy` in `~/.aws/credentials`. Policy source: `deployment/iam-lightsail-policy.json`.
+
+**Usage (local or CI):**
+```bash
+export AWS_PROFILE=visa-bulletin-deploy
+aws lightsail get-instances --region us-east-1
+aws lightsail get-static-ips --region us-east-1
+aws lightsail get-instance-metric-data --instance-name VisaBulletin2GB --metric-name CPUUtilization ...
+# Or per command:
+aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
+```
+
+**Covers:** Instances (get, start, stop, state, metrics), static IPs (get, attach, detach), snapshots, and other Lightsail resources. See `deployment/README.md` for details.
+
+### Giving instances (or cron runner) AWS privileges
+
+**Lightsail instances do not support IAM instance roles** (unlike EC2). To let a script on an instance (or a cron runner) call Lightsail API—e.g. re-attach static IPs, start/stop instances for blue-green—you must provide IAM credentials to that environment.
+
+**Option A – Credentials on the instance (cron runs on instance):**
+
+1. **Create or reuse an IAM user** with Lightsail permissions (e.g. reuse `visa-bulletin-deploy` or create a dedicated user like `visa-bulletin-instance` with the same policy).
+2. **Create an access key** for that user: `aws iam create-access-key --user-name visa-bulletin-deploy` (or the dedicated user).
+3. **On the instance:** Install AWS CLI if needed (`apt install awscli` or use existing). Configure a profile or default credentials **outside the repo** (e.g. in a file not in git, or in env vars from a secret store):
+   ```bash
+   # Example: on instance, one-time setup (store in env or secret, not in repo)
+   aws configure set aws_access_key_id "AKIA..." --profile lightsail-cron
+   aws configure set aws_secret_access_key "..." --profile lightsail-cron
+   aws configure set region us-east-1 --profile lightsail-cron
+   ```
+4. **In cron script:** Use `AWS_PROFILE=lightsail-cron` (or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) when calling `aws lightsail attach-static-ip`, `detach-static-ip`, `start-instance`, `stop-instance`, etc.
+
+**Option B – Credentials on a separate runner (cron runs off-instance):**
+
+- Run the end-to-end script (refresh + traffic switch) on a machine that has the profile or env vars set (e.g. your laptop, or a CI runner with `visa-bulletin-deploy` secrets). The script SSHs to instances for refresh and uses AWS CLI locally for Lightsail API calls. No credentials on instances.
+
+**Instance rename:** Lightsail does not support renaming instances after creation. For blue-green, use **static IP reassignment** (detach static IP from one instance, attach to the other) or **DNS switch** (point domain to the other instance’s IP); see `BLUE_GREEN_INSTANCE_ROLLOUT.md`.
+
+**Rationale:** Documenting IAM and instance credentials avoids ad-hoc key creation and keeps Lightsail API access consistent for deployment and blue-green automation.
 
 ## Rule: Verify Locally Before Deploying to Production
 
@@ -79,6 +126,64 @@ alwaysApply: true
 - User expects to see changes on production without asking again.
 - Reduces back-and-forth ("can you deploy that?").
 - Deploy to production by default after code changes.
+
+## Rule: Deploy Updated Binary and Run Yourself When Instructed
+
+**When instructions say things like "after you deploy the updated binary and run again," "deploy and run," or "rebuild and re-run," do it yourself. Do not only tell the user to do it.**
+
+**Workflow:**
+1. **Check current status first** (time may have passed):
+   - Prod: tail orchestrator log (e.g. `/tmp/orchestrate.log`), check if a run is in progress or already finished/failed.
+   - Inactive/staging host: any long-running processes (e.g. `run_pipeline`), any stage log (e.g. `/tmp/refresh_stage.log`).
+   - If a run is still in progress, decide whether to wait, monitor, or (if safe) stop and then deploy + re-run.
+2. **Deploy the updated code** (e.g. `scp` changed files to prod, or ensure latest commit is pulled on prod).
+3. **Rebuild the binary on prod** so the next run uses the new code (e.g. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown"`).
+4. **Run again** as appropriate (e.g. orchestrator with `--no-traffic-switch`, optionally `--resume` if checkpoint supports it), and monitor (orchestrator log, stage log on inactive host).
+
+**When this applies:**
+- User or prior message said "deploy the updated binary and run again," "then run again," "rebuild and re-run," or similar.
+- We just fixed orchestrator/runner/steps (or any binary used by the refresh pipeline) and the last run used an old binary.
+
+**Rationale:**
+- The agent should complete the loop (deploy → rebuild → run), not hand off to the user.
+- Checking status first avoids conflicting with an in-flight run or acting on stale assumptions.
+
+## Rule: Check Running Processes on Inactive Host Before Starting Pipeline
+
+**Before starting the orchestrator (or before the pipeline runs on the inactive/staging host), check for existing `run_pipeline discover-and-ingest` processes on that host.**
+
+**Why:**
+- Multiple ingest processes on staging overload the box (high CPU/memory) and cause SSH lag or timeouts.
+- Old runs from previous orchestrator attempts or manual runs should not still be running when a new pipeline starts.
+
+**Workflow:**
+1. **Before starting the orchestrator:** SSH to the inactive host and run `ps aux | grep run_pipeline | grep -v grep`. If any `discover-and-ingest` processes exist (other than one you are about to start), kill the old PIDs first: `kill <PID>` for each old Python ingest process (and its parent bash if present). Leave `check-completeness` or other short commands if they are quick.
+2. **When fixing a stuck or overloaded staging:** Same check; kill old ingest PIDs so the current run (or the next run) has resources. Identify the current run by start time or by the process that has `tee /tmp/refresh_stage.log` in its parent chain (that is the one started by the orchestrator).
+3. **After killing old processes:** Re-check with `ps aux | grep run_pipeline` so only the intended run remains (or none, if you are about to start fresh).
+
+**Rationale:**
+- Prevents staging from running 4–5 ingest processes at once and avoids SSH lag and timeouts.
+- Ensures each pipeline run has a clean slate or at least no competing long-running ingests.
+
+**When you notice `relation "ingest_rejection_stats" does not exist` in the stage log:** The inactive host’s DB is missing that table (migration 0024 may be recorded but the table was never created or was dropped). Fix it by creating the table on the inactive host: SSH to the inactive host, then run `bazel run //:run_sql` (or raw SQL) to create `ingest_rejection_stats` with FK to the ingest run table (on staging the run table is `ingest_run`). See migration `models/migrations/0024_ingestrejectionstats.py` for the schema. After creating the table, the pipeline will continue; future sources will no longer fail at rejection-stats write.
+
+## Rule: Refresh Orchestrator – Preliminary Steps and Postgres
+
+**The refresh orchestrator (run on active, pipeline on inactive/staging) now:**
+
+1. **Gate:** Waits for **SSH + DB reachable** (no port-80 health check before pipeline). Uses `run_psql(db_name, "SELECT 1")` with retries.
+2. **Before pipeline:** **Stops Redis, Gunicorn, Bazel** on the inactive host to free memory (Docker stop, pkill gunicorn, bazel shutdown). Then **terminates idle Postgres connections** to the target DB so the pipeline uses a clean connection set (no stale connections from old runs).
+3. **Pipeline:** Runs the full pipeline (ingest, post-processing, smoke). Smoke is DB-only; Gunicorn/Redis are not needed during pipeline.
+4. **After pipeline:** **Starts Redis and Gunicorn** (Docker compose up -d) so the instance is healthy for traffic switch. Optionally waits for HTTP 200 on port 80 before switching.
+
+**Why:** Frees ~400–500MB (Bazel) + Docker memory during ingest; ensures Postgres connections are the ones used by the orchestrator, not remains of older runs.
+
+**Manual stop (e.g. on staging):**
+```bash
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker compose -f deployment/docker-compose.blue.yml stop; docker stop visa_bulletin_web_blue visa_bulletin_redis 2>/dev/null; pkill -f 'gunicorn.*django_config' || true; bazel shutdown 2>/dev/null; echo Done"
+```
+
+**One-off checks on remote (<4GB):** Prefer the **pre-built binary** so Bazel is never started (e.g. `./bazel-bin/scripts/salary/manage_salary_indexes --list` after build). If you use `bazel run` on remote (e.g. index list), run **`bazel shutdown`** in the same or next SSH session to free memory. See `.cursor/rules/bazel.mdc`.
 
 ## Rule: Never Use Development Scripts on Production
 

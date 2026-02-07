@@ -429,6 +429,28 @@ def calculate_company_grade(company_name: str, fiscal_year: int) -> CompanyGrade
 - Fast loading
 - Integrated with visa bulletin
 
+#### H1BTrends (https://www.h1btrends.com/)
+**What They Do:**
+- 3M+ H1B & PERM filings; companies, job titles, locations search
+- Compare tool (side-by-side companies/jobs/locations)
+- Salary calculator, lottery odds, H1B vs PERM guide
+
+**Their Strengths:**
+- Large dataset (3M+ applications, 43k+ companies)
+- Both H1B (LCA) and PERM data
+- Compare tool, salary calculator, lottery predictor (e.g. FY 2027)
+- Cleaner UI than MyVisaJobs; data refreshed recently (e.g. Dec 2025)
+
+**Their Weaknesses:**
+- No explicit green card sponsorship grading or report card
+- Compare tool but no letter grades (A–F) for sponsorship quality
+- No visa bulletin or wait-time context
+
+**Our Advantages:**
+- Same site has visa bulletin (wait times) and salary/employer data (today: two areas; planned: e.g. wait time on employer page)
+- *Planned:* Company report card with transparent letter grades (A–F) — not built yet
+- *Planned:* Narrative that answers "which employers actually file PERM vs which delay or don't" (follow-through, delay/fail) — the report card would surface this
+
 #### H1BGrader.com (if it exists)
 **Search for competitors with "grading" systems**
 

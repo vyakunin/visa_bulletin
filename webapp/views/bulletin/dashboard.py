@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from django.shortcuts import render
 from django.conf import settings
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
@@ -39,7 +39,7 @@ def _parse_submission_date(date_str: str) -> date:
         return date.today()
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def dashboard_view(request, category=None, country=None):
     """
     Main dashboard view with filters and time-series chart.

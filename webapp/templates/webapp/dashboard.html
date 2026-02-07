@@ -182,6 +182,9 @@
                                     Your Priority Date
                                 </label>
                             </div>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-muted ms-2 ms-md-3 visa-chart-clear-all" style="font-size: 0.875rem;" aria-label="Uncheck all visa classes, show only priority date">
+                                Clear all
+                            </button>
                         </div>
                     </div>
                     
@@ -561,6 +564,29 @@ document.addEventListener('DOMContentLoaded', function() {
                     }, 50);
                 });
             });
+            
+            // Clear all non-mandatory (uncheck all visa classes, keep priority date)
+            var clearAllBtn = document.querySelector('.visa-chart-clear-all');
+            if (clearAllBtn) {
+                clearAllBtn.addEventListener('click', function() {
+                    document.querySelectorAll('.visa-class-toggle').forEach(function(checkbox) {
+                        checkbox.checked = false;
+                        var traceIndices = checkbox.dataset.traceIndices.split(',').map(Number);
+                        traceIndices.forEach(function(idx) {
+                            Plotly.restyle('priority-date-chart', {'visible': 'legendonly'}, [idx]);
+                        });
+                    });
+                    setTimeout(function() {
+                        var range = calculateVisibleRange();
+                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                            Plotly.relayout('priority-date-chart', {
+                                'xaxis.range': [range.xMin, range.xMax],
+                                'yaxis.range': [range.yMin, range.yMax]
+                            });
+                        }
+                    }, 50);
+                });
+            }
         });
     }
     

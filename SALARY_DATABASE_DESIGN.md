@@ -464,6 +464,23 @@ Top Roles Sponsored:
 - Integration with visa bulletin
 - Modern charts/visualizations
 
+#### H1BTrends (https://www.h1btrends.com/)
+**Strengths:**
+- 3M+ H1B & PERM filings, 43k+ companies
+- Both LCA and PERM data
+- Compare tool, salary calculator, lottery odds (e.g. FY 2027)
+- Cleaner UI than MyVisaJobs; data refreshed recently (e.g. Dec 2025)
+
+**Weaknesses:**
+- No visa bulletin / wait time integration
+- No company report card or letter grades (A–F)
+- No explicit green card follow-through narrative
+
+**Our Advantages:**
+- Visa bulletin tracker (salary + wait time)
+- Company report card with transparent grading
+- Green card narrative (who follows through, who delays)
+
 ### 2.2 Competitive Positioning
 
 **Your Unique Position:**

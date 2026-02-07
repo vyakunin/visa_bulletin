@@ -39,3 +39,11 @@ py_library(
     ],
 )
 
+py_library(
+    name = "cache_utils",
+    srcs = ["cache_utils.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+    ],
+)

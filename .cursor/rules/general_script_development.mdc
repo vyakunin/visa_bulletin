@@ -46,20 +46,14 @@ else
     tail -100 /tmp/log.log
 fi
 
-# ✅ Option 3: Use background monitoring with explicit timeout
+# ✅ Option 3: Use background + discrete check-ins (no blind loops)
 bazel run //:script > /tmp/script.log 2>&1 &
 PID=$!
 echo "Started with PID: $PID"
-# Check periodically with timeout
-for i in {1..60}; do  # Max 5 minutes (60 * 5s)
-    sleep 5
-    if ! ps -p $PID > /dev/null; then
-        echo "Process completed"
-        tail -100 /tmp/script.log
-        break
-    fi
-    tail -10 /tmp/script.log
-done
+# Each check is a separate step: run it, analyze output, then act or schedule next check
+# Do NOT use for/while that only sleep and print - that is not monitoring.
+timeout 300 bash -c 'until ! ps -p '"$PID"' >/dev/null 2>&1; do sleep 5; tail -10 /tmp/script.log; done' || true
+tail -100 /tmp/script.log
 ```
 
 **Why this matters:**
@@ -710,46 +704,43 @@ bazel run //:validate_data 2>&1 | grep "Missing Salary" | head -50
 - Saves resources (CPU, database connections, disk I/O)
 - Allows intervention before script completes with bad results
 
-**✅ GOOD - Monitorable execution with active babysitting:**
+**Rule: No blind for/while loops for babysitting.** Do not run loops that only `sleep` and `tail`/`echo` in sequence. That is not monitoring—it just prints text. **Monitoring = check in → analyze output → act (fix, kill, or schedule next check).** Each check-in must be a discrete step; after each, you analyze and potentially act.
+
+**✅ GOOD - Discrete check-ins with analysis and action after each:**
 ```bash
 # 1. Start script in background with full logging
 bazel run //:process_data > /tmp/process_data.log 2>&1 &
 PID=$!
-echo "Started with PID: $PID, monitoring: tail -f /tmp/process_data.log"
+echo "Started with PID: $PID"
 
-# 2. IMMEDIATELY check initial output (first 30 seconds)
+# 2. First check-in (after a short wait)
 sleep 5
-echo "=== Initial check ==="
 tail -20 /tmp/process_data.log
+# Analyze: Any ERROR/Exception? Process still running? → Act (kill and fix, or continue).
 
-# 3. Monitor actively for first few minutes
+# 3. Second check-in (only if you decided to keep monitoring)
+sleep 10
+tail -20 /tmp/process_data.log
+if grep -q "ERROR\|Exception\|Traceback" /tmp/process_data.log; then
+  tail -50 /tmp/process_data.log | grep -A 10 "ERROR\|Exception"
+  kill $PID 2>/dev/null; exit 1
+fi
+if ! ps -p $PID > /dev/null; then echo "Completed"; tail -50 /tmp/process_data.log; exit 0; fi
+
+# 4. Next check-in (separate command/step; you decide interval and whether to run again)
+sleep 30
+tail -20 /tmp/process_data.log
+# After each check: analyze, act, then run another check only if needed.
+```
+
+**❌ BAD - Blind loop (no purpose):**
+```bash
 for i in {1..6}; do
   sleep 10
-  echo "=== Check $i (after $((i*10)) seconds) ==="
+  echo "=== Check $i ==="
   tail -10 /tmp/process_data.log
-  
-  # Check for errors or warnings
-  if grep -q "ERROR\|WARNING\|Exception\|Traceback" /tmp/process_data.log; then
-    echo "⚠️  ERRORS DETECTED - Reviewing..."
-    tail -50 /tmp/process_data.log | grep -A 10 -B 5 "ERROR\|WARNING\|Exception"
-    read -p "Continue monitoring? (y/n) " -n 1 -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-      kill $PID
-      echo "Stopped script. Review logs: tail -100 /tmp/process_data.log"
-      exit 1
-    fi
-  fi
-  
-  # Check if still running
-  if ! ps -p $PID > /dev/null; then
-    echo "Script completed. Exit code: $?"
-    tail -50 /tmp/process_data.log
-    break
-  fi
 done
-
-# 4. Continue monitoring periodically if still running
-echo "Script still running. Monitor with: tail -f /tmp/process_data.log"
+# This only prints text; you never analyze or act after a check. Do discrete check-ins instead.
 ```
 
 **✅ GOOD - Quick validation before letting script run:**
@@ -781,88 +772,43 @@ fi
 echo "✅ Initial validation passed. Continue monitoring: tail -f /tmp/import.log"
 ```
 
-**✅ GOOD - Monitor with progress validation:**
+**✅ GOOD - Progress validation with discrete check-ins:**
 ```bash
-# Start script
 bazel run //:cluster_employers > /tmp/cluster.log 2>&1 &
 PID=$!
 
-# Monitor and validate progress
-LAST_COUNT=0
-STUCK_COUNT=0
+# Check-in 1 (after 15s): analyze progress and errors
+sleep 15
+tail -20 /tmp/cluster.log
+CURRENT=$(grep -o "Processed [0-9]*" /tmp/cluster.log | tail -1)
+grep -q "ERROR\|Exception" /tmp/cluster.log && { tail -50 /tmp/cluster.log; kill $PID; exit 1; }
+ps -p $PID >/dev/null || { tail -50 /tmp/cluster.log; exit 0; }
 
-while ps -p $PID > /dev/null; do
-  sleep 15
-  
-  # Check for progress updates
-  CURRENT_COUNT=$(grep -o "Processed [0-9]*" /tmp/cluster.log | tail -1 | grep -o "[0-9]*" || echo "0")
-  
-  if [ "$CURRENT_COUNT" = "$LAST_COUNT" ]; then
-    STUCK_COUNT=$((STUCK_COUNT + 1))
-    echo "⚠️  No progress for $((STUCK_COUNT * 15)) seconds"
-    
-    if [ $STUCK_COUNT -ge 4 ]; then
-      echo "❌ Script appears stuck (no progress for 60+ seconds)"
-      tail -50 /tmp/cluster.log
-      kill $PID
-      exit 1
-    fi
-  else
-    STUCK_COUNT=0
-    echo "✅ Progress: $CURRENT_COUNT records"
-  fi
-  
-  LAST_COUNT=$CURRENT_COUNT
-  
-  # Check for errors
-  if grep -q "ERROR\|Exception" /tmp/cluster.log; then
-    echo "❌ Errors detected"
-    tail -50 /tmp/cluster.log | grep -A 10 "ERROR\|Exception"
-    kill $PID
-    exit 1
-  fi
-done
-
-echo "Script completed. Final output:"
-tail -50 /tmp/cluster.log
+# Check-in 2 (after another 15s): compare progress, act if stuck
+sleep 15
+PREV=$CURRENT
+CURRENT=$(grep -o "Processed [0-9]*" /tmp/cluster.log | tail -1)
+[ "$CURRENT" = "$PREV" ] && echo "⚠️ No progress"  # After this check, act: kill if stuck or run next check
+# Continue with further check-ins only when needed; after each, analyze and act.
 ```
 
-**✅ GOOD - Slow exponential backoff for long-running scripts (LOCAL):**
+**✅ GOOD - Long-running script: discrete check-ins with increasing intervals (LOCAL):**
 ```bash
-# Start script
 bazel run //:long_running_script > /tmp/script.log 2>&1 &
 PID=$!
 
-# Monitor with slow exponential backoff (check frequently at first, less often over time)
-INTERVAL=10  # Start with 10 seconds
-ITERATION=0
+# Check-in 1 (10s): initial validation
+sleep 10
+tail -10 /tmp/script.log
+grep -q "ERROR\|Exception" /tmp/script.log && { tail -50 /tmp/script.log; kill $PID; exit 1; }
+ps -p $PID >/dev/null || { tail -50 /tmp/script.log; exit 0; }
 
-while ps -p $PID > /dev/null; do
-  sleep $INTERVAL
-  ITERATION=$((ITERATION + 1))
-  
-  echo "=== Check $ITERATION (interval: ${INTERVAL}s) ==="
-  tail -10 /tmp/script.log
-  free -h  # Memory check (Linux). On macOS use: vm_stat
-  
-  # Check for errors
-  if grep -q "ERROR\|Exception" /tmp/script.log; then
-    echo "❌ Errors detected"
-    tail -50 /tmp/script.log | grep -A 10 "ERROR\|Exception"
-    kill $PID
-    exit 1
-  fi
-  
-  # Slow exponential backoff: multiply by ~1.5 each iteration
-  # Pattern: 10s -> 15s -> 23s -> 35s -> 80s -> 120s -> 180s -> 270s -> 405s -> 600s
-  # Cap at 10 minutes (600s) to avoid too long between checks
-  if [ $INTERVAL -lt 600 ]; then
-    INTERVAL=$((INTERVAL * 3 / 2))  # Multiply by 1.5 (integer math)
-  fi
-done
-
-echo "Script completed. Final output:"
-tail -50 /tmp/script.log
+# Check-in 2 (15s later): analyze, then decide next check
+sleep 15
+tail -10 /tmp/script.log
+free -h
+# Analyze; if errors → act. If still running and stable → schedule next check (e.g. 30s, then 60s).
+# Do NOT use a loop that just multiplies INTERVAL and prints—each check must be followed by analysis and action.
 ```
 
 **✅ GOOD - Monitoring remote processes via SSH (CRITICAL PATTERN):**
@@ -1029,6 +975,7 @@ tail /tmp/import.log
 **When to intervene:**
 - ❌ **Errors detected** - Stop immediately, investigate, fix, restart
 - ❌ **No progress for 2+ minutes** - Script may be stuck (database lock, infinite loop)
+- ❌ **Extremely slow progress** — e.g. under ~2k records/min: analyze the bottleneck (e.g. wrong index state for the phase), fix it, restart as close to the stop point as possible (checkpoint/resume), then continue monitoring. See general_performance.mdc "Detect Extremely Slow Progress (Index State)."
 - ❌ **Unexpected behavior** - Output doesn't match expectations
 - ❌ **Performance issues** - Much slower than expected (may indicate problem)
 - ❌ **Resource exhaustion** - High CPU/memory usage (may need optimization)

@@ -12,6 +12,7 @@ py_library(
     srcs = ["directory.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/utils:pagination",
         "//models:job_title",
         requirement("Django"),
@@ -23,6 +24,7 @@ py_library(
     srcs = ["profile.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/business/salary:job_title_chart_builder",
         "//lib/business/salary:job_title_stats",
         "//models:job_title",

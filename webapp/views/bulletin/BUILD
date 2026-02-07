@@ -12,6 +12,7 @@ py_library(
     srcs = ["dashboard.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//django_config:cache_utils",
         "//lib/business/bulletin:chart_builder",
         "//lib/business/bulletin:cutoff_data_aggregator",
         "//models/enums:action_type",

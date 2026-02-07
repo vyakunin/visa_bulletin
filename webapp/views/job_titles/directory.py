@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.conf import settings
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 from django.db.models import Avg, Count, Sum
 
 from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
@@ -16,7 +16,7 @@ from models.job_title import JobTitleCluster
 AUTOCOMPLETE_YEARS = 5
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def job_title_autocomplete_view(request):
     """
     API endpoint for job title autocomplete suggestions.
@@ -86,7 +86,7 @@ def _get_job_title_directory_featured(titles):
     }
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def job_title_directory_view(request):
     """
     Job title directory page with search and top roles.

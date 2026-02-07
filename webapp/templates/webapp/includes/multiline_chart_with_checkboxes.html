@@ -1,0 +1,22 @@
+{% comment %}
+Shared multi-line chart component: checkboxes above chart (same pattern as visa bulletin dashboard).
+Legend is hidden in the chart; checkboxes control trace visibility. Use for salary distribution
+and other multi-trace charts so layout works on mobile.
+{% endcomment %}
+<div class="multiline-chart-wrapper" data-chart-id="{{ element_id }}">
+    <div class="multiline-chart-checkboxes mb-3" style="display:none;">
+        <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
+            <span class="text-muted small me-1"><i class="bi bi-eye"></i> Show:</span>
+            <div class="multiline-chart-checkbox-list d-flex flex-wrap align-items-center gap-2 gap-md-3"></div>
+            <span class="multiline-chart-clear-wrap ms-2 ms-md-3"></span>
+        </div>
+    </div>
+    <div id="{{ element_id }}" style="min-height: {{ min_height|default:'300' }}px;">
+        <div class="chart-loading text-center text-muted py-5">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading chart...</span>
+            </div>
+            <div class="mt-2">Loading chart...</div>
+        </div>
+    </div>
+</div>

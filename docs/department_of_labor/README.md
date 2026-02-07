@@ -16,8 +16,9 @@ The DOL salary database provides comprehensive data on work visa applications an
 ### Data Validation
 - **WAGE_THRESHOLDS.md** - Wage validation thresholds and rules for detecting anomalies
 
-### Implemented Features & Promotion
-- **IMPLEMENTED_FEATURES_AND_PROMO_STRATEGY.md** - Detailed summary of live DoL features (salary/worksite search, employer/job title directories and profiles, autocomplete, sitemaps) and step-by-step promo strategy with ready-to-send drafts (Reddit, Twitter, LinkedIn, journalist email, HN)
+### Promotion (promo/)
+- **promo/IMPLEMENTED_FEATURES_AND_PROMO_STRATEGY.md** - Detailed summary of live DoL features (salary search, employer/job title directories and profiles, autocomplete, sitemaps) and step-by-step promo strategy with ready-to-send drafts (Reddit, Twitter, LinkedIn, journalist email, HN)
+- **promo/REVISED_LAUNCH_STRATEGY.md** - Alternative launch strategy: "Sponsorship Security & Base Pay Benchmarking" angle, integrity badge, asset checklist, Reddit/LinkedIn/Twitter/Blind/niche/media phases
 
 ### Future Work
 - **WORKSITE_FILES_DESIGN.md** - Design for separating worksite location data from employer-focused data (not yet implemented)

@@ -10,7 +10,7 @@ from django.db.models import Avg, Count, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.cache import cache_page
+from django_config.cache_utils import cache_page_skip_bots
 
 from lib.business.salary.common_stats import (
     calculate_salary_histogram_with_overlays,
@@ -213,7 +213,7 @@ def _get_or_compute_page_payload(cluster, records, slug: str, cache_key: str, pa
     return (stats, chart_data, False)
 
 
-@cache_page(settings.CACHE_TIMEOUT)
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def employer_profile_view(request, slug):
     """
     Employer profile page showing sponsorship statistics and trends.

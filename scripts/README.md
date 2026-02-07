@@ -362,7 +362,7 @@ bazel run //scripts/salary:fix_state_codes -- --limit 1000
 
 **`scripts/salary/fix_invalid_wages.py`** - Comprehensive fix for invalid wage records (both too high and too low)
 
-**Purpose:** Identifies and corrects salary records with `wage_annual` outside the valid range ($5,000 - $480,719) configured in `wage_thresholds_config.yaml`. Uses the same validation logic as the ingest pipeline via shared `lib.parsing.salary.wage_unit_correction` module to ensure consistency.
+**Purpose:** Identifies and corrects salary records with `wage_annual` outside the valid range ($5,000 - $1,000,000) configured in `wage_thresholds_config.yaml`. Uses the same validation logic as the ingest pipeline via shared `lib.parsing.salary.wage_unit_correction` module to ensure consistency.
 
 **Invalid wages are caused by:**
 - **Incorrect wage units**: Hourly/monthly/weekly wages stored as annual (or vice versa)
@@ -378,7 +378,12 @@ bazel run //scripts/salary:fix_state_codes -- --limit 1000
 - **Edge cases** (possibly legitimate high salaries) → Flags for manual review
   - Example: $600K for C-level executive (may be legitimate, needs verification)
 
-**Uses batched updates** (`BatchedUpdateCollector`) for efficient database operations - processes thousands of records without N+1 query problems.
+**Uses batched updates** (`BatchedUpdateCollector`) for efficient database operations - processes thousands of records without N+1 query problems. Does **not** drop or recreate indexes; only runs filtered SELECT and batched UPDATEs (row-level locks). Safe to run in production.
+
+**After running fix_invalid_wages on production:** Re-compute stats that depend on `wage_annual`, or job title and employer aggregates will be stale:
+1. `bazel run //scripts/salary:update_employer_stats` — refreshes `Employer.avg_salary` (and related counts).
+2. `bazel run //scripts/salary:update_job_title_cluster_stats` — refreshes `JobTitleCluster.total_filings`, `avg_salary`, `canonical_title`.
+Then clear cache and optionally warm: `bazel run //scripts:clear_cache`; reload gunicorn if using LocMem cache.
 
 ```bash
 # Fix all invalid wages (both high and low) - RECOMMENDED
@@ -735,6 +740,15 @@ On memory-constrained instances (e.g. 2GB production): run then shut down Bazel 
 bazel run //scripts:clear_cache && bazel shutdown
 ```
 
+**`scripts/cache/inspect_cache.py`** - Inspect Django cache state and TTL for a URL path (e.g. `/salaries/`). Shows backend (Redis or LocMem), whether the key exists, and for Redis the remaining TTL. Use after at least one request to the URL so the key exists.
+```bash
+bazel run //scripts/cache:inspect_cache -- /salaries/
+bazel run //scripts/cache:inspect_cache -- /salaries/ --domain visa-bulletin.us
+# On production (with .env and Redis):
+# SITE_DOMAIN=visa-bulletin.us bazel run //scripts/cache:inspect_cache -- /salaries/
+```
+See `deployment/README.md` (Caching) for HTTP cache headers and full cache setup.
+
 **`scripts/salary/drop_data.py`** - Drop all data (use with caution!)
 ```bash
 bazel run //scripts/salary:drop_data
@@ -800,6 +814,33 @@ cd /opt/visa_bulletin
 ```bash
 ./scripts/cron/build_all.sh
 ```
+
+**`scripts/cron/refresh_data.sh`** - Thin wrapper: sources .env and runs **`scripts/cron/refresh_data.py`** (local pipeline: ingest, clustering, swap on this host). Writes a checkpoint after each step. Use **`--resume`** to continue from the last completed step (checkpoint: `$BACKUP_DIR/refresh_checkpoint.json`).
+```bash
+./scripts/cron/refresh_data.sh           # Full run (local)
+./scripts/cron/refresh_data.sh --resume  # Resume from last checkpoint
+```
+
+**`scripts/cron/refresh_and_switch.py`** - **Orchestrator** (cross-instance): run from **prod** to start staging, run the same pipeline on staging via SSH, smoke test, then (optional) switch traffic. For **first validation** (no IP flip): use **`--no-traffic-switch`**. Requires env: `REFRESH_ACTIVE_*`, `REFRESH_INACTIVE_*`, `REFRESH_SSH_*`, etc. See REFRESH_DATA_PYTHON_REFACTOR.md (First run).
+
+**Before starting:** Check running processes on the **inactive** host: `ssh -i ... ubuntu@<inactive_ip> 'ps aux | grep run_pipeline | grep -v grep'`. If any old `discover-and-ingest` processes exist (from previous runs), kill them first so staging isn't overloaded and SSH doesn't lag. See deployment rule "Check Running Processes on Inactive Host Before Starting Pipeline".
+```bash
+bazel run //scripts/cron:refresh_and_switch_py -- --no-traffic-switch   # First run: refresh on staging, no IP flip
+bazel run //scripts/cron:refresh_and_switch_py                          # Full cycle with traffic switch
+bazel run //scripts/cron:refresh_and_switch_py -- --resume              # Resume pipeline on inactive
+```
+
+**Ingest timeout:** The ingest step uses a 12h SSH timeout (`INGEST_SSH_TIMEOUT_SEC` in `steps.py`) so full LCA/PERM ingest can complete. Other steps use `REFRESH_SSH_TIMEOUT` (default 4h).
+
+**Monitoring (high-level + stage logs):** Always monitor **both** so you have visibility into what’s happening inside long-running steps (e.g. ingest).
+- **Orchestrator (prod):** `ssh prod_2Gb_vm "tail -f /tmp/orchestrate.log"`
+- **Stage log / ingest visibility (inactive host):** From prod, `ssh -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@<inactive_ip> "tail -f /tmp/refresh_stage.log"`. This shows live ingest progress (runs, sources, transform, validation). One-shot check from your machine (use `ConnectTimeout=60` if staging is under load): `ssh prod_2Gb_vm "ssh -o ConnectTimeout=60 -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -80 /tmp/refresh_stage.log'"`.
+
+**Why we don't capture stdout:** Remote `run_bin` does **not** capture the command's stdout/stderr on the orchestrator side. Output goes only to the stage log file on the inactive host (`tee`). When a step finishes, we SSH once to read `tail -n N` of that file for the orchestrator log and errors. That avoids buffering hours of output on prod and keeps the SSH pipe from blocking or lagging.
+
+**Staging load and SSH lag:** If nested SSH from prod to staging times out or is slow, staging is likely overloaded. We've seen **multiple** `run_pipeline discover-and-ingest` processes on staging (old runs from previous orchestrator attempts or manual runs). Each ingest uses heavy CPU and memory; several at once cause high load and slow SSH. **Fix:** On staging, run `ps aux | grep run_pipeline` and kill any **old** ingest PIDs (leave only the one started by the current orchestrator run). Use `ConnectTimeout=60` (or higher) when SSHing to staging from prod so the connection has time to establish under load.
+
+When a step finishes, the pipeline logs the last ~80 lines (from the stage log file) to the orchestrator log.
 
 ### Development Setup Scripts
 

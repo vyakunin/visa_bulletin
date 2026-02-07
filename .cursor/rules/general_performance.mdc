@@ -188,12 +188,21 @@ MyModel.objects.bulk_create(new_records)
 - **Target:** 100k-200k records/min
 - **If slower:** Review for per-record queries and optimize
 
-**Rationale:**
-- Individual queries create massive overhead (network, connection, parsing)
-- Batched operations are 10-20x faster
-- Prevents database connection exhaustion
-- Reduces transaction overhead
-- Critical for data migrations and imports
+## Rule: Detect Extremely Slow Progress (Index State)
+
+**CRITICAL: When a long-running script reports progress (e.g. "Processed X/Y records"), throughput under ~2k records/min is a red flag. The cause depends on the operation: indexes ON during mass writes slow updates; indexes OFF during read-heavy steps slow queries.**
+
+**Why (depends on phase):**
+- **Mass writes** (bulk_update, bulk_create, ingest inserts): Each row write with indexes ON forces the DB to update every non-unique index → can drop to ~1k–10k rows/min.
+- **Read-heavy steps** (employer clustering, update_job_title_cluster_stats, aggregations): Rely on indexes for filters/GROUP BY; with indexes OFF, full table scans → 100x+ slower (INGESTION_PLAYBOOK).
+
+**Pipeline order (this project):** Mass-update steps (ingest, backfill_job_title_links, backfill_source_file_date, cluster_job_titles linking) must run **with indexes DROPPED**. Recreate indexes **after** those steps, **before** read-heavy steps (cluster_existing_employers, update_job_title_cluster_stats, update_employer_stats) that **need** indexes for performance.
+
+**What to do when you see extremely slow progress:**
+1. **Analyze the bottleneck** — Is this step doing mass writes (want indexes OFF) or read-heavy work (want indexes ON)? Check pipeline order and index state.
+2. **Fix the cause** — Adjust script order or index drop/recreate timing; document the fix.
+3. **Restart as close to the stop point as possible** — Use checkpoint/resume, or re-run from the step that was wrong; then continue monitoring.
+4. **Do not ignore** — Letting a multi-hour run continue in a wrong index state wastes time; fix and re-run or resume.
 
 ## N+1 Query Problem
 

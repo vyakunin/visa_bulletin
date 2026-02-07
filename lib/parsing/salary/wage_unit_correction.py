@@ -190,7 +190,7 @@ def correct_wage_unit(
         for candidate_unit in _UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW:
             annual_if_candidate = float(calculate_annual_wage(wage_from, candidate_unit))
             if MIN_ANNUAL <= annual_if_candidate <= MAX_ANNUAL:
-                if row_num is not None:
+                if row_num is not None and row_num != 0:
                     unit_display = candidate_unit.value if hasattr(candidate_unit, "value") else candidate_unit
                     _wage_correction_rate_logger.log(
                         f"Row {row_num}: wage_from=${wage_from:,.0f} with unit=YEAR gives annual below ${MIN_ANNUAL:,} "
@@ -203,18 +203,16 @@ def correct_wage_unit(
         return wage_unit
 
     # Generate appropriate log message with rate limiting
-    if row_num is not None:
+    if row_num is not None and row_num != 0:
         implied_annual = float(calculate_annual_wage(wage_from, wage_unit))
         # Extract string value if wage_unit is enum
         unit_display = wage_unit.value if hasattr(wage_unit, 'value') else wage_unit
         message = (
-            f"wage_from=${wage_from:,.0f} with unit={unit_display} "
+            f"Row {row_num}: wage_from=${wage_from:,.0f} with unit={unit_display} "
             f"implies annual=${implied_annual:,.0f} (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range) "
             f"- treating as YEAR instead"
         )
-
-        # Log with rate limiting (automatically includes suppressed count if needed)
-        _wage_correction_rate_logger.log(f"Row {row_num}: {message}")
+        _wage_correction_rate_logger.log(message)
 
     return WageUnit.YEAR  # Return enum (consistent with input type)
 
@@ -268,46 +266,19 @@ def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None
     
     if wage_float < MIN_ANNUAL:
         message = f"Annual wage ${wage_float:,.0f} is below minimum threshold ${MIN_ANNUAL:,} - likely data error or incorrect unit"
-        if row_num is not None:
+        if row_num is not None and row_num != 0:
             logger.warning(f"Row {row_num}: {message}")
+        elif row_num is not None:
+            logger.warning(message)
         return False, message
     
     if wage_float > MAX_ANNUAL:
         message = f"Annual wage ${wage_float:,.0f} exceeds maximum threshold ${MAX_ANNUAL:,} - likely data error or incorrect unit"
-        if row_num is not None:
+        if row_num is not None and row_num != 0:
             logger.warning(f"Row {row_num}: {message}")
+        elif row_num is not None:
+            logger.warning(message)
         return False, message
     
     return True, None
-
-
-def should_flag_for_review(wage_annual: Decimal | None, wage_unit: str | None = None) -> tuple[bool, str | None]:
-    """
-    Determine if a wage should be flagged for manual review.
-    
-    This is less strict than validation - it flags suspicious values but doesn't reject them.
-    Used for post-ingest validation and reporting.
-    
-    Args:
-        wage_annual: Annual wage value
-        wage_unit: Optional wage unit (ignored - kept for backward compatibility)
-    
-    Returns:
-        Tuple of (should_flag, reason)
-        - should_flag: True if should be flagged for review
-        - reason: Human-readable reason if flagged, None if not flagged
-    """
-    if wage_annual is None:
-        return False, None
-    
-    wage_float = float(wage_annual)
-    
-    # Flag wages outside valid range
-    if wage_float > MAX_ANNUAL:
-        return True, f"Wage ${wage_float:,.0f} exceeds maximum ${MAX_ANNUAL:,} - likely parsing error or data entry error"
-    
-    if wage_float < MIN_ANNUAL and wage_float > 0:
-        return True, f"Wage ${wage_float:,.0f} below minimum ${MIN_ANNUAL:,} - likely incorrect unit or data error"
-    
-    return False, None
 

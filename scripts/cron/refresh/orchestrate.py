@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import instance
+from . import services
 from . import traffic_switch
 from .config import RefreshConfig, load_config
 from .pipeline import run_pipeline
@@ -61,19 +62,17 @@ def run_orchestrate(
         else:
             logger.info("Inactive instance %s already running", inactive_info.name)
 
-    if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=600):
-        logger.error("Instance %s (%s) not healthy", inactive_info.name, inactive_info.ip)
-        return 1
-    logger.info("Inactive instance healthy at %s", inactive_info.ip)
-
     ssh_user = os.environ.get("REFRESH_SSH_USER", "ubuntu")
     ssh_key = os.environ.get("REFRESH_SSH_KEY_PATH", "")
     project_root = os.environ.get("REFRESH_REMOTE_PROJECT_ROOT", "/opt/visa_bulletin")
+    ssh_timeout_raw = os.environ.get("REFRESH_SSH_TIMEOUT", "14400").strip()
+    ssh_timeout_sec = int(ssh_timeout_raw) if ssh_timeout_raw.isdigit() else 14400
     remote = RemoteRunner(
         host=inactive_info.ip,
         project_root=project_root,
         ssh_user=ssh_user,
         ssh_key_path=ssh_key if ssh_key else None,
+        ssh_timeout_sec=ssh_timeout_sec,
     )
     remote_root = Path(project_root)
     remote_config = load_config(None)
@@ -82,9 +81,25 @@ def run_orchestrate(
     remote_config.backup_dir = remote_root / "backups"
     remote_config.single_db_on_host = True
     remote_config.db_name = os.environ.get("REFRESH_REMOTE_DB_NAME", "visa_bulletin")
+    db_name = remote_config.db_name
+
+    if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=600):
+        logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
+        return 1
+    logger.info("Inactive instance SSH and DB ready at %s", inactive_info.ip)
+
+    logger.info("Stopping Redis, Gunicorn, Bazel on inactive host to free memory")
+    services.stop_remote_services(remote, remote_root)
+    services.ensure_postgres_connections_clean(remote, db_name)
+
     logger.info("Running pipeline on inactive host %s", inactive_info.ip)
     run_pipeline(remote_config, remote, resume=resume)
     logger.info("Pipeline complete on inactive; smoke already run in pipeline")
+
+    logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
+    services.start_remote_services(remote, remote_root)
+    if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
+        logger.warning("Instance %s (%s) HTTP not healthy after start_services (non-fatal)", inactive_info.name, inactive_info.ip)
 
     if no_traffic_switch:
         logger.info("--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron")
