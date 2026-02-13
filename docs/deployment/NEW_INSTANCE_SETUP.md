@@ -355,7 +355,7 @@ ssh prod_2Gb_vm
 
 **Note:** Update IP if instance was stopped/started (check AWS CLI: `aws lightsail get-instance --instance-name VisaBulletin2GB --query 'instance.publicIpAddress'`)
 
-## Orchestrator (blue-green refresh) setup
+## Orchestrator (instance-rotation refresh) setup
 
 **For prod when running refresh_and_switch.py (prod → staging):**
 

@@ -245,8 +245,7 @@ echo "[5/9] Creating database user and databases..."
 echo "--------------------------------------------------------------"
 
 DB_USER="visa_bulletin_user"
-DB_BLUE="visa_bulletin_blue"
-DB_GREEN="visa_bulletin_green"
+DB_NAME="visa_bulletin"
 
 # Generate password if not provided
 if [[ -z "${DB_PASSWORD:-}" ]]; then
@@ -264,22 +263,20 @@ if [[ "$USER_EXISTS" != "1" ]]; then
     echo "Created user: $DB_USER"
 fi
 
-# Create databases
-for DB_NAME in "$DB_BLUE" "$DB_GREEN"; do
-    DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 2>/dev/null || echo "0")
-    if [[ "$DB_EXISTS" != "1" ]]; then
-        sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
-        echo "Created database: $DB_NAME"
-    fi
-    
-    # Grant privileges
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
-done
+# Create single database (instance rotation: one DB per instance)
+DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 2>/dev/null || echo "0")
+if [[ "$DB_EXISTS" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
+    echo "Created database: $DB_NAME"
+fi
 
-echo "✅ Databases created"
+# Grant privileges
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
+
+echo "✅ Database created"
 
 # =============================================================================
 # Step 6: Configure Monitoring
@@ -297,25 +294,13 @@ timeout 10 sudo systemctl start sysstat 2>/dev/null || true
 timeout 20 sudo systemctl enable atop 2>/dev/null || true
 timeout 15 sudo systemctl start atop 2>/dev/null || true
 
-# Create health check script
+# Ensure health check script exists and add to cron (every 5 min)
 HEALTH_SCRIPT="$PROJECT_ROOT/scripts/health_check.sh"
-mkdir -p "$(dirname "$HEALTH_SCRIPT")"
-
-cat > "$HEALTH_SCRIPT" << 'HEALTH_EOF'
-#!/bin/bash
-LOG=/var/log/health_check.log
-DATE=$(date '+%Y-%m-%d %H:%M:%S')
-CPU=$(top -bn1 | grep 'Cpu(s)' | awk '{print $2}')
-MEM=$(free | awk '/Mem/{printf("%.1f", $3/$2 * 100)}')
-SWAP=$(free | awk '/Swap/{if($2>0) printf("%.1f", $3/$2 * 100); else print "0"}')
-LOAD=$(cat /proc/loadavg | awk '{print $1}')
-echo "$DATE | CPU: ${CPU}% | MEM: ${MEM}% | SWAP: ${SWAP}% | LOAD: $LOAD" >> $LOG
-tail -1000 $LOG > $LOG.tmp && mv $LOG.tmp $LOG 2>/dev/null || true
-HEALTH_EOF
-
+if [[ ! -f "$HEALTH_SCRIPT" ]]; then
+    echo "ERROR: $HEALTH_SCRIPT not found (expected in repo)"
+    exit 1
+fi
 chmod +x "$HEALTH_SCRIPT"
-
-# Add to cron
 (sudo crontab -l 2>/dev/null | grep -v health_check; echo "*/5 * * * * $HEALTH_SCRIPT") | sudo crontab -
 
 echo "✅ Monitoring configured"
@@ -395,7 +380,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
     fi
     cat > "$ENV_FILE" << ENV_EOF
 # Database Configuration
-DB_NAME=$DB_BLUE
+DB_NAME=$DB_NAME
 DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 # localhost: Host-based services (Gunicorn, Bazel scripts) connect to PostgreSQL on localhost
@@ -421,11 +406,11 @@ else
 fi
 
 # =============================================================================
-# Step 8b: Orchestrator (blue-green refresh) setup
+# Step 8b: Orchestrator (instance-rotation refresh) setup
 # =============================================================================
 # For prod->staging refresh_and_switch: SSH key for staging + AWS credentials for Lightsail.
 echo ""
-echo "[8b/9] Orchestrator (blue-green refresh) setup..."
+echo "[8b/9] Orchestrator (instance-rotation refresh) setup..."
 echo "--------------------------------------------------------------"
 
 # AWS CLI required for Lightsail (get_instance_state, start/stop instance)
@@ -445,7 +430,7 @@ chmod 700 "$HOME/.ssh" 2>/dev/null || true
 if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/null; then
     cat >> "$ENV_FILE" << 'REFRESH_EOF'
 
-# Orchestrator (blue-green refresh): prod -> staging. Uncomment and set for refresh_and_switch.py
+# Orchestrator (instance-rotation refresh): prod -> staging. Uncomment and set for refresh_and_switch.py
 # REFRESH_ACTIVE_INSTANCE_NAME=VisaBulletin2GB
 # REFRESH_ACTIVE_INSTANCE_IP=44.209.204.255
 # REFRESH_INACTIVE_INSTANCE_NAME=VisaBulletinStaging
@@ -517,7 +502,7 @@ echo "  ✅ ${SWAP_SIZE}MB swap file (swappiness=60)"
 echo "  ✅ Docker and docker-compose"
 echo "  ✅ PostgreSQL (optimized for bulk operations)"
 echo "  ✅ Redis (shared cache for employer/salary pages)"
-echo "  ✅ Blue-green databases: $DB_BLUE, $DB_GREEN"
+echo "  ✅ Database: $DB_NAME"
 echo "  ✅ Monitoring: sysstat, atop, health_check.sh"
 echo "  ✅ Bazel memory limits"
 echo "  ✅ Nginx reverse proxy"
@@ -538,7 +523,7 @@ echo "  7. Verify: curl -I http://localhost/"
 echo "  8. Setup SSL: sudo certbot --nginx -d your-domain.com"
 echo "  9. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
 echo "  10. Open AWS firewall ports 80 and 443 (Lightsail: instance Networking)"
-echo "  11. For blue-green refresh: copy AWS credentials to this instance (e.g. scp ~/.aws/credentials from your machine to this host), uncomment REFRESH_* and AWS_* in .env, copy SSH key to REFRESH_SSH_KEY_PATH"
+echo "  11. For instance-rotation refresh: copy AWS credentials to this instance (e.g. scp ~/.aws/credentials from your machine to this host), uncomment REFRESH_* and AWS_* in .env, copy SSH key to REFRESH_SSH_KEY_PATH"
 echo ""
 echo "Data loading:"
 echo "  - refresh_data.sh: Migrations + visa bulletin + DOL data (run once for initial load, then weekly via cron)"

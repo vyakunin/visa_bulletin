@@ -16,13 +16,14 @@ This directory contains all project scripts organized by functionality. All scri
 3. [Data Fixes](#data-fixes)
 4. [Employer Clustering](#employer-clustering)
 5. [Job Title Management](#job-title-management)
-6. [Database Management](#database-management)
-7. [Deployment](#deployment)
-8. [Development Utilities](#development-utilities)
-9. [Performance Benchmarking](#performance-benchmarking)
-10. [Golden Test Data Management](#golden-test-data-management)
-11. [Testing and Verification Utilities](#testing-and-verification-utilities)
-12. [Investigation/Debugging](#investigationdebugging)
+6. [VQS (Virtual Queue Simulation)](#vqs-virtual-queue-simulation)
+7. [Database Management](#database-management)
+8. [Deployment](#deployment)
+9. [Development Utilities](#development-utilities)
+10. [Performance Benchmarking](#performance-benchmarking)
+11. [Golden Test Data Management](#golden-test-data-management)
+12. [Testing and Verification Utilities](#testing-and-verification-utilities)
+13. [Investigation/Debugging](#investigationdebugging)
 
 ---
 
@@ -159,6 +160,15 @@ These scripts have been deleted and their functionality is available via flags i
 ---
 
 ## Data Ingestion
+
+### Import Visa Bulletin Data from CSV
+
+**`scripts/import_visa_bulletin_data.py`** – Import Visa Bulletin data from CSV files exported from another instance (e.g. production to development). Not part of the automated pipeline; use for one-off data transfers.
+
+```bash
+# Export from production (via SSH + psql \COPY), then import locally:
+bazel run //scripts:import_visa_bulletin_data -- --bulletin /tmp/bulletin.csv --cutoff /tmp/visa_cutoff_date.csv
+```
 
 ### Main Pipeline
 
@@ -711,6 +721,54 @@ bazel run //scripts/salary:check_sitemap_eligibility
 
 ---
 
+## VQS (Virtual Queue Simulation)
+
+VQS predicts Visa Bulletin cutoffs and Green Card maturity dates using a deterministic queue simulation. See `docs/future_features/SMART_PREDICTIONS_VQS_PROPOSAL.md` and `lib/business/vqs/README.md`.
+
+### Ingest USCIS I-140
+
+**`scripts/vqs/ingest_uscis_i140.py`** – Ingest I-140 receipts into raw_facts_ledger (for VQS).
+```bash
+# Stub data for MVP testing (no real USCIS file)
+bazel run //scripts/vqs:ingest_uscis_i140 -- --stub
+# From XLSX file
+bazel run //scripts/vqs:ingest_uscis_i140 -- --file path/to/i140_rec_fy2024_q3.xlsx [--publication-date YYYY-MM-DD]
+```
+
+### Run Simulation
+
+**`scripts/vqs/run_simulation.py`** – Run VQS and print next bulletin cutoff and maturity date.
+```bash
+bazel run //scripts/vqs:run_simulation -- --knowledge-date 2026-02-07 --visa-class 2nd --country 3 --action-type final_action [--priority-date YYYY-MM-DD] [--months 24]
+```
+Use a knowledge-date on or after the publication date of ingested facts (e.g. after running `--stub`).
+
+### Compute PERM Lag Distribution (Phase 2)
+
+**`scripts/vqs/compute_perm_lag.py`** – Compute PERM lag histogram from SalaryRecord and write to raw_facts_ledger (metric `perm_lag_distribution`). Used by Model A convolution.
+```bash
+bazel run //scripts/vqs:compute_perm_lag [--publication-date YYYY-MM-DD]
+```
+Run after PERM data is ingested; optional before running simulation for better demand de-aggregation.
+
+### Run Backtest
+
+**`scripts/vqs/run_backtest.py`** – Compare predicted vs actual cutoffs at reference dates (Bulletin MAE in days).
+```bash
+bazel run //scripts/vqs:run_backtest -- --reference-dates 2021-01-01 2022-01-01 --horizons 1 3 6 [--visa-class 2nd] [--country 3] [--output json]
+```
+
+**`scripts/vqs/compute_prediction_accuracy.py`** – Prediction accuracy metrics and plots.
+- **Metric 1 (bulletin-by-bulletin):** For each bulletin, predict every cutoff as-of day-before-publication; compare to actual; plot average error over bulletin date.
+- **Metric 2 (long-term):** For each month and (visa_class, country), predict when next cutoff will appear; compare to first bulletin where that cutoff was reached; if predicted past but not yet seen, error ≥ 1.5× (last bulletin − prediction).
+```bash
+bazel run //scripts/vqs:compute_prediction_accuracy -- --metric both --plot --output-dir /tmp/vqs_accuracy
+bazel run //scripts/vqs:compute_prediction_accuracy -- --metric bulletin --filter-visa-class 2nd --filter-country 3
+```
+Output: JSON/CSV of raw rows; with `--plot`, Plotly HTML with drill-down by visa class and country.
+
+---
+
 ## Database Management
 
 ### Migration Scripts
@@ -767,7 +825,7 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 
 ### Deployment Scripts
 
-**`scripts/deploy-zero-downtime.sh`** - Zero-downtime blue-green deployment
+**`scripts/deploy-zero-downtime.sh`** - Zero-downtime deployment (inactive env + traffic switch)
 ```bash
 ./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
 ```
@@ -795,7 +853,7 @@ Sets up a complete production environment including:
 - Docker and docker-compose
 - PostgreSQL with bulk operation optimizations
 - Blue-green databases
-- Monitoring tools (sysstat, atop, health_check.sh)
+- Monitoring tools (sysstat, atop, **scripts/health_check.sh** — logs CPU/MEM/SWAP/LOAD to `/var/log/health_check.log` every 5 min via root cron `*/5 * * * *`)
 - Bazel memory limits
 
 ```bash
@@ -828,7 +886,10 @@ cd /opt/visa_bulletin
 bazel run //scripts/cron:refresh_and_switch_py -- --no-traffic-switch   # First run: refresh on staging, no IP flip
 bazel run //scripts/cron:refresh_and_switch_py                          # Full cycle with traffic switch
 bazel run //scripts/cron:refresh_and_switch_py -- --resume              # Resume pipeline on inactive
+bazel run //scripts/cron:refresh_and_switch_py -- --from-step traffic_switch   # Skip pipeline; do switch, update new prod .env, safety, stop old
 ```
+
+After traffic switch the orchestrator sets up HTTPS on the new prod (certbot --nginx). To skip: set `REFRESH_SKIP_HTTPS_SETUP=1`. Domains: `REFRESH_HTTPS_DOMAINS` (default `visa-bulletin.us,www.visa-bulletin.us`). Then it re-assigns the staging static IP to the old prod (so old prod becomes inactive with a stable IP for the next cycle). Staging IP name: `REFRESH_STAGING_STATIC_IP_NAME` (default `VisaBulletinStaging-ip`). To skip: set `REFRESH_SKIP_STAGING_IP_REASSIGN=1`.
 
 **Ingest timeout:** The ingest step uses a 12h SSH timeout (`INGEST_SSH_TIMEOUT_SEC` in `steps.py`) so full LCA/PERM ingest can complete. Other steps use `REFRESH_SSH_TIMEOUT` (default 4h).
 

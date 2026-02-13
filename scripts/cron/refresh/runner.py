@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 import subprocess
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from .checkpoint import CheckpointData, read_checkpoint, write_checkpoint as write_checkpoint_file
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -315,8 +318,17 @@ class RemoteRunner:
 
     def run_psql(self, db_name: str, sql: str) -> str:
         sql_esc = sql.replace("'", "'\"'\"'")
-        cmd = f"cd {self.project_root} && set -a && [ -f .env ] && source .env && set +a && psql -h localhost -U ${{DB_USER:-visa_bulletin_user}} -d {db_name} -t -c '{sql_esc}'"
+        # PGPASSWORD is what psql uses; .env typically has DB_PASSWORD
+        cmd = f"cd {self.project_root} && set -a && [ -f .env ] && source .env && set +a && PGPASSWORD=$DB_PASSWORD psql -h localhost -U ${{DB_USER:-visa_bulletin_user}} -d {db_name} -t -c '{sql_esc}'"
         result = self._ssh(cmd)
+        if result.returncode != 0:
+            logger.warning(
+                "run_psql failed (rc=%s) db=%s: stderr=%r stdout=%r",
+                result.returncode,
+                db_name,
+                (result.stderr or "").strip()[:500],
+                (result.stdout or "").strip()[:200],
+            )
         return (result.stdout or "").strip() if result.returncode == 0 else ""
 
     def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:

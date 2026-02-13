@@ -347,7 +347,7 @@ Old standalone scripts may still exist in `scripts/bulletin/` and `scripts/salar
 
 **Production (AWS Lightsail 2GB):**
 - ✅ Docker + Gunicorn
-- ✅ PostgreSQL with blue-green deployment
+- ✅ PostgreSQL (single DB per instance; instance rotation)
 - ✅ Pre-built Bazel binaries (reduced memory)
 - ✅ Nginx reverse proxy with SSL
 

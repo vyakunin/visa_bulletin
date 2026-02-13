@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Zero-downtime blue-green deployment script for visa-bulletin
+# Zero-downtime deployment script for visa-bulletin
 #
 # Usage: ./scripts/deploy-zero-downtime.sh [ssh-key-path] [image-tag]
 #
 # How it works:
-# 1. Detect which environment (blue/green) is currently active
+# 1. Detect which environment (blue or green) is currently active on this host
 # 2. Deploy new version to inactive environment
 # 3. Wait for health checks to pass
 # 4. Switch Nginx proxy atomically

@@ -24,13 +24,21 @@ def wait_ssh_and_db_ready(
 ) -> bool:
     """Wait until SSH works and DB is reachable (run_psql SELECT 1). Returns True when ready."""
     deadline = time.monotonic() + timeout_sec
+    last_out: str | None = None
     while time.monotonic() < deadline:
         out = runner.run_psql(db_name, "SELECT 1")
+        last_out = out
         if out and out.strip() == "1":
             logger.info("SSH and DB ready (db=%s)", db_name)
             return True
         logger.debug("DB not ready yet: %s", out or "(empty)")
         time.sleep(poll_interval_sec)
+    logger.warning(
+        "SSH/DB not ready after %ss (db=%s); last run_psql output: %r",
+        timeout_sec,
+        db_name,
+        last_out if last_out is not None else "(none)",
+    )
     return False
 
 
@@ -92,3 +100,34 @@ def ensure_postgres_connections_clean(runner: Runner, db_name: str) -> None:
         logger.info("Terminated idle Postgres connections (db=%s)", db_name)
     else:
         logger.debug("No idle connections to terminate (db=%s)", db_name)
+
+
+def setup_https_on_remote(
+    runner: Runner,
+    domains: str | list[str] | None = None,
+    timeout_sec: int = 120,
+) -> bool:
+    """
+    On the target host: run certbot --nginx to obtain/renew SSL and enable HTTPS.
+    Domains from REFRESH_HTTPS_DOMAINS (comma-separated) or default visa-bulletin.us, www.visa-bulletin.us.
+    Returns True on success.
+    """
+    if domains is None:
+        raw = os.environ.get("REFRESH_HTTPS_DOMAINS", "visa-bulletin.us,www.visa-bulletin.us").strip()
+        domains = [d.strip() for d in raw.split(",") if d.strip()]
+    if isinstance(domains, str):
+        domains = [d.strip() for d in domains.split(",") if d.strip()]
+    if not domains:
+        logger.warning("No HTTPS domains configured; skipping certbot")
+        return True
+    domain_args = " ".join(shlex.quote(d) for d in domains)
+    cmd = (
+        f"sudo certbot --nginx -d {domain_args} "
+        "--non-interactive --agree-tos --register-unsafely-without-email"
+    )
+    result = runner.run_shell(cmd, timeout_sec=timeout_sec)
+    if result.returncode != 0:
+        logger.error("setup_https_on_remote failed: %s", result.stderr)
+        return False
+    logger.info("HTTPS set up on remote for %s", ", ".join(domains))
+    return True

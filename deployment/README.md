@@ -6,7 +6,7 @@ This directory contains production deployment configurations for the Visa Bullet
 
 **LIVE:** https://visa-bulletin.us  
 **Platform:** AWS Lightsail (2GB RAM)  
-**Database:** PostgreSQL with blue-green deployment  
+**Database:** PostgreSQL (single DB per instance; instance rotation between prod and staging)  
 **Container:** Docker with Gunicorn  
 
 ### Instances and SSH
@@ -56,7 +56,7 @@ deployment/
 
 1. **Application Server**: Docker + Gunicorn
 2. **Reverse Proxy**: Nginx with SSL
-3. **Database**: PostgreSQL (blue-green)
+3. **Database**: PostgreSQL (single DB per instance)
 4. **Data Refresh**: Cron (weekly, pre-built binaries)
 5. **Caching**: Django default cache (Redis when `REDIS_URL` is set, else LocMem). Nginx adds `Cache-Control` for HTML.
 
@@ -283,6 +283,29 @@ sudo -u postgres psql -c "SELECT * FROM pg_stat_activity WHERE state = 'active';
 sudo -u postgres psql -c "SELECT * FROM pg_stat_user_tables ORDER BY last_autovacuum DESC LIMIT 5;"
 ```
 
+### Refresh pipeline logs
+
+When the instance-rotation refresh orchestrator runs (from prod), logs are in two places:
+
+| Log | Host | Path | Content |
+|-----|------|------|--------|
+| **Orchestrate log** | Prod (orchestrator) | `/tmp/orchestrate_resume.log` | Step names, resume checkpoint, and **last 80 lines** of each step’s output (tail from stage log after step completes). |
+| **Stage log** | Staging (inactive) | `/tmp/refresh_stage.log` | **Full detailed output** of the **current** step’s `run_bin` (ingest, index drop/recreate, cluster_job_titles, update_employer_stats, cluster_existing_employers, etc.). Overwritten when the next step starts. Env override: `REFRESH_STAGE_LOG_PATH`. |
+
+**Monitor progress (from your machine):**
+
+```bash
+# High-level: which step and last tail on prod
+ssh prod_2Gb_vm "tail -50 /tmp/orchestrate_resume.log"
+
+# Detailed: full output of current step on staging (e.g. cluster_employers)
+ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -100 /tmp/refresh_stage.log'"
+# Or follow live:
+ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -f /tmp/refresh_stage.log'"
+```
+
+After each step finishes, the orchestrator appends that step’s stage-log tail (80 lines) to the orchestrate log under `[step_name] stage output (last N lines):`.
+
 ## 🐛 Troubleshooting
 
 ### External access returns 400 Bad Request (DisallowedHost)
@@ -304,6 +327,8 @@ If `curl http://<instance-ip>/` returns **400** while `curl -H 'Host: localhost'
 **New setups:** `scripts/setup_new_instance.sh` now detects the instance public IP (AWS metadata or ifconfig.me) and adds it to `ALLOWED_HOSTS` when creating `.env`.
 
 **Blue-green rotation:** If `nginx -t` fails with "zero size shared memory zone gptbot", ensure the bot rate-limit config is present: `sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/` (setup_new_instance.sh does this; older instances may need it copied manually).
+
+**Health check cron (existing instances):** If `/var/log/health_check.log` is stale, ensure the script exists and cron is installed: `HEALTH_SCRIPT=/opt/visa_bulletin/scripts/health_check.sh; test -f "$HEALTH_SCRIPT" && chmod +x "$HEALTH_SCRIPT" && (sudo crontab -l 2>/dev/null | grep -v health_check; echo "*/5 * * * * $HEALTH_SCRIPT") | sudo crontab -`
 
 ### SSH Timeout / Instance Freeze
 
@@ -347,7 +372,7 @@ sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 **Fetch app logs:**
 
 - **Systemd (current prod):** `ssh prod_2Gb_vm "journalctl -u visa-bulletin-web.service --no-pager -n 3000"`
-- **Docker (if using blue/green):** `ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail=3000"` or `docker-compose -f deployment/docker-compose.blue.yml logs --tail=3000 web-blue`
+- **Docker:** `ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail=3000"` or `docker-compose -f deployment/docker-compose.blue.yml logs --tail=3000 web-blue`
 
 **Find slow requests:**
 

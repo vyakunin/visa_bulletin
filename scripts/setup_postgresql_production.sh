@@ -4,7 +4,7 @@
 #
 # This script:
 #   1. Installs and configures PostgreSQL
-#   2. Creates blue-green databases
+#   2. Creates single database (visa_bulletin) per instance
 #   3. Tunes settings for 2GB instance with bulk operations
 #   4. Sets up swap and monitoring tools
 #
@@ -19,8 +19,7 @@ echo
 
 # Configuration
 INSTANCE_RAM_GB=2
-DB_BLUE="visa_bulletin_blue"
-DB_GREEN="visa_bulletin_green"
+DB_NAME="${DB_NAME:-visa_bulletin}"
 DB_USER="${DB_USER:-visa_bulletin_user}"
 
 # =============================================================================
@@ -105,25 +104,23 @@ else
 fi
 
 # =============================================================================
-# Step 5: Create Blue-Green Databases
+# Step 5: Create Single Database (instance rotation: one DB per instance)
 # =============================================================================
-echo "Step 5: Creating blue-green databases..."
+echo "Step 5: Creating database $DB_NAME..."
 
-for DB_NAME in "$DB_BLUE" "$DB_GREEN"; do
-    DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")
-    if [[ "$DB_EXISTS" != "1" ]]; then
-        sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
-        echo "Created database: $DB_NAME"
-    else
-        echo "Database $DB_NAME already exists"
-    fi
-    
-    # Grant privileges
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
-    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
-done
+DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")
+if [[ "$DB_EXISTS" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
+    echo "Created database: $DB_NAME"
+else
+    echo "Database $DB_NAME already exists"
+fi
+
+# Grant privileges
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
+sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
 
 # =============================================================================
 # Step 6: Tune PostgreSQL for 2GB Instance with Bulk Operations
@@ -205,35 +202,28 @@ fi
 sudo systemctl restart postgresql
 
 # =============================================================================
-# Step 7: Create Health Check Script
+# Step 7: Health Check Script and Cron
 # =============================================================================
 echo "Step 7: Setting up health check monitoring..."
 
 HEALTH_SCRIPT="/opt/visa_bulletin/scripts/health_check.sh"
 sudo mkdir -p "$(dirname "$HEALTH_SCRIPT")"
-
-sudo tee "$HEALTH_SCRIPT" > /dev/null << 'HEALTH_EOF'
+if [[ ! -f "$HEALTH_SCRIPT" ]]; then
+    echo "  Creating $HEALTH_SCRIPT (repo file not present)"
+    sudo tee "$HEALTH_SCRIPT" > /dev/null << 'HEALTH_EOF'
 #!/bin/bash
-# Log system state every 5 minutes for debugging freezes
 LOG=/var/log/health_check.log
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
-
-# Get key metrics
 CPU=$(top -bn1 | grep 'Cpu(s)' | awk '{print $2}')
 MEM=$(free | awk '/Mem/{printf("%.1f", $3/$2 * 100)}')
 SWAP=$(free | awk '/Swap/{if($2>0) printf("%.1f", $3/$2 * 100); else print "0"}')
 LOAD=$(cat /proc/loadavg | awk '{print $1}')
-
-# Log it
-echo "$DATE | CPU: ${CPU}% | MEM: ${MEM}% | SWAP: ${SWAP}% | LOAD: $LOAD" >> $LOG
-
-# Keep log from growing too large (keep last 1000 lines)
-tail -1000 $LOG > $LOG.tmp && mv $LOG.tmp $LOG 2>/dev/null || true
+echo "$DATE | CPU: ${CPU}% | MEM: ${MEM}% | SWAP: ${SWAP}% | LOAD: $LOAD" >> "$LOG"
+tail -1000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG" 2>/dev/null || true
 HEALTH_EOF
-
+fi
 sudo chmod +x "$HEALTH_SCRIPT"
 
-# Add to cron
 (sudo crontab -l 2>/dev/null | grep -v health_check; echo "*/5 * * * * $HEALTH_SCRIPT") | sudo crontab -
 
 # =============================================================================

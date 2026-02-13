@@ -1,11 +1,8 @@
 """Tests for employer profile view"""
 
-import os
-import django
+from tests.django_setup import setup_django_for_tests
 
-# Setup Django before importing models
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-django.setup()
+setup_django_for_tests()
 
 import pytest
 from django.test import TestCase, Client

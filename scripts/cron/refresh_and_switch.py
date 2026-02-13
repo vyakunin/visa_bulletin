@@ -23,6 +23,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Orchestrate data refresh on inactive instance (prod -> staging)")
     parser.add_argument("--no-traffic-switch", action="store_true", help="Skip traffic switch (first validation run)")
     parser.add_argument("--resume", action="store_true", help="Resume pipeline from checkpoint on inactive")
+    parser.add_argument(
+        "--from-step",
+        type=str,
+        default=None,
+        choices=["traffic_switch"],
+        help="Start from this step (skip pipeline). Use traffic_switch after validating with --no-traffic-switch.",
+    )
     parser.add_argument("--safety-interval", type=int, default=1800, help="Seconds to wait after traffic switch (default 1800)")
     parser.add_argument("--project-root", type=Path, default=None, help="Project root")
     args = parser.parse_args()
@@ -42,6 +49,7 @@ def main() -> int:
         safety_interval_sec=args.safety_interval,
         no_traffic_switch=args.no_traffic_switch,
         resume=args.resume,
+        from_step=args.from_step,
     )
 
 

@@ -19,26 +19,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STEP_FUNCS = {
-    "db_created": steps.step_db_created,
-    "indexes_dropped": steps.step_indexes_dropped,
-    "ingest_complete": steps.step_ingest_complete,
-    "backfill_links_done": steps.step_backfill_links_done,
-    "backfill_dates_done": steps.step_backfill_dates_done,
-    "cluster_job_titles_done": steps.step_cluster_job_titles_done,
-    "indexes_recreated": steps.step_indexes_recreated,
-    "employer_stats_done": steps.step_employer_stats_done,
-    "cluster_employers_done": steps.step_cluster_employers_done,
-    "job_title_stats_done": steps.step_job_title_stats_done,
-    "slugs_done": steps.step_slugs_done,
-    "vacuum_done": steps.step_vacuum_done,
-    "warm_cache_done": steps.step_warm_cache_done,
-    "smoke_done": steps.step_smoke_done,
-    "swap_done": steps.step_swap_done,
+    "db_created": steps.step_create_db,
+    "index_snapshot_saved": steps.step_drop_indexes_save_snapshot,
+    "ingest_complete": steps.step_run_ingest,
+    "backfill_links_done": steps.step_backfill_job_title_links,
+    "backfill_dates_done": steps.step_backfill_source_file_date,
+    "cluster_job_titles_done": steps.step_cluster_job_titles,
+    "indexes_restored": steps.step_restore_indexes,
+    "employer_stats_done": steps.step_update_employer_stats,
+    "cluster_employers_done": steps.step_cluster_employers,
+    "job_title_stats_done": steps.step_update_job_title_cluster_stats,
+    "slugs_done": steps.step_populate_job_title_slugs,
+    "vacuum_done": steps.step_vacuum_analyze,
+    "start_services": steps.step_start_services,
+    "warm_cache_done": steps.step_warm_cache,
+    "smoke_done": steps.step_run_smoke_tests,
+    "swap_done": steps.step_swap_db,
 }
 
 
 def _inactive_db_from_env(config: RefreshConfig) -> str:
-    """Return inactive DB name for two-DB host (blue <-> green)."""
+    """Return inactive DB name for legacy two-DB host (blue <-> green). Instance rotation uses single DB per host."""
     current = get_env_value(config.env_file, "DB_NAME") or ""
     if current == "visa_bulletin_blue":
         return "visa_bulletin_green"
@@ -89,7 +90,7 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
         logger.info("Running step: %s", step_name)
         try:
             result = func(config, runner, ctx)
-            if step_name == "indexes_dropped" and result is not None:
+            if step_name == "index_snapshot_saved" and result is not None:
                 ctx.index_snapshot = result
         except Exception as e:
             logger.exception("Step %s failed: %s", step_name, e)

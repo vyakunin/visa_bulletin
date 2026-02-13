@@ -26,12 +26,15 @@ def run_orchestrate(
     safety_interval_sec: int = 1800,
     no_traffic_switch: bool = False,
     resume: bool = False,
+    from_step: str | None = None,
 ) -> int:
     """
     Full cycle: resolve active/inactive -> start inactive -> wait healthy
     -> run pipeline with RemoteRunner(inactive) -> smoke -> (optional) traffic switch
-    -> safety interval -> stop old -> (optional) cron on new active.
-    If no_traffic_switch is True, skip traffic switch, safety, stop old, and cron (first validation).
+    -> update new prod .env -> safety interval -> stop old.
+    If no_traffic_switch is True, skip traffic switch and following steps (first validation).
+    If from_step=="traffic_switch", skip instance start, pipeline, and pre-switch setup;
+    assume inactive is up and pipeline done; ensure services, then do traffic switch and rest.
     Returns 0 on success.
     """
     active_info, inactive_info = instance.resolve_active_inactive_from_env()
@@ -46,25 +49,9 @@ def run_orchestrate(
 
     logger.info("Active: %s (%s), Inactive: %s (%s)", active_info.name, active_info.ip, inactive_info.name, inactive_info.ip)
 
-    assume_running = os.environ.get("REFRESH_ASSUME_INACTIVE_RUNNING", "").strip().lower() in ("1", "true", "yes")
-    if assume_running:
-        logger.info("REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)")
-    else:
-        state = instance.get_instance_state(inactive_info.name)
-        if state != "running":
-            logger.info("Starting inactive instance %s", inactive_info.name)
-            if not instance.start_instance(inactive_info.name):
-                logger.error("Failed to start %s", inactive_info.name)
-                return 1
-            if not instance.wait_instance_running(inactive_info.name, timeout_sec=600):
-                logger.error("Instance %s did not reach running state", inactive_info.name)
-                return 1
-        else:
-            logger.info("Inactive instance %s already running", inactive_info.name)
-
+    project_root = os.environ.get("REFRESH_REMOTE_PROJECT_ROOT", "/opt/visa_bulletin")
     ssh_user = os.environ.get("REFRESH_SSH_USER", "ubuntu")
     ssh_key = os.environ.get("REFRESH_SSH_KEY_PATH", "")
-    project_root = os.environ.get("REFRESH_REMOTE_PROJECT_ROOT", "/opt/visa_bulletin")
     ssh_timeout_raw = os.environ.get("REFRESH_SSH_TIMEOUT", "14400").strip()
     ssh_timeout_sec = int(ssh_timeout_raw) if ssh_timeout_raw.isdigit() else 14400
     remote = RemoteRunner(
@@ -75,37 +62,64 @@ def run_orchestrate(
         ssh_timeout_sec=ssh_timeout_sec,
     )
     remote_root = Path(project_root)
-    remote_config = load_config(None)
-    remote_config.project_root = remote_root
-    remote_config.env_file = remote_root / ".env"
-    remote_config.backup_dir = remote_root / "backups"
-    remote_config.single_db_on_host = True
-    remote_config.db_name = os.environ.get("REFRESH_REMOTE_DB_NAME", "visa_bulletin")
-    db_name = remote_config.db_name
+    db_name = os.environ.get("REFRESH_REMOTE_DB_NAME", "visa_bulletin")
 
-    if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=600):
-        logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
-        return 1
-    logger.info("Inactive instance SSH and DB ready at %s", inactive_info.ip)
+    skip_to_traffic_switch = from_step == "traffic_switch"
+    if skip_to_traffic_switch:
+        logger.info("--from-step traffic_switch: skipping instance start, pipeline; ensuring SSH and services, then switch")
+        if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=120):
+            logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
+            return 1
+        logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
+        services.start_remote_services(remote, remote_root)
+        if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
+            logger.warning("Instance %s (%s) HTTP not healthy (non-fatal)", inactive_info.name, inactive_info.ip)
+    else:
+        assume_running = os.environ.get("REFRESH_ASSUME_INACTIVE_RUNNING", "").strip().lower() in ("1", "true", "yes")
+        if assume_running:
+            logger.info("REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)")
+        else:
+            state = instance.get_instance_state(inactive_info.name)
+            if state != "running":
+                logger.info("Starting inactive instance %s", inactive_info.name)
+                if not instance.start_instance(inactive_info.name):
+                    logger.error("Failed to start %s", inactive_info.name)
+                    return 1
+                if not instance.wait_instance_running(inactive_info.name, timeout_sec=600):
+                    logger.error("Instance %s did not reach running state", inactive_info.name)
+                    return 1
+            else:
+                logger.info("Inactive instance %s already running", inactive_info.name)
 
-    logger.info("Stopping Redis, Gunicorn, Bazel on inactive host to free memory")
-    services.stop_remote_services(remote, remote_root)
-    services.ensure_postgres_connections_clean(remote, db_name)
+        if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=600):
+            logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
+            return 1
+        logger.info("Inactive instance SSH and DB ready at %s", inactive_info.ip)
 
-    logger.info("Running pipeline on inactive host %s", inactive_info.ip)
-    run_pipeline(remote_config, remote, resume=resume)
-    logger.info("Pipeline complete on inactive; smoke already run in pipeline")
+        logger.info("Stopping Redis, Gunicorn, Bazel on inactive host to free memory")
+        services.stop_remote_services(remote, remote_root)
+        services.ensure_postgres_connections_clean(remote, db_name)
 
-    logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
-    services.start_remote_services(remote, remote_root)
-    if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
-        logger.warning("Instance %s (%s) HTTP not healthy after start_services (non-fatal)", inactive_info.name, inactive_info.ip)
+        logger.info("Running pipeline on inactive host %s", inactive_info.ip)
+        remote_config = load_config(None)
+        remote_config.project_root = remote_root
+        remote_config.env_file = remote_root / ".env"
+        remote_config.backup_dir = remote_root / "backups"
+        remote_config.single_db_on_host = True
+        remote_config.db_name = db_name
+        run_pipeline(remote_config, remote, resume=resume)
+        logger.info("Pipeline complete on inactive; smoke already run in pipeline")
+
+        logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
+        services.start_remote_services(remote, remote_root)
+        if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
+            logger.warning("Instance %s (%s) HTTP not healthy after start_services (non-fatal)", inactive_info.name, inactive_info.ip)
 
     if no_traffic_switch:
         logger.info("--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron")
         return 0
 
-    switch_mode = os.environ.get("REFRESH_TRAFFIC_SWITCH", "dns").strip().lower()
+    switch_mode = os.environ.get("REFRESH_TRAFFIC_SWITCH", "static_ip").strip().lower()
     if switch_mode == "dns":
         sld = os.environ.get("REFRESH_DOMAIN_SLD", "visa-bulletin")
         tld = os.environ.get("REFRESH_DOMAIN_TLD", "us")
@@ -123,6 +137,30 @@ def run_orchestrate(
     else:
         logger.error("Unknown REFRESH_TRAFFIC_SWITCH: %s", switch_mode)
         return 1
+
+    logger.info("Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)")
+    remote.update_env("REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
+    remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
+    remote.update_env("REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
+    remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
+    remote.update_env("REFRESH_MY_INSTANCE_NAME", inactive_info.name)
+
+    setup_https = os.environ.get("REFRESH_SKIP_HTTPS_SETUP", "").strip().lower() not in ("1", "true", "yes")
+    if setup_https:
+        logger.info("Setting up HTTPS on new prod (certbot --nginx)")
+        if not services.setup_https_on_remote(remote, timeout_sec=120):
+            logger.warning("HTTPS setup failed (non-fatal); run certbot manually on new prod")
+    else:
+        logger.info("REFRESH_SKIP_HTTPS_SETUP: skipping HTTPS setup on new prod")
+
+    reassign_staging_ip = os.environ.get("REFRESH_SKIP_STAGING_IP_REASSIGN", "").strip().lower() not in ("1", "true", "yes")
+    if reassign_staging_ip:
+        staging_static_ip = os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "VisaBulletinStaging-ip").strip()
+        logger.info("Re-assigning staging static IP %s to old prod %s", staging_static_ip, active_info.name)
+        if not traffic_switch.attach_staging_static_ip_to_old_prod(staging_static_ip, active_info.name):
+            logger.warning("Staging IP reassign failed (non-fatal)")
+    else:
+        logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
 
     import time
     logger.info("Safety interval: %s sec", safety_interval_sec)

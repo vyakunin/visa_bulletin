@@ -5,15 +5,12 @@ This test file includes a golden test set based on real-world examples
 to ensure normalization quality.
 """
 
-import os
+from tests.django_setup import setup_django_for_tests
+
+setup_django_for_tests()
+
 import sys
 import unittest
-
-# Setup Django before any imports that use Django models
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-
-import django
-django.setup()
 
 from models.job_title import JobTitle
 

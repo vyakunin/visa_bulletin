@@ -1,13 +1,8 @@
 """Tests for employer clustering logic"""
 
-import os
-import django
-from django.conf import settings
+from tests.django_setup import setup_django_for_tests
 
-# Setup Django before importing models
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
-if not settings.configured:
-    django.setup()
+setup_django_for_tests()
 
 from django.test import TestCase
 from models.salary import Employer

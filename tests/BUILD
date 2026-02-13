@@ -233,6 +233,21 @@ py_test(
 )
 
 py_test(
+    name = "test_vqs",
+    size = "small",
+    srcs = ["test_vqs.py"],
+    main = "test_vqs.py",
+    deps = [
+        "//lib/business/vqs:demand",
+        "//lib/business/vqs:queue_snapshot",
+        "//lib/business/vqs:solver",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
     name = "test_chart_builder",
     size = "small",
     srcs = ["test_chart_builder.py"],
@@ -553,6 +568,7 @@ py_test(
     size = "small",
     srcs = ["test_ingest_versioning.py"],
     main = "test_ingest_versioning.py",
+    tags = ["exclusive"],  # Avoids segfault when run in parallel with other DB tests
     deps = [
         ":conftest_lib",
         ":django_setup",
@@ -570,6 +586,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
@@ -614,6 +631,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
@@ -677,6 +695,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
@@ -957,6 +976,7 @@ py_test(
     size = "small",
     srcs = ["test_job_title_normalization.py"],
     deps = [
+        ":django_setup",
         "//models:job_title",
         "//django_config:settings",
         "//webapp:apps",
@@ -968,6 +988,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
@@ -976,6 +997,7 @@ py_test(
     size = "small",
     srcs = ["test_employer_profile_view.py"],
     deps = [
+        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
         "//django_config:settings",
@@ -990,6 +1012,7 @@ py_test(
     srcs_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
     },
 )
 
