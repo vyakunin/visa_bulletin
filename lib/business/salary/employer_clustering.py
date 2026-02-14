@@ -1,7 +1,7 @@
 """Employer clustering logic for grouping similar employers"""
 
-import difflib
 import re
+from rapidfuzz import fuzz
 from typing import Optional
 from models.salary import Employer
 from lib.business import clustering_engine
@@ -256,13 +256,20 @@ def _check_exact_match(
 
 
 def _check_substring_match(
-    employer1: Employer, employer2: Employer, norm1: str, norm2: str
+    employer1: Employer,
+    employer2: Employer,
+    norm1: str,
+    norm2: str,
+    substring_can_match: Optional[bool] = None,
 ) -> tuple[bool, float, str] | None:
     """
     Check if one name is a substring of another after normalization.
-    
-    Returns: (is_match, confidence, reason) if substring match, None otherwise
+
+    When substring_can_match is False (e.g. precomputed per candidate in Phase 2),
+    returns None immediately without employer-dependent work.
     """
+    if substring_can_match is False:
+        return None
     if norm1 not in norm2 and norm2 not in norm1:
         return None
     
@@ -307,14 +314,22 @@ def _check_substring_match(
 
 
 def _check_similarity_match(
-    employer1: Employer, employer2: Employer, norm1: str, norm2: str
+    employer1: Employer,
+    employer2: Employer,
+    norm1: str,
+    norm2: str,
+    precomputed_similarity: Optional[float] = None,
 ) -> tuple[bool, float, str] | None:
     """
     Check if names match based on similarity score.
-    
-    Returns: (is_match, confidence, reason) if similarity threshold met, None otherwise
+
+    When precomputed_similarity is provided (e.g. from Phase 2), avoids recomputing
+    SequenceMatcher for the same (norm1, norm2) across employer pairs.
     """
-    similarity = difflib.SequenceMatcher(None, norm1, norm2).ratio()
+    if precomputed_similarity is not None:
+        similarity = precomputed_similarity
+    else:
+        similarity = fuzz.ratio(norm1, norm2) / 100.0
     
     has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
     if has_conflict and similarity < 0.95:
@@ -330,48 +345,42 @@ def _check_similarity_match(
 
 
 def match_employers(
-    employer1: Employer, 
+    employer1: Employer,
     employer2: Employer,
     norm1: Optional[str] = None,
-    norm2: Optional[str] = None
+    norm2: Optional[str] = None,
+    precomputed_similarity: Optional[float] = None,
+    substring_can_match: Optional[bool] = None,
 ) -> tuple[bool, float, str]:
     """
     Hybrid matching algorithm: rule-based checks first, then similarity-based fallback.
-    
-    PERFORMANCE WARNING: This function is called in the innermost loop of clustering (Phase 2).
-    It processes ~400k pairs in a full run.
-    
-    Optimization:
-    - Pass `norm1` and `norm2` arguments if already computed to avoid redundant re-normalization.
-    - Re-normalization involves regex and string operations which add up over 400k calls.
-    
-    Flow:
-    1. Hyphen variation check
-    2. Exact normalized name match
-    3. Substring match
-    4. Similarity-based fallback
-    
-    Returns: (is_match, confidence, reason)
-    - is_match: True if algorithm indicates same employer
-    - confidence: 0.0-1.0 (1.0 = high confidence)
-    - reason: Explanation of match
+
+    PERFORMANCE (Phase 2): Pass precomputed_similarity and substring_can_match when
+    processing many employer pairs for the same (norm1, norm2) to avoid redundant
+    SequenceMatcher and substring checks.
     """
     if norm1 is None:
         norm1 = Employer.normalize_name(employer1.name)
     if norm2 is None:
         norm2 = Employer.normalize_name(employer2.name)
 
-    checks = (
-        _check_hyphen_variation,
-        _check_exact_match,
-        _check_substring_match,
-        _check_similarity_match,
+    # Run checks; pass through precomputed values to avoid duplicate work per (norm1, norm2)
+    result = _check_hyphen_variation(employer1, employer2, norm1, norm2)
+    if result is not None:
+        return result
+    result = _check_exact_match(employer1, employer2, norm1, norm2)
+    if result is not None:
+        return result
+    result = _check_substring_match(
+        employer1, employer2, norm1, norm2, substring_can_match=substring_can_match
     )
-    for check in checks:
-        result = check(employer1, employer2, norm1, norm2)
-        if result is not None:
-            return result
-
+    if result is not None:
+        return result
+    result = _check_similarity_match(
+        employer1, employer2, norm1, norm2, precomputed_similarity=precomputed_similarity
+    )
+    if result is not None:
+        return result
     return (False, 0.0, "")
 
 
@@ -387,9 +396,7 @@ def fuzzy_match(employer1: Employer, employer2: Employer) -> tuple[float, str]:
     # (with generic word filtering). Don't use stored name_normalized which may be outdated.
     norm1 = Employer.normalize_name(employer1.name)
     norm2 = Employer.normalize_name(employer2.name)
-    
-    # Generic words are already removed during normalization, so we can use normalized names directly
-    similarity = difflib.SequenceMatcher(None, norm1, norm2).ratio()
+    similarity = fuzz.ratio(norm1, norm2) / 100.0
     
     reason = f"Fuzzy match similarity: {similarity:.2f}"
     if similarity >= 0.8:
@@ -403,25 +410,28 @@ def fuzzy_match(employer1: Employer, employer2: Employer) -> tuple[float, str]:
 
 
 def should_auto_cluster(
-    employer1: Employer, 
-    employer2: Employer, 
+    employer1: Employer,
+    employer2: Employer,
     threshold: float = 0.95,
     norm1: Optional[str] = None,
-    norm2: Optional[str] = None
+    norm2: Optional[str] = None,
+    precomputed_similarity: Optional[float] = None,
+    substring_can_match: Optional[bool] = None,
 ) -> tuple[bool, float, str]:
     """
-    Determine if two employers should be auto-clustered
-    
-    Args:
-        employer1: First employer
-        employer2: Second employer
-        threshold: Confidence threshold for auto-clustering (0.0-1.0)
-        norm1: Optional pre-computed normalized name for employer1
-        norm2: Optional pre-computed normalized name for employer2
-    
-    Returns: (should_cluster, confidence, reason)
+    Determine if two employers should be auto-clustered.
+
+    Phase 2: Pass precomputed_similarity and substring_can_match to avoid redundant
+    work when processing many pairs with the same (norm1, norm2).
     """
-    is_match, confidence, reason = match_employers(employer1, employer2, norm1, norm2)
+    is_match, confidence, reason = match_employers(
+        employer1,
+        employer2,
+        norm1=norm1,
+        norm2=norm2,
+        precomputed_similarity=precomputed_similarity,
+        substring_can_match=substring_can_match,
+    )
     if not is_match:
         return (False, confidence, reason)
     return (confidence >= threshold, confidence, reason)

@@ -120,6 +120,8 @@ pytz==2025.2
     # via pandas
 pyyaml==6.0.2
     # via -r requirements.txt
+rapidfuzz==3.13.0
+    # via -r requirements.txt
 redis==7.0.1
     # via -r requirements.txt
 requests==2.32.3

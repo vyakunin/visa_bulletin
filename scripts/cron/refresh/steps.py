@@ -90,7 +90,7 @@ def _log_stage_tail_text(tail_text: str, step_name: str, last_n: int = 80) -> No
 # Ingest can take many hours (full LCA/PERM). Use 12h so SSH does not time out.
 INGEST_SSH_TIMEOUT_SEC = 43200
 # Employer clustering (Phase 1 + Phase 2 + _update_cluster_statistics) can exceed 4h on 2GB instances
-CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC = 28800  # 8 hours
+CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC = 24 * 3600  # 24 hours (Phase 1 + Phase 2 can take 8h+ on 2GB)
 
 
 def step_run_ingest(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
@@ -111,7 +111,7 @@ def step_run_ingest(config: RefreshConfig, runner: Runner, context: PipelineCont
 def step_backfill_job_title_links(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/backfill_job_title_links", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "backfill_links_done", last_n=80)
+    _log_stage_tail_text(tail, "backfill_job_title_links", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Backfill job title links failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -119,7 +119,7 @@ def step_backfill_job_title_links(config: RefreshConfig, runner: Runner, context
 def step_backfill_source_file_date(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/backfill_source_file_date", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "backfill_dates_done", last_n=80)
+    _log_stage_tail_text(tail, "backfill_source_file_date", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Backfill source file date failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -127,7 +127,7 @@ def step_backfill_source_file_date(config: RefreshConfig, runner: Runner, contex
 def step_cluster_job_titles(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/cluster_job_titles", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "cluster_job_titles_done", last_n=80)
+    _log_stage_tail_text(tail, "cluster_job_titles", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Cluster job titles failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -158,19 +158,20 @@ def step_restore_indexes(
 def step_update_employer_stats(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/update_employer_stats", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "employer_stats_done", last_n=80)
+    _log_stage_tail_text(tail, "update_employer_stats", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Update employer stats failed: {tail[-2000:] if tail else result.stderr}")
 
 
 def step_cluster_employers(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+    """Run employer clustering. Assumes indexes were restored (runs after indexes_restored)."""
     result = runner.run_bin(
         "scripts/salary/cluster_existing_employers",
         cwd=config.project_root,
         timeout_sec=CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC,
     )
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "cluster_employers_done", last_n=80)
+    _log_stage_tail_text(tail, "cluster_employers", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Cluster employers failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -178,7 +179,7 @@ def step_cluster_employers(config: RefreshConfig, runner: Runner, context: Pipel
 def step_update_job_title_cluster_stats(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/update_job_title_cluster_stats", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "job_title_stats_done", last_n=80)
+    _log_stage_tail_text(tail, "update_job_title_cluster_stats", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Update job title cluster stats failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -186,7 +187,7 @@ def step_update_job_title_cluster_stats(config: RefreshConfig, runner: Runner, c
 def step_populate_job_title_slugs(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/salary/populate_job_title_slugs", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "slugs_done", last_n=80)
+    _log_stage_tail_text(tail, "populate_job_title_slugs", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Populate job title slugs failed: {tail[-2000:] if tail else result.stderr}")
 
@@ -205,7 +206,7 @@ def step_start_services(config: RefreshConfig, runner: Runner, context: Pipeline
 def step_warm_cache(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
     result = runner.run_bin("scripts/cache/warm_cache", cwd=config.project_root)
     tail = _get_stage_tail(runner, result)
-    _log_stage_tail_text(tail, "warm_cache_done", last_n=80)
+    _log_stage_tail_text(tail, "warm_cache", last_n=80)
     if result.returncode != 0:
         raise RuntimeError(f"Warm cache failed: {tail[-2000:] if tail else result.stderr}")
 

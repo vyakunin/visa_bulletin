@@ -56,6 +56,32 @@ py_binary(
 )
 
 py_binary(
+    name = "populate_case_submitted",
+    srcs = ["populate_case_submitted.py"],
+    main = "populate_case_submitted.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:http_utils",
+        "//lib/utils:excel_utils",
+        "//lib/parsing/salary:db_importer",
+        "//models:salary",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "backfill_source_file_date",
     srcs = ["backfill_source_file_date.py"],
     main = "backfill_source_file_date.py",
@@ -383,11 +409,23 @@ py_binary(
         requirement("psycopg2_binary"),  # PostgreSQL adapter
         requirement("datasketch"),  # Locality-Sensitive Hashing for fast similarity search
         requirement("tqdm"),  # Progress bar for long-running operations
+        requirement("rapidfuzz"),
     ],
     python_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
+)
+
+py_binary(
+    name = "benchmark_rapidfuzz",
+    srcs = ["benchmark_rapidfuzz.py"],
+    main = "benchmark_rapidfuzz.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("rapidfuzz"),
+    ],
+    python_version = "PY3",
 )
 
 py_binary(
@@ -1324,6 +1362,21 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":update_job_title_cluster_stats_lib",
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "test_filing_year_filter",
+    srcs = ["test_filing_year_filter.py"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/utils:filter_utils",
+        "//models:salary",
     ],
     python_version = "PY3",
     env = {

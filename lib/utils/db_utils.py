@@ -215,29 +215,38 @@ class BatchedUpdates:
         self.employers_to_update: list = []
         self.review_entries: list = []
         
-        # Pre-load all existing clusters into cache (single query at startup)
-        # This prevents duplicate cluster creation across multiple runs
+        # Pre-load existing cluster ids and canonical names (values(), not full ORM) to save memory
+        # Lazy-load full cluster instances on first use into _cluster_cache
         import logging
         logger = logging.getLogger(__name__)
         
         logger.info("Pre-loading existing employer clusters into cache...")
-        existing_clusters = EmployerCluster.objects.all()
-        cluster_count = 0
-        # Use normalized (lowercase) canonical_name as key for case-insensitive lookups
-        # This prevents creating duplicate clusters for "BBC" vs "bbc"
-        self._cluster_cache: dict[str, object] = {}  # normalized_canonical_name -> EmployerCluster
-        
-        for cluster in existing_clusters:
-            normalized_key = normalize_canonical_name(cluster.canonical_name)
-            self._cluster_cache[normalized_key] = cluster
-            cluster_count += 1
-        
+        existing_rows = list(
+            EmployerCluster.objects.values("id", "canonical_name")
+        )
+        # normalized_canonical_name -> id (avoids holding full ORM objects for 200k+ clusters)
+        self._cluster_id_by_normalized: dict[str, int] = {
+            normalize_canonical_name(row["canonical_name"]): row["id"]
+            for row in existing_rows
+        }
+        # Lazy-loaded and new clusters: normalized_key -> EmployerCluster
+        self._cluster_cache: dict[str, object] = {}
+        cluster_count = len(self._cluster_id_by_normalized)
         if cluster_count > 0:
-            logger.info(f"Loaded {cluster_count:,} existing clusters into cache")
+            logger.info(f"Loaded {cluster_count:,} existing cluster ids into cache")
         
         self._clusters_to_create: list = []  # List of EmployerCluster instances to create
         # Deduplication: track employer IDs in current batch to prevent duplicate updates
         self._employer_update_ids: set = set()  # Set of employer.pk values in current batch
+        
+        # Pre-load existing slugs into cache (single query at startup)
+        # Prevents N+1 slug loading in flush_clusters() - was reloading ALL slugs per flush
+        self._used_slugs: set[str] = set(
+            EmployerCluster.objects
+            .filter(slug__isnull=False)
+            .values_list('slug', flat=True)
+        )
+        logger.info(f"Loaded {len(self._used_slugs):,} existing slugs into cache")
     
     def add_employer_update(self, employer):
         """Add employer to update batch, flush if batch_size reached"""
@@ -377,6 +386,12 @@ class BatchedUpdates:
         
         if normalized_key in self._cluster_cache:
             return self._cluster_cache[normalized_key]
+        # Lazy-load existing cluster from pre-loaded id (avoids holding all clusters in memory)
+        if normalized_key in self._cluster_id_by_normalized:
+            cluster_id = self._cluster_id_by_normalized[normalized_key]
+            cluster = EmployerCluster.objects.get(pk=cluster_id)
+            self._cluster_cache[normalized_key] = cluster
+            return cluster
         
         # Create unsaved cluster instance with original casing (will be saved in batch)
         # The canonical_name field keeps the exact casing from the first employer
@@ -417,13 +432,6 @@ class BatchedUpdates:
         if clusters_needing_slugs:
             from django.utils.text import slugify
             
-            # Track used slugs to ensure uniqueness
-            used_slugs = set(
-                EmployerCluster.objects
-                .filter(slug__isnull=False)
-                .values_list('slug', flat=True)
-            )
-            
             for cluster in clusters_needing_slugs:
                 if cluster.canonical_name:
                     # Generate unique slug using same logic as model's generate_slug()
@@ -431,12 +439,12 @@ class BatchedUpdates:
                     slug = base_slug
                     counter = 1
                     
-                    while slug in used_slugs:
+                    while slug in self._used_slugs:
                         slug = f"{base_slug}-{counter}"
                         counter += 1
                     
                     cluster.slug = slug
-                    used_slugs.add(slug)
+                    self._used_slugs.add(slug)
             
             # Bulk update slugs
             EmployerCluster.objects.bulk_update(

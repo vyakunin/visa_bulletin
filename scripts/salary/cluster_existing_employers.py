@@ -10,7 +10,6 @@ Compares all employer pairs and:
 import os
 import sys
 import time
-import difflib
 import json
 import logging
 import random
@@ -42,8 +41,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
 django.setup()
 
-from django.db import transaction
+from django.db import connection, transaction
 from datasketch import MinHash, MinHashLSH
+from rapidfuzz import fuzz
 from models.salary import Employer, EmployerCluster, EmployerClusteringReview
 from lib.business.salary.employer_clustering import (
     match_employers,
@@ -433,19 +433,17 @@ def _process_employer_pair(
     emp2: Employer,
     auto_approve_threshold: float,
     dry_run: bool,
-    batched_updates: BatchedUpdates
+    batched_updates: BatchedUpdates,
+    norm1: Optional[str] = None,
+    norm2: Optional[str] = None,
+    precomputed_similarity: Optional[float] = None,
+    substring_can_match: Optional[bool] = None,
 ) -> int:
     """
     Process a pair of employers - cluster if matches rules.
-    
-    PERFORMANCE NOTE: This function calls `should_auto_cluster` which calls `match_employers`.
-    `match_employers` re-normalizes both names, which is redundant since we already have
-    normalized names in the calling functions.
-    
-    Optimization hint: Pass `norm1` and `norm2` down from caller to avoid re-normalization.
-    This would save 2 normalization calls per pair (regex + string ops).
-    
-    Returns: auto_clustered_count (1 or 0)
+
+    Phase 2: Pass precomputed_similarity and substring_can_match to avoid redundant
+    SequenceMatcher and substring checks for the same (norm1, norm2).
     """
     # Check early stopping condition
     global _process_employer_pair_min_pairs, _process_employer_pair_pairs_collected
@@ -460,9 +458,15 @@ def _process_employer_pair(
         if emp1.canonical_cluster.id == emp2.canonical_cluster.id:
             return 0
     
-    # Check if should auto-cluster
+    # Check if should auto-cluster (pass precomputed norm/similarity/substring to avoid redundant work)
     should_cluster, confidence, reason = should_auto_cluster(
-        emp1, emp2, threshold=auto_approve_threshold
+        emp1,
+        emp2,
+        threshold=auto_approve_threshold,
+        norm1=norm1,
+        norm2=norm2,
+        precomputed_similarity=precomputed_similarity,
+        substring_can_match=substring_can_match,
     )
     
     if should_cluster:
@@ -519,7 +523,8 @@ def _process_employer_pairs_batch(
     dry_run: bool,
     batched_updates: BatchedUpdates,
     progress: ProgressTracker,
-    batch_size: int
+    batch_size: int,
+    norm: Optional[str] = None,
 ) -> int:
     """
     Process all pairs of employers in a list (shared logic for phase 1 and phase 2)
@@ -537,7 +542,8 @@ def _process_employer_pairs_batch(
             emp2 = employers[j]
             
             pair_auto = _process_employer_pair(
-                emp1, emp2, auto_approve_threshold, dry_run, batched_updates
+                emp1, emp2, auto_approve_threshold, dry_run, batched_updates,
+                norm1=norm, norm2=norm,
             )
             auto_clustered += pair_auto
             
@@ -554,17 +560,20 @@ def _process_cross_employer_pairs(
     dry_run: bool,
     batched_updates: BatchedUpdates,
     norm1: Optional[str] = None,
-    norm2: Optional[str] = None
+    norm2: Optional[str] = None,
+    precomputed_similarity: Optional[float] = None,
+    substring_can_match: Optional[bool] = None,
 ) -> Tuple[int, int]:
     """
-    Process all pairs between two lists of employers (cartesian product)
+    Process all pairs between two lists of employers (cartesian product).
     Skips pairs that are already in the same cluster.
-    
-    Returns: (auto_clustered, processed_pairs)
+
+    Phase 2: Pass precomputed_similarity and substring_can_match to avoid redundant
+    work for the same (norm1, norm2).
     """
     auto_clustered = 0
     processed_pairs = 0
-    
+
     for emp1 in employers1:
         for emp2 in employers2:
             # Skip if already in same cluster
@@ -572,10 +581,17 @@ def _process_cross_employer_pairs(
                 if emp1.canonical_cluster.id == emp2.canonical_cluster.id:
                     processed_pairs += 1
                     continue
-            
-            # Process employer pair (normalization happens inside _process_employer_pair)
+
             pair_auto = _process_employer_pair(
-                emp1, emp2, auto_approve_threshold, dry_run, batched_updates
+                emp1,
+                emp2,
+                auto_approve_threshold,
+                dry_run,
+                batched_updates,
+                norm1=norm1,
+                norm2=norm2,
+                precomputed_similarity=precomputed_similarity,
+                substring_can_match=substring_can_match,
             )
             auto_clustered += pair_auto
             processed_pairs += 1
@@ -646,7 +662,8 @@ def _process_same_normalized_name_matches(
                 # Note: We still need to process pairs to handle cases where employers might already
                 # be in different clusters (from previous runs or Phase 2 matches)
                 pair_auto = _process_employer_pairs_batch(
-                    employers, auto_approve_threshold, dry_run, batched_updates, progress, batch_size
+                    employers, auto_approve_threshold, dry_run, batched_updates, progress, batch_size,
+                    norm=normalized_name,
                 )
                 auto_clustered += pair_auto
             
@@ -681,14 +698,11 @@ def _process_same_normalized_name_matches(
 
 def _get_normalized_name_similarity(norm1: str, norm2: str) -> float:
     """
-    Get similarity between two normalized names.
-    
-    Generic words are already removed during normalization, so we can use normalized names directly.
-    
-    Note: No caching needed - each normalized name pair is compared exactly once
-    in the Phase 2 iteration, so cache would never be reused.
+    Get similarity between two normalized names (0-1).
+
+    Uses rapidfuzz for fast ratio; same scale as difflib.SequenceMatcher.ratio().
     """
-    return difflib.SequenceMatcher(None, norm1, norm2).ratio()
+    return fuzz.ratio(norm1, norm2) / 100.0
 
 
 def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tuple[MinHashLSH, dict[str, MinHash]]:
@@ -837,17 +851,23 @@ def _process_cross_normalized_name_matches(
             
             # Verify similarity with exact calculation (LSH may have false positives)
             similarity = _get_normalized_name_similarity(norm1, norm2)
-            
+
             # Only process if similarity is actually >= 0.7 (filter false positives)
             if similarity >= 0.7:
                 employers1 = employers_by_normalized[norm1]
                 employers2 = employers_by_normalized[norm2]
-                
-                # Process all employer pairs between these two normalized names
-                # Optimization: Pass normalized names to avoid re-normalization in inner loop
+                # Precompute once per candidate: avoid redundant SequenceMatcher and substring in inner loop
+                substring_can_match = norm1 in norm2 or norm2 in norm1
                 pair_auto, pair_count = _process_cross_employer_pairs(
-                    employers1, employers2, auto_approve_threshold, dry_run, batched_updates,
-                    norm1=norm1, norm2=norm2
+                    employers1,
+                    employers2,
+                    auto_approve_threshold,
+                    dry_run,
+                    batched_updates,
+                    norm1=norm1,
+                    norm2=norm2,
+                    precomputed_similarity=similarity,
+                    substring_can_match=substring_can_match,
                 )
                 auto_clustered += pair_auto
                 processed_pairs += pair_count
@@ -885,62 +905,59 @@ def _process_cross_normalized_name_matches(
 
 
 def _update_cluster_statistics(batch_size: int, dry_run: bool):
-    """Update cluster statistics (optimized with prefetch)"""
+    """
+    Update EmployerCluster stats (total_lca_count, total_perm_count, avg_salary) from Employer aggregates.
+
+    Uses raw SQL aggregation instead of loading all clusters + employers into Python, avoiding
+    ~400s prefetch + ~20+ min bulk_update under memory pressure on 2GB instances.
+    """
     if dry_run:
         return
-    
+
     logger.info("\n" + "="*60)
-    logger.info("Updating cluster statistics...")
+    logger.info("Updating cluster statistics (SQL aggregation)...")
     logger.info("="*60)
-    
-    # Count total clusters first
+
     total_clusters = EmployerCluster.objects.count()
-    logger.info(f"Total clusters to update: {total_clusters:,}")
-    
-    logger.info("Loading clusters with employers (prefetch)...")
+    logger.info(f"Total clusters: {total_clusters:,}")
+
     start_time = time.time()
-    clusters = list(EmployerCluster.objects.prefetch_related('employers').all())
-    logger.info(f"Loaded {len(clusters):,} clusters in {time.time() - start_time:.1f}s")
-    
-    logger.info("Calculating statistics for each cluster...")
-    start_time = time.time()
-    clusters_to_update = []
-    
-    for i, cluster in enumerate(clusters):
-        employers_list = list(cluster.employers.all())
-        cluster.total_lca_count = sum(e.total_lca_count for e in employers_list)
-        cluster.total_perm_count = sum(e.total_perm_count for e in employers_list)
-        
-        salaries = [float(e.avg_salary) for e in employers_list if e.avg_salary]
-        if salaries:
-            cluster.avg_salary = sum(salaries) / len(salaries)
-        else:
-            cluster.avg_salary = None
-        
-        clusters_to_update.append(cluster)
-        
-        # Progress logging every 10,000 clusters
-        if (i + 1) % 10000 == 0:
-            elapsed = time.time() - start_time
-            rate = (i + 1) / elapsed if elapsed > 0 else 0
-            eta = (total_clusters - i - 1) / rate if rate > 0 else 0
-            logger.info(f"  Processed {i + 1:,}/{total_clusters:,} clusters "
-                       f"({(i + 1) / total_clusters * 100:.1f}%) - "
-                       f"Rate: {rate:.0f}/s - ETA: {eta:.0f}s")
-    
-    logger.info(f"Calculated stats for {len(clusters_to_update):,} clusters in {time.time() - start_time:.1f}s")
-    
-    if clusters_to_update:
-        logger.info("Bulk updating cluster statistics...")
-        start_time = time.time()
-        bulk_update_batched(
-            clusters_to_update,
-            batch_size=batch_size,
-            fields=['total_lca_count', 'total_perm_count', 'avg_salary']
-        )
-        logger.info(f"Bulk update completed in {time.time() - start_time:.1f}s")
-    
-    logger.info(f"Updated statistics for {len(clusters_to_update):,} clusters")
+    with connection.cursor() as cursor:
+        # 1. Update clusters that have at least one employer from aggregation
+        cursor.execute("""
+            WITH agg AS (
+                SELECT
+                    canonical_cluster_id AS cluster_id,
+                    COALESCE(SUM(total_lca_count), 0)::int AS lca_sum,
+                    COALESCE(SUM(total_perm_count), 0)::int AS perm_sum,
+                    AVG(avg_salary) AS avg_sal
+                FROM salary_employer
+                WHERE canonical_cluster_id IS NOT NULL
+                GROUP BY canonical_cluster_id
+            )
+            UPDATE salary_employer_cluster c
+            SET
+                total_lca_count = agg.lca_sum,
+                total_perm_count = agg.perm_sum,
+                avg_salary = agg.avg_sal
+            FROM agg
+            WHERE c.id = agg.cluster_id
+        """)
+        updated_with_employers = cursor.rowcount
+
+        # 2. Set clusters with zero employers to 0, 0, NULL
+        cursor.execute("""
+            UPDATE salary_employer_cluster c
+            SET total_lca_count = 0, total_perm_count = 0, avg_salary = NULL
+            WHERE NOT EXISTS (
+                SELECT 1 FROM salary_employer e WHERE e.canonical_cluster_id = c.id
+            )
+        """)
+        updated_zero_employers = cursor.rowcount
+
+    elapsed = time.time() - start_time
+    logger.info(f"Updated {updated_with_employers:,} clusters with employers, "
+                f"{updated_zero_employers:,} clusters with zero employers in {elapsed:.1f}s")
 
 
 def cluster_existing_employers(

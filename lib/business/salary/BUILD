@@ -61,6 +61,7 @@ py_library(
         "//lib/business:clustering_engine",
         "//lib/utils:location_utils",
         "//models:salary",
+        "@visa_bulletin_pip//rapidfuzz",
     ],
     visibility = ["//visibility:public"],
 )

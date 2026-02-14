@@ -33,3 +33,4 @@ datasketch>=1.6.0  # Locality-Sensitive Hashing for fast similarity search
 ollama>=0.1.0  # Ollama Python library for HTTP API (async support for parallel LLM calls)
 tqdm>=4.66.0  # Progress bar for long-running operations
 redis>=4.5.0  # Redis cache backend for Django (shared cache across gunicorn workers)
+rapidfuzz>=3.0.0  # Fast string similarity (optional for employer clustering Phase 2)

@@ -8,23 +8,38 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+# Map old step names (from existing checkpoints) to current names for backward compatibility
+OLD_STEP_NAME_TO_NEW: dict[str, str] = {
+    "backfill_links_done": "backfill_job_title_links",
+    "backfill_dates_done": "backfill_source_file_date",
+    "cluster_job_titles_done": "cluster_job_titles",
+    "employer_stats_done": "update_employer_stats",
+    "cluster_employers_done": "cluster_employers",
+    "job_title_stats_done": "update_job_title_cluster_stats",
+    "slugs_done": "populate_job_title_slugs",
+    "vacuum_done": "vacuum_analyze",
+    "warm_cache_done": "warm_cache",
+    "smoke_done": "smoke_tests",
+    "swap_done": "swap_db",
+}
+
 STEPS_ORDER: tuple[str, ...] = (
     "db_created",
     "index_snapshot_saved",
     "ingest_complete",
-    "backfill_links_done",
-    "backfill_dates_done",
-    "cluster_job_titles_done",
+    "backfill_job_title_links",
+    "backfill_source_file_date",
+    "cluster_job_titles",
     "indexes_restored",
-    "employer_stats_done",
-    "cluster_employers_done",
-    "job_title_stats_done",
-    "slugs_done",
-    "vacuum_done",
+    "update_employer_stats",
+    "cluster_employers",
+    "update_job_title_cluster_stats",
+    "populate_job_title_slugs",
+    "vacuum_analyze",
     "start_services",
-    "warm_cache_done",
-    "smoke_done",
-    "swap_done",
+    "warm_cache",
+    "smoke_tests",
+    "swap_db",
 )
 
 

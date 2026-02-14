@@ -297,7 +297,13 @@ class RemoteRunner:
         args_s = " ".join(shlex.quote(a) for a in args)
         stage_log = os.environ.get("REFRESH_STAGE_LOG_PATH", "/tmp/refresh_stage.log")
         inner = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
-        inner += f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run //{rel_path} -- {args_s}; fi"
+        # Bazel target: scripts/salary/manage_salary_indexes -> //scripts/salary:manage_salary_indexes
+        if "/" in rel_path:
+            pkg, _, target = rel_path.rpartition("/")
+            bazel_target = f"//{pkg}:{target}"
+        else:
+            bazel_target = f"//{rel_path}"
+        inner += f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run {bazel_target} -- {args_s}; fi"
         inner += f" 2>&1 | tee {stage_log}; exit ${{PIPESTATUS[0]:-0}}"
         cmd = f"bash -c {shlex.quote(inner)}"
         # Don't capture: output goes only to stage log; we read tail via read_stage_log_tail.

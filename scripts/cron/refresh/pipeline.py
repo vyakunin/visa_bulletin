@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .checkpoint import CheckpointData, STEPS_ORDER, should_skip_step
+from .checkpoint import CheckpointData, OLD_STEP_NAME_TO_NEW, STEPS_ORDER, should_skip_step
 from .config import RefreshConfig, get_env_value
 from .discovery import check_new_sources
 from . import steps
@@ -22,19 +22,19 @@ STEP_FUNCS = {
     "db_created": steps.step_create_db,
     "index_snapshot_saved": steps.step_drop_indexes_save_snapshot,
     "ingest_complete": steps.step_run_ingest,
-    "backfill_links_done": steps.step_backfill_job_title_links,
-    "backfill_dates_done": steps.step_backfill_source_file_date,
-    "cluster_job_titles_done": steps.step_cluster_job_titles,
+    "backfill_job_title_links": steps.step_backfill_job_title_links,
+    "backfill_source_file_date": steps.step_backfill_source_file_date,
+    "cluster_job_titles": steps.step_cluster_job_titles,
     "indexes_restored": steps.step_restore_indexes,
-    "employer_stats_done": steps.step_update_employer_stats,
-    "cluster_employers_done": steps.step_cluster_employers,
-    "job_title_stats_done": steps.step_update_job_title_cluster_stats,
-    "slugs_done": steps.step_populate_job_title_slugs,
-    "vacuum_done": steps.step_vacuum_analyze,
+    "update_employer_stats": steps.step_update_employer_stats,
+    "cluster_employers": steps.step_cluster_employers,
+    "update_job_title_cluster_stats": steps.step_update_job_title_cluster_stats,
+    "populate_job_title_slugs": steps.step_populate_job_title_slugs,
+    "vacuum_analyze": steps.step_vacuum_analyze,
     "start_services": steps.step_start_services,
-    "warm_cache_done": steps.step_warm_cache,
-    "smoke_done": steps.step_run_smoke_tests,
-    "swap_done": steps.step_swap_db,
+    "warm_cache": steps.step_warm_cache,
+    "smoke_tests": steps.step_run_smoke_tests,
+    "swap_db": steps.step_swap_db,
 }
 
 
@@ -54,6 +54,10 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
     checkpoint_path = config.checkpoint_path
     resume_from: str | None = None
     checkpoint_data = runner.read_checkpoint(checkpoint_path)
+    if checkpoint_data:
+        checkpoint_data.last_step = OLD_STEP_NAME_TO_NEW.get(
+            checkpoint_data.last_step, checkpoint_data.last_step
+        )
     if resume and checkpoint_data:
         target_db = checkpoint_data.inactive_db or _inactive_db_from_env(config)
         if config.single_db_on_host:
@@ -103,10 +107,10 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
             index_snapshot=ctx.index_snapshot or "",
         )
         runner.write_checkpoint(checkpoint_path, data)
-        if step_name == "smoke_done":
+        if step_name == "smoke_tests":
             if ctx.record_count:
                 pass  # already set in smoke if we want
-        if step_name == "swap_done":
+        if step_name == "swap_db":
             if not config.single_db_on_host:
                 runner.read_checkpoint(checkpoint_path)  # clear not needed; we remove file after swap in bash
             break

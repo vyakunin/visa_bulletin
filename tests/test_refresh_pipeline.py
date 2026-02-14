@@ -38,6 +38,6 @@ def test_run_pipeline_mock_no_resume(tmp_path: Path) -> None:
 def test_should_skip_step_order() -> None:
     from scripts.cron.refresh.checkpoint import should_skip_step
     assert should_skip_step("db_created", "db_created") is True
-    assert should_skip_step("db_created", "indexes_dropped") is False
-    assert should_skip_step("smoke_done", "db_created") is True
-    assert should_skip_step("smoke_done", "swap_done") is False
+    assert should_skip_step("db_created", "index_snapshot_saved") is False
+    assert should_skip_step("smoke_tests", "db_created") is True
+    assert should_skip_step("smoke_tests", "swap_db") is False
