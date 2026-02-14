@@ -53,8 +53,8 @@ def stop_remote_services(runner: Runner, project_root: Path) -> None:
     # Stop Docker stacks (ignore errors if not using Docker)
     stop_cmds = [
         f"cd {shlex.quote(str(root))}",
-        f"(docker compose -f {shlex.quote(str(compose_blue))} stop 2>/dev/null || true)",
-        f"(docker compose -f {shlex.quote(str(compose_green))} stop 2>/dev/null || true)",
+        f"(docker-compose -f {shlex.quote(str(compose_blue))} stop 2>/dev/null || true)",
+        f"(docker-compose -f {shlex.quote(str(compose_green))} stop 2>/dev/null || true)",
         "(docker stop visa_bulletin_web_blue visa_bulletin_web_green visa_bulletin_redis 2>/dev/null || true)",
         "pkill -f 'gunicorn.*django_config' || true",
         f"(cd {shlex.quote(str(root))} && bazel shutdown 2>/dev/null) || true",
@@ -77,7 +77,8 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
         "REFRESH_REMOTE_COMPOSE_FILE",
         str(root / "deployment" / "docker-compose.blue.yml"),
     )
-    cmd = f"cd {shlex.quote(str(root))} && docker compose -f {shlex.quote(compose_file)} up -d"
+    # Use docker-compose (standalone) so it works on hosts where "docker compose" is not the plugin
+    cmd = f"cd {shlex.quote(str(root))} && docker-compose -f {shlex.quote(compose_file)} up -d"
     result = runner.run_shell(cmd, timeout_sec=180)
     if result.returncode != 0:
         logger.error("start_remote_services failed: %s", result.stderr)
