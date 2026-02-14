@@ -50,8 +50,9 @@ def stop_remote_services(runner: Runner, project_root: Path) -> None:
     root = project_root if isinstance(project_root, Path) else Path(project_root)
     compose_blue = root / "deployment" / "docker-compose.blue.yml"
     compose_green = root / "deployment" / "docker-compose.green.yml"
-    # Stop Docker stacks (ignore errors if not using Docker)
+    # Stop Docker stacks (ignore errors if not using Docker). DOCKER_HOST for remote consistency.
     stop_cmds = [
+        "export DOCKER_HOST=unix:///var/run/docker.sock",
         f"cd {shlex.quote(str(root))}",
         f"(docker-compose -f {shlex.quote(str(compose_blue))} stop 2>/dev/null || true)",
         f"(docker-compose -f {shlex.quote(str(compose_green))} stop 2>/dev/null || true)",
@@ -77,8 +78,9 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
         "REFRESH_REMOTE_COMPOSE_FILE",
         str(root / "deployment" / "docker-compose.blue.yml"),
     )
-    # Use docker-compose (standalone) so it works on hosts where "docker compose" is not the plugin
-    cmd = f"cd {shlex.quote(str(root))} && docker-compose -f {shlex.quote(compose_file)} up -d"
+    # Use docker-compose (standalone) and explicit DOCKER_HOST so remote host (e.g. staging)
+    # talks to local daemon; avoids "Not supported URL scheme http+docker" from docker-compose v1.
+    cmd = f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && docker-compose -f {shlex.quote(compose_file)} up -d"
     result = runner.run_shell(cmd, timeout_sec=180)
     if result.returncode != 0:
         logger.error("start_remote_services failed: %s", result.stderr)
