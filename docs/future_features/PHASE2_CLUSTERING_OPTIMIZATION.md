@@ -52,14 +52,11 @@ So the dominant redundant work is:
 
 ## Further optimization options
 
-### 3. Faster ratio implementation (RapidFuzz) — benchmarked
+### 3. Faster ratio implementation (RapidFuzz) — **implemented**
 
-- **difflib.SequenceMatcher** is pure Python and has quadratic worst case.
-- **RapidFuzz** (C++ backend) gives a similar ratio; local benchmark (see `scripts/salary/benchmark_rapidfuzz.py`):
-  - **272,690 pairs** (Phase 2 scale): difflib 2.69s (101k pairs/sec), rapidfuzz 0.076s (3.57M pairs/sec) → **~35× speedup**.
-  - **50,000 pairs**: **~15× speedup**.
-  - **Threshold agreement**: Identical (same counts for ≥0.7 and ≥0.95); sample ratios matched to 4 decimal places.
-- **Conclusion**: RapidFuzz works and is much faster; ratio/decisions match difflib on the sample. Adding optional `rapidfuzz` in `_get_normalized_name_similarity` and `_check_similarity_match` (fallback to difflib when not installed) would speed up the similarity portion of Phase 2. Overall Phase 2 speedup depends on the fraction of time in ratio() (other work: hyphen/substring/structural checks, DB). If ~50% of Phase 2 time is in ratio(), expect **~1.5–2×** overall; if ~80%, **~3–4×**.
+- **RapidFuzz** is now the only implementation (no difflib fallback). Used in `_get_normalized_name_similarity` and `_check_similarity_match` via `fuzz.ratio(norm1, norm2) / 100.0`.
+- Local benchmark (see `scripts/salary/benchmark_rapidfuzz.py`): **272,690 pairs** → difflib ~2.7s (101k pairs/sec), rapidfuzz ~0.08s (3.5M pairs/sec) → **~35×** on the ratio call itself.
+- **Expected Phase 2 impact**: Ratio was previously a large share of per-candidate work; with precomputed_similarity we only call ratio once per candidate. So Phase 2 should drop from ~2h to roughly **10–30 min** (depending on DB and other work). Measure on next full run.
 
 ### 4. Parallelize candidate processing
 
@@ -74,8 +71,17 @@ So the dominant redundant work is:
 
 ---
 
+### 6. Further optimizations (proposed)
+
+- **Batch DB writes**: Already using BatchedUpdates; ensure flush batch size and transaction boundaries are tuned for 2GB (e.g. 1k–2k clusters per flush).
+- **LSH parameters**: Tune `num_perm` and threshold so candidate count stays in a sweet spot (fewer candidates → faster Phase 2; too high threshold → recall drop). Profile Phase 2 time vs candidate count on prod.
+- **Skip low-yield candidates**: If `len(employers1) * len(employers2)` is very large (e.g. > 10k) for a (norm1, norm2) pair, consider skipping or sampling to cap N×M work per candidate.
+- **Parallelize Phase 2**: Process chunks of `candidate_pairs` in a ProcessPoolExecutor; merge BatchedUpdates in the main process (non-trivial: checkpointing and shared state need design).
+
+---
+
 ## Summary
 
-- **Bottleneck**: Redundant `SequenceMatcher(norm1, norm2)` and repeated substring/structural work for the same (norm1, norm2) across employer pairs.
-- **Implemented**: (1) Precomputed similarity passed through to `_check_similarity_match`; (2) `substring_can_match` short-circuit in `_check_substring_match`.
-- **Next**: Optional RapidFuzz for ratio; optional parallelization of the candidate loop.
+- **Bottleneck (addressed)**: Redundant ratio and repeated substring/structural work for the same (norm1, norm2).
+- **Implemented**: (1) Precomputed similarity; (2) `substring_can_match` short-circuit; (3) RapidFuzz only; (4) BatchedUpdates pre-load + lazy clusters; (5) 24h timeout; (6) runner bazel target fix.
+- **Next**: Measure Phase 2 duration on prod after deploy; then consider LSH tuning, candidate capping, or parallelization if still slow.
