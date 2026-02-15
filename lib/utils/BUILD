@@ -38,6 +38,12 @@ py_library(
 )
 
 py_library(
+    name = "url_utils",
+    srcs = ["url_utils.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "pagination",
     srcs = ["pagination.py"],
     visibility = ["//visibility:public"],

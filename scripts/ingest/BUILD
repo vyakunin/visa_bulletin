@@ -16,6 +16,7 @@ py_binary(
         "//lib/ingest/plugins:plugins",
         "//models/ingest:ingest",
         "//lib/utils:logging_utils",
+        "//lib/utils:url_utils",
         "//django_config:settings",
         "//django_config:logging_config",
         "//django_config:urls",
