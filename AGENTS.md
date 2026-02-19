@@ -233,6 +233,18 @@ tail -40 /tmp/validate.log
 - Better debugging (logs persist even if terminal closes)
 - Follows best practices for long-running operations
 
+## Rule: Audit Docker Topology Before Touching Containers on Prod
+
+**NEVER run `docker-compose up/down/stop`, `docker stop`, or `docker rm` on production without first running:**
+```bash
+docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'
+ss -tlnp | grep 8000
+```
+
+Understand which container is *actually serving traffic* before touching anything. Legacy containers may depend on Docker DNS (e.g. `redis` hostname). Stopping ANY container on the shared network can break DNS for the serving container. See `.cursor/rules/deployment.mdc` for the full pre-flight checklist.
+
+`docker pull` and `docker logs` are always safe. `docker-compose up -d` is **not** — it can recreate/stop containers.
+
 ## Rule: Use SSH Config Aliases for Remote Servers
 
 **ALWAYS use SSH config aliases instead of raw IP addresses or long connection strings.**

@@ -1,0 +1,52 @@
+---
+alwaysApply: true
+---
+
+# Branching and Deployment Strategy
+
+**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md` (includes transition instructions and checklist)
+
+## Three Branches
+
+- **`main`** — Development. Can be messy, broken, WIP. Nothing deploys from `main`.
+- **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to staging instance. Data refreshes run here. Patched until ready for graduation.
+- **`prod`** — Production. Almost frozen. Updated only for: graduation (IP flip), critical hotfixes, or automated data refresh.
+
+## Separation of Concerns
+
+Three independent operations — never conflate them:
+
+- **Code deployment**: `git push` branch to instance + restart container. No data refresh.
+- **Data refresh**: orchestrator pipeline on staging instance. See `docs/PIPELINE_RUNBOOK.md`.
+- **Graduation (IP flip)**: swap Lightsail static IPs so staging becomes prod. Then fast-forward `prod` branch to match `staging`.
+
+## Workflows (Summary)
+
+**Feature:** `main` → cherry-pick to `staging` → deploy to staging instance → test → iterate
+
+**Graduation:** tag `staging` → IP flip → verify prod → `git checkout prod && git merge staging` → bring new staging up to date
+
+**Hotfix:** fix on `prod` → deploy to prod-serving instance → cherry-pick to `staging` + `main`
+
+**Data refresh:** orchestrator on staging → graduation (IP flip) if promoting fresh data to prod
+
+## Key Rules
+
+- **Never scp files to servers.** All changes through git branches.
+- **`prod` branch = what's in production.** Check it out locally to debug/fix.
+- **`staging` branch = what's on staging.** Check it out to see what's being tested.
+- **Tags mark releases.** `v1.X.Y` on `staging` before IP flip, then on `prod` after fast-forward.
+- **Code deploy ≠ data refresh.** Quick code fix = commit + push + git pull + restart. Data refresh = orchestrator pipeline (hours).
+- **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving.
+
+## Code Deployment (Quick Reference)
+
+```bash
+# Deploy staging branch to staging instance
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git checkout staging && git reset --hard origin/staging"
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
+
+# Hotfix: deploy prod branch to prod instance
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git checkout prod && git reset --hard origin/prod"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
+```

@@ -89,6 +89,44 @@ aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
 
 **Rationale:** Documenting IAM and instance credentials avoids ad-hoc key creation and keeps Lightsail API access consistent for deployment and blue-green automation.
 
+## Rule: Audit Container Topology Before ANY Docker Operation on Prod
+
+**🚨 CRITICAL: Never run `docker-compose up/down/stop/rm`, `docker stop`, or `docker rm` on prod without first understanding what is actually serving traffic.**
+
+**Mandatory pre-flight check before touching Docker on prod:**
+```bash
+# 1. What containers exist and their status?
+ssh prod_2Gb_vm "docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'"
+
+# 2. What is ACTUALLY bound to port 8000 (serving traffic)?
+ssh prod_2Gb_vm "ss -tlnp | grep 8000"
+
+# 3. What Docker networks exist, and which containers share them?
+ssh prod_2Gb_vm "docker network ls && docker network inspect deployment_default --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null"
+```
+
+**Why:** Production may have legacy containers (e.g. `visa_bulletin_web_blue` from old blue-green setup) that are the actual serving containers but are NOT managed by the current `docker-compose.yml`. These containers depend on Docker DNS (e.g. `redis` hostname resolves to a redis container on the same network). Stopping or removing ANY container on the shared Docker network can break DNS resolution for the serving container.
+
+**Safe vs dangerous operations:**
+- ✅ `docker pull` — safe, only downloads image
+- ✅ `docker logs` — safe, read-only
+- ✅ `docker inspect` — safe, read-only
+- ⚠️ `docker-compose restart web` — restarts only named service, usually safe
+- ❌ `docker-compose up -d` — may recreate/stop containers, breaks dependencies
+- ❌ `docker-compose down` — stops ALL containers in the compose project
+- ❌ `docker stop/rm` on ANY container — may break DNS for other containers on same network
+
+**If you need to update the Docker image on prod:**
+```bash
+# Safe pattern: pull image, then restart ONLY the serving container
+docker pull ghcr.io/vyakunin/visa_bulletin:latest
+# Identify the actual serving container first (step 1-2 above)
+# Then restart ONLY that container
+docker restart <serving-container-name>
+```
+
+**Incident reference (2026-02-19):** Running `docker-compose up -d` on prod stopped the `visa_bulletin_redis` container. The actual serving container (`visa_bulletin_web_blue`, a legacy container) depended on the `redis` Docker network alias for DNS. Stopping redis broke DNS resolution → 500 errors for ~3 minutes.
+
 ## Rule: Verify Locally Before Deploying to Production
 
 **CRITICAL: When working with production, first verify changes locally, only then deploy to prod.**
@@ -106,26 +144,20 @@ aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
 
 ## Rule: Deploy to Production After Implementing User-Requested Changes
 
-**When the user asks to change something (code, UI, feature, fix), also deploy the changes to production after implementing.**
+**Deploy by default** after implementing code changes. Use the branch-based deployment workflow (see `.cursor/rules/branching.mdc` and `docs/BRANCHING_AND_DEPLOYMENT.md`).
 
 **Workflow:**
-1. Implement the requested change locally.
-2. Run relevant tests (e.g. `bazel test //tests:...`).
-3. Verify locally (see rule above).
-4. Deploy to production using the "Deploy from source" flow:
-   - `scp` the changed files to `prod_2Gb_vm:/opt/visa_bulletin/...`
-   - Reload gunicorn: `ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
-4. Optionally verify (curl the affected URL, check HTML/API).
+1. Implement the change locally on `main`.
+2. Run relevant tests (`bazel test //tests:...`).
+3. Verify locally.
+4. Cherry-pick to `staging` or `prod` branch, push.
+5. `ssh <instance> "cd /opt/visa_bulletin && git pull origin <branch>"`
+6. Restart container: `docker-compose -f deployment/docker-compose.yml restart web`
+7. Verify: `curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us/`
 
-**Do not deploy to production when:**
-- User explicitly says "don't deploy" or "local only".
-- Change is documentation-only and has no runtime effect.
-- User only asked to "plan" or "document" (no code change).
+**Never scp files to servers.** All code changes go through git branches.
 
-**Rationale:**
-- User expects to see changes on production without asking again.
-- Reduces back-and-forth ("can you deploy that?").
-- Deploy to production by default after code changes.
+**Do NOT deploy when:** user says "local only", change is docs-only, or user only asked to plan/document.
 
 ## Rule: Deploy Updated Binary and Run Yourself When Instructed
 
