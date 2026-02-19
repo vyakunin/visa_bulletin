@@ -3,9 +3,10 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - main
+      - staging
+      - prod
     tags:
-      - 'v*.*.*'  # Trigger on semantic version tags (e.g., v1.2.3)
+      - 'v*.*.*'
 
 env:
   REGISTRY: ghcr.io
@@ -38,17 +39,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # For tagged releases (v1.2.3), create tags:
-            # - v1.2.3
-            # - v1.2
-            # - v1
-            # - latest
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            # For branch pushes (not tags), create tag with commit SHA
-            type=sha,prefix=main-,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/prod' }}
+            type=sha,prefix={{branch}}-,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
