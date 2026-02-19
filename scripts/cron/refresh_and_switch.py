@@ -31,6 +31,7 @@ def main() -> int:
         help="Start from this step (skip pipeline). Use traffic_switch after validating with --no-traffic-switch.",
     )
     parser.add_argument("--safety-interval", type=int, default=1800, help="Seconds to wait after traffic switch (default 1800)")
+    parser.add_argument("--skip-stop-old", action="store_true", help="Keep old instance running after switch (graduation mode)")
     parser.add_argument("--project-root", type=Path, default=None, help="Project root")
     args = parser.parse_args()
     root = args.project_root or Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")).resolve()
@@ -50,6 +51,7 @@ def main() -> int:
         no_traffic_switch=args.no_traffic_switch,
         resume=args.resume,
         from_step=args.from_step,
+        skip_stop_old=args.skip_stop_old,
     )
 
 

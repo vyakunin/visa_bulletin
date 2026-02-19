@@ -25,6 +25,7 @@ def run_orchestrate(
     no_traffic_switch: bool = False,
     resume: bool = False,
     from_step: str | None = None,
+    skip_stop_old: bool = False,
 ) -> int:
     """
     Full cycle: resolve active/inactive -> start inactive -> wait healthy
@@ -160,13 +161,16 @@ def run_orchestrate(
     else:
         logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
 
-    import time
-    logger.info("Safety interval: %s sec", safety_interval_sec)
-    time.sleep(safety_interval_sec)
+    if skip_stop_old:
+        logger.info("--skip-stop-old: keeping old instance %s running (graduation mode)", active_info.name)
+    else:
+        import time
+        logger.info("Safety interval: %s sec", safety_interval_sec)
+        time.sleep(safety_interval_sec)
 
-    logger.info("Stopping old instance %s", active_info.name)
-    if not instance.stop_instance(active_info.name):
-        logger.warning("Failed to stop %s (non-fatal)", active_info.name)
+        logger.info("Stopping old instance %s", active_info.name)
+        if not instance.stop_instance(active_info.name):
+            logger.warning("Failed to stop %s (non-fatal)", active_info.name)
 
     logger.info("Orchestrate complete")
     return 0
