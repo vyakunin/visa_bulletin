@@ -41,6 +41,65 @@ One instance holds the **production static IP** (serves live traffic). The other
 
 ---
 
+## Local Worktree Layout
+
+**The Cursor IDE workspace (`~/cursor_projects/visa_bulletin/`) always stays on `main`.** This ensures `.cursor/rules/` and `AGENTS.md` are always available to the AI assistant. Separate git worktrees provide access to `staging` and `prod` branches without switching the IDE workspace.
+
+```
+~/cursor_projects/
+  visa_bulletin/           ← main (Cursor workspace — always open here)
+  visa_bulletin_staging/   ← staging worktree (git worktree)
+  visa_bulletin_prod/      ← prod worktree (git worktree)
+```
+
+### Setup (one-time)
+
+```bash
+cd ~/cursor_projects/visa_bulletin
+git worktree add ../visa_bulletin_staging staging
+git worktree add ../visa_bulletin_prod prod
+```
+
+### Usage
+
+Cherry-pick, merge, and push from worktree directories. The IDE workspace stays on `main`.
+
+```bash
+# Cherry-pick to staging
+cd ~/cursor_projects/visa_bulletin_staging
+git cherry-pick <commit-hash>
+git push origin staging
+
+# Cherry-pick to prod (hotfix)
+cd ~/cursor_projects/visa_bulletin_prod
+git cherry-pick <commit-hash>
+git push origin prod
+
+# Fast-forward prod after graduation
+cd ~/cursor_projects/visa_bulletin_prod
+git merge staging
+git push origin prod
+```
+
+### Why worktrees?
+
+`.cursor/rules/` (AI safety rules, deployment rules, code style) only exists on `main`. If the IDE workspace checks out `staging` or `prod`, the AI loses all safety guardrails. Worktrees solve this by keeping each branch in a separate directory — the IDE never leaves `main`.
+
+### Maintenance
+
+```bash
+# List worktrees
+git worktree list
+
+# Pull latest in a worktree (before cherry-picking)
+cd ~/cursor_projects/visa_bulletin_staging && git pull origin staging
+
+# Remove a worktree (if needed)
+git worktree remove ../visa_bulletin_staging
+```
+
+---
+
 ## Separation of Concerns
 
 Three independent operations. Each has its own trigger, workflow, and scope.
@@ -88,11 +147,11 @@ main (develop) --> staging (cherry-pick) --> staging instance (deploy + test)
 ```
 
 1. Develop on `main`, test locally with `bazel test //tests:...`
-2. Cherry-pick/merge ready commits to `staging`: `git checkout staging && git cherry-pick <commits>`
-3. Push `staging`
+2. Cherry-pick ready commits to `staging` via worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <commits>`
+3. Push: `git push origin staging`
 4. Deploy `staging` branch to the staging instance (code deployment)
 5. Test on staging IP — verify with real data, end-to-end
-6. If issues: fix on `main`, cherry-pick to `staging`, re-deploy. Repeat.
+6. If issues: fix on `main`, cherry-pick to `staging` worktree, re-deploy. Repeat.
 
 ### Graduation (Staging to Prod)
 
@@ -108,7 +167,7 @@ staging instance validated --> IP flip --> ex-staging is now prod
 3. Push tag: `git push origin v1.X.Y`
 4. **IP flip**: swap static IPs (see [IP Flip Procedure](#ip-flip-procedure))
 5. Verify production responds on the new instance
-6. Fast-forward `prod` branch: `git checkout prod && git merge staging && git push origin prod`
+6. Fast-forward `prod` branch via worktree: `cd ~/cursor_projects/visa_bulletin_prod && git merge staging && git push origin prod`
 7. Bring new staging (ex-prod) up to date: deploy `staging` branch to it
 
 8. **Replace override on new prod**: the ex-staging has `docker-compose.override.yml` with a `../:/app` volume mount (created by `step_sync_code`). Replace it with a prod-safe version (no volume mount) and restart the container so it uses Docker image code. This is automated by the orchestrator after traffic switch. Without this, `git pull` on prod could bleed into gunicorn workers when they recycle via `--max-requests`.
@@ -119,12 +178,11 @@ After step 8, both instances run the same code. Next cycle starts with new featu
 
 For crashes, 5xx errors, or other critical production issues:
 
-1. Check out `prod` locally: `git checkout prod`
-2. Fix the bug, commit to `prod`
-3. Push: `git push origin prod`
-4. Deploy `prod` branch to the **production-serving instance** (SSH, git pull, restart container)
-5. Verify the fix
-6. Cherry-pick the fix to `staging` and `main`: `git checkout staging && git cherry-pick <fix> && git checkout main && git cherry-pick <fix>`
+1. Fix the bug on `main` (where the IDE and rules live), commit
+2. Cherry-pick to `prod` via worktree: `cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <fix-hash> && git push origin prod`
+3. Deploy `prod` branch to the **production-serving instance** (SSH, git pull, restart container)
+4. Verify the fix
+5. Cherry-pick to `staging` worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <fix-hash> && git push origin staging`
 
 Hotfixes go to `prod` first, then propagate back. You fix what's serving traffic, then bring other branches up to date.
 
@@ -143,11 +201,13 @@ For fixes to the orchestrator or data-processing scripts — code that gunicorn 
 **Which files are safe?** `scripts/cron/refresh/`, `scripts/salary/`, `scripts/ingest/`, `scripts/cache/`, `scripts/oneoff/`, build files (`BUILD`, `MODULE.bazel`, `build_all.sh`). For `lib/` files, verify gunicorn doesn't import them: `rg "from lib.the_module" webapp/ models/`.
 
 ```
-1. Fix on main, cherry-pick to prod branch, push
+1. Fix on main, cherry-pick to prod via worktree:
+   cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <hash> && git push origin prod
 2. ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git reset --hard origin/prod"
 3. ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch && bazel shutdown"
 4. Resume/re-run orchestrator with the updated binary
-5. Cherry-pick fix to staging and main
+5. Cherry-pick to staging worktree:
+   cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging
 ```
 
 The web container is untouched — gunicorn never imports script files. The next orchestrator run rsyncs the fixed code to staging automatically via `step_sync_code`.
@@ -254,12 +314,13 @@ All code changes go through git. Commit to the appropriate branch (`staging` or 
 
 The scp + volume mount pattern was a historical workaround that caused drift between what's in git and what's running on servers. It is **deprecated**.
 
-### Branches are source of truth
+### Branches are source of truth (use worktrees)
 
-- Check out `prod` locally to see exactly what's in production
-- Check out `staging` to see what's on the staging instance
+- View `prod` via `~/cursor_projects/visa_bulletin_prod/` — exactly what's in production
+- View `staging` via `~/cursor_projects/visa_bulletin_staging/` — what's on the staging instance
 - `git log prod` shows the full history of what was deployed
 - `git diff staging prod` shows what's different between environments
+- **Never check out staging/prod in the main workspace** — use worktrees to preserve AI rules
 
 ### Tags mark production releases
 

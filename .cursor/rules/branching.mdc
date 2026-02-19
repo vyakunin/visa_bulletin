@@ -30,11 +30,38 @@ Three independent operations — never conflate them:
 
 **Data refresh:** orchestrator on staging → graduation (IP flip) if promoting fresh data to prod
 
+## Local Worktree Layout
+
+**The Cursor workspace always stays on `main`** so AI rules (`.cursor/rules/`) are always available. Separate git worktrees handle `staging` and `prod` branches.
+
+```
+~/cursor_projects/
+  visa_bulletin/           ← main (Cursor workspace, always open here)
+  visa_bulletin_staging/   ← staging worktree
+  visa_bulletin_prod/      ← prod worktree
+```
+
+**Cherry-pick workflow (never leave main in the IDE):**
+```bash
+# Cherry-pick to staging
+cd ~/cursor_projects/visa_bulletin_staging
+git cherry-pick <commit-hash>
+git push origin staging
+
+# Cherry-pick to prod (hotfix)
+cd ~/cursor_projects/visa_bulletin_prod
+git cherry-pick <commit-hash>
+git push origin prod
+```
+
+**Why worktrees:** Checking out `staging` or `prod` in the main workspace loses `.cursor/rules/` (those files only exist on `main`). Worktrees keep each branch in its own directory so the IDE workspace never changes branches.
+
 ## Key Rules
 
 - **Never scp files to servers.** All changes through git branches.
-- **`prod` branch = what's in production.** Check it out locally to debug/fix.
-- **`staging` branch = what's on staging.** Check it out to see what's being tested.
+- **Never check out staging/prod in the main workspace.** Use worktrees.
+- **`prod` branch = what's in production.** View via `visa_bulletin_prod/` worktree.
+- **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree.
 - **Tags mark releases.** `v1.X.Y` on `staging` before IP flip, then on `prod` after fast-forward.
 - **Code deploy ≠ data refresh.** Quick code fix = commit + push + git pull + restart. Data refresh = orchestrator pipeline (hours).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving.
@@ -42,11 +69,13 @@ Three independent operations — never conflate them:
 ## Code Deployment (Quick Reference)
 
 ```bash
-# Deploy staging branch to staging instance
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git checkout staging && git reset --hard origin/staging"
+# Cherry-pick to staging worktree and deploy
+cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git reset --hard origin/staging"
 ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
 
-# Hotfix: deploy prod branch to prod instance
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git checkout prod && git reset --hard origin/prod"
+# Hotfix: cherry-pick to prod worktree and deploy
+cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <hash> && git push origin prod
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git reset --hard origin/prod"
 ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
 ```

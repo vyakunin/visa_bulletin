@@ -147,15 +147,18 @@ docker restart <serving-container-name>
 **Deploy by default** after implementing code changes. Use the branch-based deployment workflow (see `.cursor/rules/branching.mdc` and `docs/BRANCHING_AND_DEPLOYMENT.md`).
 
 **Workflow:**
-1. Implement the change locally on `main`.
+1. Implement the change locally on `main` (Cursor workspace — rules stay available).
 2. Run relevant tests (`bazel test //tests:...`).
 3. Verify locally.
-4. Cherry-pick to `staging` or `prod` branch, push.
-5. `ssh <instance> "cd /opt/visa_bulletin && git pull origin <branch>"`
+4. Cherry-pick to target branch via worktree (never checkout staging/prod in the IDE):
+   - Staging: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
+   - Prod hotfix: `cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <hash> && git push origin prod`
+5. `ssh <instance> "cd /opt/visa_bulletin && git fetch origin <branch> && git reset --hard origin/<branch>"`
 6. Restart container: `docker-compose -f deployment/docker-compose.yml restart web`
 7. Verify: `curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us/`
 
 **Never scp files to servers.** All code changes go through git branches.
+**Never check out staging/prod in the main workspace.** Use worktrees to preserve AI rules.
 
 **Do NOT deploy when:** user says "local only", change is docs-only, or user only asked to plan/document.
 
@@ -168,7 +171,7 @@ docker restart <serving-container-name>
    - Prod: tail orchestrator log (e.g. `/tmp/orchestrate.log`), check if a run is in progress or already finished/failed.
    - Inactive/staging host: any long-running processes (e.g. `run_pipeline`), any stage log (e.g. `/tmp/refresh_stage.log`).
    - If a run is still in progress, decide whether to wait, monitor, or (if safe) stop and then deploy + re-run.
-2. **Deploy the updated code** (e.g. `scp` changed files to prod, or ensure latest commit is pulled on prod).
+2. **Deploy the updated code** (cherry-pick to target branch via worktree, push, then git pull on the instance).
 3. **Rebuild the binary on prod** so the next run uses the new code (e.g. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown"`).
 4. **Run again** as appropriate (e.g. orchestrator with `--no-traffic-switch`, optionally `--resume` if checkpoint supports it), and monitor (orchestrator log, stage log on inactive host).
 
