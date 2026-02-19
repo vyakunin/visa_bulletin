@@ -288,10 +288,14 @@ class PipelineOrchestrator:
             else:
                 logger.info(f"[Run {run.id}] Pipeline completed successfully (update mode)")
             
-            # Update pipeline context if provided
+            # Update pipeline context if provided (so next run() sees updated count for ETA)
             if pipeline_context:
                 self.completed_sources_count += 1
+                pipeline_context['completed_count'] = self.completed_sources_count
                 self._log_pipeline_eta()
+                
+            # Trigger domain-specific hooks (e.g. VQS evaluation)
+            self._trigger_post_ingest_hooks(source, run)
         except Exception as e:
             run.mark_failed(e)
             logger.error(f"[Run {run.id}] Pipeline failed at stage {run.stage}: {e}")
@@ -416,6 +420,7 @@ class PipelineOrchestrator:
         
         transform_error_count = 0
         records_processed_count = 0
+        last_record_num = 0  # Always set; for-loop variable may be unbound if records is empty
         transform_rate_logger = RateLimitedLogger(
             initial_count=5,
             min_interval_seconds=5.0,
@@ -424,6 +429,7 @@ class PipelineOrchestrator:
         )
         
         for record_num, record in enumerate(records, start=1):
+            last_record_num = record_num
             # Skip records if in debug mode
             if skip_records > 0 and record_num <= skip_records:
                 continue
@@ -459,14 +465,14 @@ class PipelineOrchestrator:
                     logger.debug(f"[Run {run.id}] Transformed {records_processed_count:,} records")
                     run.save(update_fields=['records_processed'])
         
-        # Report transform stage completion with error count
+        # Report transform stage completion with error count (use last_record_num: for empty records, loop never runs so record_num would be unbound)
         if transform_error_count > 0:
             logger.warning(
-                f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {record_num:,} records "
+                f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {last_record_num:,} records "
                 f"({transform_error_count:,} errors encountered)"
             )
         else:
-            logger.info(f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {record_num:,} records")
+            logger.info(f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {last_record_num:,} records")
         
         run.stage = IngestStage.LOADING
         run.checkpoint['stage'] = IngestStage.LOADING.value
@@ -1235,7 +1241,16 @@ class PipelineOrchestrator:
         
         # Prepare data as tab-separated values
         buffer = StringIO()
-        fields = [f for f in model_class._meta.fields if not f.primary_key]
+        # Include primary keys if they are UUIDFields (which usually have Python-side defaults)
+        # Exclude AutoFields since DB generates them
+        fields = []
+        for f in model_class._meta.fields:
+            if f.primary_key:
+                if isinstance(f, models.UUIDField):
+                    fields.append(f)
+                # AutoField/BigAutoField excluded
+                continue
+            fields.append(f)
         field_names = [f.attname for f in fields]
         schema = ModelCopySchema.from_model(model_class)
 
@@ -1274,6 +1289,15 @@ class PipelineOrchestrator:
                     if isinstance(field, models.DateTimeField) and (field.auto_now or field.auto_now_add) and not field.null:
                         values.append(timezone.now().isoformat())
                         continue
+                    if isinstance(field, models.UUIDField) and field.primary_key and field.default:
+                        import uuid
+                        new_uuid = field.default() if callable(field.default) else field.default
+                        values.append(str(new_uuid))
+                        continue
+                    if field.has_default() and not field.null:
+                        dv = field.get_default()
+                        values.append(str(dv))
+                        continue
                     if isinstance(field, (models.CharField, models.TextField)) and not field.null:
                         values.append('')
                     else:
@@ -1300,25 +1324,18 @@ class PipelineOrchestrator:
                     if record_count <= 3 and field.attname in ('wage_unit', 'wage_from', 'wage_to', 'prevailing_wage_unit', 'visa_program', 'case_status'):
                         logger.info(f"  ⚙️  {field.attname}: {original_value!r} -> {value!r}")
                 
-                # Debug: Log ALL values going to wage_to field  
-                if field.attname == 'wage_to':
-                    # Log EVERY record's wage_to to catch the bug
-                    if value and isinstance(value, str) and not value.replace('.', '').replace('-', '').isdigit():
-                        logger.error(
-                            "🐛 BUG FOUND! Line %d: About to write non-numeric %r to wage_to for case %s. "
-                            "Raw record fields: wage_from=%r (type=%s), wage_to=%r (type=%s), wage_unit=%r (type=%s)",
-                            record_count,
-                            value,
-                            record_id,
-                            getattr(record, 'wage_from', None),
-                            type(getattr(record, 'wage_from', None)).__name__,
-                            getattr(record, 'wage_to', None),
-                            type(getattr(record, 'wage_to', None)).__name__,
-                            getattr(record, 'wage_unit', None),
-                            type(getattr(record, 'wage_unit', None)).__name__,
-                        )
-
                 # Normalize Decimal fields to avoid invalid numeric literals in COPY.
+                if isinstance(field, models.JSONField):
+                    if value is None:
+                        values.append('\\N')
+                        continue
+                    import json
+                    # Use json.dumps to get standard JSON (double quotes, escaped chars)
+                    # Then escape for PostgreSQL COPY format
+                    json_str = json.dumps(value)
+                    values.append(json_str.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r'))
+                    continue
+
                 if isinstance(field, models.DecimalField):
                     if value is None:
                         values.append('\\N')
@@ -1384,8 +1401,9 @@ class PipelineOrchestrator:
                     values.append('\\N')
                     continue
 
+                # PostgreSQL COPY TEXT null representation (do not escape; \N is the sentinel)
                 if value is None:
-                    values.append('\\N')
+                    values.append("\\N")
                     continue
 
                 if isinstance(value, (int, float)):
@@ -1402,20 +1420,6 @@ class PipelineOrchestrator:
                             .replace('\r', ' '))
                 values.append(str_value)
 
-            # DEBUG: Log wage fields for records around line 786
-            if wage_fields_present and 780 <= record_count <= 790:
-                wage_from_pos = schema.wage_from
-                wage_to_pos = schema.wage_to
-                wage_unit_pos = schema.wage_unit
-                logger.error(
-                    "🔍 Line %d (%s): wage_from=%r, wage_to=%r, wage_unit=%r",
-                    record_count,
-                    record_id,
-                    values[wage_from_pos] if len(values) > wage_from_pos else None,
-                    values[wage_to_pos] if len(values) > wage_to_pos else None,
-                    values[wage_unit_pos] if len(values) > wage_unit_pos else None,
-                )
-            
             # Also check if "year" is in wage_to position for ANY record
             if wage_fields_present and len(values) > schema.wage_to and values[schema.wage_to] == 'year':
                 copy_line = '\t'.join(values)
@@ -1457,3 +1461,36 @@ class PipelineOrchestrator:
                 columns=field_names,
                 null='\\N'
             )
+    def _trigger_post_ingest_hooks(self, source: DataSource, run: IngestRun):
+        """Trigger domain-specific hooks after successful ingestion."""
+        from models.ingest.enums import DataDomain
+        
+        if source.domain == DataDomain.VISA_BULLETIN:
+            try:
+                # Try to find bulletin date from metadata or checkpoint
+                bulletin_date_raw = source.metadata.get('publication_date')
+                bulletin_date = None
+                
+                if bulletin_date_raw:
+                    if isinstance(bulletin_date_raw, str):
+                        from django.utils.dateparse import parse_date
+                        bulletin_date = parse_date(bulletin_date_raw)
+                    else:
+                        bulletin_date = bulletin_date_raw
+                
+                if not bulletin_date and run.checkpoint:
+                    filepath_str = run.checkpoint.get('filepath')
+                    if filepath_str:
+                        filename = Path(filepath_str).name
+                        date_match = re.search(r'visa-bulletin-for-(\w+)-(\d{4})', filename, re.IGNORECASE)
+                        if date_match:
+                             from datetime import datetime
+                             bulletin_date = datetime.strptime(f"{date_match.group(1)}-{date_match.group(2)}", "%B-%Y").date()
+                
+                if bulletin_date:
+                    from lib.business.vqs.reporting import run_post_ingest_evaluation
+                    run_post_ingest_evaluation(bulletin_date)
+                else:
+                    logger.debug(f"[Run {run.id}] Post-ingest hook: Could not determine bulletin date for evaluation")
+            except Exception as e:
+                logger.warning(f"[Run {run.id}] Failed to trigger VQS evaluation hook: {e}")

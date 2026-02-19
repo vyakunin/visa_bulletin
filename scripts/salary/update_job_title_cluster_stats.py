@@ -279,19 +279,23 @@ def main():
             new_canonical = cluster_canonical.get(c.id)
             if new_canonical and new_canonical != c.canonical_title:
                 c.canonical_title = new_canonical
+                c.slug = None
                 canonical_updated += 1
         if clusters:
             bulk_update_batched(
                 clusters,
                 batch_size=CLUSTER_BATCH_SIZE,
-                fields=['total_filings', 'avg_salary', 'canonical_title', 'total_filings_recent'],
+                fields=['total_filings', 'avg_salary', 'canonical_title', 'total_filings_recent', 'slug'],
             )
         processed += len(clusters)
         if processed % 5000 == 0 or processed == len(all_cluster_ids):
             logger.info("  Processed %s/%s clusters (%s%%)", f"{processed:,}", f"{len(all_cluster_ids):,}", f"{(processed / len(all_cluster_ids) * 100):.1f}")
 
     logger.info("=" * 80)
-    logger.info("Done. Updated %s cluster canonical_title to most frequent raw title", f"{canonical_updated:,}")
+    logger.info(
+        "Done. Updated %s cluster canonical_titles (slugs nulled for re-generation by populate_job_title_slugs)",
+        f"{canonical_updated:,}",
+    )
 
 
 if __name__ == '__main__':

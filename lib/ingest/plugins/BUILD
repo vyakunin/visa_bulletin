@@ -88,5 +88,54 @@ py_library(
         ":dol_lca",
         ":dol_perm",
         ":visa_bulletin",
+        ":uscis",
+        ":dos",
+        ":dol_perm_supply",
+    ],
+)
+
+py_library(
+    name = "uscis",
+    srcs = ["uscis.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:base",
+        "//models/ingest:enums",
+        "//models/ingest:ingest_run",
+        "//models:raw_facts",
+        "//lib/business/vqs:ingest_utils",
+        requirement("Django"),
+    ],
+)
+
+py_library(
+    name = "dos",
+    srcs = ["dos.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:base",
+        "//models/ingest:enums",
+        "//models/ingest:ingest_run",
+        "//models:raw_facts",
+        "//lib/business/vqs:ingest_utils",
+        "//lib/utils:http_utils",
+        requirement("Django"),
+        requirement("pdfplumber"),
+    ],
+)
+
+py_library(
+    name = "dol_perm_supply",
+    srcs = ["dol_perm_supply.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:base",
+        "//models/ingest:enums",
+        "//models/ingest:ingest_run",
+        "//models:raw_facts",
+        "//lib/business/vqs:ingest_utils",
+        "//lib/parsing/salary:db_importer",
+        "//lib/utils:http_utils",
+        requirement("Django"),
     ],
 )

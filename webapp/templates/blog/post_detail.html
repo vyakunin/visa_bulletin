@@ -1,0 +1,46 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}{{ post.title }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <nav aria-label="breadcrumb" class="mb-4">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'blog_list' %}">Analysis</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ post.title }}</li>
+                </ol>
+            </nav>
+
+            <article class="blog-post">
+                <header class="mb-5">
+                    <div class="mb-3">
+                        <span class="badge bg-primary bg-opacity-10 text-primary">{{ post.category }}</span>
+                        <span class="text-muted ms-2">{{ post.published_date|date:"F d, Y" }}</span>
+                    </div>
+                    <h1 class="display-4 fw-bold mb-3">{{ post.title }}</h1>
+                </header>
+
+                <div class="blog-content fs-5 text-break">
+                    {{ post.content|safe }}
+                </div>
+
+                <hr class="my-5">
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <a href="{% url 'blog_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Analysis
+                    </a>
+                    {% if post.related_bulletin %}
+                    <a href="{% url 'dashboard' %}?category=employment_based" class="btn btn-primary">
+                        View Interactive Data <i class="bi bi-arrow-right"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </article>
+        </div>
+    </div>
+</div>
+{% endblock %}

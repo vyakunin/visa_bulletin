@@ -1,10 +1,8 @@
-# Zero-Downtime Blue-Green Deployment
+# Zero-Downtime Deployment (Historical + Current)
 
-This document explains the zero-downtime deployment strategy for visa-bulletin.
+**Current approach:** We use **instance-rotation** only: one app stack per instance (`deployment/docker-compose.yml`, port 8000). Zero-downtime = deploy to the inactive instance with [scripts/deploy.sh](scripts/deploy.sh), then switch traffic (DNS or static IP). See [INSTANCE_ROTATION.md](INSTANCE_ROTATION.md).
 
-## Overview
-
-The blue-green deployment approach eliminates downtime by running two separate environments and switching between them atomically.
+The sections below describe the **previous** same-host blue-green approach (two stacks per host on ports 8000/8001); that approach has been removed.
 
 ## Architecture
 
@@ -51,7 +49,7 @@ The blue-green deployment approach eliminates downtime by running two separate e
 
 ### Deployment Script
 
-**`scripts/deploy-zero-downtime.sh`**
+**`scripts/deploy.sh`** (current; replaces the old same-host blue-green deploy script)
 - Orchestrates blue-green deployment
 - Automatic active environment detection
 - Health check validation
@@ -114,7 +112,7 @@ Next deployment will go: Green → Blue (8001 → 8000)
 ### Basic Deployment
 
 ```bash
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
 ```
 
 ### Full Deployment Example
@@ -127,7 +125,7 @@ git push origin v1.2.3
 # 2. Wait for GitHub Actions to build image
 
 # 3. Deploy with zero downtime
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
 ```
 
 ## Health Checks
@@ -259,7 +257,7 @@ If this is your first blue-green deployment:
 1. **Initial deployment:**
    ```bash
    # Will detect no active environment and deploy to blue (8000)
-   ./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin latest
+   ./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin latest
    ```
 
 2. **Stop any old containers (if they exist):**
@@ -270,7 +268,7 @@ If this is your first blue-green deployment:
 3. **All future deployments:**
    ```bash
    # Will alternate between blue and green automatically
-   ./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin <version>
+   ./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin <version>
    ```
 
 ## Why Blue-Green?

@@ -20,6 +20,8 @@ class DataDomain(models.TextChoices):
     """
     DOL = 'dol', 'Department of Labor'
     VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
+    USCIS = 'uscis', 'USCIS'
+    DOS = 'dos', 'Department of State'
 
 
 class SourceType(models.TextChoices):
@@ -30,9 +32,14 @@ class SourceType(models.TextChoices):
     Low volume, readability preferred.
     """
     LCA = 'lca', 'LCA (H-1B)'
-    PERM = 'perm', 'PERM'
+    PERM = 'perm', 'PERM (Salary)'
     WORKSITE = 'worksite', 'Worksite Location Data'
     BULLETIN = 'bulletin', 'Visa Bulletin'
+    
+    # VQS Supply Sources
+    I485_INVENTORY = 'i485_inventory', 'USCIS I-485 Inventory'
+    ISSUANCE = 'issuance', 'DOS Monthly Issuance'
+    PERM_DISCLOSURE = 'perm_disclosure', 'PERM Disclosure (Supply)'
 
 
 class IngestStatus(models.IntegerChoices):

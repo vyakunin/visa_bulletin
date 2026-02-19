@@ -57,6 +57,8 @@ from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion
 from models.bulletin import Bulletin
 from models.visa_cutoff_date import VisaCutoffDate
+from models.raw_facts import RawFactsLedger
+from models.vqs import PredictedBulletin, PredictedCutoff
 logger.debug(f"Employer model: {Employer}")
 logger.debug(f"SalaryRecord model: {SalaryRecord}")
 logger.debug(f"JobTitle model: {JobTitle}")
@@ -67,6 +69,7 @@ logger.debug(f"IngestRun model: {IngestRun}")
 logger.debug(f"IngestVersion model: {IngestVersion}")
 logger.debug(f"Bulletin model: {Bulletin}")
 logger.debug(f"VisaCutoffDate model: {VisaCutoffDate}")
+logger.debug(f"RawFactsLedger model: {RawFactsLedger}")
 
 # Log script execution
 script_logger.log_call(

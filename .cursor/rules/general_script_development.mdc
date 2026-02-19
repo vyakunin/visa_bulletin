@@ -4,39 +4,44 @@ alwaysApply: true
 
 # General Script Development Rules
 
-These are general script development rules that apply across all projects.
+## CRITICAL: Background Execution, Pipes, and Monitoring
 
----
+This section consolidates all rules about `| head` / `| tail`, background execution, monitoring, babysitting, and while-loop hazards.
 
-## 🚨🚨🚨 CRITICAL: NEVER Use `| head` or `| tail -N` in Command Pipes 🚨🚨🚨
+### Never Use `| head` or `| tail -N` in Command Pipes
 
-**⚠️ THIS IS THE #1 MISTAKE AI ASSISTANTS MAKE - READ THIS FIRST ⚠️**
+**The #1 mistake AI assistants make.** BEFORE running ANY command, check for `| head` or `| tail -N` in a pipe. If present, STOP and use the background logging pattern.
 
-## 🚨 CRITICAL: NEVER Use While Loops That Wait for Processes
-
-**⚠️ NEVER use `while` loops that wait for processes to complete - they can hang indefinitely and block the terminal.**
-
-**❌ FORBIDDEN (will hang indefinitely):**
+**❌ FORBIDDEN patterns:**
 ```bash
-# ❌ NEVER DO THIS - Hangs if process never completes or log never updates
-while ps aux | grep -q "[v]alidate_data"; do 
-    sleep 5
-    tail -5 /tmp/log.log
-done
-
-# ❌ NEVER DO THIS - Can hang if process is stuck
-while [ -f /tmp/pidfile ]; do
-    sleep 1
-    tail -10 /tmp/log.log
-done
+command 2>&1 | head -N
+command 2>&1 | tail -N
+command 2>&1 | grep "pattern" | head -N
 ```
 
-**✅ ALWAYS DO THIS INSTEAD:**
+**✅ CORRECT pattern — always background, then view logs:**
 ```bash
-# ✅ Option 1: Use timeout to prevent infinite wait
-timeout 300 bash -c 'while ps aux | grep -q "[v]alidate_data"; do sleep 5; tail -5 /tmp/log.log; done' || echo "Timeout or process completed"
+bazel run //:script > /tmp/script.log 2>&1 &
+PID=$!
+echo "Started with PID: $PID"
+tail -f /tmp/script.log                    # Real-time monitoring
+tail -50 /tmp/script.log                   # View last N lines (on file, not pipe)
+tail -f /tmp/script.log | grep "pattern"   # Filter while monitoring
+```
 
-# ✅ Option 2: Check process status separately, then view log
+Why: `| head`/`| tail -N` in pipes hides progress, causes SIGPIPE, and prevents detecting stuck scripts.
+
+### Never Use While Loops That Wait for Processes
+
+Unguarded while loops hang indefinitely. Use `timeout` or discrete check-ins.
+
+**❌ FORBIDDEN:**
+```bash
+while ps aux | grep -q "[v]alidate_data"; do sleep 5; tail -5 /tmp/log.log; done
+```
+
+**✅ CORRECT:**
+```bash
 PID=$(pgrep -f validate_data)
 if [ -n "$PID" ]; then
     echo "Process still running (PID: $PID)"
@@ -45,1027 +50,87 @@ else
     echo "Process completed"
     tail -100 /tmp/log.log
 fi
-
-# ✅ Option 3: Use background + discrete check-ins (no blind loops)
-bazel run //:script > /tmp/script.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID"
-# Each check is a separate step: run it, analyze output, then act or schedule next check
-# Do NOT use for/while that only sleep and print - that is not monitoring.
-timeout 300 bash -c 'until ! ps -p '"$PID"' >/dev/null 2>&1; do sleep 5; tail -10 /tmp/script.log; done' || true
-tail -100 /tmp/script.log
 ```
 
-**Why this matters:**
-- While loops without timeouts can hang indefinitely
-- If process is stuck, loop never exits
-- Terminal becomes unresponsive
-- Can't interrupt or debug easily
-- AI assistants can't send Ctrl+C to break the loop
+While loops are OK only with explicit `timeout` or guaranteed break conditions.
 
-**When to use while loops:**
-- ✅ Only with explicit timeout (`timeout` command or counter)
-- ✅ Only with break conditions that are guaranteed to occur
-- ✅ Only when you can interrupt with Ctrl+C (not in automated scripts)
+### Run Long-Running Scripts in Background and Babysit
 
-**Rationale:**
-- Prevents terminal from hanging indefinitely
-- Allows early detection of stuck processes
-- Makes monitoring predictable and interruptible
-- Follows best practices for process monitoring
+**ALWAYS** run scripts that may take >10 seconds in background mode. Actively babysit with discrete check-ins.
 
-**BEFORE running ANY command, check if it contains `| head` or `| tail -N` in a pipe. If it does, STOP and use the background logging pattern instead.**
-
-**Common violations to watch for:**
-- `command 2>&1 | head -N` ❌
-- `command 2>&1 | tail -N` ❌
-- `command 2>&1 | grep "pattern" | head -N` ❌
-- `bazel run //:script 2>&1 | grep -E "pattern" -A 15 | head -40` ❌
-
-**If you see ANY of these patterns, you MUST use the background logging pattern instead.**
-
-**🚨 THIS IS THE #1 MISTAKE AI ASSISTANTS MAKE 🚨**
-
-**NEVER, EVER use `| head`, `| tail -N`, or `| grep | head` in command pipes. This rule applies to ALL commands, not just long-running scripts.**
-
-**❌ FORBIDDEN (will block monitoring):**
+**Core pattern:**
 ```bash
-# ❌ NEVER DO THIS - EVER
-bazel run //:script 2>&1 | head -50
-bazel run //:script 2>&1 | tail -15
-bazel run //:script 2>&1 | grep "pattern" | head -20
-command | head -N  # ANY use of head in pipes
-command | tail -N   # ANY use of tail -N in pipes (use tail -f on log files instead)
-
-# ❌ SPECIFIC FORBIDDEN PATTERN (common violation):
-bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file 2>&1 | grep -E "pattern" -A 15 | head -40
-```
-
-**✅ ALWAYS DO THIS INSTEAD:**
-```bash
-# ✅ Run in background, then view logs
-bazel run //:script > /tmp/script.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID"
-tail -f /tmp/script.log                    # Real-time monitoring
-tail -50 /tmp/script.log                   # View last 50 lines (on log file, not in pipe)
-tail -f /tmp/script.log | grep "pattern"   # Filter while monitoring (on log file)
-
-# ✅ CORRECT PATTERN for the forbidden example above:
-bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file > /tmp/validate.log 2>&1 &
-tail -f /tmp/validate.log | grep -E "Top file discrepancies|Per-file comparison|files with significant" -A 15
-# Or view last 40 lines after completion:
-tail -40 /tmp/validate.log
-```
-
-**Why this is critical:**
-- `| head` or `| tail -N` in pipes blocks monitoring and prevents seeing progress
-- You can't tell if script is stuck or just slow
-- Progress messages are hidden
-- Pipe closes early, may cause SIGPIPE errors
-- **AI assistants CONSTANTLY violate this** - check EVERY command for `| head` or `| tail -N`
-
-**If you need to see output:**
-1. Run command in background: `command > /tmp/log.log 2>&1 &`
-2. Monitor: `tail -f /tmp/log.log`
-3. View last N lines: `tail -N /tmp/log.log` (on the log file, NOT in the pipe)
-
-## 🚨 CRITICAL: "Monitor" Means Active Analysis and Action, Not Passive Reporting
-
-**When user asks to "monitor" something, they mean: actively check, analyze, and fix issues - NOT just report stats periodically.**
-
-**❌ BAD - Passive monitoring script:**
-```bash
-# ❌ This just reports stats in a loop - doesn't analyze or act
-while true; do
-    echo "=== Check $((++i)) ==="
-    tail -5 /tmp/log.log
-    free -h | grep Mem
-    sleep 30
-done
-```
-
-**✅ GOOD - Active monitoring with analysis and action:**
-```bash
-# Check stats at reasonable intervals
-ssh remote "tail -50 /tmp/cluster.log"
-
-# Analyze: Is progress reasonable?
-# - Script stuck? (no new output in 2 minutes)
-# - Memory issues? (swap usage increasing)
-# - Errors? (ERROR/Exception in logs)
-
-# Act based on analysis:
-# - If stuck → investigate, kill if needed, fix issue
-# - If memory spike → check query efficiency, add limits
-# - If errors → read full error, fix root cause
-# - If healthy → continue with longer intervals
-
-# Next check in 1-2 minutes (based on expected runtime)
-sleep 120
-ssh remote "tail -50 /tmp/cluster.log"
-
-# Repeat: check → analyze → act → adjust interval
-```
-
-**What "monitor" means:**
-- ✅ **Check periodically** at reasonable intervals (not every second)
-- ✅ **Analyze metrics** - Is progress normal? Any issues?
-- ✅ **Take action** - Fix issues immediately when found
-- ✅ **Adjust intervals** - Check more/less frequently based on what you see
-- ✅ **Stop when done** - Process completed or failed
-
-**What "monitor" does NOT mean:**
-- ❌ Write a loop that prints stats forever
-- ❌ Just report numbers without analysis
-- ❌ Wait for user to interpret and act
-- ❌ Fixed intervals regardless of what's happening
-
-**Monitoring checklist:**
-1. **Check current state** - Read logs, check process status
-2. **Analyze** - Is progress normal? Expected rate? Any issues?
-3. **Act if needed:**
-   - Issue found → Fix it immediately
-   - Memory spike → Investigate and optimize
-   - Process stuck → Kill and restart with fixes
-   - Errors → Read full error, fix root cause
-4. **Determine next check** - Based on:
-   - Expected runtime (longer scripts = longer intervals)
-   - Current health (issues = check more often)
-   - Phase (initialization = frequent, steady state = less frequent)
-5. **Repeat until complete**
-
-**Example - Good monitoring:**
-```bash
-# Initial check (frequent - startup is critical)
-ssh remote "tail -20 /tmp/process.log"
-# Analysis: Started correctly? Any immediate errors?
-
-sleep 30  # Short interval for startup
-
-# Second check
-ssh remote "tail -20 /tmp/process.log && free -h"
-# Analysis: Making progress? Memory stable?
-
-# If healthy, increase interval
-sleep 120  # 2 minutes
-
-# Third check
-ssh remote "tail -30 /tmp/process.log && free -h"
-# Analysis: Progress rate? Any warnings?
-
-# If stuck or issues:
-if grep -q "ERROR" /tmp/process.log; then
-    # ACT: Read full error and fix
-    ssh remote "grep -A 20 'ERROR' /tmp/process.log"
-    # Fix the issue...
-    # Restart if needed
-fi
-
-# Continue until completion
-```
-
-**Rationale:**
-- User wants you to be proactive and fix issues
-- Passive monitoring wastes time (user has to interpret and instruct)
-- Active monitoring catches issues early
-- Intelligent intervals optimize time (not too frequent, not too sparse)
-- Taking action immediately prevents cascading failures
-
-## Script Naming Conventions
-
-**Scripts that evaluate, analyze, or test should NOT be named `test_*.py` to avoid confusion with unit tests.**
-
-**✅ GOOD - Descriptive script names:**
-```python
-# Scripts that evaluate/analyze
-evaluate_clustering_threshold.py
-analyze_performance.py
-check_data_quality.py
-
-# Unit tests (in tests/ directory)
-test_clustering_evaluator.py
-test_performance.py
-test_data_quality.py
-```
-
-**❌ BAD - Confusing names:**
-```python
-# ❌ Looks like a unit test but is actually a script
-test_performance.py  # Should be: analyze_performance.py
-test_data_quality.py  # Should be: evaluate_data_quality.py
-```
-
-**Naming patterns:**
-- **Evaluation scripts:** `evaluate_*.py`, `check_*.py`, `analyze_*.py`
-- **Unit tests:** `test_*.py` (always in `tests/` directory)
-- **Utility scripts:** `fix_*.py`, `import_*.py`, `export_*.py`
-
-**Rationale:**
-- Prevents confusion between scripts and tests
-- Makes it clear what files are runnable scripts vs test code
-- Follows Python convention (test files are for pytest/unittest)
-- Easier to find and understand project structure
-
-## Debugging and Script Development
-
-**ALWAYS use Bazel for project-specific debugging tools - never run Python directly.**
-
-**✅ GOOD - Use Bazel from project root:**
-```bash
-# Always run from project root directory
-cd /path/to/project
-bazel run //:run_sql -- --query "SELECT ..."
-bazel run //scripts/salary:validate_data
-bazel run //scripts/salary:collect_dol_golden_test_data -- --limit-files 5
-```
-
-**❌ BAD - Direct Python:**
-```bash
-python3 -c "import django; ..."  # Fails: ModuleNotFoundError
-python run_sql.py  # Fails: Django not in system Python
-```
-
-**❌ BAD - Running Bazel from wrong directory:**
-```bash
-cd data/salary/dol_data  # ❌ Wrong directory
-bazel run //scripts/salary:collect_dol_golden_test_data  # May fail or behave unexpectedly
-```
-
-**CRITICAL: Always run Bazel commands from the project root:**
-- Bazel needs to find the `WORKSPACE` or `MODULE.bazel` file in the root
-- Relative paths in scripts assume project root as working directory
-- Bazel's sandbox and runfiles work correctly only from root
-
-**Why:**
-- Project dependencies (Django, etc.) are only available in Bazel environment
-- System Python doesn't have project libraries
-- Bazel ensures correct environment and dependencies
-- Running from root ensures correct path resolution and workspace detection
-
-## Script Development Flow
-
-When debugging and need a script:
-
-1. **Check documentation** - Can you reuse an existing tool?
-2. **Check if trivial** - Is it just command-line tools (`grep`, `curl`, `ls`)?
-3. **Check existing scripts** - Search codebase for similar functionality before creating new scripts
-4. **Check recent history** - Have you created similar scripts recently?
-   - **If yes** → Create/update a **permanent script** with logging
-   - **If no** → Create a **throwaway script** (but still log it)
-5. **🚨 CRITICAL: NEVER create temporary scripts without explicit user request** - Only create scripts when user explicitly asks for them
-6. **Always use Bazel** for project-specific libraries
-7. **Log all script usage:**
-   - Permanent scripts: Log each call to their own log file
-   - Throwaway scripts: Log to shared throwaway calls log with context
-
-## Rule: Never Create Temporary Scripts Without Explicit Request
-
-**🚨 CRITICAL: NEVER create temporary, one-off, or debugging scripts unless the user explicitly requests it.**
-
-**❌ FORBIDDEN - Creating scripts without explicit request:**
-- ❌ "I'll create a quick script to check X" → Don't create it, use existing tools or ask first
-- ❌ "Let me write a script to test Y" → Don't create it, use existing tools or ask first
-- ❌ Creating helper scripts for debugging → Use existing scripts or command-line tools instead
-- ❌ Creating scripts to generate sample data → Ask user first
-
-**✅ GOOD - Only create scripts when explicitly requested:**
-- ✅ User says: "Create a script to do X" → Create it
-- ✅ User says: "Write a tool to check Y" → Create it
-- ✅ User explicitly asks for a new script → Create it
-
-**What to do instead:**
-- ✅ Use existing scripts from `scripts/README.md`
-- ✅ Use command-line tools (`grep`, `curl`, `jq`, etc.)
-- ✅ Use Bazel run commands with existing targets
-- ✅ Ask user: "Should I create a script for this, or can we use existing tools?"
-
-**Rationale:**
-- Prevents accumulation of temporary scripts
-- Keeps codebase clean and maintainable
-- Forces reuse of existing tools
-- User controls what scripts exist in the project
-- Temporary scripts often become permanent clutter
-
-## Rule: Check Recent History and Logs Before Re-Running Scripts
-
-**ALWAYS check recent conversation history and existing log files before re-running scripts.**
-
-**Before running any script:**
-1. ✅ **Check conversation history** - Was this script just run? What were the results?
-2. ✅ **Check for existing log files** - Look for recent logs in `/tmp/` or project log directories
-3. ✅ **Check log timestamps** - If log is recent (< 5 minutes), use it instead of re-running
-4. ✅ **Only re-run if** - Log is stale, missing, or user explicitly requests re-run
-
-**✅ GOOD - Check logs first:**
-```bash
-# Check if recent log exists
-if [ -f /tmp/validate_tables.log ] && [ $(find /tmp/validate_tables.log -mmin -5) ]; then
-    echo "Using recent log file"
-    cat /tmp/validate_tables.log | tail -200
-else
-    echo "Log is stale or missing, running script..."
-    bazel run //scripts/salary:validate_data > /tmp/validate_tables.log 2>&1 &
-fi
-```
-
-**❌ BAD - Re-run without checking:**
-```bash
-# Don't immediately re-run if script was just executed
-bazel run //scripts/salary:validate_data > /tmp/validate_tables.log 2>&1 &
-# Should check if log exists and is recent first
-```
-
-**When to check logs:**
-- ✅ Script was run in recent conversation history
-- ✅ Long-running scripts that take > 30 seconds
-- ✅ Validation or analysis scripts that produce reports
-- ✅ Any script that writes to `/tmp/` or log directories
-
-**When re-running is OK:**
-- ✅ User explicitly requests re-run
-- ✅ Log is > 1 hour old
-- ✅ Script parameters changed
-- ✅ Code was modified since last run
-
-**Rationale:**
-- Prevents unnecessary re-execution of long-running scripts
-- Saves time and resources
-- Reduces redundant work
-- Better user experience (faster results)
-
-## Rule: Always Search for Existing Scripts Before Creating New Ones
-
-**ALWAYS search for existing scripts with similar functionality before creating a new script.**
-
-**Before creating a new script:**
-1. ✅ **Search codebase** - Use `codebase_search` or `grep` to find similar functionality
-2. ✅ **Check `scripts/README.md`** - Review categorized list of existing scripts
-3. ✅ **Consider extending existing script** - Add new mode/flag to existing script rather than creating new one
-4. ✅ **Only create new script if functionality is truly distinct** - Avoid duplication
-5. ✅ **Get explicit user confirmation** - Only create new scripts when user explicitly requests it
-
-**✅ GOOD - Extend existing script:**
-```python
-# Add new flag to existing validate_data.py
-parser.add_argument(
-    '--check-new-feature',
-    action='store_true',
-    help='Check new feature'
-)
-```
-
-**❌ BAD - Create duplicate script:**
-```python
-# Don't create validate_data_v2.py when validate_data.py exists
-# Instead, add flags to existing script
-```
-
-**When to create new script:**
-- ✅ Functionality is fundamentally different (e.g., clustering vs validation)
-- ✅ Script serves different purpose (e.g., fix vs validate)
-- ✅ Script is in different category (e.g., deployment vs data processing)
-- ✅ **User explicitly requests new script**
-
-**When to extend existing script:**
-- ✅ Same category (e.g., both validation scripts)
-- ✅ Similar functionality (e.g., both check data quality)
-- ✅ Can be controlled via flags/modes
-
-**Rationale:**
-- Prevents script proliferation and duplication
-- Makes functionality discoverable in one place
-- Reduces maintenance burden
-- Follows DRY principle
-- Easier for developers to find and use tools
-
-## Rule: Always Generalize and Remove Duplicative Scripts
-
-**ALWAYS try to generalize and remove duplicative scripts whenever possible.**
-
-**Before keeping a script:**
-1. ✅ **Check if functionality exists in master/comprehensive scripts** - Consolidate into unified scripts
-2. ✅ **Check if logic can be extracted to shared modules** - Make scripts facades over testable modules
-3. ✅ **Check if script is just a convenience wrapper** - Consider adding flags to master script instead
-4. ✅ **Delete redundant scripts** - Don't keep multiple scripts doing the same thing
-
-**When to delete a script:**
-- ✅ Functionality is fully covered by a master/comprehensive script
-- ✅ Script is just a thin wrapper around shared logic
-- ✅ Script has misleading name or unclear purpose
-- ✅ Script duplicates functionality available elsewhere
-- ✅ Can be replaced by adding a flag to existing comprehensive script
-
-**When to keep a script:**
-- ✅ Script serves a distinct, non-overlapping purpose
-- ✅ Script is in a different category (e.g., deployment vs validation)
-- ✅ Script provides unique functionality not available elsewhere
-- ✅ Script is actively used in workflows and migration would be disruptive
-
-**Process for removing duplicative scripts:**
-1. **Extract logic to shared module** (if not already done)
-2. **Integrate into master script** (add flags/options if needed)
-3. **Update all references** (docs, other scripts, BUILD files)
-4. **Delete the script** and its BUILD target
-5. **Update documentation** to point to master script
-
-**✅ GOOD - Consolidated into master script:**
-```python
-# Master validation script with flags
-bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file
-bazel run //scripts/salary:validate_data -- --check-import-completeness-by-year
-```
-
-**❌ BAD - Multiple scripts doing same thing:**
-```python
-# Don't keep separate scripts when master script covers it
-bazel run //scripts/salary:check_per_year_discrepancies  # ❌ Redundant
-bazel run //scripts/salary:check_file_discrepancies      # ❌ Redundant
-bazel run //scripts/salary:validate_data                 # ✅ Master script
-```
-
-**Rationale:**
-- Reduces maintenance burden (one script to maintain, not many)
-- Prevents confusion (one place to find functionality)
-- Makes functionality discoverable (all validation in one script)
-- Follows DRY principle (don't repeat yourself)
-- Easier to extend (add flags to master script, not create new scripts)
-
-## Rule: Run Long-Running Scripts in Background and Monitor Logs
-
-**ALWAYS run long-running or potentially slow scripts in background mode and monitor their progress through logs.**
-
-**Why:**
-- Prevents terminal from blocking indefinitely
-- Allows early detection of stuck scripts
-- Enables monitoring progress without blocking
-- Better user experience (can continue working)
-
-**CRITICAL: NEVER use `| head`, `| tail -N`, or `| grep | head` in command pipes - EVER!**
-
-**This is a CRITICAL rule that AI assistants frequently violate. Always run commands in background and monitor logs instead.**
-
-**❌ NEVER DO THIS (violates rule):**
-- ❌ `bazel run //:script 2>&1 | head -50` - Blocks monitoring, hides progress
-- ❌ `bazel run //:script 2>&1 | tail -15` - Can't see real-time progress  
-- ❌ `bazel run //:script 2>&1 | grep "pattern" | head -20` - Blocks monitoring, hides progress
-- ❌ `command | head -N` - ANY use of head in pipes is forbidden
-- ❌ `command | tail -N` - ANY use of tail -N in pipes is forbidden (use `tail -f` on log files instead)
-
-**✅ ALWAYS DO THIS INSTEAD:**
-- ✅ Run in background: `bazel run //:script > /tmp/script.log 2>&1 &`
-- ✅ Monitor logs: `tail -f /tmp/script.log`
-- ✅ View last N lines: `tail -N /tmp/script.log` (on the log file, not in pipe)
-- ✅ Filter while monitoring: `tail -f /tmp/script.log | grep "pattern"` (on log file, not command output)
-- ✅ `bazel run //:script > /tmp/log.log 2>&1 &` then `tail -f /tmp/log.log | grep "pattern"` - Monitorable
-
-**✅ GOOD - Background execution with log monitoring:**
-```bash
-# Run in background, redirect output to log file
-bazel run //:investigate_validation_issues > /tmp/validation_investigation.log 2>&1 &
-PID=$!
-
-# Monitor progress by tailing logs
-tail -f /tmp/validation_investigation.log
-
-# Or check periodically
-watch -n 2 'tail -20 /tmp/validation_investigation.log'
-
-# Check if still running
-ps -p $PID
-```
-
-**✅ GOOD - Using nohup for persistence:**
-```bash
-# Run with nohup (survives terminal close)
-nohup bazel run //:investigate_validation_issues > /tmp/validation.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID, monitoring: tail -f /tmp/validation.log"
-```
-
-**✅ GOOD - Quick progress check:**
-```bash
-# Run in background
-bazel run //:long_script > /tmp/script.log 2>&1 &
-PID=$!
-
-# Wait a bit, then check progress
-sleep 5
-if ps -p $PID > /dev/null; then
-  echo "Still running, last 10 lines:"
-  tail -10 /tmp/script.log
-else
-  echo "Completed, exit code: $?"
-  cat /tmp/script.log
-fi
-```
-
-**✅ GOOD - Filtering output while preserving full log:**
-```bash
-# Run in background with full log
-bazel run //:validate_data > /tmp/validate_data.log 2>&1 &
-PID=$!
-
-# Monitor with filtering (full log still available)
-tail -f /tmp/validate_data.log | grep -E "Running|Missing Salary|ERROR|WARNING"
-
-# Or check full log anytime
-tail -50 /tmp/validate_data.log
-```
-
-**❌ BAD - Foreground execution (blocks terminal):**
-```bash
-# Blocks terminal - can't monitor or interrupt easily
-bazel run //:investigate_validation_issues
-```
-
-**❌ BAD - Piping through grep/head that prevents monitoring:**
-```bash
-# ❌ BAD: grep filters out progress messages, head closes pipe early
-bazel run //:validate_data 2>&1 | grep -A 30 "Missing Salary" | head -50
-
-# Problems:
-# - Progress messages like "Running data sanity validation..." are hidden
-# - head -50 closes pipe after 50 lines, may cause SIGPIPE
-# - Can't see what stage script is at
-# - Can't monitor progress in real-time
-```
-
-**✅ GOOD - Proper filtering approach:**
-```bash
-# Option 1: Run in background, filter when monitoring
-bazel run //:validate_data > /tmp/validate.log 2>&1 &
-tail -f /tmp/validate.log | grep -E "Missing Salary|DATA SANITY"
-
-# Option 2: Use tee to see both filtered and full output
-bazel run //:validate_data 2>&1 | tee /tmp/validate.log | grep -E "Missing Salary|DATA SANITY"
-```
-
-**When to use background:**
-- ✅ Scripts that query databases (may be slow)
-- ✅ Scripts that process large datasets
-- ✅ Scripts that make network requests
-- ✅ Scripts that iterate over many records
-- ✅ Any script that might take > 10 seconds
-- ✅ Validation or investigation scripts
-- ✅ Scripts where you want to filter output (always log full output first)
-
-**When foreground is OK:**
-- ✅ Quick commands (< 5 seconds)
-- ✅ Interactive scripts requiring input
-- ✅ Scripts that need immediate output
-- ✅ Simple queries or lookups
-
-**Rule: Never Use grep/head/tail Filters in Pipes with Long-Running Commands**
-
-**🚨 CRITICAL: This rule applies to ALL commands, not just long-running scripts. NEVER use `| head` or `| tail -N` in pipes. See the rule at the top of this file.**
-
-**Why this matters:**
-- `head -N` or `tail -N` in a pipe closes the pipe early, may cause SIGPIPE errors
-- Progress messages are hidden (don't match grep pattern)
-- Can't tell if script is stuck or just slow
-- Can't see what stage script is at
-- Can't monitor progress in real-time
-- **AI assistants CONSTANTLY violate this rule** - this is the #1 mistake
-- Commands with `| head` block and prevent monitoring
-- You can't interrupt or see what's happening
-
-**❌ BAD - Direct piping (violates rule):**
-```bash
-# ❌ NEVER do this for long-running scripts
-bazel run //:script 2>&1 | tail -15
-bazel run //:script 2>&1 | head -50
-bazel run //:script 2>&1 | grep "pattern" | tail -20
-```
-
-**✅ GOOD - Background execution, then filter logs:**
-```bash
-# Run in background with full logging
-bazel run //:script > /tmp/script.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID"
-
-# Then monitor/filter the log file (not the pipe)
-tail -f /tmp/script.log                    # Real-time monitoring
-tail -15 /tmp/script.log                   # Last 15 lines
-tail -f /tmp/script.log | grep "pattern"   # Filter while monitoring
-```
-
-**✅ GOOD - Always log full output, filter when viewing:**
-```bash
-# Log everything, filter when monitoring
-bazel run //:validate_data > /tmp/validate.log 2>&1 &
-tail -f /tmp/validate.log | grep "Missing Salary"  # Filter while monitoring
-tail -50 /tmp/validate.log  # See full output anytime
-```
-
-**❌ BAD - Filtering in the command prevents monitoring:**
-```bash
-# Can't see progress, can't tell if stuck
-bazel run //:validate_data 2>&1 | grep "Missing Salary" | head -50
-```
-
-**Monitoring strategies:**
-
-1. **Real-time tail:**
-   ```bash
-   tail -f /tmp/script.log
-   ```
-
-2. **Periodic checks:**
-   ```bash
-   watch -n 2 'tail -20 /tmp/script.log && echo "---" && ps -p $PID'
-   ```
-
-3. **Progress indicators:**
-   - Look for log messages showing progress (e.g., "Processing record 100/1000")
-   - Check for increasing counts or percentages
-   - Watch for error messages or warnings
-
-4. **Stuck detection:**
-   - If logs stop updating for > 2 minutes, script may be stuck
-   - Check process status: `ps -p $PID`
-   - Look for database locks or network timeouts in logs
-   - Consider killing and investigating: `kill $PID`
-
-**Log file naming convention:**
-- Use `/tmp/<script_name>.log` for temporary logs
-- Include timestamp if multiple runs: `/tmp/<script_name>_$(date +%Y%m%d_%H%M%S).log`
-- Use descriptive names: `/tmp/validation_investigation.log`
-
-## Rule: Always Run Scripts in Monitorable Mode and Babysit for Early Course Correction
-
-**CRITICAL: ALWAYS run scripts in monitorable mode (background with logs) and actively babysit them to detect and fix issues early.**
-
-**Why this matters:**
-- Early detection prevents wasted time (catch errors in first 5 minutes, not after 2 hours)
-- Enables course correction before script processes too much data incorrectly
-- Prevents silent failures or incorrect data processing
-- Saves resources (CPU, database connections, disk I/O)
-- Allows intervention before script completes with bad results
-
-**Rule: No blind for/while loops for babysitting.** Do not run loops that only `sleep` and `tail`/`echo` in sequence. That is not monitoring—it just prints text. **Monitoring = check in → analyze output → act (fix, kill, or schedule next check).** Each check-in must be a discrete step; after each, you analyze and potentially act.
-
-**✅ GOOD - Discrete check-ins with analysis and action after each:**
-```bash
-# 1. Start script in background with full logging
 bazel run //:process_data > /tmp/process_data.log 2>&1 &
 PID=$!
 echo "Started with PID: $PID"
 
-# 2. First check-in (after a short wait)
-sleep 5
-tail -20 /tmp/process_data.log
-# Analyze: Any ERROR/Exception? Process still running? → Act (kill and fix, or continue).
-
-# 3. Second check-in (only if you decided to keep monitoring)
+# Check-in 1 (after short wait)
 sleep 10
 tail -20 /tmp/process_data.log
-if grep -q "ERROR\|Exception\|Traceback" /tmp/process_data.log; then
-  tail -50 /tmp/process_data.log | grep -A 10 "ERROR\|Exception"
-  kill $PID 2>/dev/null; exit 1
-fi
-if ! ps -p $PID > /dev/null; then echo "Completed"; tail -50 /tmp/process_data.log; exit 0; fi
+grep -q "ERROR\|Exception" /tmp/process_data.log && { tail -50 /tmp/process_data.log; kill $PID; exit 1; }
+ps -p $PID >/dev/null || { tail -50 /tmp/process_data.log; exit 0; }
 
-# 4. Next check-in (separate command/step; you decide interval and whether to run again)
+# Check-in 2 (increasing interval)
 sleep 30
 tail -20 /tmp/process_data.log
-# After each check: analyze, act, then run another check only if needed.
+# Analyze, act, then schedule next check only if needed.
 ```
 
-**❌ BAD - Blind loop (no purpose):**
+**No blind loops.** `Monitoring = check → analyze → act`. Each check-in is a discrete step; do not wrap in `for i in {1..N}; do sleep; tail; done`.
+
+**When foreground is OK:** Quick commands (<5s), interactive scripts, simple lookups.
+
+### Monitoring Means Active Analysis, Not Passive Reporting
+
+When asked to "monitor": check periodically → analyze (progress? errors? stuck?) → act (fix, kill, adjust interval) → repeat.
+
+**❌ BAD:** Loop that prints stats without analyzing or acting.
+**✅ GOOD:** Discrete checks at increasing intervals; after each, decide: fix issue / continue / stop.
+
+### Monitoring Intervals: Slow Exponential Backoff
+
+- **Good:** 10s → 15s → 30s → 60s → 120s → 180s → 300s → 600s (cap at 10min)
+- **Bad:** 10s → 300s → 900s (too dramatic, misses intermediate issues)
+- Reset interval if errors detected.
+- Check memory (`free -h`) each interval.
+
+### Remote Monitoring via SSH
+
+Use **synchronous remote sleep** so checks are properly spaced.
+
+**✅ CORRECT:**
 ```bash
-for i in {1..6}; do
-  sleep 10
-  echo "=== Check $i ==="
-  tail -10 /tmp/process_data.log
-done
-# This only prints text; you never analyze or act after a check. Do discrete check-ins instead.
-```
-
-**✅ GOOD - Quick validation before letting script run:**
-```bash
-# Start script
-bazel run //:import_data > /tmp/import.log 2>&1 &
-PID=$!
-
-# Wait 30 seconds, then validate initial behavior
-sleep 30
-tail -30 /tmp/import.log
-
-# Check for expected patterns
-if ! grep -q "Processing\|Starting\|Loaded" /tmp/import.log; then
-  echo "⚠️  Script may not be working correctly - no expected output"
-  tail -50 /tmp/import.log
-  kill $PID
-  exit 1
-fi
-
-# Check for errors
-if grep -q "ERROR\|Exception\|Failed" /tmp/import.log; then
-  echo "❌ Errors detected early - stopping"
-  tail -50 /tmp/import.log
-  kill $PID
-  exit 1
-fi
-
-echo "✅ Initial validation passed. Continue monitoring: tail -f /tmp/import.log"
-```
-
-**✅ GOOD - Progress validation with discrete check-ins:**
-```bash
-bazel run //:cluster_employers > /tmp/cluster.log 2>&1 &
-PID=$!
-
-# Check-in 1 (after 15s): analyze progress and errors
-sleep 15
-tail -20 /tmp/cluster.log
-CURRENT=$(grep -o "Processed [0-9]*" /tmp/cluster.log | tail -1)
-grep -q "ERROR\|Exception" /tmp/cluster.log && { tail -50 /tmp/cluster.log; kill $PID; exit 1; }
-ps -p $PID >/dev/null || { tail -50 /tmp/cluster.log; exit 0; }
-
-# Check-in 2 (after another 15s): compare progress, act if stuck
-sleep 15
-PREV=$CURRENT
-CURRENT=$(grep -o "Processed [0-9]*" /tmp/cluster.log | tail -1)
-[ "$CURRENT" = "$PREV" ] && echo "⚠️ No progress"  # After this check, act: kill if stuck or run next check
-# Continue with further check-ins only when needed; after each, analyze and act.
-```
-
-**✅ GOOD - Long-running script: discrete check-ins with increasing intervals (LOCAL):**
-```bash
-bazel run //:long_running_script > /tmp/script.log 2>&1 &
-PID=$!
-
-# Check-in 1 (10s): initial validation
-sleep 10
-tail -10 /tmp/script.log
-grep -q "ERROR\|Exception" /tmp/script.log && { tail -50 /tmp/script.log; kill $PID; exit 1; }
-ps -p $PID >/dev/null || { tail -50 /tmp/script.log; exit 0; }
-
-# Check-in 2 (15s later): analyze, then decide next check
-sleep 15
-tail -10 /tmp/script.log
-free -h
-# Analyze; if errors → act. If still running and stable → schedule next check (e.g. 30s, then 60s).
-# Do NOT use a loop that just multiplies INTERVAL and prints—each check must be followed by analysis and action.
-```
-
-**✅ GOOD - Monitoring remote processes via SSH (CRITICAL PATTERN):**
-```bash
-# Start remote script in background
 ssh remote "cd /path && nohup ./script > /tmp/script.log 2>&1 &"
-
-# Monitor with SYNCHRONOUS remote sleep (not local sleep!)
-# Each check is a single SSH command that sleeps remotely, then checks
-ssh remote "bash -c 'sleep 30; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
-
-# Next check after 2 minutes (remote sleep)
-ssh remote "bash -c 'sleep 120; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
-
-# Next check after 3 minutes (remote sleep)
-ssh remote "bash -c 'sleep 180; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
-
-# Continue with increasing intervals: 5m, 8m, 10m, 10m...
-```
-
-**❌ BAD - Local sleep with remote checks (DEFEATS THE PURPOSE):**
-```bash
-# ❌ WRONG: Sleeping locally doesn't space out SSH commands
-ssh remote "cd /path && nohup ./script > /tmp/script.log 2>&1 &"
-
-# ❌ This sleeps locally, not remotely - checks happen immediately!
-sleep 60  # Local sleep - doesn't help
-ssh remote "tail -20 /tmp/script.log"  # Immediate check
-
-sleep 120  # Local sleep - doesn't help
-ssh remote "tail -20 /tmp/script.log"  # Immediate check
-
-# Result: SSH commands execute back-to-back, spamming the remote server
-```
-
-**❌ BAD - Backgrounding sleep commands:**
-```bash
-# ❌ WRONG: Backgrounding sleep defeats the purpose
-sleep 300 &  # Backgrounded - doesn't block
-ssh remote "tail -20 /tmp/script.log"  # Executes immediately
-
-# Result: All checks happen at once, no spacing
-```
-
-**Why remote sleep is critical:**
-- ✅ Each SSH command is independent (agent can't maintain sessions)
-- ✅ Remote sleep spaces out the checks properly
-- ✅ Single command: connect → sleep → check → disconnect
-- ✅ Prevents spamming remote server with rapid SSH connections
-- ❌ Local sleep doesn't help - SSH commands execute immediately after sleep completes
-
-**Pattern for AI agents monitoring remote processes:**
-```bash
-# Initial check (after 10-15 seconds)
-ssh remote "bash -c 'sleep 15; tail -30 /tmp/script.log; ps aux | grep script'"
-
-# Check after 1 minute
-ssh remote "bash -c 'sleep 60; tail -20 /tmp/script.log; free -h'"
-
-# Check after 2 minutes
+ssh remote "bash -c 'sleep 30; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo Completed'"
 ssh remote "bash -c 'sleep 120; tail -20 /tmp/script.log; free -h'"
-
-# Check after 3 minutes
-ssh remote "bash -c 'sleep 180; tail -20 /tmp/script.log; free -h'"
-
-# Check after 5 minutes
-ssh remote "bash -c 'sleep 300; tail -20 /tmp/script.log; free -h'"
-
-# Check after 10 minutes (cap at 10 minutes)
-ssh remote "bash -c 'sleep 600; tail -20 /tmp/script.log; free -h; ps aux | grep script | grep -v grep || echo \"Completed\"'"
-
-# Continue with 10-minute intervals until completion
+# Continue with increasing intervals: 3m, 5m, 10m (cap)
 ```
 
-**❌ BAD - Dramatic backoff (too aggressive):**
+**❌ BAD:** Local `sleep` before SSH — SSH commands execute immediately regardless. Backgrounding `sleep` also defeats the purpose.
+
+### What to Monitor and When to Intervene
+
+**Monitor:** Initial startup (first 10-30s), progress indicators, error patterns, performance rate, resource usage.
+
+**Intervene when:** Errors detected, no progress for 2+ minutes, extremely slow (<2k records/min — see `general_performance.mdc`), resource exhaustion.
+
+### Log File Naming
+
+- `/tmp/<script_name>.log` for temporary logs
+- Add timestamp for multiple runs: `/tmp/<script_name>_$(date +%Y%m%d_%H%M%S).log`
+
+## Avoid Interactive Mode Issues in Background Commands
+
+Keep background commands simple and single-line. Complex quoting, `$(pwd)`, multi-line `\` continuations, and inline conditionals can cause the shell to hang waiting for input (`dquote>`, `pipe>`).
+
+**❌ BAD:**
 ```bash
-# ❌ BAD: Jumping from 10s to 300s to 900s is too dramatic
-# Misses issues that occur in the intermediate time periods
-INTERVAL=10
-while ps -p $PID > /dev/null; do
-  sleep $INTERVAL
-  # ... check logs ...
-  INTERVAL=$((INTERVAL * 30))  # ❌ Too aggressive: 10s -> 300s -> 9000s
-done
-```
-
-**Rule: Use Slow Exponential Backoff for Monitoring Intervals**
-
-**ALWAYS use slow exponential backoff (multiply by ~1.5) for monitoring intervals in long-running scripts.**
-
-**Why:**
-- Check frequently at first to catch early errors (first 5-10 minutes are critical)
-- Gradually reduce check frequency as script proves stable
-- Avoid dramatic jumps that miss issues in intermediate periods
-- Balance between responsiveness and resource usage
-
-**Backoff pattern:**
-- ✅ **Good:** 10s → 15s → 30s → 60s → 120s → 180s → 300s → 600s (cap at 10 minutes)
-- ❌ **Bad:** 10s → 300s → 900s (too dramatic, misses intermediate issues)
-
-**Implementation:**
-- Start with 10-15 seconds for first few checks
-- Multiply interval by ~1.5-2x each iteration
-- Cap maximum interval at 10 minutes (600s) to ensure regular checks
-- Reset interval if errors detected (back to frequent checking)
-
-**Memory monitoring (required during babysitting):**
-- ✅ Check memory each interval (`free -h` on Linux, `vm_stat` on macOS)
-- ✅ If swap grows or memory is exhausted, pause and investigate before continuing
-
-**CRITICAL for remote monitoring:**
-- ✅ **Use SYNCHRONOUS remote sleep** - sleep happens on remote server before check
-- ✅ **Use `block_until_ms` parameter** - wait for SSH command to complete
-- ❌ **NEVER use local sleep** - doesn't space out SSH commands
-- ❌ **NEVER background sleep commands** - defeats the purpose
-
-**When to use:**
-- ✅ Long-running scripts (> 10 minutes expected)
-- ✅ Scripts that process large datasets
-- ✅ Background monitoring after initial validation
-- ✅ Scripts where you want to reduce monitoring overhead over time
-
-**When fixed interval is OK:**
-- ✅ Short scripts (< 10 minutes)
-- ✅ Critical operations requiring constant monitoring
-- ✅ Initial validation phase (first 5-10 minutes)
-
-**Rationale:**
-- Early errors are most critical (catch configuration issues quickly)
-- Stable scripts don't need constant checking
-- Slow backoff ensures issues are still caught in reasonable time
-- Prevents excessive monitoring overhead for long-running scripts
-
-**❌ BAD - Fire and forget (no monitoring):**
-```bash
-# Start script and walk away - no way to detect issues early
-bazel run //:process_data > /tmp/process_data.log 2>&1 &
-# No monitoring, no validation, no early error detection
-# May run for hours before discovering it failed or processed data incorrectly
-```
-
-**❌ BAD - Check only at the end:**
-```bash
-# Start script
-bazel run //:import_data > /tmp/import.log 2>&1 &
-PID=$!
-
-# Wait for completion (could be hours)
-wait $PID
-
-# Only check logs after completion - too late to fix issues
-tail /tmp/import.log
-# If errors found, all the work was wasted
-```
-
-**What to monitor:**
-- ✅ **Initial startup** - Does script start correctly? (first 10-30 seconds)
-- ✅ **Progress indicators** - Are records being processed? (counts, percentages)
-- ✅ **Error patterns** - Any exceptions, warnings, or failures?
-- ✅ **Performance** - Is script progressing at expected rate?
-- ✅ **Resource usage** - Is script consuming excessive CPU/memory?
-- ✅ **Data validation** - Are results reasonable? (sample output, counts)
-
-**When to intervene:**
-- ❌ **Errors detected** - Stop immediately, investigate, fix, restart
-- ❌ **No progress for 2+ minutes** - Script may be stuck (database lock, infinite loop)
-- ❌ **Extremely slow progress** — e.g. under ~2k records/min: analyze the bottleneck (e.g. wrong index state for the phase), fix it, restart as close to the stop point as possible (checkpoint/resume), then continue monitoring. See general_performance.mdc "Detect Extremely Slow Progress (Index State)."
-- ❌ **Unexpected behavior** - Output doesn't match expectations
-- ❌ **Performance issues** - Much slower than expected (may indicate problem)
-- ❌ **Resource exhaustion** - High CPU/memory usage (may need optimization)
-
-**Early course correction benefits:**
-- ✅ Catch configuration errors before processing thousands of records
-- ✅ Detect data issues before corrupting database
-- ✅ Identify performance problems before script runs for hours
-- ✅ Fix bugs before wasting compute resources
-- ✅ Validate assumptions early (script works as expected)
-
-**Rationale:**
-- Prevents terminal blocking and improves responsiveness
-- Enables early detection of stuck scripts (no output = likely stuck)
-- Allows monitoring progress without interrupting execution
-- Better debugging (logs persist even if terminal closes)
-- Follows best practices for long-running operations
-- **Critical addition:** Active monitoring and early intervention prevents wasted time and resources, catches issues before they compound, and enables course correction when it matters most
-
-## Rule: Avoid Interactive Mode Issues in Background Commands
-
-**CRITICAL: NEVER use complex quoting, variable expansion, conditionals, or multi-line logic in background commands that can cause the shell to enter interactive mode (waiting for input).**
-
-**Why this matters:**
-- Shell can get stuck waiting for closing quotes, brackets, or command completion
-- Complex conditionals (if/then/else) in background commands can break parsing
-- Multi-line commands with pipes and conditionals can cause shell to wait for input
-- Background processes with parsing issues may hang indefinitely
-- Interactive prompts (like `dquote>`, `pipe>`) block execution and prevent monitoring
-- Simple, straightforward commands are more reliable
-
-**❌ BAD - Complex quoting in background command:**
-```bash
-# ❌ BAD: Complex quoting with $! can cause shell to wait for input
 bazel run //:script -- --output $(pwd)/data/file.jsonl > /tmp/log.log 2>&1 &
 echo "Started with PID: $!"
-# Shell may get stuck waiting for closing quote or command completion
 ```
 
-**❌ BAD - Multi-line background command with variable expansion:**
+**✅ GOOD:**
 ```bash
-# ❌ BAD: Multi-line command with $! can cause interactive mode
-bazel run //:script -- \
-  --output $(pwd)/data/file.jsonl \
-  > /tmp/log.log 2>&1 &
-echo "PID: $!"
-# Shell may enter dquote> or > prompt waiting for input
-```
-
-**❌ BAD - Complex conditionals in background command:**
-```bash
-# ❌ BAD: Complex if/then/else with pipes can break parsing
-bazel run //:script > /tmp/log.log 2>&1 &
-PID=$!
-if ps -p $PID > /dev/null 2>&1; then
-  tail -20 /tmp/log.log | grep "Phase" | tail -5
-else
-  tail -30 /tmp/log.log
-fi
-# Shell may get stuck waiting for closing brackets or quotes
-```
-
-**✅ GOOD - Simple background command:**
-```bash
-# ✅ GOOD: Simple, single-line background command
-bazel run //:script -- --output /path/to/data/file.jsonl > /tmp/log.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID"
-echo "Monitor with: tail -f /tmp/log.log"
-```
-
-**✅ GOOD - Separate PID capture:**
-```bash
-# ✅ GOOD: Run command, then capture PID separately
-bazel run //:script -- --output /path/to/data/file.jsonl > /tmp/log.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID"
-```
-
-**✅ GOOD - Using nohup for persistence:**
-```bash
-# ✅ GOOD: nohup handles background execution cleanly
-nohup bazel run //:script -- --output /path/to/data/file.jsonl > /tmp/log.log 2>&1 &
-PID=$!
-echo "Started with PID: $PID, monitoring: tail -f /tmp/log.log"
-```
-
-**✅ GOOD - Pre-expand variables before background:**
-```bash
-# ✅ GOOD: Expand variables before running in background
 OUTPUT_FILE="/path/to/data/file.jsonl"
 LOG_FILE="/tmp/log.log"
 bazel run //:script -- --output "$OUTPUT_FILE" > "$LOG_FILE" 2>&1 &
@@ -1073,27 +138,77 @@ PID=$!
 echo "Started with PID: $PID"
 ```
 
-**When to use simple patterns:**
-- ✅ Always use simple, single-line background commands
-- ✅ Capture PID separately after the `&` command
-- ✅ Pre-expand variables before background execution
-- ✅ Use absolute paths instead of `$(pwd)` in background commands
-- ✅ Avoid complex quoting or multi-line commands with `&`
-- ✅ Run status checks in separate commands (not in same line as background)
-- ✅ Use simple monitoring commands: `tail -f /tmp/log.log` or `ps -p $PID`
+**Rules:**
+- Pre-expand variables before `&`
+- Use absolute paths, not `$(pwd)`
+- Capture `$!` into `PID` on a separate line
+- Don't use `$!` on same line as `&`
+- Don't use multi-line commands or if/then/else with `&`
+- Run status checks in separate commands
 
-**When to avoid:**
-- ❌ Don't use `$!` in the same command line as the background process
-- ❌ Don't use complex variable expansion in background commands
-- ❌ Don't use multi-line commands ending with `&`
-- ❌ Don't use nested command substitution like `$(pwd)` in background commands
-- ❌ Don't use if/then/else conditionals in the same command as background execution
-- ❌ Don't chain multiple pipes and conditionals in background command setup
-- ❌ Don't use complex shell logic (loops, conditionals) in background command lines
+## Script Naming Conventions
 
-**Rationale:**
-- Simple commands are less likely to cause shell parsing issues
-- Separating PID capture avoids quoting problems
-- Pre-expanding variables makes commands more predictable
-- Prevents shell from entering interactive mode waiting for input
-- Makes monitoring and debugging easier
+| Pattern | Use For |
+|---|---|
+| `evaluate_*.py`, `check_*.py`, `analyze_*.py` | Evaluation/analysis scripts |
+| `test_*.py` (in `tests/`) | Unit tests only |
+| `fix_*.py`, `import_*.py`, `export_*.py` | Utility scripts |
+
+Scripts that evaluate or analyze should NOT be named `test_*.py` — that's reserved for pytest/unittest.
+
+## Debugging and Script Development
+
+**ALWAYS use Bazel, never run Python directly.** Always run from project root.
+
+**✅ GOOD:** `bazel run //:run_sql -- --query "SELECT ..."`
+**❌ BAD:** `python3 run_sql.py` or running Bazel from a subdirectory.
+
+Bazel needs the `WORKSPACE`/`MODULE.bazel` file at root; system Python lacks project dependencies.
+
+## Script Development Flow
+
+1. **Check documentation** — Can you reuse an existing tool?
+2. **Check if trivial** — Just command-line tools?
+3. **Search existing scripts** — Check codebase and `scripts/README.md`
+4. **Check recent history** — Created similar scripts recently? → Make it permanent with logging
+5. **NEVER create temporary scripts without explicit user request**
+6. **Always use Bazel** for project-specific libraries
+7. **Log all script usage** (permanent → own log file; throwaway → shared log with context)
+
+## Never Create Temporary Scripts Without Explicit Request
+
+Only create scripts when the user explicitly asks. Otherwise use existing scripts, command-line tools, or Bazel targets. Ask: "Should I create a script for this, or can we use existing tools?"
+
+## Check Recent History Before Re-Running Scripts
+
+Before running any script:
+1. Check conversation history — was it just run?
+2. Check for recent log files (`/tmp/`, project logs)
+3. If log is recent (<5 min), use it instead of re-running
+4. Re-run only if: log is stale (>1h), params changed, code changed, or user requests it
+
+## Search for Existing Scripts Before Creating New Ones
+
+Before creating a new script:
+1. Search codebase for similar functionality
+2. Check `scripts/README.md`
+3. Consider extending an existing script with a new flag
+4. Only create new if functionality is truly distinct
+5. Get explicit user confirmation
+
+**✅ GOOD:** Add `--check-new-feature` flag to existing `validate_data.py`
+**❌ BAD:** Create `validate_data_v2.py`
+
+**Create new when:** Fundamentally different purpose/category, user explicitly requests.
+**Extend existing when:** Same category, similar functionality, controllable via flags.
+
+## Generalize and Remove Duplicative Scripts
+
+**Before keeping a script**, check if a master/comprehensive script already covers it. Consolidate into unified scripts; delete redundant ones.
+
+**Process:** Extract logic to shared module → integrate into master script → update references → delete old script + BUILD target → update docs.
+
+**✅ GOOD:** `bazel run //scripts/salary:validate_data -- --check-import-completeness-by-file`
+**❌ BAD:** Separate `check_per_year_discrepancies` and `check_file_discrepancies` scripts when master covers both.
+
+**Keep a script only when** it serves a distinct, non-overlapping purpose in a different category, or migration would be disruptive.

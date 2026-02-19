@@ -127,7 +127,7 @@ def _aggregate_employment_data(
                 bulletin_urls=[]
             )
         
-        _append_records_to_data(normalized_data[display_name], records)
+        _append_records_to_data(normalized_data[display_name], records, VisaCategory.EMPLOYMENT_BASED.value)
     
     return _finalize_aggregated_data(normalized_data, submission_date)
 
@@ -165,12 +165,12 @@ def _aggregate_family_data(
                 bulletin_urls=[]
             )
         
-        _append_records_to_data(normalized_data[normalized_class], records)
+        _append_records_to_data(normalized_data[normalized_class], records, VisaCategory.FAMILY_SPONSORED.value)
     
     return _finalize_aggregated_data(normalized_data, submission_date)
 
 
-def _append_records_to_data(data: VisaClassData, records) -> None:
+def _append_records_to_data(data: VisaClassData, records, category: str) -> None:
     """Append bulletin records to visa class data, avoiding duplicates"""
     for record in records:
         pub_date = record.bulletin.publication_date
@@ -180,7 +180,9 @@ def _append_records_to_data(data: VisaClassData, records) -> None:
             continue
         
         data.dates.append(pub_date)
-        data.bulletin_urls.append(record.bulletin.get_bulletin_url())
+        # Internal link to prediction detail page (category-aware)
+        internal_url = f"/predictions/{category}/{pub_date.year}-{pub_date.month}/"
+        data.bulletin_urls.append(internal_url)
         
         if record.is_current:
             data.cutoff_dates.append(pub_date)

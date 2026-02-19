@@ -49,7 +49,7 @@ git push origin v1.2.3
 
 ### 2. deploy-production.yml
 
-**Purpose**: Optional manual deploy of Docker image to Lightsail (e.g. from GitHub UI). Production deploys are normally done **locally** via `./scripts/deploy-zero-downtime.sh` so repo secrets are not required.
+**Purpose**: Optional manual deploy of Docker image to Lightsail (e.g. from GitHub UI). Production deploys are normally done **locally** via `./scripts/deploy.sh` so repo secrets are not required.
 
 **Triggers**:
 - Manual workflow dispatch only (click "Run workflow" in GitHub Actions). Not triggered by pushes or builds.

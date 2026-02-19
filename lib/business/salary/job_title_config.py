@@ -69,16 +69,13 @@ class JobTitleClusteringConfig:
         norm2: str
     ) -> bool:
         """
-        Apply experience level filtering for job titles.
-        
-        Two job titles can only match if they have the same experience level.
-        This prevents matching "Junior Software Engineer" with "Senior Software Engineer".
+        Additional filtering for job title clustering.
+
+        We intentionally cluster across experience levels so that
+        "Software Engineer", "Senior Software Engineer", and "Software Engineer II"
+        all belong to one job-family cluster.  The experience level is preserved on
+        each JobTitle entity for drill-down analysis.
         """
-        # Must have same experience level to match
-        if entity1.experience_level != entity2.experience_level:
-            return False
-        
-        # Pass filter
         return True
     
     def get_entity_model(self) -> type[JobTitle]:

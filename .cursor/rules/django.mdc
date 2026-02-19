@@ -4,608 +4,184 @@ alwaysApply: true
 
 # Django Patterns and Best Practices
 
-## Rule: Use IntegerChoices for Performance, TextChoices for Readability
+## Enum Best Practices
 
-**Choose enum type based on data volume and query frequency:**
+### IntegerChoices vs TextChoices
 
-**Use IntegerChoices when:**
-- High-volume data (millions of records)
-- Frequently queried/filtered fields
-- Performance-critical (indexes, joins, comparisons)
-- Storage efficiency matters
+- **IntegerChoices** for high-volume data (millions of records): 4 bytes, faster comparisons/indexes
+- **TextChoices** for low-volume metadata (hundreds/thousands): human-readable in DB, easier debugging
 
-**Use TextChoices when:**
-- Low-volume metadata (hundreds/thousands of records)
-- Human readability in DB queries is valuable
-- Debugging ease is important
-- Storage overhead is negligible
-
-**Performance Comparison:**
-- IntegerChoices: 4 bytes, faster comparisons, better index performance
-- TextChoices: 10-50 bytes, slower comparisons, readable in queries
-
-**Examples:**
 ```python
-# High-volume: Use IntegerChoices (0 reserved for invalid)
+# High-volume: IntegerChoices (0 reserved for invalid)
 class IngestStatus(models.IntegerChoices):
     INVALID = 0, 'Invalid/Unknown'  # Reserved
     PENDING = 1, 'Pending'
     RUNNING = 2, 'Running'
-    COMPLETED = 3, 'Completed'
 
 # Low-volume: TextChoices OK
 class DataDomain(models.TextChoices):
- DOL = 'dol', 'Department of Labor'
- VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
+    DOL = 'dol', 'Department of Labor'
+    VISA_BULLETIN = 'visa_bulletin', 'Visa Bulletin'
 ```
 
-**Why IntegerChoices for high-volume?**
-- ✅ Smaller storage (4 bytes vs 10-50 bytes per record)
-- ✅ Faster comparisons and joins
-- ✅ Better index performance
-- ✅ Less memory usage
-- ❌ Less readable in raw SQL queries (see '1' not 'pending')
+### Reserve 0 for Invalid/Unknown in IntegerChoices
 
-**Why TextChoices for low-volume?**
-- ✅ Human-readable in database queries
-- ✅ Self-documenting (no lookup table needed)
-- ✅ Easier debugging
-- ✅ Negligible performance impact at low volumes
+**ALWAYS reserve `0` for invalid/unknown.** This prevents falsy-value bugs and allows safe `if country:` checks.
 
-## Rule: Reserve 0 for Invalid/Unknown in IntegerChoices
-
-**ALWAYS reserve value `0` for invalid/unknown/unspecified in IntegerChoices enums.**
-
-**✅ GOOD - 0 reserved for invalid:**
 ```python
+# ✅ GOOD
 class Country(models.IntegerChoices):
-    INVALID = 0, "Invalid/Unknown"  # Reserved - never used for valid data
+    INVALID = 0, "Invalid/Unknown"
     ALL = 1, "Other Countries"
     CHINA = 2, "China (mainland born)"
-    INDIA = 3, "India"
-```
 
-**❌ BAD - 0 used for valid value:**
-```python
+# ❌ BAD - 0 used for valid value
 class Country(models.IntegerChoices):
-    ALL = 0, "Other Countries"  # ❌ 0 should be reserved
-    CHINA = 1, "China (mainland born)"
+    ALL = 0, "Other Countries"  # ❌ 0 is falsy
 ```
 
-**Benefits:**
-- ✅ Prevents falsy value bugs (0 is falsy, but it's invalid anyway)
-- ✅ Can use truthiness checks safely: `if country:` filters out invalid
-- ✅ Clear semantic meaning: 0 = invalid/unknown
-- ✅ Consistent pattern across all IntegerChoices
-- ✅ Easier debugging (0 always means invalid)
+### Falsy Value Bug (Legacy Code)
 
-**When to use:**
-- ✅ All new IntegerChoices enums
-- ✅ Migrate existing enums when feasible (see migration section below)
+For **legacy** enums where 0 is a valid value (not yet migrated), use explicit `is None` checks:
 
-**Rationale:**
-- Eliminates entire class of bugs (falsy value checks work correctly)
-- Makes code more readable (`if country:` is clear and safe)
-- Follows common pattern in many systems (0 = invalid/null)
-- Reduces cognitive load (no need to remember which enums use 0)
-
-## Rule: IntegerChoices Falsy Value Bug - Always Use Explicit None Checks
-
-**CRITICAL: When using IntegerChoices where a value can be `0`, NEVER use truthiness checks.**
-
-**Note:** This rule applies to legacy code or enums that haven't been migrated yet. After migrating to reserve 0 for invalid (see rule above), you can use truthiness checks safely: `if country:` will correctly filter out invalid (0) values.
-
-**The Bug (Legacy Pattern):**
-- IntegerChoices can have value `0` for valid data (e.g., `ALL = 0, "Other Countries"`)
-- `0` is falsy in Python: `bool(0) == False`
-- Code like `if not country:` treats `Country.ALL` (value 0) as falsy and skips it
-- This causes silent data loss - records are matched correctly but discarded
-- **Solution:** Reserve 0 for invalid, or use explicit `is None` checks
-
-**❌ BAD - Falsy check:**
 ```python
-country = Country.from_header(header)
-if not country:  # ❌ Treats 0 as falsy!
-    # Skip unknown country
-    continue
-# Country.ALL (value=0) is incorrectly skipped here!
+# ❌ BAD (legacy) - Treats Country.ALL (value=0) as falsy
+if not country: continue
+
+# ✅ GOOD (legacy) - Only skips actual None
+if country is None: continue
 ```
 
-**✅ GOOD - Explicit None check:**
+After migrating to reserve 0 for INVALID, `if not country:` works correctly.
+
+**Test:** `test_country_all_is_not_treated_as_none()` in `tests/test_country_header_parsing.py`.
+
+### Always Use Enum Values Instead of String Literals
+
+**Use `.value` instead of hardcoded strings.** Single source of truth, type safety, refactoring safety.
+
 ```python
-country = Country.from_header(header)
-if country is None:  # ✅ Only skips actual None values
-    # Skip unknown country
-    continue
-# Country.ALL (value=0) is correctly processed here!
+# ❌ BAD
+source = DataSource.objects.create(domain='dol', source_type='lca')
+
+# ✅ GOOD
+source = DataSource.objects.create(domain=DataDomain.DOL.value, source_type=SourceType.LCA.value)
 ```
 
-**Real-World Example (Legacy Pattern - Fixed):**
+**When to use `.value`:** Setting fields, comparing values, argparse choices, test assertions, dict keys.
+
+**When to use enum directly (Django handles conversion):** ORM queries (`filter(domain=DataDomain.DOL)`), model field assignments, comparisons with model fields.
+
+**Key enums:** `DataDomain`, `SourceType`, `VisaProgram`, `VisaCategory`, `ActionType`, `Country`.
+
+### Use Enum Types in Function Signatures
+
+**Use enum types (not `str`) in internal function signatures.**
+
 ```python
-# In lib/parsing/bulletin/table_to_cutoff_data.py (before migration)
-for country_header, cutoff_value in zip(country_headers, cutoff_values):
-    country = Country.from_header(country_header)
-    
-    # CRITICAL: Check for None explicitly, not just falsy!
-    # Country.ALL = 0 (legacy), which is falsy, so we must check `country is None`
-    if country is None:
-        logger.warning(f"Unknown country header: '{country_header}'")
-        continue
-    
-    # Process all valid countries including Country.ALL (value=0 in legacy)
-    data = {'country': country.value, ...}
+# ❌ BAD
+def create_salary_record(visa_program: str, wage_unit: str) -> SalaryRecord: ...
+
+# ✅ GOOD
+def create_salary_record(visa_program: VisaProgram, wage_unit: WageUnit | None) -> SalaryRecord: ...
 ```
 
-**New Pattern (After Migration):**
-```python
-# With 0 reserved for INVALID, truthiness checks work correctly:
-for country_header, cutoff_value in zip(country_headers, cutoff_values):
-    country = Country.from_header(country_header)
-    
-    # Safe: 0 is invalid, so truthiness check filters it out correctly
-    if not country:  # ✅ Works correctly - filters out INVALID (0)
-        logger.warning(f"Unknown country header: '{country_header}'")
-        continue
-    
-    # Process all valid countries (all have value >= 1)
-    data = {'country': country.value, ...}
-```
+**Use `str` only for:** parsing user input, CLI arguments, external APIs. Convert to enum after parsing.
 
-**When This Applies:**
-- ✅ Legacy IntegerChoices enums where first value is 0 (before migration)
-- ✅ Any code checking if enum value exists/is valid in legacy code
-- ✅ Any code filtering out "unknown" or "invalid" enum values
+**Django ORM:** Automatically converts enum instances to DB values. When bypassing ORM (e.g., COPY), use `.value` manually.
 
-**After Migration:**
-- ✅ With 0 reserved for INVALID, truthiness checks work correctly
-- ✅ `if country:` safely filters out invalid (0) and keeps all valid values (>= 1)
-- ✅ No need for explicit None checks to avoid falsy bugs
-
-**Test Coverage:**
-- Test `test_country_all_is_not_treated_as_none()` in `tests/test_country_header_parsing.py` verifies extraction works
-- Ensures Country.ALL (value=1 after migration) is extracted correctly
-
-**Rationale:**
-- Prevents silent data loss
-- Catches bug at test time, not production
-- Makes code intent explicit (checking for None, not falsy values)
-- Follows Python best practice: explicit is better than implicit
-
-**Pattern:**
+### TextChoices Pattern Reference
 
 ```python
-from django.db import models
-
 class Country(models.TextChoices):
-    """Country for visa chargeability"""
-    CHINA = "china", "China (mainland born)"  # (value, label)
+    CHINA = "china", "China (mainland born)"
     INDIA = "india", "India"
-    
+
     @classmethod
     def from_header(cls, header: str):
-        """Custom parsing method"""
-        mappings = {
-            'CHINA-mainland born': cls.CHINA,
-            'INDIA': cls.INDIA,
-        }
+        mappings = {'CHINA-mainland born': cls.CHINA, 'INDIA': cls.INDIA}
         return mappings.get(header)
 
-# In models
-class VisaCutoffDate(models.Model):
-    country = models.CharField(
-        max_length=50,
-        choices=Country.choices  # Django constraint
-    )
-```
-
-**Usage:**
-
-```python
-# ✅ Queries with enums (type-safe)
+# Usage
 records = VisaCutoffDate.objects.filter(country=Country.CHINA)
-
-# ✅ Access enum instance from record
-record = VisaCutoffDate.objects.first()
-print(record.country)        # 'china' (string value)
-print(record.get_country_display())  # 'China (mainland born)' (label)
-
-# ✅ Tests
-assert result['country'] == Country.CHINA.value
-
-# ✅ Data creation
+record.get_country_display()  # 'China (mainland born)'
 VisaCutoffDate.objects.create(country=Country.CHINA)
 ```
 
-**Benefits:**
-- Type safety and IDE autocomplete
-- Readable database queries (SELECT shows 'china')
-- Single source of truth
-- Automatic database constraints
-- Admin UI shows human-readable labels
-
-## Rule: Always Use Enum Values Instead of String Literals
-
-**ALWAYS use enum values (`.value`) instead of hardcoded string literals when working with Django TextChoices or IntegerChoices.**
-
-**Why:**
-- Single source of truth (change enum value once, not everywhere)
-- Type safety (IDE autocomplete, catch typos)
-- Refactoring safety (rename enum value, code updates automatically)
-- Prevents inconsistencies (typos like `'dol'` vs `'DOL'` vs `'Dol'`)
-
-**❌ BAD - String literals:**
-```python
-# Hardcoded strings scattered throughout codebase
-source = DataSource.objects.create(domain='dol', source_type='lca')
-if domain == 'dol':
-    process_dol_data()
-parser.add_argument('--domain', choices=['dol', 'visa_bulletin'])
-assert result['domain'] == 'dol'
-```
-
-**✅ GOOD - Enum values:**
-```python
-from models.ingest.enums import DataDomain, SourceType
-
-# Use enum values
-source = DataSource.objects.create(
-    domain=DataDomain.DOL.value, 
-    source_type=SourceType.LCA.value
-)
-if domain == DataDomain.DOL.value:
-    process_dol_data()
-parser.add_argument('--domain', choices=[d.value for d in DataDomain])
-assert result['domain'] == DataDomain.DOL.value
-```
-
-**When to use `.value`:**
-- ✅ Setting enum fields: `domain=DataDomain.DOL.value`
-- ✅ Comparing against enum values: `if domain == DataDomain.DOL.value:`
-- ✅ Argparse choices: `choices=[d.value for d in DataDomain]`
-- ✅ Test assertions: `assert result['domain'] == DataDomain.DOL.value`
-- ✅ Dictionary keys/values: `{'domain': DataDomain.DOL.value}`
-
-**When NOT to use `.value` (use enum directly):**
-- ✅ Django queries: `DataSource.objects.filter(domain=DataDomain.DOL)` (Django handles conversion)
-- ✅ Model field assignments: `record.domain = DataDomain.DOL` (Django handles conversion)
-- ✅ Comparisons with model fields: `if record.domain == DataDomain.DOL:` (Django handles conversion)
-
-**Special cases:**
-
-1. **User input parsing** - Accept strings, convert to enum:
-```python
-# ✅ GOOD - Accept string input, convert to enum
-def parse_domain(input_str: str) -> DataDomain | None:
-    """Parse user input to enum"""
-    for domain in DataDomain:
-        if domain.value == input_str.lower():
-            return domain
-    return None
-
-# Use enum for internal logic
-domain = parse_domain(user_input)
-if domain == DataDomain.DOL:
-    process_dol_data()
-```
-
-2. **Argparse choices** - Use enum values:
-```python
-# ✅ GOOD - Use enum values for choices
-parser.add_argument(
-    '--domain', 
-    choices=[d.value for d in DataDomain],
-    help=f'Domain: {", ".join(d.value for d in DataDomain)}'
-)
-```
-
-3. **Plugin registry keys** - Use enum values:
-```python
-# ✅ GOOD - Use enum values for registry keys
-key = f"{plugin.domain.value}:{plugin.source_type.value}"
-PluginRegistry._plugins[key] = plugin
-```
-
-**Enums to check:**
-- `DataDomain`: `'dol'`, `'visa_bulletin'` → Use `DataDomain.DOL.value`, `DataDomain.VISA_BULLETIN.value`
-- `SourceType`: `'lca'`, `'perm'`, `'worksite'`, `'bulletin'` → Use `SourceType.LCA.value`, etc.
-- `VisaProgram`: `'h1b'`, `'perm'`, `'h1b1'`, `'e3'` → Use `VisaProgram.H1B.value` (IntegerChoices, but `.value` still works)
-- `VisaCategory`, `ActionType`, `Country`, etc. → Use enum values
-
-**Rationale:**
-- Prevents typos and inconsistencies
-- Makes refactoring safe (change enum definition, all code updates)
-- Type safety catches errors at development time
-- Single source of truth for all enum values
-- Easier to find all usages (search for `DataDomain.DOL` not `'dol'`)
-
-## Rule: Use Enum Types in Function Signatures (Internal Code)
-
-**ALWAYS use enum types (not `str`) in function signatures for parameters that represent enum values in code we own.**
-
-**❌ BAD - String types for enum parameters:**
-```python
-def create_salary_record(
-    visa_program: str,  # ❌ Should be VisaProgram
-    case_status: str,   # ❌ Should be CaseStatus | None
-    wage_unit: str,     # ❌ Should be WageUnit | None
-) -> SalaryRecord:
-    ...
-```
-
-**✅ GOOD - Enum types:**
-```python
-from models.enums.visa_program import VisaProgram, CaseStatus, WageUnit
-
-def create_salary_record(
-    visa_program: VisaProgram,
-    case_status: CaseStatus | None,
-    wage_unit: WageUnit | None,
-) -> SalaryRecord:
-    ...
-```
-
-**Why:**
-- Type checkers can validate enum usage at development time
-- IDE autocomplete shows valid enum options
-- Prevents passing invalid string values
-- Makes code self-documenting (clear what values are valid)
-- Catches typos before runtime
-
-**When to use `str` for enum-related parameters:**
-- ✅ Parsing user input or external data (e.g., `parse_visa_program(raw_value: str) -> VisaProgram | None`)
-- ✅ CLI arguments that accept string inputs (convert to enum after parsing)
-- ✅ External APIs or serialization formats
-
-**When to use enum types:**
-- ✅ Internal function signatures (code we own)
-- ✅ Model creation/updates (Django handles enum-to-value conversion)
-- ✅ Business logic functions
-- ✅ Data transformation pipelines
-
-**Django ORM Integration:**
-- Django automatically converts enum instances to their database values
-- When creating models: `SalaryRecord(visa_program=VisaProgram.H1B)` → Django stores the integer value
-- When querying: `SalaryRecord.objects.filter(visa_program=VisaProgram.H1B)` → Django converts to value
-- When using COPY (bypassing ORM): Must convert manually with `.value` attribute
-
-**Rationale:**
-- Type safety prevents entire class of bugs (passing invalid enum values)
-- Self-documenting code (enum type shows valid options)
-- IDE support for autocomplete and refactoring
-- Consistent with modern Python type hinting best practices
-
 ## Django Settings
 
-- Use `settings.py` for local development
-- Use `settings_production.py` for production (imported conditionally)
-- Store secrets in environment variables, not in code
-- Use `.env` files for local secrets (gitignored)
+- `settings.py` for local development; `settings_production.py` for production
+- Secrets in environment variables, `.env` for local (gitignored)
 
 ## Database
 
-- **PostgreSQL is the ONLY supported database** (configured in `django_config/settings.py`)
-- **SQLite is NOT supported** for development or production
-- Database connection configured via environment variables (DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT)
+- **PostgreSQL only** (configured in `django_config/settings.py`)
+- SQLite NOT supported
+- Connection via env vars: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`
 
 ## Database Migrations
 
-- **Always review migrations before committing**
-- **Never bypass migrations** (no `--fake` or `--skip-checks` in production)
-- Test migrations on development database first
-- Check for reversibility when possible
-- Document complex migrations with comments
-- Use `makemigrations --check` in CI/CD to catch missing migrations
+- Always review before committing; never bypass with `--fake` or `--skip-checks`
+- Test on dev DB first; check reversibility; document complex migrations
 
-### Rule: Never Circumvent makemigrations/migrate Process
+### Never Circumvent makemigrations/migrate
 
-**🚨 CRITICAL: NEVER run direct SQL schema changes (ALTER TABLE, etc.) to bypass migrations unless explicitly instructed.**
-
-**Always use the proper migration workflow:**
+**🚨 NEVER run direct SQL schema changes to bypass migrations unless explicitly instructed.**
 
 ```bash
-# 1. Create migration locally
+# Proper workflow
 bazel run //:makemigrations
-
-# 2. Review the migration file
-cat models/migrations/NNNN_*.py
-
-# 3. Copy to server (if needed)
+cat models/migrations/NNNN_*.py  # Review
 scp models/migrations/NNNN_*.py server:/path/to/models/migrations/
-
-# 4. Apply migration on server with correct DB_HOST
 ssh server "cd /path && DB_HOST=localhost bazel run //:migrate"
 ```
 
-**❌ FORBIDDEN - Direct SQL:**
+**Direct SQL acceptable only:** user explicitly instructs, emergency with approval, one-time data fixes (not schema).
+
+**Common issues:**
+
+| Issue | Fix |
+|-------|-----|
+| `could not translate host name 'host.docker.internal'` | Override: `DB_HOST=localhost bazel run //:migrate`. `.env` uses `host.docker.internal` for Docker; Bazel runs on host need `localhost`. |
+| `could not change directory to '/home/ubuntu'` | Harmless warning from `sudo -u postgres psql`. |
+| SystemCheckError E034 (index name >30 chars) | Always set explicit short `name=` (≤30 chars) on `models.Index` with `include=` or many fields. |
+
+### Running Migrations with Server
+
+PostgreSQL MVCC allows concurrent schema changes — **server can stay running** during migrations.
+
+In production (Docker), migrations run during container startup before the web server starts.
+
+### Creating Migrations
+
+For models in subdirectories (e.g., `models/ingest/`):
+1. Import in `models/__init__.py`: `from .ingest import DataSource, IngestRun, IngestVersion`
+2. Run: `bazel run //:makemigrations`
+3. Wrapper (`scripts/makemigrations_wrapper.py`) handles Bazel sandbox, copies migrations to workspace
+
+## ForeignKey Lazy References to Subdirectory Models
+
+Django system checks run before `AppConfig.ready()`, so subdirectory models need explicit registration.
+
+**All 3 steps required:**
+1. **Direct import** in referencing file: `from .ingest.ingest_version import IngestVersion  # noqa: F401`
+2. **Import in `models/__init__.py`**: `from .ingest.ingest_version import IngestVersion`
+3. **Bazel dep**: `"//models/ingest:ingest_version"` in BUILD
+
+**String reference format:** Use `'models.ModelName'` (matches `app_label`). Not `'subdirectory.ModelName'`.
+
+**See:** `docs/DJANGO_MODEL_RESOLUTION_ISSUE.md` for troubleshooting.
+
+## Django Model Names vs PostgreSQL Table Names
+
+**Django model names ≠ PostgreSQL table names.** Pattern: `{app_label}_{model_name_snake_case}`.
+
 ```bash
-# ❌ NEVER DO THIS
-psql -c "ALTER TABLE salary_record ALTER COLUMN field DROP NOT NULL;"
+# Verify table names
+bazel run //:run_sql -- --query "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
 ```
 
-**When direct SQL is acceptable:**
-- ✅ User explicitly instructs: "run this SQL directly"
-- ✅ Emergency production fix with explicit approval
-- ✅ One-time data fixes (not schema changes)
-
-**Why this matters:**
-- Django's migration system tracks schema state
-- Direct SQL bypasses migration history
-- Creates inconsistency between code and database
-- Breaks rollback capability
-- Causes "No migrations to apply" confusion when migration file exists but wasn't recorded
-
-**Common issues and fixes:**
-
-**Issue: `bazel run //:migrate` fails with "could not translate host name 'host.docker.internal'"`**
-- **Root cause:** `.env` has `DB_HOST=host.docker.internal` (correct for Docker containers), but Bazel commands run directly on the host (cron jobs, manual commands)
-- **Fix:** Override with `DB_HOST=localhost bazel run //:migrate`
-- **Pattern:** 
-  - `.env` has `host.docker.internal` for Docker containers (web service)
-  - Cron jobs run on the host (not in Docker), need `localhost`
-  - Bazel scripts auto-convert to `localhost` when running on host:
-    - `scripts/cron/refresh_data.sh` (lines 175-176)
-    - `scripts/ingest/run_pipeline.py` (lines 28-30)
-
-**Issue: "could not change directory to '/home/ubuntu': Permission denied" when running `sudo -u postgres psql`**
-- **This is harmless** - postgres user can't access /home/ubuntu, but psql works fine
-- Can be avoided with: `sudo -u postgres psql -d dbname` (no cd needed)
-- Not an error, just a warning
-
-**Issue: SystemCheckError E034 - "The index name '...' cannot be longer than 30 characters"**
-- **Root cause:** Django limits index names to 30 chars (Oracle compatibility). Indexes with `include=` or many fields get an auto-generated name (e.g. `salary_record_emp_worksite_fy_inc_wage`, 35 chars) when `name=` is omitted.
-- **Fix:** Always set an explicit short `name=` (≤30 chars) on `models.Index` when using `include=` or many fields. Example: `name='sr_emp_wk_fy_inc_wage'`.
-- **If a concurrent migration added the same index without name=:** Edit that migration's `AddIndex` to add `name='sr_emp_wk_fy_inc_wage'` (or another short name) to the Index, or remove the duplicate AddIndex if 0029 already adds it.
-
-**Rationale:**
-- Migrations are the single source of truth for database schema
-- Bypassing migrations creates technical debt and confusion
-- Proper workflow ensures consistency across environments
-- Migration history enables safe rollbacks
-
-### Rule: Running Migrations with Server
-
-**PostgreSQL supports concurrent schema changes:**
-- ✅ **Server can stay running** - PostgreSQL uses MVCC (Multi-Version Concurrency Control)
-- ✅ Migrations can run while server is active
-- ✅ No need to stop the server before running migrations
-
-**✅ GOOD - Server can run:**
-```bash
-# Server can be running - no need to stop
-bazel run //:migrate
-```
-
-**Production:**
-- In production (Docker), migrations run during container startup before the web server starts
-- No manual intervention needed - migrations are automatic
-- See `Dockerfile` and `docker-compose.yml` for production migration flow
-
-**Rationale:**
-- PostgreSQL uses MVCC (Multi-Version Concurrency Control) allowing concurrent schema changes
-- Server can remain running during migrations without conflicts
-
-**Creating Migrations:**
-
-**For models in subdirectories (e.g., `models/ingest/`):**
-1. Import models in `models/__init__.py` so Django can discover them:
-   ```python
-   from .ingest import DataSource, IngestRun, IngestVersion
-   ```
-2. Run migrations via Bazel:
-   ```bash
-   bazel run //:makemigrations
-   ```
-3. The wrapper script automatically:
-   - Detects new models (including subdirectories)
-   - Creates migrations in the sandbox
-   - Copies migrations to workspace (`models/migrations/`)
-   - Handles both root and subdirectory migrations
-
-**Migration Wrapper:**
-- Uses `scripts/makemigrations_wrapper.py` to handle Bazel sandbox
-- Automatically copies migrations from sandbox to workspace
-- Handles both `models/migrations/` and `models/ingest/migrations/` (if needed)
-- Includes ingest models in BUILD deps: `//models:ingest`
-
-**Rationale:**
-- Migrations are part of your codebase
-- Bad migrations can corrupt production data
-- Migrations should be reviewed like code changes
-- Reversible migrations enable safe rollbacks
-- Subdirectory models must be imported for Django to detect them
-
-## Rule: ForeignKey Lazy References to Models in Subdirectories
-
-**When using ForeignKey with string references to models in subdirectories, you MUST import the model directly to ensure Django can resolve it.**
-
-**Problem:**
-Django's system check runs before `AppConfig.ready()`, so models in subdirectories aren't discovered when using lazy string references like `'models.IngestVersion'`.
-
-**Error:**
-```
-SystemCheckError: The field models.SalaryRecord.ingest_version was declared with a lazy reference 
-to 'models.ingestversion', but app 'models' doesn't provide model 'ingestversion'.
-```
-
-**Solution (3 parts required):**
-
-1. **Direct import in files that reference the model:**
-```python
-# In models/salary.py
-from .ingest.ingest_version import IngestVersion  # noqa: F401
-
-class SalaryRecord(models.Model):
-    ingest_version = models.ForeignKey(
-        'models.IngestVersion',  # String reference
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-    )
-```
-
-2. **Import in `models/__init__.py` for discovery:**
-```python
-from .ingest.ingest_version import IngestVersion
-```
-
-3. **Add Bazel dependency in BUILD file:**
-```python
-py_library(
-    name = "salary",
-    deps = [
-        "//models/ingest:ingest_version",  # Required
-        # ... other deps
-    ],
-)
-```
-
-**Why all three are needed:**
-- Direct import ensures model is registered before system checks run
-- `__init__.py` import enables Django to discover models during `makemigrations`
-- Bazel dependency makes module available in sandboxed environment
-
-**String reference format:**
-- ✅ Use `'models.ModelName'` (matches `app_label` in Meta class)
-- ❌ Don't use `'subdirectory.ModelName'` (Django looks for app 'subdirectory')
-- ❌ Don't use just `'ModelName'` (only works if model is in same file)
-
-**See:** `docs/DJANGO_MODEL_RESOLUTION_ISSUE.md` for complete troubleshooting guide.
-
-## Rule: Django Model Names vs PostgreSQL Table Names
-
-**CRITICAL: Django model names are NOT the same as PostgreSQL table names. Always verify table names before querying.**
-
-**Naming Convention:**
-- **Django models**: `CamelCase` class names (e.g., `JobTitle`, `SalaryRecord`)
-- **PostgreSQL tables**: `app_label_modelname` in snake_case (e.g., `salary_job_title`, `salary_record`)
-
-**How Django generates table names:**
-1. Takes the app label (e.g., `salary`, `bulletin`)
-2. Converts model name to snake_case (e.g., `JobTitle` → `job_title`)
-3. Combines: `{app_label}_{model_name_snake_case}`
-
-**✅ GOOD - Verify table names first:**
-```python
-# Use run_sql to list tables
-bazel run //:run_sql -- --query \
-  "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
-
-# Or query specific pattern
-bazel run //:run_sql -- --query \
-  "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE '%job%'"
-```
-
-**❌ BAD - Assume model name is table name:**
-```python
-# Wrong: Using Django model name directly
-bazel run //:run_sql -- --query "SELECT COUNT(*) FROM JobTitle"  # ❌ Table doesn't exist
-bazel run //:run_sql -- --query "SELECT COUNT(*) FROM models_jobtitle"  # ❌ Wrong pattern
-
-# Correct: Using actual PostgreSQL table name
-bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"  # ✅ Works
-```
-
-**Common table mappings in this project:**
+**Common table mappings:**
 
 | Django Model | File | PostgreSQL Table |
 |-------------|------|------------------|
@@ -620,38 +196,6 @@ bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"  # ✅ W
 | `IngestRun` | `models/ingest/ingest_run.py` | `models_ingestrun` |
 | `IngestVersion` | `models/ingest/ingest_version.py` | `models_ingestversion` |
 
-**How to find table names when in doubt:**
+**How to find table names:** Query `pg_tables`, check migrations for `CREATE TABLE`, or use `Model._meta.db_table`.
 
-1. **Query pg_tables (fastest):**
-   ```sql
-   SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;
-   ```
-
-2. **Check Django migrations:**
-   ```bash
-   grep "CREATE TABLE" models/migrations/*.py
-   ```
-
-3. **Use Django shell (if available):**
-   ```python
-   from models.salary import JobTitle
-   print(JobTitle._meta.db_table)  # Prints: salary_job_title
-   ```
-
-**Why this matters:**
-- Wrong table names cause confusing `relation does not exist` errors
-- Wastes time debugging queries
-- Pattern is consistent: always `app_label_model_name_snake_case`
-- Some models have custom `db_table` in Meta class (rare but possible)
-
-**When writing raw SQL:**
-- ✅ Always use PostgreSQL table names (lowercase, underscores)
-- ✅ Query `pg_tables` first if unsure
-- ✅ Check Django model's `_meta.db_table` attribute if needed
-- ❌ Never assume Django model name matches table name
-
-**Rationale:**
-- Django's naming convention is automatic but not obvious
-- Raw SQL queries need actual table names, not model names
-- Querying wrong table wastes time with cryptic errors
-- Always verify table names first - saves debugging time
+**When writing raw SQL:** Always use PostgreSQL table names. Query `pg_tables` first if unsure. Never assume model name = table name.

@@ -4,23 +4,7 @@ alwaysApply: true
 
 # Deployment and Rollout Rules
 
-## Production Instances
-
-**Current Production Instances:**
-- **44.209.204.255** - Production (`prod_2Gb_vm`)
-- **3.227.71.176** - Backup (`backup_0_5Gb_vm`)
-- **54.196.241.197** - Staging (`staging_2Gb_vm`)
-
-**When deploying, always verify:**
-- Which instance is the target
-- What's running there (Docker vs direct gunicorn)
-- Database being used (blue vs green)
-
-## Rule: Always Verify Target Instance Before SSH Commands
-
-**CRITICAL: Always use the correct SSH alias based on the target instance.**
-
-**SSH aliases in `~/.ssh/config`:**
+## Production Instances and SSH
 
 | Alias | IP | RAM | Purpose |
 |-------|----|-----|---------|
@@ -28,683 +12,225 @@ alwaysApply: true
 | `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup |
 | `staging_2Gb_vm` | 54.196.241.197 | 2GB | Staging |
 
-**When user mentions a specific instance:**
-- ✅ Use the matching alias: `ssh prod_2Gb_vm`, `ssh backup_0_5Gb_vm`, or `ssh staging_2Gb_vm` (staging)
-- ✅ Verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?"
-- ❌ Don't use raw IPs or the old `lightsail` aliases
+**Before deploying, verify:** target instance, what's running (Docker vs gunicorn), database (blue vs green).
 
-**When debugging production issues:**
-- Ask user: "Which instance should I work with?"
-- Use the correct alias in commands
-- Verify instance in first command before making changes
-
-**Rationale:**
-- Multiple instances exist (prod, backup)
-- Wrong alias = wrong instance
-- Wrong instance = data corruption or service disruption
-- Always be explicit when making changes
+**CRITICAL:** Always use SSH aliases, not raw IPs. Verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?" When debugging, ask which instance first.
 
 ## AWS IAM and Lightsail CLI
 
-### IAM user for local/CI (visa-bulletin-deploy)
+**IAM user:** `visa-bulletin-deploy` with `lightsail:*`. Profile in `~/.aws/credentials`. Policy: `deployment/iam-lightsail-policy.json`.
 
-**IAM user:** `visa-bulletin-deploy` with Lightsail full access (`lightsail:*`). Use the named profile so you don't rely on SSO login.
-
-**Profile:** `visa-bulletin-deploy` in `~/.aws/credentials`. Policy source: `deployment/iam-lightsail-policy.json`.
-
-**Usage (local or CI):**
 ```bash
 export AWS_PROFILE=visa-bulletin-deploy
 aws lightsail get-instances --region us-east-1
-aws lightsail get-static-ips --region us-east-1
-aws lightsail get-instance-metric-data --instance-name VisaBulletin2GB --metric-name CPUUtilization ...
-# Or per command:
-aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
 ```
 
-**Covers:** Instances (get, start, stop, state, metrics), static IPs (get, attach, detach), snapshots, and other Lightsail resources. See `deployment/README.md` for details.
+**Instance credentials:** Lightsail has no IAM roles (unlike EC2). Two options:
+- **Option A – On-instance:** Create access key for IAM user, configure `aws configure --profile lightsail-cron` on the instance (outside repo). Use `AWS_PROFILE=lightsail-cron` in cron scripts.
+- **Option B – Off-instance runner:** Run from laptop/CI with `visa-bulletin-deploy` profile; SSH to instances for refresh, use AWS CLI locally for Lightsail API.
 
-### Giving instances (or cron runner) AWS privileges
+**Instance rename:** Not supported. Use **static IP reassignment** or **DNS switch** for blue-green.
 
-**Lightsail instances do not support IAM instance roles** (unlike EC2). To let a script on an instance (or a cron runner) call Lightsail API—e.g. re-attach static IPs, start/stop instances for blue-green—you must provide IAM credentials to that environment.
+## Rule: Verify Locally Before Deploying
 
-**Option A – Credentials on the instance (cron runs on instance):**
+1. Implement change locally
+2. Run tests (`bazel test //tests:...`)
+3. Verify locally (dev server, affected URL)
+4. Only then deploy to production
 
-1. **Create or reuse an IAM user** with Lightsail permissions (e.g. reuse `visa-bulletin-deploy` or create a dedicated user like `visa-bulletin-instance` with the same policy).
-2. **Create an access key** for that user: `aws iam create-access-key --user-name visa-bulletin-deploy` (or the dedicated user).
-3. **On the instance:** Install AWS CLI if needed (`apt install awscli` or use existing). Configure a profile or default credentials **outside the repo** (e.g. in a file not in git, or in env vars from a secret store):
-   ```bash
-   # Example: on instance, one-time setup (store in env or secret, not in repo)
-   aws configure set aws_access_key_id "AKIA..." --profile lightsail-cron
-   aws configure set aws_secret_access_key "..." --profile lightsail-cron
-   aws configure set region us-east-1 --profile lightsail-cron
-   ```
-4. **In cron script:** Use `AWS_PROFILE=lightsail-cron` (or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) when calling `aws lightsail attach-static-ip`, `detach-static-ip`, `start-instance`, `stop-instance`, etc.
+## Rule: Deploy After User-Requested Changes
 
-**Option B – Credentials on a separate runner (cron runs off-instance):**
+**Deploy by default** after implementing code changes. Use the branch-based deployment workflow (see `.cursor/rules/branching.mdc` and `docs/BRANCHING_AND_DEPLOYMENT.md`).
 
-- Run the end-to-end script (refresh + traffic switch) on a machine that has the profile or env vars set (e.g. your laptop, or a CI runner with `visa-bulletin-deploy` secrets). The script SSHs to instances for refresh and uses AWS CLI locally for Lightsail API calls. No credentials on instances.
+**Do NOT deploy when:** user says "local only", change is docs-only, or user only asked to plan/document.
 
-**Instance rename:** Lightsail does not support renaming instances after creation. For blue-green, use **static IP reassignment** (detach static IP from one instance, attach to the other) or **DNS switch** (point domain to the other instance’s IP); see `BLUE_GREEN_INSTANCE_ROLLOUT.md`.
+## Rule: Deploy Updated Binary and Run When Instructed
 
-**Rationale:** Documenting IAM and instance credentials avoids ad-hoc key creation and keeps Lightsail API access consistent for deployment and blue-green automation.
+When instructions say "deploy and run" or "rebuild and re-run," do it yourself:
+1. **Check status first** — tail orchestrator/stage logs, check for in-flight runs
+2. **Deploy** — commit to appropriate branch (`staging` or `prod`), push, then `git pull` on the target instance
+3. **Rebuild** — `ssh <instance> "cd /opt/visa_bulletin && bazel build //target && bazel shutdown"`
+4. **Run and monitor** — orchestrator with appropriate flags, monitor logs
 
-## Rule: Verify Locally Before Deploying to Production
+**Never scp files to servers.** All code changes go through git branches. See `docs/BRANCHING_AND_DEPLOYMENT.md`.
 
-**CRITICAL: When working with production, first verify changes locally, only then deploy to prod.**
+## Rule: Check Running Processes Before Starting Pipeline
 
-**Workflow:**
-1. Implement the change locally.
-2. Run relevant tests (e.g. `bazel test //tests:...`).
-3. **Verify locally** (run dev server, open the affected URL, confirm behavior).
-4. Only then deploy to production (scp, reload, or zero-downtime script).
+**Before starting the orchestrator on inactive/staging host:**
+1. `ps aux | grep run_pipeline | grep -v grep` — kill stale `discover-and-ingest` PIDs
+2. Re-check after killing so only the intended run remains
 
-**Rationale:**
-- Prevents broken or untested code from reaching production (e.g. IntegerChoices crash from class-level dict).
-- Catches bugs before users see them.
-- Reduces rollbacks and hotfixes.
+**`relation "ingest_rejection_stats" does not exist`:** Table missing on inactive host. Create it via `bazel run //:run_sql` using schema from `models/migrations/0024_ingestrejectionstats.py`.
 
-## Rule: Deploy to Production After Implementing User-Requested Changes
+## Rule: Refresh Orchestrator – Preliminary Steps
 
-**When the user asks to change something (code, UI, feature, fix), also deploy the changes to production after implementing.**
+The orchestrator (active → inactive pipeline):
+1. **Gate:** SSH + DB reachable (`run_psql(db_name, "SELECT 1")` with retries)
+2. **Before pipeline:** Stop Redis, Gunicorn, Bazel on inactive host; terminate idle Postgres connections
+3. **Pipeline:** Full ingest + post-processing + smoke (DB-only, no Gunicorn needed)
+4. **After pipeline:** Start Redis + Gunicorn (`docker compose up -d`); optionally wait for HTTP 200
 
-**Workflow:**
-1. Implement the requested change locally.
-2. Run relevant tests (e.g. `bazel test //tests:...`).
-3. Verify locally (see rule above).
-4. Deploy to production using the "Deploy from source" flow:
-   - `scp` the changed files to `prod_2Gb_vm:/opt/visa_bulletin/...`
-   - Reload gunicorn: `ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"` or `pkill -HUP gunicorn`
-4. Optionally verify (curl the affected URL, check HTML/API).
-
-**Do not deploy to production when:**
-- User explicitly says "don't deploy" or "local only".
-- Change is documentation-only and has no runtime effect.
-- User only asked to "plan" or "document" (no code change).
-
-**Rationale:**
-- User expects to see changes on production without asking again.
-- Reduces back-and-forth ("can you deploy that?").
-- Deploy to production by default after code changes.
-
-## Rule: Deploy Updated Binary and Run Yourself When Instructed
-
-**When instructions say things like "after you deploy the updated binary and run again," "deploy and run," or "rebuild and re-run," do it yourself. Do not only tell the user to do it.**
-
-**Workflow:**
-1. **Check current status first** (time may have passed):
-   - Prod: tail orchestrator log (e.g. `/tmp/orchestrate.log`), check if a run is in progress or already finished/failed.
-   - Inactive/staging host: any long-running processes (e.g. `run_pipeline`), any stage log (e.g. `/tmp/refresh_stage.log`).
-   - If a run is still in progress, decide whether to wait, monitor, or (if safe) stop and then deploy + re-run.
-2. **Deploy the updated code** (e.g. `scp` changed files to prod, or ensure latest commit is pulled on prod).
-3. **Rebuild the binary on prod** so the next run uses the new code (e.g. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown"`).
-4. **Run again** as appropriate (e.g. orchestrator with `--no-traffic-switch`, optionally `--resume` if checkpoint supports it), and monitor (orchestrator log, stage log on inactive host).
-
-**When this applies:**
-- User or prior message said "deploy the updated binary and run again," "then run again," "rebuild and re-run," or similar.
-- We just fixed orchestrator/runner/steps (or any binary used by the refresh pipeline) and the last run used an old binary.
-
-**Rationale:**
-- The agent should complete the loop (deploy → rebuild → run), not hand off to the user.
-- Checking status first avoids conflicting with an in-flight run or acting on stale assumptions.
-
-## Rule: Check Running Processes on Inactive Host Before Starting Pipeline
-
-**Before starting the orchestrator (or before the pipeline runs on the inactive/staging host), check for existing `run_pipeline discover-and-ingest` processes on that host.**
-
-**Why:**
-- Multiple ingest processes on staging overload the box (high CPU/memory) and cause SSH lag or timeouts.
-- Old runs from previous orchestrator attempts or manual runs should not still be running when a new pipeline starts.
-
-**Workflow:**
-1. **Before starting the orchestrator:** SSH to the inactive host and run `ps aux | grep run_pipeline | grep -v grep`. If any `discover-and-ingest` processes exist (other than one you are about to start), kill the old PIDs first: `kill <PID>` for each old Python ingest process (and its parent bash if present). Leave `check-completeness` or other short commands if they are quick.
-2. **When fixing a stuck or overloaded staging:** Same check; kill old ingest PIDs so the current run (or the next run) has resources. Identify the current run by start time or by the process that has `tee /tmp/refresh_stage.log` in its parent chain (that is the one started by the orchestrator).
-3. **After killing old processes:** Re-check with `ps aux | grep run_pipeline` so only the intended run remains (or none, if you are about to start fresh).
-
-**Rationale:**
-- Prevents staging from running 4–5 ingest processes at once and avoids SSH lag and timeouts.
-- Ensures each pipeline run has a clean slate or at least no competing long-running ingests.
-
-**When you notice `relation "ingest_rejection_stats" does not exist` in the stage log:** The inactive host’s DB is missing that table (migration 0024 may be recorded but the table was never created or was dropped). Fix it by creating the table on the inactive host: SSH to the inactive host, then run `bazel run //:run_sql` (or raw SQL) to create `ingest_rejection_stats` with FK to the ingest run table (on staging the run table is `ingest_run`). See migration `models/migrations/0024_ingestrejectionstats.py` for the schema. After creating the table, the pipeline will continue; future sources will no longer fail at rejection-stats write.
-
-## Rule: Refresh Orchestrator – Preliminary Steps and Postgres
-
-**The refresh orchestrator (run on active, pipeline on inactive/staging) now:**
-
-1. **Gate:** Waits for **SSH + DB reachable** (no port-80 health check before pipeline). Uses `run_psql(db_name, "SELECT 1")` with retries.
-2. **Before pipeline:** **Stops Redis, Gunicorn, Bazel** on the inactive host to free memory (Docker stop, pkill gunicorn, bazel shutdown). Then **terminates idle Postgres connections** to the target DB so the pipeline uses a clean connection set (no stale connections from old runs).
-3. **Pipeline:** Runs the full pipeline (ingest, post-processing, smoke). Smoke is DB-only; Gunicorn/Redis are not needed during pipeline.
-4. **After pipeline:** **Starts Redis and Gunicorn** (Docker compose up -d) so the instance is healthy for traffic switch. Optionally waits for HTTP 200 on port 80 before switching.
-
-**Why:** Frees ~400–500MB (Bazel) + Docker memory during ingest; ensures Postgres connections are the ones used by the orchestrator, not remains of older runs.
-
-**Manual stop (e.g. on staging):**
+**Manual stop:**
 ```bash
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker compose -f deployment/docker-compose.blue.yml stop; docker stop visa_bulletin_web_blue visa_bulletin_redis 2>/dev/null; pkill -f 'gunicorn.*django_config' || true; bazel shutdown 2>/dev/null; echo Done"
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker compose -f deployment/docker-compose.yml stop; docker stop visa_bulletin_web visa_bulletin_redis 2>/dev/null; pkill -f 'gunicorn.*django_config' || true; bazel shutdown 2>/dev/null; echo Done"
 ```
 
-**One-off checks on remote (<4GB):** Prefer the **pre-built binary** so Bazel is never started (e.g. `./bazel-bin/scripts/salary/manage_salary_indexes --list` after build). If you use `bazel run` on remote (e.g. index list), run **`bazel shutdown`** in the same or next SSH session to free memory. See `.cursor/rules/bazel.mdc`.
+**One-off checks on remote (<4GB):** Prefer pre-built binary. If using `bazel run`, always `bazel shutdown` after.
 
-## Rule: Never Use Development Scripts on Production
+## Rule: Never Use Dev Scripts on Production
 
-**🚨 CRITICAL: NEVER use development scripts like `restart_server.sh` on production instances.**
+**❌ NEVER** use `restart_server.sh`, `bazel run //:runserver`, or manually kill gunicorn on production.
 
-**Development vs Production:**
-
-**Development (local machine):**
-- ✅ Use `./scripts/restart_server.sh` (manages Django runserver)
-- ✅ Run `bazel run //:runserver` directly
-- ✅ Kill processes with `pkill -f runserver`
-- ✅ Uses Django development server (runserver)
-
-**Production (deployed instances):**
-- ✅ Use Docker Compose to manage services
-- ✅ Use `docker-compose restart` for specific environment
-- ❌ **NEVER** use `restart_server.sh` (breaks production)
-- ❌ **NEVER** kill gunicorn processes manually
-- ❌ **NEVER** run `bazel run //:runserver` on production
-- Uses Gunicorn in Docker containers
-
-**How to properly restart/clear cache on production:**
-
-### 1. Check which environment is active (blue or green)
+**✅ Production restart:**
 ```bash
-# Check nginx config to see which port is active
-ssh prod_2Gb_vm "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
-# Port 8000 = blue, Port 8001 = green
-
-# Or check running containers
-ssh prod_2Gb_vm "docker ps --format '{{.Names}}'"
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
 ```
 
-### 2. Restart the active environment
+**✅ Verify health:**
 ```bash
-# If blue is active (port 8000):
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
-
-# If green is active (port 8001):
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
-```
-
-### 3. Verify service is healthy
-```bash
-# Check container status
 ssh prod_2Gb_vm "docker ps | grep visa_bulletin"
-
-# Check health
-ssh prod_2Gb_vm "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
-
-# Test the endpoint
+ssh prod_2Gb_vm "docker inspect visa_bulletin_web --format='{{.State.Health.Status}}'"
 curl -I http://production-ip/
-
-# Check logs if issues
-ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail 50"
 ```
 
-### If containers aren't running (like I just broke):
+**If containers not running:** `docker-compose -f deployment/docker-compose.yml up -d`
+
+**Cache:** Django cache clears on restart. LocMem needs gunicorn reload. Nginx cache: `nginx -s reload`.
+
+## Rule: Hotfix in Production
+
+**DEPRECATED: scp + volume mount pattern.** Never scp files or use `../:/app` volume mount. All code changes go through git.
+
+**Hotfix workflow (see `docs/BRANCHING_AND_DEPLOYMENT.md`):**
+1. Check out `prod` locally, fix, commit, push
+2. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git checkout prod && git reset --hard origin/prod"`
+3. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"`
+4. Verify: `curl -s -o /dev/null -w "%{http_code}" https://www.visa-bulletin.us/salaries/`
+5. Cherry-pick fix to `staging` and `main`
+
+## Rule: Orchestrator Hotfix (Pipeline or Script Fix on Prod)
+
+For fixes to orchestrator code (`scripts/cron/refresh/`), data-processing scripts (`scripts/salary/`, `scripts/ingest/`), or build files — code that gunicorn never imports. Safe to deploy directly to prod without affecting the web container.
+
+**✅ Orchestrator hotfix workflow:**
 ```bash
-# Start the blue environment
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
-
-# Monitor startup
-ssh prod_2Gb_vm "docker logs -f visa_bulletin_web_blue"
+# 1. Cherry-pick to prod, push
+# 2. Pull on prod (web container unaffected — gunicorn doesn't import scripts/)
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git reset --hard origin/prod"
+# 3. Rebuild orchestrator binary only
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch && bazel shutdown"
+# 4. Resume/re-run orchestrator
+# 5. Cherry-pick fix to staging and main
 ```
 
-### Cache clearing:
-- **Django cache:** Automatically cleared on container restart
-- **Browser cache:** Users may need hard refresh (Ctrl+Shift+R)
-- **Nginx cache:** Not used in current setup, but if configured: `nginx -s reload`
+**When NOT to use:** if the change touches `webapp/`, `models/`, `django_config/`, templates, or `lib/` modules imported by Django. Use staging graduation instead.
 
-**Why this matters:**
-- Development server (runserver) is single-threaded, not production-ready
-- Gunicorn in Docker provides proper process management, logging, and resource limits
-- Docker restart is graceful and maintains service availability
-- restart_server.sh assumes bazel/runserver environment, not Docker
+**Which deployment path?**
 
-**Common mistakes:**
-- ❌ Using `restart_server.sh` on production → Breaks service
-- ❌ Running `bazel run //:runserver` on production → Wrong server type
-- ❌ Killing gunicorn manually → Docker restart policy will fight you
-- ❌ Not checking which environment is active → Restart wrong container
+| Changed files | Path |
+|---|---|
+| `scripts/` or build files | Orchestrator hotfix (prod, safe) |
+| `webapp/`, `models/`, `django_config/`, templates | Staging graduation |
+| `lib/` imported only by scripts | Orchestrator hotfix (verify: `rg "from lib.module" webapp/ models/`) |
+| `lib/` imported by Django | Staging graduation |
+| Mixed or unsure | Staging graduation (always safe) |
 
-**Rationale:**
-- Clear separation between dev and production workflows
-- Prevents production outages from using dev tools
-- Docker provides proper service management (health checks, restart policies, resource limits)
+**Post-graduation:** the orchestrator automatically replaces `docker-compose.override.yml` on new prod (drops `../:/app` volume mount, keeps `mem_limit`/`ALLOWED_HOSTS`). This makes `git pull` on prod invisible to the web container.
+
+See `docs/BRANCHING_AND_DEPLOYMENT.md` for full details.
 
 ## Pre-Deployment Checklist (MANDATORY)
 
-**Before ANY version tag or deployment, verify:**
-
-- [ ] All tests passing (`bazel test //tests:all` - pre-commit hook handles this)
-- [ ] Changes committed and pushed to main
-- [ ] **IF workflow changed:** Test with `act --dryrun` ⚠️ 
-- [ ] Version number decided (ask user)
-- [ ] Release notes written for tag message
-- [ ] **IF enum migrations:** Database will be swapped atomically during rollout (no complex migrations needed)
-- [ ] **Cron jobs updated:** Verify `deployment/cron/setup-ingest-cron.sh` is configured on production
-
-**Critical:** If `.github/workflows/*.yml` modified, **MUST** run `act` before tagging!
+- [ ] All tests passing (`bazel test //tests:all`)
+- [ ] Changes committed and pushed to the correct branch (`staging` or `prod`)
+- [ ] **IF workflow changed:** `act --dryrun` ⚠️
+- [ ] Version number decided (ask user) — for graduations
+- [ ] **IF enum migrations:** DB swapped atomically
+- [ ] Cron jobs updated (`deployment/cron/setup-ingest-cron.sh`)
 
 ## Rule: Always Ask About Version Before Rollout
 
-**ALWAYS ask the user if they want to update the version before deploying/rolling out.**
-
-**Before any deployment or rollout, ask:**
-```
-Do you want to tag this as a new version before deploying?
- 1. Yes, create new version tag (e.g., v1.2.3)
- 2. No, deploy current latest
- 3. Deploy specific existing version (specify which)
-```
-
-**Rationale:**
-- Versions provide clear deployment history
-- Enable easy rollbacks to known good versions
-- Track what was deployed when
-- Follow semantic versioning best practices
+Ask user before deploying: (1) Create new version tag, (2) Deploy current latest, (3) Deploy specific version.
 
 ## Deployment Methods
 
-### ⭐ Method 1: Zero-Downtime Blue-Green Deployment (RECOMMENDED)
+**See `docs/BRANCHING_AND_DEPLOYMENT.md` for the full workflow.**
 
-**Use this for all deployments.**
+**Code deployment (quick):** commit to `staging` or `prod` branch, push, SSH to instance, `git pull`, restart container.
 
+**Graduation (IP flip):** tag on `staging`, swap Lightsail static IPs, fast-forward `prod` branch, sync new staging.
+
+**Docker image rebuild** (when deps change): push tag, GitHub Actions builds image, pull on instance.
+
+**Test workflow changes with `act` BEFORE pushing tags:**
 ```bash
-# 1. Commit changes
-git commit -m "Add feature X"
-
-# 2. TEST WORKFLOW WITH ACT (if workflow changed)
-cd /path/to/project
-source ~/.shrc
-act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
-
-# 3. Tag release
-git tag -a v1.2.3 -m "Release 1.2.3: Feature X"
-git push origin v1.2.3
-
-# 4. Wait for GitHub Actions to build image
-
-# 5. Deploy with zero downtime
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+source ~/.shrc && act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
 ```
 
-**How it works:**
-1. Detects active environment (blue on :8000 or green on :8001)
-2. Deploys new version to inactive environment
-3. Waits for health checks to pass (60s timeout)
-4. Switches Nginx proxy atomically (no dropped connections)
-5. Stops old environment
-
-**Benefits:**
-- ✅ Zero downtime
-- ✅ Automatic rollback if health checks fail
-- ✅ Old version keeps running until new version is healthy
-- ✅ Safe for production traffic
-- ✅ Prevents ContainerConfig errors (separate container names)
-
-### Method 2: GitHub Actions Deployment
-
-```bash
-# Trigger via CLI
-source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
-
-# Or via GitHub web UI
-```
-
-## Blue-Green Deployment Architecture
-
-**Files:**
-- `deployment/docker-compose.blue.yml` - Blue environment (port 8000)
-- `deployment/docker-compose.green.yml` - Green environment (port 8001)
-- `scripts/deploy-zero-downtime.sh` - Blue-green deployment orchestrator
-
-**How It Works:**
-
-1. **Active Detection:**
- - Script checks Nginx config to see which port is active
- - Blue (8000) or Green (8001)
-
-2. **Deploy to Inactive:**
- - Pulls new image
- - Starts containers in inactive environment
- - Uses separate container names (no conflicts)
-
-3. **Health Checks:**
- - Waits up to 60 seconds for healthy status
- - Rolls back if health checks fail
-
-4. **Atomic Switch:**
- - Updates Nginx proxy configuration
- - Reloads Nginx (zero dropped connections)
- - Traffic now flows to new version
-
-5. **Cleanup:**
- - Stops old environment
- - Frees resources
-
-**Resource Usage:**
-- During deployment: 2x web containers (both running briefly)
-- Normal operation: 1x web container
-- Database shared between environments (no duplication)
-
-## Rollout Flow
-
-See `ROLLOUT_FLOW.md` for the complete step-by-step process.
+**Note:** `scripts/deploy.sh` is outdated and not currently used. Code deployment is done via git pull + container restart. See `docs/BRANCHING_AND_DEPLOYMENT.md` for the current procedure.
 
 ## Pre-Deployment Checks
 
-**ALWAYS run pre-deployment checks before deploying to catch configuration issues:**
-
 ```bash
-# Run health checks on production environment
 ./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
 ```
+Validates: port 8000, Docker, nginx config, SSL, disk space, stale containers.
 
-**The script validates:**
-- Port 8000 availability (detects old systemd services)
-- Docker and docker-compose installation
-- Nginx proxy configuration (should point to port 8000)
-- SSL certificate status
-- Disk space availability
-- Docker service running
-- Stale containers
+## Cache Reset
 
-**If checks fail:** Follow the suggested fixes before proceeding with deployment.
-
-## Cache reset (clear_cache script)
-
-**When to run:** After data refresh or deploy that changes cached payloads (e.g. job title canonical_title, employer/salary stats). Ensures autocomplete, directory, and profile pages show fresh data.
-
-**What it resets:** All Django default cache keys, including:
-- Job title autocomplete (`/api/job-title-autocomplete/`) and directory (`/job-titles/`)
-- Employer directory and profile pages
-- Salary search results
-- Market overview, fiscal years, count caches
-- Sitemaps, dashboard, other `@cache_page` views
-
-**How to run:**
+**When:** After data refresh or deploy changing cached payloads.
 ```bash
-# On production
 ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
-# If using LocMem (no Redis), reload gunicorn so workers see cleared cache
+# LocMem only: reload gunicorn
 ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
-# Optional: reload nginx if it caches responses
-ssh prod_2Gb_vm "sudo nginx -s reload"
 ```
 
-**With Redis:** Cache is shared; `clear_cache` is enough; no app restart needed.  
-**With LocMem:** Reload gunicorn after `clear_cache` so workers pick up empty cache.
+With Redis: `clear_cache` is sufficient. See `scripts/clear_cache.py` for affected caches.
 
-**Script:** `scripts/clear_cache.py` — docstring lists all affected caches. See also job title coherence rule (clear cache after update_job_title_cluster_stats).
+## Rollback
 
-## Rollback Procedure
+**After graduation (IP flip):** swap static IPs back to the previous instance. Near-instant, no DNS delay.
 
-If deployment fails or issues arise:
+**After code deployment:** `git checkout <previous-tag>` on the instance, restart container.
 
-### Quick Rollback
-```bash
-# Deploy previous version
-./scripts/deploy.sh ~/ssh-key.pem v1.2.2
-```
-
-### Emergency Rollback (Docker → Systemd)
-```bash
-ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && \
- sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
- sudo nginx -t && sudo systemctl reload nginx'
-```
+See `docs/BRANCHING_AND_DEPLOYMENT.md` for the full IP flip procedure and rollback steps.
 
 ## Common Deployment Issues
 
-### Issue: ContainerConfig KeyError
-
-**Symptoms:**
-```
-ERROR: for web 'ContainerConfig'
-KeyError: 'ContainerConfig'
-```
-
-**Root Cause:**
-- docker-compose 1.29.2 bug when recreating containers
-- Old container metadata missing `ContainerConfig` key
-- Occurs when `docker-compose up` tries to inspect existing containers
-
-**Solution:**
-
-Use `./scripts/deploy-zero-downtime.sh` which:
-- ✅ Starts new containers before stopping old ones
-- ✅ No downtime
-- ✅ Avoids ContainerConfig issue (separate container names)
-- ✅ Automatic rollback if deployment fails
-
-**Manual Fix (if error occurs outside deployment script):**
-```bash
-ssh backup_0_5Gb_vm
-cd /opt/visa_bulletin
-sudo docker-compose down
-sudo docker-compose up -d
-```
-
-**Why Blue-Green Prevents This:**
-- Separate container names (`web-blue`, `web-green`)
-- No recreation - always creates fresh containers
-- Old containers removed only after new ones are healthy
-
-## Testing GitHub Actions Workflows
-
-**🚨 MANDATORY: Test workflow changes with `act` before pushing tags 🚨**
-
-**When to run `act`:**
-- ✅ **ALWAYS** when `.github/workflows/*.yml` files are modified
-- ✅ **ALWAYS** before creating a new version tag if workflow changed
-- ✅ When Dockerfile or docker-compose.yml changes affect build
-
-**How to test:**
-```bash
-cd /path/to/project
-source ~/.shrc
-
-# Dry run (fast, checks syntax and steps)
-act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
-
-# Full run (slower, actually builds - use for major changes)
-act -W .github/workflows/docker-build-push.yml -j build-and-push
-```
-
-**Why this matters:**
-- Failed workflows waste GitHub Actions minutes
-- Broken tags require deletion and recreation
-- Prevents deployment blockers
-- Catches configuration errors before production
-
-**If you skip this step:**
-- Risk: Broken builds discovered only after pushing tag
-- Impact: Deployment delays, tag management overhead
-- Cost: Wasted CI/CD time and manual fixes
+**ContainerConfig KeyError** (`KeyError: 'ContainerConfig'`): docker-compose 1.29.2 bug with old container metadata. Fix: `docker-compose down && docker-compose up -d`.
 
 ## Monitoring After Deployment
 
-After any deployment, run a **thorough smoke check** (status + content, not just return codes):
 ```bash
-# Smoke check: key pages return 200 and expected content (titles, key strings)
 bazel run //scripts:smoke_check_production -- --base https://visa-bulletin.us --timeout 60
-
-# Check site is up (quick)
 curl -I https://visa-bulletin.us
-
-# Check Docker logs (if using Docker)
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml logs --tail=50"
-
-# Monitor for 10-15 minutes for errors
+ssh prod_2Gb_vm "docker-compose -f deployment/docker-compose.yml logs --tail=50 web"
 ```
 
-## Rule: Always Verify and Update Pipeline Scripts When Fixing Bugs
+## Rule: Update Pipeline and Setup Scripts When Fixing Bugs
 
-**🚨 CRITICAL: When fixing ANY bug in data processing, ALWAYS check if pipeline/refresh/setup scripts need to be updated.**
+**When fixing ANY bug in data processing or ingestion, ALWAYS check if these scripts need updating:**
 
-**Why:**
-- Bug fixes must not only fix current data but also prevent future occurrences
-- Automated pipelines must include the fix to prevent regression
-- New deployments must work correctly from the start
-- Reduces operational burden (don't manually fix same issue repeatedly)
-
-**After fixing a bug, ALWAYS check these scripts:**
-
-1. **`scripts/cron/refresh_data.sh`** - Does it run the fixed code?
-   - If bug was in a script, does refresh_data.sh call it?
-   - If bug was in function logic, is it called during refresh?
-   - Check lines 315-328 for post-processing steps
-
-2. **`scripts/cron/build_all.sh`** - Does it build the fixed binary?
-   - Add new scripts to REQUIRED_BINARIES if needed
-
-3. **Setup scripts** - Do they initialize correctly?
-   - `scripts/setup_new_instance.sh`
-   - `scripts/cron/refresh_data.sh` (initial data load + weekly refresh)
+| Script | Check |
+|--------|-------|
+| `scripts/cron/refresh_data.sh` | Does it run the fixed code? Add if missing. |
+| `scripts/cron/build_all.sh` | Does it build the fixed binary? Add to REQUIRED_BINARIES. |
+| `scripts/setup_new_instance.sh` | New env vars, migrations, dependencies? |
+| `deployment/cron/setup-ingest-cron.sh` | New flags, paths, env vars? |
+| Docs (`NEW_INSTANCE_SETUP.md`, `INGESTION_PLAYBOOK.md`) | Updated steps, troubleshooting, known issues? |
 
 **Decision tree:**
 ```
-Bug fixed in a script → Check if refresh_data.sh runs it → If not, add it
-Bug fixed in a library → Check callers are in pipeline → Verify integration
-Bug requires data fix → Run fix script on production → Schedule in pipeline
+Bug in script → refresh_data.sh runs it? → If not, add it
+Bug in library → callers in pipeline? → Verify integration
+Bug needs data fix → run on prod → schedule in pipeline
 ```
 
-**✅ GOOD - Complete fix workflow:**
-```
-1. Fix the bug in source code
-2. Test fix locally
-3. Check: Is fixed code/script called in refresh_data.sh?
-4. If NO: Add it to the pipeline
-5. If YES: Verify the fix will apply to future runs
-6. Run fix on production to correct existing data
-7. Verify fix prevents future occurrences
-8. Commit all changes together
-```
+**✅ GOOD:** Fix source → test → update pipeline/setup scripts → run fix on prod → commit all together.
+**❌ BAD:** Fix source → deploy → forget pipeline. Bug returns on next refresh.
 
-**❌ BAD - Incomplete fix:**
-```
-1. Fix the bug in source code
-2. Manually run fix on production
-3. Commit and celebrate
-[Bug returns on next refresh because pipeline wasn't updated]
-```
-
-**Example: Job Title Clustering Bug Fix**
-- Bug: cluster_job_titles.py only matched exact strings, missing 86% of records
-- Fix: Updated script to use normalized matching
-- Pipeline check: ✅ refresh_data.sh already calls cluster_job_titles (line 322)
-- Action needed: Run script once to fix existing data, future runs will work
-- Result: Both current data and future data are correct
-
-**Rationale:**
-- Prevents bug from reoccurring in future pipeline runs
-- Reduces operational burden (no manual fixes after each refresh)
-- Ensures new deployments work correctly
-- Makes fixes persistent and maintainable
-
-## Rule: Sync Setup Scripts When Fixing Data Ingestion Issues
-
-**CRITICAL: When you fix data ingestion, processing, or database issues, you MUST update the corresponding setup scripts immediately.**
-
-**Why:**
-- New instances deployed from setup scripts must work correctly
-- Cron jobs must reflect latest ingestion logic
-- refresh_data.sh must load data properly (initial + weekly)
-- Prevents regression when setting up new servers
-
-**When you fix ingestion/processing, update these files:**
-
-### 1. Setup Scripts
-- `scripts/setup_new_instance.sh` - Initial instance setup
-- `scripts/cron/refresh_data.sh` - Initial data load + weekly refresh
-
-**What to check/update:**
-- Environment variables needed for fix
-- Database initialization steps
-- Data loading commands
-- Migration requirements
-- Dependencies or packages needed
-
-### 2. Cron Job Scripts
-- `scripts/cron/refresh_data.sh` - Periodic data refresh
-- `deployment/cron/setup-ingest-cron.sh` - Cron schedule configuration
-
-**What to check/update:**
-- Ingestion command flags
-- Data source paths
-- Environment variables
-- Error handling
-- Retry logic
-
-### 3. Documentation
-- `docs/deployment/NEW_INSTANCE_SETUP.md` - Setup instructions
-- `docs/INGESTION_PLAYBOOK.md` - Data ingestion guide
-- `docs/DEPLOYMENT_COMPLETE.md` - Deployment checklist
-
-**What to check/update:**
-- Setup steps
-- Troubleshooting sections
-- Known issues
-- Configuration examples
-
-### Workflow When Fixing Ingestion Issues
-
-**✅ GOOD - Complete fix workflow:**
-```
-1. Identify and fix the ingestion issue in source code
-2. Test fix locally
-3. Update setup_new_instance.sh with any new requirements
-4. Update refresh_data.sh if data loading changed
-5. Update refresh_data.sh if periodic refresh changed
-6. Update documentation with new steps/gotchas
-7. Test setup script changes (if possible)
-8. Commit all changes together
-```
-
-**❌ BAD - Incomplete fix:**
-```
-1. Fix ingestion issue in source code
-2. Commit and deploy
-[Setup scripts now outdated, new instances will fail]
-```
-
-### Common Scenarios and Required Updates
-
-**Scenario 1: Add new ingestion flag**
-- Update: `refresh_data.sh` (add flag to cron command)
-- Update: `refresh_data.sh` (add flag to pipeline)
-- Update: `INGESTION_PLAYBOOK.md` (document new flag)
-
-**Scenario 2: Add environment variable**
-- Update: `setup_new_instance.sh` (add to .env creation)
-- Update: `NEW_INSTANCE_SETUP.md` (document variable)
-
-**Scenario 3: Change data source paths**
-- Update: `refresh_data.sh` (update paths)
-- Update: `refresh_data.sh` (update paths)
-
-**Scenario 4: Add database migration**
-- Update: `setup_new_instance.sh` (run migration)
-- Update: `NEW_INSTANCE_SETUP.md` (document migration)
-
-**Scenario 5: Fix salary data processing**
-- Update: `refresh_data.sh` (if processing logic changed)
-- Update: `INGESTION_PLAYBOOK.md` (document new behavior)
-
-### Verification Checklist
-
-**Before committing ingestion fixes, verify:**
-- [ ] Setup scripts include all new environment variables
-- [ ] refresh_data.sh includes all new initialization steps
-- [ ] Cron scripts include all new flags/options
+**Verification checklist before committing:**
+- [ ] Setup scripts include new env vars
+- [ ] refresh_data.sh includes new steps/flags
+- [ ] Cron scripts updated
 - [ ] Documentation reflects new behavior
-- [ ] Error messages mention new requirements
-- [ ] Known issues section updated if applicable
-
-**Rationale:**
-- Setup scripts are the source of truth for deployment
-- Out-of-sync scripts cause hard-to-debug production issues
-- New instances must work correctly on first try
-- Cron jobs must reflect latest ingestion logic
-- Documentation prevents setup confusion

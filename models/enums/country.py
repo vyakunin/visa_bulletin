@@ -43,6 +43,8 @@ class Country(models.IntegerChoices):
             (r'^MEXICO$', cls.MEXICO),
             (r'^PHILIPPINES$', cls.PHILIPPINES),
             (r'EL SALVADOR.*GUATEMALA.*HONDURAS', cls.EL_SALVADOR_GUATEMALA_HONDURAS),
+            (r'SALVADOR.*HONDURAS', cls.EL_SALVADOR_GUATEMALA_HONDURAS),
+            (r'GUATEMALA.*HONDURAS', cls.EL_SALVADOR_GUATEMALA_HONDURAS),
             (r'ALL.*CHARGEABILITY.*EXCEPT', cls.ALL),
         ]
         
@@ -54,8 +56,10 @@ class Country(models.IntegerChoices):
         exact_mappings = {
             'ALL CHARGEABILITY AREAS EXCEPT THOSE LISTED': cls.ALL,
             'ALL AREAS': cls.ALL,
+            'EL SALVADOR/GUATEMALA/HONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
+            'EL SALVADOR, GUATEMALA, AND HONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
+            'EL SALVADOR, GUATEMALA, HONDURAS': cls.EL_SALVADOR_GUATEMALA_HONDURAS,
         }
-        
         return exact_mappings.get(normalized)
 
     @classmethod

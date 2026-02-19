@@ -3,16 +3,28 @@
 from django.urls import path
 
 from webapp.views.bulletin.dashboard import dashboard_view
+from webapp.views.bulletin.vqs_api import VQSPredictView
 from webapp.views.employers.directory import company_autocomplete_view, employer_directory_view
 from webapp.views.employers.profile import employer_profile_view
 from webapp.views.job_titles.directory import job_title_autocomplete_view, job_title_directory_view
 from webapp.views.job_titles.profile import job_title_profile_view
 from webapp.views.salary.search import salary_search_view, worksite_search_view
-from webapp.views.static.pages import about_view, contact_view, faq_view
+from webapp.views.static.pages import about_view, contact_view, faq_view, health_view
+from webapp.views.prediction_views import prediction_list, prediction_detail, spaghetti_view
+from webapp.views.blog_views import blog_list, blog_detail
 
 urlpatterns = [
+    path('analysis/', blog_list, name='blog_list'),
+    path('analysis/<slug:slug>/', blog_detail, name='blog_detail'),
+
+    path('spaghetti/', spaghetti_view, name='spaghetti'),
     path('', dashboard_view, name='dashboard'),
-    
+    path('predictions/', prediction_list, name='prediction_list'),
+    path('predictions/<str:category>/<int:year>-<int:month>/', prediction_detail, name='prediction_detail_category'),
+    # Legacy URL defaults to employment_based
+    path('predictions/<int:year>-<int:month>/', prediction_detail, {'category': 'employment_based'}, name='prediction_detail'),
+    path('health/', health_view, name='health'),
+
     # Static pages
     path('faq/', faq_view, name='faq'),
     path('about/', about_view, name='about'),
@@ -23,6 +35,7 @@ urlpatterns = [
     path('worksites/', worksite_search_view, name='worksite_search'),
     path('api/company-autocomplete/', company_autocomplete_view, name='company_autocomplete'),
     path('api/job-title-autocomplete/', job_title_autocomplete_view, name='job_title_autocomplete'),
+    path('api/vqs/predict/', VQSPredictView.as_view(), name='vqs_predict'),
     
     # Employer Pages
     path('employers/', employer_directory_view, name='employer_directory'),

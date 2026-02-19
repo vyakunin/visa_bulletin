@@ -11,6 +11,7 @@ from django_config.cache_utils import cache_page_skip_bots
 from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
+from models.blog import BlogPost
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     get_aggregated_visa_class_data,
@@ -66,7 +67,7 @@ def dashboard_view(request, category=None, country=None):
     valid_country_values = [c.value for c in Country]
     if country not in valid_country_values:
         country = Country.ALL.value
-    action_type = request.GET.get('action_type', ActionType.FINAL_ACTION.value)
+    action_type = request.GET.get('action_type', ActionType.FILING.value)
     submission_date = _parse_submission_date(request.GET.get('submission_date', ''))
     
     # Get aggregated visa class data
@@ -128,6 +129,7 @@ def dashboard_view(request, category=None, country=None):
         'og_type': 'website',
         'category_slugs_json': json.dumps(category_slugs),
         'country_slugs_json': json.dumps(country_slugs),
+        'latest_post': BlogPost.objects.filter(is_published=True).order_by("-published_date").first(),
     }
     
     return render(request, 'webapp/dashboard.html', context)

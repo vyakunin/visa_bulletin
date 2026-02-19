@@ -369,7 +369,7 @@ The setup script configures:
 ### Zero-Downtime Deployment
 
 ```bash
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
 ```
 
 **Full deployment guide:** See [deployment/README.md](deployment/README.md) and [docs/deployment/NEW_INSTANCE_SETUP.md](docs/deployment/NEW_INSTANCE_SETUP.md)

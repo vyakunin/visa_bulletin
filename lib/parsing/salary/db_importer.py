@@ -102,8 +102,8 @@ PERM_COLUMN_MAPPINGS = {
     ],
     'prevailing_wage': ['PW_AMOUNT_9089', 'PW_AMOUNT', 'PREVAILING_WAGE', 'PW_WAGE_1', 'PW_WAGE'],
     'prevailing_wage_unit': ['PW_UNIT_OF_PAY_9089', 'PW_UNIT_OF_PAY', 'PW_WAGE_UNIT_1'],
-    'case_submitted': ['CASE_RECEIVED_DATE', 'RECEIVED_DATE'],
-    'decision_date': ['DECISION_DATE', 'Decision_Date'],
+    'case_submitted': ['CASE_RECEIVED_DATE', 'RECEIVED_DATE', 'Received_Date'],
+    'decision_date': ['DECISION_DATE', 'Decision_Date', 'Certified_Date', 'Denied_Date'],
     'employment_start': ['EMPLOYMENT_START_DATE', 'BEGIN_DATE'],
     'employment_end': ['EMPLOYMENT_END_DATE', 'END_DATE'],
 }
@@ -160,16 +160,21 @@ def parse_date(date_str: str | None) -> datetime | None:
 
 
 def parse_decimal(value: str | None) -> Decimal | None:
-    """Parse decimal value, handling currency formatting"""
+    """Parse decimal value, handling currency formatting and null sentinels."""
     if not value:
         return None
-    
+
+    cleaned = value.strip()
+    # Treat PostgreSQL COPY null sentinel and common null representations as None
+    if cleaned in ("\\N", "\\n", "NULL", "null", ""):
+        return None
+
     # Remove currency symbols, commas, spaces
-    cleaned = value.strip().replace('$', '').replace(',', '').replace(' ', '')
-    
+    cleaned = cleaned.replace("$", "").replace(",", "").replace(" ", "")
+
     if not cleaned:
         return None
-    
+
     try:
         return Decimal(cleaned)
     except InvalidOperation:

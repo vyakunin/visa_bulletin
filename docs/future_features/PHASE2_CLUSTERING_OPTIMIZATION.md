@@ -85,3 +85,18 @@ So the dominant redundant work is:
 - **Bottleneck (addressed)**: Redundant ratio and repeated substring/structural work for the same (norm1, norm2).
 - **Implemented**: (1) Precomputed similarity; (2) `substring_can_match` short-circuit; (3) RapidFuzz only; (4) BatchedUpdates pre-load + lazy clusters; (5) 24h timeout; (6) runner bazel target fix.
 - **Next**: Measure Phase 2 duration on prod after deploy; then consider LSH tuning, candidate capping, or parallelization if still slow.
+
+---
+
+## Incremental clustering (not implemented)
+
+**Current behavior:** Any ingest (even one new source) runs the full pipeline: `cluster_job_titles` over all unique job titles and `cluster_existing_employers` over all employers. Both are full-scan O(n) or O(n²) processes.
+
+**Why:** Job title clustering loads all JobTitle entities and builds a full bucket index; it skips already-clustered entities but still iterates over all. Employer clustering loads all employers and builds LSH candidate pairs; checkpoint/resume skips already-processed pairs across runs but each run still loads the full set.
+
+**Possible way around (future work):**
+
+- **Job titles:** Only consider JobTitle entities with no `canonical_cluster` (or created/updated since last run); merge them into an existing bucket index or run a small assign pass. Would require persisting the bucket index or reusing it for “new only” entities.
+- **Employers:** Only consider employers with no `canonical_cluster` (or linked to salary records from the new ingest); find candidates only against those plus existing clusters; avoid rebuilding full LSH. Would require defining “new” employers and a cheaper candidate strategy (e.g. same normalized name only, or LSH over a subset).
+
+Until incremental clustering exists, one new source still triggers full re-clustering.

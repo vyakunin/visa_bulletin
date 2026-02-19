@@ -109,22 +109,29 @@ def backfill_job_title_links(dry_run: bool = False):
         logger.info(f"  CHANGES SAVED: {collector.count:,} records updated")
     logger.info("="*80)
     
-    # Update JobTitle statistics
     if not dry_run and linked_count > 0:
-        logger.info("\nUpdating JobTitle statistics...")
-        from django.db.models import Count, Avg
-        from django.db import connection
-        
-        # Update total_filings for all affected JobTitles
-        updated = 0
-        for job_title in JobTitle.objects.all():
-            count = SalaryRecord.objects.filter(job_title_entity=job_title).count()
-            if job_title.total_filings != count:
-                job_title.total_filings = count
-                job_title.save(update_fields=['total_filings'])
-                updated += 1
-        
-        logger.info(f"Updated statistics for {updated:,} JobTitle entities")
+        logger.info("\nUpdating JobTitle statistics via bulk aggregation...")
+        from django.db.models import Count
+
+        counts_by_id = dict(
+            SalaryRecord.objects
+            .filter(job_title_entity__isnull=False)
+            .values_list('job_title_entity_id')
+            .annotate(cnt=Count('id'))
+            .values_list('job_title_entity_id', 'cnt')
+        )
+
+        to_update: list[JobTitle] = []
+        for jt in JobTitle.objects.only('id', 'total_filings').iterator(chunk_size=5000):
+            new_count = counts_by_id.get(jt.id, 0)
+            if jt.total_filings != new_count:
+                jt.total_filings = new_count
+                to_update.append(jt)
+
+        if to_update:
+            from lib.utils.db_utils import bulk_update_batched
+            bulk_update_batched(to_update, fields=['total_filings'], batch_size=1000)
+        logger.info(f"Updated statistics for {len(to_update):,} JobTitle entities")
 
 
 def main():

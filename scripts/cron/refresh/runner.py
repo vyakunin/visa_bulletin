@@ -44,10 +44,6 @@ class Runner(Protocol):
         """Update .env key=value on target host."""
         ...
 
-    def detect_active_env(self) -> str:
-        """Return 'blue' or 'green' based on nginx config."""
-        ...
-
     def read_checkpoint(self, path: Path) -> CheckpointData | None:
         """Read checkpoint JSON from target host."""
         ...
@@ -71,7 +67,13 @@ class LocalRunner:
         if env:
             self._env.update(env)
 
-    def run_bin(self, rel_path: str, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_bin(
+        self,
+        rel_path: str,
+        *args: str,
+        cwd: Path | None = None,
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[str]:
         cwd = cwd or self.project_root
         bazel_bin = self.project_root / "bazel-bin"
         bin_path = bazel_bin / rel_path
@@ -152,15 +154,6 @@ class LocalRunner:
         update_env_value(self.env_file, key, value)
         self._env[key] = value
 
-    def detect_active_env(self) -> str:
-        nginx_conf = self.project_root / "deployment" / "nginx" / "visa-bulletin-locations.conf"
-        if not nginx_conf.exists():
-            return "blue"
-        text = nginx_conf.read_text()
-        if "8001" in text:
-            return "green"
-        return "blue"
-
     def read_checkpoint(self, path: Path) -> CheckpointData | None:
         return read_checkpoint(Path(path))
 
@@ -181,18 +174,38 @@ class LocalRunner:
 
 
 class MockRunner:
-    """Record runner calls for tests. Returns success by default."""
+    """Record runner calls for tests. Returns success by default.
+
+    Supports per-binary failure simulation via ``run_bin_side_effects``:
+    a dict mapping ``rel_path`` to a ``CompletedProcess`` (or callable
+    ``(rel_path, *args) -> CompletedProcess``).  When a matching entry
+    exists the per-path value takes precedence over the blanket
+    ``run_bin_return``.
+    """
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self._checkpoint: CheckpointData | None = None
         self.run_bin_return: subprocess.CompletedProcess[str] | None = None
+        self.run_bin_side_effects: dict[str, subprocess.CompletedProcess[str] | Any] = {}
         self.run_psql_return: str = "0"
+        self.run_psql_side_effects: dict[str, str | Any] = {}
         self.run_sudo_psql_return: subprocess.CompletedProcess[str] | None = None
         self.run_migrate_return: subprocess.CompletedProcess[str] | None = None
 
-    def run_bin(self, rel_path: str, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-        self.calls.append(("run_bin", (rel_path, *args), {"cwd": cwd}))
+    def run_bin(
+        self,
+        rel_path: str,
+        *args: str,
+        cwd: Path | None = None,
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append(("run_bin", (rel_path, *args), {"cwd": cwd, **kwargs}))
+        if rel_path in self.run_bin_side_effects:
+            effect = self.run_bin_side_effects[rel_path]
+            if callable(effect):
+                return effect(rel_path, *args)
+            return effect
         if self.run_bin_return is not None:
             return self.run_bin_return
         return subprocess.CompletedProcess(args=[rel_path, *args], returncode=0, stdout="", stderr="")
@@ -203,6 +216,11 @@ class MockRunner:
 
     def run_psql(self, db_name: str, sql: str) -> str:
         self.calls.append(("run_psql", (db_name, sql), {}))
+        for pattern, value in self.run_psql_side_effects.items():
+            if pattern in sql:
+                if callable(value):
+                    return value(db_name, sql)
+                return value
         return self.run_psql_return
 
     def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -220,10 +238,6 @@ class MockRunner:
     def update_env(self, key: str, value: str) -> None:
         self.calls.append(("update_env", (key, value), {}))
 
-    def detect_active_env(self) -> str:
-        self.calls.append(("detect_active_env", (), {}))
-        return "blue"
-
     def read_checkpoint(self, path: Path) -> CheckpointData | None:
         self.calls.append(("read_checkpoint", (str(path),), {}))
         return self._checkpoint
@@ -234,7 +248,19 @@ class MockRunner:
 
     def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
         self.calls.append(("run_shell", (command,), {"timeout_sec": timeout_sec}))
-        return subprocess.CompletedProcess(args=["run_shell"], returncode=0, stdout="", stderr="")
+        stdout = ""
+        if "curl" in command and "http_code" in command:
+            if "job-title-autocomplete" in command:
+                stdout = '[{"title":"Software Engineer","slug":"software-engineer","total_filings":1000}]\n200'
+            elif "company-autocomplete" in command:
+                stdout = '[{"name":"Google LLC","slug":"google-llc","total_filings":500}]\n200'
+            elif "job-titles" in command:
+                stdout = '<a href="/job-title/software-engineer/">Software Engineer</a>' * 15 + "\n200"
+            elif "employers" in command:
+                stdout = '<a href="/employer/google-llc/">Google LLC</a>' * 15 + "\n200"
+            else:
+                stdout = "OK\n200"
+        return subprocess.CompletedProcess(args=["run_shell"], returncode=0, stdout=stdout, stderr="")
 
 
 class RemoteRunner:
@@ -267,7 +293,7 @@ class RemoteRunner:
         capture_output: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         timeout = timeout_sec if timeout_sec is not None else self.ssh_timeout
-        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10"]
         if self.ssh_key_path:
             cmd.extend(["-i", self.ssh_key_path])
         cmd.append(f"{self.ssh_user}@{self.host}")
@@ -291,23 +317,32 @@ class RemoteRunner:
         *args: str,
         cwd: Path | None = None,
         timeout_sec: int | None = None,
+        env_override: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         root = str(cwd or self.project_root)
         bin_path = f"{root}/bazel-bin/{rel_path}"
         args_s = " ".join(shlex.quote(a) for a in args)
         stage_log = os.environ.get("REFRESH_STAGE_LOG_PATH", "/tmp/refresh_stage.log")
         inner = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
+        # Optional env overrides (e.g. REDIS_URL= so warm_cache uses LocMem on host)
+        if env_override:
+            for k, v in env_override.items():
+                inner += f"export {shlex.quote(k)}={shlex.quote(v)} && "
         # Bazel target: scripts/salary/manage_salary_indexes -> //scripts/salary:manage_salary_indexes
         if "/" in rel_path:
             pkg, _, target = rel_path.rpartition("/")
             bazel_target = f"//{pkg}:{target}"
         else:
             bazel_target = f"//{rel_path}"
-        inner += f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run {bazel_target} -- {args_s}; fi"
-        inner += f" 2>&1 | tee {stage_log}; exit ${{PIPESTATUS[0]:-0}}"
+        run_cmd = f"if [ -x {bin_path} ]; then {bin_path} {args_s}; else bazel run {bazel_target} -- {args_s}; fi"
+        # Wrap with remote-side timeout so the process self-terminates before the SSH
+        # session times out.  Without this, SSH timeout kills the local client but the
+        # remote process keeps running as a zombie (no TTY = no SIGHUP on disconnect).
+        if timeout_sec is not None:
+            remote_timeout = max(timeout_sec - 120, int(timeout_sec * 0.95))
+            run_cmd = f"timeout --signal=TERM --kill-after=60 {remote_timeout} bash -c {shlex.quote(run_cmd)}"
+        inner += f"{run_cmd} 2>&1 | tee {stage_log}; exit ${{PIPESTATUS[0]:-0}}"
         cmd = f"bash -c {shlex.quote(inner)}"
-        # Don't capture: output goes only to stage log; we read tail via read_stage_log_tail.
-        # Avoids buffering hours of output on prod and keeps SSH pipe from blocking.
         result = self._ssh(cmd, timeout_sec=timeout_sec, capture_output=False)
         return subprocess.CompletedProcess(
             args=[rel_path, *args],
@@ -344,7 +379,10 @@ class RemoteRunner:
 
     def run_migrate(self, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         root = str(cwd or self.project_root)
-        cmd = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && python3 manage.py migrate --noinput"
+        cmd = (
+            f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
+            f"DB_HOST=localhost ./bazel-bin/migrate migrate --noinput"
+        )
         return self._ssh(cmd)
 
     def update_env(self, key: str, value: str) -> None:
@@ -357,11 +395,6 @@ class RemoteRunner:
     def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
         """Run a shell command on the remote host via SSH."""
         return self._ssh(command, timeout_sec=timeout_sec)
-
-    def detect_active_env(self) -> str:
-        nginx = self.project_root / "deployment" / "nginx" / "visa-bulletin-locations.conf"
-        result = self._ssh(f"grep -q 8001 {nginx} && echo green || echo blue")
-        return (result.stdout or "blue").strip()
 
     def read_checkpoint(self, path: Path) -> CheckpointData | None:
         result = self._ssh(f"cat {path}")

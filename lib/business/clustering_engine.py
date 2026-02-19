@@ -309,7 +309,8 @@ def assign_to_cluster(
     auto_approve_threshold: float = 0.95,
     bucket_index: dict[str, list[EntityType]] | None = None,
     normalized_cache: dict[int, str] | None = None,
-    bucket_cache: dict[int, set[str]] | None = None
+    bucket_cache: dict[int, set[str]] | None = None,
+    save: bool = True,
 ) -> ClusterType:
     """
     Find existing cluster or create new one for an entity.
@@ -323,18 +324,18 @@ def assign_to_cluster(
         entity: Entity to assign to a cluster
         config: Entity-specific configuration
         auto_approve_threshold: Confidence threshold for auto-clustering
+        save: If True (default), call entity.save() after assignment.
+              If False, set entity.canonical_cluster but leave saving to caller
+              (for batched bulk_update).
     
     Returns: Cluster instance
     """
-    # If already assigned, return existing cluster
     if entity.canonical_cluster:
         return entity.canonical_cluster
     
-    # Get model classes from config
     EntityModel = config.get_entity_model()
     ClusterModel = config.get_cluster_model()
     
-    # Normalize entity name
     if normalized_cache is not None and entity.id in normalized_cache:
         entity_normalized = normalized_cache[entity.id]
     else:
@@ -342,7 +343,6 @@ def assign_to_cluster(
         if normalized_cache is not None:
             normalized_cache[entity.id] = entity_normalized
     
-    # Use fuzzy bucket matching to catch typos and variations
     if bucket_cache is not None and entity.id in bucket_cache:
         bucket_candidates = bucket_cache[entity.id]
     else:
@@ -350,7 +350,6 @@ def assign_to_cluster(
         if bucket_cache is not None:
             bucket_cache[entity.id] = bucket_candidates
 
-    # Get candidates from bucket index if provided
     if bucket_index is not None:
         candidate_entities: dict[int, EntityType] = {}
         for bucket in bucket_candidates:
@@ -359,7 +358,6 @@ def assign_to_cluster(
                     candidate_entities[other_entity.id] = other_entity
         similar_entities = list(candidate_entities.values())
     else:
-        # Fallback: full scan if no index provided
         all_entities = EntityModel.objects.exclude(id=entity.id).select_related('canonical_cluster')
         similar_entities = []
         for other_entity in all_entities:
@@ -377,14 +375,11 @@ def assign_to_cluster(
                 if bucket_cache is not None:
                     bucket_cache[other_entity.id] = other_buckets
 
-            # If any bucket candidate overlaps, they might be the same entity
             if bucket_candidates & other_buckets:
                 similar_entities.append(other_entity)
     
-    # Check if any similar entities are already in clusters
     for similar_entity in similar_entities:
         if similar_entity.canonical_cluster:
-            # Found existing cluster - check if we should join it
             if normalized_cache is not None and similar_entity.id in normalized_cache:
                 similar_normalized = normalized_cache[similar_entity.id]
             else:
@@ -402,12 +397,11 @@ def assign_to_cluster(
             )
             
             if result.is_match:
-                # Auto-assign to existing cluster
                 entity.canonical_cluster = similar_entity.canonical_cluster
-                entity.save()
+                if save:
+                    entity.save()
                 return entity.canonical_cluster
             else:
-                # Ambiguous - add to review queue (only if reasonably similar)
                 match_result = match_entities(
                     entity,
                     similar_entity,
@@ -415,7 +409,7 @@ def assign_to_cluster(
                     norm1=entity_normalized,
                     norm2=similar_normalized
                 )
-                if match_result.confidence >= 0.6:  # Only queue reasonably similar names
+                if match_result.confidence >= 0.6:
                     config.create_review_entry(
                         min(entity, similar_entity, key=lambda e: e.id),
                         max(entity, similar_entity, key=lambda e: e.id),
@@ -423,8 +417,6 @@ def assign_to_cluster(
                         match_result.reason or f"Fuzzy match: {match_result.confidence:.3f}"
                     )
     
-    # No match found - create new cluster
-    # Use config's create_cluster method if available, otherwise use default
     if hasattr(config, 'create_cluster'):
         cluster = config.create_cluster(entity)
     else:
@@ -432,7 +424,8 @@ def assign_to_cluster(
             canonical_name=entity.name
         )
     entity.canonical_cluster = cluster
-    entity.save()
+    if save:
+        entity.save()
     
     return cluster
 

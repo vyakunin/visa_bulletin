@@ -6,7 +6,7 @@ This document outlines cleanup tasks for the production environment.
 
 **Docker Resources:**
 - Images: 7 total, 1 active, 2.521GB total, 683.3MB reclaimable (27%)
-- Containers: 2 active (web-green, data-refresh-green)
+- Containers: web + redis (visa_bulletin_web, visa_bulletin_redis)
 - Build Cache: 302.4MB reclaimable
 
 **Old Images to Remove:**
@@ -80,7 +80,7 @@ ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@3.227.71.176 "sudo docker system df
 ## What NOT to Clean
 
 **Never remove:**
-- Active containers (web-green, data-refresh-green)
+- Active containers (visa_bulletin_web, visa_bulletin_redis)
 - Current image version (v1.0.5)
 - Database files (`visa_bulletin.db`)
 - Saved pages directory (`saved_pages/`)
@@ -90,5 +90,5 @@ ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@3.227.71.176 "sudo docker system df
 
 If cleanup fails:
 1. Check which containers are using the images: `sudo docker ps -a`
-2. Stop containers first if needed: `sudo docker-compose -f docker-compose.green.yml down`
+2. Stop containers first if needed: `sudo docker-compose -f deployment/docker-compose.yml down`
 3. Force remove if necessary: `sudo docker rmi -f <image-id>`

@@ -15,14 +15,14 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- status
     bazel run //scripts/ingest:run_pipeline -- check-completeness --domain dol
     bazel run //scripts/ingest:run_pipeline -- reingest-files --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx
-    bazel run //scripts/ingest:run_pipeline -- cleanup --days 30
+    bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed
+    bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --dry-run
 """
 
 import argparse
 import logging
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 # Convert DB_HOST from host.docker.internal to localhost when running on host
@@ -53,6 +53,7 @@ from django.utils import timezone
 from lib.utils.logging_utils import ScriptLogger
 from lib.utils.data_source_utils import get_data_source_filepath
 from lib.utils.http_utils import get_workspace_dir
+from lib.utils.url_utils import normalize_source_url, path_basename_from_url
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -68,37 +69,68 @@ def register_plugins():
 
 
 def discover_sources(domain: str | None = None):
-    """Discover new data sources"""
+    """
+    Discover new data sources. Deduplicates by:
+    1) Normalized URL (https, lowercase host, no query/fragment) so same URL in different form is not re-added.
+    2) Same (domain, source_type, path basename) so the same file under different paths (e.g. DOL urljoin
+       with/without trailing slash on base) is not re-added.
+    """
     register_plugins()
-    
+
     discovered = []
     plugins = PluginRegistry.list_plugins()
-    
+
     for plugin_domain, plugin_source_type, plugin in plugins:
         if domain and plugin_domain != domain:
             continue
-        
-        logger.info(f"Discovering sources for {plugin_domain}:{plugin_source_type}")
-        sources = plugin.discover_sources()
-        
-        for source_info in sources:
-            # Check if source already exists, use get_or_create to handle race conditions
+
+        logger.info("Discovering sources for %s:%s", plugin_domain, plugin_source_type)
+        source_infos = plugin.discover_sources()
+
+        existing_sources = list(
+            DataSource.objects.filter(
+                domain=plugin_domain, source_type=plugin_source_type
+            ).values("id", "url")
+        )
+        normalized_to_source = {
+            normalize_source_url(ds["url"]): ds for ds in existing_sources
+        }
+        basename_to_source = {}
+        for ds in existing_sources:
+            bn = path_basename_from_url(ds["url"]).lower()
+            key = (plugin_domain, plugin_source_type, bn)
+            if key not in basename_to_source:
+                basename_to_source[key] = ds
+
+        for source_info in source_infos:
+            normalized = normalize_source_url(source_info.url)
+            basename = path_basename_from_url(normalized).lower()
+            existing = normalized_to_source.get(normalized) or basename_to_source.get(
+                (plugin_domain, plugin_source_type, basename)
+            )
+            if existing:
+                logger.debug("Source already exists (normalized or same filename): %s", source_info.url)
+                continue
+
             source, created = DataSource.objects.get_or_create(
-                url=source_info.url,
+                url=normalized,
                 defaults={
-                    'domain': source_info.domain,
-                    'source_type': source_info.source_type,
-                    'format_version': source_info.format_version,
-                    'metadata': source_info.metadata or {}
-                }
+                    "domain": source_info.domain,
+                    "source_type": source_info.source_type,
+                    "format_version": source_info.format_version,
+                    "metadata": source_info.metadata or {},
+                },
             )
             if created:
                 discovered.append(source)
-                logger.info(f"Discovered new source: {source.url}")
-            else:
-                logger.debug(f"Source already exists: {source_info.url}")
-    
-    logger.info(f"Discovered {len(discovered)} new sources")
+                logger.info("Discovered new source: %s", source.url)
+                normalized_to_source[normalized] = {"id": source.id, "url": source.url}
+                basename_to_source[(plugin_domain, plugin_source_type, basename)] = {
+                    "id": source.id,
+                    "url": source.url,
+                }
+
+    logger.info("Discovered %s new sources", len(discovered))
     return discovered
 
 
@@ -108,18 +140,20 @@ def run_pipeline(
     all_pending: bool = False,
     missing_only: bool = False,
     retry_failed: bool = False,
+    include_failed: bool = False,
     domain: str | None = None,
-    skip_records: int = 0
+    skip_records: int = 0,
 ):
     """
     Run ingest pipeline for source(s)
-    
+
     Args:
         source_id: Specific source ID to ingest
         url: Specific source URL to ingest
-        all_pending: Process all sources without completed runs
+        all_pending: Process all sources without completed runs (excludes sources with any FAILED run unless include_failed=True)
         missing_only: Process only sources with local files but no completed runs
-        retry_failed: Retry sources that have failed runs
+        retry_failed: Retry sources that have failed runs (but no completed runs)
+        include_failed: When using all_pending, also include sources that have FAILED runs (default: exclude them so they are not re-run)
         domain: Filter by domain (dol, visa_bulletin, etc.)
     """
     import time
@@ -134,6 +168,8 @@ def run_pipeline(
         source = DataSource.objects.get(id=source_id)
         sources = [source]
         pipeline_context = None
+        salary_relevant_count = 1 if source.domain == DataDomain.DOL.value else 0
+        logger.info(f"Starting pipeline for 1 source (salary_relevant: {salary_relevant_count})")
     elif url:
         source, _ = DataSource.objects.get_or_create(
             url=url,
@@ -184,15 +220,23 @@ def run_pipeline(
             
             logger.info(f"Found {len(sources)} sources with failed runs (no completed runs)")
         elif all_pending:
-            # Get all sources that haven't been successfully ingested
-            # Sources with no completed runs
+            # Get all sources that haven't been successfully ingested (no completed runs).
+            # By default exclude sources that have any FAILED run so we don't re-run them; use --include-failed or run --retry-failed to retry.
             sources_with_completed = set(
                 DataSource.objects.filter(runs__status=IngestStatus.COMPLETED)
                 .values_list('id', flat=True)
                 .distinct()
             )
-            sources = list(sources_qs.exclude(id__in=sources_with_completed))
-            
+            sources_qs = sources_qs.exclude(id__in=sources_with_completed)
+            if not include_failed:
+                sources_with_failed = set(
+                    DataSource.objects.filter(runs__status=IngestStatus.FAILED)
+                    .values_list('id', flat=True)
+                    .distinct()
+                )
+                sources_qs = sources_qs.exclude(id__in=sources_with_failed)
+                logger.info("Excluding sources that have FAILED runs (use --include-failed or run --retry-failed to retry)")
+            sources = list(sources_qs)
             logger.info(f"Found {len(sources)} pending sources (no completed runs)")
         
         # Create pipeline context for ETA calculation
@@ -202,7 +246,8 @@ def run_pipeline(
             'completed_count': 0,
             'start_time': pipeline_start
         }
-        logger.info(f"Starting pipeline for {len(sources)} sources")
+        salary_relevant_count = sum(1 for s in sources if getattr(s, 'domain', None) == DataDomain.DOL.value)
+        logger.info(f"Starting pipeline for {len(sources)} sources (salary_relevant: {salary_relevant_count})")
     else:
         logger.error("Must specify --source-id, --url, --all-pending, --missing-only, or --retry-failed")
         sys.exit(1)
@@ -338,10 +383,10 @@ def reingest_files(
         "source_file_date",
     ]
 
-    indexes_dropped = False
+    did_drop_indexes = False
     try:
         _run_manage_salary_indexes("drop", snapshot_path, overwrite_snapshot)
-        indexes_dropped = True
+        did_drop_indexes = True
 
         for idx, source in enumerate(sources, 1):
             logger.info(f"Re-ingesting source {source.id} ({idx}/{len(sources)}): {source.url}")
@@ -377,39 +422,74 @@ def reingest_files(
                 logger.error(f"Pipeline failed for source {source.id}: {e}", exc_info=True)
                 continue
     finally:
-        if indexes_dropped:
+        if did_drop_indexes:
             _run_manage_salary_indexes("recreate", snapshot_path, overwrite_snapshot)
 
 
-def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
-    """Discover new sources and ingest all pending"""
+def discover_and_ingest(
+    domain: str | None = None,
+    all_domains: bool = False,
+    no_ingest_new: bool = False,
+):
+    """Discover new sources and ingest all pending (excludes sources with FAILED runs unless --include-failed)."""
     logger.info("Discovering new sources...")
     discovered = discover_sources(domain if not all_domains else None)
-    
+
+    if no_ingest_new:
+        logger.info("--no-ingest-new: marking sources with no runs as FAILED so 0 pending")
+        mark_no_run_sources_failed(dry_run=False)
+
     logger.info("Running pipeline for all pending sources...")
-    run_pipeline(all_pending=True, domain=domain)
+    run_pipeline(all_pending=True, include_failed=False, domain=domain)
 
 
-def cleanup_ingest_runs(days: int, dry_run: bool = False) -> None:
-    """Delete old ingest run metadata older than the given number of days."""
-    cutoff = timezone.now() - timedelta(days=days)
-    stale_qs = IngestRun.objects.filter(
-        Q(completed_at__lt=cutoff)
-        | Q(
-            completed_at__isnull=True,
-            started_at__lt=cutoff,
-            status__in=[IngestStatus.COMPLETED, IngestStatus.FAILED],
-        )
-    )
-    stale_count = stale_qs.count()
-    logger.info("Found %s ingest runs older than %s days", stale_count, days)
-
-    if dry_run:
-        logger.info("Dry run enabled - no records deleted")
+def mark_unfinished_runs_failed(include_pending: bool = True, dry_run: bool = False) -> None:
+    """Mark RUNNING (and optionally PENDING) ingest runs as FAILED so they are not re-run by default."""
+    statuses = [IngestStatus.RUNNING]
+    if include_pending:
+        statuses.append(IngestStatus.PENDING)
+    qs = IngestRun.objects.filter(status__in=statuses)
+    count = qs.count()
+    logger.info("Found %s unfinished runs (status in %s)", count, [s.label for s in statuses])
+    if count == 0:
         return
+    if dry_run:
+        logger.info("Dry run: would mark %s runs as FAILED", count)
+        for run in qs[:10]:
+            logger.info("  Run %s (source %s)", run.id, run.source_id)
+        if count > 10:
+            logger.info("  ... and %s more", count - 10)
+        return
+    msg = "Marked as failed: unfinished run (use mark-unfinished-failed to clear)"
+    for run in qs:
+        run.mark_failed(ValueError(msg))
+    logger.info("Marked %s runs as FAILED", count)
 
-    deleted_count, _ = stale_qs.delete()
-    logger.info("Deleted %s ingest run records", deleted_count)
+
+def mark_no_run_sources_failed(dry_run: bool = False) -> None:
+    """Create one FAILED run per DataSource that has no runs so all_pending finds 0 (no ingest)."""
+    sources_with_any_run = set(
+        IngestRun.objects.values_list("source_id", flat=True).distinct()
+    )
+    all_sources = set(DataSource.objects.values_list("id", flat=True))
+    sources_with_no_run = all_sources - sources_with_any_run
+    count = len(sources_with_no_run)
+    logger.info("Found %s sources with no runs (of %s total)", count, len(all_sources))
+    if count == 0:
+        return
+    if dry_run:
+        logger.info("Dry run: would create %s FAILED runs (one per source)", count)
+        return
+    created = 0
+    for source_id in sources_with_no_run:
+        source = DataSource.objects.get(id=source_id)
+        IngestRun.objects.create(
+            source=source,
+            status=IngestStatus.FAILED,
+            error_message="Marked: source had no runs (excluded from pending)",
+        )
+        created += 1
+    logger.info("Created %s FAILED runs; all_pending will now find 0 for these sources", created)
 
 
 def download_sources(domain: str | None = None, all_domains: bool = False, list_available: bool = False):
@@ -534,50 +614,25 @@ def show_status(source_id: int | None = None):
 def check_completeness(domain: str | None = None):
     """
     Check if all available data sources have been ingested.
-    
-    Discovers available sources and compares with completed ingest runs.
+
+    Runs discover_sources() first so the DB is synced with normalized-URL and
+    same-filename dedup, then compares sources to completed ingest runs.
     """
     logger.info("Checking data completeness...")
-    
-    # Step 1: Discover all available sources (to ensure we have latest list)
+
+    # Step 1: Sync discovery (same dedup as discover_sources: normalized URL + same filename)
     logger.info("Step 1: Discovering available sources...")
-    register_plugins()
+    discover_sources(domain)
+
+    # Step 2: All sources in DB for the domain(s) - discovery already deduped
+    if domain:
+        all_available_sources = list(DataSource.objects.filter(domain=domain))
+    else:
+        all_available_sources = list(DataSource.objects.all())
+    logger.info("  Found %s total available sources (unique URLs)", len(all_available_sources))
     
-    all_available_sources = []
-    seen_urls = set()  # Track URLs to avoid duplicates in list
-    plugins = PluginRegistry.list_plugins()
-    
-    for plugin_domain, plugin_source_type, plugin in plugins:
-        if domain and plugin_domain != domain:
-            continue
-        
-        logger.info(f"  Discovering {plugin_domain}:{plugin_source_type}...")
-        source_infos = plugin.discover_sources()
-        
-        for source_info in source_infos:
-            # Skip if we've already added this URL (multiple plugins may discover same source)
-            if source_info.url in seen_urls:
-                continue
-            seen_urls.add(source_info.url)
-            
-            # Get or create DataSource record
-            source, created = DataSource.objects.get_or_create(
-                url=source_info.url,
-                defaults={
-                    'domain': source_info.domain,
-                    'source_type': source_info.source_type,
-                    'format_version': source_info.format_version,
-                    'metadata': source_info.metadata or {}
-                }
-            )
-            all_available_sources.append(source)
-            if created:
-                logger.info(f"    ✓ Discovered new: {source.url}")
-    
-    logger.info(f"  Found {len(all_available_sources)} total available sources (unique URLs)")
-    
-    # Step 2: Check which sources have completed ingest runs
-    logger.info("Step 2: Checking ingestion status...")
+    # Step 3: Check which sources have completed ingest runs
+    logger.info("Step 3: Checking ingestion status...")
     
     # Get all sources with completed runs (from existing DB records, not just discovered)
     sources_with_completed_urls = set(
@@ -589,12 +644,12 @@ def check_completeness(domain: str | None = None):
     logger.info(f"  DEBUG: Sample completed URLs: {list(sources_with_completed_urls)[:3]}")
     logger.info(f"  DEBUG: Sample discovered URLs: {[s.url for s in all_available_sources[:3]]}")
     
-    # Match discovered sources against completed URLs
+    # Match sources against completed URLs
     ingested_sources = [s for s in all_available_sources if s.url in sources_with_completed_urls]
     missing_sources = [s for s in all_available_sources if s.url not in sources_with_completed_urls]
     logger.info(f"  DEBUG: Matched {len(ingested_sources)} ingested sources")
     
-    # Step 3: Categorize missing sources
+    # Step 4: Categorize missing sources
     broken_links = []  # Sources with 404 errors (files don't exist)
     not_ingested = []  # Sources that exist but haven't been ingested
     
@@ -612,7 +667,7 @@ def check_completeness(domain: str | None = None):
         else:
             not_ingested.append(source)
     
-    # Step 4: Show summary
+    # Step 5: Show summary
     logger.info("")
     logger.info("=" * 80)
     logger.info("COMPLETENESS SUMMARY")
@@ -699,6 +754,7 @@ def main():
     run_group.add_argument('--all-pending', action='store_true', help='Run all pending sources (no completed runs)')
     run_group.add_argument('--missing-only', action='store_true', help='Run only sources with local files but no completed runs')
     run_group.add_argument('--retry-failed', action='store_true', help='Retry sources that have failed runs (but no completed runs)')
+    run_parser.add_argument('--include-failed', action='store_true', help='With --all-pending: include sources that have FAILED runs (default: exclude them)')
     run_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Filter by domain (works with --all-pending, --missing-only, --retry-failed)')
     run_parser.add_argument('--skip-records', type=int, default=0, help='Skip first N records (for debugging specific records)')
     
@@ -727,10 +783,24 @@ def main():
     completeness_parser = subparsers.add_parser('check-completeness', help='Check if all available data sources have been ingested')
     completeness_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to check (default: all)')
 
-    # Cleanup command
-    cleanup_parser = subparsers.add_parser('cleanup', help='Delete old ingest run metadata')
-    cleanup_parser.add_argument('--days', type=int, default=30, help='Delete runs older than N days (default: 30)')
-    cleanup_parser.add_argument('--dry-run', action='store_true', help='Report deletions without removing records')
+    # Mark unfinished runs as failed (so they are not re-run by default)
+    mark_failed_parser = subparsers.add_parser(
+        'mark-unfinished-failed',
+        help='Mark RUNNING (and optionally PENDING) ingest runs as FAILED so they are not re-run by default',
+    )
+    mark_failed_parser.add_argument(
+        '--running-only',
+        action='store_true',
+        help='Only mark RUNNING runs (default: mark RUNNING and PENDING)',
+    )
+    mark_failed_parser.add_argument('--dry-run', action='store_true', help='Report what would be marked without updating')
+
+    # Mark sources with no runs as failed (create one FAILED run each so all_pending finds 0)
+    mark_no_run_parser = subparsers.add_parser(
+        'mark-no-run-sources-failed',
+        help='Create one FAILED run per DataSource that has no runs so all_pending finds 0 (no ingest)',
+    )
+    mark_no_run_parser.add_argument('--dry-run', action='store_true', help='Report what would be created without updating')
 
     # Re-ingest specific files with index management
     reingest_parser = subparsers.add_parser('reingest-files', help='Re-ingest specific local files with index drop/recreate')
@@ -768,8 +838,9 @@ def main():
                 args.all_pending,
                 args.missing_only,
                 args.retry_failed,
+                getattr(args, 'include_failed', False),
                 args.domain,
-                args.skip_records
+                args.skip_records,
             )
         elif args.command == 'discover-and-ingest':
             discover_and_ingest(args.domain, args.all_domains)
@@ -779,10 +850,15 @@ def main():
             resume_run(args.run_id)
         elif args.command == 'status':
             show_status(args.source_id)
+        elif args.command == 'mark-unfinished-failed':
+            mark_unfinished_runs_failed(
+                include_pending=not getattr(args, 'running_only', False),
+                dry_run=getattr(args, 'dry_run', False),
+            )
+        elif args.command == 'mark-no-run-sources-failed':
+            mark_no_run_sources_failed(dry_run=getattr(args, 'dry_run', False))
         elif args.command == 'check-completeness':
             check_completeness(args.domain)
-        elif args.command == 'cleanup':
-            cleanup_ingest_runs(args.days, args.dry_run)
         elif args.command == 'reingest-files':
             reingest_files(args.files, args.index_snapshot, args.overwrite_index_snapshot)
     except Exception as e:

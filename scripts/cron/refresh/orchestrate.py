@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,71 @@ if TYPE_CHECKING:
     from .runner import Runner
 
 logger = logging.getLogger(__name__)
+
+
+def _wait_app_healthy_via_ssh(
+    runner: Runner,
+    timeout_sec: int = 300,
+    poll_interval_sec: int = 10,
+) -> bool:
+    """Check app health by SSHing into the host and curling localhost:8000.
+
+    More reliable than external HTTP: avoids nginx server_name mismatches,
+    HTTP→HTTPS redirects, and security group restrictions on port 8000.
+    """
+    import time
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        result = runner.run_shell(
+            "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
+            timeout_sec=15,
+        )
+        code = (result.stdout or "").strip()
+        if code == "200":
+            logger.info("App healthy (HTTP 200 on localhost:8000)")
+            return True
+        logger.debug("Health check: HTTP %s", code or "(no response)")
+        time.sleep(poll_interval_sec)
+    return False
+
+
+def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) -> None:
+    """Replace the staging docker-compose.override.yml (which has ../:/app volume mount)
+    with a prod-safe version that keeps operational settings but drops the volume mount.
+
+    Without this, git pull on prod would bleed into gunicorn workers when they
+    recycle via --max-requests, because the volume mount exposes host files to the container.
+    """
+    override_path = project_root / "deployment" / "docker-compose.override.yml"
+    allowed_hosts = f"{host_ip},localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us"
+    override_content = (
+        "version: '3.8'\n"
+        "services:\n"
+        "  web:\n"
+        "    mem_limit: 512m\n"
+        "    memswap_limit: 768m\n"
+        "    environment:\n"
+        "      - WEB_CONCURRENCY=1\n"
+        f"      - ALLOWED_HOSTS={allowed_hosts}\n"
+    )
+    runner.run_shell(
+        f"cat > {shlex.quote(str(override_path))} << 'OVERRIDE_EOF'\n{override_content}OVERRIDE_EOF",
+        timeout_sec=10,
+    )
+    logger.info("Wrote prod-safe override (no volume mount) at %s", override_path)
+
+    compose_file = project_root / "deployment" / "docker-compose.yml"
+    compose_args = f"-f {shlex.quote(str(compose_file))} -f {shlex.quote(str(override_path))}"
+    restart_cmd = (
+        f"export DOCKER_HOST=unix:///var/run/docker.sock && "
+        f"cd {shlex.quote(str(project_root))} && "
+        f"docker-compose {compose_args} up -d"
+    )
+    result = runner.run_shell(restart_cmd, timeout_sec=120)
+    if result.returncode != 0:
+        logger.warning("Container restart after override cleanup failed (rc=%s): %s", result.returncode, result.stderr)
+    else:
+        logger.info("Restarted web container with prod-safe override (using Docker image code)")
 
 
 def run_orchestrate(
@@ -72,7 +138,7 @@ def run_orchestrate(
             return 1
         logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
         services.start_remote_services(remote, remote_root)
-        if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
+        if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
             logger.warning("Instance %s (%s) HTTP not healthy (non-fatal)", inactive_info.name, inactive_info.ip)
     else:
         assume_running = os.environ.get("REFRESH_ASSUME_INACTIVE_RUNNING", "").strip().lower() in ("1", "true", "yes")
@@ -105,37 +171,25 @@ def run_orchestrate(
         remote_config.project_root = remote_root
         remote_config.env_file = remote_root / ".env"
         remote_config.backup_dir = remote_root / "backups"
-        remote_config.single_db_on_host = True
         remote_config.db_name = db_name
         run_pipeline(remote_config, remote, resume=resume)
         logger.info("Pipeline complete on inactive; smoke already run in pipeline")
 
         logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
         services.start_remote_services(remote, remote_root)
-        if not instance.wait_instance_healthy(inactive_info.ip, port=80, timeout_sec=300):
+        if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
             logger.warning("Instance %s (%s) HTTP not healthy after start_services (non-fatal)", inactive_info.name, inactive_info.ip)
 
     if no_traffic_switch:
         logger.info("--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron")
         return 0
 
-    switch_mode = os.environ.get("REFRESH_TRAFFIC_SWITCH", "static_ip").strip().lower()
-    if switch_mode == "dns":
-        sld = os.environ.get("REFRESH_DOMAIN_SLD", "visa-bulletin")
-        tld = os.environ.get("REFRESH_DOMAIN_TLD", "us")
-        api_user = os.environ.get("NAMECHEAP_API_USER", "")
-        api_key = os.environ.get("NAMECHEAP_API_KEY", "")
-        client_ip = os.environ.get("REFRESH_CLIENT_IP", active_info.ip)
-        if not traffic_switch.switch_traffic_dns(sld, tld, inactive_info.ip, api_user, api_key, client_ip):
-            logger.error("DNS switch failed")
-            return 1
-    elif switch_mode == "static_ip":
-        static_ip_name = os.environ.get("REFRESH_STATIC_IP_NAME", "")
-        if not traffic_switch.switch_traffic_static_ip(static_ip_name, inactive_info.name):
-            logger.error("Static IP switch failed")
-            return 1
-    else:
-        logger.error("Unknown REFRESH_TRAFFIC_SWITCH: %s", switch_mode)
+    static_ip_name = os.environ.get("REFRESH_STATIC_IP_NAME", "")
+    if not static_ip_name:
+        logger.error("REFRESH_STATIC_IP_NAME not set; cannot switch traffic")
+        return 1
+    if not traffic_switch.switch_traffic_static_ip(static_ip_name, inactive_info.name):
+        logger.error("Static IP switch failed")
         return 1
 
     logger.info("Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)")
@@ -155,12 +209,20 @@ def run_orchestrate(
 
     reassign_staging_ip = os.environ.get("REFRESH_SKIP_STAGING_IP_REASSIGN", "").strip().lower() not in ("1", "true", "yes")
     if reassign_staging_ip:
-        staging_static_ip = os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "VisaBulletinStaging-ip").strip()
-        logger.info("Re-assigning staging static IP %s to old prod %s", staging_static_ip, active_info.name)
-        if not traffic_switch.attach_staging_static_ip_to_old_prod(staging_static_ip, active_info.name):
-            logger.warning("Staging IP reassign failed (non-fatal)")
+        staging_static_ip = os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "").strip()
+        if not staging_static_ip:
+            logger.warning("REFRESH_STAGING_STATIC_IP_NAME not set; skipping staging IP reassign")
+        else:
+            logger.info("Re-assigning staging static IP %s to old prod %s", staging_static_ip, active_info.name)
+            if not traffic_switch.attach_staging_static_ip_to_old_prod(staging_static_ip, active_info.name):
+                logger.warning("Staging IP reassign failed (non-fatal)")
     else:
         logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
+
+    logger.info("Replacing docker-compose.override.yml on new prod with prod-safe version (no volume mount)")
+    _write_prod_safe_override(remote, remote_root, inactive_info.ip)
+    if not _wait_app_healthy_via_ssh(remote, timeout_sec=120):
+        logger.warning("New prod not healthy after override cleanup (non-fatal)")
 
     import time
     logger.info("Safety interval: %s sec", safety_interval_sec)

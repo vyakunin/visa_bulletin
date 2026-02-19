@@ -71,7 +71,7 @@ Documentation for deployment, infrastructure, and operations.
 - **NEW_INSTANCE_SETUP.md** - Living document for production instance setup (most current)
 - **ROLLOUT_FLOW.md** - Complete rollout process for new deployments
 
-**Related Code:** `deployment/`, `scripts/deploy-zero-downtime.sh`
+**Related Code:** `deployment/`, `scripts/deploy.sh`
 
 ---
 

@@ -14,10 +14,10 @@ bazel run //:runserver
 **For Production Deployment:**
 ```bash
 # Deploy latest version
-./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem
+./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
 
 # Deploy specific version
-./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.3
+./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
 ```
 
 **For Releases:**
@@ -71,7 +71,7 @@ Prod:   docker pull → docker-compose up
 1. **Dockerfile** - Now uses gunicorn instead of dev server
 2. **docker-compose.yml** - Pulls from GHCR instead of building locally
 3. **docker-compose.dev.yml** - New file for local development
-4. **scripts/deploy-zero-downtime.sh** - Zero-downtime Docker deployment
+4. **scripts/deploy.sh** - Deploy to host (single stack; instance-rotation for zero-downtime)
 5. **.github/workflows/** - New CI/CD workflows
 
 ## Documentation
@@ -94,10 +94,10 @@ bazel test //tests:...
 ### Deployment
 ```bash
 # Deploy latest
-./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem
+./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
 
 # Deploy specific version
-./scripts/deploy-zero-downtime.sh ~/Downloads/VisaBulletin.pem v1.2.3
+./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
 ```
 
 ### On Production

@@ -20,6 +20,7 @@ from lib.utils.filter_utils import (
     apply_text_search_filter,
     apply_visa_program_filter,
     apply_fiscal_year_filter,
+    apply_filing_year_filter,
 )
 from lib.utils.location_utils import US_STATES
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
@@ -48,6 +49,31 @@ def _get_cached_fiscal_years() -> list[int]:
     return fiscal_years
 
 
+def _get_cached_filing_years() -> list[int]:
+    """
+    Get available filing years (from case_submitted) with caching.
+    """
+    cache_key = 'salary_filing_years'
+    filing_years = cache.get(cache_key)
+    
+    if filing_years is None:
+        from django.db.models.functions import ExtractYear
+        filing_years = list(
+            SalaryRecord.objects
+            .exclude(case_submitted__isnull=True)
+            .annotate(year=ExtractYear('case_submitted'))
+            .values_list('year', flat=True)
+            .distinct()
+            .order_by('-year')
+        )
+        cache.set(cache_key, filing_years)
+    
+    return filing_years
+
+
+
+
+
 # Note: @cache_page automatically varies by query parameters, so different searches have different cache keys
 # Cache is cleared when server restarts or via: bazel run //scripts:clear_cache
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -65,6 +91,7 @@ def salary_search_view(request):
     """
     # Get available fiscal years (cached) - needed for form choices
     fiscal_years = _get_cached_fiscal_years()
+    filing_years = _get_cached_filing_years()
     
     # Initialize form with dynamic fiscal year choices
     form = SalarySearchForm(request.GET)
@@ -79,7 +106,9 @@ def salary_search_view(request):
     employer_filter = cleaned_data.get('employer') or request.GET.get('employer', '') or ''
     state_filter = cleaned_data.get('state') or request.GET.get('state', '') or ''
     program_filter = cleaned_data.get('program') or request.GET.get('program', '') or ''
-    year_filter = cleaned_data.get('year') or request.GET.get('year') or None
+    # 'year' parameter now refers to fiscal year (unchanged)
+    fiscal_year_filter = cleaned_data.get('year') or request.GET.get('year') or None
+    filing_year_filter = cleaned_data.get('filing_year') or request.GET.get('filing_year') or None
     try:
         page = cleaned_data.get('page') or int(request.GET.get('page', 1))
     except (ValueError, TypeError):
@@ -91,7 +120,8 @@ def salary_search_view(request):
         'employer_filter': employer_filter,
         'state_filter': state_filter,
         'program_filter': program_filter,
-        'year_filter': str(year_filter) if year_filter else '',
+        'year_filter': str(fiscal_year_filter) if fiscal_year_filter else '',
+        'filing_year_filter': str(filing_year_filter) if filing_year_filter else '',
         'page': page,
     }
     
@@ -104,7 +134,7 @@ def salary_search_view(request):
     
     # Build and apply filters FIRST (before expensive exclude)
     # This reduces the dataset size before the expensive exclude operation
-    has_filters = any([query, employer_filter, state_filter, program_filter, year_filter])
+    has_filters = any([query, employer_filter, state_filter, program_filter, fiscal_year_filter, filing_year_filter])
     records = SalaryRecord.objects.all()
     
     # Apply filters using generic utilities
@@ -119,7 +149,8 @@ def salary_search_view(request):
     if state_filter:
         records = records.filter(worksite_state=state_filter)
     records = apply_visa_program_filter(records, program_filter)
-    records = apply_fiscal_year_filter(records, year_filter)
+    records = apply_fiscal_year_filter(records, fiscal_year_filter)
+    records = apply_filing_year_filter(records, filing_year_filter)
     
     # Exclude worksite records AFTER applying filters (reduces dataset size)
     # Use indexed is_worksite field for fast filtering (much faster than source_file pattern matching)
@@ -186,10 +217,10 @@ def salary_search_view(request):
     cache_key_count = None
     if not has_filters:
         cache_key_count = 'salary_non_worksite_count'
-    elif params['program_filter'] == 'h1b' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter']]):
+    elif params['program_filter'] == 'h1b' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter'], params['filing_year_filter']]):
         # Common case: just program=h1b filter (no other filters)
         cache_key_count = 'salary_h1b_non_worksite_count'
-    elif params['program_filter'] == 'perm' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter']]):
+    elif params['program_filter'] == 'perm' and not any([params['query'], params['employer_filter'], params['state_filter'], params['year_filter'], params['filing_year_filter']]):
         # Common case: just program=perm filter (no other filters)
         cache_key_count = 'salary_perm_non_worksite_count'
     
@@ -228,11 +259,13 @@ def salary_search_view(request):
         'employer_filter': employer_filter,
         'state_filter': state_filter,
         'program_filter': program_filter,
-        'year_filter': year_filter,
+        'year_filter': str(fiscal_year_filter) if fiscal_year_filter else '',
+        'filing_year_filter': str(filing_year_filter) if filing_year_filter else '',
         
         # Filter options
         'states': US_STATES,
         'fiscal_years': fiscal_years,
+        'filing_years': filing_years,
         
         # Results
         'records': records,

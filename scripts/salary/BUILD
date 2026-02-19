@@ -92,6 +92,7 @@ py_binary(
         "//models:salary",
         "//models/ingest:ingest",
         "//django_config:settings",
+        "//django_config:logging_config",
         "//webapp:apps",
         requirement("Django"),
         requirement("asgiref"),
@@ -148,28 +149,6 @@ py_binary(
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
 )
-
-py_binary(
-    name = "reset_clustering",
-    srcs = ["reset_clustering.py"],
-    main = "reset_clustering.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//lib/utils:logging_utils",
-        "//models:salary",
-        "//django_config:settings",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),
-    ],
-    python_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-)
-
 
 py_binary(
     name = "validate_data",

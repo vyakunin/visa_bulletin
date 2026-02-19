@@ -20,4 +20,7 @@ class ModelsConfig(AppConfig):
         from .salary import SalaryRecord, Employer, WorksiteRecord  # noqa: F401
         from .job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview  # noqa: F401
         from .visa_cutoff_date import VisaCutoffDate  # noqa: F401
+        from .raw_facts import RawFactsLedger  # noqa: F401
+        from .vqs import PredictedBulletin, PredictedCutoff  # noqa: F401
+        from .blog import BlogPost  # noqa: F401
 

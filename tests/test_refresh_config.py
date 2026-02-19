@@ -20,8 +20,8 @@ def test_get_env_value_missing_file() -> None:
 
 def test_get_env_value_present(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("DB_NAME=visa_bulletin_blue\nDB_USER=u\n")
-    assert get_env_value(env_file, "DB_NAME") == "visa_bulletin_blue"
+    env_file.write_text("DB_NAME=visa_bulletin\nDB_USER=u\n")
+    assert get_env_value(env_file, "DB_NAME") == "visa_bulletin"
     assert get_env_value(env_file, "DB_USER") == "u"
     assert get_env_value(env_file, "MISSING") is None
 
@@ -50,11 +50,3 @@ def test_load_config_project_root(tmp_path: Path) -> None:
     assert config.env_file == tmp_path / ".env"
 
 
-def test_load_config_single_db_from_env(tmp_path: Path) -> None:
-    (tmp_path / ".env").write_text("DB_NAME=visa_bulletin\n")
-    os.environ["REFRESH_SINGLE_DB_ON_HOST"] = "1"
-    try:
-        config = load_config(tmp_path)
-        assert config.single_db_on_host is True
-    finally:
-        os.environ.pop("REFRESH_SINGLE_DB_ON_HOST", None)

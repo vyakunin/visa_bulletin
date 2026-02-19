@@ -72,6 +72,28 @@ def apply_fiscal_year_filter(queryset, year_filter: str | int | None, year_field
         return queryset
 
 
+def apply_filing_year_filter(queryset, year_filter: str | int | None, filing_date_field: str = 'case_submitted'):
+    """
+    Apply filing year filter to queryset.
+    
+    Args:
+        queryset: Django queryset to filter
+        year_filter: Year filter value (string or int)
+        filing_date_field: Name of the filing date field (default: 'case_submitted')
+        
+    Returns:
+        Filtered queryset
+    """
+    if not year_filter:
+        return queryset
+    
+    try:
+        year = int(year_filter)
+        return queryset.filter(**{f'{filing_date_field}__year': year})
+    except (ValueError, TypeError):
+        return queryset
+
+
 
 
 

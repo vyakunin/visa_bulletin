@@ -74,16 +74,16 @@ class TestJobTitleNormalization(unittest.TestCase):
             )
     
     def test_normalization_removes_seniority(self):
-        """Normalization should remove seniority indicators but keep roman numerals."""
+        """Normalization should remove seniority indicators and level markers."""
         test_cases = [
             ('Senior Software Engineer', 'software engineer'),
             ('Junior Developer', 'developer'),
             ('Lead Data Scientist', 'data scientist'),
             ('Staff Engineer', 'engineer'),
             ('Principal Architect', 'architect'),
-            # Roman numerals are kept (company-specific)
-            ('Software Engineer II', 'software engineer ii'),
-            ('Software Engineer III', 'software engineer iii'),
+            # Level markers (roman numerals and digits) stripped for job-family clustering
+            ('Software Engineer II', 'software engineer'),
+            ('Software Engineer III', 'software engineer'),
         ]
         
         for title, expected_normalized in test_cases:
@@ -101,8 +101,8 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('COMPUTER SOFTWARE ENG., SYSTEMS SOFTWARE', 'computer software eng systems', ''),
             ('Security Engineer, Security Response', 'security engineer response', ''),
             ('Senior Software Engineer', 'software engineer', 'senior'),
-            ('Software Engineer II', 'software engineer ii', 'ii'),  # Roman numeral kept verbatim
-            ('Software Engineer III', 'software engineer iii', 'iii'),  # Roman numeral kept verbatim
+            ('Software Engineer II', 'software engineer', 'ii'),  # Level marker stripped; level in experience_level
+            ('Software Engineer III', 'software engineer', 'iii'),  # Level marker stripped; level in experience_level
             ('Manager II, Supply Chain', 'manager supply chain', 'ii'),
             ('Manager 2, Supply Chain', 'manager supply chain', 'ii'),  # Level marker detected before digit removal
             ('Director 3, Engineering', 'director engineering', 'iii'),  # Level marker detected before digit removal

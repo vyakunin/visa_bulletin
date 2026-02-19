@@ -1,0 +1,2126 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predictions for November 2025</title>
+    
+    <!-- Favicons (multiple formats for best compatibility) -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    
+    <!-- Theme color for mobile browsers -->
+    <meta name="theme-color" content="#003366">
+    
+    <!-- Performance Optimizations -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdn.plot.ly" crossorigin>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.">
+    <meta name="keywords" content="visa bulletin, priority date tracker, EB2, EB3, green card, immigration, USCIS, employment based visa, family sponsored visa, India EB2, China EB3, visa retrogression, H-1B salary, PERM, DoL">
+    <meta name="author" content="U.S. Immigration Data">
+    
+    
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="http://localhost:8000/predictions/2025-11/">
+    <meta property="og:title" content="U.S. Immigration Data">
+    <meta property="og:description" content="Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.">
+    <meta property="og:image" content="http://localhost:8000/static/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="U.S. Immigration Data - Priority dates and employment visa data">
+    <meta property="og:site_name" content="U.S. Immigration Data">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="http://localhost:8000/predictions/2025-11/">
+    <meta name="twitter:title" content="U.S. Immigration Data">
+    <meta name="twitter:description" content="Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.">
+    <meta name="twitter:image" content="http://localhost:8000/static/og-image.png">
+    <meta name="twitter:image:alt" content="U.S. Immigration Data - Priority dates and employment visa data">
+    
+    <!-- Structured Data (JSON-LD) - Organization & Logo -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "U.S. Immigration Data",
+        "url": "https://visa-bulletin.us",
+        "logo": "http://localhost:8000/static/og-image.png",
+        "description": "Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.",
+        "contactPoint": {
+            "@type": "ContactPoint",
+            "email": "vyakunin@gmail.com",
+            "contactType": "Customer Service"
+        },
+        "sameAs": [
+            "https://github.com/vyakunin/visa_bulletin"
+        ]
+    }
+    </script>
+    
+    <!-- Structured Data (JSON-LD) - WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "U.S. Immigration Data",
+        "url": "https://visa-bulletin.us",
+        "description": "Priority dates, work visas, and labor market data. Visa bulletin, green card, DoL, PERM, H-1B salaries by job and employer.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://visa-bulletin.us/?category={category}&country={country}"
+            },
+            "query-input": "required name=category"
+        }
+    }
+    </script>
+    
+    <!-- Structured Data (JSON-LD) - Page-specific data -->
+    
+    
+    <!-- Critical CSS (inlined for faster render) -->
+    <style>
+        /* Bootstrap Critical CSS - Container, Grid, Forms, Buttons */
+        *,::after,::before{box-sizing:border-box}
+        body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:1rem;font-weight:400;line-height:1.5;color:#212529;background-color:#fff}
+        h1,h2,h3,h4,h5,h6{margin-top:0;margin-bottom:.5rem;font-weight:500;line-height:1.2}
+        h1{font-size:2.5rem}h2{font-size:2rem}h3{font-size:1.75rem}h5{font-size:1.25rem}
+        p{margin-top:0;margin-bottom:1rem}
+        .container{width:100%;padding-right:var(--bs-gutter-x,.75rem);padding-left:var(--bs-gutter-x,.75rem);margin-right:auto;margin-left:auto}
+        @media (min-width:576px){.container{max-width:540px}}
+        @media (min-width:768px){.container{max-width:720px}}
+        @media (min-width:992px){.container{max-width:960px}}
+        @media (min-width:1200px){.container{max-width:1140px}}
+        .row{--bs-gutter-x:1.5rem;--bs-gutter-y:0;display:flex;flex-wrap:wrap;margin-top:calc(var(--bs-gutter-y) * -1);margin-right:calc(var(--bs-gutter-x) * -.5);margin-left:calc(var(--bs-gutter-x) * -.5)}
+        .col-12{flex:0 0 auto;width:100%}
+        .g-3{--bs-gutter-x:1rem;--bs-gutter-y:1rem}
+        .card{position:relative;display:flex;flex-direction:column;min-width:0;word-wrap:break-word;background-color:#fff;background-clip:border-box;border:1px solid rgba(0,0,0,.125);border-radius:.25rem}
+        .card-header{padding:.5rem 1rem;margin-bottom:0;background-color:rgba(0,0,0,.03);border-bottom:1px solid rgba(0,0,0,.125)}
+        .card-body{flex:1 1 auto;padding:1rem}
+        .form-label{margin-bottom:.5rem;font-weight:500}
+        .form-control,.form-select{display:block;width:100%;padding:.375rem .75rem;font-size:1rem;font-weight:400;line-height:1.5;color:#212529;background-color:#fff;background-clip:padding-box;border:1px solid #ced4da;appearance:none;border-radius:.25rem;transition:border-color .15s ease-in-out,box-shadow .15s ease-in-out}
+        .form-control:focus,.form-select:focus{color:#212529;background-color:#fff;border-color:#86b7fe;outline:0;box-shadow:0 0 0 .25rem rgba(13,110,253,.25)}
+        .btn{display:inline-block;font-weight:400;line-height:1.5;color:#212529;text-align:center;text-decoration:none;vertical-align:middle;cursor:pointer;user-select:none;background-color:transparent;border:1px solid transparent;padding:.375rem .75rem;font-size:1rem;border-radius:.25rem;transition:color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out}
+        .btn-primary{color:#fff;background-color:#0d6efd;border-color:#0d6efd}
+        .btn-primary:hover{color:#fff;background-color:#0b5ed7;border-color:#0a58ca}
+        .w-100{width:100%!important}
+        .mt-4{margin-top:1.5rem!important}
+        .mb-0{margin-bottom:0!important}
+        .mb-2{margin-bottom:.5rem!important}
+        .mb-3{margin-bottom:1rem!important}
+        .text-white{color:#fff!important}
+        .text-center{text-align:center!important}
+        .alert{position:relative;padding:1rem;margin-bottom:1rem;border:1px solid transparent;border-radius:.25rem}
+        .alert-info{color:#055160;background-color:#cff4fc;border-color:#b6effb}
+        .alert-warning{color:#664d03;background-color:#fff3cd;border-color:#ffecb5}
+        .alert-heading{color:inherit}
+        .visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+        .spinner-border{display:inline-block;width:2rem;height:2rem;vertical-align:-.125em;border:.25em solid currentColor;border-right-color:transparent;border-radius:50%;animation:.75s linear infinite spinner-border}
+        @keyframes spinner-border{to{transform:rotate(360deg)}}
+        .text-primary{color:#0d6efd!important}
+        .text-muted{color:#6c757d!important}
+        .small{font-size:.875em}
+        .lead{font-size:1.25rem;font-weight:300}
+        .display-4{font-size:3.5rem;font-weight:300;line-height:1.2}
+    </style>
+    
+    <!-- Full Bootstrap CSS (async load) -->
+    <!-- 
+    Bootstrap CSS: Synchronous vs Async Loading Tradeoff
+    
+    DECISION: Load Bootstrap synchronously (render-blocking)
+    
+    WHY SYNC:
+    - Bootstrap is CRITICAL for layout - must apply before first paint
+    - Async loading caused 0.216 CLS (99% of total CLS budget!)
+    - Lighthouse trace showed 3 layout shifts from delayed Bootstrap application
+    
+    TRADEOFF:
+    - Sync loading adds ~50ms to initial render (blocking)
+    - BUT eliminates all layout shifts = much better user experience
+    - Net result: Performance 90→98, CLS 0.216→0.001
+    
+    ALTERNATIVE CONSIDERED:
+    - Async preload with critical CSS inlining (previous approach)
+    - Failed because our critical CSS couldn't fully replicate Bootstrap's layout
+    - Even with extensive inlining, still had 0.216 CLS
+    
+    For this site, Bootstrap is foundational - better to block render than shift layout.
+    -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons (deferred - not critical for initial render) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"></noscript>
+    
+    <!-- Analytics (Privacy-focused, GDPR compliant) -->
+    
+    
+    <!-- Custom CSS - Government Official Theme -->
+    <style>
+        /* Font Optimization */
+        @font-face {
+            font-family: 'Bootstrap-icons';
+            src: url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/fonts/bootstrap-icons.woff2?524846017b983fc8ded9325d94ed40f3") format('woff2'),
+                 url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/fonts/bootstrap-icons.woff?524846017b983fc8ded9325d94ed40f3") format('woff');
+            font-display: swap; /* Prevent layout shift during font load */
+        }
+
+        :root {
+            --gov-navy: #003366;
+            --gov-red: #B31942;
+            --gov-gold: #D4AF37;
+            --gov-green: #2D7A3E;
+            --gov-background: #F5F7FA;
+            --gov-text: #1A1A1A;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--gov-background);
+            color: var(--gov-text);
+        }
+        
+        /* Prevent layout shift by reserving minimum space */
+        main {
+            min-height: 600px;
+        }
+        
+        /* Reserve space for dashboard content to prevent CLS - only on pages with charts */
+        .dashboard-container {
+            min-height: 1800px !important; /* Increased and forced to prevent any container shift */
+        }
+        
+        /* CLS is now fixed by loading Bootstrap synchronously - no aggressive min-heights needed */
+        
+        h1, h2, h3, h4, h5, h6 {
+            font-family: Georgia, serif;
+            font-weight: normal;
+        }
+        
+        .hero-section {
+            background: var(--gov-navy);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 2rem;
+            border-bottom: 4px solid var(--gov-red);
+        }
+        
+        .hero-section h1 {
+            font-family: Georgia, serif;
+            font-weight: normal;
+        }
+        
+        .filter-card {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            border: 1px solid #d0d0d0;
+            border-radius: 2px;
+        }
+        
+        /* Reserve space for form controls to prevent shift */
+        .filter-card .form-select,
+        .filter-card .form-control {
+            height: 44px !important; /* Explicit height prevents auto-sizing shift */
+        }
+        
+        /* Ensure help text has reserved space */
+        .filter-card .form-text {
+            display: block;
+            min-height: 20px; /* Reserve space even before text loads */
+        }
+        
+        .filter-card .card-header {
+            background: var(--gov-navy) !important;
+            border-bottom: 2px solid var(--gov-red);
+        }
+        
+        .btn-primary {
+            background-color: var(--gov-red);
+            border-color: var(--gov-red);
+            font-weight: 600;
+        }
+        
+        .btn-primary:hover {
+            background-color: #9a1436;
+            border-color: #9a1436;
+        }
+        
+        /* Telegram button - official brand color */
+        .btn-telegram {
+            background-color: #26A5E4;
+            border-color: #26A5E4;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .btn-telegram:hover {
+            background-color: #1e8bc3;
+            border-color: #1e8bc3;
+            color: white;
+        }
+        
+        /* Bluesky button - official brand color */
+        .btn-bluesky {
+            background-color: #1185FE;
+            border-color: #1185FE;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .btn-bluesky:hover {
+            background-color: #0d6ecc;
+            border-color: #0d6ecc;
+            color: white;
+        }
+        
+        /* Email button - standard blue color */
+        .btn-email {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .btn-email:hover {
+            background-color: #0b5ed7;
+            border-color: #0a58ca;
+            color: white;
+        }
+        
+        .projection-alert {
+            border-left: 6px solid var(--gov-navy);
+            background-color: #e8f4f8;
+            border-radius: 2px;
+            min-height: 280px; /* Reserve space for projection cards - prevents CLS */
+        }
+        
+        /* Plotly chart container */
+        #chart-plot {
+            min-height: 350px;
+        }
+        
+        #chart-container {
+            min-height: 400px;
+        }
+        
+        /* Force Plotly chart to fit container width */
+        .plotly-graph-div {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        
+        .js-plotly-plot, .plot-container {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        
+        /* Position Plotly modebar to avoid title overlap */
+        .modebar {
+            top: auto !important;
+            bottom: 5px !important;
+            right: 5px !important;
+        }
+        
+        .footer-link {
+            color: var(--footer-link-color);
+            text-decoration: underline;
+        }
+        
+        .card {
+            border: 1px solid #d0d0d0;
+            border-radius: 2px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-select, .form-control {
+            border: 2px solid #E8E8E8;
+            border-radius: 2px;
+        }
+        
+        .form-select:focus, .form-control:focus {
+            border-color: var(--gov-navy);
+            box-shadow: 0 0 0 0.2rem rgba(0, 51, 102, 0.15);
+        }
+        
+        .badge.bg-success {
+            background-color: var(--gov-green) !important;
+        }
+        
+        footer {
+            background-color: var(--gov-navy);
+            color: white;
+            padding: 2rem 0;
+            margin-top: 3rem;
+        }
+        
+        footer hr {
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        footer p {
+            color: #FFFFFF; /* Pure white for better contrast on navy (WCAG AA) */
+        }
+        
+        .alert-info {
+            background-color: #e8f4f8;
+            border-color: var(--gov-navy);
+        }
+        
+        .alert-warning {
+            background-color: #fff9e6;
+            border-color: var(--gov-gold);
+            border-left: 6px solid var(--gov-gold);
+        }
+        
+        .text-success {
+            color: var(--gov-green) !important;
+        }
+        
+        .bi {
+            margin-right: 6px;
+        }
+        
+        /* Autocomplete styles */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+        
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 0 0 0.25rem 0.25rem;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .autocomplete-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        
+        .autocomplete-item:hover,
+        .autocomplete-item.active {
+            background-color: #f8f9fa;
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
+        .autocomplete-item strong {
+            color: var(--gov-navy);
+        }
+
+        .autocomplete-count {
+            color: #6c757d;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+
+        /* Sortable table headers: clickable, sorted column highlighted */
+        .sortable-table thead th {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease;
+        }
+        .sortable-table thead th:hover {
+            background-color: rgba(0, 0, 0, 0.04);
+        }
+        .sortable-table thead th.sortable-sorted {
+            background-color: rgba(44, 82, 130, 0.12);
+            color: var(--gov-navy, #1a365d);
+        }
+        .sortable-table thead th.sortable-sorted .sort-indicator {
+            font-weight: bold;
+            color: var(--gov-navy, #1a365d);
+        }
+        
+        /* Navigation Colors */
+        :root {
+            --nav-inactive-text: #4a5568;      /* Medium gray for inactive links */
+            --nav-inactive-bg: transparent;     /* No background for inactive */
+            --nav-hover-text: #1a365d;         /* Dark blue on hover */
+            --nav-hover-bg: #f7fafc;           /* Light gray background on hover */
+            --nav-active-text: #ffffff;        /* White text for active */
+            --nav-active-bg: #2c5282;          /* Strong blue background for active */
+            --nav-border-color: #e2e8f0;       /* Border color */
+            --footer-link-color: #60a5fa;      /* Light blue for footer links - excellent contrast on navy */
+        }
+        
+        /* Navigation Bar */
+        .navbar-compact {
+            background-color: white;
+            border-bottom: 1px solid var(--nav-border-color);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            padding: 0.5rem 0;
+        }
+        
+        .navbar-compact .nav-link {
+            color: var(--nav-inactive-text);
+            background-color: var(--nav-inactive-bg);
+            font-size: 0.95rem;
+            padding: 0.5rem 1.25rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+        
+        .navbar-compact .nav-link:hover {
+            color: var(--nav-hover-text);
+            background-color: var(--nav-hover-bg);
+        }
+        
+        .navbar-compact .nav-link.active {
+            color: var(--nav-active-text) !important;
+            background-color: var(--nav-active-bg) !important;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(44, 82, 130, 0.3);
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            .hero-section {
+                padding: 1.5rem 0;
+            }
+            .hero-section h1 {
+                font-size: 1.75rem;
+            }
+            .hero-section p {
+                font-size: 0.95rem;
+            }
+            .filter-card .card-body {
+                padding: 1rem;
+            }
+            .filter-card label {
+                font-size: 0.9rem;
+                margin-bottom: 0.25rem;
+            }
+            .filter-card select, .filter-card input {
+                font-size: 0.9rem;
+                height: 44px !important; /* Preserve explicit height on mobile */
+            }
+            .filter-card .form-text {
+                min-height: 20px; /* Preserve help text space on mobile */
+            }
+            /* Constrain chart on mobile */
+            #chart-container {
+                overflow: hidden;
+            }
+            
+            #chart-plot {
+                min-height: 300px;
+            }
+            
+            .plotly-graph-div {
+                max-width: 100vw !important;
+            }
+            .multiline-chart-wrapper .plotly-graph-div {
+                max-width: 100% !important;
+            }
+            .multiline-chart-checkbox-list {
+                max-width: 100%;
+            }
+            /* Reduce projection alert padding */
+            .projection-alert {
+                padding: 0.75rem;
+                font-size: 0.9rem;
+            }
+            .projection-alert h5 {
+                font-size: 1rem;
+            }
+        }
+    </style>
+    
+    
+</head>
+<body>
+    <div class="hero-section">
+        <div class="container">
+            <h1 class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</h1>
+            <p class="lead">Priority dates, work visas, and labor market data</p>
+        </div>
+    </div>
+    
+    <!-- Navigation Bar -->
+    <nav class="navbar-compact">
+        <div class="container">
+            <ul class="nav nav-pills justify-content-center">
+                <li class="nav-item">
+                    <a class="nav-link " href="/">
+                        <i class="bi bi-calendar-check"></i> Priority Dates
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/salaries/">
+                        <i class="bi bi-currency-dollar"></i> Salaries
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/job-titles/">
+                        <i class="bi bi-briefcase"></i> Job Titles
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/employers/">
+                        <i class="bi bi-building"></i> Employers
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/faq/">
+                        <i class="bi bi-question-circle"></i> FAQ
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/about/">
+                        <i class="bi bi-info-circle"></i> About
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link " href="/contact/">
+                        <i class="bi bi-envelope"></i> Contact
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    
+    <div class="container mt-4 ">
+        
+<div class="container py-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/predictions/">Predictions</a></li>
+            <li class="breadcrumb-item active" aria-current="page">November 2025</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1>Predictions for November 2025</h1>
+        <div class="btn-group shadow-sm">
+            
+            <a href="/predictions/2025-10/" class="btn btn-outline-primary"
+                title="Previous Month">
+                <i class="bi bi-chevron-left"></i> Oct 2025
+            </a>
+            
+
+            
+            <a href="/predictions/2025-12/" class="btn btn-outline-primary"
+                title="Next Month">
+                Dec 2025 <i class="bi bi-chevron-right"></i>
+            </a>
+            
+        </div>
+    </div>
+
+    
+    <p class="text-muted">Knowledge Date: October 31, 2025</p>
+    <div class="alert alert-info py-2 d-flex align-items-center">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <small>Predictions relative to last month's bulletin. Movement (e.g. <span
+                class="badge bg-success bg-opacity-10 text-success">↑ 1m</span>) shown below.</small>
+    </div>
+    
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover shadow-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th rowspan="2" class="align-middle text-center">Preference</th>
+                    <th rowspan="2" class="align-middle text-center" style="width: 1%;">Type</th>
+                    <th colspan="2" class="text-center">Other Countries</th><th colspan="2" class="text-center">China (mainland born)</th><th colspan="2" class="text-center">India</th><th colspan="2" class="text-center">Mexico</th><th colspan="2" class="text-center">Philippines</th>
+                </tr>
+                <tr><th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th><th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th><th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th><th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th><th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">EB-1</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">22 Dec 2022</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">14 May 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-danger text-danger border-danger"
+                                style="font-size: 0.7rem;">
+                                ↓ 1d
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">14 Feb 2022</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-danger text-danger border-danger"
+                                style="font-size: 0.7rem;">
+                                ↓ 1d
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">14 Apr 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-danger text-danger border-danger"
+                                style="font-size: 0.7rem;">
+                                ↓ 1d
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Oct 2025</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +31.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +1.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +1.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +31.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +31.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                </tr>
+                
+                
+                
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">EB-2</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Dec 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Jul 2024</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Dec 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2013</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Dec 2013</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Dec 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Jul 2024</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Dec 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Jul 2024</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                </tr>
+                
+                
+                
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">EB-3</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Mar 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jan 2022</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">20 Aug 2013</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-danger text-danger border-danger"
+                                style="font-size: 0.7rem;">
+                                ↓ 2d
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">14 Aug 2014</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-danger text-danger border-danger"
+                                style="font-size: 0.7rem;">
+                                ↓ 1d
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2023</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-danger"
+                                style="font-size: 0.75rem;">
+                                +1.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                </tr>
+                
+                
+                
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">EB-4</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2020</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Feb 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2020</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Feb 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2020</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Feb 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2020</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Feb 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Jul 2020</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">15 Feb 2021</span>
+                            
+                            <span
+                                class="badge bg-opacity-10 border border-opacity-25 bg-secondary text-secondary border-secondary"
+                                style="font-size: 0.7rem;">
+                                0
+                            </span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        <span class="text-muted small">{{
+                            cell.final_action.formatted_actual }}</span>
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <span class="text-muted small">{{
+                                cell.filing.formatted_actual }}</span>
+                            
+                            <span
+                                class="ms-1 fw-bold text-muted"
+                                style="font-size: 0.75rem;">
+                                0.0d
+                            </span>
+                            
+                        </div>
+                    </td>
+                    
+                </tr>
+                
+                
+                
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">EB-5</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2011</span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        -
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2011</span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        -
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2011</span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        -
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2011</span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        -
+                        
+                    </td>
+                    
+                    <td class="align-middle text-center">
+                        
+                        
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">01 Apr 2011</span>
+                            
+                        </div>
+                        
+                        
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        
+                        -
+                        
+                    </td>
+                    
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        -
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            -
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        -
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            -
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        -
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            -
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        -
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            -
+                            
+                        </div>
+                    </td>
+                    
+                    <td class="align-middle text-center border-bottom-thick">
+                        -
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            -
+                            
+                        </div>
+                    </td>
+                    
+                </tr>
+                
+                
+            </tbody>
+        </table>
+    </div>
+</div>
+
+    </div>
+    
+    <footer class="container mt-5 mb-4">
+        <hr style="border-color: rgba(255,255,255,0.2);">
+        
+        <div class="text-center mb-3" style="color: #8FA3B8; font-size: 0.95rem;">
+            <p class="mb-2">
+                <strong>Built to help the community</strong> — I created this site to make U.S. immigration and employment visa data easier to find. 
+                If you find it useful, please share it with others in the immigration community.
+            </p>
+            
+            <!-- Share Buttons -->
+            <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
+                <!-- WhatsApp -->
+                <a href="whatsapp://send?text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries:%20https://visa-bulletin.us/" 
+                   class="btn btn-success btn-sm">
+                    <i class="bi bi-whatsapp"></i> WhatsApp
+                </a>
+                
+                <!-- Telegram -->
+                <a href="https://t.me/share/url?url=https://visa-bulletin.us/&text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries" 
+                   class="btn btn-telegram btn-sm">
+                    <i class="bi bi-telegram"></i> Telegram
+                </a>
+                
+                <!-- Bluesky -->
+                <a href="https://bsky.app/intent/compose?text=Check%20out%20U.S.%20Immigration%20Data%20-%20priority%20dates%2C%20work%20visas%2C%20salaries%20https://visa-bulletin.us/" 
+                   class="btn btn-bluesky btn-sm">
+                    <i class="bi bi-cloud"></i> Bluesky
+                </a>
+                
+                <!-- Copy Link -->
+                <button onclick="navigator.clipboard.writeText('https://visa-bulletin.us/'); alert('Link copied!')" 
+                        class="btn btn-secondary btn-sm">
+                    <i class="bi bi-clipboard"></i> Copy Link
+                </button>
+            </div>
+            
+            <p class="mb-2">
+                <i class="bi bi-envelope"></i> Questions or feedback? Email <a href="mailto:vyakunin@gmail.com" class="footer-link">vyakunin@gmail.com</a>
+                <br>
+                <i class="bi bi-github"></i> View source code on <a href="https://github.com/vyakunin/visa_bulletin" target="_blank" rel="noopener" class="footer-link">GitHub</a>
+            </p>
+        </div>
+        
+        <hr style="border-color: rgba(255,255,255,0.1); margin: 1rem 0;">
+        
+        <p class="text-center" style="color: #8FA3B8; font-size: 0.85rem;">
+            Data sourced from U.S. Department of State Visa Bulletins. 
+            Projections are estimates based on historical trends and should not be considered official guidance.
+        </p>
+    </footer>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
+    
+    <!-- Plotly.js Lazy Loading -->
+    <!-- Only load Plotly when chart container is visible (saves 332KB on initial load) -->
+    <script>
+        let plotlyLoaded = false;
+        let plotlyLoadCallbacks = [];
+        
+        function loadPlotly(callback) {
+            if (plotlyLoaded) {
+                if (callback) callback();
+                return;
+            }
+            
+            if (callback) {
+                plotlyLoadCallbacks.push(callback);
+            }
+            
+            // Only start loading once
+            if (plotlyLoadCallbacks.length > 1) return;
+            
+            const script = document.createElement('script');
+            script.src = 'https://cdn.plot.ly/plotly-basic-2.32.0.min.js';
+            script.charset = 'utf-8';
+            script.onload = function() {
+                plotlyLoaded = true;
+                plotlyLoadCallbacks.forEach(cb => cb());
+                plotlyLoadCallbacks = [];
+            };
+            document.head.appendChild(script);
+        }
+        
+        // Lazy load when chart container is visible
+        document.addEventListener('DOMContentLoaded', function() {
+            const chartContainer = document.getElementById('chart-container');
+            if (chartContainer) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
+                        loadPlotly(function() {
+                            // Trigger any chart rendering after Plotly loads
+                            const renderEvent = new Event('plotlyLoaded');
+                            document.dispatchEvent(renderEvent);
+                        });
+                        observer.disconnect();
+                    }
+                }, {
+                    rootMargin: '50px' // Start loading 50px before visible
+                });
+                observer.observe(chartContainer);
+            }
+        });
+        
+        // Shared multi-line chart with checkboxes (same pattern as visa bulletin dashboard)
+        window.renderMultilineChartWithCheckboxes = function(elementId, chartData, options) {
+            options = options || {};
+            var resizeYAxisOnToggle = options.resizeYAxisOnToggle !== false;
+            var element = document.getElementById(elementId);
+            if (!element) return;
+            if (!chartData || !chartData.data || chartData.data.length === 0) {
+                element.innerHTML = '<p class="text-muted text-center py-4">Chart data not available</p>';
+                return;
+            }
+            var wrapper = element.closest('.multiline-chart-wrapper');
+            if (!wrapper) return;
+            var checkboxesRow = wrapper.querySelector('.multiline-chart-checkboxes');
+            var checkboxList = wrapper.querySelector('.multiline-chart-checkbox-list');
+            if (!checkboxesRow || !checkboxList) return;
+            var traces = chartData.data;
+            if (traces.length < 2) {
+                checkboxesRow.style.display = 'none';
+            } else {
+                checkboxesRow.style.display = 'block';
+                checkboxList.innerHTML = '';
+                traces.forEach(function(trace, idx) {
+                    var name = trace.name || ('Trace ' + (idx + 1));
+                    var id = elementId + '-toggle-' + idx;
+                    var div = document.createElement('div');
+                    div.className = 'form-check form-check-inline mb-0';
+                    div.innerHTML = '<input class="form-check-input multiline-chart-toggle" type="checkbox" id="' + id + '" data-trace-index="' + idx + '" data-mandatory="' + (idx === 0 ? '1' : '0') + '" checked aria-label="Toggle ' + name.replace(/"/g, '&quot;') + ' visibility">' +
+                        '<label class="form-check-label small" for="' + id + '">' + name + '</label>';
+                    checkboxList.appendChild(div);
+                });
+                var clearWrap = wrapper.querySelector('.multiline-chart-clear-wrap');
+                if (clearWrap && traces.length > 1) {
+                    var clearLink = document.createElement('button');
+                    clearLink.type = 'button';
+                    clearLink.className = 'btn btn-link btn-sm p-0 text-muted multiline-chart-clear-overlays';
+                    clearLink.style.fontSize = '0.875rem';
+                    clearLink.textContent = 'Clear overlays';
+                    clearLink.setAttribute('aria-label', 'Uncheck all overlays, show only baseline');
+                    clearWrap.innerHTML = '';
+                    clearWrap.appendChild(clearLink);
+                }
+            }
+            var loadingEl = element.querySelector('.chart-loading');
+            if (loadingEl) loadingEl.remove();
+            var layout = Object.assign({}, chartData.layout || {});
+            layout.showlegend = false;
+            layout.margin = layout.margin || {};
+            layout.margin.t = layout.margin.t !== undefined ? layout.margin.t : 30;
+            layout.margin.r = layout.margin.r !== undefined ? layout.margin.r : 10;
+            layout.margin.b = layout.margin.b !== undefined ? layout.margin.b : 90;
+            layout.margin.l = layout.margin.l !== undefined ? layout.margin.l : 45;
+            layout.autosize = true;
+            var config = { responsive: true, displayModeBar: false };
+            Plotly.newPlot(elementId, chartData.data, layout, config).then(function() {
+                if (typeof Plotly.Plots !== 'undefined' && Plotly.Plots.resize) {
+                    Plotly.Plots.resize(elementId);
+                }
+                wrapper.querySelectorAll('.multiline-chart-toggle').forEach(function(cb) {
+                    cb.addEventListener('change', function() {
+                        var idx = parseInt(this.dataset.traceIndex, 10);
+                        var visible = this.checked ? true : 'legendonly';
+                        Plotly.restyle(elementId, { visible: visible }, [idx]);
+                        if (resizeYAxisOnToggle) {
+                            var gd = document.getElementById(elementId);
+                            if (gd && gd.data) {
+                                var maxY = 0;
+                                gd.data.forEach(function(trace, i) {
+                                    var v = trace.visible;
+                                    if (v !== 'legendonly' && v !== false && trace.y && trace.y.length) {
+                                        var m = Math.max.apply(null, trace.y);
+                                        if (m > maxY) maxY = m;
+                                    }
+                                });
+                                var newYMax = Math.ceil(maxY * 1.1) || 1;
+                                Plotly.relayout(elementId, { 'yaxis.range': [0, newYMax] });
+                            }
+                        }
+                    });
+                });
+                var clearBtn = wrapper.querySelector('.multiline-chart-clear-overlays');
+                if (clearBtn && traces.length > 1) {
+                    clearBtn.addEventListener('click', function() {
+                        var toggles = wrapper.querySelectorAll('.multiline-chart-toggle');
+                        var visibility = [];
+                        toggles.forEach(function(cb, i) {
+                            var mandatory = cb.getAttribute('data-mandatory') === '1';
+                            if (mandatory) {
+                                cb.checked = true;
+                                visibility[i] = true;
+                            } else {
+                                cb.checked = false;
+                                visibility[i] = 'legendonly';
+                            }
+                        });
+                        for (var i = 0; i < visibility.length; i++) {
+                            Plotly.restyle(elementId, { visible: visibility[i] }, [i]);
+                        }
+                        if (resizeYAxisOnToggle && chartData.data[0] && chartData.data[0].y) {
+                            var maxY = Math.max.apply(null, chartData.data[0].y);
+                            var newYMax = Math.ceil(maxY * 1.1) || 1;
+                            Plotly.relayout(elementId, { 'yaxis.range': [0, newYMax] });
+                        }
+                    });
+                }
+            }).catch(function(e) {
+                console.error('Error rendering chart:', elementId, e);
+                element.innerHTML = '<p class="text-muted text-center py-4">Chart failed to load</p>';
+            });
+        };
+    </script>
+    
+    <!-- Autocomplete functionality -->
+    <script src="/static/js/autocomplete.js" defer></script>
+    <script src="/static/js/sortable_tables.js" defer></script>
+    
+    
+</body>
+</html>
+

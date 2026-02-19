@@ -33,11 +33,13 @@ py_binary(
         "//django_config:urls",
         "//django_config:context_processors",
         "//webapp:apps",
-        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        "//webapp/views:blog_views",
         "//webapp:urls",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:salary",
+        "//models:blog",
         "//models/enums:visa_category",
         "//models/enums:action_type",
         "//models/enums:country",
@@ -208,4 +210,3 @@ alias(
     actual = "//scripts/salary:cluster_existing_employers",
     visibility = ["//visibility:public"],
 )
-

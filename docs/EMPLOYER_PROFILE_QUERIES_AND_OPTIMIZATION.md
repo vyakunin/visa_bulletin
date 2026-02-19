@@ -103,7 +103,7 @@ CACHES = {
 
 No view or cache key changes: `cache.get` / `cache.set` and `@cache_page` keep working; they just use the shared backend.
 
-**Setup:** New instances: `scripts/setup_new_instance.sh` installs Redis and adds `REDIS_URL=redis://127.0.0.1:6379/1` to `.env`. Docker: `deployment/docker-compose.blue.yml` and `docker-compose.green.yml` include a Redis service and set `REDIS_URL=redis://redis:6379/1` for the web container.
+**Setup:** New instances: `scripts/setup_new_instance.sh` installs Redis and adds `REDIS_URL=redis://127.0.0.1:6379/1` to `.env`. Docker: `deployment/docker-compose.yml` includes a Redis service and sets `REDIS_URL=redis://redis:6379/1` for the web container.
 
 **Single-worker workaround:** If you run gunicorn with `--workers 1`, LocMemCache is effectively “shared” (only one process). Second request will usually be fast, but you lose parallelism.
 

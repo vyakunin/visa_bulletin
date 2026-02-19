@@ -463,6 +463,17 @@ for code, name in US_STATES:
 
 ---
 
+### `utils/url_utils.py`
+**Purpose:** Canonical URL form and path basename for source deduplication (ingest discovery).
+
+**Key functions:**
+- `normalize_source_url(url)` - Canonical form: https, lowercase host, no query/fragment, no trailing slash (so same logical source in different URL form is not re-added)
+- `path_basename_from_url(url)` - Last path segment (filename) for same-file dedup when the same file appears under different paths (e.g. DOL urljoin with/without trailing slash on base)
+
+**Usage:** Used by `scripts/ingest/run_pipeline.py` in `discover_sources()` so already-seen/ingested sources are not treated as new.
+
+---
+
 ### `utils/pagination.py`
 **Purpose:** Reusable pagination utilities for Django views.
 

@@ -4,7 +4,7 @@ Chart building logic for visa bulletin dashboard
 Creates Plotly charts with historical data and projections.
 """
 
-from datetime import date
+from datetime import date, timedelta
 import plotly.graph_objects as go
 
 from models.enums.country import Country
@@ -109,7 +109,7 @@ def _add_visa_class_traces(
         y=cutoff_dates,
         mode='lines+markers',
         name=visa_class_label,
-        line=dict(color=color, width=2),
+        line=dict(color=color, width=2, shape='hv'),
         marker=dict(size=5),
         customdata=customdata,
         hovertemplate=(
@@ -127,28 +127,88 @@ def _add_visa_class_traces(
         last_valid_cutoff = next((c for c in reversed(cutoff_dates) if c is not None), None)
         if last_valid_cutoff:
             projection_date = projection['estimated_date']
-            # When estimated month matches last historical month, link to that bulletin
-            last_url = bulletin_urls[-1] if bulletin_urls and len(bulletin_urls) == len(dates) else None
-            same_month = (
-                dates[-1].year == projection_date.year and dates[-1].month == projection_date.month
-            )
-            proj_customdata = [last_url, last_url if same_month else None]
+            avg_rate = projection.get('avg_progress_days_per_month', 0)
+            
+            # Generate monthly intermediate points for "modelled movement"
+            import calendar
+            
+            proj_x = [dates[-1]]
+            proj_y = [last_valid_cutoff]
+            
+            curr_x = dates[-1]
+            curr_y = last_valid_cutoff
+            
+            # Add monthly steps until we reach or exceed the target
+            max_steps = 120 # 10 years
+            step = 0
+            while curr_y < submission_date and curr_x < projection_date and step < max_steps:
+                # Increment month manually
+                m = curr_x.month - 1 + 1
+                new_year = curr_x.year + m // 12
+                new_month = m % 12 + 1
+                new_day = min(curr_x.day, calendar.monthrange(new_year, new_month)[1])
+                curr_x = date(new_year, new_month, new_day)
+                
+                curr_y += timedelta(days=avg_rate)
+                
+                # Cap at submission_date for the final point
+                if curr_y > submission_date:
+                    curr_y = submission_date
+                
+                proj_x.append(curr_x)
+                proj_y.append(curr_y)
+                step += 1
+            
+            # Ensure the final projection point is included
+            if proj_x[-1] != projection_date:
+                proj_x.append(projection_date)
+                proj_y.append(submission_date)
+
+            # Map internal URLs for projection points (null for now as they are future)
+            proj_customdata = [None] * len(proj_x)
+            
+            # Separate intersection point for the single star
+            intersection_x = []
+            intersection_y = []
+            if proj_y[-1] == submission_date:
+                intersection_x = [proj_x[-1]]
+                intersection_y = [proj_y[-1]]
+
             fig.add_trace(go.Scatter(
-                x=[dates[-1], projection_date],
-                y=[last_valid_cutoff, submission_date],
-                mode='lines+markers',
+                x=proj_x,
+                y=proj_y,
+                mode='lines',
                 name=f'{visa_class_label} (Projection)',
-                line=dict(color=color, width=2, dash='dash'),
-                marker=dict(size=6, symbol='star'),
+                line=dict(color=color, width=2, dash='dash', shape='hv'),
                 customdata=proj_customdata,
                 hovertemplate=(
                     f'<b>{visa_class_label}</b><br>'
-                    f'<b>{"Bulletin" if same_month else "Estimated"}:</b> %{{x|%B %Y}}<br>'
-                    + ('<i>Click to view bulletin</i><extra></extra>' if same_month else '<extra></extra>')
+                    f'<b>Estimated:</b> %{{x|%B %Y}}<br>'
+                    f'<b>Projected Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>'
                 )
             ))
+            
+            # Add single star marker at intersection
+            if intersection_x:
+                fig.add_trace(go.Scatter(
+                    x=intersection_x,
+                    y=intersection_y,
+                    mode='markers',
+                    name=f'{visa_class_label} (Intersection)',
+                    marker=dict(size=12, symbol='star', color=color, line=dict(width=1, color='white')),
+                    showlegend=False,
+                    hovertemplate=(
+                        f'<b>{visa_class_label} - Ready Date</b><br>'
+                        f'<b>Estimated:</b> %{{x|%B %Y}}<br>'
+                        f'<b>Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>'
+                    )
+                ))
+            
             trace_indices.append(current_idx)
             current_idx += 1
+            if intersection_x:
+                trace_indices.append(current_idx)
+                current_idx += 1
     
     return trace_indices, projection_date, current_idx
 

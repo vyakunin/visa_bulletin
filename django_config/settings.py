@@ -91,25 +91,32 @@ DEBUG = not IS_PRODUCTION  # True locally, False in production (safe by default)
 _default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
-    'testserver',  # For Django tests
-    '3.227.71.176',  # AWS Lightsail static IP (old production)
-    '44.209.204.255',  # AWS Lightsail static IP (new 2GB instance)
-    '54.196.241.197',  # Staging
+    'testserver',
     'visa-bulletin.us',
     'www.visa-bulletin.us',
 ]
-ALLOWED_HOSTS = (
-    [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
-    if os.environ.get('ALLOWED_HOSTS')
-    else _default_allowed_hosts
-)
+# Instance IPs come from ALLOWED_HOSTS in .env (set by setup_new_instance.sh).
+# The orchestrator health check (GET http://inactive_ip/health/) requires the
+# instance IP in ALLOWED_HOSTS; add REFRESH_ACTIVE/INACTIVE_INSTANCE_IP so the
+# health check works even if .env only lists domain names.
+_refresh_ips = [
+    ip for var in ('REFRESH_ACTIVE_INSTANCE_IP', 'REFRESH_INACTIVE_INSTANCE_IP')
+    if (ip := os.environ.get(var, '').strip())
+]
+if os.environ.get('ALLOWED_HOSTS'):
+    _allowed = [h.strip() for h in os.environ['ALLOWED_HOSTS'].split(',') if h.strip()]
+    for ip in _refresh_ips:
+        if ip not in _allowed:
+            _allowed.append(ip)
+    ALLOWED_HOSTS = _allowed
+else:
+    ALLOWED_HOSTS = _default_allowed_hosts + _refresh_ips
 
 # WSGI application
 ROOT_URLCONF = 'django_config.urls'
 
 # Caching configuration
-# Use Redis when REDIS_URL is set (production/staging); otherwise LocMem (dev, single-worker).
-# Single default timeout (24h) for all cache_page and cache.set; no per-call overrides.
+# Cache is for production (multi-worker, Redis). Use Redis when REDIS_URL is set; otherwise LocMem only so Django doesn't require Redis (e.g. tests, one-off scripts that don't need cache).
 CACHE_TIMEOUT = 60 * 60 * 24  # 24 hours
 REDIS_URL = os.environ.get('REDIS_URL', '')
 if REDIS_URL:
@@ -138,6 +145,11 @@ ANALYTICS_SCRIPT = os.environ.get('ANALYTICS_SCRIPT', '')
 # Logging Configuration
 from django_config.logging_config import setup_logging
 setup_logging(debug=DEBUG)
+
+# Trust X-Forwarded-Proto from nginx so build_absolute_uri() uses the correct scheme.
+# Without this, HTTPS requests proxied to gunicorn generate http:// URLs for
+# autocomplete endpoints, causing mixed-content blocks in browsers.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # HTTPS/Security settings (enable in production)
 # Uncomment these when deploying with HTTPS:

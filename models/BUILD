@@ -31,6 +31,7 @@ py_library(
     deps = [
         ":bulletin",
         "//models/ingest:ingest_version",
+        "//models/enums:action_type",
         requirement("Django"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
@@ -60,6 +61,16 @@ py_library(
     ],
 )
 
+py_library(
+    name = "raw_facts",
+    srcs = ["raw_facts.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
 filegroup(
     name = "migrations",
     srcs = glob(["migrations/*.py"]) + ["//models/ingest:migrations"],
@@ -67,4 +78,26 @@ filegroup(
 )
 
 # Ingest models (targets are in models/ingest/BUILD)
+
+
+py_library(
+    name = "vqs",
+    srcs = ["vqs.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+)
+
+py_library(
+    name = "blog",
+    srcs = ["blog.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bulletin",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+)
 

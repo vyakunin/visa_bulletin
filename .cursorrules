@@ -1,0 +1,5 @@
+# Project Rule Loader
+
+1. **Read AGENTS.md**: [AGENTS.md](file:///Users/vyakunin/cursor_projects/visa_bulletin/AGENTS.md) for critical rules.
+2. **Index all rules**: All files in [.cursor/rules/](file:///Users/vyakunin/cursor_projects/visa_bulletin/.cursor/rules/) are `alwaysApply: true`.
+3. **Hierarchy**: AGENTS.md (critical) > `.cursor/rules/*.mdc` (all always-applied) > current task scope.

@@ -179,19 +179,30 @@ bazel run //scripts:import_visa_bulletin_data -- --bulletin /tmp/bulletin.csv --
 # Discover sources
 bazel run //scripts/ingest:run_pipeline -- discover --domain dol
 
-# Ingest pending sources
+# Ingest pending sources (excludes sources that have FAILED runs; use --include-failed to retry them)
 bazel run //scripts/ingest:run_pipeline -- run --all-pending --domain dol
 
-# Discover and ingest all domains
+# Retry sources that have failed runs (no completed runs)
+bazel run //scripts/ingest:run_pipeline -- run --retry-failed
+
+# Discover and ingest all domains (pending only; failed sources are not re-run by default)
 bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --all-domains
 
+# Mark RUNNING and PENDING ingest runs as FAILED so they are not re-run by default
+bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed
+bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --dry-run
+bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --running-only  # Only mark RUNNING
+
 # Cleanup old ingest run metadata
-bazel run //scripts/ingest:run_pipeline -- cleanup --days 30
 
 # Re-ingest specific local files (drops non-unique indexes first, recreates after)
 bazel run //scripts/ingest:run_pipeline -- reingest-files -- \
   --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx data/salary/dol_data/PERM_Disclosure_Data_FY2024_Q4.xlsx
 ```
+
+**Discovery deduplication (why "new" sources should not appear for already-seen data):**
+- Discovery deduplicates by **normalized URL** (https, lowercase host, no query/fragment) so the same URL in a different form (e.g. http vs https, with `?tracking=1`) is not re-added.
+- Discovery also deduplicates by **same (domain, source_type, path basename)** so the same file under different paths is not re-added. Example: DOL `urljoin(base_url, "PERM_FY2024.xlsx")` yields `.../foreign-labor/PERM_FY2024.xlsx` while `urljoin(base_url, "performance/PERM_FY2024.xlsx")` yields `.../foreign-labor/performance/PERM_FY2024.xlsx`; both are treated as one source (same filename, same domain/type). See `lib/utils/url_utils.py` and `discover_sources()` in `run_pipeline.py`.
 
 **Index management during re-ingest:**
 - The `reingest-files` command **automatically drops non-unique indexes** on `salary_record`/`worksite_record`
@@ -508,11 +519,6 @@ bazel run //scripts/salary:review_clustering
 bazel run //scripts/salary:apply_review_decisions
 ```
 
-**`scripts/salary/reset_clustering.py`** - Reset clustering (remove all clusters)
-```bash
-bazel run //scripts/salary:reset_clustering
-```
-
 **`scripts/salary/cleanup_orphaned_employers.py`** - Clean up orphaned employers
 ```bash
 bazel run //scripts/salary:cleanup_orphaned_employers
@@ -825,9 +831,9 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 
 ### Deployment Scripts
 
-**`scripts/deploy-zero-downtime.sh`** - Zero-downtime deployment (inactive env + traffic switch)
+**`scripts/deploy.sh`** - Deploy to a host (single stack; for zero-downtime deploy to inactive instance then switch traffic)
 ```bash
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
 ```
 
 **`scripts/pre-deploy-check.sh`** - Pre-deployment validation checks

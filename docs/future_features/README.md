@@ -17,6 +17,21 @@ These documents represent well-researched feature proposals that may be implemen
   - **Estimated Effort:** 3-4 weeks implementation time
   - **Market Potential:** 150K+ monthly visitors, high PR potential
 
+### Smart Predictions (Visa Bulletin / Green Card Readiness)
+- **SMART_PREDICTIONS_PROPOSALS.md** - Proposals for better priority-date and green-card readiness predictions
+  - **What:** Goals (next bulletin; maturity date), current approach, Reddit proposals, data not yet used, ML design (loss, features, model, validation), alternatives
+  - **Data:** Existing bulletin/cutoff data; optional DOS/USCIS ingestion
+  - **Status:** Design/proposal phase, not implemented
+  - **Related:** FEATURE_IDEAS.md (Feature 2: Wait Time Calculator), `lib/business/bulletin/cutoff_projection.py`
+- **SMART_PREDICTIONS_VQS_PROPOSAL.md** - Virtual Queue Simulation (VQS) alternative
+  - **What:** Deterministic queue simulation (demand vs supply); ML limited to hidden parameters (demand de-aggregator, attrition, supply forecaster); bi-temporal "Time Machine" data layer; Solver monthly loop
+  - **Status:** Proposal only, not implemented
+  - **See also:** SMART_PREDICTIONS_PROPOSALS.md Section 6.5 (Alternatives: VQS)
+- **VQS_TEST_REPORT.md** - VQS accuracy test report (v2 baseline; v3 improvements implemented)
+- **VQS_NEW_SUGGESTIONS.md** - Post–v3 improvement suggestions (EB4 handling, confidence, supply rebalance, more I-140 data, retrogression from history, EB1 India, long-term metrics, docs)
+- **VQS_RUNBOOK.md** - One-page runbook: how to add a new I-140 file and re-run accuracy (paths, commands, checkpoint dir)
+- **VQS_FAMILY_EXTENSION_DESIGN.md** - Design for extending VQS to family-based categories
+
 ## When to Implement
 
 Features in this directory should be prioritized based on:

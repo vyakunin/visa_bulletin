@@ -50,10 +50,10 @@ FROM python:3.11-slim
 # Security: Run as non-root user
 RUN groupadd -r visabulletin && useradd -r -g visabulletin visabulletin
 
-# Install runtime dependencies only
-# Note: PostgreSQL client libraries are included in psycopg2-binary Python package
+# Install runtime dependencies
+# libpq5: PostgreSQL client library required by psycopg2-binary at runtime
 RUN apt-get update && apt-get install -y \
-    curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -63,11 +63,17 @@ COPY --from=bazel-builder /app/dist /app
 COPY --from=bazel-builder /app/.bazelversion /app/
 COPY requirements.txt /app/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies and verify critical packages are importable
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "import psycopg2; import django; print('OK: psycopg2 + django importable')"
 
-# Create necessary directories
+# Create necessary directories and ensure __init__.py for all Python packages
+# (Bazel handles imports via runfiles, so __init__.py files are not in the repo;
+# standard Python/gunicorn needs them for package discovery)
 RUN mkdir -p saved_pages logs static && \
+    find /app/webapp /app/models /app/lib /app/extractors \
+        -type d ! -path '*/__pycache__/*' \
+        -exec sh -c 'test ! -f "$1/__init__.py" && touch "$1/__init__.py"' _ {} \; && \
     chown -R visabulletin:visabulletin /app
 
 # Switch to non-root user
@@ -76,9 +82,9 @@ USER visabulletin
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
-    CMD curl -f --max-time 5 http://localhost:8000/ || exit 1
+# Health check (Python-based; curl not guaranteed in slim image)
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"
 
 # Default command: run migrations then start server with gunicorn
 # Using 2 workers for 1GB RAM instance (reduced from 3 to prevent OOM)

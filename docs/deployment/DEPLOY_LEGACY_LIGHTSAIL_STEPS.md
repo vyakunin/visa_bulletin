@@ -308,14 +308,13 @@ Visit: `https://YOUR_DOMAIN.com`
 
 ### 9.1 Setup Ingest Pipeline Cron Jobs
 ```bash
-# Run setup script (creates daily ingest + weekly cleanup jobs)
+# Run setup script (creates daily ingest cron)
 cd /opt/visa_bulletin
 bash deployment/cron/setup-ingest-cron.sh
 ```
 
 This sets up:
 - **Daily ingest**: Discovers and ingests new data sources at 9 AM UTC
-- **Weekly cleanup**: Removes old ingest runs older than 30 days (Sunday 2 AM UTC)
 
 **Data will now refresh daily at 9 AM UTC using the unified ingest pipeline!**
 
