@@ -15,9 +15,7 @@ import logging
 import os
 import random
 import sys
-from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 # Setup Django FIRST (before any imports that might trigger model imports)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -38,9 +36,11 @@ else:
 sys.path.insert(0, str(project_root))
 
 import django
+
 django.setup()
 
 from django.apps import apps
+
 Employer = apps.get_model('models', 'Employer')
 EmployerClusteringReview = apps.get_model('models', 'EmployerClusteringReview')
 
@@ -50,11 +50,13 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # Import shared LLM validation utilities
-from lib.business.salary.llm_verifier import validate_pair_with_llm as validate_pair_shared
 from lib.business.salary.clustering_evaluator import EmployerPair
+from lib.business.salary.llm_verifier import (
+    validate_pair_with_llm as validate_pair_shared,
+)
 
 
-def validate_pair_with_llm(emp1: Employer, emp2: Employer, similarity: float) -> tuple[Optional[bool], Optional[str]]:
+def validate_pair_with_llm(emp1: Employer, emp2: Employer, similarity: float) -> tuple[bool | None, str | None]:
     """
     Use LLM to validate if two employers are the same company.
     
@@ -73,10 +75,10 @@ def validate_pair_with_llm(emp1: Employer, emp2: Employer, similarity: float) ->
         emp2_state=emp2.state,
         similarity=similarity
     )
-    
+
     # Use shared validation function
     outcome = validate_pair_shared(pair)
-    
+
     # Convert EvaluationOutcome to tuple for backward compatibility
     if outcome.is_same is None:
         return None, None
@@ -96,10 +98,10 @@ def sample_pairs_from_clustering_results(
     # Sample from each category
     auto_sample_size = min(sample_size // 2, len(auto_clustered_pairs))
     queue_sample_size = min(sample_size // 2, len(queued_pairs))
-    
+
     auto_sample = random.sample(auto_clustered_pairs, auto_sample_size) if auto_clustered_pairs else []
     queue_sample = random.sample(queued_pairs, queue_sample_size) if queued_pairs else []
-    
+
     return {
         'auto_clustered': auto_sample,
         'queued_for_review': queue_sample,
@@ -118,44 +120,44 @@ def evaluate_samples(samples: dict) -> dict:
     auto_tp = 0  # True positives (correctly clustered)
     auto_fp = 0  # False positives (incorrectly clustered)
     auto_total = 0
-    
+
     for emp1, emp2, similarity in samples['auto_clustered']:
         auto_total += 1
         is_same, response = validate_pair_with_llm(emp1, emp2, similarity)
         if is_same is None:
             logger.warning(f"Skipping {emp1.name} <-> {emp2.name} (LLM unavailable)")
             continue
-        
+
         if is_same:
             auto_tp += 1
             logger.debug(f"✓ TP: {emp1.name} <-> {emp2.name}")
         else:
             auto_fp += 1
             logger.warning(f"✗ FP: {emp1.name} <-> {emp2.name} (LLM: {response[:100]})")
-    
+
     logger.info("Evaluating queued-for-review pairs...")
     queue_tp = 0  # True positives (should have been clustered)
     queue_fp = 0  # False positives (correctly queued)
     queue_total = 0
-    
+
     for emp1, emp2, similarity in samples['queued_for_review']:
         queue_total += 1
         is_same, response = validate_pair_with_llm(emp1, emp2, similarity)
         if is_same is None:
             logger.warning(f"Skipping {emp1.name} <-> {emp2.name} (LLM unavailable)")
             continue
-        
+
         if is_same:
             queue_tp += 1  # Should have been auto-clustered (false negative)
             logger.warning(f"✗ FN: {emp1.name} <-> {emp2.name} (should be clustered, LLM: {response[:100]})")
         else:
             queue_fp += 1  # Correctly queued (true negative)
             logger.debug(f"✓ TN: {emp1.name} <-> {emp2.name}")
-    
+
     # Calculate metrics
     auto_precision = auto_tp / max(auto_total, 1)
     auto_recall = auto_tp / max(auto_tp + queue_tp, 1)  # TP / (TP + FN)
-    
+
     metrics = {
         'auto_clustered': {
             'total_evaluated': auto_total,
@@ -174,7 +176,7 @@ def evaluate_samples(samples: dict) -> dict:
             'f1_score': 2 * (auto_precision * auto_recall) / max(auto_precision + auto_recall, 0.001),
         }
     }
-    
+
     return metrics
 
 
@@ -184,17 +186,17 @@ def main():
     parser.add_argument('--sample-size', type=int, default=50, help='Number of pairs to sample per category')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for sampling')
     parser.add_argument('--output', help='Output JSON file for metrics')
-    
+
     args = parser.parse_args()
-    
+
     random.seed(args.seed)
-    
+
     # Parse clustering log to extract pairs
     logger.info(f"Parsing clustering log: {args.clustering_log}")
     auto_clustered_pairs = []
     queued_pairs = []
-    
-    with open(args.clustering_log, 'r') as f:
+
+    with open(args.clustering_log) as f:
         for line in f:
             if 'Auto-clustered:' in line:
                 # Extract employer names and similarity
@@ -218,7 +220,7 @@ def main():
                                     auto_clustered_pairs.append((emp1, emp2, similarity))
                         except ValueError:
                             pass
-            
+
             elif 'Queued for review:' in line:
                 # Similar parsing for queued pairs
                 parts = line.split('Queued for review:')[1].strip()
@@ -238,54 +240,54 @@ def main():
                                     queued_pairs.append((emp1, emp2, similarity))
                         except ValueError:
                             pass
-    
+
     logger.info(f"Found {len(auto_clustered_pairs):,} auto-clustered pairs")
     logger.info(f"Found {len(queued_pairs):,} queued pairs")
-    
+
     if not auto_clustered_pairs and not queued_pairs:
         logger.error("No pairs found in clustering log. Check log format.")
         return 1
-    
+
     # Sample pairs
     samples = sample_pairs_from_clustering_results(
         auto_clustered_pairs,
         queued_pairs,
         sample_size=args.sample_size
     )
-    
+
     logger.info(f"Sampled {len(samples['auto_clustered'])} auto-clustered pairs")
     logger.info(f"Sampled {len(samples['queued_for_review'])} queued pairs")
-    
+
     # Evaluate with LLM
     metrics = evaluate_samples(samples)
-    
+
     # Print results
     print("\n" + "="*60)
     print("CLUSTERING EVALUATION RESULTS")
     print("="*60)
-    print(f"\nAuto-Clustered Pairs:")
+    print("\nAuto-Clustered Pairs:")
     print(f"  Total evaluated: {metrics['auto_clustered']['total_evaluated']}")
     print(f"  True positives: {metrics['auto_clustered']['true_positives']}")
     print(f"  False positives: {metrics['auto_clustered']['false_positives']}")
     print(f"  Precision: {metrics['auto_clustered']['precision']:.1%}")
-    
-    print(f"\nQueued for Review Pairs:")
+
+    print("\nQueued for Review Pairs:")
     print(f"  Total evaluated: {metrics['queued_for_review']['total_evaluated']}")
     print(f"  True negatives: {metrics['queued_for_review']['true_negatives']}")
     print(f"  False negatives: {metrics['queued_for_review']['false_negatives']}")
-    
-    print(f"\nOverall Metrics:")
+
+    print("\nOverall Metrics:")
     print(f"  Precision: {metrics['overall']['precision']:.1%}")
     print(f"  Recall: {metrics['overall']['recall']:.1%}")
     print(f"  F1 Score: {metrics['overall']['f1_score']:.3f}")
     print("="*60)
-    
+
     # Save to file if requested
     if args.output:
         with open(args.output, 'w') as f:
             json.dump(metrics, f, indent=2)
         logger.info(f"Metrics saved to {args.output}")
-    
+
     return 0
 
 

@@ -22,7 +22,7 @@ class RejectionTracker:
         tracker.record_rejection('missing_employer_name', case_number='I-200-12345')
         tracker.save_to_db()
     """
-    
+
     def __init__(self, run: 'IngestRun'):
         """
         Initialize rejection tracker.
@@ -33,7 +33,7 @@ class RejectionTracker:
         self.run = run
         # Dict of reason -> {'count': int, 'samples': list[str]}
         self._stats: dict[str, dict] = defaultdict(lambda: {'count': 0, 'samples': []})
-    
+
     def record_rejection(self, reason: str, case_number: str | None = None):
         """
         Record a rejected record.
@@ -44,12 +44,12 @@ class RejectionTracker:
         """
         stats = self._stats[reason]
         stats['count'] += 1
-        
+
         # Add to samples if provided and not already in list (keep max 10)
         if case_number and case_number not in stats['samples']:
             if len(stats['samples']) < 10:
                 stats['samples'].append(case_number)
-    
+
     def save_to_db(self):
         """
         Save collected rejection statistics to database.
@@ -59,10 +59,10 @@ class RejectionTracker:
         if not self._stats:
             logger.debug(f"[Run {self.run.id}] No rejections to save")
             return
-        
+
         # Import here to avoid circular dependency
         from models.ingest.rejection_stats import IngestRejectionStats
-        
+
         # Create rejection stats records
         rejection_records = []
         for reason, stats in self._stats.items():
@@ -74,21 +74,21 @@ class RejectionTracker:
                     sample_case_numbers=stats['samples']
                 )
             )
-        
+
         # Bulk create
         IngestRejectionStats.objects.bulk_create(rejection_records, ignore_conflicts=True)
-        
+
         # Log summary
         total_rejections = sum(s['count'] for s in self._stats.values())
         logger.info(
             f"[Run {self.run.id}] Saved {len(rejection_records)} rejection reasons "
             f"({total_rejections:,} total rejections)"
         )
-        
+
         # Log breakdown for visibility
         for reason, stats in sorted(self._stats.items(), key=lambda x: x[1]['count'], reverse=True):
             logger.info(f"[Run {self.run.id}]   {reason}: {stats['count']:,} records")
-    
+
     def get_stats(self) -> dict:
         """
         Get current rejection statistics (for testing/debugging).
@@ -97,7 +97,7 @@ class RejectionTracker:
             Dict of reason -> {'count': int, 'samples': list[str]}
         """
         return dict(self._stats)
-    
+
     def total_rejections(self) -> int:
         """Get total number of rejections across all reasons"""
         return sum(s['count'] for s in self._stats.values())

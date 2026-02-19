@@ -7,19 +7,19 @@ class WageUnit(models.TextChoices):
     """
     Wage unit of pay from DOL disclosure data
     """
-    
+
     YEAR = "year", "Per Year"
     MONTH = "month", "Per Month"
     BI_WEEKLY = "bi_weekly", "Bi-Weekly"
     WEEK = "week", "Per Week"
     HOUR = "hour", "Per Hour"
-    
+
     @classmethod
     def from_dol_value(cls, value: str):
         """Parse wage unit from DOL CSV value"""
         if not value:
             return None
-        
+
         normalized = value.strip().upper()
         mappings = {
             'YEAR': cls.YEAR,

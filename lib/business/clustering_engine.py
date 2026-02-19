@@ -13,9 +13,9 @@ Key features:
 """
 
 import difflib
-from typing import Protocol, TypeVar, Generic, Optional, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
-
+from typing import Protocol, TypeVar
 
 # Generic type variables for entities and clusters
 EntityType = TypeVar('EntityType')
@@ -27,7 +27,7 @@ class ClusterableEntity(Protocol):
     id: int
     name: str  # Original name
     name_normalized: str  # Normalized name for matching
-    canonical_cluster: Optional[ClusterType]
+    canonical_cluster: ClusterType | None
 
 
 class EntityClusteringConfig(Protocol[EntityType, ClusterType]):
@@ -36,22 +36,22 @@ class EntityClusteringConfig(Protocol[EntityType, ClusterType]):
     
     Implement this protocol to customize clustering for different entity types.
     """
-    
+
     def normalize_name(self, name: str) -> str:
         """Normalize entity name for matching."""
         ...
-    
+
     def extract_structural_words(self, name: str) -> set[str]:
         """Extract words that distinguish different entities."""
         ...
-    
+
     def has_conflicting_structural_words(self, name1: str, name2: str) -> bool:
         """Check if two names have conflicting structural words."""
         ...
-    
+
     def should_apply_additional_filter(
-        self, 
-        entity1: EntityType, 
+        self,
+        entity1: EntityType,
         entity2: EntityType,
         norm1: str,
         norm2: str
@@ -62,19 +62,19 @@ class EntityClusteringConfig(Protocol[EntityType, ClusterType]):
         Returns: True if entities pass the filter (should be compared), False otherwise.
         """
         ...
-    
+
     def get_entity_model(self) -> type[EntityType]:
         """Return the entity model class."""
         ...
-    
+
     def get_cluster_model(self) -> type[ClusterType]:
         """Return the cluster model class."""
         ...
-    
+
     def get_review_model(self):
         """Return the review model class for ambiguous pairs."""
         ...
-    
+
     def create_review_entry(
         self,
         entity1: EntityType,
@@ -144,7 +144,7 @@ def get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
         {'mercede benz van', 'mbv', 'mer...van'}
     """
     candidates = {normalized_name}
-    
+
     # Word initials: "hbss connec corp" -> "hcc", "hbss connect corp" -> "hcc"
     # This catches typos in the middle of words
     words = normalized_name.split()
@@ -152,14 +152,14 @@ def get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
         initials = ''.join(w[0] if w else '' for w in words[:5])  # First letter of first 5 words
         if len(initials) >= 2:  # Only use if at least 2 words
             candidates.add(initials)
-    
+
     # Prefix + suffix: "mercedesbenz van" -> "mer...van", "mercede benz van" -> "mer...van"
     # This catches spacing/hyphen variations
     if len(normalized_name) >= 6:
         prefix = normalized_name[:3]
         suffix = normalized_name[-3:]
         candidates.add(f"{prefix}...{suffix}")
-    
+
     return candidates
 
 
@@ -178,8 +178,8 @@ def match_entities(
     entity1: EntityType,
     entity2: EntityType,
     config: EntityClusteringConfig[EntityType, ClusterType],
-    norm1: Optional[str] = None,
-    norm2: Optional[str] = None
+    norm1: str | None = None,
+    norm2: str | None = None
 ) -> MatchResult:
     """
     Hybrid matching algorithm: rule-based checks first, then similarity-based fallback.
@@ -206,22 +206,22 @@ def match_entities(
         norm1 = config.normalize_name(entity1.name)
     if norm2 is None:
         norm2 = config.normalize_name(entity2.name)
-    
+
     # Apply entity-specific filtering (e.g., location, SOC code)
     if not config.should_apply_additional_filter(entity1, entity2, norm1, norm2):
         return MatchResult(is_match=False, confidence=0.0, reason="Failed entity-specific filter")
-    
+
     # Rule 1: Exact normalized name match
     if norm1 == norm2:
         # Check for structural word conflicts
         if config.has_conflicting_structural_words(entity1.name, entity2.name):
             return MatchResult(
-                is_match=False, 
-                confidence=0.0, 
+                is_match=False,
+                confidence=0.0,
                 reason="Structural word conflict (same normalized name, different structural words)"
             )
         return MatchResult(is_match=True, confidence=1.0, reason="Exact normalized match")
-    
+
     # Rule 2: Substring match (one name contains the other)
     if norm1 in norm2 or norm2 in norm1:
         # Check for structural word conflicts
@@ -233,10 +233,10 @@ def match_entities(
             )
         # High confidence for substring matches without conflicts
         return MatchResult(is_match=True, confidence=0.95, reason="Substring match")
-    
+
     # Rule 3: High similarity score
     similarity = calculate_similarity(norm1, norm2)
-    
+
     # Very high similarity (>= 0.98) without structural conflicts
     if similarity >= 0.98:
         if config.has_conflicting_structural_words(entity1.name, entity2.name):
@@ -250,7 +250,7 @@ def match_entities(
             confidence=similarity,
             reason=f"Very high similarity ({similarity:.2f})"
         )
-    
+
     # High similarity (>= 0.90) without structural conflicts
     if similarity >= 0.90:
         if config.has_conflicting_structural_words(entity1.name, entity2.name):
@@ -264,7 +264,7 @@ def match_entities(
             confidence=similarity,
             reason=f"High similarity ({similarity:.2f})"
         )
-    
+
     # No match
     return MatchResult(is_match=False, confidence=similarity, reason=f"Low similarity ({similarity:.2f})")
 
@@ -274,8 +274,8 @@ def should_auto_cluster(
     entity2: EntityType,
     config: EntityClusteringConfig[EntityType, ClusterType],
     threshold: float = 0.95,
-    norm1: Optional[str] = None,
-    norm2: Optional[str] = None
+    norm1: str | None = None,
+    norm2: str | None = None
 ) -> MatchResult:
     """
     Determine if two entities should be auto-clustered.
@@ -291,10 +291,10 @@ def should_auto_cluster(
     Returns: MatchResult (is_match True if should auto-cluster)
     """
     result = match_entities(entity1, entity2, config, norm1, norm2)
-    
+
     if result.is_match and result.confidence >= threshold:
         return result
-    
+
     # Don't auto-cluster if confidence is below threshold
     return MatchResult(
         is_match=False,
@@ -329,11 +329,11 @@ def assign_to_cluster(
     # If already assigned, return existing cluster
     if entity.canonical_cluster:
         return entity.canonical_cluster
-    
+
     # Get model classes from config
     EntityModel = config.get_entity_model()
     ClusterModel = config.get_cluster_model()
-    
+
     # Normalize entity name
     if normalized_cache is not None and entity.id in normalized_cache:
         entity_normalized = normalized_cache[entity.id]
@@ -341,7 +341,7 @@ def assign_to_cluster(
         entity_normalized = config.normalize_name(entity.name)
         if normalized_cache is not None:
             normalized_cache[entity.id] = entity_normalized
-    
+
     # Use fuzzy bucket matching to catch typos and variations
     if bucket_cache is not None and entity.id in bucket_cache:
         bucket_candidates = bucket_cache[entity.id]
@@ -380,7 +380,7 @@ def assign_to_cluster(
             # If any bucket candidate overlaps, they might be the same entity
             if bucket_candidates & other_buckets:
                 similar_entities.append(other_entity)
-    
+
     # Check if any similar entities are already in clusters
     for similar_entity in similar_entities:
         if similar_entity.canonical_cluster:
@@ -400,7 +400,7 @@ def assign_to_cluster(
                 norm1=entity_normalized,
                 norm2=similar_normalized
             )
-            
+
             if result.is_match:
                 # Auto-assign to existing cluster
                 entity.canonical_cluster = similar_entity.canonical_cluster
@@ -422,7 +422,7 @@ def assign_to_cluster(
                         match_result.confidence,
                         match_result.reason or f"Fuzzy match: {match_result.confidence:.3f}"
                     )
-    
+
     # No match found - create new cluster
     # Use config's create_cluster method if available, otherwise use default
     if hasattr(config, 'create_cluster'):
@@ -433,6 +433,6 @@ def assign_to_cluster(
         )
     entity.canonical_cluster = cluster
     entity.save()
-    
+
     return cluster
 

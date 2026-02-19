@@ -5,9 +5,8 @@ This module implements the EntityClusteringConfig protocol for job title cluster
 leveraging the JobTitle model's normalization logic.
 """
 
-from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 from lib.business.salary.generic_words import GENERIC_WORDS
-
+from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 
 # Job-title-specific generic words (extend employer generic words)
 JOB_TITLE_GENERIC_WORDS = GENERIC_WORDS | {
@@ -18,11 +17,11 @@ JOB_TITLE_GENERIC_WORDS = GENERIC_WORDS | {
 
 class JobTitleClusteringConfig:
     """Configuration for job title clustering using the generic framework."""
-    
+
     def normalize_name(self, title: str) -> str:
         """Normalize job title for matching."""
         return JobTitle.normalize_title(title)
-    
+
     def extract_structural_words(self, title: str) -> set[str]:
         """
         Extract structural words that distinguish different job titles.
@@ -32,15 +31,15 @@ class JobTitleClusteringConfig:
         still use generic words to help filter out noise.
         """
         import re
-        
+
         # Normalize and extract words
         normalized = title.lower()
         # Remove punctuation, keep words
         words = set(re.findall(r'\b\w+\b', normalized))
-        
+
         # Return intersection with generic words (these can help distinguish)
         return words & JOB_TITLE_GENERIC_WORDS
-    
+
     def has_conflicting_structural_words(self, title1: str, title2: str) -> bool:
         """
         Check if two job titles have conflicting structural words.
@@ -52,15 +51,15 @@ class JobTitleClusteringConfig:
         # Extract core words (excluding generic words)
         words1 = set(title1.lower().split()) - JOB_TITLE_GENERIC_WORDS
         words2 = set(title2.lower().split()) - JOB_TITLE_GENERIC_WORDS
-        
+
         # If no overlap in core words, they're likely different titles
         if words1 and words2 and not (words1 & words2):
             # Exception: If one is a subset of the other, not conflicting
             if not (words1.issubset(words2) or words2.issubset(words1)):
                 return True
-        
+
         return False
-    
+
     def should_apply_additional_filter(
         self,
         entity1: JobTitle,
@@ -77,22 +76,22 @@ class JobTitleClusteringConfig:
         # Must have same experience level to match
         if entity1.experience_level != entity2.experience_level:
             return False
-        
+
         # Pass filter
         return True
-    
+
     def get_entity_model(self) -> type[JobTitle]:
         """Return the JobTitle model class."""
         return JobTitle
-    
+
     def get_cluster_model(self) -> type[JobTitleCluster]:
         """Return the JobTitleCluster model class."""
         return JobTitleCluster
-    
+
     def get_review_model(self) -> type[JobTitleClusteringReview]:
         """Return the JobTitleClusteringReview model class."""
         return JobTitleClusteringReview
-    
+
     def create_cluster(self, entity: JobTitle) -> JobTitleCluster:
         """
         Create a new cluster for a job title.
@@ -102,7 +101,7 @@ class JobTitleClusteringConfig:
         return JobTitleCluster.objects.create(
             canonical_title=entity.title
         )
-    
+
     def create_review_entry(
         self,
         entity1: JobTitle,

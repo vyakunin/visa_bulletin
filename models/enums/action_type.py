@@ -12,10 +12,10 @@ class ActionType(models.TextChoices):
     - Access as enum in Python (ActionType.FINAL_ACTION)
     - Query with: objects.filter(action_type=ActionType.FINAL_ACTION)
     """
-    
+
     FINAL_ACTION = "final_action", "Final Action"
     FILING = "filing", "Dates for Filing"
-    
+
     @classmethod
     def from_table_title(cls, title: str):
         """Parse action type from table title"""

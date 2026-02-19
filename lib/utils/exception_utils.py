@@ -1,8 +1,9 @@
 """Exception handling utilities for distinguishing recoverable vs unrecoverable errors"""
 
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar, ParamSpec
+from typing import ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def handle_unrecoverable_errors(
             return plugin.transform(record)
     """
     log = logger_instance or logger
-    
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | None:
@@ -81,11 +82,11 @@ def handle_unrecoverable_errors(
                 # Unrecoverable errors: configuration issues, missing dependencies
                 message = log_message or f"Unrecoverable error in {func.__name__}: {e}"
                 log.error(message, exc_info=True)
-                
+
                 # Call optional callback for state updates
                 if on_unrecoverable:
                     on_unrecoverable(e)
-                
+
                 # Always re-raise unrecoverable errors
                 raise
             except Exception as e:
@@ -97,7 +98,7 @@ def handle_unrecoverable_errors(
                         return None
                 # If no callback or suppress_recoverable=False, propagate normally
                 raise
-        
+
         return wrapper
     return decorator
 

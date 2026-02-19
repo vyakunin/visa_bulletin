@@ -9,7 +9,6 @@ migrations to the actual workspace.
 
 import logging
 import os
-import sys
 import shutil
 from pathlib import Path
 
@@ -21,23 +20,25 @@ workspace_dir = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', os.getcwd()))
 # needs to load the database backend. PostgreSQL backend requires psycopg2-binary.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
 # Configure logging
-from lib.utils.logging_utils import ScriptLogger
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
+
 setup_logging()
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
 from django.core.management import call_command
-from django.conf import settings
 
 # Debug: Check what Django sees
 logger.debug(f"Workspace dir: {workspace_dir}")
 logger.debug(f"Current dir: {os.getcwd()}")
 
 from django.apps import apps
+
 for app_config in apps.get_app_configs():
     if app_config.name == 'models':
         logger.debug(f"Models app path: {app_config.path}")
@@ -50,13 +51,14 @@ for app_config in apps.get_app_configs():
 # Check if models are loaded
 # IMPORTANT: Import ALL models so makemigrations can detect them
 # makemigrations runs BEFORE AppConfig.ready(), so models must be imported here
-from models.salary import Employer, SalaryRecord
-from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
+from models.bulletin import Bulletin
 from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion
-from models.bulletin import Bulletin
+from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
+from models.salary import Employer, SalaryRecord
 from models.visa_cutoff_date import VisaCutoffDate
+
 logger.debug(f"Employer model: {Employer}")
 logger.debug(f"SalaryRecord model: {SalaryRecord}")
 logger.debug(f"JobTitle model: {JobTitle}")
@@ -93,11 +95,11 @@ if models_app_path:
     # Copy main models migrations
     migrations_src = models_app_path / 'migrations'
     migrations_dst = workspace_dir / 'models' / 'migrations'
-    
+
     if migrations_src.exists():
         # Ensure destination exists
         migrations_dst.mkdir(parents=True, exist_ok=True)
-        
+
         # Copy new migration files
         for migration_file in migrations_src.glob('*.py'):
             if migration_file.name != '__init__.py':
@@ -105,15 +107,15 @@ if models_app_path:
                 if not dst_file.exists() or migration_file.stat().st_mtime > dst_file.stat().st_mtime:
                     shutil.copy2(migration_file, dst_file)
                     logger.info(f"Copied {migration_file.name} to workspace")
-    
+
     # Copy ingest subdirectory migrations if they exist
     ingest_migrations_src = models_app_path / 'ingest' / 'migrations'
     ingest_migrations_dst = workspace_dir / 'models' / 'ingest' / 'migrations'
-    
+
     if ingest_migrations_src.exists():
         # Ensure destination exists
         ingest_migrations_dst.mkdir(parents=True, exist_ok=True)
-        
+
         # Copy new migration files
         for migration_file in ingest_migrations_src.glob('*.py'):
             if migration_file.name != '__init__.py':

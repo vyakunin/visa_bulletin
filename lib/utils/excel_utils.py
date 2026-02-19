@@ -10,8 +10,8 @@ All functions handle proper workbook closing and error handling.
 """
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from openpyxl import load_workbook
 
@@ -35,7 +35,7 @@ def read_excel_headers(filepath: Path, read_only: bool = True) -> list[str]:
     """
     if filepath.suffix.lower() not in ['.xlsx', '.xls']:
         raise ValueError(f"Not an Excel file: {filepath.suffix}")
-    
+
     wb = load_workbook(filepath, read_only=read_only)
     try:
         ws = wb.active
@@ -64,7 +64,7 @@ def _count_excel_rows(filepath: Path, read_only: bool = True) -> int:
     """
     if filepath.suffix.lower() not in ['.xlsx', '.xls']:
         raise ValueError(f"Not an Excel file: {filepath.suffix}")
-    
+
     wb = load_workbook(filepath, read_only=read_only)
     try:
         ws = wb.active
@@ -103,16 +103,16 @@ def read_excel_streaming(
     """
     if filepath.suffix.lower() not in ['.xlsx', '.xls']:
         raise ValueError(f"Not an Excel file: {filepath.suffix}")
-    
+
     wb = load_workbook(filepath, read_only=read_only, data_only=data_only)
     try:
         ws = wb.active
-        
+
         # Get headers from first row
         headers = []
         for cell in ws[1]:
             headers.append(str(cell.value) if cell.value else '')
-        
+
         # Stream rows starting from start_row
         for row in ws.iter_rows(min_row=start_row, values_only=True):
             record = {}
@@ -181,38 +181,38 @@ def read_excel_rows(
     """
     if filepath.suffix.lower() not in ['.xlsx', '.xls']:
         raise ValueError(f"Not an Excel file: {filepath.suffix}")
-    
+
     if not row_numbers:
         return []
-    
+
     # Filter and validate row numbers
     valid_rows = sorted(set(r for r in row_numbers if r > 0))
     if not valid_rows:
         return []
-    
+
     wb = load_workbook(filepath, read_only=read_only, data_only=data_only)
     try:
         ws = wb.active
-        
+
         # Get headers from first row
         headers = []
         for cell in ws[1]:
             headers.append(str(cell.value) if cell.value else '')
-        
+
         # Check max_row to avoid iterating beyond file
         max_valid_row = min(valid_rows[-1], ws.max_row) if ws.max_row else 0
         if max_valid_row < valid_rows[0]:
             return []
-        
+
         # Use sequential iteration for better performance with read_only mode
         # This is faster than random access (ws[row_num]) for large files
         needed_rows = set(valid_rows)
         records_dict = {}  # Store by row number
-        
+
         # Iterate sequentially from first needed row to last
         min_row = valid_rows[0]
         max_row = max_valid_row
-        
+
         # Track current row number as we iterate
         current_row_num = min_row
         for row in ws.iter_rows(min_row=min_row, max_row=max_row, values_only=True):
@@ -222,19 +222,19 @@ def read_excel_rows(
                     if i < len(headers):
                         record[headers[i]] = str(value) if value is not None else ''
                 records_dict[current_row_num] = record
-                
+
                 # Early exit if we've collected all needed rows
                 if len(records_dict) >= len(needed_rows):
                     break
-            
+
             current_row_num += 1
-        
+
         # Return in original row_numbers order (not sorted)
         result = []
         for row_num in row_numbers:
             if row_num in records_dict:
                 result.append(records_dict[row_num])
-        
+
         return result
     finally:
         wb.close()
@@ -260,19 +260,19 @@ def get_excel_info(filepath: Path) -> dict:
     """
     if filepath.suffix.lower() not in ['.xlsx', '.xls']:
         raise ValueError(f"Not an Excel file: {filepath.suffix}")
-    
+
     wb = load_workbook(filepath, read_only=True)
     try:
         ws = wb.active
-        
+
         # Get headers
         headers = []
         for cell in ws[1]:
             headers.append(str(cell.value) if cell.value else '')
-        
+
         # Get row count
         row_count = max(0, ws.max_row - 1) if ws.max_row else 0
-        
+
         return {
             'headers': headers,
             'row_count': row_count,

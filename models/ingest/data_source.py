@@ -1,12 +1,13 @@
 """DataSource model - Registry of all data sources"""
 
 from django.db import models
-from .enums import DataDomain, SourceType, FormatVersion
+
+from .enums import DataDomain, FormatVersion, SourceType
 
 
 class DataSource(models.Model):
     """Registry of known data sources (URLs, files, APIs)"""
-    
+
     url = models.URLField(unique=True, help_text="Source URL")
     domain = models.CharField(
         max_length=50,
@@ -49,7 +50,7 @@ class DataSource(models.Model):
         blank=True,
         help_text="Flexible metadata storage"
     )
-    
+
     class Meta:
         app_label = 'models'  # Explicitly set app_label for Django model resolution
         db_table = 'ingest_data_source'
@@ -58,7 +59,7 @@ class DataSource(models.Model):
             models.Index(fields=['domain', 'source_type']),
             models.Index(fields=['domain', 'format_version']),
         ]
-    
+
     def __str__(self):
         return f"{self.get_domain_display()} {self.get_source_type_display()}: {self.url}"
 

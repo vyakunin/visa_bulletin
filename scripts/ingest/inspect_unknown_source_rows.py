@@ -31,7 +31,6 @@ from django_config.logging_config import setup_logging
 from lib.utils.http_utils import get_workspace_dir
 from lib.utils.logging_utils import ScriptLogger
 
-
 LCA_INDICATORS = [
     "LCA_CASE_NUMBER",
     "LCA_CASE_WAGE_RATE_FROM",
@@ -101,7 +100,11 @@ def _find_row_details(
     logger: logging.Logger,
     max_matches: int,
 ) -> None:
-    from lib.parsing.salary.db_importer import LCA_COLUMN_MAPPINGS, PERM_COLUMN_MAPPINGS, get_column_value
+    from lib.parsing.salary.db_importer import (
+        LCA_COLUMN_MAPPINGS,
+        PERM_COLUMN_MAPPINGS,
+        get_column_value,
+    )
     from lib.utils.excel_utils import read_excel_headers, read_excel_streaming
 
     headers = read_excel_headers(filepath)
@@ -135,7 +138,11 @@ def _scan_file_for_missing(
     max_rows: int,
     logger: logging.Logger,
 ) -> list[dict]:
-    from lib.parsing.salary.db_importer import LCA_COLUMN_MAPPINGS, PERM_COLUMN_MAPPINGS, get_column_value
+    from lib.parsing.salary.db_importer import (
+        LCA_COLUMN_MAPPINGS,
+        PERM_COLUMN_MAPPINGS,
+        get_column_value,
+    )
     from lib.utils.excel_utils import read_excel_headers, read_excel_streaming
 
     headers = read_excel_headers(filepath)

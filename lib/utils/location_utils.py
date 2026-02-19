@@ -98,17 +98,17 @@ def normalize_state_code(state: str | None) -> str:
     """
     if not state:
         return ""
-    
+
     state_upper = state.upper().strip()
-    
+
     # Check if already a valid 2-letter code
     if state_upper in VALID_STATES:
         return state_upper
-    
+
     # Check if it's a full state name
     if state_upper in STATE_NAME_TO_CODE:
         return STATE_NAME_TO_CODE[state_upper]
-    
+
     # Fallback: return first 2 characters (uppercased)
     # This handles cases like "MASSACHUSETTS" -> "MA" (first 2 chars)
     # or unknown states -> first 2 chars

@@ -8,22 +8,22 @@ from django.utils.text import slugify
 def populate_slugs(apps, schema_editor):
     """Generate and populate slugs for all existing EmployerCluster records"""
     EmployerCluster = apps.get_model('models', 'EmployerCluster')
-    
+
     # Track used slugs to ensure uniqueness
     used_slugs = set()
-    
+
     for cluster in EmployerCluster.objects.all():
         if not cluster.slug and cluster.canonical_name:
             # Generate base slug
             base_slug = slugify(cluster.canonical_name)
-            
+
             # Ensure uniqueness
             slug = base_slug
             counter = 1
             while slug in used_slugs or EmployerCluster.objects.filter(slug=slug).exclude(pk=cluster.pk).exists():
                 slug = f"{base_slug}-{counter}"
                 counter += 1
-            
+
             # Set slug and save
             cluster.slug = slug
             cluster.save(update_fields=['slug'])

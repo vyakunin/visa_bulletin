@@ -2,8 +2,9 @@
 
 from django.db import models
 from django.utils import timezone
-from .enums import IngestStatus, IngestStage
+
 from .data_source import DataSource
+from .enums import IngestStage, IngestStatus
 
 
 class IngestRun(models.Model):
@@ -13,7 +14,7 @@ class IngestRun(models.Model):
     Each IngestRun represents one full pass through: download → parse → transform → load.
     The pipeline can be interrupted and resumed at any stage via checkpoints.
     """
-    
+
     source = models.ForeignKey(
         DataSource,
         on_delete=models.CASCADE,
@@ -39,7 +40,7 @@ class IngestRun(models.Model):
         blank=True,
         help_text="When the ingest run completed"
     )
-    
+
     # Progress tracking
     records_processed = models.IntegerField(
         default=0,
@@ -61,14 +62,14 @@ class IngestRun(models.Model):
         default=0,
         help_text="Records skipped (duplicates, etc.)"
     )
-    
+
     # Resumption support
     checkpoint = models.JSONField(
         default=dict,
         blank=True,
         help_text="Checkpoint data for resumption: {stage, last_row, batch, filepath, ...}"
     )
-    
+
     # Error tracking
     error_message = models.TextField(
         blank=True,
@@ -78,7 +79,7 @@ class IngestRun(models.Model):
         blank=True,
         help_text="Full traceback if ingest failed"
     )
-    
+
     class Meta:
         app_label = 'models'  # Explicitly set app_label for Django model resolution
         db_table = 'ingest_run'
@@ -88,17 +89,17 @@ class IngestRun(models.Model):
             models.Index(fields=['status', 'stage']),
             models.Index(fields=['started_at']),
         ]
-    
+
     def __str__(self):
         return f"Run {self.id}: {self.source} ({self.status}, {self.stage})"
-    
+
     def mark_completed(self):
         """Mark run as completed"""
         self.status = IngestStatus.COMPLETED
         self.stage = IngestStage.COMPLETED
         self.completed_at = timezone.now()
         self.save()
-    
+
     def mark_failed(self, error: Exception):
         """Mark run as failed with error"""
         import traceback

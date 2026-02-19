@@ -7,18 +7,20 @@ The bug: wage_unit enum value is being written to wage_to column during COPY,
 suggesting field order mismatch or improper enum-to-value conversion.
 """
 import unittest
+from datetime import UTC, datetime
 from decimal import Decimal
 from io import StringIO
-from datetime import datetime, timezone
 
 from django.db import connection, models
 
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
 from django.test import TestCase
-from models.salary import WorksiteRecord
+
 from models.enums.visa_program import VisaProgram, WageUnit
+from models.salary import WorksiteRecord
 
 
 class TestWorksiteRecordCopyBug(TestCase):
@@ -58,7 +60,7 @@ class TestWorksiteRecordCopyBug(TestCase):
         self.assertEqual(record.soc_title, 'Software Developers, Systems Software\\')
 
         buffer = StringIO()
-        now_ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S+00')
+        now_ts = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S+00')
         # Exclude PK; include all others (auto_now fields need explicit values for COPY).
         fields = [f for f in WorksiteRecord._meta.fields if not f.primary_key]
         field_names = [f.attname for f in fields]

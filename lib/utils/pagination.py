@@ -64,7 +64,7 @@ def calculate_pagination_info(total_results: int, page: int, per_page: int) -> d
     total_pages = (total_results + per_page - 1) // per_page
     page = max(1, min(page, total_pages)) if total_pages > 0 else 1
     offset = (page - 1) * per_page
-    
+
     # Calculate page range for pagination display
     if total_pages <= 7:
         page_range = list(range(1, total_pages + 1))
@@ -74,7 +74,7 @@ def calculate_pagination_info(total_results: int, page: int, per_page: int) -> d
         page_range = [1, '...'] + list(range(total_pages - 4, total_pages + 1))
     else:
         page_range = [1, '...'] + list(range(page - 1, page + 2)) + ['...', total_pages]
-    
+
     return {
         'page': page,
         'total_pages': total_pages,
@@ -106,13 +106,13 @@ def build_pagination_query_string(params: dict, param_mapping: dict[str, str] | 
             'program_filter': 'program',
             'year_filter': 'year',
         }
-    
+
     pagination_parts = []
     for internal_key, url_param in param_mapping.items():
         value = params.get(internal_key)
         if value:
             pagination_parts.append(f'{url_param}={value}')
-    
+
     return '&'.join(pagination_parts)
 
 

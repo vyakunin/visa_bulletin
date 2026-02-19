@@ -14,18 +14,19 @@ from lib.utils.excel_utils import read_excel_headers, read_excel_rows
 from lib.utils.http_utils import get_workspace_dir
 from lib.utils.logging_utils import ScriptLogger
 
+
 def examine_file(filepath: Path):
     """Examine a single file and report its characteristics."""
     print(f"\n=== {filepath.name} ===")
-    
+
     try:
         # Read headers
         headers = read_excel_headers(filepath)
         print(f"Headers (first 20): {headers[:20]}")
-        
+
         # Check for key indicators
         headers_upper = [str(h).upper() if h else '' for h in headers]
-        
+
         has_lca = any('LCA' in h for h in headers_upper)
         has_perm = any('WAGE_OFFER' in h or 'JOB_OPP_WAGE' in h or 'PW_JOB_TITLE' in h for h in headers_upper)
         has_employer = any('EMPLOYER' in h for h in headers_upper)
@@ -33,7 +34,7 @@ def examine_file(filepath: Path):
         has_wage = any('WAGE' in h for h in headers_upper)
         has_case = any('CASE' in h for h in headers_upper)
         has_salary = has_wage and has_case
-        
+
         print(f"  Has LCA columns: {has_lca}")
         print(f"  Has PERM columns: {has_perm}")
         print(f"  Has employer fields: {has_employer}")
@@ -41,18 +42,18 @@ def examine_file(filepath: Path):
         print(f"  Has wage fields: {has_wage}")
         print(f"  Has case fields: {has_case}")
         print(f"  Likely salary/worksite data: {has_salary}")
-        
+
         # Get sample row
         try:
             sample_rows = read_excel_rows(filepath, [2, 3], read_only=True, data_only=True)
             if sample_rows:
-                print(f"Sample row 2 (first 10 columns):")
+                print("Sample row 2 (first 10 columns):")
                 row2 = sample_rows[0]
                 for i, (key, value) in enumerate(list(row2.items())[:10]):
                     print(f"    {key}: {value}")
         except Exception as e:
             print(f"  Could not read sample rows: {e}")
-        
+
     except Exception as e:
         print(f"ERROR: {e}")
 

@@ -46,7 +46,7 @@ class LLMVerifier(ABC):
     
     Provides clean interface for verifying if two employers are the same company.
     """
-    
+
     def __init__(self, config: VerifierConfig):
         """
         Initialize verifier with configuration.
@@ -55,7 +55,7 @@ class LLMVerifier(ABC):
             config: VerifierConfig with model, prompt, and other settings
         """
         self.config = config
-    
+
     @abstractmethod
     async def verify_async(self, pair: EmployerPair) -> EvaluationOutcome:
         """
@@ -68,7 +68,7 @@ class LLMVerifier(ABC):
             EvaluationOutcome with validation result
         """
         pass
-    
+
     def verify(self, pair: EmployerPair) -> EvaluationOutcome:
         """
         Verify if two employers are the same company (synchronous wrapper).
@@ -80,7 +80,7 @@ class LLMVerifier(ABC):
             EvaluationOutcome with validation result
         """
         return asyncio.run(self.verify_async(pair))
-    
+
     @abstractmethod
     async def verify_batch_async(self, pairs: list[EmployerPair]) -> list[EvaluationOutcome]:
         """
@@ -93,7 +93,7 @@ class LLMVerifier(ABC):
             List of EvaluationOutcome results in same order as input pairs
         """
         pass
-    
+
     def verify_batch(self, pairs: list[EmployerPair]) -> list[EvaluationOutcome]:
         """
         Verify multiple pairs in parallel (synchronous wrapper).
@@ -105,32 +105,32 @@ class LLMVerifier(ABC):
             List of EvaluationOutcome results in same order as input pairs
         """
         return asyncio.run(self.verify_batch_async(pairs))
-    
+
     def _load_prompt_template(self) -> str:
         """Load prompt template from file or use provided template."""
         if self.config.prompt_template:
             return self.config.prompt_template
-        
+
         if self.config.prompt_template_path:
             try:
-                with open(self.config.prompt_template_path, 'r') as f:
+                with open(self.config.prompt_template_path) as f:
                     return f.read().strip()
             except FileNotFoundError:
                 logger.error(f"Prompt template not found: {self.config.prompt_template_path}")
                 raise
-        
+
         # Try to load from Bazel runfiles
         from lib.utils.bazel_runfiles import get_template_file
         template_path = get_template_file("llm_prompt_template.txt")
         if template_path:
             try:
-                with open(template_path, 'r') as f:
+                with open(template_path) as f:
                     return f.read().strip()
             except FileNotFoundError:
                 pass
-        
+
         raise ValueError("No prompt template available. Set prompt_template or prompt_template_path in config.")
-    
+
     def _format_prompt(self, pair: EmployerPair, template: str) -> str:
         """Format prompt template with pair data."""
         # Build format dict - only include similarity if template uses it
@@ -142,21 +142,21 @@ class LLMVerifier(ABC):
             'emp2_city': pair.emp2_city or 'N/A',
             'emp2_state': pair.emp2_state or 'N/A',
         }
-        
+
         # Only include similarity if template actually uses it (avoids KeyError)
         if '{similarity' in template:
             format_dict['similarity'] = pair.similarity
-        
+
         return template.format(**format_dict)
-    
+
     def _parse_response(self, response: str) -> EvaluationOutcome:
         """Parse LLM response into EvaluationOutcome."""
         if not response:
             return EvaluationOutcome.failed()
-        
+
         response_upper = response.upper()
         is_same = response_upper.startswith("YES")
-        
+
         if is_same:
             return EvaluationOutcome.same(response)
         else:
@@ -170,7 +170,7 @@ class OllamaVerifier(LLMVerifier):
     Uses async HTTP API for efficient parallel processing with connection pooling.
     Includes model auto-pulling and fallback model support.
     """
-    
+
     def __init__(self, config: VerifierConfig):
         super().__init__(config)
         self._client = None
@@ -178,23 +178,23 @@ class OllamaVerifier(LLMVerifier):
         # Cache of models that have been checked/verified as available
         # Prevents repeated availability checks for every LLM call
         self._checked_models: set[str] = set()
-    
+
     def _get_client(self):
         """Get or create async Ollama client."""
         if self._client is None:
             if AsyncClient is None:
                 logger.error("ollama library not installed. Install with: pip install ollama")
                 return None
-            
+
             try:
                 self._client = AsyncClient(host=self.config.ollama_host)
                 logger.debug(f"Created Ollama async client (host={self.config.ollama_host})")
             except Exception as e:
                 logger.error(f"Failed to create Ollama client: {e}")
                 return None
-        
+
         return self._client
-    
+
     async def _ensure_model_available(self, model: str) -> bool:
         """
         Ensure an Ollama model is available, pulling it if necessary.
@@ -211,16 +211,16 @@ class OllamaVerifier(LLMVerifier):
         # Skip check if model was already verified (cached)
         if model in self._checked_models:
             return True
-        
+
         if not self.config.auto_pull_model:
             # If auto_pull is disabled, assume model is available (benchmark script handles pulling)
             self._checked_models.add(model)
             return True
-        
+
         client = self._get_client()
         if not client:
             return False
-        
+
         try:
             # Check if model exists by listing models
             models_list = await client.list()
@@ -230,7 +230,7 @@ class OllamaVerifier(LLMVerifier):
                 models = models_list.get('models', [])
             else:
                 models = models_list if isinstance(models_list, list) else []
-            
+
             # Extract model names from dict format
             available_models = set()
             for m in models:
@@ -244,19 +244,19 @@ class OllamaVerifier(LLMVerifier):
                     name = ''
                 if name:
                     available_models.add(name)
-            
+
             if model in available_models:
                 logger.debug(f"Model {model} is already available")
                 # Cache the result to avoid future checks
                 self._checked_models.add(model)
                 return True
-            
+
             # Model not found, pull it
             logger.info(f"Model {model} not found. Pulling from Ollama...")
             # client.pull() with stream=True may return coroutine or async iterator
             # Handle both cases
             pull_result = client.pull(model, stream=True)
-            
+
             # Check if it's a coroutine (needs await) or async iterator (can iterate directly)
             if asyncio.iscoroutine(pull_result):
                 # If coroutine, await it first to get the iterator
@@ -269,51 +269,51 @@ class OllamaVerifier(LLMVerifier):
                 async for progress in pull_result:
                     if isinstance(progress, dict) and 'status' in progress:
                         logger.debug(f"Pulling {model}: {progress['status']}")
-            
+
             logger.info(f"Successfully pulled model {model}")
             # Cache the result after successful pull
             self._checked_models.add(model)
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to ensure model {model} is available: {e}", exc_info=True)
             return False
-    
+
     async def verify_async(self, pair: EmployerPair) -> EvaluationOutcome:
         """Verify single pair using Ollama."""
         if self._template is None:
             self._template = self._load_prompt_template()
-        
+
         prompt = self._format_prompt(pair, self._template)
         response = await self._call_ollama(prompt, model=self.config.model)
-        
+
         if not response:
             return EvaluationOutcome.failed()
-        
+
         return self._parse_response(response)
-    
+
     async def verify_batch_async(self, pairs: list[EmployerPair]) -> list[EvaluationOutcome]:
         """Verify multiple pairs in parallel."""
         import time
         batch_start = time.perf_counter()
-        
+
         if not pairs:
             return []
-        
+
         template_start = time.perf_counter()
         if self._template is None:
             self._template = self._load_prompt_template()
         template_elapsed = time.perf_counter() - template_start
-        
+
         # Prepare prompts
         prompt_start = time.perf_counter()
         prompts = [self._format_prompt(pair, self._template) for pair in pairs]
         prompt_elapsed = time.perf_counter() - prompt_start
-        
+
         # Process in parallel with concurrency limit
         semaphore = asyncio.Semaphore(self.config.max_concurrent)
         call_times = []
-        
+
         async def verify_single(prompt: str) -> EvaluationOutcome:
             call_start = time.perf_counter()
             async with semaphore:
@@ -329,15 +329,15 @@ class OllamaVerifier(LLMVerifier):
                     call_times.append(call_elapsed)
                     logger.error(f"Error verifying pair: {e}", exc_info=True)
                     return EvaluationOutcome.failed()
-        
+
         # Create tasks for all prompts
         llm_start = time.perf_counter()
         tasks = [verify_single(prompt) for prompt in prompts]
-        
+
         # Wait for all tasks to complete
         results = await asyncio.gather(*tasks, return_exceptions=True)
         llm_elapsed = time.perf_counter() - llm_start
-        
+
         # Handle exceptions
         parse_start = time.perf_counter()
         outcomes = []
@@ -348,9 +348,9 @@ class OllamaVerifier(LLMVerifier):
             else:
                 outcomes.append(result)
         parse_elapsed = time.perf_counter() - parse_start
-        
+
         total_elapsed = time.perf_counter() - batch_start
-        
+
         # Log timing breakdown
         if call_times:
             avg_call_time = sum(call_times) / len(call_times)
@@ -362,18 +362,18 @@ class OllamaVerifier(LLMVerifier):
                 f"llm={llm_elapsed:.3f}s (avg={avg_call_time:.3f}s, min={min_call_time:.3f}s, max={max_call_time:.3f}s), "
                 f"parse={parse_elapsed:.3f}s, pairs={len(pairs)}, throughput={len(pairs)/total_elapsed:.1f} pairs/s"
             )
-        
+
         return outcomes
-    
+
     async def _call_ollama(self, prompt: str, model: str | None = None) -> str | None:
         """Call Ollama API with prompt."""
         import time
         call_start = time.perf_counter()
         timing = {}
-        
+
         if model is None:
             model = self.config.model
-            
+
         # Ensure model is available (auto-pull if needed)
         # Note: This check is cached per verifier instance to avoid repeated /api/tags calls
         ensure_start = time.perf_counter()
@@ -382,13 +382,13 @@ class OllamaVerifier(LLMVerifier):
         timing['ensure_model'] = ensure_elapsed
         if ensure_elapsed > 0.1:
             logger.debug(f"Model availability check took {ensure_elapsed:.3f}s (uncached)")
-        
+
         client_start = time.perf_counter()
         client = self._get_client()
         timing['get_client'] = time.perf_counter() - client_start
         if not client:
             return None
-        
+
         try:
             request_start = time.perf_counter()
             response = await asyncio.wait_for(
@@ -400,15 +400,15 @@ class OllamaVerifier(LLMVerifier):
             )
             request_elapsed = time.perf_counter() - request_start
             timing['llm_request'] = request_elapsed
-            
+
             parse_start = time.perf_counter()
             if response and 'message' in response and 'content' in response['message']:
                 content = response['message']['content'].strip()
                 timing['parse_response'] = time.perf_counter() - parse_start
-                
+
                 total_elapsed = time.perf_counter() - call_start
                 timing['total'] = total_elapsed
-                
+
                 # Log detailed timing for slow calls or when debugging
                 if total_elapsed > 1.0:
                     logger.debug(
@@ -419,12 +419,12 @@ class OllamaVerifier(LLMVerifier):
                         f"parse={timing.get('parse_response', 0):.3f}s"
                     )
                 return content
-            
+
             timing['parse_response'] = time.perf_counter() - parse_start
             logger.warning(f"Unexpected response format from Ollama: {response}")
             return None
-            
-        except asyncio.TimeoutError:
+
+        except TimeoutError:
             elapsed = time.perf_counter() - call_start
             logger.warning(f"Ollama call timed out after {elapsed:.2f}s (model: {model})")
             # Try fallback model if primary timed out
@@ -474,7 +474,7 @@ def create_verifier(
     """
     if ollama_host is None:
         ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-    
+
     config = VerifierConfig(
         model=model,
         prompt_template_path=prompt_template_path,
@@ -485,7 +485,7 @@ def create_verifier(
         fallback_model=fallback_model,
         auto_pull_model=auto_pull_model
     )
-    
+
     return OllamaVerifier(config)
 
 
@@ -606,13 +606,13 @@ async def validate_pairs_parallel_async(
     """
     if not pairs:
         return []
-    
+
     verifier = create_verifier(
         model=model,
         prompt_template_path=prompt_template_path,
         max_concurrent=max_concurrent
     )
-    
+
     # Process in batches if specified
     if batch_size:
         results = []

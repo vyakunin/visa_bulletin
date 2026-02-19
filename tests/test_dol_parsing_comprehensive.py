@@ -10,17 +10,18 @@ sample data so it can run in CI without requiring the full data directory.
 """
 
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
 import unittest
 from enum import Enum
 
-from lib.ingest.registry import PluginRegistry
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
+from lib.ingest.registry import PluginRegistry
 from models.ingest.data_source import DataSource
+from models.ingest.enums import DataDomain, IngestStage, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
-from models.ingest.enums import IngestStatus, IngestStage, DataDomain, SourceType
 from models.salary import SalaryRecord, WorksiteRecord
 
 
@@ -43,7 +44,7 @@ class TestDolParsingComprehensive(TestCase):
         PluginRegistry.register(H1BSalaryDataSourcePlugin(skip_clustering=True))
         PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
 
-    def _test_transform(self, domain: DataDomain, source_type: SourceType, filename: str, 
+    def _test_transform(self, domain: DataDomain, source_type: SourceType, filename: str,
                        sample_row: dict, expect_type: ExpectedOutputType):
         """
         Test transform() on a sample row.
@@ -57,7 +58,7 @@ class TestDolParsingComprehensive(TestCase):
         """
         plugin = PluginRegistry.get_plugin(domain, source_type)
         self.assertIsNotNone(plugin, f'No plugin found for {domain}:{source_type}')
-        
+
         # Create mock source and run
         mock_source = DataSource(
             url=f'file://test/{filename}',
@@ -65,36 +66,36 @@ class TestDolParsingComprehensive(TestCase):
             source_type=source_type,
             local_file_path=f'/test/{filename}'
         )
-        
+
         mock_run = IngestRun(
             source=mock_source,
             status=IngestStatus.RUNNING,
             stage=IngestStage.PARSING,
             checkpoint={'filepath': f'/test/{filename}'}
         )
-        
+
         # Set run context
         plugin._current_run = mock_run
-        
+
         # Transform the sample row
         result = None
         try:
             result = plugin.transform(sample_row)
         except Exception as e:
             self.fail(f"Transform failed for {filename}: {e}")
-        
+
         # Validate based on expected type
         if expect_type == ExpectedOutputType.SALARY_RECORD:
-            self.assertIsInstance(result, SalaryRecord, 
+            self.assertIsInstance(result, SalaryRecord,
                                 f"{filename} should return SalaryRecord")
-            self.assertIsNotNone(result.case_number, 
+            self.assertIsNotNone(result.case_number,
                                f"{filename}: Missing case_number")
-            self.assertIsNotNone(result.job_title, 
+            self.assertIsNotNone(result.job_title,
                                f"{filename}: Missing job_title")
         elif expect_type == ExpectedOutputType.WORKSITE_RECORD:
-            self.assertIsInstance(result, WorksiteRecord, 
+            self.assertIsInstance(result, WorksiteRecord,
                                 f"{filename} should return WorksiteRecord")
-            self.assertIsNotNone(result.case_number, 
+            self.assertIsNotNone(result.case_number,
                                f"{filename}: Missing case_number")
         elif expect_type == ExpectedOutputType.NONE:
             self.assertIsNone(result,
@@ -103,7 +104,7 @@ class TestDolParsingComprehensive(TestCase):
             self.fail(f"Invalid expect_type: {expect_type}")
 
     # === LCA FORMATS ===
-    
+
     def test_lca_fy2009_format(self):
         """Test very old LCA format (FY2009)"""
         sample_row = {
@@ -114,7 +115,7 @@ class TestDolParsingComprehensive(TestCase):
             'WAGE_RATE_OF_PAY': '85000',
             'WAGE_UNIT_OF_PAY': 'Year',
         }
-        self._test_transform(DataDomain.DOL, SourceType.LCA, 'H-1B_FY2009.xlsx', 
+        self._test_transform(DataDomain.DOL, SourceType.LCA, 'H-1B_FY2009.xlsx',
                             sample_row, ExpectedOutputType.WORKSITE_RECORD)  # I-200 = worksite
 
     def test_lca_fy2015_format(self):
@@ -157,7 +158,7 @@ class TestDolParsingComprehensive(TestCase):
                             sample_row, ExpectedOutputType.SALARY_RECORD)
 
     # === PERM FORMATS ===
-    
+
     def test_perm_fy2009_format(self):
         """Test old PERM format (FY2009)"""
         sample_row = {
@@ -215,7 +216,7 @@ class TestDolParsingComprehensive(TestCase):
                             sample_row, ExpectedOutputType.SALARY_RECORD)
 
     # === WORKSITE FORMATS ===
-    
+
     def test_worksite_fy2020_format(self):
         """Test worksite format (FY2020) - I-200 prefix
         
@@ -255,7 +256,7 @@ class TestDolParsingComprehensive(TestCase):
                             sample_row, ExpectedOutputType.WORKSITE_RECORD)
 
     # === APPENDIX A (Supplemental - expect None) ===
-    
+
     def test_appendix_a_fy2024_format(self):
         """Test Appendix A format - supplemental data (expect None)"""
         sample_row = {

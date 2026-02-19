@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
 from django.conf import settings
@@ -33,7 +34,7 @@ else:
     print("🚀 Development mode detected")
     print("   • DEBUG is True (helpful error messages)")
     print("   • Using development SECRET_KEY")
-    
+
 print()
 print("=" * 70)
 print("💡 To enable production mode:")

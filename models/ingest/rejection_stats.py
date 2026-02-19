@@ -1,6 +1,7 @@
 """IngestRejectionStats model - Tracks why records are rejected during ingestion"""
 
 from django.db import models
+
 from .ingest_run import IngestRun
 
 
@@ -28,7 +29,7 @@ class IngestRejectionStats(models.Model):
     Each record represents one rejection reason with aggregate counts and examples.
     This helps identify data quality issues and potential format mismatches.
     """
-    
+
     run = models.ForeignKey(
         IngestRun,
         on_delete=models.CASCADE,
@@ -48,7 +49,7 @@ class IngestRejectionStats(models.Model):
         default=list,
         help_text="Sample case numbers (up to 10) for investigation"
     )
-    
+
     class Meta:
         app_label = 'models'
         db_table = 'ingest_rejection_stats'
@@ -59,10 +60,10 @@ class IngestRejectionStats(models.Model):
         ]
         verbose_name = 'Ingest Rejection Statistics'
         verbose_name_plural = 'Ingest Rejection Statistics'
-    
+
     def __str__(self):
         return f"Run {self.run_id}: {self.get_reason_display()} ({self.count:,} records)"
-    
+
     def add_rejection(self, case_number: str | None = None):
         """
         Increment rejection count and optionally add sample case number.
@@ -71,7 +72,7 @@ class IngestRejectionStats(models.Model):
             case_number: Case number to add to samples (if provided and not already in list)
         """
         self.count += 1
-        
+
         # Add to samples if provided and not already in list (keep max 10)
         if case_number and case_number not in self.sample_case_numbers:
             if len(self.sample_case_numbers) < 10:

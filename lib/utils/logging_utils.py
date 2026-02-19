@@ -35,7 +35,7 @@ def _get_throwaway_logger() -> logging.Logger:
         _throwaway_logger = logging.getLogger('script_logger.throwaway')
         _throwaway_logger.setLevel(logging.INFO)
         _throwaway_logger.handlers = []  # Clear any existing handlers
-        
+
         # Add file handler for throwaway log
         handler = logging.FileHandler(LOGS_DIR / 'throwaway_calls.log', mode='a')
         handler.setFormatter(logging.Formatter(THROWAWAY_LOG_FORMAT))
@@ -70,7 +70,7 @@ def _is_script_file(filepath: Path) -> bool:
         return False
     # Check if file has shebang or looks like a script
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath) as f:
             first_line = f.readline()
             if first_line.startswith('#!'):
                 return True
@@ -90,10 +90,10 @@ def _is_script_file(filepath: Path) -> bool:
 def _log_throwaway_entry(script_path: Path, args: dict | None = None, context: str | None = None):
     """Internal function to write throwaway log entry using logging module"""
     script_name = script_path.name
-    
+
     # Merge any stored context
     final_context = context or _throwaway_context.get(script_path, 'No context provided')
-    
+
     log_entry = {
         'timestamp': datetime.now().isoformat(),
         'script': script_name,
@@ -101,7 +101,7 @@ def _log_throwaway_entry(script_path: Path, args: dict | None = None, context: s
         'args': args or {},
         'context': final_context,
     }
-    
+
     # Use logging module instead of manual file I/O
     logger = _get_throwaway_logger()
     logger.info(json.dumps(log_entry, default=str))
@@ -128,7 +128,7 @@ if _is_script_file(_throwaway_script_path):
                 args_dict[key.replace('-', '_')] = value
             else:
                 args_dict[f'arg_{i}'] = arg
-    
+
     _log_throwaway_entry(_throwaway_script_path, args_dict)
 
 
@@ -164,7 +164,7 @@ def log_context(context: str):
 
 class ScriptLogger:
     """Logger for permanent scripts - logs each call to script-specific log file"""
-    
+
     def __init__(self, script_path: str | Path):
         """
         Initialize logger for a permanent script.
@@ -174,14 +174,14 @@ class ScriptLogger:
         """
         self.script_path = Path(script_path)
         self.script_name = self.script_path.stem
-        
+
         # Use logging module with script-specific logger
         self.logger = logging.getLogger(f"script.{self.script_name}")
         self.logger.setLevel(logging.INFO)
-        
+
         # Remove existing handlers to avoid duplicates
         self.logger.handlers = []
-        
+
         # Add file handler using logging module
         handler = logging.FileHandler(LOGS_DIR / f"{self.script_name}.log", mode='a')
         handler.setFormatter(logging.Formatter(
@@ -190,7 +190,7 @@ class ScriptLogger:
         ))
         self.logger.addHandler(handler)
         self.logger.propagate = False  # Don't propagate to root logger
-    
+
     def log_call(self, args: dict | None = None, context: str | None = None):
         """
         Log a script execution.
@@ -205,6 +205,6 @@ class ScriptLogger:
             'args': args or {},
             'context': context,
         }
-        
+
         # Use logging module instead of manual file I/O
         self.logger.info(json.dumps(log_entry, default=str))

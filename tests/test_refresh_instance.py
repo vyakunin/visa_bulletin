@@ -3,8 +3,6 @@
 
 import os
 
-import pytest
-
 from scripts.cron.refresh.instance import (
     InstanceInfo,
     is_this_host_active,

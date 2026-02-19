@@ -1,6 +1,7 @@
 """Shared validation utilities for reusable queryset patterns"""
 
 from django.db.models import Q
+
 from models.salary import SalaryRecord
 
 
@@ -34,7 +35,7 @@ def get_invalid_state_queryset():
         >>> count = invalid.count()
     """
     from lib.utils.location_utils import VALID_STATES
-    
+
     return SalaryRecord.objects.filter(
         worksite_state__isnull=False
     ).exclude(worksite_state__in=VALID_STATES).exclude(worksite_state='')
@@ -71,7 +72,7 @@ def get_orphaned_employers_queryset():
         >>> count = orphaned.count()
     """
     from models.salary import Employer
-    
+
     return Employer.objects.filter(salary_records__isnull=True)
 
 

@@ -5,13 +5,13 @@ from django.db import models
 
 class FamilyPreference(models.TextChoices):
     """Family-sponsored visa preference categories"""
-    
+
     F1 = "F1", "F1: Unmarried Sons/Daughters of U.S. Citizens"
     F2A = "F2A", "F2A: Spouses/Children of Permanent Residents"
     F2B = "F2B", "F2B: Unmarried Sons/Daughters (21+) of Permanent Residents"
     F3 = "F3", "F3: Married Sons/Daughters of U.S. Citizens"
     F4 = "F4", "F4: Brothers/Sisters of Adult U.S. Citizens"
-    
+
     @classmethod
     def _get_legacy_mappings(cls) -> dict[str, str]:
         """
@@ -33,7 +33,7 @@ class FamilyPreference(models.TextChoices):
             '4th': cls.F4.value,
             '4 th': cls.F4.value,
         }
-    
+
     @classmethod
     def normalize_legacy_name(cls, visa_class: str) -> str:
         """

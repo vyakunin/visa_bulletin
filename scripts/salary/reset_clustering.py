@@ -19,6 +19,7 @@ import argparse
 import logging
 import os
 import sys
+
 from django.db import transaction
 
 # Setup Django early
@@ -26,11 +27,12 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
-from models.salary import Employer, EmployerCluster, EmployerClusteringReview
-from lib.utils.logging_utils import ScriptLogger
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
+from models.salary import Employer, EmployerCluster, EmployerClusteringReview
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -52,30 +54,30 @@ def reset_clustering(keep_reviews: bool = False) -> dict:
         'clusters_deleted': 0,
         'reviews_deleted': 0,
     }
-    
+
     # Count before reset
     clustered_employers = Employer.objects.filter(canonical_cluster__isnull=False).count()
     total_clusters = EmployerCluster.objects.count()
     total_reviews = EmployerClusteringReview.objects.count()
-    
-    logger.info(f"Current state:")
+
+    logger.info("Current state:")
     logger.info(f"  Clustered employers: {clustered_employers:,}")
     logger.info(f"  Total clusters: {total_clusters:,}")
     if not keep_reviews:
         logger.info(f"  Review queue entries: {total_reviews:,}")
-    
+
     # Reset employer cluster assignments
     logger.info("\nResetting employer cluster assignments...")
     updated = Employer.objects.filter(canonical_cluster__isnull=False).update(canonical_cluster=None)
     results['employers_reset'] = updated
     logger.info(f"  Reset {updated:,} employer cluster assignments")
-    
+
     # Delete clusters
     logger.info("\nDeleting employer clusters...")
     deleted_clusters, _ = EmployerCluster.objects.all().delete()
     results['clusters_deleted'] = deleted_clusters
     logger.info(f"  Deleted {deleted_clusters:,} clusters")
-    
+
     # Delete reviews (optional)
     if not keep_reviews:
         logger.info("\nDeleting review queue...")
@@ -84,11 +86,11 @@ def reset_clustering(keep_reviews: bool = False) -> dict:
         logger.info(f"  Deleted {deleted_reviews:,} review queue entries")
     else:
         logger.info("\nKeeping review queue entries (--keep-reviews)")
-    
+
     # Verify reset
     remaining_clustered = Employer.objects.filter(canonical_cluster__isnull=False).count()
     remaining_clusters = EmployerCluster.objects.count()
-    
+
     logger.info("\n" + "="*60)
     logger.info("Reset complete!")
     logger.info("="*60)
@@ -100,10 +102,10 @@ def reset_clustering(keep_reviews: bool = False) -> dict:
     logger.info("Verification:")
     logger.info(f"  Remaining clustered employers: {remaining_clustered:,} (should be 0)")
     logger.info(f"  Remaining clusters: {remaining_clusters:,} (should be 0)")
-    
+
     if remaining_clustered > 0 or remaining_clusters > 0:
         logger.warning("⚠️  Warning: Some clustering data remains!")
-    
+
     return results
 
 
@@ -128,42 +130,42 @@ After resetting, run clustering:
 WARNING: This operation cannot be undone!
         """
     )
-    
+
     parser.add_argument(
         '--force', '-f',
         action='store_true',
         help='Skip confirmation prompt (use with caution)'
     )
-    
+
     parser.add_argument(
         '--keep-reviews',
         action='store_true',
         help='Keep EmployerClusteringReview records (only reset cluster assignments)'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Log script execution
     script_logger.log_call(
         args={'force': args.force, 'keep_reviews': args.keep_reviews},
         context='Resetting employer clustering'
     )
-    
+
     # Get counts before reset
     clustered_count = Employer.objects.filter(canonical_cluster__isnull=False).count()
     cluster_count = EmployerCluster.objects.count()
     review_count = EmployerClusteringReview.objects.count()
-    
+
     logger.info("="*60)
     logger.info("Reset Employer Clustering")
     logger.info("="*60)
-    logger.info(f"Current state:")
+    logger.info("Current state:")
     logger.info(f"  Clustered employers: {clustered_count:,}")
     logger.info(f"  Total clusters: {cluster_count:,}")
     if not args.keep_reviews:
         logger.info(f"  Review queue entries: {review_count:,}")
     logger.info("")
-    
+
     # Confirmation prompt
     if not args.force:
         warning_msg = "WARNING: This will remove ALL clustering information!"
@@ -177,19 +179,19 @@ WARNING: This operation cannot be undone!
         if response.lower() != 'yes':
             logger.info("Operation cancelled.")
             sys.exit(0)
-    
+
     # Perform reset in transaction
     try:
         with transaction.atomic():
             results = reset_clustering(keep_reviews=args.keep_reviews)
-        
+
         logger.info("")
         logger.info("✓ Clustering reset complete!")
         logger.info("")
         logger.info("Next steps:")
         logger.info("  Run clustering:")
         logger.info("    bazel run //scripts/salary:cluster_existing_employers")
-        
+
     except Exception as e:
         logger.error(f"Error during reset: {e}", exc_info=True)
         sys.exit(1)

@@ -12,9 +12,7 @@ import os
 import random
 import subprocess
 import sys
-import time
 from pathlib import Path
-from typing import Optional
 
 # Setup Django FIRST (before any imports that might trigger model imports)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -35,9 +33,11 @@ else:
 sys.path.insert(0, str(project_root))
 
 import django
+
 django.setup()
 
 from django.apps import apps
+
 Employer = apps.get_model('models', 'Employer')
 
 from django_config.logging_config import setup_logging
@@ -53,8 +53,8 @@ def load_pairs_from_jsonl(jsonl_file: str) -> tuple[list, list]:
     """Load pairs from JSONL file."""
     auto_clustered = []
     queued = []
-    
-    with open(jsonl_file, 'r') as f:
+
+    with open(jsonl_file) as f:
         for line in f:
             if not line.strip():
                 continue
@@ -66,7 +66,7 @@ def load_pairs_from_jsonl(jsonl_file: str) -> tuple[list, list]:
                     queued.append(pair)
             except json.JSONDecodeError:
                 continue
-    
+
     return auto_clustered, queued
 
 
@@ -82,7 +82,7 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
     auto_total = 0
     auto_skipped = 0
     false_positives = []
-    
+
     for pair in auto_sample:
         auto_total += 1
         is_same, response = validate_pair_with_llm(
@@ -93,7 +93,7 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
         if is_same is None:
             auto_skipped += 1
             continue
-        
+
         if is_same:
             auto_tp += 1
         else:
@@ -103,14 +103,14 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
                 'llm_response': response,
                 'reason': 'False positive - should not be clustered'
             })
-    
+
     logger.info(f"Evaluating {len(queue_sample)} queued pairs...")
     queue_tp = 0
     queue_fp = 0
     queue_total = 0
     queue_skipped = 0
     false_negatives = []
-    
+
     for pair in queue_sample:
         queue_total += 1
         is_same, response = validate_pair_with_llm(
@@ -121,7 +121,7 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
         if is_same is None:
             queue_skipped += 1
             continue
-        
+
         if is_same:
             queue_tp += 1
             false_negatives.append({
@@ -131,10 +131,10 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
             })
         else:
             queue_fp += 1
-    
+
     auto_precision = auto_tp / max(auto_total, 1)
     auto_recall = auto_tp / max(auto_tp + queue_tp, 1) if (auto_tp + queue_tp) > 0 else 0.0
-    
+
     metrics = {
         'auto_clustered': {
             'total_evaluated': auto_total,
@@ -155,7 +155,7 @@ def evaluate_samples(auto_sample: list, queue_sample: list) -> tuple[dict, list,
             'f1_score': 2 * (auto_precision * auto_recall) / max(auto_precision + auto_recall, 0.001),
         }
     }
-    
+
     return metrics, false_positives, false_negatives
 
 
@@ -163,7 +163,7 @@ def run_clustering(threshold: float, pairs_output: str, min_pairs: int, seed: in
     """Run clustering script and capture pairs. Stops early when enough pairs collected."""
     logger.info(f"Running clustering with threshold={threshold:.3f}...")
     logger.info(f"Early stopping: Will stop when {min_pairs:,} pairs collected")
-    
+
     if 'BUILD_WORKSPACE_DIRECTORY' in os.environ:
         project_root = Path(os.environ['BUILD_WORKSPACE_DIRECTORY'])
     else:
@@ -175,7 +175,7 @@ def run_clustering(threshold: float, pairs_output: str, min_pairs: int, seed: in
             current = current.parent
         else:
             project_root = Path(__file__).parent.parent.parent
-    
+
     cmd = [
         'bazel', 'run', '//scripts/salary:cluster_existing_employers', '--',
         '--dry-run',
@@ -185,7 +185,7 @@ def run_clustering(threshold: float, pairs_output: str, min_pairs: int, seed: in
         '--shuffle',  # Shuffle for random sampling
         '--shuffle-seed', str(seed),  # Reproducible randomness
     ]
-    
+
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
     if result.returncode != 0:
         # Check if it's just early stopping (StopIteration)
@@ -194,7 +194,7 @@ def run_clustering(threshold: float, pairs_output: str, min_pairs: int, seed: in
             return True
         logger.error(f"Clustering failed: {result.stderr}")
         return False
-    
+
     return True
 
 
@@ -206,33 +206,33 @@ def main():
     parser.add_argument('--output-dir', default='/tmp/clustering_test', help='Output directory')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--show-all-samples', action='store_true', help='Show all false positive/negative samples')
-    
+
     args = parser.parse_args()
-    
+
     random.seed(args.seed)
     os.makedirs(args.output_dir, exist_ok=True)
-    
+
     # Run clustering (with early stopping)
     pairs_file = f"{args.output_dir}/pairs_threshold_{args.threshold:.3f}.jsonl"
     if not run_clustering(args.threshold, pairs_file, args.min_pairs, args.seed):
         return 1
-    
+
     # Load pairs
     auto_clustered, queued = load_pairs_from_jsonl(pairs_file)
     logger.info(f"Found {len(auto_clustered):,} auto-clustered pairs")
     logger.info(f"Found {len(queued):,} queued pairs")
-    
+
     if not auto_clustered and not queued:
         logger.error("No pairs found")
         return 1
-    
+
     # Sample pairs
     auto_sample = random.sample(auto_clustered, min(args.sample_size, len(auto_clustered))) if auto_clustered else []
     queue_sample = random.sample(queued, min(args.sample_size, len(queued))) if queued else []
-    
+
     logger.info(f"Sampled {len(auto_sample)} auto-clustered pairs")
     logger.info(f"Sampled {len(queue_sample)} queued pairs")
-    
+
     # Check if LLM is available (required for validation)
     ollama_check = subprocess.run(["which", "ollama"], capture_output=True)
     if ollama_check.returncode != 0:
@@ -243,7 +243,7 @@ def main():
         logger.error("Install: brew install ollama && ollama pull llama3.2:3b")
         logger.error("="*60)
         return 1
-    
+
     # Check if model is available
     model_check = subprocess.run(["ollama", "list"], capture_output=True, text=True)
     if "llama3.2:3b" not in model_check.stdout and "mistral" not in model_check.stdout:
@@ -252,53 +252,53 @@ def main():
         if pull_result.returncode != 0:
             logger.error("Failed to pull model. Please run: ollama pull llama3.2:3b")
             return 1
-    
+
     # Evaluate with LLM using parallel async HTTP API
     # Create evaluator with parallel processing enabled (default)
     template_path = Path(__file__).parent / 'llm_prompt_template.txt'
-    
+
     evaluator = ClusteringEvaluator(
         llm_validator=None,  # None = use async HTTP API
         prompt_template_path=template_path,
         use_parallel=True,  # Enable parallel processing (2-4x faster)
         max_concurrent=4  # Match Ollama server parallel config
     )
-    
+
     # Evaluator now handles dict pairs directly (converts internally for async)
     results = evaluator.evaluate_samples(auto_sample, queue_sample)
     metrics = results.metrics
     false_positives = results.false_positives
     false_negatives = results.false_negatives
-    
+
     # Warn if too many samples were skipped (LLM unavailable)
     total_skipped = metrics['auto_clustered']['skipped'] + metrics['queued_for_review']['skipped']
     if total_skipped > len(auto_sample) * 0.1:  # More than 10% skipped
         logger.warning(f"WARNING: {total_skipped} samples skipped ({total_skipped/len(auto_sample)*100:.1f}%). "
                       f"Precision measurement may be unreliable.")
-    
+
     # Print results
     print("\n" + "="*60)
     print(f"THRESHOLD TEST RESULTS (threshold={args.threshold:.3f})")
     print("="*60)
-    print(f"\nSample Size:")
+    print("\nSample Size:")
     print(f"  Auto-clustered: {len(auto_sample):,} pairs evaluated")
     print(f"  Queued: {len(queue_sample):,} pairs evaluated")
-    print(f"\nMetrics:")
+    print("\nMetrics:")
     print(f"  Precision: {metrics['overall']['precision']:.2%}")
     print(f"  Recall: {metrics['overall']['recall']:.2%}")
     print(f"  F1 Score: {metrics['overall']['f1_score']:.3f}")
-    print(f"\nAuto-Clustered Breakdown:")
+    print("\nAuto-Clustered Breakdown:")
     print(f"  True positives: {metrics['auto_clustered']['true_positives']}")
     print(f"  False positives: {metrics['auto_clustered']['false_positives']}")
     print(f"  Skipped: {metrics['auto_clustered']['skipped']}")
-    print(f"\nQueued Breakdown:")
+    print("\nQueued Breakdown:")
     print(f"  True negatives: {metrics['queued_for_review']['true_negatives']}")
     print(f"  False negatives: {metrics['queued_for_review']['false_negatives']}")
     print(f"  Skipped: {metrics['queued_for_review']['skipped']}")
-    print(f"\nTotal Pairs:")
+    print("\nTotal Pairs:")
     print(f"  Auto-clustered: {len(auto_clustered):,}")
     print(f"  Queued: {len(queued):,}")
-    
+
     # Show false positives
     if false_positives:
         print(f"\n{'='*60}")
@@ -315,8 +315,8 @@ def main():
         if len(false_positives) > max_show:
             print(f"\n... and {len(false_positives) - max_show} more")
     else:
-        print(f"\n✓ No false positives found!")
-    
+        print("\n✓ No false positives found!")
+
     # Show false negatives
     if false_negatives:
         print(f"\n{'='*60}")
@@ -333,10 +333,10 @@ def main():
         if len(false_negatives) > max_show:
             print(f"\n... and {len(false_negatives) - max_show} more")
     else:
-        print(f"\n✓ No false negatives found!")
-    
+        print("\n✓ No false negatives found!")
+
     print("\n" + "="*60)
-    
+
     # Save results JSON
     result_file = f"{args.output_dir}/results_threshold_{args.threshold:.3f}.json"
     with open(result_file, 'w') as f:
@@ -352,9 +352,9 @@ def main():
             'false_positives': false_positives,
             'false_negatives': false_negatives,
         }, f, indent=2)
-    
+
     print(f"Results saved to: {result_file}")
-    
+
     # Save false positives MD file
     if false_positives:
         md_file = f"{args.output_dir}/false_positives_threshold_{args.threshold:.3f}.md"
@@ -363,7 +363,7 @@ def main():
             f.write(f"**Total False Positives:** {len(false_positives)}\n\n")
             f.write(f"Generated from evaluation with sample size: {len(auto_sample)} auto-clustered pairs\n\n")
             f.write("---\n\n")
-            
+
             for i, fp in enumerate(false_positives, 1):
                 f.write(f"## False Positive {i}\n\n")
                 f.write(f"**Employer 1:** {fp['emp1_name']}\n")
@@ -374,11 +374,11 @@ def main():
                 if fp.get('llm_response'):
                     f.write(f"**LLM Response:**\n```\n{fp['llm_response']}\n```\n\n")
                 f.write("---\n\n")
-        
+
         print(f"False positives saved to: {md_file}")
     else:
         print("No false positives to save.")
-    
+
     return 0
 
 

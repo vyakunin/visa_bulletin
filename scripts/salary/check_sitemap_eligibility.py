@@ -2,6 +2,7 @@
 """Check how many job title clusters are eligible for sitemap"""
 
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -18,7 +19,7 @@ def main():
         slug__isnull=False,
         total_filings__gte=10
     ).count()
-    
+
     print("Job Title Cluster Sitemap Eligibility")
     print("=" * 80)
     print(f"Total clusters: {total:,}")
@@ -26,7 +27,7 @@ def main():
     print(f"With total_filings >= 10: {with_filings:,}")
     print(f"Eligible for sitemap (both): {eligible:,}")
     print("=" * 80)
-    
+
     if eligible == 0:
         print("\n⚠️  No clusters eligible for sitemap!")
         print("The total_filings field on JobTitleCluster may need to be updated.")

@@ -2,14 +2,17 @@
 
 import json
 
+from django.conf import settings
+from django.db.models import Avg, Count, Sum
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
-from django.conf import settings
-from django_config.cache_utils import cache_page_skip_bots
-from django.db.models import Avg, Count, Sum
 
-from lib.utils.pagination import calculate_pagination_info, build_pagination_query_string
+from django_config.cache_utils import cache_page_skip_bots
+from lib.utils.pagination import (
+    build_pagination_query_string,
+    calculate_pagination_info,
+)
 from models.job_title import JobTitleCluster
 
 # Years for "recent" filings; must match scripts/salary/update_job_title_cluster_stats.RECENT_YEARS
@@ -100,17 +103,17 @@ def job_title_directory_view(request):
         page = int(request.GET.get('page', 1))
     except (ValueError, TypeError):
         page = 1
-    
+
     per_page = 50
     base_titles = _get_job_title_directory_base_queryset()
     summary = _get_job_title_directory_summary(base_titles)
     featured = _get_job_title_directory_featured(base_titles)
-    
+
     titles = base_titles
     if query:
         titles = titles.filter(canonical_title__icontains=query)
     titles = titles.order_by('-total_filings', 'canonical_title')
-    
+
     total_results = titles.count()
     has_titles_without_slugs = False
     if query and total_results == 0:
@@ -118,14 +121,14 @@ def job_title_directory_view(request):
             canonical_title__icontains=query,
             slug__isnull=True,
         ).exists()
-    
+
     pagination = calculate_pagination_info(total_results, page, per_page)
     titles = titles[pagination['offset']:pagination['offset'] + per_page]
     params = {
         'query': query,
         'page': page,
     }
-    
+
     context = {
         'query': query,
         'titles': titles,
@@ -146,5 +149,5 @@ def job_title_directory_view(request):
         # Autocomplete URL
         'job_title_autocomplete_url': request.build_absolute_uri(reverse('job_title_autocomplete')),
     }
-    
+
     return render(request, 'webapp/job_title_directory.html', context)

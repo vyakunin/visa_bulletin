@@ -1,7 +1,8 @@
 """Job title models for normalization and clustering"""
 
-from django.db import models
 import re
+
+from django.db import models
 
 
 class JobTitleCluster(models.Model):
@@ -16,7 +17,7 @@ class JobTitleCluster(models.Model):
         help_text="Representative title for the cluster (e.g., 'Software Engineer'). "
         "Set by update_job_title_cluster_stats to the most frequent SalaryRecord.job_title in the cluster.",
     )
-    
+
     slug = models.SlugField(
         max_length=255,
         unique=True,
@@ -25,19 +26,19 @@ class JobTitleCluster(models.Model):
         blank=True,
         help_text="URL-safe slug for job title (e.g., 'software-engineer')"
     )
-    
+
     # Aggregated statistics
     total_filings = models.IntegerField(
         default=0,
         help_text="Total filings across all job titles in cluster"
     )
-    
+
     total_filings_recent = models.IntegerField(
         default=0,
         db_index=True,
         help_text="Filings in last N years (for autocomplete ranking); set by update_job_title_cluster_stats"
     )
-    
+
     avg_salary = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -45,41 +46,41 @@ class JobTitleCluster(models.Model):
         blank=True,
         help_text="Average salary across all job titles in cluster"
     )
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         db_table = 'salary_job_title_cluster'
         indexes = [
             models.Index(fields=['canonical_title']),
             models.Index(fields=['slug']),
         ]
-    
+
     def __str__(self):
         return self.canonical_title
-    
+
     def generate_slug(self):
         """Generate URL-safe slug from canonical_title"""
         if not self.canonical_title:
             return ""
-        
+
         from django.utils.text import slugify
-        
+
         # Use Django's slugify to handle basic conversion
         base_slug = slugify(self.canonical_title)
-        
+
         # Ensure uniqueness by checking database
         slug = base_slug
         counter = 1
-        
+
         # Check if this slug already exists (excluding current instance)
         while JobTitleCluster.objects.filter(slug=slug).exclude(pk=self.pk).exists():
             slug = f"{base_slug}-{counter}"
             counter += 1
-        
+
         return slug
-    
+
     def save(self, *args, **kwargs):
         """Auto-generate slug on save if not present"""
         if not self.slug and self.canonical_title:
@@ -93,20 +94,20 @@ class JobTitle(models.Model):
     
     Groups salary records with same job title and seniority level.
     """
-    
+
     # Original and normalized title
     title = models.CharField(
         max_length=500,
         help_text="Representative job title: initially the first raw title seen; "
         "update_job_title_cluster_stats sets it to the most frequent SalaryRecord.job_title for this entity.",
     )
-    
+
     title_normalized = models.CharField(
         max_length=500,
         db_index=True,
         help_text="Normalized title for matching (no seniority indicators)"
     )
-    
+
     # Experience/seniority level extracted from title
     experience_level = models.CharField(
         max_length=20,
@@ -127,7 +128,7 @@ class JobTitle(models.Model):
         db_index=True,
         help_text="Extracted experience/seniority level"
     )
-    
+
     # Link to canonical cluster
     canonical_cluster = models.ForeignKey(
         JobTitleCluster,
@@ -137,14 +138,14 @@ class JobTitle(models.Model):
         related_name='job_titles',
         help_text="Canonical job title cluster"
     )
-    
+
     # Aggregated statistics
     total_filings = models.IntegerField(default=0)
     avg_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         db_table = 'salary_job_title'
         unique_together = ['title_normalized', 'experience_level']
@@ -152,7 +153,7 @@ class JobTitle(models.Model):
             models.Index(fields=['title_normalized']),
             models.Index(fields=['experience_level']),
         ]
-    
+
     def __str__(self):
         if self.experience_level:
             return f"{self.format_experience_level(self.experience_level)} {self.title}"
@@ -181,18 +182,18 @@ class JobTitle(models.Model):
             return roman_map[normalized]
 
         return normalized.replace('_', ' ').title()
-    
+
     # Clustering engine compatibility properties
     @property
     def name(self) -> str:
         """Alias for title (clustering engine compatibility)"""
         return self.title
-    
+
     @property
     def name_normalized(self) -> str:
         """Alias for title_normalized (clustering engine compatibility)"""
         return self.title_normalized
-    
+
     @staticmethod
     def normalize_title(title: str) -> str:
         """
@@ -203,16 +204,16 @@ class JobTitle(models.Model):
         """
         if not title:
             return ""
-        
+
         normalized = title.lower().strip()
-        
+
         # Standard normalization (from employer patterns)
         normalized = re.sub(r'\s*&\s*', ' and ', normalized)
-        
+
         # Handle parentheticals:
         # - Remove noise: job codes, multiple openings, ACWIA, level markers
         # - Keep meaningful specializations: technologies, position levels, etc.
-        
+
         # Patterns to REMOVE completely (noise)
         noise_parenthetical_patterns = [
             r'\(multiple\s*(openings?|positions?)?\)',  # (Multiple Openings), (multiple positions)
@@ -227,7 +228,7 @@ class JobTitle(models.Model):
         ]
         for pattern in noise_parenthetical_patterns:
             normalized = re.sub(pattern, ' ', normalized, flags=re.IGNORECASE)
-        
+
         # For ALL remaining parentheticals, extract content with markers to protect from seniority removal
         # This keeps specializations like (Java/J2EE), (Game Development), (.NET), (Manager), (Full Stack)
         parenthetical_contents = []
@@ -243,24 +244,24 @@ class JobTitle(models.Model):
                 # Use alphanumeric placeholder (no underscores) to survive cleanup
                 return f' XPARENX{idx}XPARENX '
             return ' '
-        
+
         normalized = re.sub(r'\(([^)]+)\)', extract_parenthetical, normalized)
-        
+
         normalized = re.sub(r'[-_]', ' ', normalized)
         normalized = re.sub(r'[^\w\s]', ' ', normalized)
         normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
+
         # Detect level markers BEFORE removing digits
         # This ensures "Manager 2, Supply Chain" keeps "manager" because of the "2"
         level_marker_pattern = r'\b(i{1,3}|iv|v|[1-5])\b(?!\w)'
         has_level_marker = bool(re.search(level_marker_pattern, normalized))
-        
+
         # NOW remove standalone digits (but level marker detection already happened)
         normalized = re.sub(r'\s+\d+\s+', ' ', normalized)
         normalized = re.sub(r'\s+\d+$', '', normalized)
         normalized = re.sub(r'^\d+\s+', '', normalized)
         normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
+
         # Apply seniority removal (parenthetical content is protected by placeholders)
         seniority_patterns = [
             r'\bentry[ -]level\b', r'\bentry\b', r'\bjunior\b', r'\bjr\.?\b',
@@ -293,14 +294,14 @@ class JobTitle(models.Model):
 
         if has_level_marker and has_role_word:
             normalized = re.sub(level_marker_pattern, ' ', normalized)
-        
+
         # Restore parenthetical content
         for idx, content in enumerate(parenthetical_contents):
             normalized = normalized.replace(f'XPARENX{idx}XPARENX', content)
-        
+
         # Clean up whitespace again after seniority removal and restoration
         normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
+
         # Title standardization: map common variants to a canonical form for matching.
         title_equivalents = {
             'software developer': 'software engineer',
@@ -342,9 +343,9 @@ class JobTitle(models.Model):
         """
         if not title:
             return ''
-        
+
         title_lower = title.lower()
-        
+
         # Level markers take precedence over role words
         roman_levels = [
             ('v', r'\bv\b(?!\w)'),
@@ -379,33 +380,33 @@ class JobTitle(models.Model):
             ('junior', [r'\bjunior\b', r'\bjr\.?\b']),
             ('entry', [r'\bentry[ -]level\b', r'\bentry\b']),
         ]
-        
+
         for level, patterns in seniority_checks:
             for pattern in patterns:
                 if re.search(pattern, title_lower):
                     return level
-        
+
         return ''
 
 
 class JobTitleClusteringReview(models.Model):
     """Review queue for ambiguous job title matches"""
-    
+
     job_title1 = models.ForeignKey(
         JobTitle,
         on_delete=models.CASCADE,
         related_name='review_pairs_as_first'
     )
-    
+
     job_title2 = models.ForeignKey(
         JobTitle,
         on_delete=models.CASCADE,
         related_name='review_pairs_as_second'
     )
-    
+
     similarity_score = models.FloatField(help_text="Similarity score (0.0-1.0)")
     match_reason = models.TextField(blank=True)
-    
+
     status = models.CharField(
         max_length=20,
         choices=[
@@ -417,12 +418,12 @@ class JobTitleClusteringReview(models.Model):
         default='pending',
         db_index=True
     )
-    
+
     reviewed_by = models.CharField(max_length=100, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         db_table = 'salary_job_title_clustering_review'
         unique_together = ['job_title1', 'job_title2']

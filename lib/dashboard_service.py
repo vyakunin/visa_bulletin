@@ -9,13 +9,12 @@ from datetime import date
 from itertools import groupby
 from operator import attrgetter
 
-from models.visa_cutoff_date import VisaCutoffDate
-from models.enums.visa_category import VisaCategory
-from models.enums.action_type import ActionType
-from models.enums.country import Country
-from models.enums.family_preference import FamilyPreference
-from models.enums.employment_preference import EmploymentPreference
 from lib.projection import calculate_projection
+from models.enums.country import Country
+from models.enums.employment_preference import EmploymentPreference
+from models.enums.family_preference import FamilyPreference
+from models.enums.visa_category import VisaCategory
+from models.visa_cutoff_date import VisaCutoffDate
 
 
 @dataclass
@@ -27,7 +26,7 @@ class VisaClassData:
     cutoff_dates: list[date | None]
     bulletin_urls: list[str]
     projection: dict | None = None
-    
+
     def to_dict(self) -> dict:
         """Convert to dict for template context"""
         return {
@@ -51,7 +50,7 @@ def get_visa_classes_for_category(category: str) -> list[tuple[str, str]]:
         List of (value, label) tuples
     """
     from lib.visa_class_utils import get_deduplicated_employment_classes
-    
+
     if category == VisaCategory.FAMILY_SPONSORED.value:
         return FamilyPreference.choices
     elif category == VisaCategory.EMPLOYMENT_BASED.value:
@@ -86,12 +85,12 @@ def get_aggregated_visa_class_data(
         country=country,
         action_type=action_type
     ).select_related('bulletin').order_by('visa_class', 'bulletin__publication_date')
-    
+
     if category == VisaCategory.EMPLOYMENT_BASED.value:
         visa_class_data = _aggregate_employment_data(all_cutoff_data, submission_date)
     else:
         visa_class_data = _aggregate_family_data(all_cutoff_data, submission_date)
-    
+
     return visa_class_data, bool(visa_class_data)
 
 
@@ -106,16 +105,16 @@ def _aggregate_employment_data(
     that need to be normalized and aggregated.
     """
     normalized_data: dict[str, VisaClassData] = {}
-    
+
     for visa_class, records in groupby(cutoff_data, key=attrgetter('visa_class')):
         # Normalize to display name (e.g., "1st" → "EB-1: Priority Workers")
         display_name = EmploymentPreference.normalize_for_display(visa_class)
-        
+
         # Skip unrecognized classes (normalization returns same as input)
         if not display_name or display_name == visa_class:
             list(records)  # Consume iterator
             continue
-        
+
         # Initialize or get existing data for this normalized class
         if display_name not in normalized_data:
             normalized_data[display_name] = VisaClassData(
@@ -125,9 +124,9 @@ def _aggregate_employment_data(
                 cutoff_dates=[],
                 bulletin_urls=[]
             )
-        
+
         _append_records_to_data(normalized_data[display_name], records)
-    
+
     return _finalize_aggregated_data(normalized_data, submission_date)
 
 
@@ -143,18 +142,18 @@ def _aggregate_family_data(
     """
     visa_classes_map = {vc[0]: vc[1] for vc in FamilyPreference.choices}
     normalized_data: dict[str, VisaClassData] = {}
-    
+
     for visa_class, records in groupby(cutoff_data, key=attrgetter('visa_class')):
         # Normalize legacy name (e.g., "1st" → "F1", "2A" → "F2A")
         normalized_class = FamilyPreference.normalize_legacy_name(visa_class)
-        
+
         # Skip unrecognized classes
         if normalized_class not in visa_classes_map:
             list(records)  # Consume iterator
             continue
-        
+
         visa_class_label = visa_classes_map[normalized_class]
-        
+
         if normalized_class not in normalized_data:
             normalized_data[normalized_class] = VisaClassData(
                 visa_class=normalized_class,
@@ -163,9 +162,9 @@ def _aggregate_family_data(
                 cutoff_dates=[],
                 bulletin_urls=[]
             )
-        
+
         _append_records_to_data(normalized_data[normalized_class], records)
-    
+
     return _finalize_aggregated_data(normalized_data, submission_date)
 
 
@@ -173,14 +172,14 @@ def _append_records_to_data(data: VisaClassData, records) -> None:
     """Append bulletin records to visa class data, avoiding duplicates"""
     for record in records:
         pub_date = record.bulletin.publication_date
-        
+
         # Avoid duplicates (same date from different name variants)
         if pub_date in data.dates:
             continue
-        
+
         data.dates.append(pub_date)
         data.bulletin_urls.append(record.bulletin.get_bulletin_url())
-        
+
         if record.is_current:
             data.cutoff_dates.append(pub_date)
         elif record.is_unavailable:
@@ -195,21 +194,21 @@ def _finalize_aggregated_data(
 ) -> list[dict]:
     """Sort data by date, calculate projections, and convert to dicts"""
     result = []
-    
+
     for data in normalized_data.values():
         if not data.dates:
             continue
-        
+
         # Sort all lists by date
         sorted_indices = sorted(range(len(data.dates)), key=lambda i: data.dates[i])
         data.dates = [data.dates[i] for i in sorted_indices]
         data.cutoff_dates = [data.cutoff_dates[i] for i in sorted_indices]
         data.bulletin_urls = [data.bulletin_urls[i] for i in sorted_indices]
-        
+
         # Calculate projection
         data.projection = calculate_projection(data.dates, data.cutoff_dates, submission_date)
         result.append(data.to_dict())
-    
+
     # Sort by label for consistent ordering
     result.sort(key=lambda x: x['visa_class_label'])
     return result
@@ -233,21 +232,21 @@ def build_seo_metadata(
     """
     category_display = _get_display_label(VisaCategory, category)
     country_display = _get_display_label(Country, country)
-    
+
     current_year = date.today().year
     current_month_name = date.today().strftime("%B")
-    
+
     # Dynamic title
     if country == Country.ALL.value and category == VisaCategory.FAMILY_SPONSORED.value:
         page_title = f"Visa Bulletin Predictions {current_year} - Priority Date Tracker"
     else:
         page_title = f"{country_display} {category_display} Visa Bulletin Predictions & Tracker - {current_month_name} {current_year}"
-    
+
     page_description = (
         f"Track current priority dates and projections for {country_display} {category_display} visas. "
         f"View historical trends, see when dates will move, and estimate your green card wait time."
     )
-    
+
     structured_data = {
         "@context": "https://schema.org",
         "@type": "Dataset",
@@ -268,7 +267,7 @@ def build_seo_metadata(
             "encodingFormat": "text/html"
         }
     }
-    
+
     return {
         'page_title': page_title,
         'page_description': page_description,

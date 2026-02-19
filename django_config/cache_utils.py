@@ -11,7 +11,6 @@ import re
 from django.core.cache import cache
 from django.utils.cache import get_cache_key
 
-
 # Same bot list as nginx gptbot-rate-limit.conf (case-insensitive match).
 BOT_USER_AGENT_PATTERNS = (
     r"GPTBot",

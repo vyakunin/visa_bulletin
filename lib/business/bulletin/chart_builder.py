@@ -5,10 +5,10 @@ Creates Plotly charts with historical data and projections.
 """
 
 from datetime import date
+
 import plotly.graph_objects as go
 
 from models.enums.country import Country
-
 
 # Color palette for multiple visa classes
 VISA_CLASS_COLORS = [
@@ -45,33 +45,33 @@ def build_multi_class_chart_with_projections(
     trace_info = []
     current_trace_idx = 0
     max_projection_date = None
-    
+
     # Add traces for each visa class
     for idx, data in enumerate(visa_class_data):
         color = VISA_CLASS_COLORS[idx % len(VISA_CLASS_COLORS)]
-        
+
         trace_indices, proj_date, current_trace_idx = _add_visa_class_traces(
             fig, data, color, submission_date, current_trace_idx
         )
-        
+
         if proj_date and (max_projection_date is None or proj_date > max_projection_date):
             max_projection_date = proj_date
-        
+
         trace_info.append({
             'visa_class': data['visa_class'],
             'label': data.get('visa_class_label', data['visa_class']),
             'color': color,
             'trace_indices': trace_indices
         })
-    
+
     # Add priority date line
     priority_date_trace_idx = current_trace_idx
     if visa_class_data:
         _add_priority_date_line(fig, visa_class_data, submission_date, max_projection_date)
-    
+
     # Configure layout
     _apply_chart_layout(fig, category_label, country)
-    
+
     return {
         'chart_json': fig.to_json(),
         'trace_info': trace_info,
@@ -98,10 +98,10 @@ def _add_visa_class_traces(
     cutoff_dates = data['cutoff_dates']
     projection = data.get('projection')
     bulletin_urls = data.get('bulletin_urls', [])
-    
+
     trace_indices = []
     projection_date = None
-    
+
     # Historical data trace
     customdata = bulletin_urls if bulletin_urls else [None] * len(dates)
     fig.add_trace(go.Scatter(
@@ -121,7 +121,7 @@ def _add_visa_class_traces(
     ))
     trace_indices.append(current_idx)
     current_idx += 1
-    
+
     # Projection trace (if available)
     if projection and projection.get('estimated_date'):
         last_valid_cutoff = next((c for c in reversed(cutoff_dates) if c is not None), None)
@@ -149,7 +149,7 @@ def _add_visa_class_traces(
             ))
             trace_indices.append(current_idx)
             current_idx += 1
-    
+
     return trace_indices, projection_date, current_idx
 
 
@@ -162,7 +162,7 @@ def _add_priority_date_line(
     """Add horizontal line showing user's priority date"""
     first_dates = visa_class_data[0]['dates']
     line_end = max_projection_date if max_projection_date else first_dates[-1]
-    
+
     fig.add_trace(go.Scatter(
         x=[first_dates[0], line_end],
         y=[submission_date, submission_date],
@@ -178,7 +178,7 @@ def _apply_chart_layout(fig: go.Figure, category_label: str, country: str) -> No
     country_label = _get_country_label(country)
     # Title on left to avoid modebar overlap
     title_text = f'{category_label} ({country_label})'
-    
+
     fig.update_layout(
         title=dict(
             text=title_text,
@@ -238,11 +238,11 @@ def build_chart_with_projection(
         'projection': projection,
         'bulletin_urls': bulletin_urls
     }]
-    
+
     chart_data = build_multi_class_chart_with_projections(
         visa_class_data, submission_date, country, visa_class
     )
-    
+
     return _wrap_chart_as_html(chart_data['chart_json'])
 
 

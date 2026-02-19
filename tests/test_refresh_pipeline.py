@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from scripts.cron.refresh.checkpoint import CheckpointData, STEPS_ORDER
 from scripts.cron.refresh.config import RefreshConfig
 from scripts.cron.refresh.pipeline import run_pipeline
 from scripts.cron.refresh.runner import MockRunner

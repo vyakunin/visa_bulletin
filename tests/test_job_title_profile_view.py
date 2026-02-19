@@ -1,30 +1,36 @@
 """Tests for job title profile view."""
 
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
+import json
 import sys
 import unittest
-import json
+from decimal import Decimal
+
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
-from django.db import connection
+
+from models.enums.visa_program import CaseStatus, VisaProgram, WageUnit
 from models.job_title import JobTitle, JobTitleCluster
-from models.salary import SalaryRecord, Employer, EmployerCluster
-from models.enums.visa_program import VisaProgram, WageUnit, CaseStatus
-from decimal import Decimal
+from models.salary import Employer, EmployerCluster, SalaryRecord
 
 try:
     from scripts.salary.update_job_title_cluster_stats import (
-        main as update_job_title_cluster_stats_main,
         _most_frequent_raw_title_per_cluster,
+    )
+    from scripts.salary.update_job_title_cluster_stats import (
+        main as update_job_title_cluster_stats_main,
     )
 except ImportError:
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from scripts.salary.update_job_title_cluster_stats import (
-        main as update_job_title_cluster_stats_main,
         _most_frequent_raw_title_per_cluster,
+    )
+    from scripts.salary.update_job_title_cluster_stats import (
+        main as update_job_title_cluster_stats_main,
     )
 
 
@@ -37,12 +43,12 @@ except ImportError:
 )
 class TestJobTitleProfileView(TestCase):
     """Test job title profile view functionality"""
-    
+
     def setUp(self):
         """Set up test data"""
         from django.core.cache import cache
         cache.clear()
-        
+
         # Create employer cluster and employer
         self.employer_cluster, _ = EmployerCluster.objects.get_or_create(
             slug="test-company-inc-jt",
@@ -50,7 +56,7 @@ class TestJobTitleProfileView(TestCase):
                 'canonical_name': "Test Company Inc",
             }
         )
-        
+
         self.employer, _ = Employer.objects.get_or_create(
             name="Test Company Inc JT",
             defaults={
@@ -60,7 +66,7 @@ class TestJobTitleProfileView(TestCase):
                 'canonical_cluster': self.employer_cluster
             }
         )
-        
+
         # Create job title cluster
         self.cluster, _ = JobTitleCluster.objects.get_or_create(
             slug="software-engineer-test",
@@ -70,7 +76,7 @@ class TestJobTitleProfileView(TestCase):
                 'avg_salary': Decimal('150000.00')
             }
         )
-        
+
         # Create job titles with different experience levels
         self.job_title_senior, _ = JobTitle.objects.get_or_create(
             title_normalized="software engineer test",
@@ -82,7 +88,7 @@ class TestJobTitleProfileView(TestCase):
                 'avg_salary': Decimal('180000.00')
             }
         )
-        
+
         self.job_title_junior, _ = JobTitle.objects.get_or_create(
             title_normalized="software engineer test",
             experience_level="junior",
@@ -93,10 +99,10 @@ class TestJobTitleProfileView(TestCase):
                 'avg_salary': Decimal('120000.00')
             }
         )
-        
+
         # Clean up any existing test records
         SalaryRecord.objects.filter(case_number__startswith="TEST-JT-").delete()
-        
+
         # Create salary records
         for i in range(5):
             SalaryRecord.objects.create(
@@ -116,7 +122,7 @@ class TestJobTitleProfileView(TestCase):
                 source_file="test.xlsx",
                 is_worksite=False
             )
-        
+
         for i in range(3):
             SalaryRecord.objects.create(
                 case_number=f"TEST-JT-{i}-JUNIOR",
@@ -135,48 +141,48 @@ class TestJobTitleProfileView(TestCase):
                 source_file="test.xlsx",
                 is_worksite=False
             )
-    
+
     def test_slug_generation_uniqueness(self):
         """Test that slug generation creates unique slugs"""
         # Create cluster with same canonical title
         cluster2 = JobTitleCluster.objects.create(
             canonical_title="Software Engineer"
         )
-        
+
         # Should auto-generate unique slug
         self.assertIsNotNone(cluster2.slug)
         self.assertNotEqual(cluster2.slug, self.cluster.slug)
         self.assertTrue(cluster2.slug.startswith('software-engineer'))
-    
+
     def test_slug_generation_on_save(self):
         """Test that slug is auto-generated on save"""
         cluster = JobTitleCluster.objects.create(
             canonical_title="Data Scientist"
         )
-        
+
         self.assertIsNotNone(cluster.slug)
         self.assertEqual(cluster.slug, "data-scientist")
-    
+
     def test_view_returns_200_for_valid_slug(self):
         """Test that view returns 200 for valid cluster slug"""
         client = Client()
         response = client.get(reverse('job_title_profile', kwargs={'slug': 'software-engineer-test'}))
-        
+
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Software Engineer Test")
-    
+
     def test_view_returns_404_for_invalid_slug(self):
         """Test that view returns 404 for invalid slug"""
         client = Client()
         response = client.get(reverse('job_title_profile', kwargs={'slug': 'nonexistent-job'}))
-        
+
         self.assertEqual(response.status_code, 404)
-    
+
     def test_view_content_includes_key_sections(self):
         """Test that view renders with key content sections"""
         client = Client()
         response = client.get(reverse('job_title_profile', kwargs={'slug': 'software-engineer-test'}))
-        
+
         self.assertEqual(response.status_code, 200)
         # Check for key sections in rendered HTML
         self.assertContains(response, "Market Overview")
@@ -273,7 +279,7 @@ class TestJobTitleProfileView(TestCase):
             )
         # Count by normalized title (10 = 8 in self.cluster + 2 in other_cluster)
         self.assertEqual(stats["basic"]["total_filings"], 10)
-    
+
     def test_redirect_for_title_variation(self):
         """Test that view redirects for title variations to canonical slug"""
         # Create a different cluster with similar name
@@ -283,7 +289,7 @@ class TestJobTitleProfileView(TestCase):
                 'canonical_title': "Software Developer Test",
             }
         )
-        
+
         job_title, _ = JobTitle.objects.get_or_create(
             title_normalized="software developer test",
             experience_level="",
@@ -292,14 +298,14 @@ class TestJobTitleProfileView(TestCase):
                 'canonical_cluster': similar_cluster
             }
         )
-        
+
         client = Client()
         # Try accessing with a variation that should redirect
         response = client.get(
             reverse('job_title_profile', kwargs={'slug': 'software-dev'}),
             follow=False
         )
-        
+
         # Should either return 200 or redirect (depending on match logic)
         self.assertIn(response.status_code, [200, 301, 302, 404])
 
@@ -313,66 +319,66 @@ class TestJobTitleProfileView(TestCase):
 )
 class TestJobTitleSlugGeneration(TestCase):
     """Test slug generation for JobTitleCluster"""
-    
+
     def test_generate_slug_basic(self):
         """Test basic slug generation"""
         cluster = JobTitleCluster(canonical_title="Software Engineer")
         slug = cluster.generate_slug()
-        
+
         self.assertEqual(slug, "software-engineer")
-    
+
     def test_generate_slug_with_special_chars(self):
         """Test slug generation with special characters"""
         cluster = JobTitleCluster(canonical_title="C++ Developer / Architect")
         slug = cluster.generate_slug()
-        
+
         self.assertEqual(slug, "c-developer-architect")
-    
+
     def test_generate_slug_uniqueness(self):
         """Test that duplicate titles get unique slugs"""
         # Clean up any existing test clusters first
         JobTitleCluster.objects.filter(canonical_title="Data Scientist Test Unique").delete()
-        
+
         cluster1 = JobTitleCluster.objects.create(
             canonical_title="Data Scientist Test Unique"
         )
-        
+
         cluster2 = JobTitleCluster.objects.create(
             canonical_title="Data Scientist Test Unique"
         )
-        
+
         self.assertNotEqual(cluster1.slug, cluster2.slug)
         self.assertEqual(cluster1.slug, "data-scientist-test-unique")
         self.assertTrue(cluster2.slug.startswith("data-scientist-test-unique"))
-    
+
     def test_slug_auto_generated_on_save(self):
         """Test that slug is auto-generated when saving without slug"""
         # Clean up any existing test clusters first
         JobTitleCluster.objects.filter(canonical_title="Machine Learning Engineer Test").delete()
-        
+
         cluster = JobTitleCluster.objects.create(
             canonical_title="Machine Learning Engineer Test"
         )
-        
+
         self.assertIsNotNone(cluster.slug)
         self.assertEqual(cluster.slug, "machine-learning-engineer-test")
-    
+
     def test_slug_not_overwritten_if_exists(self):
         """Test that existing slug is not overwritten"""
         # Clean up any existing test clusters first
         JobTitleCluster.objects.filter(slug="custom-slug-test").delete()
-        
+
         cluster = JobTitleCluster.objects.create(
             canonical_title="DevOps Engineer Test",
             slug="custom-slug-test"
         )
-        
+
         self.assertEqual(cluster.slug, "custom-slug-test")
-        
+
         # Update and save - slug should remain
         cluster.total_filings = 100
         cluster.save()
-        
+
         cluster.refresh_from_db()
         self.assertEqual(cluster.slug, "custom-slug-test")
 
@@ -389,8 +395,9 @@ class TestJobTitleAutocompleteView(TestCase):
 
     def setUp(self):
         """Set up test data for autocomplete."""
-        from django.core.cache import cache
         from datetime import datetime
+
+        from django.core.cache import cache
         cache.clear()
 
         self.cluster_software = JobTitleCluster.objects.create(
@@ -521,14 +528,14 @@ class TestJobTitleAutocompleteView(TestCase):
 )
 class TestJobTitleStatistics(TestCase):
     """Test job title statistics calculations"""
-    
+
     def setUp(self):
         """Set up test data"""
         from django.core.cache import cache
-        from lib.business.salary.job_title_stats import get_job_title_statistics
-        
+
+
         cache.clear()
-        
+
         # Create employers
         employer_cluster, _ = EmployerCluster.objects.get_or_create(
             slug="tech-corp-test",
@@ -536,7 +543,7 @@ class TestJobTitleStatistics(TestCase):
                 'canonical_name': "Tech Corp Test",
             }
         )
-        
+
         employer, _ = Employer.objects.get_or_create(
             name="Tech Corp Test",
             defaults={
@@ -559,7 +566,7 @@ class TestJobTitleStatistics(TestCase):
                 'canonical_cluster': employer_cluster_2
             }
         )
-        
+
         # Create job title cluster
         self.cluster, _ = JobTitleCluster.objects.get_or_create(
             slug="data-analyst-test",
@@ -567,7 +574,7 @@ class TestJobTitleStatistics(TestCase):
                 'canonical_title': "Data Analyst Test",
             }
         )
-        
+
         # Create job title
         job_title, _ = JobTitle.objects.get_or_create(
             title_normalized="data analyst test",
@@ -577,10 +584,10 @@ class TestJobTitleStatistics(TestCase):
                 'canonical_cluster': self.cluster
             }
         )
-        
+
         # Clean up any existing test records
         SalaryRecord.objects.filter(case_number__startswith="TEST-STATS-JT-").delete()
-        
+
         # Create salary records with varying salaries
         salaries = [80000, 90000, 100000, 110000, 120000]
         for i, salary in enumerate(salaries):
@@ -619,41 +626,41 @@ class TestJobTitleStatistics(TestCase):
                 source_file="test.xlsx",
                 is_worksite=False
             )
-    
+
     def test_statistics_basic_aggregation(self):
         """Test that basic statistics are calculated correctly"""
         from lib.business.salary.job_title_stats import get_job_title_statistics
-        
+
         stats = get_job_title_statistics(self.cluster, years=5, program_filter='all')
-        
+
         self.assertIn('basic', stats)
         self.assertEqual(stats['basic']['total_filings'], 8)
         self.assertIsNotNone(stats['basic']['median_salary'])
-    
+
     def test_statistics_salary_percentiles(self):
         """Test that salary percentiles are calculated"""
         from lib.business.salary.job_title_stats import get_job_title_statistics
-        
+
         stats = get_job_title_statistics(self.cluster, years=5, program_filter='all')
-        
+
         self.assertIn('salary_percentiles', stats)
         percentiles = stats['salary_percentiles']
-        
+
         # Check that percentiles are in ascending order
         self.assertLessEqual(percentiles['p10'], percentiles['p25'])
         self.assertLessEqual(percentiles['p25'], percentiles['p50'])
         self.assertLessEqual(percentiles['p50'], percentiles['p75'])
         self.assertLessEqual(percentiles['p75'], percentiles['p90'])
-    
+
     def test_statistics_geographic_distribution(self):
         """Test that geographic distribution is included"""
         from lib.business.salary.job_title_stats import get_job_title_statistics
-        
+
         stats = get_job_title_statistics(self.cluster, years=5, program_filter='all')
-        
+
         self.assertIn('geographic_dist', stats)
         self.assertGreater(len(stats['geographic_dist']), 0)
-        
+
         # Should have CA data
         self.assertEqual(stats['geographic_dist'][0]['worksite_state'], 'CA')
 
@@ -699,8 +706,9 @@ class TestJobTitleDataCoherence(TestCase):
     """
 
     def setUp(self):
-        from django.core.cache import cache
         from datetime import datetime
+
+        from django.core.cache import cache
         cache.clear()
         # Cluster A: representative title "Data Analyst", slug data-analyst-coherence
         self.cluster_a, _ = JobTitleCluster.objects.get_or_create(

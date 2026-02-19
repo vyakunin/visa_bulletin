@@ -35,14 +35,15 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
 from django.core.cache import cache
 from django.http import HttpRequest
 from django.utils.cache import get_cache_key
 
-from lib.utils.logging_utils import ScriptLogger
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
 
 script_logger = ScriptLogger(__file__)
 setup_logging()

@@ -11,6 +11,7 @@ import pytest
 
 # Use shared Django setup utility
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
 
@@ -23,15 +24,16 @@ def django_db_setup(django_db_setup, django_db_blocker):
         bulletin_handler._TABLES_CREATED = True
     except ImportError:
         pass
-    
+
     with django_db_blocker.unblock():
+        import logging
+
         from django.db import connection
+
         from models.bulletin import Bulletin
         from models.visa_cutoff_date import VisaCutoffDate
-        
-        import logging
         logger = logging.getLogger(__name__)
-        
+
         with connection.schema_editor() as schema_editor:
             try:
                 schema_editor.create_model(Bulletin)
@@ -50,13 +52,13 @@ def clean_db(db):
     """Clean database before each test"""
     from models.bulletin import Bulletin
     from models.visa_cutoff_date import VisaCutoffDate
-    
+
     # Setup: Clean before test
     VisaCutoffDate.objects.all().delete()
     Bulletin.objects.all().delete()
-    
+
     yield  # Run the test
-    
+
     # Teardown: Clean after test
     VisaCutoffDate.objects.all().delete()
     Bulletin.objects.all().delete()
@@ -66,8 +68,9 @@ def clean_db(db):
 def sample_bulletin(db):
     """Create a sample bulletin for testing"""
     from datetime import date
+
     from models.bulletin import Bulletin
-    
+
     return Bulletin.objects.create(publication_date=date(2025, 12, 1))
 
 

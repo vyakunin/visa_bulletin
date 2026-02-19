@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .checkpoint import CheckpointData, OLD_STEP_NAME_TO_NEW, STEPS_ORDER, should_skip_step
+from . import steps
+from .checkpoint import (
+    OLD_STEP_NAME_TO_NEW,
+    STEPS_ORDER,
+    CheckpointData,
+    should_skip_step,
+)
 from .config import RefreshConfig, get_env_value
 from .discovery import check_new_sources
-from . import steps
 
 if TYPE_CHECKING:
     from .runner import Runner  # noqa: F401
@@ -99,7 +103,7 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
         except Exception as e:
             logger.exception("Step %s failed: %s", step_name, e)
             raise
-        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         data = CheckpointData(
             last_step=step_name,
             timestamp=ts,

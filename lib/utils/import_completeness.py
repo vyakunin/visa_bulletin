@@ -27,17 +27,17 @@ Usage:
     # This shows both per-file and per-year comparison tables.
 """
 
+import csv
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
+from django.db.models import Count
+
+from lib.parsing.salary.file_detection import is_worksite_file
 from lib.utils.data_source_utils import count_file_rows, get_fiscal_year_from_filename
 from lib.utils.excel_utils import read_excel_streaming
-from lib.parsing.salary.file_detection import is_worksite_file
 from models.salary import SalaryRecord, WorksiteRecord
-from django.db.models import Count
-import csv
 
 
 @dataclass
@@ -49,7 +49,7 @@ class FileComparisonResult:
     discrepancy: int
     discrepancy_pct: float
     by_program: dict[int, int]  # visa_program -> count
-    reason: Optional[str] = None  # Reason for missing records (e.g., "all_duplicates", "worksite_file", "not_imported")
+    reason: str | None = None  # Reason for missing records (e.g., "all_duplicates", "worksite_file", "not_imported")
 
 
 @dataclass
@@ -73,14 +73,14 @@ def get_file_record_counts() -> dict[str, dict]:
         Dict mapping filename to {'total': int, 'by_program': {visa_program: count}}
     """
     result = {}
-    
+
     # Get SalaryRecord counts
     salary_counts = (
         SalaryRecord.objects
         .values('source_file', 'visa_program')
         .annotate(count=Count('id'))
     )
-    
+
     for item in salary_counts:
         source_file = item['source_file']
         if not source_file:  # Skip empty source_file
@@ -92,14 +92,14 @@ def get_file_record_counts() -> dict[str, dict]:
             }
         result[source_file]['total'] += item['count']
         result[source_file]['by_program'][item['visa_program']] = result[source_file]['by_program'].get(item['visa_program'], 0) + item['count']
-    
+
     # Get WorksiteRecord counts (worksite files create WorksiteRecord entries)
     worksite_counts = (
         WorksiteRecord.objects
         .values('source_file', 'visa_program')
         .annotate(count=Count('id'))
     )
-    
+
     for item in worksite_counts:
         source_file = item['source_file']
         if not source_file:  # Skip empty source_file
@@ -111,7 +111,7 @@ def get_file_record_counts() -> dict[str, dict]:
             }
         result[source_file]['total'] += item['count']
         result[source_file]['by_program'][item['visa_program']] = result[source_file]['by_program'].get(item['visa_program'], 0) + item['count']
-    
+
     return result
 
 
@@ -123,7 +123,7 @@ def get_db_counts_by_year() -> dict[int, int]:
         Dict mapping fiscal_year to record count (includes both SalaryRecord and WorksiteRecord)
     """
     db_by_year = {}
-    
+
     # Get SalaryRecord counts by year
     salary_by_year = (
         SalaryRecord.objects
@@ -135,7 +135,7 @@ def get_db_counts_by_year() -> dict[int, int]:
         fy = item['fiscal_year']
         if fy is not None:
             db_by_year[fy] = db_by_year.get(fy, 0) + item['count']
-    
+
     # Get WorksiteRecord counts by year
     worksite_by_year = (
         WorksiteRecord.objects
@@ -147,7 +147,7 @@ def get_db_counts_by_year() -> dict[int, int]:
         fy = item['fiscal_year']
         if fy is not None:
             db_by_year[fy] = db_by_year.get(fy, 0) + item['count']
-    
+
     return db_by_year
 
 
@@ -156,7 +156,7 @@ def _analyze_missing_records_reason(
     filename: str,
     file_rows: int,
     db_count: int
-) -> Optional[str]:
+) -> str | None:
     """
     Analyze why records from a file are missing from the database.
     
@@ -176,10 +176,10 @@ def _analyze_missing_records_reason(
     """
     if db_count > 0:
         return None  # Some records exist, not 100% missing
-    
+
     if file_rows == 0:
         return None  # Empty file, no reason to analyze
-    
+
     # Check if it's a worksite file
     if is_worksite_file(filename):
         # Check if records exist in WorksiteRecord (or SalaryRecord if imported there)
@@ -195,14 +195,14 @@ def _analyze_missing_records_reason(
                 return f"worksite_file ({salary_count:,} in SalaryRecord)"
         # Worksite file with no records - might not be imported yet
         return "worksite_file_not_imported"
-    
+
     # For files with 100% missing, sample case_numbers to check for duplicates
     # Sample up to 100 case_numbers from the file
     try:
         sample_size = min(100, file_rows)
         case_numbers_sample = []
         case_cols = ['CASE_NUMBER', 'case_number', 'LCA_CASE_NUMBER', 'CASE_NUM']
-        
+
         if filepath.suffix.lower() in ['.xlsx', '.xls']:
             # Read Excel file using existing utilities
             for i, record in enumerate(read_excel_streaming(filepath)):
@@ -215,7 +215,7 @@ def _analyze_missing_records_reason(
                         break
         elif filepath.suffix.lower() == '.csv':
             # Read CSV file
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 reader = csv.DictReader(f)
                 for i, row in enumerate(reader):
                     if i >= sample_size:
@@ -225,7 +225,7 @@ def _analyze_missing_records_reason(
                         if col in row and row[col]:
                             case_numbers_sample.append(str(row[col]).strip())
                             break
-        
+
         if case_numbers_sample:
             # Check if these case_numbers exist in DB (from any file) - check BOTH tables
             salary_existing = SalaryRecord.objects.filter(
@@ -234,11 +234,11 @@ def _analyze_missing_records_reason(
             worksite_existing = WorksiteRecord.objects.filter(
                 case_number__in=case_numbers_sample
             ).values_list('case_number', flat=True)
-            
+
             # Combine both sets (case_numbers can exist in either table)
             existing_case_numbers = set(salary_existing) | set(worksite_existing)
             existing_count = len(existing_case_numbers)
-            
+
             if existing_count == len(case_numbers_sample):
                 # All sampled case_numbers exist - likely all duplicates
                 return f"all_duplicates (sampled {len(case_numbers_sample)}/{file_rows:,})"
@@ -248,13 +248,13 @@ def _analyze_missing_records_reason(
     except Exception:
         # If we can't analyze, return None (unknown reason)
         pass
-    
+
     return None
 
 
 def compare_file_counts(
     data_dir: Path,
-    db_counts: Optional[dict[str, dict]] = None,
+    db_counts: dict[str, dict] | None = None,
     min_discrepancy_threshold: int = 100,
     min_discrepancy_pct: float = 1.0,
     return_all: bool = False
@@ -274,37 +274,37 @@ def compare_file_counts(
     """
     if db_counts is None:
         db_counts = get_file_record_counts()
-    
+
     data_files = list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.csv'))
     results = []
-    
+
     for filepath in sorted(data_files):
         filename = filepath.name
-        
+
         # Count rows in file (with caching for performance)
         file_rows = count_file_rows(filepath)
         if file_rows is None:
             continue
-        
+
         # Get database count
         db_count = db_counts.get(filename, {}).get('total', 0)
         by_program = db_counts.get(filename, {}).get('by_program', {})
-        
+
         # Calculate discrepancy
         discrepancy = file_rows - db_count
         discrepancy_pct = (discrepancy / file_rows * 100) if file_rows > 0 else 0
-        
+
         # Include all files if return_all=True, otherwise only significant discrepancies
         include_file = True
         if not return_all:
             include_file = abs(discrepancy) >= min_discrepancy_threshold or abs(discrepancy_pct) >= min_discrepancy_pct
-        
+
         if include_file:
             # Analyze reason for missing records (if 100% missing)
             reason = None
             if db_count == 0 and file_rows > 0:
                 reason = _analyze_missing_records_reason(filepath, filename, file_rows, db_count)
-            
+
             results.append(FileComparisonResult(
                 filename=filename,
                 file_rows=file_rows,
@@ -314,16 +314,16 @@ def compare_file_counts(
                 by_program=by_program,
                 reason=reason
             ))
-    
+
     # Sort by absolute discrepancy (largest first)
     results.sort(key=lambda x: abs(x.discrepancy), reverse=True)
-    
+
     return results
 
 
 def compare_counts_by_year(
     data_dir: Path,
-    db_counts_by_year: Optional[dict[int, int]] = None,
+    db_counts_by_year: dict[int, int] | None = None,
     min_discrepancy_pct: float = 5.0
 ) -> list[YearComparisonResult]:
     """
@@ -339,37 +339,37 @@ def compare_counts_by_year(
     """
     if db_counts_by_year is None:
         db_counts_by_year = get_db_counts_by_year()
-    
+
     # Group files by fiscal year
     files_by_year: dict[int, list[tuple[Path, int]]] = defaultdict(list)
-    
+
     xlsx_files = list(data_dir.glob('**/*.xlsx'))
     for file_path in xlsx_files:
         rows = count_file_rows(file_path)
         if rows is None:
             continue
-        
+
         # Extract fiscal year from filename
         fiscal_year = get_fiscal_year_from_filename(file_path.name)
         if fiscal_year is None:
             # Skip files without extractable fiscal year (don't use current year as fallback)
             continue
-        
+
         files_by_year[fiscal_year].append((file_path, rows))
-    
+
     # Build comparison results
     all_years = sorted(set(list(files_by_year.keys()) + list(db_counts_by_year.keys())))
     results = []
-    
+
     for year in all_years:
         file_rows = sum(rows for _, rows in files_by_year.get(year, []))
         db_records = db_counts_by_year.get(year, 0)
-        
+
         diff = file_rows - db_records
         diff_pct = (diff / file_rows * 100) if file_rows > 0 else 0
-        
+
         file_names = [f.name for f, _ in files_by_year.get(year, [])]
-        
+
         # Only include if significant discrepancy
         if file_rows > 0 and abs(diff_pct) >= min_discrepancy_pct:
             results.append(YearComparisonResult(
@@ -380,9 +380,9 @@ def compare_counts_by_year(
                 difference_pct=diff_pct,
                 files=file_names
             ))
-    
+
     # Sort by fiscal year
     results.sort(key=lambda x: x.fiscal_year)
-    
+
     return results
 

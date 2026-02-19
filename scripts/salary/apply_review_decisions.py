@@ -6,23 +6,24 @@ This script applies the decisions made during the dry run review.
 """
 
 import os
-import sys
-from pathlib import Path
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
 from django.db import transaction
 from django.utils import timezone
-from models.salary import Employer, EmployerClusteringReview
+
+from django_config.logging_config import setup_logging
 from lib.business.salary.employer_clustering import match_employers
 from lib.utils.logging_utils import ScriptLogger
-from django_config.logging_config import setup_logging
+from models.salary import Employer, EmployerClusteringReview
 
 setup_logging()
 import logging
+
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
@@ -34,11 +35,11 @@ def find_employer_by_name(name: str, city: str = '', state: str = '') -> Employe
         employers = employers.filter(city__iexact=city)
     if state:
         employers = employers.filter(state__iexact=state)
-    
+
     employer = employers.first()
     if employer:
         return employer
-    
+
     # Try normalized name match
     normalized = Employer.normalize_name(name)
     employers = Employer.objects.filter(name_normalized=normalized)
@@ -46,16 +47,16 @@ def find_employer_by_name(name: str, city: str = '', state: str = '') -> Employe
         employers = employers.filter(city__iexact=city)
     if state:
         employers = employers.filter(state__iexact=state)
-    
+
     return employers.first()
 
 
-def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool, 
+def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool,
                             similarity: float, reason: str, reviewed_by: str = 'manual') -> EmployerClusteringReview:
     """Create or update review entry."""
     if emp1.id > emp2.id:
         emp1, emp2 = emp2, emp1
-    
+
     review, created = EmployerClusteringReview.objects.get_or_create(
         employer1=emp1,
         employer2=emp2,
@@ -67,7 +68,7 @@ def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool
             'reviewed_at': timezone.now(),
         }
     )
-    
+
     if not created:
         review.status = 'approved' if should_approve else 'rejected'
         review.reviewed_by = reviewed_by
@@ -75,7 +76,7 @@ def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool
         review.similarity_score = similarity
         review.match_reason = reason
         review.save()
-    
+
     return review
 
 
@@ -123,50 +124,50 @@ def main():
         args={'decisions_count': len(DECISIONS)},
         context='Applying review decisions from dry run'
     )
-    
+
     logger.info(f"Applying {len(DECISIONS)} review decisions...")
-    
+
     applied = 0
     not_found = 0
     errors = 0
-    
+
     for example_num, (emp1_name, emp1_city, emp1_state, emp2_name, emp2_city, emp2_state, should_approve) in DECISIONS.items():
         try:
             emp1 = find_employer_by_name(emp1_name, emp1_city, emp1_state)
             emp2 = find_employer_by_name(emp2_name, emp2_city, emp2_state)
-            
+
             if not emp1 or not emp2:
                 logger.warning(f"Example #{example_num}: Employer not found (emp1: {emp1 is not None}, emp2: {emp2 is not None})")
                 not_found += 1
                 continue
-            
+
             # Get similarity and reason from production algorithm
             is_match, confidence, reason = match_employers(emp1, emp2)
             similarity = confidence
-            
+
             with transaction.atomic():
                 review = create_or_update_review(
                     emp1,
                     emp2,
                     should_approve,
                     similarity,
-                    reason or f"Manual review decision from dry run",
+                    reason or "Manual review decision from dry run",
                     reviewed_by='manual-borderline'
                 )
-            
+
             applied += 1
             status = 'APPROVED' if should_approve else 'REJECTED'
             logger.info(f"Example #{example_num}: {status} - {emp1_name} vs {emp2_name}")
-            
+
         except Exception as e:
             logger.error(f"Error processing example #{example_num}: {e}", exc_info=True)
             errors += 1
-    
-    logger.info(f"\nSummary:")
+
+    logger.info("\nSummary:")
     logger.info(f"  Applied: {applied}")
     logger.info(f"  Not found: {not_found}")
     logger.info(f"  Errors: {errors}")
-    
+
     print(f"\n✅ Applied {applied} review decisions to database")
 
 

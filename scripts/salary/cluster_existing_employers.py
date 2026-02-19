@@ -7,15 +7,15 @@ Compares all employer pairs and:
 - Queues ambiguous cases for review
 """
 
-import os
-import sys
-import time
 import json
 import logging
+import os
 import random
+import sys
+import time
 from collections import defaultdict
-from typing import Optional, Tuple, Set
 from pathlib import Path
+from typing import Optional
 
 # Import tqdm for progress bars (optional - gracefully handles if not available)
 try:
@@ -39,22 +39,21 @@ except ImportError:
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from django.db import connection, transaction
 from datasketch import MinHash, MinHashLSH
+from django.db import connection
 from rapidfuzz import fuzz
-from models.salary import Employer, EmployerCluster, EmployerClusteringReview
+
+from django_config.logging_config import setup_logging
 from lib.business.salary.employer_clustering import (
-    match_employers,
-    fuzzy_match,
     should_auto_cluster,
-    assign_to_cluster,
 )
+from lib.utils.db_utils import BatchedUpdates
 from lib.utils.logging_utils import ScriptLogger
 from lib.utils.rate_limited_logger import RateLimitedLogger
-from lib.utils.db_utils import bulk_update_batched, bulk_create_batched, BatchedUpdates
-from django_config.logging_config import setup_logging
+from models.salary import Employer, EmployerCluster
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -87,11 +86,12 @@ def save_checkpoint_incremental(
     """
     if not phase1_new and not phase2_new:
         return  # Nothing to save
-    
+
     try:
         from django.db import transaction
+
         from models.salary import ClusteringCheckpoint
-        
+
         with transaction.atomic():
             # Bulk create checkpoint entries (database handles deduplication via unique constraint)
             checkpoint_entries = []
@@ -105,19 +105,19 @@ def save_checkpoint_incremental(
                 checkpoint_entries.append(
                     ClusteringCheckpoint(phase='phase2', item_key=pair_key)
                 )
-            
+
             # Bulk create with ignore_conflicts to handle duplicates gracefully
             ClusteringCheckpoint.objects.bulk_create(
                 checkpoint_entries,
                 ignore_conflicts=True
             )
-        
+
         logger.debug(f"Checkpoint updated: +{len(phase1_new)} phase1, +{len(phase2_new)} phase2")
     except Exception as e:
         logger.warning(f"Failed to save checkpoint: {e}")
 
 
-def load_checkpoint() -> Optional[dict]:
+def load_checkpoint() -> dict | None:
     """
     Load checkpoint data from database.
     
@@ -128,7 +128,7 @@ def load_checkpoint() -> Optional[dict]:
     """
     try:
         from models.salary import ClusteringCheckpoint
-        
+
         # Load all processed items into sets (one-time cost, then O(1) lookups)
         phase1_processed = set(
             ClusteringCheckpoint.objects.filter(phase='phase1')
@@ -138,14 +138,14 @@ def load_checkpoint() -> Optional[dict]:
             ClusteringCheckpoint.objects.filter(phase='phase2')
             .values_list('item_key', flat=True)
         )
-        
+
         if len(phase1_processed) == 0 and len(phase2_processed) == 0:
             return None
-        
-        logger.info(f"Loaded checkpoint from database")
+
+        logger.info("Loaded checkpoint from database")
         logger.info(f"  Phase 1 processed: {len(phase1_processed):,} normalized names")
         logger.info(f"  Phase 2 processed: {len(phase2_processed):,} candidate pairs")
-        
+
         return {
             'phase1_processed': phase1_processed,
             'phase2_processed': phase2_processed,
@@ -155,14 +155,14 @@ def load_checkpoint() -> Optional[dict]:
         return None
 
 
-def is_phase1_processed(normalized_name: str, checkpoint: Optional[dict]) -> bool:
+def is_phase1_processed(normalized_name: str, checkpoint: dict | None) -> bool:
     """Check if normalized name is already processed (using in-memory set)"""
     if not checkpoint:
         return False
     return normalized_name in checkpoint.get('phase1_processed', set())
 
 
-def is_phase2_processed(norm1: str, norm2: str, checkpoint: Optional[dict]) -> bool:
+def is_phase2_processed(norm1: str, norm2: str, checkpoint: dict | None) -> bool:
     """Check if candidate pair is already processed (using in-memory set)"""
     if not checkpoint:
         return False
@@ -199,7 +199,7 @@ def clear_checkpoint(checkpoint_file: str = CHECKPOINT_FILE):
 
 class ProgressTracker:
     """Track progress with ETA calculation and optional tqdm progress bar"""
-    
+
     def __init__(self, total: int, phase_name: str, use_progress_bar: bool = True):
         self.total = total
         self.processed = 0
@@ -208,7 +208,7 @@ class ProgressTracker:
         self.last_log_time = self.start_time
         self.last_log_count = 0
         self.use_progress_bar = use_progress_bar and TQDM_AVAILABLE
-        
+
         # Initialize tqdm progress bar if available and enabled
         if self.use_progress_bar and total > 0:
             # Use tqdm with file=sys.stderr to avoid interfering with logging
@@ -223,13 +223,13 @@ class ProgressTracker:
             )
         else:
             self.pbar = None
-    
+
     def update(self, count: int = 1):
         """Update progress counter"""
         self.processed += count
         if self.pbar:
             self.pbar.update(count)
-    
+
     def log_progress(self, batch_size: int = 1000):
         """Log progress with ETA if at batch interval (for non-tqdm logging)"""
         # If using tqdm, it handles display automatically - just log periodically
@@ -248,12 +248,12 @@ class ProgressTracker:
             current_time = time.time()
             pairs_since_last_log = self.processed - self.last_log_count
             time_since_last_log = current_time - self.last_log_time
-            
+
             should_log = (
                 pairs_since_last_log >= 1000 or
                 time_since_last_log >= 5.0
             )
-            
+
             if should_log:
                 logger.info(
                     f"[{self.phase_name}] Processed {self.processed:,}/{self.total:,} pairs "
@@ -262,14 +262,14 @@ class ProgressTracker:
                 self.last_log_time = current_time
                 self.last_log_count = self.processed
             return
-        
+
         # Original logging logic (when tqdm not available)
         if self.processed % batch_size != 0:
             return
-        
+
         elapsed = time.time() - self.start_time
         rate = self.processed / elapsed if elapsed > 0 else 0
-        
+
         if rate > 0:
             if self.total > 0:
                 # Known total - show percentage and ETA
@@ -277,7 +277,7 @@ class ProgressTracker:
                 eta_seconds = remaining / rate
                 eta_minutes = eta_seconds / 60
                 percentage = (self.processed / self.total) * 100
-                
+
                 logger.info(
                     f"[{self.phase_name}] Processed {self.processed:,}/{self.total:,} pairs "
                     f"({percentage:.1f}%) | Rate: {rate:.0f} pairs/sec | ETA: {eta_minutes:.1f} min"
@@ -304,12 +304,12 @@ class ProgressTracker:
                     )
         else:
             logger.info(f"[{self.phase_name}] Processed {self.processed:,} pairs...")
-    
+
     def close(self):
         """Close progress bar if using tqdm"""
         if self.pbar:
             self.pbar.close()
-    
+
     def get_summary(self) -> dict:
         """Get progress summary"""
         elapsed = time.time() - self.start_time
@@ -336,10 +336,10 @@ def calculate_phase1_total_pairs(employers_by_normalized: dict) -> int:
 
 
 def _load_and_group_employers(
-    shuffle: bool = False, 
-    seed: Optional[int] = None,
-    limit: Optional[int] = None
-) -> Tuple[list[Employer], dict[str, list[Employer]]]:
+    shuffle: bool = False,
+    seed: int | None = None,
+    limit: int | None = None
+) -> tuple[list[Employer], dict[str, list[Employer]]]:
     """
     Load employers and group by normalized name.
     
@@ -359,18 +359,18 @@ def _load_and_group_employers(
     qs = Employer.objects.all().select_related('canonical_cluster').only(
         'id', 'name', 'city', 'state', 'canonical_cluster'
     )
-    
+
     if limit and not shuffle:
         # If limiting and not shuffling, we can limit at DB level for speed
         qs = qs[:limit]
-        
+
     all_employers = list(qs)
     total = len(all_employers)
     logger.info(f"Found {total:,} employers to process")
-    
+
     if total == 0:
         return [], {}
-    
+
     # Shuffle for random sampling if requested
     if shuffle:
         if seed is not None:
@@ -384,7 +384,7 @@ def _load_and_group_employers(
     elif limit and total > limit:
         # Should have been handled by DB limit, but just in case
         all_employers = all_employers[:limit]
-    
+
     logger.info("Grouping employers by normalized name (re-normalizing from original names)...")
     employers_by_normalized = defaultdict(list)
     for emp in all_employers:
@@ -392,10 +392,10 @@ def _load_and_group_employers(
         # (with generic word filtering). Don't use stored name_normalized which may be outdated.
         normalized = Employer.normalize_name(emp.name)
         employers_by_normalized[normalized].append(emp)
-    
+
     unique_normalized = len(employers_by_normalized)
     logger.info(f"Found {unique_normalized:,} unique normalized names")
-    
+
     return all_employers, dict(employers_by_normalized)
 
 
@@ -434,10 +434,10 @@ def _process_employer_pair(
     auto_approve_threshold: float,
     dry_run: bool,
     batched_updates: BatchedUpdates,
-    norm1: Optional[str] = None,
-    norm2: Optional[str] = None,
-    precomputed_similarity: Optional[float] = None,
-    substring_can_match: Optional[bool] = None,
+    norm1: str | None = None,
+    norm2: str | None = None,
+    precomputed_similarity: float | None = None,
+    substring_can_match: bool | None = None,
 ) -> int:
     """
     Process a pair of employers - cluster if matches rules.
@@ -452,12 +452,12 @@ def _process_employer_pair(
         if total_collected >= _process_employer_pair_min_pairs:
             # Signal to stop (return special value or raise exception)
             raise StopIteration("Enough pairs collected for sampling")
-    
+
     # Skip if already in same cluster
     if emp1.canonical_cluster and emp2.canonical_cluster:
         if emp1.canonical_cluster.id == emp2.canonical_cluster.id:
             return 0
-    
+
     # Check if should auto-cluster (pass precomputed norm/similarity/substring to avoid redundant work)
     should_cluster, confidence, reason = should_auto_cluster(
         emp1,
@@ -468,15 +468,14 @@ def _process_employer_pair(
         precomputed_similarity=precomputed_similarity,
         substring_can_match=substring_can_match,
     )
-    
+
     if should_cluster:
         # Auto-cluster
         if not dry_run:
             # Optimized: We already know these employers match, so we don't need to search
             # for existing clusters via assign_to_cluster (which loads all employers).
             # Instead, reuse existing cluster or queue for batch creation.
-            from models.salary import EmployerCluster
-            
+
             # Get or queue cluster for emp1
             if not emp1.canonical_cluster:
                 # Queue cluster creation (will be batch created)
@@ -485,16 +484,16 @@ def _process_employer_pair(
                 batched_updates.add_employer_update(emp1)
             else:
                 cluster = emp1.canonical_cluster
-            
+
             # Assign emp2 to same cluster
             emp2.canonical_cluster = cluster
             batched_updates.add_employer_update(emp2)
-        
+
         auto_cluster_logger.log(f"Auto-clustered: {emp1.name} <-> {emp2.name} ({confidence:.3f})")
-        
+
         # Increment counter regardless of output file
         _process_employer_pair_pairs_collected['auto'] += 1
-        
+
         # Also log to structured output file if requested
         if _process_employer_pair_output_file:
             _process_employer_pair_output_file.write(
@@ -513,7 +512,7 @@ def _process_employer_pair(
                 }) + '\n'
             )
         return 1
-        
+
     return 0
 
 
@@ -524,7 +523,7 @@ def _process_employer_pairs_batch(
     batched_updates: BatchedUpdates,
     progress: ProgressTracker,
     batch_size: int,
-    norm: Optional[str] = None,
+    norm: str | None = None,
 ) -> int:
     """
     Process all pairs of employers in a list (shared logic for phase 1 and phase 2)
@@ -532,7 +531,7 @@ def _process_employer_pairs_batch(
     Returns: auto_clustered_count
     """
     auto_clustered = 0
-    
+
     # Note: We don't catch StopIteration here so it propagates to the caller
     # (e.g. _process_same_normalized_name_matches) which handles early stopping
     # for the entire phase.
@@ -540,16 +539,16 @@ def _process_employer_pairs_batch(
         for j in range(i + 1, len(employers)):
             emp1 = employers[i]
             emp2 = employers[j]
-            
+
             pair_auto = _process_employer_pair(
                 emp1, emp2, auto_approve_threshold, dry_run, batched_updates,
                 norm1=norm, norm2=norm,
             )
             auto_clustered += pair_auto
-            
+
             progress.update()
             progress.log_progress(batch_size)
-    
+
     return auto_clustered
 
 
@@ -559,11 +558,11 @@ def _process_cross_employer_pairs(
     auto_approve_threshold: float,
     dry_run: bool,
     batched_updates: BatchedUpdates,
-    norm1: Optional[str] = None,
-    norm2: Optional[str] = None,
-    precomputed_similarity: Optional[float] = None,
-    substring_can_match: Optional[bool] = None,
-) -> Tuple[int, int]:
+    norm1: str | None = None,
+    norm2: str | None = None,
+    precomputed_similarity: float | None = None,
+    substring_can_match: bool | None = None,
+) -> tuple[int, int]:
     """
     Process all pairs between two lists of employers (cartesian product).
     Skips pairs that are already in the same cluster.
@@ -595,7 +594,7 @@ def _process_cross_employer_pairs(
             )
             auto_clustered += pair_auto
             processed_pairs += 1
-    
+
     return auto_clustered, processed_pairs
 
 
@@ -604,8 +603,8 @@ def _process_same_normalized_name_matches(
     auto_approve_threshold: float,
     batch_size: int,
     dry_run: bool,
-    checkpoint_file: Optional[str] = None
-) -> Tuple[int, int]:
+    checkpoint_file: str | None = None
+) -> tuple[int, int]:
     """
     Phase 1: Process employers with same normalized name
     
@@ -614,15 +613,15 @@ def _process_same_normalized_name_matches(
     logger.info("\n" + "="*60)
     logger.info("PHASE 1: Processing same normalized name matches")
     logger.info("="*60)
-    
+
     # Load checkpoint if resuming (loads all processed items into memory sets)
     checkpoint = load_checkpoint() if checkpoint_file else None
-    
+
     if checkpoint:
         phase1_processed = checkpoint.get('phase1_processed', set())
         if phase1_processed:
             logger.info(f"Resuming Phase 1: {len(phase1_processed):,} already-processed normalized names")
-    
+
     # Pre-calculate total pairs for phase 1 (only count unprocessed)
     # Filter out already-processed names using in-memory set lookups (O(1) per lookup)
     unprocessed_employers = {
@@ -635,23 +634,23 @@ def _process_same_normalized_name_matches(
         logger.info(f"Phase 1: Will process {phase1_total:,} pairs ({phase1_count:,} already done)")
     else:
         logger.info(f"Phase 1: Will process {phase1_total:,} pairs")
-    
+
     progress = ProgressTracker(phase1_total, "Phase 1")
     batched_updates = BatchedUpdates(batch_size=batch_size, dry_run=dry_run)
-    
+
     auto_clustered = 0
     clusters_created = 0
-    
+
     checkpoint_interval = 100  # Save checkpoint every 100 normalized names
     names_processed_since_checkpoint = 0
     pending_checkpoint_names = set()  # Batch checkpoint saves for efficiency
-    
+
     try:
         for normalized_name, employers in employers_by_normalized.items():
             # Skip if already processed (uses in-memory set lookup, O(1))
             if is_phase1_processed(normalized_name, checkpoint):
                 continue
-            
+
             if len(employers) == 1:
                 # Single employer - create cluster if needed
                 clusters_created += _process_single_employer_cluster(
@@ -666,33 +665,33 @@ def _process_same_normalized_name_matches(
                     norm=normalized_name,
                 )
                 auto_clustered += pair_auto
-            
+
             # Mark as processed and batch checkpoint saves (incremental, DB-backed, memory-efficient)
             # Note: We don't maintain phase1_processed set anymore - DB queries handle membership checks
             pending_checkpoint_names.add(normalized_name)
             names_processed_since_checkpoint += 1
-            
+
             if checkpoint_file and names_processed_since_checkpoint >= checkpoint_interval:
                 # Save batched new items incrementally (append-only, no full file rewrite)
                 save_checkpoint_incremental(pending_checkpoint_names, set(), checkpoint_file)
                 pending_checkpoint_names.clear()
                 names_processed_since_checkpoint = 0
     except StopIteration:
-        logger.info(f"Early stopping in Phase 1: Collected enough pairs for sampling")
+        logger.info("Early stopping in Phase 1: Collected enough pairs for sampling")
         batched_updates.flush_all()
-    
+
     # Final checkpoint save (incremental) - save any remaining batched items
     if checkpoint_file and pending_checkpoint_names:
         save_checkpoint_incremental(pending_checkpoint_names, set(), checkpoint_file)
-    
+
     # Final bulk operations for phase 1
     batched_updates.flush_all(employer_fields=['canonical_cluster'])
-    
+
     phase1_summary = progress.get_summary()
     progress.close()  # Close progress bar
     logger.info(f"\nPhase 1 complete: {phase1_summary['processed']:,} pairs in {phase1_summary['elapsed_seconds']:.1f}s "
                 f"({phase1_summary['rate_per_second']:.0f} pairs/sec)")
-    
+
     return auto_clustered, clusters_created
 
 
@@ -705,7 +704,7 @@ def _get_normalized_name_similarity(norm1: str, norm2: str) -> float:
     return fuzz.ratio(norm1, norm2) / 100.0
 
 
-def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tuple[MinHashLSH, dict[str, MinHash]]:
+def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> tuple[MinHashLSH, dict[str, MinHash]]:
     """
     Build LSH index for fast similarity search.
     
@@ -713,36 +712,36 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
     """
     logger.info(f"Building LSH index for {len(normalized_names):,} normalized names...")
     start_time = time.time()
-    
+
     # Create LSH index with threshold
     # num_perm controls precision: higher = more accurate but slower
     # 128 is a good balance for string similarity (provides good accuracy)
     lsh = MinHashLSH(threshold=threshold, num_perm=128)
     minhashes = {}
-    
+
     # Progress tracking
     last_log = 0
     log_interval = max(10000, len(normalized_names) // 20)  # Log ~20 times
-    
+
     for idx, norm_name in enumerate(normalized_names):
         # Create MinHash for this normalized name
         m = MinHash(num_perm=128)
-        
+
         # Add words to MinHash (split by space)
         words = norm_name.split()
         for word in words:
             if word:  # Skip empty strings
                 m.update(word.encode('utf8'))
-        
+
         # Add character 3-grams for better matching of similar strings
         # Limit to avoid excessive computation for very long names
         max_ngrams = min(50, len(norm_name) - 2)  # Cap at 50 n-grams per name
         for i in range(max_ngrams):
             m.update(norm_name[i:i+3].encode('utf8'))
-        
+
         minhashes[norm_name] = m
         lsh.insert(norm_name, m)
-        
+
         # Progress logging
         if (idx + 1) - last_log >= log_interval:
             elapsed = time.time() - start_time
@@ -751,11 +750,11 @@ def _build_lsh_index(normalized_names: list[str], threshold: float = 0.7) -> Tup
                        f"({(idx + 1) / len(normalized_names) * 100:.1f}%) | "
                        f"Rate: {rate:.0f} names/sec")
             last_log = idx + 1
-    
+
     elapsed = time.time() - start_time
     logger.info(f"LSH index built in {elapsed:.1f}s ({len(normalized_names):,} names, "
                f"{len(normalized_names) / elapsed:.0f} names/sec)")
-    
+
     return lsh, minhashes
 
 
@@ -765,7 +764,7 @@ def _process_cross_normalized_name_matches(
     auto_approve_threshold: float,
     batch_size: int,
     dry_run: bool,
-    checkpoint_file: Optional[str] = None
+    checkpoint_file: str | None = None
 ) -> int:
     """
     Phase 2: Check employers with different normalized names but high similarity
@@ -788,37 +787,37 @@ def _process_cross_normalized_name_matches(
     logger.info("\n" + "="*60)
     logger.info("PHASE 2: Processing cross-normalized-name matches (LSH-based)")
     logger.info("="*60)
-    
+
     # Build LSH index for fast similarity search
     lsh_threshold = 0.7  # LSH threshold (should match similarity threshold)
     lsh, minhashes = _build_lsh_index(normalized_names, threshold=lsh_threshold)
-    
+
     # Track candidate pairs found by LSH
-    candidate_pairs: Set[Tuple[str, str]] = set()
-    
+    candidate_pairs: set[tuple[str, str]] = set()
+
     logger.info("Querying LSH index for candidate pairs...")
     query_start = time.time()
-    
+
     # Query LSH for each normalized name to find similar candidates
     for norm_name in normalized_names:
         m = minhashes[norm_name]
         candidates = lsh.query(m)
-        
+
         # Add candidate pairs (avoid duplicates by using sorted tuple)
         for candidate in candidates:
             if candidate != norm_name:  # Skip self
                 # Use sorted tuple to ensure (a, b) == (b, a)
                 pair = tuple(sorted([norm_name, candidate]))
                 candidate_pairs.add(pair)
-    
+
     query_elapsed = time.time() - query_start
     logger.info(f"Found {len(candidate_pairs):,} candidate normalized name pairs via LSH in {query_elapsed:.1f}s")
     logger.info(f"  (Compared to {len(normalized_names) * (len(normalized_names) - 1) // 2:,} total pairs - "
                 f"{len(normalized_names) * (len(normalized_names) - 1) // 2 / max(len(candidate_pairs), 1):.0f}x reduction)")
-    
+
     # Load checkpoint if resuming (uses DB queries, not memory sets)
     checkpoint = load_checkpoint() if checkpoint_file else None
-    
+
     if checkpoint:
         phase2_processed = checkpoint.get('phase2_processed', set())
         if phase2_processed:
@@ -831,24 +830,24 @@ def _process_cross_normalized_name_matches(
                     remaining_pairs.add((norm1, norm2))
             candidate_pairs = remaining_pairs
             logger.info(f"  Remaining candidate pairs: {len(candidate_pairs):,}")
-    
+
     # Track progress through candidate pairs
     candidate_progress = ProgressTracker(len(candidate_pairs), "Phase 2 (candidates)")
     batched_updates = BatchedUpdates(batch_size=batch_size, dry_run=dry_run)
-    
+
     auto_clustered = 0
     processed_pairs = 0
-    
+
     checkpoint_interval = 1000  # Save checkpoint every 1000 candidate pairs
     pairs_processed_since_checkpoint = 0
     pending_checkpoint_pairs = set()  # Batch checkpoint saves for efficiency
-    
+
     try:
         # Process candidate pairs (much smaller set than all pairs)
         for norm1, norm2 in candidate_pairs:
             candidate_progress.update()
             candidate_progress.log_progress(batch_size=1000)  # Log every 1k candidate pairs
-            
+
             # Verify similarity with exact calculation (LSH may have false positives)
             similarity = _get_normalized_name_similarity(norm1, norm2)
 
@@ -871,36 +870,36 @@ def _process_cross_normalized_name_matches(
                 )
                 auto_clustered += pair_auto
                 processed_pairs += pair_count
-                
+
                 # Mark as processed and batch checkpoint saves (incremental, DB-backed, memory-efficient)
                 # Note: We don't maintain phase2_processed set anymore - DB queries handle membership checks
                 pending_checkpoint_pairs.add((norm1, norm2))
                 pairs_processed_since_checkpoint += 1
-            
+
             if checkpoint_file and pairs_processed_since_checkpoint >= checkpoint_interval:
                 # Save batched new items incrementally (append-only, no full file rewrite)
                 save_checkpoint_incremental(set(), pending_checkpoint_pairs, checkpoint_file)
                 pending_checkpoint_pairs.clear()
                 pairs_processed_since_checkpoint = 0
     except StopIteration:
-        logger.info(f"Early stopping in Phase 2: Collected enough pairs for sampling")
+        logger.info("Early stopping in Phase 2: Collected enough pairs for sampling")
         batched_updates.flush_all()
-    
+
     # Final checkpoint save (incremental) - save any remaining batched items
     if checkpoint_file and pending_checkpoint_pairs:
         save_checkpoint_incremental(set(), pending_checkpoint_pairs, checkpoint_file)
-    
+
     # Final bulk operations for phase 2
     batched_updates.flush_all(employer_fields=['canonical_cluster'])
-    
+
     candidate_summary = candidate_progress.get_summary()
     candidate_progress.close()  # Close progress bar
-    logger.info(f"\nPhase 2 complete:")
+    logger.info("\nPhase 2 complete:")
     logger.info(f"  Candidate pairs processed: {candidate_summary['processed']:,}/{candidate_summary['total']:,}")
     logger.info(f"  Employer pairs processed: {processed_pairs:,}")
     logger.info(f"  Time: {candidate_summary['elapsed_seconds']:.1f}s")
     logger.info(f"  Rate: {candidate_summary['rate_per_second']:.0f} candidate pairs/sec")
-    
+
     return auto_clustered
 
 
@@ -964,12 +963,12 @@ def cluster_existing_employers(
     auto_approve_threshold: float = 0.95,
     batch_size: int = 1000,
     dry_run: bool = False,
-    pairs_output_file: Optional[str] = None,
-    min_pairs_needed: Optional[int] = None,
+    pairs_output_file: str | None = None,
+    min_pairs_needed: int | None = None,
     shuffle_employers: bool = False,
-    shuffle_seed: Optional[int] = None,
-    checkpoint_file: Optional[str] = None,
-    employer_limit: Optional[int] = None
+    shuffle_seed: int | None = None,
+    checkpoint_file: str | None = None,
+    employer_limit: int | None = None
 ):
     """
     Cluster all existing employers
@@ -999,7 +998,7 @@ def cluster_existing_employers(
         else:
             logger.info("  No existing checkpoint found - starting fresh")
     logger.info("="*60)
-    
+
     # Open pairs output file if requested
     global _process_employer_pair_output_file, _process_employer_pair_min_pairs, _process_employer_pair_pairs_collected
     pairs_file = None
@@ -1007,7 +1006,7 @@ def cluster_existing_employers(
         pairs_file = open(pairs_output_file, 'w')
         _process_employer_pair_output_file = pairs_file
         logger.info(f"Writing pairs to: {pairs_output_file}")
-    
+
     # Set up early stopping if requested
     if min_pairs_needed is not None:
         _process_employer_pair_min_pairs = min_pairs_needed
@@ -1016,7 +1015,7 @@ def cluster_existing_employers(
     else:
         _process_employer_pair_min_pairs = None
         _process_employer_pair_pairs_collected = {'auto': 0, 'queued': 0}
-    
+
     try:
         # Load and group employers (with optional shuffling and limit)
         all_employers, employers_by_normalized = _load_and_group_employers(
@@ -1027,22 +1026,22 @@ def cluster_existing_employers(
         if not all_employers:
             logger.info("No employers to cluster")
             return
-        
+
         total = len(all_employers)
-        
+
         # Phase 1: Process same normalized names
         phase1_auto, clusters_created = _process_same_normalized_name_matches(
             employers_by_normalized, auto_approve_threshold, batch_size, dry_run,
             checkpoint_file=checkpoint_file
         )
-        
+
         # Phase 2: Process cross-normalized matches
         # PERFORMANCE NOTE: This is the main bottleneck for full runs (O(K * P)).
         # K = candidate pairs (approx 400k for full dataset), P = processing cost.
         # Processing rate is ~200 pairs/sec due to:
         # 1. Re-normalization in match_employers (redundant, could be optimized by passing normalized names)
         # 2. CPU-bound string comparison logic (difflib, regex)
-        # 
+        #
         # For debugging/development, use --limit-employers to reduce N (and thus K).
         normalized_names = list(employers_by_normalized.keys())
         phase2_auto = _process_cross_normalized_name_matches(
@@ -1050,25 +1049,25 @@ def cluster_existing_employers(
             auto_approve_threshold, batch_size, dry_run,
             checkpoint_file=checkpoint_file
         )
-        
+
         # Clear checkpoint on successful completion
         if checkpoint_file:
             clear_checkpoint()
-            logger.info(f"Checkpoint cleared after successful completion")
+            logger.info("Checkpoint cleared after successful completion")
     finally:
         if pairs_file:
             pairs_file.close()
             _process_employer_pair_output_file = None
         _process_employer_pair_min_pairs = None
         _process_employer_pair_pairs_collected = {'auto': 0}
-    
+
     # Update cluster statistics
     _update_cluster_statistics(batch_size, dry_run)
-    
+
     # Final summary
     total_auto = phase1_auto + phase2_auto
     total_elapsed = time.time() - start_time
-    
+
     logger.info("\n" + "="*60)
     logger.info("CLUSTERING SUMMARY")
     logger.info("="*60)
@@ -1077,14 +1076,14 @@ def cluster_existing_employers(
     logger.info(f"  Clusters created: {clusters_created:,}")
     logger.info(f"  Total time: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
     logger.info("="*60)
-    
+
     if dry_run:
         logger.info("\nDRY RUN - No changes made to database")
 
 
 def main():
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Cluster existing employers')
     parser.add_argument('--threshold', type=float, default=0.95,
                        help='Auto-approve threshold (default: 0.95)')
@@ -1107,50 +1106,51 @@ def main():
     parser.add_argument('--limit-employers', type=int, help='Limit number of employers to process (for fast debugging)')
     parser.add_argument('--stats-only', action='store_true',
                        help='Only update cluster statistics (skip clustering)')
-    
+
     args = parser.parse_args()
-    
+
     # Handle clustering reset if requested
     if args.reset_clustering:
         logger.info("Resetting clustering state...")
-        from models.salary import Employer, EmployerCluster
         from django.db import transaction
-        
+
+        from models.salary import Employer, EmployerCluster
+
         with transaction.atomic():
             # Reset employer cluster assignments
             updated_count = Employer.objects.exclude(canonical_cluster__isnull=True).update(canonical_cluster=None)
             logger.info(f"  Reset {updated_count:,} employer cluster assignments")
-            
+
             # Delete all clusters
             deleted_count, _ = EmployerCluster.objects.all().delete()
             logger.info(f"  Deleted {deleted_count:,} clusters")
-            
+
             # Note: Reviews table is deprecated/unused now
-        
+
         logger.info("Clustering state reset complete. Starting fresh clustering...")
-    
+
     # Handle checkpoint clearing
     if args.clear_checkpoint:
         clear_checkpoint()
         logger.info("Checkpoint cleared - starting fresh")
-    
+
     # Determine checkpoint file usage
     checkpoint_file = args.checkpoint_file if args.resume or args.checkpoint_file != CHECKPOINT_FILE else None
     if args.resume and not checkpoint_file:
         checkpoint_file = CHECKPOINT_FILE
-    
+
     script_logger.log_call(
         args=vars(args),
         context='Cluster existing employers'
     )
-    
+
     # Stats-only mode: just update cluster statistics without clustering
     if args.stats_only:
         logger.info("Running in stats-only mode - updating cluster statistics...")
         _update_cluster_statistics(batch_size=args.batch_size, dry_run=args.dry_run)
         logger.info("Stats update complete!")
         return
-    
+
     cluster_existing_employers(
         auto_approve_threshold=args.threshold,
         batch_size=args.batch_size,

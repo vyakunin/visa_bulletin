@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
-from lib.parsing.bulletin.parser import extract_tables, extract_table, normalize
-from bs4 import BeautifulSoup
+
+from lib.parsing.bulletin.parser import extract_tables, normalize
 
 
 class TestBulletinParser(unittest.TestCase):
@@ -17,10 +17,10 @@ class TestBulletinParser(unittest.TestCase):
             'data/bulletin/saved_pages/visa-bulletin-for-march-2023.html',
             'data/bulletin/saved_pages/visa-bulletin-for-october-2021.html'
         ]
-        
+
         self.test_htmls = []
         for file_path in self.test_files:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 self.test_htmls.append(f.read())
 
     def test_normalize_whitespace(self):
@@ -29,7 +29,7 @@ class TestBulletinParser(unittest.TestCase):
         self.assertEqual(normalize("  multiple   spaces  "), "multiple spaces")
         self.assertEqual(normalize("line\nbreak\nhere"), "line break here")
         self.assertEqual(normalize("tab\ttab\ttab"), "tab tab tab")
-        
+
     def test_extract_tables_returns_list(self):
         """Test that extract_tables returns a list for all test files"""
         for i, html in enumerate(self.test_htmls):
@@ -44,7 +44,7 @@ class TestBulletinParser(unittest.TestCase):
             with self.subTest(file=self.test_files[i]):
                 tables = extract_tables(html)
                 # Fixed to expect 4 tables
-                self.assertEqual(len(tables), 4, 
+                self.assertEqual(len(tables), 4,
                                f"Expected 4 tables in {self.test_files[i]}, got {len(tables)}")
 
     def test_table_titles_are_correct(self):
@@ -55,13 +55,13 @@ class TestBulletinParser(unittest.TestCase):
             'employment_based_final_action',
             'employment_based_dates_for_filing'
         }
-        
+
         for i, html in enumerate(self.test_htmls):
             with self.subTest(file=self.test_files[i]):
                 tables = extract_tables(html)
                 table_titles = {table.title for table in tables}
                 # Fixed to expect correct titles
-                self.assertEqual(table_titles, expected_titles, 
+                self.assertEqual(table_titles, expected_titles,
                                f"Unexpected table titles in {self.test_files[i]}: {table_titles}")
 
     def test_tables_have_headers(self):
@@ -71,7 +71,7 @@ class TestBulletinParser(unittest.TestCase):
                 tables = extract_tables(html)
                 for table in tables:
                     # Fixed to expect headers
-                    self.assertGreater(len(table.headers), 0, 
+                    self.assertGreater(len(table.headers), 0,
                                    f"Table {table.title} should have headers")
 
     def test_tables_have_rows(self):
@@ -81,7 +81,7 @@ class TestBulletinParser(unittest.TestCase):
                 tables = extract_tables(html)
                 for table in tables:
                     # Fixed to expect reasonable number of rows (typically 5-10)
-                    self.assertGreater(len(table.rows), 0, 
+                    self.assertGreater(len(table.rows), 0,
                                      f"Table {table.title} should have at least 1 row in {self.test_files[i]}")
 
     def test_date_conversion(self):
@@ -89,16 +89,16 @@ class TestBulletinParser(unittest.TestCase):
         # Test specific known data from march 2023
         html = self.test_htmls[1]  # march-2023
         tables = extract_tables(html)
-        
+
         # Find the family sponsored final actions table
         family_final = None
         for table in tables:
             if table.title == 'family_sponsored_final_actions':
                 family_final = table
                 break
-        
+
         self.assertIsNotNone(family_final, "Should find family_sponsored_final_actions table")
-        
+
         # Check that F1 row exists and first date cell is converted correctly
         # From the HTML: F1 row has "01DEC14" which should be date(2014, 12, 1)
         f1_row = None
@@ -106,30 +106,30 @@ class TestBulletinParser(unittest.TestCase):
             if row[0] == 'F1':
                 f1_row = row
                 break
-        
+
         self.assertIsNotNone(f1_row, "Should find F1 row")
         # Fixed to expect date object
         self.assertIsInstance(f1_row[1], date, "Date should be converted to date object")
         self.assertEqual(f1_row[1], date(2014, 12, 1), "F1 All Areas should be Dec 1, 2014")
-        
+
     def test_current_status_preserved(self):
         """Test that 'C' (Current) status is preserved as string, not converted to date"""
         html = self.test_htmls[1]  # march-2023
         tables = extract_tables(html)
-        
+
         family_final = None
         for table in tables:
             if table.title == 'family_sponsored_final_actions':
                 family_final = table
                 break
-        
+
         # F2A row should have all 'C' values
         f2a_row = None
         for row in family_final.rows:
             if row[0] == 'F2A':
                 f2a_row = row
                 break
-        
+
         self.assertIsNotNone(f2a_row, "Should find F2A row")
         # This should actually pass - 'C' should remain string
         self.assertEqual(f2a_row[1], 'C', "'C' should be preserved as string")
@@ -138,20 +138,20 @@ class TestBulletinParser(unittest.TestCase):
         """Test specific known values from March 2023 bulletin"""
         html = self.test_htmls[1]  # march-2023
         tables = extract_tables(html)
-        
+
         family_final = None
         for table in tables:
             if table.title == 'family_sponsored_final_actions':
                 family_final = table
                 break
-        
+
         # Check F1 Mexico should be "01APR01" = date(2001, 4, 1)
         f1_row = None
         for row in family_final.rows:
             if row[0] == 'F1':
                 f1_row = row
                 break
-        
+
         headers_lower = [header.lower() for header in family_final.headers]
         mexico_index = headers_lower.index('mexico')
         # Fixed to expect correct date

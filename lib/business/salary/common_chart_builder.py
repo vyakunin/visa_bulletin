@@ -7,7 +7,6 @@ import json
 import plotly.graph_objs as go
 import plotly.utils
 
-
 # Bins with count below this fraction of max are treated as "empty" for trim (so we keep exactly one padding bucket on each side).
 # 0.01 (1%) yields one small bucket on the left; 0.005 gave two (9 and 52).
 _SIGNIFICANT_BIN_FRACTION = 0.01

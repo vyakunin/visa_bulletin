@@ -12,10 +12,10 @@ class VisaCategory(models.TextChoices):
     - Access as enum in Python (VisaCategory.FAMILY_SPONSORED)
     - Query with: objects.filter(visa_category=VisaCategory.FAMILY_SPONSORED)
     """
-    
+
     FAMILY_SPONSORED = "family_sponsored", "Family-Sponsored"
     EMPLOYMENT_BASED = "employment_based", "Employment-Based"
-    
+
     @classmethod
     def from_table_title(cls, title: str):
         """Parse category from table title"""

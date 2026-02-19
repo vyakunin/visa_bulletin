@@ -2,21 +2,21 @@
 
 import json
 
+from django.conf import settings
+from django.db.models import Exists, F, OuterRef, Q
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
-from django.conf import settings
-from django_config.cache_utils import cache_page_skip_bots
-from django.db.models import Exists, F, OuterRef, Q
 
-from models.salary import Employer, EmployerCluster
-from lib.utils.pagination import (
-    calculate_pagination_info,
-    build_pagination_query_string,
-    encode_keyset_cursor,
-    decode_keyset_cursor,
-)
+from django_config.cache_utils import cache_page_skip_bots
 from lib.utils.location_utils import US_STATES
+from lib.utils.pagination import (
+    build_pagination_query_string,
+    calculate_pagination_info,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
+)
+from models.salary import Employer, EmployerCluster
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -32,10 +32,10 @@ def company_autocomplete_view(request):
     """
     query = request.GET.get('q', '').strip()
     limit = int(request.GET.get('limit', 20))
-    
+
     if not query or len(query) < 2:
         return HttpResponse(json.dumps([]), content_type='application/json')
-    
+
     # Get cluster canonical names and slugs that match the query
     # Order by total record count (LCA + PERM) for relevance
     matching_companies = (
@@ -49,7 +49,7 @@ def company_autocomplete_view(request):
         .values('canonical_name', 'slug', 'total_count')
         [:limit]
     )
-    
+
     suggestions = [
         {
             'name': company['canonical_name'],
@@ -120,12 +120,12 @@ def employer_directory_view(request):
         page = int(request.GET.get('page', 1))
     except (ValueError, TypeError):
         page = 1
-    
+
     per_page = 50
-    
+
     base = _employer_directory_base_queryset(query, state_filter)
     total_results = base.count()
-    
+
     # Order by stored fields; annotate total for program=all
     if program_filter == 'h1b':
         employers_ordered = base.order_by('-total_lca_count', 'id')
@@ -137,7 +137,7 @@ def employer_directory_view(request):
             .annotate(total=F('total_lca_count') + F('total_perm_count'))
             .order_by('-total', 'id')
         )
-    
+
     # Keyset pagination: if valid cursor, fetch that page instead of offset
     decoded = decode_keyset_cursor(cursor_param) if cursor_param else None
     use_keyset = decoded is not None
@@ -191,10 +191,10 @@ def employer_directory_view(request):
         employers = list(employers_ordered[offset : offset + per_page])
         has_next_keyset = (offset + per_page) < total_results
         has_prev_keyset = page > 1
-    
+
     # Pagination metadata (page for display; total_pages from count)
     pagination = calculate_pagination_info(total_results, page, per_page)
-    
+
     # Build next_cursor and prev_cursor from current page rows
     next_cursor = None
     prev_cursor = None
@@ -205,10 +205,10 @@ def employer_directory_view(request):
         order_prev = _order_value_for_row(first_row, program_filter)
         next_cursor = encode_keyset_cursor(order_next, last_row.id, "next")
         prev_cursor = encode_keyset_cursor(order_prev, first_row.id, "prev")
-    
+
     has_next = len(employers) == per_page and has_next_keyset
     has_prev = has_prev_keyset
-    
+
     # Check if there are employers matching the query but without slugs (for helpful feedback)
     has_employers_without_slugs = False
     if query and total_results == 0:
@@ -216,14 +216,14 @@ def employer_directory_view(request):
             canonical_name__icontains=query.strip(),
             slug__isnull=True,
         ).exists()
-    
+
     params = {
         'query': query,
         'program_filter': program_filter,
         'state_filter': state_filter,
         'page': page,
     }
-    
+
     context = {
         'query': query,
         'program_filter': program_filter,
@@ -248,5 +248,5 @@ def employer_directory_view(request):
         'page_title': 'Employer Directory - H-1B & PERM Sponsors | U.S. Immigration Data',
         'page_description': 'Browse top employers sponsoring H-1B and PERM visas. Search by company name, filter by state and visa program.',
     }
-    
+
     return render(request, 'webapp/employer_directory.html', context)

@@ -1,15 +1,16 @@
 """Plugin registry for data source plugins"""
 
-from typing import Optional
-from .base import DataSourcePlugin
+
 from models.ingest.enums import DataDomain, SourceType
+
+from .base import DataSourcePlugin
 
 
 class PluginRegistry:
     """Central registry for data source plugins"""
-    
+
     _plugins: dict[str, DataSourcePlugin] = {}
-    
+
     @classmethod
     def register(cls, plugin: DataSourcePlugin):
         """
@@ -22,12 +23,12 @@ class PluginRegistry:
             raise ValueError(f"Plugin domain must be DataDomain enum, got {type(plugin.domain)}")
         if not isinstance(plugin.source_type, SourceType):
             raise ValueError(f"Plugin source_type must be SourceType enum, got {type(plugin.source_type)}")
-        
+
         key = f"{plugin.domain.value}:{plugin.source_type.value}"
         cls._plugins[key] = plugin
-    
+
     @classmethod
-    def get_plugin(cls, domain: str | DataDomain, source_type: str | SourceType) -> Optional[DataSourcePlugin]:
+    def get_plugin(cls, domain: str | DataDomain, source_type: str | SourceType) -> DataSourcePlugin | None:
         """
         Get plugin by domain and source type.
         
@@ -43,7 +44,7 @@ class PluginRegistry:
         source_val = source_type.value if hasattr(source_type, 'value') else source_type
         key = f"{domain_val}:{source_val}"
         return cls._plugins.get(key)
-    
+
     @classmethod
     def list_plugins(cls) -> list[tuple[str, str, DataSourcePlugin]]:
         """
@@ -56,7 +57,7 @@ class PluginRegistry:
             (key.split(':')[0], key.split(':')[1], plugin)
             for key, plugin in cls._plugins.items()
         ]
-    
+
     @classmethod
     def clear(cls):
         """Clear all registered plugins (mainly for testing)"""

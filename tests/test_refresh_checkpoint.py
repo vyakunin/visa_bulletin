@@ -2,15 +2,11 @@
 """Unit tests for scripts/cron/refresh checkpoint: should_skip_step, read/write."""
 
 import json
-import tempfile
 from pathlib import Path
 
-import pytest
-
 from scripts.cron.refresh.checkpoint import (
-    CheckpointData,
     OLD_STEP_NAME_TO_NEW,
-    STEPS_ORDER,
+    CheckpointData,
     read_checkpoint,
     should_skip_step,
     write_checkpoint,

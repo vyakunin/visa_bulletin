@@ -8,15 +8,13 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import instance
-from . import services
-from . import traffic_switch
+from . import instance, services, traffic_switch
 from .config import RefreshConfig, load_config
 from .pipeline import run_pipeline
 from .runner import RemoteRunner
 
 if TYPE_CHECKING:
-    from .runner import Runner
+    pass
 
 logger = logging.getLogger(__name__)
 

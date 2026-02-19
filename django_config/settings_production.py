@@ -33,7 +33,7 @@ if DB_ENGINE == 'sqlite3':
             },
         }
     }
-    
+
     # Database connection initialization (WAL mode for SQLite only)
     def setup_sqlite_wal(sender, connection, **kwargs):
         """Enable WAL mode for SQLite to allow concurrent reads/writes"""
@@ -42,7 +42,7 @@ if DB_ENGINE == 'sqlite3':
             cursor.execute('PRAGMA journal_mode=WAL;')
             cursor.execute('PRAGMA synchronous=NORMAL;')
             cursor.execute('PRAGMA cache_size=-64000;')
-    
+
     from django.db.backends.signals import connection_created
     connection_created.connect(setup_sqlite_wal)
 else:

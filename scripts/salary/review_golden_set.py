@@ -12,29 +12,30 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
 from django.db import transaction
 from django.utils import timezone
-from models.salary import Employer, EmployerClusteringReview
-from lib.business.salary.employer_clustering import match_employers, fuzzy_match
-from lib.utils.logging_utils import ScriptLogger
+
 from django_config.logging_config import setup_logging
+from lib.business.salary.employer_clustering import match_employers
+from lib.utils.logging_utils import ScriptLogger
+from models.salary import Employer, EmployerClusteringReview
 
 setup_logging()
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
 
-def load_examples(jsonl_file: Path, limit: Optional[int] = None) -> list[dict]:
+def load_examples(jsonl_file: Path, limit: int | None = None) -> list[dict]:
     """Load examples from JSONL file."""
     examples = []
-    with open(jsonl_file, 'r') as f:
+    with open(jsonl_file) as f:
         for line_num, line in enumerate(f, 1):
             if not line.strip():
                 continue
@@ -50,7 +51,7 @@ def load_examples(jsonl_file: Path, limit: Optional[int] = None) -> list[dict]:
     return examples
 
 
-def find_employer_by_name(name: str, city: str = '', state: str = '') -> Optional[Employer]:
+def find_employer_by_name(name: str, city: str = '', state: str = '') -> Employer | None:
     """
     Find employer in database by name and optionally location.
     
@@ -58,17 +59,17 @@ def find_employer_by_name(name: str, city: str = '', state: str = '') -> Optiona
     """
     # Try exact name match first
     employers = Employer.objects.filter(name=name)
-    
+
     # Filter by location if provided
     if city:
         employers = employers.filter(city__iexact=city)
     if state:
         employers = employers.filter(state__iexact=state)
-    
+
     employer = employers.first()
     if employer:
         return employer
-    
+
     # Try normalized name match
     normalized = Employer.normalize_name(name)
     employers = Employer.objects.filter(name_normalized=normalized)
@@ -76,7 +77,7 @@ def find_employer_by_name(name: str, city: str = '', state: str = '') -> Optiona
         employers = employers.filter(city__iexact=city)
     if state:
         employers = employers.filter(state__iexact=state)
-    
+
     return employers.first()
 
 
@@ -93,7 +94,7 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
     emp2_name = example.get('emp2_name', '')
     ground_truth = example.get('ground_truth', 'unknown')
     similarity = example.get('similarity', 0.0)
-    
+
     # Find employers in database
     emp1 = find_employer_by_name(
         emp1_name,
@@ -105,7 +106,7 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
         example.get('emp2_city', ''),
         example.get('emp2_state', '')
     )
-    
+
     if not emp1 or not emp2:
         return {
             'should_approve': None,
@@ -114,24 +115,24 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
             'emp1': emp1,
             'emp2': emp2
         }
-    
+
     # Use production algorithm to check
     is_match, confidence, reason = match_employers(emp1, emp2)
-    
+
     # Determine if should approve based on ground truth
     should_approve = (ground_truth == 'same')
-    
+
     # Check for borderline cases
     is_borderline = False
-    
+
     # Borderline: Low similarity but marked as same
     if ground_truth == 'same' and similarity < 0.7:
         is_borderline = True
-    
+
     # Borderline: High similarity but marked as different
     if ground_truth == 'different' and similarity > 0.8:
         is_borderline = True
-    
+
     # Borderline: Structural word conflicts but marked as same
     if ground_truth == 'same':
         # Check for obvious structural conflicts
@@ -149,7 +150,7 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
             if conflict2 in name1_upper and conflict1 in name2_upper:
                 is_borderline = True
                 break
-    
+
     # Borderline: Generic names that could be different entities
     generic_names = ['CHILDREN\'S HOSPITAL', 'COLUMBIA COLLEGE', 'UNIVERSITY']
     name1_upper = emp1_name.upper()
@@ -162,7 +163,7 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
             if loc1.strip(', ') != loc2.strip(', '):
                 is_borderline = True
                 break
-    
+
     return {
         'should_approve': should_approve,
         'reason': reason or f"Similarity: {similarity:.3f}, Ground truth: {ground_truth}",
@@ -174,13 +175,13 @@ def review_example(example: dict, auto_approve: bool = False) -> dict:
     }
 
 
-def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool, 
+def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool,
                             similarity: float, reason: str, reviewed_by: str = 'manual') -> EmployerClusteringReview:
     """Create or update review entry."""
     # Ensure emp1.id < emp2.id for consistency
     if emp1.id > emp2.id:
         emp1, emp2 = emp2, emp1
-    
+
     review, created = EmployerClusteringReview.objects.get_or_create(
         employer1=emp1,
         employer2=emp2,
@@ -192,7 +193,7 @@ def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool
             'reviewed_at': timezone.now(),
         }
     )
-    
+
     if not created:
         # Update existing review
         review.status = 'approved' if should_approve else 'rejected'
@@ -201,7 +202,7 @@ def create_or_update_review(emp1: Employer, emp2: Employer, should_approve: bool
         review.similarity_score = similarity
         review.match_reason = reason
         review.save()
-    
+
     return review
 
 
@@ -230,48 +231,48 @@ def main():
         action='store_true',
         help='Review but do not save to database'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Log execution
     script_logger.log_call(
         args=vars(args),
         context='Reviewing golden set examples and marking as reviewed'
     )
-    
+
     # Load examples
     if not args.examples_file.exists():
         logger.error(f"Examples file not found: {args.examples_file}")
         sys.exit(1)
-    
+
     logger.info(f"Loading examples from {args.examples_file}...")
     examples = load_examples(args.examples_file, limit=args.limit)
     logger.info(f"Loaded {len(examples)} examples")
-    
+
     if not examples:
         logger.error("No examples to review!")
         sys.exit(1)
-    
+
     # Review examples
     reviewed_count = 0
     borderline_cases = []
     not_found_cases = []
     errors = []
-    
+
     print(f"\n{'='*80}")
     print(f"REVIEWING {len(examples)} EXAMPLES")
     print(f"{'='*80}\n")
-    
+
     for i, example in enumerate(examples, 1):
         emp1_name = example.get('emp1_name', 'N/A')
         emp2_name = example.get('emp2_name', 'N/A')
         ground_truth = example.get('ground_truth', 'unknown')
-        
+
         print(f"[{i}/{len(examples)}] Reviewing: '{emp1_name}' vs '{emp2_name}' ({ground_truth})")
-        
+
         try:
             result = review_example(example, auto_approve=args.auto_approve)
-            
+
             if result['should_approve'] is None:
                 # Employer not found
                 not_found_cases.append({
@@ -282,7 +283,7 @@ def main():
                 })
                 print(f"  ⚠️  SKIPPED: {result['reason']}")
                 continue
-            
+
             if result['is_borderline']:
                 # Borderline case - ask user
                 borderline_cases.append({
@@ -317,7 +318,7 @@ def main():
                     reviewed_count += 1
                     status = 'APPROVED' if result['should_approve'] else 'REJECTED'
                     print(f"  ✅ {status} (DRY RUN): {result['reason']}")
-        
+
         except Exception as e:
             errors.append({
                 'example': i,
@@ -327,7 +328,7 @@ def main():
             })
             logger.error(f"Error reviewing example {i}: {e}", exc_info=True)
             print(f"  ❌ ERROR: {e}")
-    
+
     # Summary
     print(f"\n{'='*80}")
     print("REVIEW SUMMARY")
@@ -337,13 +338,13 @@ def main():
     print(f"Borderline cases: {len(borderline_cases)}")
     print(f"Not found in DB: {len(not_found_cases)}")
     print(f"Errors: {len(errors)}")
-    
+
     # Show borderline cases
     if borderline_cases:
         print(f"\n{'='*80}")
         print("BORDERLINE CASES - NEED YOUR DECISION")
         print(f"{'='*80}\n")
-        
+
         for case in borderline_cases:
             print(f"\nExample #{case['example']}:")
             print(f"  Employer 1: {case['emp1_name']}")
@@ -354,9 +355,9 @@ def main():
             print(f"  Ground truth: {case['ground_truth']}")
             print(f"  Reason: {case['reason']}")
             print(f"  Current status: Marked as '{case['ground_truth']}' in golden set")
-            
+
             if not args.auto_approve:
-                response = input(f"\n  Approve (same company)? [y/n/skip]: ").strip().lower()
+                response = input("\n  Approve (same company)? [y/n/skip]: ").strip().lower()
                 if response == 'y':
                     should_approve = True
                 elif response == 'n':
@@ -364,7 +365,7 @@ def main():
                 else:
                     print("  Skipped")
                     continue
-                
+
                 if not args.dry_run:
                     with transaction.atomic():
                         review = create_or_update_review(
@@ -378,7 +379,7 @@ def main():
                     reviewed_count += 1
                     status = 'APPROVED' if should_approve else 'REJECTED'
                     print(f"  ✅ {status}")
-    
+
     # Show not found cases
     if not_found_cases:
         print(f"\n{'='*80}")
@@ -389,7 +390,7 @@ def main():
             print(f"  {case['reason']}")
         if len(not_found_cases) > 10:
             print(f"\n... and {len(not_found_cases) - 10} more")
-    
+
     # Show errors
     if errors:
         print(f"\n{'='*80}")
@@ -398,9 +399,9 @@ def main():
         for error in errors:
             print(f"Example #{error['example']}: {error['emp1_name']} vs {error['emp2_name']}")
             print(f"  Error: {error['error']}")
-    
+
     if args.dry_run:
-        print(f"\n⚠️  DRY RUN - No changes saved to database")
+        print("\n⚠️  DRY RUN - No changes saved to database")
     else:
         print(f"\n✅ Reviewed {reviewed_count} examples and saved to database")
 

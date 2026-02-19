@@ -27,6 +27,7 @@ Usage:
 """
 
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -37,10 +38,11 @@ import logging
 from decimal import Decimal
 
 from django.db import connection
-from models.job_title import JobTitleCluster, JobTitle
+
+from django_config.logging_config import setup_logging
 from lib.utils.db_utils import bulk_update_batched
 from lib.utils.logging_utils import ScriptLogger
-from django_config.logging_config import setup_logging
+from models.job_title import JobTitle, JobTitleCluster
 
 setup_logging()
 script_logger = ScriptLogger(__file__)

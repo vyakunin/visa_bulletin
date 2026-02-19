@@ -7,8 +7,9 @@ Handles the complete pipeline:
 3. Save VisaCutoffDate records (idempotent)
 """
 
-import os
 import logging
+import os
+
 import django
 
 # Setup Django if not already configured
@@ -17,12 +18,13 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
 
 # Only call django.setup() if not already set up
 from django.apps import apps as django_apps
+
 if not django_apps.ready:
     django.setup()
 
-from lib.parsing.bulletin.table_to_cutoff_data import TableToCutoffData
 from lib.parsing.bulletin.parser import extract_tables
 from lib.parsing.bulletin.publication_data import PublicationData
+from lib.parsing.bulletin.table_to_cutoff_data import TableToCutoffData
 
 logger = logging.getLogger(__name__)
 
@@ -46,34 +48,34 @@ def save_bulletin_to_db(publication_data: PublicationData):
     # Extract date and tables from PublicationData
     publication_date = publication_data.publication_date.date()
     tables = extract_tables(publication_data.content)
-    
+
     # Import models here to ensure Django is fully set up
     from models.bulletin import Bulletin
     from models.visa_cutoff_date import VisaCutoffDate
-    
+
     # Get or create bulletin with URL
     bulletin, created = Bulletin.objects.get_or_create(
         publication_date=publication_date,
         defaults={'url': publication_data.url}
     )
-    
+
     # Update URL if bulletin exists but URL is missing
     if not created and not bulletin.url and publication_data.url:
         bulletin.url = publication_data.url
         bulletin.save()
-    
+
     if created:
         logger.info(f"Created new bulletin: {publication_date}")
     else:
         logger.info(f"Bulletin already exists: {publication_date}")
-    
+
     # Create extractor from PublicationData (accepts PublicationData object directly)
     extractor = TableToCutoffData(publication_data)
-    
+
     # Process each table
     for table in tables:
         cutoff_data_list = extractor.extract_from_table(table)
-        
+
         # Save each cutoff date (update_or_create for idempotency)
         for cutoff_data in cutoff_data_list:
             VisaCutoffDate.objects.update_or_create(
@@ -89,9 +91,9 @@ def save_bulletin_to_db(publication_data: PublicationData):
                     'is_unavailable': cutoff_data['is_unavailable'],
                 }
             )
-    
+
     # Log summary
     cutoff_count = VisaCutoffDate.objects.filter(bulletin=bulletin).count()
     logger.info(f"  Saved {cutoff_count} cutoff date records")
-    
+
     return bulletin

@@ -4,18 +4,18 @@ import json
 import logging
 from datetime import date, datetime
 
-from django.shortcuts import render
 from django.conf import settings
-from django_config.cache_utils import cache_page_skip_bots
+from django.shortcuts import render
 
-from models.enums.visa_category import VisaCategory
-from models.enums.action_type import ActionType
-from models.enums.country import Country
+from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
-    get_aggregated_visa_class_data,
     build_seo_metadata,
+    get_aggregated_visa_class_data,
 )
+from models.enums.action_type import ActionType
+from models.enums.country import Country
+from models.enums.visa_category import VisaCategory
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,13 @@ def _parse_submission_date(date_str: str) -> date:
     """Parse submission date from request, supports MM/DD/YYYY and YYYY-MM-DD."""
     if not date_str:
         return date.today()
-    
+
     # Try MM/DD/YYYY format first
     try:
         return datetime.strptime(date_str, '%m/%d/%Y').date()
     except ValueError:
         pass
-    
+
     # Try YYYY-MM-DD format (backward compatibility)
     try:
         return datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -68,12 +68,12 @@ def dashboard_view(request, category=None, country=None):
         country = Country.ALL.value
     action_type = request.GET.get('action_type', ActionType.FINAL_ACTION.value)
     submission_date = _parse_submission_date(request.GET.get('submission_date', ''))
-    
+
     # Get aggregated visa class data
     visa_class_data, has_data = get_aggregated_visa_class_data(
         category, country, action_type, submission_date
     )
-    
+
     # Build chart
     chart_data = None
     if has_data:
@@ -81,7 +81,7 @@ def dashboard_view(request, category=None, country=None):
         chart_data = build_multi_class_chart_with_projections(
             visa_class_data, submission_date, country, cat_label
         )
-    
+
     # Build SEO metadata
     seo = build_seo_metadata(category, country, request.build_absolute_uri())
     action_type_display = ActionType(action_type).label if action_type in [c.value for c in ActionType] else action_type
@@ -103,22 +103,22 @@ def dashboard_view(request, category=None, country=None):
         'country': country,
         'action_type': action_type,
         'submission_date': submission_date,
-        
+
         # Data
         'chart_data': chart_data,
         'visa_class_data': visa_class_data,
         'has_data': has_data,
-        
+
         # Filter options
         'visa_categories': VisaCategory.choices,
         'countries': Country.choices,
         'action_types': ActionType.choices,
-        
+
         # Display labels
         'category_display': seo['category_display'],
         'country_display': seo['country_display'],
         'action_type_display': action_type_display,
-        
+
         # SEO
         'page_title': seo['page_title'],
         'page_description': seo['page_description'],
@@ -129,5 +129,5 @@ def dashboard_view(request, category=None, country=None):
         'category_slugs_json': json.dumps(category_slugs),
         'country_slugs_json': json.dumps(country_slugs),
     }
-    
+
     return render(request, 'webapp/dashboard.html', context)

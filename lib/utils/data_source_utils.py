@@ -7,13 +7,12 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Cache for file stats (lazy-loaded)
-_file_stats_cache: Optional[dict] = None
-_cache_file_path: Optional[Path] = None
+_file_stats_cache: dict | None = None
+_cache_file_path: Path | None = None
 
 
 def _get_cache_file_path() -> Path:
@@ -39,20 +38,20 @@ def _load_cache() -> dict:
     global _file_stats_cache
     if _file_stats_cache is not None:
         return _file_stats_cache
-    
+
     cache_file_path = _get_cache_file_path()
     if cache_file_path.exists():
         try:
-            with open(cache_file_path, 'r') as f:
+            with open(cache_file_path) as f:
                 _file_stats_cache = json.load(f)
             logger.debug(f"Loaded file stats cache from {cache_file_path}")
         except Exception as e:
             logger.warning(f"Could not load cache file {cache_file_path}: {e}")
             _file_stats_cache = {}
     else:
-        logger.debug(f"Cache file not found, creating new cache")
+        logger.debug("Cache file not found, creating new cache")
         _file_stats_cache = {}
-    
+
     return _file_stats_cache
 
 
@@ -69,7 +68,7 @@ def _save_cache(cache: dict) -> None:
         logger.warning(f"Could not save cache file {cache_file_path}: {e}")
 
 
-def get_data_source_filepath(source) -> Optional[Path]:
+def get_data_source_filepath(source) -> Path | None:
     """
     Get the file path from a DataSource object, validating it exists.
     
@@ -81,17 +80,17 @@ def get_data_source_filepath(source) -> Optional[Path]:
     """
     if not source.local_file_path:
         return None
-    
+
     filepath = Path(source.local_file_path)
     if not filepath.exists():
         return None
-    
+
     return filepath
 
 
 def _get_file_stats_impl(
     filepath: Path,
-    logger_instance: Optional[logging.Logger] = None
+    logger_instance: logging.Logger | None = None
 ) -> dict:
     """
     Internal implementation: Get comprehensive statistics from input file (Excel/CSV).
@@ -115,10 +114,10 @@ def _get_file_stats_impl(
         Exception: If file analysis fails (e.g., corrupted Excel file, CSV parsing error)
     """
     log = logger_instance or logger
-    
+
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
-    
+
     stats = {
         'filepath': str(filepath),
         'filename': filepath.name,
@@ -126,16 +125,16 @@ def _get_file_stats_impl(
         'row_count': None,
         'columns': None,
     }
-    
+
     log.debug(f"Getting input stats for filepath: {filepath}")
-    
+
     if filepath.suffix.lower() in ['.xlsx', '.xls']:
-        from lib.utils.excel_utils import read_excel_headers, _count_excel_rows
-        
+        from lib.utils.excel_utils import _count_excel_rows, read_excel_headers
+
         stats['row_count'] = _count_excel_rows(filepath)
         stats['columns'] = read_excel_headers(filepath)
     elif filepath.suffix.lower() == '.csv':
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(filepath, encoding='utf-8', errors='ignore') as f:
             reader = csv.reader(f)
             headers = next(reader, [])
             # Count rows (excluding header)
@@ -148,13 +147,13 @@ def _get_file_stats_impl(
         stats['columns'] = None
     else:
         raise ValueError(f"Unknown file type: {filepath.suffix}")
-    
+
     return stats
 
 
 def get_file_stats(
     filepath: Path,
-    logger_instance: Optional[logging.Logger] = None
+    logger_instance: logging.Logger | None = None
 ) -> dict:
     """
     Get comprehensive statistics from input file (Excel/CSV), with caching.
@@ -176,14 +175,14 @@ def get_file_stats(
         Exception: If file analysis fails (e.g., corrupted Excel file, CSV parsing error)
     """
     log = logger_instance or logger
-    
+
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
-    
+
     # Load cache and check if already cached
     cache = _load_cache()
     cache_key = filepath.as_uri()
-    
+
     if cache_key in cache:
         cached_value = cache[cache_key]
         if cached_value is not None:
@@ -192,22 +191,22 @@ def get_file_stats(
                 log.debug(f"Using cached stats for {filepath.name}")
                 return cached_value
             # Old format (int): cache will be migrated to new format (dict) on next save
-    
+
     # Not in cache, analyze file
     stats = _get_file_stats_impl(filepath, log)
-    
+
     # Save to cache
     cache[cache_key] = stats
     _save_cache(cache)
     if stats['row_count'] is not None:
         log.debug(f"Cached stats for {filepath.name}: {stats['row_count']:,} rows")
-    
+
     return stats
 
 
 def count_file_rows(
     filepath: Path,
-    logger_instance: Optional[logging.Logger] = None
+    logger_instance: logging.Logger | None = None
 ) -> int:
     """
     Count data rows in file (excluding header), with caching.
@@ -232,11 +231,11 @@ def count_file_rows(
         Exception: If file analysis fails (e.g., corrupted Excel file, CSV parsing error)
     """
     log = logger_instance or logger
-    
+
     # Check cache first for backwards compatibility with old format (int)
     cache = _load_cache()
     cache_key = filepath.as_uri()
-    
+
     if cache_key in cache:
         cached_value = cache[cache_key]
         if cached_value is not None:
@@ -250,13 +249,13 @@ def count_file_rows(
                 if row_count is not None:
                     log.debug(f"Using cached row count for {filepath.name}: {row_count:,}")
                     return row_count
-    
+
     # Not in cache, get full stats (which will cache the new format)
     stats = get_file_stats(filepath, logger_instance=log)
     return stats.get('row_count')
 
 
-def get_fiscal_year_from_filename(filename: str, fallback_url: Optional[str] = None) -> Optional[int]:
+def get_fiscal_year_from_filename(filename: str, fallback_url: str | None = None) -> int | None:
     """
     Extract fiscal year from filename, with optional fallback to URL.
     
@@ -293,7 +292,7 @@ def get_fiscal_year_from_filename(filename: str, fallback_url: Optional[str] = N
     match = re.search(r'FY(\d{4})', filename, re.IGNORECASE)
     if match:
         return int(match.group(1))
-    
+
     # Try FY## pattern (2 digits - e.g., FY17 = 2017, FY16 = 2016, FY14 = 2014)
     # Use lookahead to ensure it's followed by non-digit (or end of string), not word boundary
     # because _ is a word character and FY14_Q4 would fail with \b
@@ -303,12 +302,12 @@ def get_fiscal_year_from_filename(filename: str, fallback_url: Optional[str] = N
         # Convert 2-digit year to 4-digit (FY17 -> 2017, FY16 -> 2016, etc.)
         # Assume years 00-99 map to 2000-2099
         return 2000 + year_2digit
-    
+
     # Try to find any 4-digit year starting with 20
     match = re.search(r'20\d{2}', filename)
     if match:
         return int(match.group())
-    
+
     # Fallback to URL if filename extraction failed and URL is provided
     if fallback_url:
         # Extract filename from URL (handle full URLs, file:// URLs, and reimport:// URLs)
@@ -320,12 +319,12 @@ def get_fiscal_year_from_filename(filename: str, fallback_url: Optional[str] = N
         else:
             url_path = urlparse(fallback_url).path
         url_filename = Path(url_path).name if url_path else fallback_url
-        
+
         # Try FY#### pattern in URL filename (4 digits)
         match = re.search(r'FY(\d{4})', url_filename, re.IGNORECASE)
         if match:
             return int(match.group(1))
-        
+
         # Try FY## pattern in URL filename (2 digits)
         # Use lookahead to ensure it's followed by non-digit (or end of string)
         match = re.search(r'FY(\d{2})(?=\D|$)', url_filename, re.IGNORECASE)
@@ -333,20 +332,20 @@ def get_fiscal_year_from_filename(filename: str, fallback_url: Optional[str] = N
             year_2digit = int(match.group(1))
             # Convert 2-digit year to 4-digit (FY17 -> 2017, FY16 -> 2016, etc.)
             return 2000 + year_2digit
-        
+
         # Try to find any 4-digit year starting with 20 in URL filename
         match = re.search(r'20\d{2}', url_filename)
         if match:
             return int(match.group())
-    
+
     return None
 
 
 def get_fiscal_year_from_datasource(
     source_file: str,
     data_source: 'DataSource',
-    logger_instance: Optional[logging.Logger] = None
-) -> Optional[int]:
+    logger_instance: logging.Logger | None = None
+) -> int | None:
     """
     Get fiscal year from DataSource using multiple strategies.
     
@@ -374,28 +373,28 @@ def get_fiscal_year_from_datasource(
     """
     if logger_instance is None:
         logger_instance = logger
-    
+
     # Strategy 1: Try basic extraction from filename and URL
     fiscal_year = get_fiscal_year_from_filename(source_file, fallback_url=data_source.url)
-    
+
     # Strategy 2: If URL is file:// or reimport://, try advanced strategies
     if fiscal_year is None and (data_source.url.startswith('file://') or data_source.url.startswith('reimport://')):
         # Strategy 2a: Check alternative DataSources with same local_file_path
         if data_source.local_file_path:
             # Import here to avoid circular dependencies
+
             from models.ingest.data_source import DataSource as DataSourceModel
-            from django.db.models import Q
-            
+
             other_sources = DataSourceModel.objects.filter(
                 local_file_path=data_source.local_file_path
             ).exclude(id=data_source.id)
-            
+
             for alt_source in other_sources:
                 alt_fiscal_year = get_fiscal_year_from_filename(source_file, fallback_url=alt_source.url)
                 if alt_fiscal_year:
                     logger_instance.debug(f"Found fiscal year from alternative DataSource {alt_source.id}: {alt_source.url}")
                     return alt_fiscal_year
-        
+
         # Strategy 2b: Check IngestRun records for original URL info
         from models.ingest.ingest_run import IngestRun
         runs = IngestRun.objects.filter(source=data_source).order_by('-started_at')
@@ -405,7 +404,7 @@ def get_fiscal_year_from_datasource(
                 fiscal_year = get_fiscal_year_from_filename(source_file, fallback_url=run.source.url)
                 if fiscal_year:
                     return fiscal_year
-            
+
             # Check checkpoint for original filename
             if run.checkpoint and isinstance(run.checkpoint, dict):
                 checkpoint_filepath = run.checkpoint.get('filepath', '')
@@ -416,7 +415,7 @@ def get_fiscal_year_from_datasource(
                         fiscal_year = get_fiscal_year_from_filename(checkpoint_filename)
                         if fiscal_year:
                             return fiscal_year
-        
+
         # Strategy 2c: Try extracting from metadata
         if data_source.metadata:
             original_filename = data_source.metadata.get('original_filename') or data_source.metadata.get('filename')
@@ -425,7 +424,7 @@ def get_fiscal_year_from_datasource(
                 fiscal_year = get_fiscal_year_from_filename(original_filename)
                 if fiscal_year:
                     return fiscal_year
-    
+
     return fiscal_year
 
 
@@ -452,7 +451,7 @@ def get_source_file_date(filepath: Path, data_source: 'DataSource') -> datetime 
     """
     # Step 1: Extract fiscal year from filename
     fiscal_year = get_fiscal_year_from_filename(filepath.name, fallback_url=data_source.url)
-    
+
     # Step 2: Get file modification time
     mtime = None
     if filepath.exists():
@@ -462,7 +461,7 @@ def get_source_file_date(filepath: Path, data_source: 'DataSource') -> datetime 
         except (OSError, ValueError):
             # File doesn't exist or can't read mtime
             pass
-    
+
     # Step 3 & 4: Validate mtime against extracted year
     if mtime and fiscal_year:
         mtime_year = mtime.year
@@ -478,10 +477,10 @@ def get_source_file_date(filepath: Path, data_source: 'DataSource') -> datetime 
     elif mtime:
         # Have mtime but no fiscal year → use mtime
         return mtime
-    
+
     # Step 5: Fallback to DataSource.downloaded_at
     if data_source.downloaded_at:
         return data_source.downloaded_at
-    
+
     # Step 6: No date available
     return None

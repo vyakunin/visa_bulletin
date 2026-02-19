@@ -66,8 +66,8 @@ def setup_django_for_tests():
         else:
             from tests.ensure_test_db import grant_createdb
             grant_createdb()
-            from django.db import connection
             from django.core.management import call_command
+            from django.db import connection
             # Bazel runs tests in parallel; each process needs its own DB to avoid "already exists".
             base_name = connection.settings_dict['NAME']
             if base_name == 'postgres':

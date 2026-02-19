@@ -10,21 +10,21 @@ For example, Country.ALL = 0, so `if not country:` would incorrectly skip it.
 Always use: `if country is None:` instead of `if not country:`
 """
 
-from datetime import date, datetime
-from typing import Optional, Union
 import logging
+from datetime import date, datetime
+from typing import Union
 
-from models.enums.visa_category import VisaCategory
 from models.enums.action_type import ActionType
 from models.enums.country import Country
+from models.enums.visa_category import VisaCategory
 
 logger = logging.getLogger(__name__)
 
 
 class TableToCutoffData:
     """Extracts structured data from parsed bulletin tables"""
-    
-    def __init__(self, publication_date_or_data: Union[date, datetime, 'PublicationData'], publication_url: Optional[str] = None):
+
+    def __init__(self, publication_date_or_data: Union[date, datetime, 'PublicationData'], publication_url: str | None = None):
         """
         Initialize extractor for a specific bulletin
         
@@ -38,7 +38,7 @@ class TableToCutoffData:
         """
         # Support both PublicationData object and (date, url) tuple
         from lib.parsing.bulletin.publication_data import PublicationData
-        
+
         if isinstance(publication_date_or_data, PublicationData):
             pub_data = publication_date_or_data
             pub_date = pub_data.publication_date
@@ -56,9 +56,9 @@ class TableToCutoffData:
             else:
                 self.publication_date = pub_date
             self.publication_url = publication_url
-    
+
     @classmethod
-    def from_metadata(cls, publication_date: Optional[date], publication_url: str) -> 'TableToCutoffData':
+    def from_metadata(cls, publication_date: date | None, publication_url: str) -> 'TableToCutoffData':
         """
         Create extractor from metadata (convenience method).
         
@@ -72,7 +72,7 @@ class TableToCutoffData:
         # Use a default date if None (shouldn't happen in practice)
         pub_date = publication_date if publication_date else date.today()
         return cls(pub_date, publication_url)
-    
+
     def extract_from_table(self, table) -> list[dict[str, any]]:
         """
         Extract structured data from a parsed BulletinTable object
@@ -84,26 +84,26 @@ class TableToCutoffData:
             List of dicts ready for VisaCutoffDate model creation
         """
         results = []
-        
+
         # Get category and action type from table title using enums
         visa_category = VisaCategory.from_table_title(table.title)
         action_type = ActionType.from_table_title(table.title)
-        
+
         if not visa_category or not action_type:
             # Unknown table type, skip
             return results
-        
+
         # Skip first column (it's the class name), rest are countries
         country_headers = table.headers[1:]
-        
+
         for row in table.rows:
             visa_class = row[0]
             cutoff_values = row[1:]
-            
+
             # Create entry for each country
             for country_header, cutoff_value in zip(country_headers, cutoff_values):
                 country = Country.from_header(country_header)
-                
+
                 # CRITICAL: Check for None explicitly, not just falsy!
                 # Country.ALL = 0, which is falsy, so we must check `country is None`
                 if country is None:
@@ -113,7 +113,7 @@ class TableToCutoffData:
                         f"Full headers: {country_headers}. Skipping this column."
                     )
                     continue
-                
+
                 data = {
                     'visa_category': visa_category.value,
                     'visa_class': visa_class,
@@ -121,11 +121,11 @@ class TableToCutoffData:
                     'country': country.value,
                     **self._parse_cutoff_value(cutoff_value)
                 }
-                
+
                 results.append(data)
-        
+
         return results
-    
+
     def _parse_cutoff_value(self, value) -> dict[str, any]:
         """
         Parse a cutoff value (date, 'C', or 'U')

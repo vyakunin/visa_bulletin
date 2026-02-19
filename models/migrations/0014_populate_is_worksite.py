@@ -6,11 +6,11 @@ from django.db import migrations
 def populate_is_worksite(apps, schema_editor):
     """Populate is_worksite field based on source_file pattern"""
     SalaryRecord = apps.get_model('models', 'SalaryRecord')
-    
+
     # Update all records in batches to avoid memory issues
     batch_size = 10000
     total_updated = 0
-    
+
     # Get all records that should be marked as worksite
     # Use raw SQL for efficiency on large dataset
     with schema_editor.connection.cursor() as cursor:
@@ -37,7 +37,7 @@ def populate_is_worksite(apps, schema_editor):
                 AND is_worksite = 0
             """)
         total_updated = cursor.rowcount
-    
+
     print(f"Updated {total_updated} records with is_worksite=True")
 
 

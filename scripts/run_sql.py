@@ -25,7 +25,7 @@ def is_running_in_docker() -> bool:
     if os.path.exists("/.dockerenv"):
         return True
     try:
-        with open("/proc/1/cgroup", "r") as handle:
+        with open("/proc/1/cgroup") as handle:
             return "docker" in handle.read()
     except (FileNotFoundError, PermissionError):
         return False
@@ -47,6 +47,7 @@ import django
 django.setup()
 
 from django.db import connection  # noqa: E402
+
 from django_config.logging_config import setup_logging  # noqa: E402
 from lib.utils.logging_utils import ScriptLogger  # noqa: E402
 from models.bulletin import Bulletin  # noqa: F401,E402

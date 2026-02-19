@@ -137,6 +137,7 @@ ANALYTICS_SCRIPT = os.environ.get('ANALYTICS_SCRIPT', '')
 
 # Logging Configuration
 from django_config.logging_config import setup_logging
+
 setup_logging(debug=DEBUG)
 
 # HTTPS/Security settings (enable in production)

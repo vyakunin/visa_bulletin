@@ -1,5 +1,5 @@
 # Models package
-# 
+#
 # IMPORTANT: Do NOT import models at module level here!
 # Model imports are handled in models/apps.py in the ready() method.
 # Importing models here causes AppRegistryNotReady errors during django.setup().

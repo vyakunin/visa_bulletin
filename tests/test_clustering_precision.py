@@ -6,16 +6,18 @@ Written using TDD approach: write failing tests first, then fix algorithm.
 """
 
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
 import unittest
-from models.salary import Employer
+
 from lib.business.salary.employer_clustering import match_employers, should_auto_cluster
+from models.salary import Employer
 
 
 class TestClusteringPrecision(unittest.TestCase):
     """Test precision improvements to prevent false positives."""
-    
+
     def test_structural_word_conflict_should_not_match(self):
         """Test that structural word conflicts prevent matching."""
         # Known false positives that should NOT match
@@ -41,18 +43,18 @@ class TestClusteringPrecision(unittest.TestCase):
                 'reason': 'Technology vs Consulting - different structural words'
             },
         ]
-        
+
         for case in conflict_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 # Should NOT match (false positive prevention)
                 self.assertFalse(
                     is_match,
                     f"Precision issue: Should NOT match '{case['emp1'].name}' vs '{case['emp2'].name}' "
                     f"({case['reason']}) - reason: {reason}, confidence: {confidence:.3f}"
                 )
-    
+
     def test_location_filtering_for_generic_names_different_states(self):
         """Test that location filtering reduces confidence for generic names across different states."""
         # Generic names in different states should have low confidence (below auto-cluster threshold)
@@ -64,11 +66,11 @@ class TestClusteringPrecision(unittest.TestCase):
                 'should_auto_cluster': False  # Should match but with low confidence (< 0.95)
             },
         ]
-        
+
         for case in generic_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 # Should match but with low confidence (below 0.95 threshold) for different states
                 if case['emp1'].state and case['emp2'].state and case['emp1'].state != case['emp2'].state:
                     # match_employers returns True with low confidence, but should_auto_cluster rejects it
@@ -85,7 +87,7 @@ class TestClusteringPrecision(unittest.TestCase):
                         cluster_confidence, 0.95,
                         f"Confidence should be below threshold for different states: {cluster_confidence:.3f}"
                     )
-    
+
     def test_similarity_threshold_boundaries(self):
         """Test that similarity thresholds are strict enough."""
         # Test that 0.90 similarity is not enough for auto-cluster
@@ -98,21 +100,21 @@ class TestClusteringPrecision(unittest.TestCase):
                 'should_match': False,  # Should NOT match at 0.90 threshold
             },
         ]
-        
+
         # Note: This test will need actual similarity calculation
         # For now, we test that threshold of 0.95 is used
         emp1 = Employer(name='Test Company Inc', city='NY', state='NY')
         emp2 = Employer(name='Test Company LLC', city='NY', state='NY')
-        
+
         should_cluster, confidence, reason = should_auto_cluster(emp1, emp2, threshold=0.95)
-        
+
         # If confidence < 0.95, should NOT auto-cluster
         if confidence < 0.95:
             self.assertFalse(
                 should_cluster,
                 f"Precision: Should NOT auto-cluster when confidence ({confidence:.3f}) < threshold (0.95)"
             )
-    
+
     def test_substring_match_with_structural_conflict_should_not_match(self):
         """Test that substring matches are rejected when structural words conflict."""
         # Substring matches should NOT be allowed when structural words differ
@@ -128,11 +130,11 @@ class TestClusteringPrecision(unittest.TestCase):
                 'reason': 'Substring match but structural words conflict (Technologies vs Partners)'
             },
         ]
-        
+
         for case in substring_conflict_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 # Should NOT match even if substring (structural words conflict)
                 self.assertFalse(
                     is_match,
@@ -140,7 +142,7 @@ class TestClusteringPrecision(unittest.TestCase):
                     f"when structural words conflict ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                 )
-    
+
     def test_normalization_edge_cases_that_cause_false_positives(self):
         """Test normalization edge cases that cause false positives."""
         # Cases where normalization creates false matches
@@ -153,11 +155,11 @@ class TestClusteringPrecision(unittest.TestCase):
             },
             # Add more cases as we identify normalization issues
         ]
-        
+
         for case in normalization_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 if case['should_match']:
                     self.assertTrue(
                         is_match,
@@ -168,7 +170,7 @@ class TestClusteringPrecision(unittest.TestCase):
                         is_match,
                         f"Should NOT match: '{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']})"
                     )
-    
+
     def test_geographic_qualifiers_distinguish_companies(self):
         """Test that geographic qualifiers (USA, US, North, South) distinguish companies."""
         geographic_cases = [
@@ -180,11 +182,11 @@ class TestClusteringPrecision(unittest.TestCase):
             },
             # Add more cases as we identify them
         ]
-        
+
         for case in geographic_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 if not case['should_match']:
                     self.assertFalse(
                         is_match,
@@ -192,7 +194,7 @@ class TestClusteringPrecision(unittest.TestCase):
                         f"'{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                         f"reason: {reason}, confidence: {confidence:.3f}"
                     )
-    
+
     def test_hyphen_variations_require_exact_location(self):
         """Test that hyphen variations (HI-TEK vs HITEK) require exact location match."""
         hyphen_cases = [
@@ -227,11 +229,11 @@ class TestClusteringPrecision(unittest.TestCase):
                 'reason': 'Hyphen variation with same state (city differs)'
             },
         ]
-        
+
         for case in hyphen_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 if case['should_match']:
                     self.assertTrue(
                         is_match,
@@ -246,7 +248,7 @@ class TestClusteringPrecision(unittest.TestCase):
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                     )
-    
+
     def test_generic_names_missing_state_lower_confidence(self):
         """Test that hyphen variations with missing state now have confidence at threshold (0.95).
         
@@ -261,11 +263,11 @@ class TestClusteringPrecision(unittest.TestCase):
                 'reason': 'Hyphen variation with same city - now auto-clusters'
             },
         ]
-        
+
         for case in generic_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 # Should match with confidence at threshold
                 self.assertGreaterEqual(
                     confidence, 0.95,
@@ -273,7 +275,7 @@ class TestClusteringPrecision(unittest.TestCase):
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' - "
                     f"confidence: {confidence:.3f}, reason: {reason}"
                 )
-                
+
                 # Verify should_auto_cluster accepts it (RECALL FIX)
                 should_cluster, cluster_confidence, cluster_reason = should_auto_cluster(
                     case['emp1'], case['emp2'], threshold=0.95
@@ -283,7 +285,7 @@ class TestClusteringPrecision(unittest.TestCase):
                     f"Should auto-cluster hyphen variation with same city: "
                     f"confidence: {cluster_confidence:.3f} >= 0.95"
                 )
-    
+
     def test_bbc_entities_should_cluster_appropriately(self):
         """Test BBC entities clustering behavior."""
         # BBC test cases based on actual data
@@ -331,11 +333,11 @@ class TestClusteringPrecision(unittest.TestCase):
                 'reason': 'BBC Retail vs BBC News - completely different BBC divisions'
             },
         ]
-        
+
         for case in bbc_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 # Test basic matching
                 if case['should_match']:
                     self.assertTrue(
@@ -349,7 +351,7 @@ class TestClusteringPrecision(unittest.TestCase):
                         f"BBC entities should NOT match: '{case['emp1'].name}' vs '{case['emp2'].name}' "
                         f"({case['reason']}) - reason: {reason}, confidence: {confidence:.3f}"
                     )
-                
+
                 # Test auto-clustering threshold
                 if case['should_match']:
                     should_cluster, cluster_confidence, cluster_reason = should_auto_cluster(

@@ -13,7 +13,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 # Setup Django FIRST (before any imports that might trigger model imports)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -34,6 +33,7 @@ else:
 sys.path.insert(0, str(project_root))
 
 import django
+
 django.setup()
 
 from django_config.logging_config import setup_logging
@@ -48,7 +48,7 @@ def test_threshold(
     min_pairs: int,
     output_dir: Path,
     seed: int
-) -> Optional[dict]:
+) -> dict | None:
     """
     Test a single threshold and return precision metrics.
     
@@ -58,15 +58,15 @@ def test_threshold(
     logger.info(f"\n{'='*60}")
     logger.info(f"Testing threshold: {threshold:.4f}")
     logger.info(f"{'='*60}")
-    
+
     # Run threshold evaluation
     result_file = output_dir / f"results_threshold_{threshold:.4f}.json"
-    
+
     # Check if we already have results for this threshold
     if result_file.exists():
         logger.info(f"Found existing results for threshold {threshold:.4f}, loading...")
         try:
-            with open(result_file, 'r') as f:
+            with open(result_file) as f:
                 data = json.load(f)
                 precision = data['metrics']['overall']['precision']
                 logger.info(f"Loaded: Precision = {precision:.2%}")
@@ -78,7 +78,7 @@ def test_threshold(
                 }
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Failed to load existing results: {e}, re-running test...")
-    
+
     # Run evaluation script
     cmd = [
         'bazel', 'run', '//scripts/salary:evaluate_clustering_threshold', '--',
@@ -88,40 +88,40 @@ def test_threshold(
         '--output-dir', str(output_dir),
         '--seed', str(seed),
     ]
-    
+
     logger.info(f"Running: {' '.join(cmd)}")
     start_time = time.time()
-    
+
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         cwd=str(project_root)
     )
-    
+
     elapsed = time.time() - start_time
-    
+
     if result.returncode != 0:
         logger.error(f"Threshold test failed (exit code {result.returncode})")
         logger.error(f"stderr: {result.stderr[:500]}")
         return None
-    
+
     # Load results
     if not result_file.exists():
         logger.error(f"Results file not found: {result_file}")
         return None
-    
+
     try:
-        with open(result_file, 'r') as f:
+        with open(result_file) as f:
             data = json.load(f)
-        
+
         precision = data['metrics']['overall']['precision']
         fp_count = data['metrics']['auto_clustered']['false_positives']
         tp_count = data['metrics']['auto_clustered']['true_positives']
-        
+
         logger.info(f"✓ Threshold {threshold:.4f}: Precision = {precision:.2%} "
                    f"(TP={tp_count}, FP={fp_count}) - {elapsed:.1f}s")
-        
+
         return {
             'threshold': threshold,
             'precision': precision,
@@ -144,7 +144,7 @@ def binary_search_threshold(
     high: float = 1.00,
     convergence_threshold: float = 0.01,
     max_iterations: int = 20
-) -> Optional[dict]:
+) -> dict | None:
     """
     Perform binary search to find threshold achieving target precision.
     
@@ -159,7 +159,7 @@ def binary_search_threshold(
     logger.info(f"Convergence threshold: {convergence_threshold:.3f}")
     logger.info(f"Sample size: {sample_size}")
     logger.info("="*60)
-    
+
     # Check if Ollama is available
     ollama_check = subprocess.run(["which", "ollama"], capture_output=True)
     if ollama_check.returncode != 0:
@@ -169,40 +169,40 @@ def binary_search_threshold(
         logger.error("Install: brew install ollama && ollama pull llama3.2:3b")
         logger.error("="*60)
         return None
-    
+
     iteration = 0
     best_result = None
     best_precision_diff = float('inf')
-    
+
     while iteration < max_iterations:
         iteration += 1
-        
+
         # Check convergence
         if high - low < convergence_threshold:
             logger.info(f"\n✓ Converged after {iteration-1} iterations")
             logger.info(f"  Final range: [{low:.4f}, {high:.4f}] (width: {high-low:.4f})")
             break
-        
+
         # Test midpoint
         mid = (low + high) / 2
-        
+
         logger.info(f"\n--- Iteration {iteration} ---")
         logger.info(f"Testing threshold: {mid:.4f} (range: [{low:.4f}, {high:.4f}])")
-        
+
         result = test_threshold(mid, sample_size, min_pairs, output_dir, seed)
-        
+
         if result is None:
             logger.error(f"Failed to test threshold {mid:.4f}, aborting search")
             return None
-        
+
         precision = result['precision']
         precision_diff = abs(precision - target_precision)
-        
+
         # Track best result so far
         if precision_diff < best_precision_diff:
             best_precision_diff = precision_diff
             best_result = result
-        
+
         # Update bounds based on precision
         if precision > target_precision:
             # Precision too high → threshold too high → lower it
@@ -218,11 +218,11 @@ def binary_search_threshold(
             # Exact match (unlikely but possible)
             logger.info(f"✓ Exact match! Precision = {precision:.2%} at threshold {mid:.4f}")
             return result
-    
+
     if iteration >= max_iterations:
         logger.warning(f"\n⚠ Reached max iterations ({max_iterations})")
         logger.warning(f"  Final range: [{low:.4f}, {high:.4f}] (width: {high-low:.4f})")
-    
+
     # Return best result found
     if best_result:
         logger.info(f"\n✓ Best result: threshold {best_result['threshold']:.4f} "
@@ -292,25 +292,25 @@ def main():
         default=20,
         help='Maximum iterations (default: 20)'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Validate arguments
     if args.low >= args.high:
         logger.error(f"Invalid search range: low ({args.low}) >= high ({args.high})")
         return 1
-    
+
     if args.target_precision <= 0 or args.target_precision >= 1:
         logger.error(f"Invalid target precision: {args.target_precision} (must be 0 < p < 1)")
         return 1
-    
+
     if args.min_pairs < args.sample_size * 2:
         logger.warning(f"min_pairs ({args.min_pairs}) < sample_size*2 ({args.sample_size*2})")
         logger.warning("Consider increasing min_pairs for better sampling")
-    
+
     # Create output directory
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Run binary search
     start_time = time.time()
     result = binary_search_threshold(
@@ -325,38 +325,38 @@ def main():
         max_iterations=args.max_iterations
     )
     total_elapsed = time.time() - start_time
-    
+
     # Print final summary
     print("\n" + "="*60)
     print("BINARY SEARCH SUMMARY")
     print("="*60)
-    
+
     if result:
         print(f"✓ Optimal threshold: {result['threshold']:.4f}")
         print(f"  Precision: {result['precision']:.2%}")
         print(f"  Target: {args.target_precision:.1%}")
         print(f"  Difference: {abs(result['precision'] - args.target_precision):.2%}")
-        
+
         metrics = result['metrics']
-        print(f"\nDetailed Metrics:")
-        print(f"  Auto-clustered:")
+        print("\nDetailed Metrics:")
+        print("  Auto-clustered:")
         print(f"    True positives: {metrics['auto_clustered']['true_positives']}")
         print(f"    False positives: {metrics['auto_clustered']['false_positives']}")
         print(f"    Precision: {metrics['auto_clustered']['precision']:.2%}")
-        print(f"  Overall:")
+        print("  Overall:")
         print(f"    Precision: {metrics['overall']['precision']:.2%}")
         print(f"    Recall: {metrics['overall']['recall']:.2%}")
         print(f"    F1 Score: {metrics['overall']['f1_score']:.3f}")
-        
+
         print(f"\nResults saved to: {result['result_file']}")
     else:
         print("✗ Binary search failed - no optimal threshold found")
         print("  Check logs above for errors")
         return 1
-    
+
     print(f"\nTotal time: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
     print("="*60)
-    
+
     return 0
 
 

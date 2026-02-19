@@ -6,18 +6,20 @@ Tests that true positives remain matched and true negatives remain unmatched.
 """
 
 from tests.django_setup import setup_django_for_tests
+
 setup_django_for_tests()
 
 import json
 import unittest
 from pathlib import Path
-from models.salary import Employer
+
 from lib.business.salary.employer_clustering import match_employers, should_auto_cluster
+from models.salary import Employer
 
 
 class TestClusteringRegression(unittest.TestCase):
     """Regression tests to prevent breaking known good cases."""
-    
+
     @classmethod
     def setUpClass(cls):
         """Load examples from clustering_examples.jsonl."""
@@ -26,17 +28,17 @@ class TestClusteringRegression(unittest.TestCase):
             Path(__file__).parent.parent / "data" / "clustering_examples.jsonl",  # Local execution
             Path("data/clustering_examples.jsonl"),  # Bazel runfiles (workspace root)
         ]
-        
+
         examples_file = None
         for path in possible_paths:
             if path.exists():
                 examples_file = path
                 break
-        
+
         cls.examples = []
-        
+
         if examples_file and examples_file.exists():
-            with open(examples_file, 'r') as f:
+            with open(examples_file) as f:
                 for line in f:
                     if not line.strip():
                         continue
@@ -47,16 +49,16 @@ class TestClusteringRegression(unittest.TestCase):
                             cls.examples.append(example)
                     except json.JSONDecodeError:
                         continue
-        
+
         # Separate examples by ground truth
         cls.true_positives = [ex for ex in cls.examples if ex.get('ground_truth') == 'same']
         cls.true_negatives = [ex for ex in cls.examples if ex.get('ground_truth') == 'different']
-    
+
     def test_known_true_positives_remain_matched(self):
         """Test that known true positive pairs remain matched."""
         # Test a sample of true positives (first 20 to keep test fast)
         test_cases = self.true_positives[:20]
-        
+
         for example in test_cases:
             with self.subTest(emp1=example['emp1_name'], emp2=example['emp2_name']):
                 emp1 = Employer(
@@ -71,21 +73,21 @@ class TestClusteringRegression(unittest.TestCase):
                     city=example.get('emp2_city', '') or '',
                     state=example.get('emp2_state', '') or ''
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 # Should match (true positive)
                 self.assertTrue(
                     is_match,
                     f"Should match: '{example['emp1_name']}' vs '{example['emp2_name']}' "
                     f"(reason: {reason}, confidence: {confidence:.3f})"
                 )
-    
+
     def test_known_true_negatives_remain_unmatched(self):
         """Test that known true negative pairs remain unmatched."""
         # Test a sample of true negatives (first 20 to keep test fast)
         test_cases = self.true_negatives[:20]
-        
+
         for example in test_cases:
             with self.subTest(emp1=example['emp1_name'], emp2=example['emp2_name']):
                 emp1 = Employer(
@@ -100,16 +102,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=example.get('emp2_city', '') or '',
                     state=example.get('emp2_state', '') or ''
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 # Should NOT match (true negative)
                 self.assertFalse(
                     is_match,
                     f"Should NOT match: '{example['emp1_name']}' vs '{example['emp2_name']}' "
                     f"(reason: {reason}, confidence: {confidence:.3f})"
                 )
-    
+
     def test_precision_critical_cases_remain_unmatched(self):
         """Test known false positive cases that should NOT match (precision-critical)."""
         # Known false positive cases from the codebase
@@ -147,7 +149,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'emp2_state': 'MA',
             },
         ]
-        
+
         for case in precision_critical_cases:
             with self.subTest(emp1=case['emp1_name'], emp2=case['emp2_name']):
                 emp1 = Employer(
@@ -162,16 +164,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case.get('emp2_city', '') or '',
                     state=case.get('emp2_state', '') or ''
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 # Should NOT match (false positive prevention)
                 self.assertFalse(
                     is_match,
                     f"Precision regression: Should NOT match '{case['emp1_name']}' vs '{case['emp2_name']}' "
                     f"(reason: {reason}, confidence: {confidence:.3f})"
                 )
-    
+
     def test_recall_critical_cases_remain_matched(self):
         """Test known false negative cases that SHOULD match (recall-critical)."""
         # Known false negative cases (same company, different name variations)
@@ -193,7 +195,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'emp2_state': 'NY',
             },
         ]
-        
+
         for case in recall_critical_cases:
             with self.subTest(emp1=case['emp1_name'], emp2=case['emp2_name']):
                 emp1 = Employer(
@@ -208,16 +210,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case.get('emp2_city', '') or '',
                     state=case.get('emp2_state', '') or ''
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 # Should match (false negative prevention)
                 self.assertTrue(
                     is_match,
                     f"Recall regression: Should match '{case['emp1_name']}' vs '{case['emp2_name']}' "
                     f"(reason: {reason}, confidence: {confidence:.3f})"
                 )
-    
+
     def test_auto_cluster_threshold_consistency(self):
         """Test that auto-cluster threshold (0.95) works consistently."""
         # Test that high-confidence matches are auto-clustered
@@ -231,7 +233,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'emp2_state': 'CA',
             },
         ]
-        
+
         for case in high_confidence_cases:
             with self.subTest(emp1=case['emp1_name'], emp2=case['emp2_name']):
                 emp1 = Employer(
@@ -246,9 +248,9 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case.get('emp2_city', '') or '',
                     state=case.get('emp2_state', '') or ''
                 )
-                
+
                 should_cluster, confidence, reason = should_auto_cluster(emp1, emp2, threshold=0.95)
-                
+
                 # Should auto-cluster if confidence >= 0.95
                 if confidence >= 0.95:
                     self.assertTrue(
@@ -256,7 +258,7 @@ class TestClusteringRegression(unittest.TestCase):
                         f"Should auto-cluster: '{case['emp1_name']}' vs '{case['emp2_name']}' "
                         f"(confidence: {confidence:.3f} >= 0.95, reason: {reason})"
                     )
-    
+
     def test_non_generic_exact_matches_across_states(self):
         """Test that non-generic exact matches work across different states (recall maintenance)."""
         # Non-generic company names should match across states (same company, different locations)
@@ -280,7 +282,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'reason': 'Non-generic company name should match across states'
             },
         ]
-        
+
         for case in non_generic_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 emp1 = Employer(
@@ -295,16 +297,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case['emp2'].city,
                     state=case['emp2'].state
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 self.assertTrue(
                     is_match,
                     f"Recall: Should match non-generic name across states: "
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                 )
-                
+
                 # Should auto-cluster (high confidence)
                 should_cluster, cluster_confidence, cluster_reason = should_auto_cluster(
                     emp1, emp2, threshold=0.95
@@ -314,7 +316,7 @@ class TestClusteringRegression(unittest.TestCase):
                     f"Should auto-cluster non-generic name across states: "
                     f"confidence: {cluster_confidence:.3f} should be >= 0.95"
                 )
-    
+
     def test_hyphen_variations_with_same_location_should_match(self):
         """Test that hyphen variations with same location should match (recall maintenance)."""
         # Hyphen variations in same location are likely same company
@@ -332,7 +334,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'reason': 'Hyphen variation with exact location match'
             },
         ]
-        
+
         for case in hyphen_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 emp1 = Employer(
@@ -347,16 +349,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case['emp2'].city,
                     state=case['emp2'].state
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 self.assertTrue(
                     is_match,
                     f"Recall: Should match hyphen variation with same location: "
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                 )
-    
+
     def test_case_variations_should_match(self):
         """Test that case variations (uppercase vs mixed case) of the same name should match."""
         case_variation_cases = [
@@ -379,7 +381,7 @@ class TestClusteringRegression(unittest.TestCase):
                 'reason': 'Case variation of same company name'
             },
         ]
-        
+
         for case in case_variation_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 emp1 = Employer(
@@ -394,16 +396,16 @@ class TestClusteringRegression(unittest.TestCase):
                     city=case['emp2'].city,
                     state=case['emp2'].state
                 )
-                
+
                 is_match, confidence, reason = match_employers(emp1, emp2)
-                
+
                 self.assertTrue(
                     is_match,
                     f"Should match case variation: "
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                 )
-                
+
                 # Case variations should have exact match confidence
                 self.assertEqual(
                     confidence, 1.0,
@@ -411,7 +413,7 @@ class TestClusteringRegression(unittest.TestCase):
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' - "
                     f"got confidence: {confidence:.3f}"
                 )
-    
+
     def test_no_fully_identical_examples(self):
         """Test that the golden set doesn't contain fully identical examples.
         
@@ -419,7 +421,7 @@ class TestClusteringRegression(unittest.TestCase):
         the clustering algorithm and should be removed from the golden set.
         """
         identical_examples = []
-        
+
         for example in self.examples:
             name1 = example.get('emp1_name', '').upper().strip()
             name2 = example.get('emp2_name', '').upper().strip()
@@ -427,7 +429,7 @@ class TestClusteringRegression(unittest.TestCase):
             city2 = example.get('emp2_city', '').upper().strip()
             state1 = example.get('emp1_state', '').upper().strip()
             state2 = example.get('emp2_state', '').upper().strip()
-            
+
             # Check if fully identical
             if name1 == name2 and city1 == city2 and state1 == state2:
                 identical_examples.append({
@@ -436,7 +438,7 @@ class TestClusteringRegression(unittest.TestCase):
                     'state': state1,
                     'ground_truth': example.get('ground_truth')
                 })
-        
+
         self.assertEqual(
             len(identical_examples), 0,
             f"Found {len(identical_examples)} fully identical examples in golden set. "

@@ -12,10 +12,10 @@ Provides comprehensive statistics for job title clusters including:
 """
 
 from datetime import datetime
-from django.db.models import Q, Avg, Count, Max, Min, StdDev
+
 from django.core.cache import cache
-from models.salary import SalaryRecord
-from models.job_title import JobTitle, JobTitleCluster
+from django.db.models import Avg, Count, Max, Min, Q, StdDev
+
 from lib.business.salary.common_stats import (
     apply_program_filter,
     calculate_geographic_distributions,
@@ -25,6 +25,8 @@ from lib.business.salary.common_stats import (
     calculate_yoy_growth,
     calculate_yoy_trends,
 )
+from models.job_title import JobTitle, JobTitleCluster
+from models.salary import SalaryRecord
 
 GROWTH_PARTIAL_YEAR_MIN_RATIO = 0.6
 
@@ -66,16 +68,16 @@ def get_job_title_statistics(
         base_key = f"cluster:{cluster.id}"
     cache_key = f"job_title_stats:{base_key}:{program_filter}:{years}:{level_cache_key}"
     stats = cache.get(cache_key)
-    
+
     if stats is not None:
         return stats
-    
+
     # Calculate start year
     current_year = datetime.now().year
     start_year = current_year - years
     original_years = years
     auto_expanded = False
-    
+
     # Build base queryset - use normalized title when aggregating across levels.
     # When normalized_title is set, count matches JobTitleCluster.total_filings
     # (stats script sets cluster total_filings by normalized title so autocomplete matches profile).
@@ -90,13 +92,13 @@ def get_job_title_statistics(
     else:
         base_filters['job_title_entity__canonical_cluster'] = cluster
     records = SalaryRecord.objects.filter(**base_filters)
-    
+
     # Apply program filter
     records = apply_program_filter(records, program_filter)
 
     if experience_level is not None:
         records = records.filter(job_title_entity__experience_level=experience_level)
-    
+
     # A. Market Overview - Check if we got any results
     basic_stats = records.aggregate(
         total_filings=Count('id'),
@@ -105,7 +107,7 @@ def get_job_title_statistics(
         max_salary=Max('wage_annual'),
         std_salary=StdDev('wage_annual'),
     )
-    
+
     # Auto-expand to all available years if no data in requested window
     if not basic_stats['total_filings'] or basic_stats['total_filings'] == 0:
         # Remove fiscal_year filter to get all available data (keep salary bounds)
@@ -121,30 +123,30 @@ def get_job_title_statistics(
 
         records_all_years = SalaryRecord.objects.filter(**base_filters_all_years)
         records_all_years = apply_program_filter(records_all_years, program_filter)
-        
+
         if experience_level is not None:
             records_all_years = records_all_years.filter(job_title_entity__experience_level=experience_level)
-        
+
         # Check if we have any data at all
         basic_stats_all_years = records_all_years.aggregate(
             total_filings=Count('id'),
         )
-        
+
         if basic_stats_all_years['total_filings'] and basic_stats_all_years['total_filings'] > 0:
             # We have data in other years - expand window and recalculate
             auto_expanded = True
             years = 20  # Expand to maximum
-            
+
             # Get the actual min/max fiscal years for accurate display
             year_range = records_all_years.aggregate(
                 min_year=Min('fiscal_year'),
                 max_year=Max('fiscal_year'),
             )
             start_year = year_range['min_year'] or (current_year - 20)
-            
+
             # Use the expanded queryset
             records = records_all_years
-            
+
             # Recalculate basic stats with expanded data
             basic_stats = records.aggregate(
                 total_filings=Count('id'),
@@ -153,13 +155,13 @@ def get_job_title_statistics(
                 max_salary=Max('wage_annual'),
                 std_salary=StdDev('wage_annual'),
             )
-            
+
             # Update cache key to reflect expansion
             cache_key = f"job_title_stats:{base_key}:{program_filter}:all:{level_cache_key}"
-    
+
     # B. Salary Distribution (percentiles)
     salary_percentiles = calculate_salary_percentiles(records)
-    
+
     # C. Top Employers for This Role
     # Note: Records with employer=None or employer.canonical_cluster=None group under
     # canonical_name=None (displayed as "None"). We exclude that group so we don't show
@@ -191,7 +193,7 @@ def get_job_title_statistics(
         records,
         overlay_employers,
     )
-    
+
     # D. Experience vs Salary Analysis
     experience_analysis = list(
         records
@@ -248,13 +250,13 @@ def get_job_title_statistics(
         overlay["employer_name"] = JobTitle.format_experience_level(
             overlay.get("employer_name")
         )
-    
+
     # E. Geographic Distribution
     geographic_dist, geographic_dist_by_median = calculate_geographic_distributions(
         records,
         limit=20,
     )
-    
+
     # Top metro areas (city + state combinations)
     top_metros = list(
         records
@@ -267,7 +269,7 @@ def get_job_title_statistics(
         )
         .order_by('-count')[:10]
     )
-    
+
     # F. Related Job Titles (other titles in same cluster)
     related_titles = list(
         JobTitle.objects
@@ -278,7 +280,7 @@ def get_job_title_statistics(
         )
         .order_by('-total_filings')[:20]
     )
-    
+
     # G. Year-over-Year Trends
     yoy_trends = calculate_yoy_trends(records)
 
@@ -293,7 +295,7 @@ def get_job_title_statistics(
         start_year,
         min_ratio=GROWTH_PARTIAL_YEAR_MIN_RATIO,
     )
-    
+
     # H. Company Comparison (top 5 employers with detailed stats)
     # "None" row: records where employer_id is NULL or employer.canonical_cluster_id is NULL.
     # Raw-data trace: (1) employer_id NULL → employer_name present but FK never set (e.g. legacy
@@ -316,7 +318,7 @@ def get_job_title_statistics(
     )
     # Drop the group with no company name (employer null or unclustered), then take top 5
     company_comparison = [c for c in company_comparison if c.get('employer__canonical_cluster__canonical_name')][:5]
-    
+
     # Compile all stats
     stats = {
         'basic': basic_stats,
@@ -343,10 +345,10 @@ def get_job_title_statistics(
         'actual_years': years,
         'start_year': start_year,
     }
-    
+
     # Cache for 6 hours
     cache.set(cache_key, stats)
-    
+
     return stats
 
 
@@ -368,10 +370,10 @@ def get_related_job_titles(
         base_key = f"cluster:{cluster.id}"
     cache_key = f"job_title_related:{base_key}:{limit}"
     related = cache.get(cache_key)
-    
+
     if related is not None:
         return related
-    
+
     # Get all job titles in cluster with statistics
     title_query = JobTitle.objects.exclude(total_filings=0)
     if normalized_title:
@@ -389,7 +391,7 @@ def get_related_job_titles(
         )
         .order_by('-total_filings')[:limit]
     )
-    
+
     # Group by experience level for career path visualization
     experience_groups = {
         'entry': [],
@@ -403,18 +405,18 @@ def get_related_job_titles(
         'director': [],
         '': [],  # Unspecified
     }
-    
+
     for title in titles:
         level = title['experience_level'] or ''
         if level in experience_groups:
             experience_groups[level].append(title)
-    
+
     related = {
         'all_titles': titles,
         'by_experience': experience_groups,
     }
-    
+
     # Cache for 6 hours
     cache.set(cache_key, related)
-    
+
     return related

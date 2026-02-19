@@ -35,24 +35,25 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
-from django_config.logging_config import setup_logging
 from django.db.models import Q
-from lib.ingest.registry import PluginRegistry
+from django.utils import timezone
+
+from django_config.logging_config import setup_logging
 from lib.ingest.orchestrator import PipelineOrchestrator
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin
-from models.ingest.data_source import DataSource
-from models.ingest.ingest_run import IngestRun
-from models.ingest.ingest_version import IngestVersion
-from models.ingest.enums import DataDomain, SourceType, IngestStatus, IngestStage
-from models.salary import SalaryRecord
-from django.utils import timezone
-from lib.utils.logging_utils import ScriptLogger
+from lib.ingest.registry import PluginRegistry
 from lib.utils.data_source_utils import get_data_source_filepath
 from lib.utils.http_utils import get_workspace_dir
+from lib.utils.logging_utils import ScriptLogger
+from models.ingest.data_source import DataSource
+from models.ingest.enums import DataDomain, IngestStage, IngestStatus, SourceType
+from models.ingest.ingest_run import IngestRun
+from models.salary import SalaryRecord
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -70,17 +71,17 @@ def register_plugins():
 def discover_sources(domain: str | None = None):
     """Discover new data sources"""
     register_plugins()
-    
+
     discovered = []
     plugins = PluginRegistry.list_plugins()
-    
+
     for plugin_domain, plugin_source_type, plugin in plugins:
         if domain and plugin_domain != domain:
             continue
-        
+
         logger.info(f"Discovering sources for {plugin_domain}:{plugin_source_type}")
         sources = plugin.discover_sources()
-        
+
         for source_info in sources:
             # Check if source already exists, use get_or_create to handle race conditions
             source, created = DataSource.objects.get_or_create(
@@ -97,7 +98,7 @@ def discover_sources(domain: str | None = None):
                 logger.info(f"Discovered new source: {source.url}")
             else:
                 logger.debug(f"Source already exists: {source_info.url}")
-    
+
     logger.info(f"Discovered {len(discovered)} new sources")
     return discovered
 
@@ -123,13 +124,12 @@ def run_pipeline(
         domain: Filter by domain (dol, visa_bulletin, etc.)
     """
     import time
-    from pathlib import Path
-    
+
     # Register plugins
     PluginRegistry.register(H1BSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(VisaBulletinPlugin())
-    
+
     if source_id:
         source = DataSource.objects.get(id=source_id)
         sources = [source]
@@ -144,11 +144,11 @@ def run_pipeline(
     elif all_pending or missing_only or retry_failed:
         # Build query for sources
         sources_qs = DataSource.objects.all()
-        
+
         # Filter by domain if specified
         if domain:
             sources_qs = sources_qs.filter(domain=domain)
-        
+
         if missing_only:
             # Only sources with local files but no completed runs
             sources_with_completed = set(
@@ -157,7 +157,7 @@ def run_pipeline(
                 .distinct()
             )
             sources_qs = sources_qs.exclude(id__in=sources_with_completed)
-            
+
             # Filter to only sources with local files
             sources_with_files = []
             for source in sources_qs:
@@ -165,7 +165,7 @@ def run_pipeline(
                 if filepath and filepath.exists():
                     sources_with_files.append(source)
             sources = sources_with_files
-            
+
             logger.info(f"Found {len(sources)} sources with local files but no completed runs")
         elif retry_failed:
             # Sources with failed runs (but no completed runs)
@@ -181,7 +181,7 @@ def run_pipeline(
             )
             # Sources that have failed but not completed
             sources = list(sources_qs.filter(id__in=sources_with_failed).exclude(id__in=sources_with_completed))
-            
+
             logger.info(f"Found {len(sources)} sources with failed runs (no completed runs)")
         elif all_pending:
             # Get all sources that haven't been successfully ingested
@@ -192,9 +192,9 @@ def run_pipeline(
                 .distinct()
             )
             sources = list(sources_qs.exclude(id__in=sources_with_completed))
-            
+
             logger.info(f"Found {len(sources)} pending sources (no completed runs)")
-        
+
         # Create pipeline context for ETA calculation
         pipeline_start = time.time()
         pipeline_context = {
@@ -206,7 +206,7 @@ def run_pipeline(
     else:
         logger.error("Must specify --source-id, --url, --all-pending, --missing-only, or --retry-failed")
         sys.exit(1)
-    
+
     # VisaCutoffDate has no case_number; COPY path doesn't support ignore_conflicts, so use bulk_create for visa_bulletin
     use_copy = domain != DataDomain.VISA_BULLETIN.value
     orchestrator = PipelineOrchestrator(
@@ -215,14 +215,14 @@ def run_pipeline(
         prefilter_existing=True,
         use_copy=use_copy
     )
-    
+
     # Add skip_records to pipeline context if specified
     if skip_records > 0:
         if pipeline_context is None:
             pipeline_context = {}
         pipeline_context['skip_records'] = skip_records
         logger.info(f"Skipping first {skip_records:,} records for debugging")
-    
+
     for idx, source in enumerate(sources, 1):
         logger.info(f"Running pipeline for source {source.id} ({idx}/{len(sources)}): {source.url}")
         try:
@@ -234,7 +234,7 @@ def run_pipeline(
             # The run itself is already marked as FAILED by the orchestrator
             # raise
             continue
-    
+
     # Final pipeline summary
     if pipeline_context and len(sources) > 0:
         total_time = time.time() - pipeline_context['start_time']
@@ -385,7 +385,7 @@ def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
     """Discover new sources and ingest all pending"""
     logger.info("Discovering new sources...")
     discovered = discover_sources(domain if not all_domains else None)
-    
+
     logger.info("Running pipeline for all pending sources...")
     run_pipeline(all_pending=True, domain=domain)
 
@@ -415,7 +415,7 @@ def cleanup_ingest_runs(days: int, dry_run: bool = False) -> None:
 def download_sources(domain: str | None = None, all_domains: bool = False, list_available: bool = False):
     """Download sources without ingesting"""
     register_plugins()
-    
+
     if list_available:
         # Just list available sources without downloading
         plugins = PluginRegistry.list_plugins()
@@ -425,8 +425,8 @@ def download_sources(domain: str | None = None, all_domains: bool = False, list_
             if all_domains or not domain:
                 logger.info(f"\n{plugin_domain.upper()}:{plugin_source_type.upper()} - Available sources:")
             else:
-                logger.info(f"\nAvailable sources:")
-            
+                logger.info("\nAvailable sources:")
+
             sources = plugin.discover_sources()
             for source_info in sources:
                 logger.info(f"  - {source_info.url}")
@@ -434,17 +434,17 @@ def download_sources(domain: str | None = None, all_domains: bool = False, list_
                     for key, value in source_info.metadata.items():
                         logger.info(f"    {key}: {value}")
         return
-    
+
     # Discover and download
     logger.info("Discovering sources...")
     discovered = discover_sources(domain if not all_domains else None)
-    
+
     if not discovered:
         logger.info("No new sources to download")
         return
-    
+
     logger.info(f"Downloading {len(discovered)} source(s)...")
-    
+
     for idx, source in enumerate(discovered, 1):
         logger.info(f"Downloading source {source.id} ({idx}/{len(discovered)}): {source.url}")
         try:
@@ -454,7 +454,7 @@ def download_sources(domain: str | None = None, all_domains: bool = False, list_
                 status=IngestStatus.RUNNING,
                 stage=IngestStage.DOWNLOADING
             )
-            
+
             plugin = PluginRegistry.get_plugin(source.domain, source.source_type)
             if not plugin:
                 logger.error(f"No plugin found for {source.domain}:{source.source_type}")
@@ -462,17 +462,17 @@ def download_sources(domain: str | None = None, all_domains: bool = False, list_
                 run.error_message = f"No plugin found for {source.domain}:{source.source_type}"
                 run.save()
                 continue
-            
+
             # Download only (no parsing/ingesting) - use plugin's download method directly
             filepath = plugin.download(source, run)
             logger.info(f"✓ Downloaded: {filepath}")
-            
+
             # Mark run as completed (download-only)
             run.status = IngestStatus.COMPLETED
             run.stage = IngestStage.DOWNLOADING  # Keep at downloading stage to indicate download-only
             run.completed_at = timezone.now()
             run.save()
-            
+
         except Exception as e:
             logger.error(f"Download failed for source {source.id}: {e}")
             if 'run' in locals():
@@ -480,7 +480,7 @@ def download_sources(domain: str | None = None, all_domains: bool = False, list_
                 run.error_message = str(e)
                 run.save()
             raise
-    
+
     logger.info(f"✓ Downloaded {len(discovered)} source(s)")
 
 
@@ -490,18 +490,18 @@ def resume_run(run_id: int):
     PluginRegistry.register(H1BSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(VisaBulletinPlugin())
-    
+
     run = IngestRun.objects.get(id=run_id)
     if run.status == IngestStatus.COMPLETED:
         logger.warning(f"Run {run_id} is already completed")
         return
-    
+
     orchestrator = PipelineOrchestrator(
         adaptive_batch=True,
         prefilter_existing=True,
         use_copy=False
     )
-    
+
     logger.info(f"Resuming run {run_id} from stage: {run.stage}")
     try:
         orchestrator.run(run.source, resume=True)
@@ -517,7 +517,7 @@ def show_status(source_id: int | None = None):
         sources = [DataSource.objects.get(id=source_id)]
     else:
         sources = DataSource.objects.all()[:20]  # Limit to recent 20
-    
+
     for source in sources:
         latest_run = source.runs.order_by('-started_at').first()
         if latest_run:
@@ -538,28 +538,28 @@ def check_completeness(domain: str | None = None):
     Discovers available sources and compares with completed ingest runs.
     """
     logger.info("Checking data completeness...")
-    
+
     # Step 1: Discover all available sources (to ensure we have latest list)
     logger.info("Step 1: Discovering available sources...")
     register_plugins()
-    
+
     all_available_sources = []
     seen_urls = set()  # Track URLs to avoid duplicates in list
     plugins = PluginRegistry.list_plugins()
-    
+
     for plugin_domain, plugin_source_type, plugin in plugins:
         if domain and plugin_domain != domain:
             continue
-        
+
         logger.info(f"  Discovering {plugin_domain}:{plugin_source_type}...")
         source_infos = plugin.discover_sources()
-        
+
         for source_info in source_infos:
             # Skip if we've already added this URL (multiple plugins may discover same source)
             if source_info.url in seen_urls:
                 continue
             seen_urls.add(source_info.url)
-            
+
             # Get or create DataSource record
             source, created = DataSource.objects.get_or_create(
                 url=source_info.url,
@@ -573,12 +573,12 @@ def check_completeness(domain: str | None = None):
             all_available_sources.append(source)
             if created:
                 logger.info(f"    ✓ Discovered new: {source.url}")
-    
+
     logger.info(f"  Found {len(all_available_sources)} total available sources (unique URLs)")
-    
+
     # Step 2: Check which sources have completed ingest runs
     logger.info("Step 2: Checking ingestion status...")
-    
+
     # Get all sources with completed runs (from existing DB records, not just discovered)
     sources_with_completed_urls = set(
         DataSource.objects.filter(
@@ -588,16 +588,16 @@ def check_completeness(domain: str | None = None):
     logger.info(f"  Found {len(sources_with_completed_urls)} unique sources with completed runs")
     logger.info(f"  DEBUG: Sample completed URLs: {list(sources_with_completed_urls)[:3]}")
     logger.info(f"  DEBUG: Sample discovered URLs: {[s.url for s in all_available_sources[:3]]}")
-    
+
     # Match discovered sources against completed URLs
     ingested_sources = [s for s in all_available_sources if s.url in sources_with_completed_urls]
     missing_sources = [s for s in all_available_sources if s.url not in sources_with_completed_urls]
     logger.info(f"  DEBUG: Matched {len(ingested_sources)} ingested sources")
-    
+
     # Step 3: Categorize missing sources
     broken_links = []  # Sources with 404 errors (files don't exist)
     not_ingested = []  # Sources that exist but haven't been ingested
-    
+
     for source in missing_sources:
         runs = source.runs.all()
         is_404 = False
@@ -606,12 +606,12 @@ def check_completeness(domain: str | None = None):
             # Check if error is 404
             if latest_run.error_message and '404' in latest_run.error_message:
                 is_404 = True
-        
+
         if is_404:
             broken_links.append(source)
         else:
             not_ingested.append(source)
-    
+
     # Step 4: Show summary
     logger.info("")
     logger.info("=" * 80)
@@ -621,7 +621,7 @@ def check_completeness(domain: str | None = None):
     logger.info(f"  ✓ Ingested: {len(ingested_sources)}")
     logger.info(f"  ✗ Not ingested (available): {len(not_ingested)}")
     logger.info(f"  ⚠ Broken links (404): {len(broken_links)}")
-    
+
     if not_ingested:
         logger.info("")
         logger.info("NOT INGESTED (files exist but not ingested):")
@@ -634,11 +634,11 @@ def check_completeness(domain: str | None = None):
                     status_str += f" - {latest_run.error_message[:100]}"
             else:
                 status_str = "  No runs"
-            
+
             logger.info(f"  - {source.url}")
             logger.info(f"    {status_str}")
             logger.info(f"    Domain: {source.get_domain_display()}, Type: {source.get_source_type_display()}")
-    
+
     if broken_links:
         logger.info("")
         logger.info("BROKEN LINKS (404 - files don't exist yet or were removed):")
@@ -654,7 +654,7 @@ def check_completeness(domain: str | None = None):
                         status_str += f" - {error_msg[:120]}"
             else:
                 status_str = "  No runs (link discovered but file doesn't exist)"
-            
+
             logger.info(f"  - {source.url}")
             logger.info(f"    {status_str}")
             logger.info(f"    Domain: {source.get_domain_display()}, Type: {source.get_source_type_display()}")
@@ -665,10 +665,10 @@ def check_completeness(domain: str | None = None):
             logger.info(f"  (Note: {len(broken_links)} sources have 404 errors and cannot be ingested)")
         else:
             logger.info("✓ All available sources have been ingested!")
-    
+
     logger.info("")
     logger.info("=" * 80)
-    
+
     return {
         'total': len(all_available_sources),
         'ingested': len(ingested_sources),
@@ -684,13 +684,13 @@ def main():
         description='Unified ingest pipeline CLI',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
-    
+
     # Discover command
     discover_parser = subparsers.add_parser('discover', help='Discover new data sources')
     discover_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to discover')
-    
+
     # Run command
     run_parser = subparsers.add_parser('run', help='Run ingest pipeline')
     run_group = run_parser.add_mutually_exclusive_group(required=True)
@@ -701,28 +701,28 @@ def main():
     run_group.add_argument('--retry-failed', action='store_true', help='Retry sources that have failed runs (but no completed runs)')
     run_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Filter by domain (works with --all-pending, --missing-only, --retry-failed)')
     run_parser.add_argument('--skip-records', type=int, default=0, help='Skip first N records (for debugging specific records)')
-    
+
     # Discover and ingest
     di_parser = subparsers.add_parser('discover-and-ingest', help='Discover and ingest in one command')
     di_group = di_parser.add_mutually_exclusive_group()
     di_group.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to discover')
     di_group.add_argument('--all-domains', action='store_true', help='Discover all domains')
-    
+
     # Download command
     download_parser = subparsers.add_parser('download', help='Download sources without ingesting')
     download_group = download_parser.add_mutually_exclusive_group()
     download_group.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to download')
     download_group.add_argument('--all-domains', action='store_true', help='Download all domains')
     download_parser.add_argument('--list-available', action='store_true', help='List available sources without downloading')
-    
+
     # Resume command
     resume_parser = subparsers.add_parser('resume', help='Resume interrupted run')
     resume_parser.add_argument('--run-id', type=int, required=True, help='Run ID to resume')
-    
+
     # Status command
     status_parser = subparsers.add_parser('status', help='Show ingest status')
     status_parser.add_argument('--source-id', type=int, help='Show status for specific source')
-    
+
     # Check completeness command
     completeness_parser = subparsers.add_parser('check-completeness', help='Check if all available data sources have been ingested')
     completeness_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to check (default: all)')
@@ -749,15 +749,15 @@ def main():
         action='store_true',
         help='Overwrite existing index snapshot when dropping indexes',
     )
-    
+
     args = parser.parse_args()
-    
+
     if not args.command:
         parser.print_help()
         sys.exit(1)
-    
+
     script_logger.log_call(args=vars(args), context='Unified ingest pipeline CLI')
-    
+
     try:
         if args.command == 'discover':
             discover_sources(args.domain)

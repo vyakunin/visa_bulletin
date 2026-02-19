@@ -4,18 +4,22 @@ Display pending bucket mismatch reviews for manual review.
 """
 
 import os
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from models.salary import EmployerClusteringReview
 from django.db import transaction
 from django.utils import timezone
-from lib.utils.logging_utils import ScriptLogger
+
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
+from models.salary import EmployerClusteringReview
 
 setup_logging()
 import logging
+
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
@@ -39,7 +43,7 @@ to_reject = []
 for i, review in enumerate(reviews, 1):
     emp1 = review.employer1
     emp2 = review.employer2
-    
+
     logger.info(f"\n{i}. Similarity: {review.similarity_score:.3f}")
     logger.info(f"   Employer 1: '{emp1.name}'")
     logger.info(f"              Location: {emp1.city}, {emp1.state}")
@@ -48,11 +52,11 @@ for i, review in enumerate(reviews, 1):
     logger.info(f"              Location: {emp2.city}, {emp2.state}")
     logger.info(f"              Normalized: '{emp2.name_normalized}'")
     logger.info(f"   Reason: {review.match_reason}")
-    
+
     # Analyze the difference
     norm1 = emp1.name_normalized.lower()
     norm2 = emp2.name_normalized.lower()
-    
+
     # Check for common patterns
     if norm1 == norm2:
         logger.info("   → SAME: Normalized names are identical (normalization bug)")
@@ -86,7 +90,7 @@ for i, review in enumerate(reviews, 1):
         logger.info("   → NEEDS REVIEW: Medium similarity, needs manual check")
 
 logger.info("\n" + "=" * 100)
-logger.info(f"\nSummary:")
+logger.info("\nSummary:")
 logger.info(f"  Auto-approve: {len(to_approve)}")
 logger.info(f"  Auto-reject: {len(to_reject)}")
 logger.info(f"  Needs manual review: {reviews.count() - len(to_approve) - len(to_reject)}")
@@ -101,7 +105,7 @@ if to_approve or to_reject:
             review.notes = f"{review.notes} | Auto-approved: {reason}"
             review.save()
             logger.info(f"  ✓ Approved: '{review.employer1.name}' vs '{review.employer2.name}' ({reason})")
-        
+
         for review, reason in to_reject:
             review.status = 'rejected'
             review.reviewed_by = 'auto-reviewed'
@@ -109,7 +113,7 @@ if to_approve or to_reject:
             review.notes = f"{review.notes} | Auto-rejected: {reason}"
             review.save()
             logger.info(f"  ✗ Rejected: '{review.employer1.name}' vs '{review.employer2.name}' ({reason})")
-    
+
     logger.info(f"\nApplied {len(to_approve)} approvals and {len(to_reject)} rejections")
 else:
     logger.info("\nNo automatic decisions to apply")

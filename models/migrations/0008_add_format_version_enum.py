@@ -1,13 +1,14 @@
 # Generated migration to add FormatVersion enum to DataSource.format_version
 
-from django.db import migrations, models
 import re
+
+from django.db import migrations, models
 
 
 def convert_years_to_format_versions(apps, schema_editor):
     """Convert year strings to FormatVersion enum values"""
     DataSource = apps.get_model('models', 'DataSource')
-    
+
     for source in DataSource.objects.all():
         if not source.format_version or source.format_version == '':
             source.format_version = 'unknown'
@@ -37,7 +38,7 @@ class Migration(migrations.Migration):
     operations = [
         # First, convert existing year strings to format versions
         migrations.RunPython(convert_years_to_format_versions, migrations.RunPython.noop),
-        
+
         # Then, update the field to use enum choices
         migrations.AlterField(
             model_name='datasource',

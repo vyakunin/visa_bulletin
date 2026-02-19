@@ -10,15 +10,15 @@ from django.db.models import Avg, Count, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django_config.cache_utils import cache_page_skip_bots
 
+from django_config.cache_utils import cache_page_skip_bots
+from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
     calculate_salary_histogram_with_overlays,
     calculate_salary_percentiles,
     calculate_yoy_growth,
     calculate_yoy_trends,
 )
-from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -258,7 +258,7 @@ def employer_profile_view(request, slug):
         ),
         "canonical_url": request.build_absolute_uri(),
     }
-    
+
     context = {
         'cluster': cluster,
         'stats': stats,
@@ -282,6 +282,7 @@ def employer_profile_view(request, slug):
 def _build_employer_profile_charts(stats, employer_name, slug=None):
     """Build Plotly chart data for employer profile page."""
     from decimal import Decimal
+
     import plotly.graph_objs as go
 
     def _scale_axis_max(value, scale=1.2):
@@ -358,7 +359,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
         medians = [s['median_salary'] for s in state_by_median]
         max_median = max(medians) if medians else 0
         y_max = _scale_axis_max(max_median)
-        
+
         fig = go.Figure(data=[
             go.Bar(
                 x=states,
@@ -371,7 +372,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
                 marker_color='rgb(26, 118, 255)',
             )
         ])
-        
+
         fig.update_layout(
             title="Median Salary by State",
             xaxis_title="State",
@@ -392,7 +393,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
         t0 = time.perf_counter()
         years = [t['fiscal_year'] for t in stats['yoy_trends']]
         counts = [t['count'] for t in stats['yoy_trends']]
-        
+
         fig = go.Figure(data=[
             go.Scatter(
                 x=years,
@@ -403,7 +404,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
                 hovertemplate='<b>FY %{x}</b><br>Filings: %{y:,}<extra></extra>',
             )
         ])
-        
+
         fig.update_layout(
             title="Filing Volume Over Time",
             xaxis_title="Fiscal Year",
@@ -422,7 +423,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
         t0 = time.perf_counter()
         years = [t['fiscal_year'] for t in stats['yoy_trends']]
         salaries = [t['median_salary'] for t in stats['yoy_trends']]
-        
+
         fig = go.Figure(data=[
             go.Scatter(
                 x=years,
@@ -433,7 +434,7 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
                 hovertemplate='<b>FY %{x}</b><br>Median Salary: $%{y:,.0f}<extra></extra>',
             )
         ])
-        
+
         fig.update_layout(
             title="Median Salary Trend",
             xaxis_title="Fiscal Year",

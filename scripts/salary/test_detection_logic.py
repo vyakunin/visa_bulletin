@@ -10,27 +10,28 @@ from lib.utils.excel_utils import read_excel_headers
 from lib.utils.http_utils import get_workspace_dir
 from scripts.salary.collect_dol_golden_test_data import detect_file_type
 
+
 def test_file(filename: str):
     """Test detection on a single file."""
     workspace = get_workspace_dir()
     filepath = workspace / 'data' / 'salary' / 'dol_data' / filename
-    
+
     if not filepath.exists():
         print(f"{filename}: NOT FOUND")
         return
-    
+
     try:
         headers = read_excel_headers(filepath)
         detected = detect_file_type(headers)
-        
+
         print(f"\n{filename}:")
         print(f"  Detected as: {detected}")
         print(f"  Headers (first 10): {headers[:10]}")
-        
+
         if detected is None:
-            print(f"  ❌ Still unknown - needs more detection logic")
+            print("  ❌ Still unknown - needs more detection logic")
         else:
-            print(f"  ✅ Now detected correctly")
+            print("  ✅ Now detected correctly")
     except Exception as e:
         print(f"{filename}: ERROR - {e}")
 
@@ -43,7 +44,7 @@ def main():
         'H-1B_Case_Data_FY2008.xlsx',         # Has CASE_NO, WAGE_RATE_1
         'lca_361.xlsx',                        # Has CASE_NUMBER, VISA_CLASS
     ]
-    
+
     print("Testing updated detection logic on previously unknown files...")
     for filename in test_files:
         test_file(filename)

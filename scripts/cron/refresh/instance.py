@@ -7,7 +7,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +116,8 @@ def wait_instance_healthy(
     poll_interval_sec: int = 10,
 ) -> bool:
     """Wait until HTTP GET to http://ip:port/path returns 200. Returns True if healthy within timeout."""
-    import urllib.request
     import urllib.error
+    import urllib.request
     deadline = time.monotonic() + timeout_sec
     url = f"http://{ip}:{port}{path}"
     while time.monotonic() < deadline:

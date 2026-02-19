@@ -5,20 +5,21 @@ Test LLM responses with old vs new prompts to compare improvements.
 Tests known false positive cases to see if new prompt fixes them.
 """
 
+import asyncio
 import os
 import sys
-import asyncio
-from pathlib import Path
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from lib.business.salary.llm_verifier import validate_pair_with_llm_async, call_ollama_async
-from lib.business.salary.clustering_evaluator import EmployerPair, EvaluationOutcome
-from lib.utils.bazel_runfiles import get_template_file
 import logging
+
+from lib.business.salary.clustering_evaluator import EmployerPair
+from lib.business.salary.llm_verifier import call_ollama_async
+from lib.utils.bazel_runfiles import get_template_file
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ TEST_CASES = [
     ("Ascension Medical Group - Northern Wisconsin, Inc.", "Ascension Medical Group – Northern Wisconsin, Inc.", "Milwaukee", "WI", "Milwaukee", "WI", "YES", "Unicode dash difference"),
     ("ULTIMATE CARE INC.", "ULTIMATE CARE, INC", "Miami", "FL", "Miami", "FL", "YES", "Punctuation difference"),
     ("THE GUARDIAN LIFE INSURANCE CO. OF AMERICA", "GUARDIAN LIFE INSURANCE COMPANY OF AMERICA", "New York", "NY", "New York", "NY", "YES", "CO vs COMPANY"),
-    
+
     # False positives that should be NO (actually different companies)
     ("NCI TECHNOLOGY, INC.", "NCI Group, INC.", "Washington", "DC", "Washington", "DC", "NO", "TECHNOLOGY vs Group"),
     ("Macro Consultants LLC", "MACRO INTERNATIONAL INC", "Chicago", "IL", "Chicago", "IL", "NO", "Consultants vs International"),
@@ -68,7 +69,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
         'incorrect': 0,
         'details': []
     }
-    
+
     for name1, name2, city1, state1, city2, state2, expected, reason in test_cases:
         pair = EmployerPair(
             emp1_name=name1,
@@ -79,7 +80,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
             emp2_state=state2,
             similarity=1.0
         )
-        
+
         # Build prompt
         prompt = prompt_template.format(
             emp1_name=name1,
@@ -90,7 +91,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
             emp2_state=state2,
             similarity=1.0
         )
-        
+
         # Call LLM
         response_text = await call_ollama_async(prompt)
         if not response_text:
@@ -106,7 +107,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
             })
             results['incorrect'] += 1
             continue
-        
+
         # Parse response (look for YES/NO at start)
         response_upper = response_text.strip().upper()
         got = None
@@ -120,13 +121,13 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
                 got = 'YES'
             elif 'NO' in response_upper[:10] or ' NO' in response_upper[:50]:
                 got = 'NO'
-        
+
         is_correct = (got == expected)
         if is_correct:
             results['correct'] += 1
         else:
             results['incorrect'] += 1
-        
+
         results['details'].append({
             'name1': name1,
             'name2': name2,
@@ -136,7 +137,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
             'correct': is_correct,
             'reason': reason
         })
-    
+
     return results
 
 
@@ -146,67 +147,67 @@ async def main():
     print("LLM PROMPT COMPARISON TEST")
     print("="*80)
     print()
-    
+
     # Load new prompt
     template_path = get_template_file("llm_prompt_template.txt")
     if not template_path:
         logger.error("Could not find prompt template")
         return 1
-    
-    with open(template_path, 'r') as f:
+
+    with open(template_path) as f:
         new_prompt = f.read().strip()
-    
+
     print(f"Testing {len(TEST_CASES)} cases...")
     print()
-    
+
     # Test old prompt
     print("Testing OLD prompt...")
     old_results = await test_prompt(OLD_PROMPT, TEST_CASES, "OLD")
-    
+
     # Test new prompt
     print("Testing NEW prompt...")
     new_results = await test_prompt(new_prompt, TEST_CASES, "NEW")
-    
+
     # Print results
     print("\n" + "="*80)
     print("RESULTS SUMMARY")
     print("="*80)
     print()
-    
+
     for results in [old_results, new_results]:
         accuracy = (results['correct'] / results['total']) * 100 if results['total'] > 0 else 0
         print(f"{results['prompt_name']} PROMPT:")
         print(f"  Accuracy: {results['correct']}/{results['total']} ({accuracy:.1f}%)")
         print()
-    
+
     # Print detailed results
     print("="*80)
     print("DETAILED RESULTS")
     print("="*80)
     print()
-    
+
     for i, test_case in enumerate(TEST_CASES, 1):
         name1, name2, _, _, _, _, expected, reason = test_case
         old_detail = old_results['details'][i-1]
         new_detail = new_results['details'][i-1]
-        
+
         print(f"\nTest {i}: {reason}")
         print(f"  Names: {name1} vs {name2}")
         print(f"  Expected: {expected}")
         print()
-        print(f"  OLD prompt:")
+        print("  OLD prompt:")
         print(f"    Got: {old_detail['got']} {'✓' if old_detail['correct'] else '✗'}")
         print(f"    Response: {old_detail['response'][:200] if old_detail['response'] else 'N/A'}")
         print()
-        print(f"  NEW prompt:")
+        print("  NEW prompt:")
         print(f"    Got: {new_detail['got']} {'✓' if new_detail['correct'] else '✗'}")
         print(f"    Response: {new_detail['response'][:200] if new_detail['response'] else 'N/A'}")
         print("-" * 80)
-    
+
     # Improvement summary
     improvement = new_results['correct'] - old_results['correct']
     print(f"\nIMPROVEMENT: {improvement} more correct answers with new prompt")
-    
+
     return 0
 
 

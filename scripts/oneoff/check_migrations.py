@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Quick script to check which migrations have been applied"""
 import os
-import sys
 
 # Set environment variables before Django setup
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
@@ -13,6 +12,7 @@ os.environ['DB_HOST'] = 'localhost'
 os.environ['DB_PORT'] = '5432'
 
 import django
+
 django.setup()
 
 from django.db import connection
@@ -28,6 +28,7 @@ cursor.execute("""
 # Get all migration files
 import os
 from pathlib import Path
+
 # In Bazel sandbox, need to use BUILD_WORKSPACE_DIRECTORY
 workspace_dir = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent))
 migration_dir = workspace_dir / 'models' / 'migrations'

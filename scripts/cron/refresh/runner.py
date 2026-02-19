@@ -11,7 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from .checkpoint import CheckpointData, read_checkpoint, write_checkpoint as write_checkpoint_file
+from .checkpoint import CheckpointData, read_checkpoint
+from .checkpoint import write_checkpoint as write_checkpoint_file
 
 logger = logging.getLogger(__name__)
 

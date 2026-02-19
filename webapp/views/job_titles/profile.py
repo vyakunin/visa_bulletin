@@ -2,15 +2,18 @@
 
 from datetime import datetime
 
-from django.http import Http404
 from django.conf import settings
+from django.db.models import F
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django_config.cache_utils import cache_page_skip_bots
-from django.db.models import F
 
-from lib.business.salary.job_title_stats import get_job_title_statistics, get_related_job_titles
+from django_config.cache_utils import cache_page_skip_bots
 from lib.business.salary.job_title_chart_builder import build_job_title_profile_charts
+from lib.business.salary.job_title_stats import (
+    get_job_title_statistics,
+    get_related_job_titles,
+)
 from models.job_title import JobTitle, JobTitleCluster
 
 
@@ -54,21 +57,21 @@ def job_title_profile_view(request, slug: str):
         job_titles = JobTitle.objects.filter(
             title_normalized__icontains=slug_normalized
         ).select_related('canonical_cluster')
-        
+
         if job_titles.exists():
             canonical_cluster = job_titles.first().canonical_cluster
             if canonical_cluster and canonical_cluster.slug:
                 return redirect('job_title_profile', slug=canonical_cluster.slug, permanent=True)
-        
+
         # 3. Not found - raise 404
         raise Http404(f"Job title '{slug}' not found")
-    
+
     # Get query parameters
     try:
         years = min(int(request.GET.get('years', 5)), 20)  # Max 20 years
     except (ValueError, TypeError):
         years = 5
-    
+
     program_filter = request.GET.get('program', 'all').lower()
 
     level_param = request.GET.get('level', 'all').lower().strip()
@@ -83,7 +86,7 @@ def job_title_profile_view(request, slug: str):
     else:
         experience_level = None
         level_filter = 'all'
-    
+
     # Calculate start year
     current_year = datetime.now().year
     start_year = current_year - years
@@ -104,10 +107,10 @@ def job_title_profile_view(request, slug: str):
         limit=20,
         normalized_title=None,
     )
-    
+
     # Build chart data
     chart_data = build_job_title_profile_charts(stats, cluster.canonical_title)
-    
+
     # Get similar job titles (from other clusters with similar names)
     similar_clusters = []
     if cluster.canonical_title:
@@ -129,7 +132,7 @@ def job_title_profile_view(request, slug: str):
         'description': f"{cluster.canonical_title} visa sponsorship statistics: {total_filings:,} filings, ${median_salary:,.0f} median salary. Top employers, salary trends, and geographic data.",
         'canonical_url': request.build_absolute_uri(),
     }
-    
+
     context = {
         'cluster': cluster,
         'stats': stats,
@@ -148,5 +151,5 @@ def job_title_profile_view(request, slug: str):
         'page_description': seo['description'],
         'canonical_url': seo['canonical_url'],
     }
-    
+
     return render(request, 'webapp/job_title_profile.html', context)

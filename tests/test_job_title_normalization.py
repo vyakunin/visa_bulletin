@@ -9,7 +9,6 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
-import sys
 import unittest
 
 from models.job_title import JobTitle
@@ -17,7 +16,7 @@ from models.job_title import JobTitle
 
 class TestJobTitleNormalization(unittest.TestCase):
     """Test job title normalization logic."""
-    
+
     def test_no_duplicate_words_in_normalized_title(self):
         """Normalized titles should never contain duplicate words."""
         test_cases = [
@@ -30,17 +29,17 @@ class TestJobTitleNormalization(unittest.TestCase):
             'Shoes and Clothing Sorter and Grader',
             'Manufacturing Engineer - Powder Metal Engineer',
         ]
-        
+
         for title in test_cases:
             normalized = JobTitle.normalize_title(title)
             words = normalized.split()
             unique_words = set(words)
-            
+
             self.assertEqual(
                 len(words), len(unique_words),
                 f"Title '{title}' has duplicate words in normalized form: '{normalized}'"
             )
-    
+
     def test_experience_level_extraction(self):
         """Test extraction of experience levels from job titles."""
         test_cases = [
@@ -65,14 +64,14 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('Entry Level Analyst', 'entry'),
             ('Software Engineer', ''),  # No level
         ]
-        
+
         for title, expected_level in test_cases:
             level = JobTitle.extract_experience_level(title)
             self.assertEqual(
                 level, expected_level,
                 f"Title '{title}' should extract level '{expected_level}', got '{level}'"
             )
-    
+
     def test_normalization_removes_seniority(self):
         """Normalization should remove seniority indicators but keep roman numerals."""
         test_cases = [
@@ -85,14 +84,14 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('Software Engineer II', 'software engineer ii'),
             ('Software Engineer III', 'software engineer iii'),
         ]
-        
+
         for title, expected_normalized in test_cases:
             normalized = JobTitle.normalize_title(title)
             self.assertEqual(
                 normalized, expected_normalized,
                 f"Title '{title}' should normalize to '{expected_normalized}', got '{normalized}'"
             )
-    
+
     def test_golden_set_normalizations(self):
         """Golden test set from real-world examples."""
         golden_set = [
@@ -125,12 +124,12 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('Registered Nurse', 'nurse', ''),  # RN → nurse
             ('Physician Assistant', 'physician assistant', ''),  # physician NOT converted (only as complete title)
         ]
-        
+
         for original, expected_norm, expected_level in golden_set:
             with self.subTest(title=original):
                 normalized = JobTitle.normalize_title(original)
                 level = JobTitle.extract_experience_level(original)
-                
+
                 self.assertEqual(
                     normalized, expected_norm,
                     f"Normalization failed for '{original}'"
@@ -139,7 +138,7 @@ class TestJobTitleNormalization(unittest.TestCase):
                     level, expected_level,
                     f"Level extraction failed for '{original}'"
                 )
-    
+
     def test_no_trailing_or_leading_spaces(self):
         """Normalized titles should not have leading/trailing spaces."""
         test_cases = [
@@ -148,14 +147,14 @@ class TestJobTitleNormalization(unittest.TestCase):
             '   Product Manager',
             ' Lead Designer ',
         ]
-        
+
         for title in test_cases:
             normalized = JobTitle.normalize_title(title)
             self.assertEqual(
                 normalized, normalized.strip(),
                 f"Title '{title}' has leading/trailing spaces after normalization"
             )
-    
+
     def test_multiple_spaces_collapsed(self):
         """Multiple spaces should be collapsed to single space."""
         test_cases = [
@@ -163,14 +162,14 @@ class TestJobTitleNormalization(unittest.TestCase):
             'Data     Scientist',
             'Product  Manager  II',
         ]
-        
+
         for title in test_cases:
             normalized = JobTitle.normalize_title(title)
             self.assertNotIn(
                 '  ', normalized,
                 f"Title '{title}' has multiple consecutive spaces: '{normalized}'"
             )
-    
+
     def test_special_characters_removed(self):
         """Special characters should be removed or normalized."""
         test_cases = [
@@ -179,7 +178,7 @@ class TestJobTitleNormalization(unittest.TestCase):
             ('Product Manager, Growth', 'product growth'),  # manager → level
             ('Senior Engineer & Architect', 'engineer and architect'),
         ]
-        
+
         for title, expected in test_cases:
             normalized = JobTitle.normalize_title(title)
             self.assertEqual(

@@ -8,7 +8,6 @@ This library handles all path variations automatically - no need for multiple pa
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ except ImportError:
     logger.debug("Bazel runfiles library not available (non-Bazel environment)")
 
 
-def get_data_file_path(workspace_path: str) -> Optional[Path]:
+def get_data_file_path(workspace_path: str) -> Path | None:
     """
     Get the path to a Bazel data file using the standard runfiles library.
     
@@ -50,7 +49,7 @@ def get_data_file_path(workspace_path: str) -> Optional[Path]:
                 return fallback_path
         logger.debug(f"Runfiles library not available, fallback failed for: {workspace_path}")
         return None
-    
+
     try:
         r = runfiles.Create()
         # Standard library handles workspace prefix automatically
@@ -58,15 +57,15 @@ def get_data_file_path(workspace_path: str) -> Optional[Path]:
         workspace_name = "visa_bulletin"
         full_path = f"{workspace_name}/{workspace_path}"
         resolved = r.Rlocation(full_path)
-        
+
         if resolved and Path(resolved).exists():
             return Path(resolved)
-        
+
         # Try without workspace prefix (some Bazel setups)
         resolved = r.Rlocation(workspace_path)
         if resolved and Path(resolved).exists():
             return Path(resolved)
-        
+
         logger.debug(f"Data file not found in runfiles: {workspace_path}")
         return None
     except Exception as e:
@@ -74,7 +73,7 @@ def get_data_file_path(workspace_path: str) -> Optional[Path]:
         return None
 
 
-def get_template_file(template_name: str, template_dir: str = "scripts/salary") -> Optional[Path]:
+def get_template_file(template_name: str, template_dir: str = "scripts/salary") -> Path | None:
     """
     Get the path to a template file.
     

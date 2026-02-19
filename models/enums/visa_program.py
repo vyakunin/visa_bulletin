@@ -9,9 +9,10 @@ See:
 
 from django.db import models
 
+from models.enums.case_status import CaseStatus  # noqa: F401
+
 # Import other enums for backward compatibility
 from models.enums.wage_unit import WageUnit  # noqa: F401
-from models.enums.case_status import CaseStatus  # noqa: F401
 
 
 class VisaProgram(models.IntegerChoices):
@@ -25,13 +26,13 @@ class VisaProgram(models.IntegerChoices):
     - Smaller storage (4 bytes vs 10-50 bytes)
     - Value 0 is reserved for invalid/unknown (allows safe truthiness checks)
     """
-    
+
     INVALID = 0, "Invalid/Unknown"
     H1B = 1, "H-1B (Specialty Occupation)"
     H1B1 = 2, "H-1B1 (Chile/Singapore)"
     E3 = 3, "E-3 (Australia)"
     PERM = 4, "PERM (Permanent Labor Certification)"
-    
+
     @classmethod
     def from_string(cls, value: str):
         """Convert string value to enum (for migration compatibility)"""

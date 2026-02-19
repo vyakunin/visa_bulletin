@@ -8,7 +8,6 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -232,6 +231,7 @@ def step_swap_db(config: RefreshConfig, runner: Runner, context: PipelineContext
     if config.single_db_on_host:
         return
     from datetime import datetime
+
     from .config import get_env_value
     current_db = get_env_value(config.env_file, "DB_NAME") or ""
     if current_db == context.db_name:

@@ -1,8 +1,8 @@
 """Shared HTTP and file utilities for data fetching scripts"""
 
-import os
 import hashlib
 import logging
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -64,17 +64,17 @@ def download_file(url: str, dest_path: Path, timeout: int = 60) -> Path:
     """
     logger.info(f"Downloading: {url}")
     logger.info(f"  Saving to: {dest_path}")
-    
+
     response = requests.get(url, stream=True, timeout=timeout)
     response.raise_for_status()
-    
+
     # Get file size if available
     total_size = int(response.headers.get('content-length', 0))
     if total_size:
         logger.info(f"  File size: {total_size / (1024*1024):.1f} MB")
-    
+
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     downloaded = 0
     with open(dest_path, 'wb') as f:
         for chunk in response.iter_content(chunk_size=8192):
@@ -84,7 +84,7 @@ def download_file(url: str, dest_path: Path, timeout: int = 60) -> Path:
                 if total_size and downloaded % (1024 * 1024) == 0:  # Log every MB
                     percent = (downloaded / total_size) * 100
                     logger.info(f"  Progress: {percent:.1f}%")
-    
+
     logger.info(f"  ✓ Downloaded: {dest_path.name}")
     return dest_path
 

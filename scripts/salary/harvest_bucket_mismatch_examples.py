@@ -14,26 +14,21 @@ import argparse
 import json
 import logging
 import os
-import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from django.db.models import Q
-from models.salary import Employer
-from lib.business.salary.employer_clustering import fuzzy_match
+from django_config.logging_config import setup_logging
 from lib.business.salary.generic_words import (
-    GENERIC_WORDS,
-    DISTINGUISHING_GENERIC_WORDS,
     ALL_GENERIC_WORDS,
 )
 from lib.utils.logging_utils import ScriptLogger
-from django_config.logging_config import setup_logging
+from models.salary import Employer
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -56,7 +51,7 @@ def buckets_differ_only_by_generic_words(norm1: str, norm2: str) -> bool:
 def harvest_bucket_mismatch_candidates(
     min_similarity: float = 0.80,
     max_candidates: int = 500,
-    output_file: Optional[Path] = None
+    output_file: Path | None = None
 ) -> list[dict]:
     """
     Find pairs of employers that normalize to different buckets but have high similarity.
@@ -72,27 +67,27 @@ def harvest_bucket_mismatch_candidates(
     logger.info("Harvesting bucket mismatch candidates...")
     logger.info(f"  Min similarity: {min_similarity}")
     logger.info(f"  Max candidates: {max_candidates}")
-    
+
     # Load all employers with their normalized names
     logger.info("Loading employers from database...")
     employers = list(Employer.objects.all().values('id', 'name', 'name_normalized', 'city', 'state'))
     logger.info(f"Loaded {len(employers)} employers")
-    
+
     # Group by normalized name (hash buckets)
     buckets = defaultdict(list)
     for emp in employers:
         buckets[emp['name_normalized']].append(emp)
-    
+
     logger.info(f"Found {len(buckets)} unique normalized name buckets")
-    
+
     # Find candidates: pairs in different buckets with high similarity
     # Optimization: Use word-based indexing to only compare relevant buckets
     candidates = []
     checked_pairs = set()  # Avoid duplicates
-    
+
     logger.info("Searching for high-similarity pairs in different buckets...")
     logger.info("  Using optimized approach: word-based bucket indexing + random sampling")
-    
+
     # Build word-to-buckets index (only compare buckets that share CORE words, not generic words)
     import random
     word_to_buckets = defaultdict(list)
@@ -102,10 +97,10 @@ def harvest_bucket_mismatch_candidates(
         for word in core_words:
             if len(word) > 2:  # Skip very short words
                 word_to_buckets[word].append(bucket_name)
-    
+
     logger.info(f"  Built word index: {len(word_to_buckets)} core words mapping to buckets")
     logger.info(f"  (Excluded generic words like: {', '.join(sorted(list(ALL_GENERIC_WORDS))[:10])}...)")
-    
+
     # Sample 1-2 employers per bucket (much smaller sample)
     sampled_employers_by_bucket = {}
     for bucket_name, bucket_employers in buckets.items():
@@ -113,26 +108,26 @@ def harvest_bucket_mismatch_candidates(
         sample_size = min(random.randint(1, 2), len(bucket_employers))
         sampled = random.sample(bucket_employers, sample_size)
         sampled_employers_by_bucket[bucket_name] = sampled
-    
+
     total_sampled = sum(len(emps) for emps in sampled_employers_by_bucket.values())
     logger.info(f"  Sampled {total_sampled} employers from {len(buckets)} buckets (1-2 per bucket)")
-    
+
     # Compare only buckets that share common words (much more efficient)
-    import time
     import difflib
+    import time
     start_time = time.time()
     comparisons = 0
     similarity_calculations = 0
     buckets_processed = 0
-    
+
     # Process buckets in random order
     bucket_names = list(sampled_employers_by_bucket.keys())
     random.shuffle(bucket_names)
-    
+
     for bucket1_name in bucket_names:
         if len(candidates) >= max_candidates:
             break
-        
+
         buckets_processed += 1
         if buckets_processed % 1000 == 0:
             elapsed = time.time() - start_time
@@ -144,70 +139,70 @@ def harvest_bucket_mismatch_candidates(
                 f"Candidates: {len(candidates)} | "
                 f"Time: {elapsed:.1f}s"
             )
-        
+
         emp1_list = sampled_employers_by_bucket[bucket1_name]
         core_words1 = extract_core_words(bucket1_name)
-        
+
         # Only compare with buckets that share at least one CORE word (not generic)
         candidate_buckets = set()
         for word in core_words1:
             if len(word) > 2 and word in word_to_buckets:
                 candidate_buckets.update(word_to_buckets[word])
-        
+
         # Remove self and limit to reasonable number of comparisons
         candidate_buckets.discard(bucket1_name)
-        
+
         # Skip buckets that differ only by generic words (not meaningful bucket mismatches)
         candidate_buckets_filtered = []
         for bucket2_name in candidate_buckets:
             if not buckets_differ_only_by_generic_words(bucket1_name, bucket2_name):
                 candidate_buckets_filtered.append(bucket2_name)
-        
+
         candidate_buckets = candidate_buckets_filtered
         if len(candidate_buckets) > 100:  # Limit comparisons per bucket
             candidate_buckets = random.sample(candidate_buckets, 100)
-        
+
         for bucket2_name in candidate_buckets:
             if len(candidates) >= max_candidates:
                 break
-            
+
             emp2_list = sampled_employers_by_bucket.get(bucket2_name, [])
-            
+
             # Compare all pairs between these two buckets
             for emp1 in emp1_list:
                 if len(candidates) >= max_candidates:
                     break
-                
+
                 norm1 = emp1['name_normalized']
-                
+
                 for emp2 in emp2_list:
                     if len(candidates) >= max_candidates:
                         break
-                    
+
                     norm2 = emp2['name_normalized']
-                    
+
                     # Skip if already checked (avoid duplicates)
                     pair_key = tuple(sorted([emp1['id'], emp2['id']]))
                     if pair_key in checked_pairs:
                         continue
                     checked_pairs.add(pair_key)
                     comparisons += 1
-                    
+
                     # Quick filter: skip if normalized names share no common CORE words
                     # (generic words don't count - we want meaningful differences)
                     core_words1 = extract_core_words(norm1)
                     core_words2 = extract_core_words(norm2)
                     if not core_words1.intersection(core_words2) and len(core_words1) > 0 and len(core_words2) > 0:
                         continue
-                    
+
                     # Skip if buckets differ only by generic words (not a meaningful bucket mismatch)
                     if buckets_differ_only_by_generic_words(norm1, norm2):
                         continue
-                    
+
                     # Calculate similarity
                     similarity_calculations += 1
                     similarity = difflib.SequenceMatcher(None, emp1['name'].lower(), emp2['name'].lower()).ratio()
-                    
+
                     # Only consider high-similarity pairs
                     if similarity >= min_similarity:
                         candidates.append({
@@ -225,17 +220,17 @@ def harvest_bucket_mismatch_candidates(
                             'bucket_mismatch': True,
                             'reason': f"Different normalized buckets: '{norm1}' vs '{norm2}' (similarity: {similarity:.3f})"
                         })
-    
+
     # Sort by similarity (highest first)
     candidates.sort(key=lambda x: x['similarity'], reverse=True)
-    
+
     total_time = time.time() - start_time
     logger.info(f"Found {len(candidates)} bucket mismatch candidates")
     logger.info(f"  Total comparisons: {comparisons:,}")
     logger.info(f"  Similarity calculations: {similarity_calculations:,}")
     logger.info(f"  Filter efficiency: {(1 - similarity_calculations/comparisons)*100:.1f}% filtered by quick checks" if comparisons > 0 else "")
     logger.info(f"  Total time: {total_time:.1f}s ({total_time/60:.1f} min)")
-    
+
     # Save to file if requested
     if output_file:
         logger.info(f"Saving {len(candidates)} candidates to {output_file}")
@@ -243,21 +238,21 @@ def harvest_bucket_mismatch_candidates(
             for candidate in candidates:
                 f.write(json.dumps(candidate) + '\n')
         logger.info(f"Saved to {output_file}")
-    
+
     return candidates
 
 
-def print_candidates(candidates: list[dict], limit: Optional[int] = None):
+def print_candidates(candidates: list[dict], limit: int | None = None):
     """Print candidates in human-readable format"""
     print(f"\n{'='*80}")
-    print(f"BUCKET MISMATCH CANDIDATES (Potential False Negatives)")
+    print("BUCKET MISMATCH CANDIDATES (Potential False Negatives)")
     print(f"{'='*80}")
     print(f"Total candidates: {len(candidates)}")
     if limit:
         print(f"Showing top {limit} by similarity:")
         candidates = candidates[:limit]
     print()
-    
+
     for i, candidate in enumerate(candidates, 1):
         print(f"{i}. Similarity: {candidate['similarity']:.3f}")
         print(f"   Employer 1: '{candidate['emp1_name']}'")
@@ -302,9 +297,9 @@ def main():
         default='detailed',
         help='Output format (default: detailed)'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Log the execution
     script_logger.log_call(
         args={
@@ -316,14 +311,14 @@ def main():
         },
         context='Harvesting bucket mismatch candidates for golden set coverage'
     )
-    
+
     # Harvest candidates
     candidates = harvest_bucket_mismatch_candidates(
         min_similarity=args.min_similarity,
         max_candidates=args.max_candidates,
         output_file=args.output
     )
-    
+
     # Print results
     if args.format == 'summary':
         print(f"Found {len(candidates)} bucket mismatch candidates")
@@ -339,7 +334,7 @@ def main():
             # Print to stdout
             for candidate in candidates:
                 print(json.dumps(candidate))
-    
+
     logger.info("Harvesting complete")
 
 

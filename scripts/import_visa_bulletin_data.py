@@ -12,6 +12,7 @@ Usage:
 import csv
 import os
 import sys
+
 import django
 
 # Setup Django
@@ -19,23 +20,24 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 django.setup()
 
-from models.bulletin import Bulletin
-from models.visa_cutoff_date import VisaCutoffDate
-from models.enums.country import Country
 from django.db import transaction
+
+from models.bulletin import Bulletin
+from models.enums.country import Country
+from models.visa_cutoff_date import VisaCutoffDate
 
 
 def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str):
     """Import visa bulletin data from CSV files"""
-    
-    print(f"Importing visa bulletin data...")
+
+    print("Importing visa bulletin data...")
     print(f"Bulletin CSV: {bulletin_csv}")
     print(f"Cutoff CSV: {cutoff_csv}")
-    
+
     with transaction.atomic():
         # Import bulletins
         print("\n1. Importing bulletins...")
-        with open(bulletin_csv, 'r') as f:
+        with open(bulletin_csv) as f:
             reader = csv.DictReader(f)
             bulletins_created = 0
             for row in reader:
@@ -49,10 +51,10 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str):
                 )
                 bulletins_created += 1
         print(f"✅ Imported {bulletins_created} bulletins")
-        
+
         # Import visa cutoff dates with country conversion
         print("\n2. Importing visa cutoff dates...")
-        with open(cutoff_csv, 'r') as f:
+        with open(cutoff_csv) as f:
             reader = csv.DictReader(f)
             cutoffs_created = 0
             for row in reader:
@@ -62,7 +64,7 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str):
                 if country_enum is None:
                     print(f"WARNING: Unknown country '{country_str}', skipping row {row['id']}")
                     continue
-                
+
                 VisaCutoffDate.objects.get_or_create(
                     id=int(row['id']),
                     defaults={
@@ -79,9 +81,9 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str):
                 )
                 cutoffs_created += 1
         print(f"✅ Imported {cutoffs_created} visa cutoff dates")
-    
+
     print("\n✅ Import completed successfully!")
-    print(f"\nDatabase summary:")
+    print("\nDatabase summary:")
     print(f"  Bulletins: {Bulletin.objects.count()}")
     print(f"  Visa Cutoff Dates: {VisaCutoffDate.objects.count()}")
 
@@ -89,13 +91,13 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str):
 if __name__ == '__main__':
     bulletin_csv = '/tmp/bulletin.csv'
     cutoff_csv = '/tmp/visa_cutoff_date.csv'
-    
+
     if not os.path.exists(bulletin_csv):
         print(f"ERROR: Bulletin CSV not found: {bulletin_csv}")
         sys.exit(1)
-    
+
     if not os.path.exists(cutoff_csv):
         print(f"ERROR: Cutoff CSV not found: {cutoff_csv}")
         sys.exit(1)
-    
+
     import_visa_bulletin_data(bulletin_csv, cutoff_csv)

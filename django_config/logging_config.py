@@ -27,7 +27,7 @@ def setup_logging(debug=True):
         debug: If True, set log level to DEBUG, otherwise INFO (default: True)
     """
     log_level = logging.DEBUG if debug else logging.INFO
-    
+
     # Root logger configuration
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
@@ -40,7 +40,7 @@ def setup_logging(debug=True):
         level=log_level,
         handlers=[handler],
     )
-    
+
     # Set specific loggers
     loggers = {
         'django': logging.WARNING,  # Reduce Django noise
@@ -50,7 +50,7 @@ def setup_logging(debug=True):
         'lib': log_level,
         'extractors': log_level,
     }
-    
+
     for logger_name, level in loggers.items():
         logging.getLogger(logger_name).setLevel(level)
 

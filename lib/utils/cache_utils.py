@@ -13,7 +13,7 @@ def invalidate_salary_cache():
         'worksite_fiscal_years',
         'worksite_has_data',
     ]
-    
+
     for key in cache_keys_to_invalidate:
         cache.delete(key)
 

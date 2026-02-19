@@ -7,7 +7,7 @@ common rate-limiting patterns for application logging.
 
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class RateLimitedLogger:
         if rate_logger.should_log(immediate_condition_value=removed > total * 0.9):
             rate_logger.log(f"Pre-filtered {total} -> {after} records")
     """
-    
+
     def __init__(
         self,
         initial_count: int = 5,
@@ -69,12 +69,12 @@ class RateLimitedLogger:
         self.logger = logger or logging.getLogger(__name__)
         self.log_level = log_level
         self.immediate_condition = immediate_condition
-        
+
         # State tracking
         self._log_count = 0  # Number of times logging actually occurred
         self._attempt_count = 0  # Total number of log attempts (including suppressed)
         self._last_log_time = 0.0
-    
+
     def should_log(self, immediate_condition_value: bool = False) -> bool:
         """
         Check if logging should occur based on rate limiting rules.
@@ -86,21 +86,21 @@ class RateLimitedLogger:
             True if should log, False otherwise
         """
         current_time = time.time()
-        
+
         # Immediate condition bypasses rate limiting
         if immediate_condition_value or (self.immediate_condition and self.immediate_condition()):
             return True
-        
+
         # First N logs: always log
         if self._log_count < self.initial_count:
             return True
-        
+
         # After first N: log at most once per min_interval_seconds
         if current_time - self._last_log_time >= self.min_interval_seconds:
             return True
-        
+
         return False
-    
+
     def log(self, message: str, immediate_condition_value: bool = False, include_suppressed_count: bool = True):
         """
         Log a message if rate limiting allows it.
@@ -111,14 +111,14 @@ class RateLimitedLogger:
             include_suppressed_count: If True, appends suppressed count to message if any messages were suppressed (default: True)
         """
         self._attempt_count += 1
-        
+
         if self.should_log(immediate_condition_value=immediate_condition_value):
             # Add suppressed count if requested and there are suppressed messages
             if include_suppressed_count and self._attempt_count > self._log_count + 1:
                 suppressed = self._attempt_count - self._log_count - 1
                 if suppressed > 0:
                     message += f" (and {suppressed} more similar messages)"
-            
+
             self.logger.log(self.log_level, message)
             self._log_count += 1
             # Reset attempt count to log count after outputting suppressed count
@@ -126,22 +126,22 @@ class RateLimitedLogger:
             if include_suppressed_count and self._attempt_count > self._log_count:
                 self._attempt_count = self._log_count
             self._last_log_time = time.time()
-    
+
     @property
     def log_count(self) -> int:
         """Get the number of times logging has occurred."""
         return self._log_count
-    
+
     @property
     def attempt_count(self) -> int:
         """Get the total number of log attempts (including suppressed)."""
         return self._attempt_count
-    
+
     @property
     def suppressed_count(self) -> int:
         """Get the number of suppressed log attempts."""
         return max(0, self._attempt_count - self._log_count)
-    
+
     def reset(self):
         """Reset the rate limiter state (useful for new runs/contexts)."""
         self._log_count = 0

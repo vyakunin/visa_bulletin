@@ -4,10 +4,7 @@
 import os
 from pathlib import Path
 
-import pytest
-
 from scripts.cron.refresh.config import (
-    RefreshConfig,
     get_env_value,
     load_config,
     update_env_value,

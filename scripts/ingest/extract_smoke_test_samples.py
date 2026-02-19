@@ -8,14 +8,15 @@ Usage:
 
 import os
 import sys
+
 import yaml
-from pathlib import Path
 
 # Setup Django
 if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
 from lib.utils.excel_utils import read_excel_streaming
@@ -25,7 +26,7 @@ from lib.utils.http_utils import get_workspace_dir
 def categorize_file(filename: str) -> dict:
     """Categorize file type and expected output"""
     filename_lower = filename.lower()
-    
+
     if 'appendix' in filename_lower:
         return {'type': 'appendix_a', 'expect': 'none', 'description': 'Appendix A (exempt workers metadata)'}
     elif 'worksite' in filename_lower:
@@ -40,14 +41,14 @@ def extract_samples():
     """Extract one sample row from each DoL file"""
     workspace_dir = get_workspace_dir()
     data_dir = workspace_dir / 'data' / 'salary' / 'dol_data'
-    
+
     samples = []
-    
+
     for filepath in sorted(data_dir.glob('*.xlsx')):
         print(f"Extracting sample from {filepath.name}...", file=sys.stderr)
-        
+
         category = categorize_file(filepath.name)
-        
+
         try:
             # Get first data row
             for row in read_excel_streaming(filepath, start_row=1):
@@ -60,7 +61,7 @@ def extract_samples():
                         str_val = str(v)
                         # Truncate very long values
                         sample_data[k] = str_val[:200] if len(str_val) > 200 else str_val
-                
+
                 samples.append({
                     'filename': filepath.name,
                     'type': category['type'],
@@ -78,7 +79,7 @@ def extract_samples():
                 'description': category['description'],
                 'error': str(e)
             })
-    
+
     # Output as YAML
     print(yaml.dump(samples, default_flow_style=False, allow_unicode=True))
 

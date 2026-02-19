@@ -13,20 +13,17 @@ Usage:
     bazel run //scripts/salary:backfill_source_file_date -- --limit 10000
 """
 
-import os
-import sys
 import argparse
-from pathlib import Path
+import os
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from django.db import transaction
-from django.utils import timezone
-from models.salary import SalaryRecord
-from lib.utils.logging_utils import log_context
 from lib.utils.db_utils import BatchedUpdateCollector
+from lib.utils.logging_utils import log_context
+from models.salary import SalaryRecord
 
 log_context("Backfilling source_file_date for existing SalaryRecord records")
 
@@ -41,17 +38,17 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
     """
     # Query records without source_file_date
     queryset = SalaryRecord.objects.filter(source_file_date__isnull=True)
-    
+
     total_count = queryset.count()
     if limit:
         queryset = queryset[:limit]
         print(f"Processing {limit:,} of {total_count:,} records without source_file_date")
     else:
         print(f"Processing {total_count:,} records without source_file_date")
-    
+
     if dry_run:
         print("DRY RUN MODE - No records will be updated")
-    
+
     # Use BatchedUpdateCollector for efficient updates
     collector = BatchedUpdateCollector(
         fields=['source_file_date'],
@@ -59,10 +56,10 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
         dry_run=dry_run,
         use_transaction=True
     )
-    
+
     updated_count = 0
     skipped_count = 0
-    
+
     for record in queryset.iterator(chunk_size=1000):
         # Try to get source_file_date from ingest_version.run.started_at
         source_file_date = None
@@ -81,26 +78,26 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
                     source_file_date = data_source.downloaded_at
             except Exception:
                 pass
-        
+
         # Fallback to created_at if nothing else available
         if not source_file_date:
             source_file_date = record.created_at
-        
+
         # Update record
         record.source_file_date = source_file_date
         collector.add(record)
         updated_count += 1
-        
+
         if updated_count % 10000 == 0:
             print(f"Processed {updated_count:,} records...")
-    
+
     # Flush remaining records
     collector.flush()
-    
-    print(f"\nBackfill complete:")
+
+    print("\nBackfill complete:")
     print(f"  Updated: {updated_count:,} records")
     print(f"  Skipped: {skipped_count:,} records")
-    
+
     if dry_run:
         print("\nDRY RUN - No records were actually updated")
 
@@ -120,9 +117,9 @@ def main():
         default=None,
         help='Maximum number of records to process (default: all)'
     )
-    
+
     args = parser.parse_args()
-    
+
     backfill_source_file_date(dry_run=args.dry_run, limit=args.limit)
 
 

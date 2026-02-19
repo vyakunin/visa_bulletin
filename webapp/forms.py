@@ -1,6 +1,7 @@
 """Django forms for search filters"""
 
 from django import forms
+
 from lib.utils.location_utils import US_STATES
 
 

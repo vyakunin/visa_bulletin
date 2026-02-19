@@ -16,6 +16,7 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
 try:
@@ -48,18 +49,18 @@ def test_import(filepath: Path, visa_program: str, test_name: str):
     print(f"File: {filepath.name}")
     print("Streaming: Always enabled")
     print()
-    
+
     # Clean up any existing test records
     SalaryRecord.objects.filter(source_file=filepath.name).delete()
-    
+
     # Get initial memory
     mem_before = get_memory_usage()
     if HAS_PSUTIL:
         print(f"Initial memory: {mem_before:.1f} MB")
-    
+
     # Get initial record count
     initial_count = SalaryRecord.objects.count()
-    
+
     # Run import (streaming is always enabled)
     start_time = time.time()
     try:
@@ -74,19 +75,19 @@ def test_import(filepath: Path, visa_program: str, test_name: str):
         import traceback
         traceback.print_exc()
         return None
-    
+
     total_time = time.time() - start_time
-    
+
     # Get final memory
     mem_after = get_memory_usage()
     mem_used = mem_after - mem_before if HAS_PSUTIL else 0
-    
+
     # Get final record count
     final_count = SalaryRecord.objects.count()
     actual_imported = final_count - initial_count
-    
+
     print()
-    print(f"Results:")
+    print("Results:")
     print(f"  Imported: {imported:,} records")
     print(f"  Skipped: {skipped:,} records")
     print(f"  Errors: {errors:,} records")
@@ -96,7 +97,7 @@ def test_import(filepath: Path, visa_program: str, test_name: str):
     if HAS_PSUTIL:
         print(f"  Memory used: {mem_used:.1f} MB")
         print(f"  Peak memory: {mem_after:.1f} MB")
-    
+
     return {
         'imported': imported,
         'skipped': skipped,
@@ -123,23 +124,23 @@ def main():
         default='h1b',
         help='Visa program type (default: h1b)'
     )
-    
+
     args = parser.parse_args()
-    
+
     if not args.file.exists():
         print(f"Error: File not found: {args.file}")
         sys.exit(1)
-    
+
     workspace_dir = get_workspace_dir()
     filepath = workspace_dir / args.file if not args.file.is_absolute() else args.file
-    
+
     visa_program = VisaProgram.PERM if args.program == 'perm' else VisaProgram.H1B
-    
+
     # Test import with streaming (always enabled)
     result = test_import(
         filepath, visa_program, test_name="Import Performance Test (Streaming Enabled)"
     )
-    
+
     if result:
         print()
         print("Test complete!")

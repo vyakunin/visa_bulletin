@@ -37,30 +37,30 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
     """
     if len(dates) < 2:
         return None
-    
+
     # Filter out None values and get recent data (last 12 months for stability)
     valid_points = [
-        (pub_date, cutoff) for pub_date, cutoff in zip(dates, cutoff_dates) 
+        (pub_date, cutoff) for pub_date, cutoff in zip(dates, cutoff_dates)
         if cutoff is not None
     ]
-    
+
     if len(valid_points) < 2:
         return None
-    
+
     # Use last 12 months for projection
     recent_points = valid_points[-12:]
-    
+
     # Calculate monthly progress rate
     first_pub, first_cutoff = recent_points[0]
     last_pub, last_cutoff = recent_points[-1]
-    
+
     months_elapsed = calculate_months_between(first_pub, last_pub)
     if months_elapsed == 0:
         months_elapsed = 1
-    
+
     days_advanced = (last_cutoff - first_cutoff).days
     avg_days_per_month = days_advanced / months_elapsed
-    
+
     # Check if already current or no movement
     if last_cutoff >= submission_date:
         return {
@@ -69,7 +69,7 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
             'estimated_date': None,
             'months_to_wait': 0,
         }
-    
+
     if avg_days_per_month <= 0:
         # No recent progress - fall back to historical linear regression
         historical_projection = calculate_historical_linear_regression(
@@ -77,7 +77,7 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
         )
         if historical_projection:
             return historical_projection
-        
+
         # If historical regression also fails, return no movement
         return {
             'status': 'no_movement',
@@ -85,14 +85,14 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
             'estimated_date': None,
             'months_to_wait': None,
         }
-    
+
     # Calculate estimated wait time
     days_to_advance = (submission_date - last_cutoff).days
     months_to_wait = days_to_advance / avg_days_per_month
-    
+
     # Project future date
     estimated_date = add_months_to_date(last_pub, int(months_to_wait))
-    
+
     return {
         'status': 'projected',
         'message': f'Estimated processing in {int(months_to_wait)} months',
@@ -155,24 +155,24 @@ def _calculate_linear_regression_coefficients(
     """
     x_values = [(pub_date - epoch).days for pub_date, _ in valid_points]
     y_values = [(cutoff - epoch).days for _, cutoff in valid_points]
-    
+
     n = len(x_values)
     sum_x = sum(x_values)
     sum_y = sum(y_values)
     sum_xy = sum(x * y for x, y in zip(x_values, y_values))
     sum_x_squared = sum(x * x for x in x_values)
-    
+
     denominator = n * sum_x_squared - sum_x * sum_x
     if denominator == 0:
         return None
-    
+
     slope = (n * sum_xy - sum_x * sum_y) / denominator
     intercept = (sum_y - slope * sum_x) / n
-    
+
     # Check if slope is positive (forward progress)
     if slope <= 0:
         return None
-    
+
     return slope, intercept
 
 
@@ -192,7 +192,7 @@ def _project_from_regression(
     submission_days = (submission_date - epoch).days
     last_cutoff_days = slope * (last_pub_date - epoch).days + intercept
     last_cutoff = epoch + timedelta(days=int(last_cutoff_days))
-    
+
     # Check if already reached
     if last_cutoff >= submission_date:
         return {
@@ -201,19 +201,19 @@ def _project_from_regression(
             'estimated_date': None,
             'months_to_wait': 0,
         }
-    
+
     # Project when submission_date will be reached
     projected_pub_days = (submission_days - intercept) / slope
     projected_date = epoch + timedelta(days=int(projected_pub_days))
-    
+
     # Calculate months from now
     months_to_wait = calculate_months_between(last_pub_date, projected_date)
     if months_to_wait < 0:
         months_to_wait = 0
-    
+
     # Calculate average progress rate for display
     days_per_month = slope * 30  # Rough approximation
-    
+
     return {
         'status': 'projected_historical',
         'message': f'Estimated processing in {int(months_to_wait)} months (based on long-term trend)',
@@ -225,7 +225,7 @@ def _project_from_regression(
 
 
 def calculate_historical_linear_regression(
-    valid_points: list[tuple[date, date]], 
+    valid_points: list[tuple[date, date]],
     submission_date: date,
     last_pub_date: date
 ) -> dict[str, any] | None:
@@ -252,13 +252,13 @@ def calculate_historical_linear_regression(
     """
     if len(valid_points) < 6:  # Need reasonable historical data
         return None
-    
+
     epoch = date(2000, 1, 1)
     regression_result = _calculate_linear_regression_coefficients(valid_points, epoch)
-    
+
     if regression_result is None:
         return None
-    
+
     slope, intercept = regression_result
     return _project_from_regression(slope, intercept, submission_date, last_pub_date, epoch)
 

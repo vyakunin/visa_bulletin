@@ -1,6 +1,7 @@
 """Generic filter application utilities for Django querysets"""
 
 from django.db.models import Q
+
 from models.enums.visa_program import VisaProgram
 
 
@@ -18,12 +19,12 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
     """
     if not query:
         return queryset
-    
+
     # Build Q objects for OR search across fields
     q_objects = Q()
     for field in fields:
         q_objects |= Q(**{f'{field}__icontains': query})
-    
+
     return queryset.filter(q_objects)
 
 
@@ -41,12 +42,12 @@ def apply_visa_program_filter(queryset, program_filter: str, program_field: str 
     """
     if not program_filter:
         return queryset
-    
+
     if program_filter == 'h1b':
         return queryset.filter(**{f'{program_field}__in': [VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3]})
     elif program_filter == 'perm':
         return queryset.filter(**{f'{program_field}': VisaProgram.PERM})
-    
+
     return queryset
 
 
@@ -64,7 +65,7 @@ def apply_fiscal_year_filter(queryset, year_filter: str | int | None, year_field
     """
     if not year_filter:
         return queryset
-    
+
     try:
         year = int(year_filter)
         return queryset.filter(**{year_field: year})

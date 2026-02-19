@@ -9,7 +9,6 @@ with fallback to hardcoded defaults if config is missing.
 """
 
 import logging
-import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -49,22 +48,22 @@ def _load_thresholds_from_config():
     if _CONFIG_PATH is None or not _CONFIG_PATH.exists():
         logger.debug(f"Config file not found: {_CONFIG_PATH}, using defaults")
         return None
-    
+
     if yaml is None:
         logger.warning("PyYAML not installed, cannot load config file. Install with: pip install pyyaml")
         return None
-    
+
     try:
-        with open(_CONFIG_PATH, 'r') as f:
+        with open(_CONFIG_PATH) as f:
             config = yaml.safe_load(f)
-        
+
         # Extract single unified threshold range
         annual_range = config.get('annual_wage_range', {})
         thresholds = {
             'min_annual': annual_range.get('min'),
             'max_annual': annual_range.get('max'),
         }
-        
+
         logger.debug(f"Loaded thresholds from config (last updated: {config.get('_last_updated', 'unknown')})")
         return thresholds
     except Exception as e:
@@ -75,13 +74,13 @@ def _load_thresholds_from_config():
 def _get_thresholds():
     """Get current thresholds (from config or defaults)."""
     config = _load_thresholds_from_config()
-    
+
     if config is None:
         return {
             'min_annual': _DEFAULT_MIN_ANNUAL,
             'max_annual': _DEFAULT_MAX_ANNUAL,
         }
-    
+
     return {
         'min_annual': config.get('min_annual') or _DEFAULT_MIN_ANNUAL,
         'max_annual': config.get('max_annual') or _DEFAULT_MAX_ANNUAL,
@@ -133,19 +132,19 @@ def should_correct_wage_unit(
     """
     if not wage_from or wage_unit == WageUnit.YEAR:
         return False
-    
+
     wage_from_float = float(wage_from)
-    
+
     # Calculate implied annual wage using the stated unit
     implied_annual = float(calculate_annual_wage(wage_from, wage_unit))
-    
+
     # If implied annual is outside valid range, check if wage_from itself is in range
     # (which would mean the unit is wrong and should be YEAR)
     if not (MIN_ANNUAL <= implied_annual <= MAX_ANNUAL):
         # Check if treating wage_from as annual would be in range
         if MIN_ANNUAL <= wage_from_float <= MAX_ANNUAL:
             return True  # wage_from is reasonable as annual, so correct unit to YEAR
-    
+
     return False
 
 
@@ -233,7 +232,7 @@ def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str | WageUnit) 
     """
     if not wage_from:
         return None
-    
+
     multipliers = {
         WageUnit.YEAR: 1,
         WageUnit.MONTH: 12,
@@ -241,7 +240,7 @@ def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str | WageUnit) 
         WageUnit.WEEK: 52,
         WageUnit.HOUR: HOURS_PER_YEAR,
     }
-    
+
     multiplier = multipliers.get(wage_unit, 1)
     return wage_from * multiplier
 
@@ -261,9 +260,9 @@ def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None
     """
     if wage_annual is None:
         return True, None  # Missing wage is handled separately
-    
+
     wage_float = float(wage_annual)
-    
+
     if wage_float < MIN_ANNUAL:
         message = f"Annual wage ${wage_float:,.0f} is below minimum threshold ${MIN_ANNUAL:,} - likely data error or incorrect unit"
         if row_num is not None and row_num != 0:
@@ -271,7 +270,7 @@ def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None
         elif row_num is not None:
             logger.warning(message)
         return False, message
-    
+
     if wage_float > MAX_ANNUAL:
         message = f"Annual wage ${wage_float:,.0f} exceeds maximum threshold ${MAX_ANNUAL:,} - likely data error or incorrect unit"
         if row_num is not None and row_num != 0:
@@ -279,6 +278,6 @@ def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None
         elif row_num is not None:
             logger.warning(message)
         return False, message
-    
+
     return True, None
 

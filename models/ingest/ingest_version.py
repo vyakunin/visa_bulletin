@@ -1,12 +1,13 @@
 """IngestVersion model - For rollback capability"""
 
 from django.db import models
+
 from .ingest_run import IngestRun
 
 
 class IngestVersion(models.Model):
     """Version marker for rollback - links records to their ingest run"""
-    
+
     run = models.OneToOneField(
         IngestRun,
         on_delete=models.CASCADE,
@@ -36,7 +37,7 @@ class IngestVersion(models.Model):
         auto_now_add=True,
         help_text="When this version was created"
     )
-    
+
     class Meta:
         app_label = 'models'  # Explicitly set app_label for Django model resolution
         db_table = 'ingest_version'
@@ -44,7 +45,7 @@ class IngestVersion(models.Model):
         indexes = [
             models.Index(fields=['is_active', 'version_tag']),
         ]
-    
+
     def __str__(self):
         status = "active" if self.is_active else "inactive"
         return f"Version {self.version_tag} ({status})"

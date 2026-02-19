@@ -4,18 +4,22 @@ Apply manual review decisions for pending bucket mismatch reviews.
 """
 
 import os
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from models.salary import EmployerClusteringReview
 from django.db import transaction
 from django.utils import timezone
-from lib.utils.logging_utils import ScriptLogger
+
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
+from models.salary import EmployerClusteringReview
 
 setup_logging()
 import logging
+
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
@@ -41,7 +45,7 @@ MANUAL_DECISIONS = [
     ('Test Stratus Technology', 'Stratus Technology', 'approved', 'Test prefix variation'),
     ('JEFFREY L. BONDE', 'JEFF BONDE', 'approved', 'Full name vs nickname, same person'),
     ('CREDIT CARD DISCOUNT', 'CREDITCARD DISCOUNT', 'approved', 'Spacing variation'),
-    
+
     # Different company cases
     ('Eta Wireless', 'Get Wireless', 'rejected', 'Different companies: Eta vs Get'),
     ('ORIC Pharmaceuticals', 'OSI PHARMACEUTICALS', 'rejected', 'Different companies: ORIC vs OSI'),
@@ -81,12 +85,12 @@ unmatched = []
 for review in reviews:
     emp1_name = review.employer1.name.upper()
     emp2_name = review.employer2.name.upper()
-    
+
     matched = False
     for emp1_pattern, emp2_pattern, decision, reason in MANUAL_DECISIONS:
         emp1_pattern_upper = emp1_pattern.upper()
         emp2_pattern_upper = emp2_pattern.upper()
-        
+
         # Check if both names match the patterns (either order)
         if ((emp1_pattern_upper in emp1_name and emp2_pattern_upper in emp2_name) or
             (emp1_pattern_upper in emp2_name and emp2_pattern_upper in emp1_name)):
@@ -96,11 +100,11 @@ for review in reviews:
                 to_reject.append((review, reason))
             matched = True
             break
-    
+
     if not matched:
         unmatched.append(review)
 
-logger.info(f"\nMatched decisions:")
+logger.info("\nMatched decisions:")
 logger.info(f"  To approve: {len(to_approve)}")
 logger.info(f"  To reject: {len(to_reject)}")
 logger.info(f"  Unmatched (need manual review): {len(unmatched)}")
@@ -122,7 +126,7 @@ if to_approve or to_reject:
             review.notes = f"{review.notes} | Manual-approved: {reason}"
             review.save()
             logger.info(f"  ✓ Approved: '{review.employer1.name}' vs '{review.employer2.name}' ({reason})")
-        
+
         for review, reason in to_reject:
             review.status = 'rejected'
             review.reviewed_by = 'manual-reviewed'
@@ -130,7 +134,7 @@ if to_approve or to_reject:
             review.notes = f"{review.notes} | Manual-rejected: {reason}"
             review.save()
             logger.info(f"  ✗ Rejected: '{review.employer1.name}' vs '{review.employer2.name}' ({reason})")
-    
+
     logger.info(f"\nApplied {len(to_approve)} approvals and {len(to_reject)} rejections")
     logger.info(f"Remaining pending: {len(unmatched)}")
 else:

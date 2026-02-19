@@ -32,15 +32,17 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
+import yaml
 from django.db import connection
+
 from django_config.logging_config import setup_logging
 from lib.utils.http_utils import get_workspace_dir
 from lib.utils.logging_utils import ScriptLogger
 from models.ingest.enums import IngestStatus
 from models.ingest.ingest_run import IngestRun
-import yaml
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -201,7 +203,7 @@ def recreate_indexes(snapshot_path: Path, force: bool = False) -> None:
 def create_clustering_indexes() -> None:
     """Create minimal indexes required for clustering and employer profile performance."""
     _ensure_no_running_ingests()
-    
+
     clustering_indexes = [
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title)",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name)",
@@ -211,16 +213,16 @@ def create_clustering_indexes() -> None:
         # Covering index for employer profile percentiles/histogram (index-only scan, no heap fetches)
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS sr_emp_wk_fy_inc_wage ON salary_record(employer_id, is_worksite, fiscal_year) INCLUDE (wage_annual)",
     ]
-    
+
     logger.info("Creating %d clustering indexes...", len(clustering_indexes))
-    
+
     with connection.cursor() as cursor:
         for indexdef in clustering_indexes:
             # Extract index name from SQL
             index_name = indexdef.split('EXISTS ')[1].split(' ON ')[0]
             logger.info("Creating index: %s", index_name)
             cursor.execute(indexdef)
-    
+
     logger.info("Created clustering indexes successfully.")
 
 
@@ -233,7 +235,7 @@ def main() -> None:
     action_group.add_argument('--list', action='store_true', help='List indexes for target tables')
     action_group.add_argument('--drop', action='store_true', help='Drop non-unique indexes')
     action_group.add_argument('--recreate', action='store_true', help='Recreate dropped indexes from snapshot')
-    action_group.add_argument('--create-clustering-indexes', action='store_true', 
+    action_group.add_argument('--create-clustering-indexes', action='store_true',
                               help='Create minimal indexes required for clustering (job_title, employer_name)')
     parser.add_argument(
         '--snapshot',

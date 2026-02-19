@@ -11,16 +11,16 @@ Usage:
     bazel run //:refresh_data_incremental
 """
 
+import logging
 import os
 import sys
 import time
-import logging
 from datetime import datetime
-from urllib.parse import urlparse
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
-from django.db import transaction, OperationalError
+from django.db import OperationalError, transaction
 
 # Configure logging with timestamps
 logging.basicConfig(
@@ -37,9 +37,9 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     import django
     django.setup()
 
-from lib.bulletin_parser import parse_publication_links, extract_tables
-from lib.parsing.bulletin.publication_data import PublicationData
 from extractors.bulletin_handler import save_bulletin_to_db
+from lib.bulletin_parser import extract_tables, parse_publication_links
+from lib.parsing.bulletin.publication_data import PublicationData
 from models.bulletin import Bulletin
 
 # Get workspace directory
@@ -80,7 +80,7 @@ def fetch_publication(pub_url):
     """Fetch or load cached publication HTML"""
     if is_saved(pub_url):
         filename = os.path.basename(urlparse(pub_url).path)
-        with open(SAVED_PAGES_DIR / filename, 'r', encoding='utf-8') as f:
+        with open(SAVED_PAGES_DIR / filename, encoding='utf-8') as f:
             return f.read()
     else:
         response = requests.get(pub_url)
@@ -123,7 +123,7 @@ def main():
     logger.info("="*80)
     logger.info("🔄 INCREMENTAL DATA REFRESH - STARTED")
     logger.info("="*80)
-    
+
     # Get existing bulletins from database
     logger.info("")
     logger.info("📊 Checking existing data...")
@@ -133,7 +133,7 @@ def main():
         oldest = min(existing_dates)
         newest = max(existing_dates)
         logger.info(f"  • Date range: {oldest} to {newest}")
-    
+
     # Fetch list of available bulletins
     logger.info("")
     logger.info("🌐 Fetching bulletin list from travel.state.gov...")
@@ -141,7 +141,7 @@ def main():
     html = fetch_main_page(url)
     publication_urls = parse_publication_links(html)
     logger.info(f"  • Available bulletins: {len(publication_urls)}")
-    
+
     # Filter to only new bulletins
     new_bulletins = []
     for pub_url in publication_urls:
@@ -155,7 +155,7 @@ def main():
         except ValueError:
             logger.warning(f"  ⚠️  Skipping invalid date format: {date_str}")
             continue
-    
+
     if not new_bulletins:
         logger.info("")
         logger.info("✅ No new bulletins to fetch. Database is up to date!")
@@ -165,38 +165,38 @@ def main():
         logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)")
         logger.info("="*80)
         return 0
-    
+
     logger.info("")
     logger.info(f"📥 Found {len(new_bulletins)} new bulletin(s) to fetch:")
     for url, date in new_bulletins[:5]:
         logger.info(f"  • {date.strftime('%B %Y')}")
     if len(new_bulletins) > 5:
         logger.info(f"  ... and {len(new_bulletins) - 5} more")
-    
+
     # Fetch and save new bulletins
     logger.info("")
     logger.info("💾 Fetching and saving new bulletins...")
     success_count = 0
     error_count = 0
-    
+
     for pub_url, publication_date in new_bulletins:
         try:
             logger.info("")
             logger.info(f"  📄 {publication_date.strftime('%B %Y')}...", extra={'no_timestamp': True})
-            
+
             # Fetch HTML
             content = fetch_publication(pub_url)
-            
+
             # Create PublicationData
             pub_data = PublicationData(
                 url=pub_url,
                 content=content,
                 publication_date=datetime.combine(publication_date, datetime.min.time())
             )
-            
+
             # Save to database with retry
             bulletin = save_with_retry(pub_data)
-            
+
             if bulletin:
                 # Count saved records
                 tables = extract_tables(content)
@@ -206,11 +206,11 @@ def main():
             else:
                 logger.error("✗ Failed after retries")
                 error_count += 1
-                
+
         except Exception as e:
             logger.error(f"✗ Error: {e}")
             error_count += 1
-    
+
     # Summary
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -222,7 +222,7 @@ def main():
     logger.info(f"  • Errors: {error_count}")
     logger.info(f"  • Total bulletins now in DB: {len(existing_dates) + success_count}")
     logger.info(f"  • Duration: {duration:.1f}s")
-    
+
     # Determine exit status
     if error_count > 0:
         logger.warning("")

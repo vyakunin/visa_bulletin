@@ -36,10 +36,12 @@ if '--validate-parsing' in sys.argv:
 
 from django_config.logging_config import setup_logging
 from lib.utils.data_source_utils import get_file_stats
-from lib.utils.excel_utils import read_excel_headers, read_excel_rows, read_excel_streaming
+from lib.utils.excel_utils import (
+    read_excel_headers,
+    read_excel_rows,
+)
 from lib.utils.http_utils import get_workspace_dir
 from lib.utils.logging_utils import ScriptLogger
-
 
 DEFAULT_FILES = [
     "data/salary/dol_data/PERM_Disclosure_Data_FY2020.xlsx",
@@ -147,20 +149,20 @@ def _validate_parsing(
     Returns:
         dict with keys: success (bool), errors (list), warnings (list), samples (list)
     """
-    from lib.ingest.registry import PluginRegistry
     from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
     from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
+    from lib.ingest.registry import PluginRegistry
     from models.ingest.data_source import DataSource
+    from models.ingest.enums import IngestStage, IngestStatus
     from models.ingest.ingest_run import IngestRun
-    from models.ingest.enums import IngestStatus, IngestStage
-    
+
     logger.info("🔬 Validating parsing for %s...", file_path.name)
     logger.info("=" * 80)
-    
+
     # Register plugins
     PluginRegistry.register(H1BSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
-    
+
     # Detect file type from filename
     filename_lower = file_path.name.lower()
     if 'perm' in filename_lower:
@@ -176,7 +178,7 @@ def _validate_parsing(
             'warnings': [],
             'samples': []
         }
-    
+
     plugin = PluginRegistry.get_plugin(domain, source_type)
     if not plugin:
         return {
@@ -185,10 +187,10 @@ def _validate_parsing(
             'warnings': [],
             'samples': []
         }
-    
+
     logger.info("  Plugin: %s:%s", domain, source_type)
     logger.info("  Parsing %d sample rows...", sample_rows)
-    
+
     # Create a mock DataSource and IngestRun for parsing (not persisted to DB)
     # The parse() method checks run.source for fiscal year extraction
     mock_source = DataSource(
@@ -197,34 +199,34 @@ def _validate_parsing(
         source_type=source_type,
         local_file_path=str(file_path)
     )
-    
+
     mock_run = IngestRun(
         source=mock_source,
         status=IngestStatus.RUNNING,
         stage=IngestStage.PARSING,
         checkpoint={'filepath': str(file_path)}
     )
-    
+
     errors = []
     warnings = []
     samples = []
     parsed_count = 0
     transformed_count = 0
-    
+
     try:
         # Parse sample rows through plugin
         for idx, parsed_record in enumerate(plugin.parse(file_path, mock_run)):
             if idx >= sample_rows:
                 break
-            
+
             parsed_count += 1
-            
+
             # Transform to model
             try:
                 model_instance = plugin.transform(parsed_record)
                 if model_instance:
                     transformed_count += 1
-                    
+
                     # Validate required fields
                     validation_errors = []
                     if not getattr(model_instance, 'case_number', None):
@@ -233,7 +235,7 @@ def _validate_parsing(
                         validation_errors.append('Missing employer_name')
                     if not getattr(model_instance, 'job_title', None):
                         validation_errors.append('Missing job_title')
-                    
+
                     samples.append({
                         'row': idx + 1,
                         'case_number': getattr(model_instance, 'case_number', None),
@@ -241,7 +243,7 @@ def _validate_parsing(
                         'job_title': getattr(model_instance, 'job_title', None),
                         'validation_errors': validation_errors
                     })
-                    
+
                     if validation_errors:
                         errors.extend([f"Row {idx + 1}: {err}" for err in validation_errors])
                 else:
@@ -249,7 +251,7 @@ def _validate_parsing(
             except Exception as e:
                 errors.append(f"Row {idx + 1}: Transform failed - {str(e)}")
                 logger.error("Transform error on row %d: %s", idx + 1, e, exc_info=True)
-        
+
     except Exception as e:
         errors.append(f"Parse failed: {str(e)}")
         logger.error("Parse error: %s", e, exc_info=True)
@@ -259,11 +261,11 @@ def _validate_parsing(
             'warnings': warnings,
             'samples': samples
         }
-    
+
     # Log results
     logger.info("  ✓ Parsed: %d rows", parsed_count)
     logger.info("  ✓ Transformed: %d records", transformed_count)
-    
+
     if samples:
         logger.info("\n  Sample records:")
         for sample in samples[:3]:  # Show first 3
@@ -273,23 +275,23 @@ def _validate_parsing(
             logger.info("      Job: %s", sample['job_title'][:50] if sample['job_title'] else 'N/A')
             if sample['validation_errors']:
                 logger.info("      ⚠️  Validation errors: %s", ', '.join(sample['validation_errors']))
-    
+
     if warnings:
         logger.info("\n  ⚠️  Warnings:")
         for warning in warnings[:10]:  # Show first 10
             logger.info("    - %s", warning)
-    
+
     if errors:
         logger.info("\n  ❌ Errors:")
         for error in errors[:10]:  # Show first 10
             logger.info("    - %s", error)
-    
+
     success = len(errors) == 0 and transformed_count > 0
     if success:
         logger.info("\n  ✅ Parsing validation PASSED")
     else:
         logger.info("\n  ❌ Parsing validation FAILED")
-    
+
     return {
         'success': success,
         'errors': errors,
@@ -384,17 +386,17 @@ def main() -> None:
     if args.validate_parsing:
         logger.info("🔬 SMOKE TEST: Validating parsing for %d files", len(files))
         logger.info("=" * 80)
-        
+
         validation_results = []
         for file_path in files:
             if not file_path.exists():
                 logger.warning("%s not found", file_path)
                 continue
-            
+
             result = _validate_parsing(logger, file_path, sample_rows=5)
             validation_results.append((file_path.name, result))
             logger.info("")
-        
+
         # Summary
         logger.info("=" * 80)
         logger.info("SMOKE TEST SUMMARY")
@@ -404,7 +406,7 @@ def main() -> None:
         logger.info("Total files: %d", len(validation_results))
         logger.info("  ✅ Passed: %d", passed)
         logger.info("  ❌ Failed: %d", failed)
-        
+
         if failed > 0:
             logger.info("\nFailed files:")
             for filename, result in validation_results:
@@ -415,7 +417,7 @@ def main() -> None:
             sys.exit(1)  # Exit with error if any validation failed
         else:
             logger.info("\n✅ All files passed smoke test - ready for ingestion!")
-        
+
         return
 
     # Extract specific row mode
@@ -423,35 +425,35 @@ def main() -> None:
         target_row = args.extract_row
         logger.info("Extracting row %d from %d files", target_row, len(files))
         logger.info("=" * 80)
-        
+
         for file_path in files:
             if not file_path.exists():
                 logger.warning("%s not found", file_path)
                 continue
-            
+
             logger.info("\nFile: %s", file_path.name)
             logger.info("-" * 80)
-            
+
             # Read header and target row
             import openpyxl
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             ws = wb.active
-            
+
             # Get header
             header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
             logger.info("Header (%d columns):", len(header_row))
-            
+
             # Get target row
             found = False
             for i, row in enumerate(ws.iter_rows(min_row=target_row, max_row=target_row, values_only=True), start=target_row):
                 found = True
                 logger.info("\nRow %d values:", i)
-                
+
                 # Show all non-None values
                 for col_name, value in zip(header_row, row):
                     if value is not None:
                         logger.info("  %s: %r", col_name, value)
-                
+
                 # Focus on wage fields
                 logger.info("\n🔍 Key wage fields:")
                 wage_cols = ['CASE_NUMBER', 'WAGE_RATE_OF_PAY_FROM', 'WAGE_RATE_OF_PAY_TO', 'WAGE_UNIT_OF_PAY', 'PW_UNIT_OF_PAY']
@@ -461,12 +463,12 @@ def main() -> None:
                         logger.info("  %s: %r", col, row[idx])
                     except (ValueError, IndexError):
                         pass
-            
+
             wb.close()
-            
+
             if not found:
                 logger.warning("Row %d not found in %s", target_row, file_path.name)
-        
+
         return
 
     # Normal inspection mode

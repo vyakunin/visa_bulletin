@@ -33,6 +33,7 @@ if not os.environ.get("DJANGO_SETTINGS_MODULE"):
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
+
 django.setup()
 
 from django.core.cache import cache, caches

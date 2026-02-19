@@ -1,8 +1,9 @@
 """Tests for recall improvements and bucket mismatch handling"""
 
-import unittest
 import os
 import sys
+import unittest
+
 import django
 
 # Add project root to path
@@ -13,13 +14,17 @@ sys.path.insert(0, project_root)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 django.setup()
 
+from lib.business.salary.employer_clustering import (
+    _get_fuzzy_bucket_candidates,
+    match_employers,
+    should_auto_cluster,
+)
 from models.salary import Employer
-from lib.business.salary.employer_clustering import match_employers, should_auto_cluster, _get_fuzzy_bucket_candidates
 
 
 class TestClusteringRecall(unittest.TestCase):
     """Test recall improvements and bucket mismatch handling"""
-    
+
     def test_hyphen_variations_with_missing_state_should_match(self):
         """Test that hyphen variations with same city but missing state now match (recall fix)."""
         # RECALL FIX: Increased confidence from 0.90 to 0.95 for hyphen variations
@@ -47,24 +52,24 @@ class TestClusteringRecall(unittest.TestCase):
                 'reason': 'Hyphen variation with same city (state missing)'
             },
         ]
-        
+
         for case in hyphen_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
-                
+
                 self.assertTrue(
                     is_match,
                     f"Should match: '{case['emp1'].name}' vs '{case['emp2'].name}' ({case['reason']}) - "
                     f"reason: {reason}, confidence: {confidence:.3f}"
                 )
-                
+
                 self.assertGreaterEqual(
                     confidence, case.get('min_confidence', 0.95),
                     f"Confidence should be >= 0.95 to pass auto-cluster threshold: "
                     f"'{case['emp1'].name}' vs '{case['emp2'].name}' - "
                     f"confidence: {confidence:.3f}"
                 )
-                
+
                 # Verify should_auto_cluster accepts it
                 should_cluster, cluster_confidence, cluster_reason = should_auto_cluster(
                     case['emp1'], case['emp2'], threshold=0.95
@@ -74,7 +79,7 @@ class TestClusteringRecall(unittest.TestCase):
                     f"Should auto-cluster hyphen variation with same city: "
                     f"confidence: {cluster_confidence:.3f} >= 0.95"
                 )
-    
+
     def test_bucket_mismatch_cases_should_match(self):
         """Test known bucket mismatch cases that should match (production issue).
         
@@ -104,13 +109,13 @@ class TestClusteringRecall(unittest.TestCase):
                 'reason': 'Ampersand normalization: & vs and (bucket mismatch)'
             },
         ]
-        
+
         for case in bucket_mismatch_cases:
             with self.subTest(emp1=case['emp1'].name, emp2=case['emp2'].name):
                 # These might normalize to different buckets, but if compared, should match
                 norm1 = Employer.normalize_name(case['emp1'].name)
                 norm2 = Employer.normalize_name(case['emp2'].name)
-                
+
                 # If they normalize to same bucket, should match
                 if norm1 == norm2:
                     is_match, confidence, reason = match_employers(case['emp1'], case['emp2'])
@@ -130,7 +135,7 @@ class TestClusteringRecall(unittest.TestCase):
                             f"Should match via similarity (bucket mismatch): '{case['emp1'].name}' vs '{case['emp2'].name}' - "
                             f"normalized: '{norm1}' vs '{norm2}', reason: {reason}, confidence: {confidence:.3f}"
                         )
-    
+
     def test_fuzzy_bucket_candidates_generate_overlap(self):
         """Test that fuzzy bucket candidates generate overlapping buckets for similar names."""
         test_cases = [
@@ -159,13 +164,13 @@ class TestClusteringRecall(unittest.TestCase):
                 'reason': 'Different companies should not share buckets'
             },
         ]
-        
+
         for case in test_cases:
             with self.subTest(name1=case['name1'], name2=case['name2']):
                 buckets1 = _get_fuzzy_bucket_candidates(case['name1'])
                 buckets2 = _get_fuzzy_bucket_candidates(case['name2'])
                 overlap = buckets1 & buckets2
-                
+
                 if case['should_overlap']:
                     self.assertTrue(
                         bool(overlap),

@@ -15,6 +15,7 @@ import argparse
 import logging
 import os
 import sys
+
 from django.db import transaction
 
 # Setup Django early (before any model imports)
@@ -22,16 +23,18 @@ if not os.environ.get('DJANGO_SETTINGS_MODULE'):
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 
 import django
+
 django.setup()
 
 # Configure logging
 from django_config.logging_config import setup_logging
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
 # Import models and utilities
-from lib.utils.logging_utils import ScriptLogger
 from lib.utils.http_utils import get_workspace_dir
+from lib.utils.logging_utils import ScriptLogger
 from models.salary import Employer, SalaryRecord
 
 script_logger = ScriptLogger(__file__)
@@ -69,7 +72,7 @@ def delete_all_data_files() -> int:
     if not dol_data_dir.exists():
         logger.info("data/salary/dol_data/ directory does not exist, nothing to delete")
         return 0
-    
+
     deleted_count = 0
     for pattern in ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', '*.xls', '*.XLS']:
         for filepath in dol_data_dir.glob(pattern):
@@ -79,7 +82,7 @@ def delete_all_data_files() -> int:
                 logger.debug(f"Deleted: {filepath.name}")
             except Exception as e:
                 logger.warning(f"Failed to delete {filepath.name}: {e}")
-    
+
     return deleted_count
 
 
@@ -98,53 +101,53 @@ Examples:
 WARNING: This operation cannot be undone!
         """
     )
-    
+
     parser.add_argument(
         '--force', '-f',
         action='store_true',
         help='Skip confirmation prompt (use with caution)'
     )
-    
+
     parser.add_argument(
         '--delete-files',
         action='store_true',
         help='Also delete all data files in data/salary/dol_data/ directory'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Log script execution
     script_logger.log_call(
         args={'force': args.force, 'delete_files': args.delete_files},
         context='Dropping all salary data and orphaned employers'
     )
-    
+
     # Get counts before deletion
     salary_count = SalaryRecord.objects.count()
     employer_count = Employer.objects.count()
     orphaned_count = Employer.objects.filter(salary_records__isnull=True).count()
-    
+
     # Check file count if deleting files
     file_count = 0
     if args.delete_files:
         dol_data_dir = get_workspace_dir() / 'dol_data'
         if dol_data_dir.exists():
-            file_count = len(list(dol_data_dir.glob('*.csv')) + 
-                            list(dol_data_dir.glob('*.xlsx')) + 
+            file_count = len(list(dol_data_dir.glob('*.csv')) +
+                            list(dol_data_dir.glob('*.xlsx')) +
                             list(dol_data_dir.glob('*.xls')))
-    
+
     logger.info("=" * 60)
     logger.info("Salary Data Deletion")
     logger.info("=" * 60)
-    logger.info(f"Current database state:")
+    logger.info("Current database state:")
     logger.info(f"  Salary records: {salary_count:,}")
     logger.info(f"  Total employers: {employer_count:,}")
     logger.info(f"  Orphaned employers: {orphaned_count:,}")
     if args.delete_files:
-        logger.info(f"Current file state:")
+        logger.info("Current file state:")
         logger.info(f"  Data files in data/salary/dol_data/: {file_count}")
     logger.info("")
-    
+
     # Confirmation prompt
     if not args.force:
         warning_msg = "WARNING: This will delete ALL salary records and orphaned employers!"
@@ -156,7 +159,7 @@ WARNING: This operation cannot be undone!
         if response.lower() != 'yes':
             logger.info("Operation cancelled.")
             sys.exit(0)
-    
+
     # Delete files first (if requested)
     files_deleted = 0
     if args.delete_files:
@@ -164,13 +167,13 @@ WARNING: This operation cannot be undone!
         files_deleted = delete_all_data_files()
         logger.info(f"Deleted {files_deleted} file(s) from data/salary/dol_data/")
         logger.info("")
-    
+
     # Perform database deletion in transaction
     try:
         with transaction.atomic():
             salary_deleted = drop_all_salary_records()
             employers_deleted = drop_orphaned_employers()
-        
+
         logger.info("=" * 60)
         logger.info("Deletion complete!")
         logger.info(f"  Salary records deleted: {salary_deleted:,}")
@@ -181,7 +184,7 @@ WARNING: This operation cannot be undone!
         logger.info("Final database state:")
         logger.info(f"  Salary records: {SalaryRecord.objects.count():,}")
         logger.info(f"  Total employers: {Employer.objects.count():,}")
-        
+
     except Exception as e:
         logger.error(f"Error during deletion: {e}")
         sys.exit(1)

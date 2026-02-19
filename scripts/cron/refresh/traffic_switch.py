@@ -19,8 +19,8 @@ def switch_traffic_dns(
 ) -> bool:
     """Switch DNS A records for @ and www to new_ip via Namecheap API. Returns True on success."""
     try:
-        import urllib.request
         import urllib.parse
+        import urllib.request
         import xml.etree.ElementTree as ET
     except ImportError:
         logger.error("Namecheap API requires urllib and xml.etree")

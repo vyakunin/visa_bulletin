@@ -11,7 +11,6 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,19 +18,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EvaluationOutcome:
     """Result of LLM validation for a pair of employers."""
-    is_same: Optional[bool]  # True if same company, False if different, None if validation failed
-    response: Optional[str]  # LLM response text, or None if validation failed
-    
+    is_same: bool | None  # True if same company, False if different, None if validation failed
+    response: str | None  # LLM response text, or None if validation failed
+
     @classmethod
     def same(cls, response: str) -> 'EvaluationOutcome':
         """Create outcome for same company."""
         return cls(is_same=True, response=response)
-    
+
     @classmethod
     def different(cls, response: str) -> 'EvaluationOutcome':
         """Create outcome for different companies."""
         return cls(is_same=False, response=response)
-    
+
     @classmethod
     def failed(cls) -> 'EvaluationOutcome':
         """Create outcome for failed validation."""
@@ -70,11 +69,11 @@ class EvaluationResults:
 
 class ClusteringEvaluator:
     """Evaluates clustering pairs using LLM validation."""
-    
+
     def __init__(
-        self, 
-        llm_validator=None, 
-        prompt_template_path: Optional[Path] = None,
+        self,
+        llm_validator=None,
+        prompt_template_path: Path | None = None,
         use_parallel: bool = True,
         max_concurrent: int = 4
     ):
@@ -92,7 +91,7 @@ class ClusteringEvaluator:
         self.prompt_template_path = prompt_template_path
         self.use_parallel = use_parallel
         self.max_concurrent = max_concurrent
-    
+
     def _evaluate_single_pair(self, pair: EmployerPair | dict, pair_type: str, pair_index: int, total: int) -> EvaluationOutcome:
         """
         Evaluate a single employer pair using LLM validation.
@@ -119,13 +118,13 @@ class ClusteringEvaluator:
             )
         else:
             employer_pair = pair
-        
+
         logger.debug(f"Evaluating {pair_type} pair {pair_index}/{total}: "
                     f"{employer_pair.emp1_name} vs {employer_pair.emp2_name} "
                     f"(similarity={employer_pair.similarity:.3f})")
-        
+
         return self.llm_validator(employer_pair)
-    
+
     def _evaluate_auto_clustered_pairs(self, auto_sample: list) -> PairEvaluationStats:
         """
         Evaluate auto-clustered pairs (should be same company).
@@ -138,19 +137,19 @@ class ClusteringEvaluator:
         auto_fp = 0
         auto_skipped = 0
         false_positives = []
-        
+
         for i, pair in enumerate(auto_sample, 1):
             # Log progress every 20 pairs
             if i % 20 == 0 or i == 1:
                 logger.info(f"Progress: Evaluating auto-clustered pair {i}/{len(auto_sample)} ({i/len(auto_sample)*100:.1f}%)")
-            
+
             outcome = self._evaluate_single_pair(pair, 'auto-clustered', i, len(auto_sample))
-            
+
             if outcome.is_same is None:
                 auto_skipped += 1
                 logger.warning(f"Skipped auto-clustered pair {i}: LLM validation failed")
                 continue
-            
+
             # Extract pair data for logging/error tracking
             pair_dict = pair if isinstance(pair, dict) else {
                 'emp1_name': pair.emp1_name,
@@ -161,7 +160,7 @@ class ClusteringEvaluator:
                 'emp2_state': pair.emp2_state,
                 'similarity': pair.similarity
             }
-            
+
             if outcome.is_same:
                 auto_tp += 1
                 logger.debug(f"True positive: {pair_dict['emp1_name']} = {pair_dict['emp2_name']}")
@@ -174,7 +173,7 @@ class ClusteringEvaluator:
                 })
                 logger.warning(f"False positive {auto_fp}: {pair_dict['emp1_name']} ≠ {pair_dict['emp2_name']} "
                              f"(similarity={pair_dict['similarity']:.3f})")
-        
+
         return PairEvaluationStats(
             true_positives=auto_tp,
             false_positives=auto_fp,
@@ -182,7 +181,7 @@ class ClusteringEvaluator:
             total=len(auto_sample),
             error_pairs=false_positives
         )
-    
+
     async def _evaluate_auto_clustered_pairs_async(self, auto_sample: list) -> PairEvaluationStats:
         """
         Evaluate auto-clustered pairs in parallel (async).
@@ -191,7 +190,7 @@ class ClusteringEvaluator:
             PairEvaluationStats with counts and false positives list
         """
         from lib.business.salary.llm_verifier import validate_pairs_parallel_async
-        
+
         # Convert to EmployerPair objects if needed
         pairs = []
         for pair in auto_sample:
@@ -207,7 +206,7 @@ class ClusteringEvaluator:
                 ))
             else:
                 pairs.append(pair)
-        
+
         # Validate all pairs in parallel
         logger.info(f"Validating {len(pairs)} pairs in parallel (max_concurrent={self.max_concurrent})...")
         outcomes = await validate_pairs_parallel_async(
@@ -215,23 +214,23 @@ class ClusteringEvaluator:
             prompt_template_path=self.prompt_template_path,
             max_concurrent=self.max_concurrent
         )
-        
+
         # Process results
         auto_tp = 0
         auto_fp = 0
         auto_skipped = 0
         false_positives = []
-        
+
         for i, (pair, outcome) in enumerate(zip(auto_sample, outcomes), 1):
             # Log progress every 20 pairs
             if i % 20 == 0 or i == 1:
                 logger.info(f"Progress: Processed {i}/{len(auto_sample)} auto-clustered pairs ({i/len(auto_sample)*100:.1f}%)")
-            
+
             if outcome.is_same is None:
                 auto_skipped += 1
                 logger.warning(f"Skipped auto-clustered pair {i}: LLM validation failed")
                 continue
-            
+
             # Extract pair data for logging/error tracking
             pair_dict = pair if isinstance(pair, dict) else {
                 'emp1_name': pair.emp1_name,
@@ -242,7 +241,7 @@ class ClusteringEvaluator:
                 'emp2_state': pair.emp2_state,
                 'similarity': pair.similarity
             }
-            
+
             if outcome.is_same:
                 auto_tp += 1
                 logger.debug(f"True positive: {pair_dict['emp1_name']} = {pair_dict['emp2_name']}")
@@ -255,7 +254,7 @@ class ClusteringEvaluator:
                 })
                 logger.warning(f"False positive {auto_fp}: {pair_dict['emp1_name']} ≠ {pair_dict['emp2_name']} "
                              f"(similarity={pair_dict['similarity']:.3f})")
-        
+
         return PairEvaluationStats(
             true_positives=auto_tp,
             false_positives=auto_fp,
@@ -263,7 +262,7 @@ class ClusteringEvaluator:
             total=len(auto_sample),
             error_pairs=false_positives
         )
-    
+
     def _evaluate_queued_pairs(self, queue_sample: list) -> PairEvaluationStats:
         """
         Evaluate queued pairs (uncertain, need review).
@@ -278,31 +277,31 @@ class ClusteringEvaluator:
             PairEvaluationStats with counts and false negatives list
         """
         logger.info(f"Evaluating {len(queue_sample)} queued pairs...")
-        
+
         # Use parallel async validation if enabled
         if self.use_parallel and self.llm_validator is None:
             return asyncio.run(
                 self._evaluate_queued_pairs_async(queue_sample)
             )
-        
+
         # Fallback to sequential validation
         queue_tp = 0  # False negatives (should have been clustered)
         queue_fp = 0  # True negatives (correctly identified as different)
         queue_skipped = 0
         false_negatives = []
-        
+
         for i, pair in enumerate(queue_sample, 1):
             # Log progress every 20 pairs
             if i % 20 == 0 or i == 1:
                 logger.info(f"Progress: Evaluating queued pair {i}/{len(queue_sample)} ({i/len(queue_sample)*100:.1f}%)")
-            
+
             outcome = self._evaluate_single_pair(pair, 'queued', i, len(queue_sample))
-            
+
             if outcome.is_same is None:
                 queue_skipped += 1
                 logger.warning(f"Skipped queued pair {i}: LLM validation failed")
                 continue
-            
+
             # Extract pair data for logging/error tracking
             pair_dict = pair if isinstance(pair, dict) else {
                 'emp1_name': pair.emp1_name,
@@ -313,7 +312,7 @@ class ClusteringEvaluator:
                 'emp2_state': pair.emp2_state,
                 'similarity': pair.similarity
             }
-            
+
             if outcome.is_same:
                 queue_tp += 1  # False negative
                 false_negatives.append({
@@ -326,7 +325,7 @@ class ClusteringEvaluator:
             else:
                 queue_fp += 1  # True negative
                 logger.debug(f"True negative: {pair_dict['emp1_name']} ≠ {pair_dict['emp2_name']}")
-        
+
         return PairEvaluationStats(
             true_positives=queue_tp,  # Represents false negatives for queued pairs
             false_positives=queue_fp,  # Represents true negatives for queued pairs
@@ -334,7 +333,7 @@ class ClusteringEvaluator:
             total=len(queue_sample),
             error_pairs=false_negatives
         )
-    
+
     async def _evaluate_queued_pairs_async(self, queue_sample: list) -> PairEvaluationStats:
         """
         Evaluate queued pairs in parallel (async).
@@ -343,7 +342,7 @@ class ClusteringEvaluator:
             PairEvaluationStats with counts and false negatives list
         """
         from lib.business.salary.llm_verifier import validate_pairs_parallel_async
-        
+
         # Convert to EmployerPair objects if needed
         pairs = []
         for pair in queue_sample:
@@ -359,7 +358,7 @@ class ClusteringEvaluator:
                 ))
             else:
                 pairs.append(pair)
-        
+
         # Validate all pairs in parallel
         logger.info(f"Validating {len(pairs)} queued pairs in parallel (max_concurrent={self.max_concurrent})...")
         outcomes = await validate_pairs_parallel_async(
@@ -367,23 +366,23 @@ class ClusteringEvaluator:
             prompt_template_path=self.prompt_template_path,
             max_concurrent=self.max_concurrent
         )
-        
+
         # Process results
         queue_tp = 0  # False negatives (should have been clustered)
         queue_fp = 0  # True negatives (correctly identified as different)
         queue_skipped = 0
         false_negatives = []
-        
+
         for i, (pair, outcome) in enumerate(zip(queue_sample, outcomes), 1):
             # Log progress every 20 pairs
             if i % 20 == 0 or i == 1:
                 logger.info(f"Progress: Processed {i}/{len(queue_sample)} queued pairs ({i/len(queue_sample)*100:.1f}%)")
-            
+
             if outcome.is_same is None:
                 queue_skipped += 1
                 logger.warning(f"Skipped queued pair {i}: LLM validation failed")
                 continue
-            
+
             # Extract pair data for logging/error tracking
             pair_dict = pair if isinstance(pair, dict) else {
                 'emp1_name': pair.emp1_name,
@@ -394,7 +393,7 @@ class ClusteringEvaluator:
                 'emp2_state': pair.emp2_state,
                 'similarity': pair.similarity
             }
-            
+
             if outcome.is_same:
                 queue_tp += 1  # False negative
                 false_negatives.append({
@@ -407,7 +406,7 @@ class ClusteringEvaluator:
             else:
                 queue_fp += 1  # True negative
                 logger.debug(f"True negative: {pair_dict['emp1_name']} ≠ {pair_dict['emp2_name']}")
-        
+
         return PairEvaluationStats(
             true_positives=queue_tp,  # Represents false negatives for queued pairs
             false_positives=queue_fp,  # Represents true negatives for queued pairs
@@ -415,7 +414,7 @@ class ClusteringEvaluator:
             total=len(queue_sample),
             error_pairs=false_negatives
         )
-    
+
     async def _evaluate_queued_pairs_async(self, queue_sample: list) -> PairEvaluationStats:
         """
         Evaluate queued pairs in parallel (async).
@@ -424,7 +423,7 @@ class ClusteringEvaluator:
             PairEvaluationStats with counts and false negatives list
         """
         from lib.business.salary.llm_verifier import validate_pairs_parallel_async
-        
+
         # Convert to EmployerPair objects if needed
         pairs = []
         for pair in queue_sample:
@@ -440,7 +439,7 @@ class ClusteringEvaluator:
                 ))
             else:
                 pairs.append(pair)
-        
+
         # Validate all pairs in parallel
         logger.info(f"Validating {len(pairs)} queued pairs in parallel (max_concurrent={self.max_concurrent})...")
         outcomes = await validate_pairs_parallel_async(
@@ -448,23 +447,23 @@ class ClusteringEvaluator:
             prompt_template_path=self.prompt_template_path,
             max_concurrent=self.max_concurrent
         )
-        
+
         # Process results
         queue_tp = 0  # False negatives (should have been clustered)
         queue_fp = 0  # True negatives (correctly identified as different)
         queue_skipped = 0
         false_negatives = []
-        
+
         for i, (pair, outcome) in enumerate(zip(queue_sample, outcomes), 1):
             # Log progress every 20 pairs
             if i % 20 == 0 or i == 1:
                 logger.info(f"Progress: Processed {i}/{len(queue_sample)} queued pairs ({i/len(queue_sample)*100:.1f}%)")
-            
+
             if outcome.is_same is None:
                 queue_skipped += 1
                 logger.warning(f"Skipped queued pair {i}: LLM validation failed")
                 continue
-            
+
             # Extract pair data for logging/error tracking
             pair_dict = pair if isinstance(pair, dict) else {
                 'emp1_name': pair.emp1_name,
@@ -475,7 +474,7 @@ class ClusteringEvaluator:
                 'emp2_state': pair.emp2_state,
                 'similarity': pair.similarity
             }
-            
+
             if outcome.is_same:
                 queue_tp += 1  # False negative
                 false_negatives.append({
@@ -488,7 +487,7 @@ class ClusteringEvaluator:
             else:
                 queue_fp += 1  # True negative
                 logger.debug(f"True negative: {pair_dict['emp1_name']} ≠ {pair_dict['emp2_name']}")
-        
+
         return PairEvaluationStats(
             true_positives=queue_tp,  # Represents false negatives for queued pairs
             false_positives=queue_fp,  # Represents true negatives for queued pairs
@@ -496,35 +495,35 @@ class ClusteringEvaluator:
             total=len(queue_sample),
             error_pairs=false_negatives
         )
-    
-    def _calculate_metrics(self, auto_stats: PairEvaluationStats, 
+
+    def _calculate_metrics(self, auto_stats: PairEvaluationStats,
                            queue_stats: PairEvaluationStats) -> dict:
         """Calculate precision, recall, and F1 metrics."""
-        auto_precision = (auto_stats.true_positives / 
-                         (auto_stats.true_positives + auto_stats.false_positives) 
+        auto_precision = (auto_stats.true_positives /
+                         (auto_stats.true_positives + auto_stats.false_positives)
                          if (auto_stats.true_positives + auto_stats.false_positives) > 0 else 0.0)
-        
-        queue_precision = (queue_stats.true_positives / 
-                          (queue_stats.true_positives + queue_stats.false_positives) 
+
+        queue_precision = (queue_stats.true_positives /
+                          (queue_stats.true_positives + queue_stats.false_positives)
                           if (queue_stats.true_positives + queue_stats.false_positives) > 0 else 0.0)
-        
+
         # Overall precision = TP / (TP + FP) across both categories
         total_tp = auto_stats.true_positives + queue_stats.true_positives
         total_fp = auto_stats.false_positives + queue_stats.false_positives
         overall_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
-        
+
         # Overall recall = TP / (TP + FN)
         # TP = auto-clustered pairs that are same (auto_stats.true_positives)
         # FN = queued pairs that are same (queue_stats.true_positives, which are false negatives)
-        overall_recall = (auto_stats.true_positives / 
-                         (auto_stats.true_positives + queue_stats.true_positives) 
+        overall_recall = (auto_stats.true_positives /
+                         (auto_stats.true_positives + queue_stats.true_positives)
                          if (auto_stats.true_positives + queue_stats.true_positives) > 0 else 0.0)
-        
+
         # F1 score
-        f1_score = (2 * (overall_precision * overall_recall) / 
-                   (overall_precision + overall_recall) 
+        f1_score = (2 * (overall_precision * overall_recall) /
+                   (overall_precision + overall_recall)
                    if (overall_precision + overall_recall) > 0 else 0.0)
-        
+
         return {
             'auto_clustered': {
                 'true_positives': auto_stats.true_positives,
@@ -548,7 +547,7 @@ class ClusteringEvaluator:
                 'false_positives': total_fp,
             }
         }
-    
+
     def evaluate_samples(self, auto_sample: list, queue_sample: list) -> EvaluationResults:
         """
         Evaluate auto-clustered and queued pairs.
@@ -562,21 +561,21 @@ class ClusteringEvaluator:
         """
         # Evaluate auto-clustered pairs
         auto_stats = self._evaluate_auto_clustered_pairs(auto_sample)
-        
+
         # Evaluate queued pairs
         queue_stats = self._evaluate_queued_pairs(queue_sample)
-        
+
         # Calculate metrics
         metrics = self._calculate_metrics(auto_stats, queue_stats)
-        
+
         # Log summary
-        logger.info(f"Evaluation complete:")
+        logger.info("Evaluation complete:")
         logger.info(f"  Auto-clustered: {auto_stats.true_positives} TP, {auto_stats.false_positives} FP, {auto_stats.skipped} skipped")
         logger.info(f"  Queued: {queue_stats.true_positives} FN, {queue_stats.false_positives} TN, {queue_stats.skipped} skipped")
         logger.info(f"  Overall: Precision={metrics['overall']['precision']:.2%}, "
                    f"Recall={metrics['overall']['recall']:.2%}, "
                    f"F1={metrics['overall']['f1_score']:.3f}")
-        
+
         return EvaluationResults(
             metrics=metrics,
             false_positives=auto_stats.error_pairs,

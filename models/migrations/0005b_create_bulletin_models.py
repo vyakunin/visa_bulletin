@@ -1,8 +1,8 @@
 # Generated migration to create Bulletin and VisaCutoffDate models
 # These models must be created before 0007 (which references VisaCutoffDate)
 
-from django.db import migrations, models
 import django.db.models.deletion
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):

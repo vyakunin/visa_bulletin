@@ -1,6 +1,7 @@
 """Country/region enum for visa applicant chargeability"""
 
 import re
+
 from django.db import models
 
 
@@ -16,7 +17,7 @@ class Country(models.IntegerChoices):
     - Smaller storage (4 bytes vs 10-50 bytes)
     - Value 0 is reserved for invalid/unknown (allows safe truthiness checks)
     """
-    
+
     INVALID = 0, "Invalid/Unknown"
     ALL = 1, "Other Countries"
     CHINA = 2, "China (mainland born)"
@@ -24,7 +25,7 @@ class Country(models.IntegerChoices):
     MEXICO = 4, "Mexico"
     PHILIPPINES = 5, "Philippines"
     EL_SALVADOR_GUATEMALA_HONDURAS = 6, "El Salvador/Guatemala/Honduras"
-    
+
     @classmethod
     def from_header(cls, header: str):
         """
@@ -35,7 +36,7 @@ class Country(models.IntegerChoices):
         """
         # Normalize whitespace and special characters
         normalized = re.sub(r'[\s\xa0\n]+', ' ', header).strip().upper()
-        
+
         # Pattern-based matching (order matters - most specific first)
         patterns = [
             (r'CHINA.*MAINLAND', cls.CHINA),
@@ -45,17 +46,17 @@ class Country(models.IntegerChoices):
             (r'EL SALVADOR.*GUATEMALA.*HONDURAS', cls.EL_SALVADOR_GUATEMALA_HONDURAS),
             (r'ALL.*CHARGEABILITY.*EXCEPT', cls.ALL),
         ]
-        
+
         for pattern, country in patterns:
             if re.search(pattern, normalized):
                 return country
-        
+
         # Fallback: exact matching for edge cases
         exact_mappings = {
             'ALL CHARGEABILITY AREAS EXCEPT THOSE LISTED': cls.ALL,
             'ALL AREAS': cls.ALL,
         }
-        
+
         return exact_mappings.get(normalized)
 
     @classmethod

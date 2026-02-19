@@ -13,19 +13,19 @@ class CaseStatus(models.IntegerChoices):
     - Smaller storage (4 bytes vs 10-50 bytes)
     - Value 0 is reserved for invalid/unknown (allows safe truthiness checks)
     """
-    
+
     INVALID = 0, "Invalid/Unknown"
     CERTIFIED = 1, "Certified"
     DENIED = 2, "Denied"
     WITHDRAWN = 3, "Withdrawn"
     CERTIFIED_WITHDRAWN = 4, "Certified-Withdrawn"
-    
+
     @classmethod
     def from_dol_value(cls, value: str):
         """Parse case status from DOL CSV value"""
         if not value:
             return None
-        
+
         normalized = value.strip().upper().replace('-', '_').replace(' ', '_')
         mappings = {
             'CERTIFIED': cls.CERTIFIED,
@@ -35,7 +35,7 @@ class CaseStatus(models.IntegerChoices):
             'CERTIFIED_EXPIRED': cls.CERTIFIED,  # Treat as certified
         }
         return mappings.get(normalized)
-    
+
     @classmethod
     def from_string(cls, value: str):
         """Convert string value to enum (for migration compatibility)"""

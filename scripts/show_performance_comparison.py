@@ -5,17 +5,15 @@ Show performance comparison: baseline metrics vs optimized code.
 Uses baseline metrics from log analysis and shows expected improvements.
 """
 
-import sys
-from pathlib import Path
 
 def show_comparison():
     """Show before/after performance comparison"""
-    
+
     print("=" * 80)
     print("PERFORMANCE COMPARISON: BEFORE vs AFTER OPTIMIZATIONS")
     print("=" * 80)
     print()
-    
+
     # Baseline metrics from log analysis (before optimizations)
     print("BASELINE METRICS (from /tmp/reimport.log analysis):")
     print("-" * 80)
@@ -37,7 +35,7 @@ def show_comparison():
     print("  Row processing: ~30-40% of total time")
     print("  Database inserts: ~10-20% of total time")
     print()
-    
+
     print("=" * 80)
     print("OPTIMIZED METRICS (with streaming enabled):")
     print("-" * 80)
@@ -53,7 +51,7 @@ def show_comparison():
     print("    Note: DataFrame still loaded, but conversion is chunked")
     print("    Reduction: ~50% during conversion phase")
     print()
-    
+
     print("Performance Improvements:")
     print("  File reading:")
     print("    CSV: No change (already efficient)")
@@ -66,13 +64,13 @@ def show_comparison():
     print("  Database inserts:")
     print("    No change (same batch operations)")
     print()
-    
+
     print("Scalability Improvements:")
     print("  ✓ Can now process CSV files larger than available RAM")
     print("  ✓ Reduced memory spikes during large file imports")
     print("  ✓ Better handling of multiple concurrent imports")
     print()
-    
+
     print("=" * 80)
     print("EXPECTED RESULTS")
     print("-" * 80)
@@ -92,7 +90,7 @@ def show_comparison():
     print("    Row processing: 135s (30%)")
     print("    Database inserts: 45s (10%)")
     print()
-    
+
     print("=" * 80)
     print("HOW TO VERIFY")
     print("-" * 80)
@@ -106,7 +104,7 @@ def show_comparison():
     print("3. Monitor memory during import:")
     print("   (Use Activity Monitor on macOS or top/htop on Linux)")
     print()
-    
+
     print("=" * 80)
     print("KEY IMPROVEMENTS")
     print("-" * 80)

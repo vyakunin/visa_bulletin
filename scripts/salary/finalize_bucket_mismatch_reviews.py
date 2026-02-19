@@ -2,18 +2,22 @@
 """Finalize bucket mismatch reviews - mark clearly same/different"""
 
 import os
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
+
 django.setup()
 
-from models.salary import EmployerClusteringReview
 from django.db import transaction
 from django.utils import timezone
-from lib.utils.logging_utils import ScriptLogger
+
 from django_config.logging_config import setup_logging
+from lib.utils.logging_utils import ScriptLogger
+from models.salary import EmployerClusteringReview
 
 setup_logging()
 import logging
+
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
@@ -71,7 +75,7 @@ for review in pending_reviews:
     name2 = review.employer2.name.lower()
     norm1 = review.employer1.name_normalized.lower()
     norm2 = review.employer2.name_normalized.lower()
-    
+
     # Check if clearly different
     is_different = False
     for diff1, diff2 in clearly_different:
@@ -80,10 +84,10 @@ for review in pending_reviews:
             to_reject.append((review, f"Different companies: {diff1} vs {diff2}"))
             is_different = True
             break
-    
+
     if is_different:
         continue
-    
+
     # Check if clearly same (typos/normalization)
     is_same = False
     for pattern1, pattern2 in clearly_same_patterns:
@@ -92,22 +96,22 @@ for review in pending_reviews:
             to_approve.append((review, f"Same company: {pattern1} vs {pattern2} (typo/normalization)"))
             is_same = True
             break
-    
+
     if is_same:
         continue
-    
+
     # Check for other normalization issues (same core words)
     def clean_words(s):
         s = s.replace('-', ' ').replace('&', ' ').replace('.', ' ').replace('/', ' ').replace('|', ' ').replace(',', ' ')
         return {w for w in s.split() if w not in ['the', 'a', 'of', 'and', 'inc', 'llc', 'corp', 'ltd', 'pc', 'pllc'] and len(w) > 2}
-    
+
     words1 = clean_words(norm1)
     words2 = clean_words(norm2)
-    
+
     if words1 == words2 and len(words1) > 0:
         to_approve.append((review, "Same company: same core words (normalization issue)"))
         continue
-    
+
     # Still need review
     logger.warning(f"  NEEDS REVIEW: '{review.employer1.name}' vs '{review.employer2.name}'")
     logger.warning(f"    {norm1} vs {norm2} | sim: {review.similarity_score:.3f}")
@@ -127,7 +131,7 @@ if to_approve or to_reject:
                 review.notes = reason
             review.save()
             logger.info(f"  Approved: '{review.employer1.name}' vs '{review.employer2.name}' - {reason}")
-        
+
         for review, reason in to_reject:
             review.status = 'rejected'
             review.reviewed_by = 'auto-finalized'
@@ -138,7 +142,7 @@ if to_approve or to_reject:
                 review.notes = reason
             review.save()
             logger.info(f"  Rejected: '{review.employer1.name}' vs '{review.employer2.name}' - {reason}")
-    
+
     logger.info(f"\nFinalized {len(to_approve) + len(to_reject)} reviews")
 else:
     logger.info("No reviews to finalize")

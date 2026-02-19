@@ -5,22 +5,22 @@ from django.db import models
 
 class EmploymentPreference(models.TextChoices):
     """Employment-based preference categories"""
-    
+
     # EB-1: Priority Workers
     EB1 = "1st", "EB-1: Priority Workers"
-    
+
     # EB-2: Professionals with Advanced Degrees
     EB2 = "2nd", "EB-2: Professionals with Advanced Degrees"
-    
+
     # EB-3: Skilled Workers
     EB3 = "3rd", "EB-3: Skilled Workers, Professionals"
-    
-    # EB-4: Special Immigrants  
+
+    # EB-4: Special Immigrants
     EB4 = "4th", "EB-4: Special Immigrants"
-    
+
     # EB-5: Investor Categories
     EB5 = "5th", "EB-5: All Categories"
-    
+
     @classmethod
     def normalize_for_display(cls, visa_class: str) -> str:
         """
@@ -37,7 +37,7 @@ class EmploymentPreference(models.TextChoices):
         clean = ' '.join(visa_class.split())  # Normalize whitespace
         clean = clean.replace(' -', '-').replace('- ', '-')  # Normalize hyphens
         clean_lower = clean.lower()
-        
+
         # EB-1 through EB-4 (handles "1st", "1 st", etc.)
         if clean.startswith('1') or '1 st' in clean or '1st' in clean:
             return 'EB-1: Priority Workers'
@@ -51,7 +51,7 @@ class EmploymentPreference(models.TextChoices):
             if 'religious' in clean_lower:
                 return 'EB-4: Religious Workers'
             return 'EB-4: Special Immigrants'
-        
+
         # EB-5 variations (MANY historical formats!)
         if '5' in clean or 'eb-5' in clean_lower:
             # Check for specific EB-5 subcategories
@@ -73,7 +73,7 @@ class EmploymentPreference(models.TextChoices):
                 return 'EB-5: Pilot Programs'
             # Generic EB-5
             return 'EB-5: All Categories'
-        
+
         # Special subcategories
         if 'other worker' in clean_lower:
             return 'EB-3: Other Workers'
@@ -83,10 +83,10 @@ class EmploymentPreference(models.TextChoices):
             return 'Schedule A Workers'
         if 'iraqi' in clean_lower or 'afghani' in clean_lower:
             return 'Iraqi & Afghani Translators'
-        
+
         # Single letters usually mean "Current" or "Unavailable"
         if clean in ('C', 'U'):
             return clean
-        
+
         # Fallback: return cleaned version
         return clean
