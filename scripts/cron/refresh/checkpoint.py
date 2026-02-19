@@ -20,11 +20,14 @@ OLD_STEP_NAME_TO_NEW: dict[str, str] = {
     "vacuum_done": "vacuum_analyze",
     "warm_cache_done": "warm_cache",
     "smoke_done": "smoke_tests",
-    "swap_done": "swap_db",
+    "swap_done": "smoke_tests",
+    "db_created": "ensure_db",
 }
 
 STEPS_ORDER: tuple[str, ...] = (
-    "db_created",
+    "sync_code",
+    "build_pipeline_binaries",
+    "ensure_db",
     "index_snapshot_saved",
     "ingest_complete",
     "backfill_job_title_links",
@@ -39,13 +42,12 @@ STEPS_ORDER: tuple[str, ...] = (
     "start_services",
     "warm_cache",
     "smoke_tests",
-    "swap_db",
 )
 
 
 @dataclass
 class CheckpointData:
-    """Checkpoint payload: last_step, timestamp, inactive_db/db_name, index_snapshot."""
+    """Checkpoint payload: last_step, timestamp, inactive_db (db name used for run), index_snapshot."""
 
     last_step: str
     timestamp: str

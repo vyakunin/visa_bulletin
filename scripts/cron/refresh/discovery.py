@@ -26,6 +26,9 @@ def check_new_sources(
     out = getattr(result, "stdout", "") or ""
     err = getattr(result, "stderr", "") or ""
     output = out + err
+    # RemoteRunner does not capture stdout/stderr (output goes to stage log only)
+    if not output.strip() and hasattr(runner, "read_stage_log_tail"):
+        output = runner.read_stage_log_tail(800) or ""
     count = 0
     for line in output.splitlines():
         if "Not ingested (available)" in line:

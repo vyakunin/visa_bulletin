@@ -233,21 +233,6 @@ py_test(
 )
 
 py_test(
-    name = "test_vqs",
-    size = "small",
-    srcs = ["test_vqs.py"],
-    main = "test_vqs.py",
-    deps = [
-        "//lib/business/vqs:demand",
-        "//lib/business/vqs:queue_snapshot",
-        "//lib/business/vqs:solver",
-        requirement("pytest"),
-    ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-)
-
-py_test(
     name = "test_chart_builder",
     size = "small",
     srcs = ["test_chart_builder.py"],

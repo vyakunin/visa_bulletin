@@ -15,6 +15,8 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- status
     bazel run //scripts/ingest:run_pipeline -- check-completeness --domain dol
     bazel run //scripts/ingest:run_pipeline -- reingest-files --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx
+    bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed
+    bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --dry-run
     bazel run //scripts/ingest:run_pipeline -- cleanup --days 30
 """
 
@@ -108,18 +110,20 @@ def run_pipeline(
     all_pending: bool = False,
     missing_only: bool = False,
     retry_failed: bool = False,
+    include_failed: bool = False,
     domain: str | None = None,
-    skip_records: int = 0
+    skip_records: int = 0,
 ):
     """
     Run ingest pipeline for source(s)
-    
+
     Args:
         source_id: Specific source ID to ingest
         url: Specific source URL to ingest
-        all_pending: Process all sources without completed runs
+        all_pending: Process all sources without completed runs (excludes sources with any FAILED run unless include_failed=True)
         missing_only: Process only sources with local files but no completed runs
-        retry_failed: Retry sources that have failed runs
+        retry_failed: Retry sources that have failed runs (but no completed runs)
+        include_failed: When using all_pending, also include sources that have FAILED runs (default: exclude them so they are not re-run)
         domain: Filter by domain (dol, visa_bulletin, etc.)
     """
     import time
@@ -184,15 +188,23 @@ def run_pipeline(
             
             logger.info(f"Found {len(sources)} sources with failed runs (no completed runs)")
         elif all_pending:
-            # Get all sources that haven't been successfully ingested
-            # Sources with no completed runs
+            # Get all sources that haven't been successfully ingested (no completed runs).
+            # By default exclude sources that have any FAILED run so we don't re-run them; use --include-failed or run --retry-failed to retry.
             sources_with_completed = set(
                 DataSource.objects.filter(runs__status=IngestStatus.COMPLETED)
                 .values_list('id', flat=True)
                 .distinct()
             )
-            sources = list(sources_qs.exclude(id__in=sources_with_completed))
-            
+            sources_qs = sources_qs.exclude(id__in=sources_with_completed)
+            if not include_failed:
+                sources_with_failed = set(
+                    DataSource.objects.filter(runs__status=IngestStatus.FAILED)
+                    .values_list('id', flat=True)
+                    .distinct()
+                )
+                sources_qs = sources_qs.exclude(id__in=sources_with_failed)
+                logger.info("Excluding sources that have FAILED runs (use --include-failed or run --retry-failed to retry)")
+            sources = list(sources_qs)
             logger.info(f"Found {len(sources)} pending sources (no completed runs)")
         
         # Create pipeline context for ETA calculation
@@ -338,10 +350,10 @@ def reingest_files(
         "source_file_date",
     ]
 
-    indexes_dropped = False
+    did_drop_indexes = False
     try:
         _run_manage_salary_indexes("drop", snapshot_path, overwrite_snapshot)
-        indexes_dropped = True
+        did_drop_indexes = True
 
         for idx, source in enumerate(sources, 1):
             logger.info(f"Re-ingesting source {source.id} ({idx}/{len(sources)}): {source.url}")
@@ -377,17 +389,66 @@ def reingest_files(
                 logger.error(f"Pipeline failed for source {source.id}: {e}", exc_info=True)
                 continue
     finally:
-        if indexes_dropped:
+        if did_drop_indexes:
             _run_manage_salary_indexes("recreate", snapshot_path, overwrite_snapshot)
 
 
 def discover_and_ingest(domain: str | None = None, all_domains: bool = False):
-    """Discover new sources and ingest all pending"""
+    """Discover new sources and ingest all pending (excludes sources with FAILED runs unless --include-failed)."""
     logger.info("Discovering new sources...")
     discovered = discover_sources(domain if not all_domains else None)
-    
+
     logger.info("Running pipeline for all pending sources...")
-    run_pipeline(all_pending=True, domain=domain)
+    run_pipeline(all_pending=True, include_failed=False, domain=domain)
+
+
+def mark_unfinished_runs_failed(include_pending: bool = True, dry_run: bool = False) -> None:
+    """Mark RUNNING (and optionally PENDING) ingest runs as FAILED so they are not re-run by default."""
+    statuses = [IngestStatus.RUNNING]
+    if include_pending:
+        statuses.append(IngestStatus.PENDING)
+    qs = IngestRun.objects.filter(status__in=statuses)
+    count = qs.count()
+    logger.info("Found %s unfinished runs (status in %s)", count, [s.label for s in statuses])
+    if count == 0:
+        return
+    if dry_run:
+        logger.info("Dry run: would mark %s runs as FAILED", count)
+        for run in qs[:10]:
+            logger.info("  Run %s (source %s)", run.id, run.source_id)
+        if count > 10:
+            logger.info("  ... and %s more", count - 10)
+        return
+    msg = "Marked as failed: unfinished run (use mark-unfinished-failed to clear)"
+    for run in qs:
+        run.mark_failed(ValueError(msg))
+    logger.info("Marked %s runs as FAILED", count)
+
+
+def mark_no_run_sources_failed(dry_run: bool = False) -> None:
+    """Create one FAILED run per DataSource that has no runs so all_pending finds 0 (no ingest)."""
+    sources_with_any_run = set(
+        IngestRun.objects.values_list("source_id", flat=True).distinct()
+    )
+    all_sources = set(DataSource.objects.values_list("id", flat=True))
+    sources_with_no_run = all_sources - sources_with_any_run
+    count = len(sources_with_no_run)
+    logger.info("Found %s sources with no runs (of %s total)", count, len(all_sources))
+    if count == 0:
+        return
+    if dry_run:
+        logger.info("Dry run: would create %s FAILED runs (one per source)", count)
+        return
+    created = 0
+    for source_id in sources_with_no_run:
+        source = DataSource.objects.get(id=source_id)
+        IngestRun.objects.create(
+            source=source,
+            status=IngestStatus.FAILED,
+            error_message="Marked: source had no runs (excluded from pending)",
+        )
+        created += 1
+    logger.info("Created %s FAILED runs; all_pending will now find 0 for these sources", created)
 
 
 def cleanup_ingest_runs(days: int, dry_run: bool = False) -> None:
@@ -699,6 +760,7 @@ def main():
     run_group.add_argument('--all-pending', action='store_true', help='Run all pending sources (no completed runs)')
     run_group.add_argument('--missing-only', action='store_true', help='Run only sources with local files but no completed runs')
     run_group.add_argument('--retry-failed', action='store_true', help='Retry sources that have failed runs (but no completed runs)')
+    run_parser.add_argument('--include-failed', action='store_true', help='With --all-pending: include sources that have FAILED runs (default: exclude them)')
     run_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Filter by domain (works with --all-pending, --missing-only, --retry-failed)')
     run_parser.add_argument('--skip-records', type=int, default=0, help='Skip first N records (for debugging specific records)')
     
@@ -726,6 +788,25 @@ def main():
     # Check completeness command
     completeness_parser = subparsers.add_parser('check-completeness', help='Check if all available data sources have been ingested')
     completeness_parser.add_argument('--domain', choices=[d.value for d in DataDomain], help='Domain to check (default: all)')
+
+    # Mark unfinished runs as failed (so they are not re-run by default)
+    mark_failed_parser = subparsers.add_parser(
+        'mark-unfinished-failed',
+        help='Mark RUNNING (and optionally PENDING) ingest runs as FAILED so they are not re-run by default',
+    )
+    mark_failed_parser.add_argument(
+        '--running-only',
+        action='store_true',
+        help='Only mark RUNNING runs (default: mark RUNNING and PENDING)',
+    )
+    mark_failed_parser.add_argument('--dry-run', action='store_true', help='Report what would be marked without updating')
+
+    # Mark sources with no runs as failed (create one FAILED run each so all_pending finds 0)
+    mark_no_run_parser = subparsers.add_parser(
+        'mark-no-run-sources-failed',
+        help='Create one FAILED run per DataSource that has no runs so all_pending finds 0 (no ingest)',
+    )
+    mark_no_run_parser.add_argument('--dry-run', action='store_true', help='Report what would be created without updating')
 
     # Cleanup command
     cleanup_parser = subparsers.add_parser('cleanup', help='Delete old ingest run metadata')
@@ -768,8 +849,9 @@ def main():
                 args.all_pending,
                 args.missing_only,
                 args.retry_failed,
+                getattr(args, 'include_failed', False),
                 args.domain,
-                args.skip_records
+                args.skip_records,
             )
         elif args.command == 'discover-and-ingest':
             discover_and_ingest(args.domain, args.all_domains)
@@ -779,6 +861,13 @@ def main():
             resume_run(args.run_id)
         elif args.command == 'status':
             show_status(args.source_id)
+        elif args.command == 'mark-unfinished-failed':
+            mark_unfinished_runs_failed(
+                include_pending=not getattr(args, 'running_only', False),
+                dry_run=getattr(args, 'dry_run', False),
+            )
+        elif args.command == 'mark-no-run-sources-failed':
+            mark_no_run_sources_failed(dry_run=getattr(args, 'dry_run', False))
         elif args.command == 'check-completeness':
             check_completeness(args.domain)
         elif args.command == 'cleanup':

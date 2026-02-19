@@ -48,44 +48,79 @@ def stop_remote_services(runner: Runner, project_root: Path) -> None:
     Frees memory for the pipeline. Uses run_shell; safe to no-op if not present.
     """
     root = project_root if isinstance(project_root, Path) else Path(project_root)
-    compose_blue = root / "deployment" / "docker-compose.blue.yml"
-    compose_green = root / "deployment" / "docker-compose.green.yml"
-    # Stop Docker stacks (ignore errors if not using Docker). DOCKER_HOST for remote consistency.
+    compose_file = root / "deployment" / "docker-compose.yml"
+    override_file = root / "deployment" / "docker-compose.override.yml"
+    compose_args = f"-f {shlex.quote(str(compose_file))}"
+    # Include override file for stop too (compose needs same file set for service discovery)
+    compose_with_override = (
+        f"docker-compose {compose_args} -f {shlex.quote(str(override_file))}"
+        f" stop 2>/dev/null || docker-compose {compose_args} stop 2>/dev/null || true"
+    )
     stop_cmds = [
         "export DOCKER_HOST=unix:///var/run/docker.sock",
         f"cd {shlex.quote(str(root))}",
-        f"(docker-compose -f {shlex.quote(str(compose_blue))} stop 2>/dev/null || true)",
-        f"(docker-compose -f {shlex.quote(str(compose_green))} stop 2>/dev/null || true)",
-        "(docker stop visa_bulletin_web_blue visa_bulletin_web_green visa_bulletin_redis 2>/dev/null || true)",
-        "pkill -f 'gunicorn.*django_config' || true",
+        f"({compose_with_override})",
+        "(docker stop visa_bulletin_web visa_bulletin_redis 2>/dev/null || true)",
+        # Use pgrep + kill excluding $$ so we don't kill the SSH-invoked shell (pkill -f matches
+        # the shell's command line and would kill it, causing SSH exit 255).
+        "(pgrep -f 'gunicorn.*django_config' | grep -v ^$$ | xargs -r kill 2>/dev/null) || true",
+        # Kill stale pipeline processes left behind by previous runs (e.g. SSH timeout
+        # kills the client but the remote binary keeps running as a zombie).
+        "(pgrep -f 'backfill_job_title_links|backfill_source_file_date|cluster_job_titles"
+        "|cluster_existing_employers|update_employer_stats|update_job_title_cluster_stats"
+        "|populate_job_title_slugs|run_pipeline|manage_salary_indexes|warm_cache'"
+        " | grep -v ^$$ | xargs -r kill 2>/dev/null) || true",
         f"(cd {shlex.quote(str(root))} && bazel shutdown 2>/dev/null) || true",
     ]
     cmd = " && ".join(stop_cmds)
     result = runner.run_shell(cmd, timeout_sec=120)
     if result.returncode != 0:
-        logger.warning("stop_remote_services had non-zero exit %s (stderr: %s)", result.returncode, result.stderr)
+        logger.warning(
+            "stop_remote_services had non-zero exit %s (stdout: %r stderr: %r)",
+            result.returncode,
+            result.stdout,
+            result.stderr,
+        )
     else:
         logger.info("Stopped remote services (Docker/Gunicorn/Bazel)")
 
 
 def start_remote_services(runner: Runner, project_root: Path) -> None:
     """
-    On the target host: start Docker web+redis (compose up -d).
-    Uses REFRESH_REMOTE_COMPOSE_FILE or defaults to docker-compose.blue.yml.
+    On the target host: start Docker web+redis (compose up -d), then ensure nginx is running
+    so port 80 proxies to the app (orchestrator health check uses http://ip:80/health/).
+    Uses REFRESH_REMOTE_COMPOSE_FILE or defaults to deployment/docker-compose.yml.
     """
     root = project_root if isinstance(project_root, Path) else Path(project_root)
     compose_file = os.environ.get(
         "REFRESH_REMOTE_COMPOSE_FILE",
-        str(root / "deployment" / "docker-compose.blue.yml"),
+        str(root / "deployment" / "docker-compose.yml"),
     )
     # Use docker-compose (standalone) and explicit DOCKER_HOST so remote host (e.g. staging)
     # talks to local daemon; avoids "Not supported URL scheme http+docker" from docker-compose v1.
-    cmd = f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && docker-compose -f {shlex.quote(compose_file)} up -d"
+    # Include override file (host volume mount) if present so the web container uses current code.
+    override_file = str(root / "deployment" / "docker-compose.override.yml")
+    compose_args = f"-f {shlex.quote(compose_file)}"
+    cmd = (
+        f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
+        f"if [ -f {shlex.quote(override_file)} ]; then "
+        f"  docker-compose {compose_args} -f {shlex.quote(override_file)} up -d; "
+        f"else "
+        f"  docker-compose {compose_args} up -d; "
+        f"fi"
+    )
     result = runner.run_shell(cmd, timeout_sec=180)
     if result.returncode != 0:
         logger.error("start_remote_services failed: %s", result.stderr)
         raise RuntimeError(f"Failed to start remote services: {result.stderr}")
     logger.info("Started remote services (Docker compose)")
+    # Ensure nginx is running so port 80 proxies to app (health check uses http://ip:80/health/).
+    nginx_cmd = "sudo systemctl start nginx 2>/dev/null || true; sudo systemctl reload nginx 2>/dev/null || true"
+    nginx_result = runner.run_shell(nginx_cmd, timeout_sec=30)
+    if nginx_result.returncode != 0:
+        logger.warning("nginx start/reload had non-zero exit %s (stderr: %s)", nginx_result.returncode, nginx_result.stderr)
+    else:
+        logger.info("Nginx started/reloaded for port 80 proxy")
 
 
 def ensure_postgres_connections_clean(runner: Runner, db_name: str) -> None:

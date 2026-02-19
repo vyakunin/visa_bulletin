@@ -288,9 +288,10 @@ class PipelineOrchestrator:
             else:
                 logger.info(f"[Run {run.id}] Pipeline completed successfully (update mode)")
             
-            # Update pipeline context if provided
+            # Update pipeline context if provided (so next run() sees updated count for ETA)
             if pipeline_context:
                 self.completed_sources_count += 1
+                pipeline_context['completed_count'] = self.completed_sources_count
                 self._log_pipeline_eta()
         except Exception as e:
             run.mark_failed(e)
@@ -416,6 +417,7 @@ class PipelineOrchestrator:
         
         transform_error_count = 0
         records_processed_count = 0
+        last_record_num = 0  # Always set; for-loop variable may be unbound if records is empty
         transform_rate_logger = RateLimitedLogger(
             initial_count=5,
             min_interval_seconds=5.0,
@@ -424,6 +426,7 @@ class PipelineOrchestrator:
         )
         
         for record_num, record in enumerate(records, start=1):
+            last_record_num = record_num
             # Skip records if in debug mode
             if skip_records > 0 and record_num <= skip_records:
                 continue
@@ -459,14 +462,14 @@ class PipelineOrchestrator:
                     logger.debug(f"[Run {run.id}] Transformed {records_processed_count:,} records")
                     run.save(update_fields=['records_processed'])
         
-        # Report transform stage completion with error count
+        # Report transform stage completion with error count (use last_record_num: for empty records, loop never runs so record_num would be unbound)
         if transform_error_count > 0:
             logger.warning(
-                f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {record_num:,} records "
+                f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {last_record_num:,} records "
                 f"({transform_error_count:,} errors encountered)"
             )
         else:
-            logger.info(f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {record_num:,} records")
+            logger.info(f"[Run {run.id}] Transform stage completed: {records_processed_count:,} models yielded from {last_record_num:,} records")
         
         run.stage = IngestStage.LOADING
         run.checkpoint['stage'] = IngestStage.LOADING.value
