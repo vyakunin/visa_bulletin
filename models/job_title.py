@@ -292,7 +292,10 @@ class JobTitle(models.Model):
         for pattern in patterns_to_apply:
             normalized = re.sub(pattern, ' ', normalized)
 
-        if has_level_marker and has_role_word:
+        # Always strip level markers from normalized form so that
+        # "Software Engineer II" and "Software Engineer 2" normalize identically.
+        # The level is already captured separately via extract_experience_level().
+        if has_level_marker:
             normalized = re.sub(level_marker_pattern, ' ', normalized)
 
         # Restore parenthetical content

@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document describes the blue-green database deployment strategy for automated data refresh with near-zero downtime.
+**Current deployment:** We use **one database per instance** (`visa_bulletin`). Refresh runs on the inactive (staging) instance; traffic switch flips to that instance. There are no longer two databases (blue/green) on a single host. The sections below are kept for historical reference and for options (e.g. shared DB host) that we do not use.
+
+This document describes blue-green–style deployment and automated data refresh with near-zero downtime.
 
 ## Table of Contents
 

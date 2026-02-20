@@ -17,9 +17,11 @@ py_binary(
         "//webapp:urls",
         "//models:bulletin",
         "//models:visa_cutoff_date",
+        "//models:raw_facts",
         "//models:salary",
         "//models/ingest:ingest",
         "//models/enums:visa_program",
+        "//models:vqs",
         "//lib/utils:logging_utils",
         "//django_config:logging_config",
         requirement("Django"),
@@ -195,13 +197,17 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//django_config:settings",
+        "//django_config:logging_config",
         "//webapp:apps",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models/enums:country",
+        "//models/enums:visa_category",
+        "//models/enums:action_type",
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     env = {
@@ -226,3 +232,183 @@ py_binary(
 
 # investigate_null_salaries target removed - functionality merged into //scripts/salary:validate_data
 # Use: bazel run //scripts/salary:validate_data -- --check-incomplete-records
+
+py_binary(
+    name = "vqs_backtest",
+    srcs = ["vqs_backtest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:meta_params",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+
+py_binary(
+    name = "ingest_i485_inventory",
+    srcs = ["ingest_i485_inventory.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:raw_facts",
+        "//models/enums:country",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "ingest_dos_issuance",
+    srcs = ["ingest_dos_issuance.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:raw_facts",
+        "//models/enums:country",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "ingest_perm_disclosure",
+    srcs = ["ingest_perm_disclosure.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:raw_facts",
+        "//models/enums:country",
+        "//lib/parsing/salary:db_importer",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "test_plugins",
+    srcs = ["test_plugins.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:plugins",
+        "//models/ingest:enums",
+        requirement("Django"),
+    ],
+    data = ["//data/sources:sample_data"],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "ingest_vqs_supply",
+    srcs = ["ingest_vqs_supply.py"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/ingest:registry",
+        "//lib/ingest:orchestrator",
+        "//lib/ingest/plugins:plugins",
+        "//models/ingest:enums",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+
+
+py_binary(
+    name = "publish_predictions",
+    srcs = ["publish_predictions.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/business/vqs:solver",
+        "//lib/business/vqs:aggregator",
+        "//lib/business/vqs:meta_params",
+        "//lib/business/vqs:data_cache",
+        "//models:vqs",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:raw_facts",
+        "//models/enums:country",
+        requirement("Django"),
+        requirement("python-dateutil"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "debug_predictions_db",
+    srcs = ["debug_predictions_db.py"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:vqs",
+        "//models/enums:country",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+py_binary(
+    name = "check_coverage",
+    srcs = ["check_coverage.py"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:bulletin",
+        "//models:vqs",
+        requirement("Django"),
+        requirement("python-dateutil"),
+    ],
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)

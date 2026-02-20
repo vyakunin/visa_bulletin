@@ -4,88 +4,89 @@
 
 {% block content %}
 <main>
-<div class="row">
-    <div class="col-12">
-        <!-- Filter Card -->
-        <div class="card filter-card">
-            <div class="card-header bg-primary text-white">
-                <h2 class="h5 mb-0"><i class="bi bi-funnel"></i> Filter Options</h2>
-            </div>
-            <div class="card-body">
-                <form method="get" action="" id="filterForm">
-                    <div class="row g-2">
-                        <!-- Visa Category -->
-                        <div class="col-12">
-                            <label for="category" class="form-label">Visa Category</label>
-                            <select class="form-select" id="category" name="category" onchange="updateVisaClasses()">
-                                {% for value, label in visa_categories %}
-                                <option value="{{ value }}" {% if value == category %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        
-                        <!-- Country -->
-                        <div class="col-12">
-                            <label for="country" class="form-label">Country</label>
-                            <select class="form-select" id="country" name="country" onchange="autoSubmitForm()">
-                                {% for value, label in countries %}
-                                <option value="{{ value }}" {% if value == country %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        
-                        <!-- Action Type -->
-                        <div class="col-12">
-                            <label for="action_type" class="form-label">Action Type</label>
-                            <select class="form-select" id="action_type" name="action_type" onchange="autoSubmitForm()">
-                                {% for value, label in action_types %}
-                                <option value="{{ value }}" {% if value == action_type %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        
-                        <!-- Submission Date -->
-                        <div class="col-12">
-                            <label for="submission_date" class="form-label">Priority Date</label>
-                            <div class="input-group">
-                                <input type="text" 
-                                       class="form-control" 
-                                       id="submission_date" 
-                                       name="submission_date" 
-                                       value="{{ submission_date|date:'m/d/Y' }}"
-                                       placeholder="MM/DD/YYYY"
-                                       pattern="\d{1,2}/\d{1,2}/\d{4}"
-                                       inputmode="numeric"
-                                       autocomplete="off"
-                                       maxlength="10">
-                                <button class="btn btn-outline-secondary" type="button" id="datePickerBtn" 
-                                        title="Open calendar">
-                                    <i class="bi bi-calendar3"></i>
-                                </button>
-                                <input type="date" id="datePickerHidden" class="visually-hidden" tabindex="-1" aria-label="Hidden date picker for calendar selection">
+    <div class="row">
+        <div class="col-12">
+            <!-- Filter Card -->
+            <div class="card filter-card">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="h5 mb-0"><i class="bi bi-funnel"></i> Filter Options</h2>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="" id="filterForm">
+                        <div class="row g-2">
+                            <!-- Visa Category -->
+                            <div class="col-12">
+                                <label for="category" class="form-label">Visa Category</label>
+                                <select class="form-select" id="category" name="category"
+                                    onchange="updateVisaClasses()">
+                                    {% for value, label in visa_categories %}
+                                    <option value="{{ value }}" {% if value == category %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
                             </div>
-                            <small class="form-text text-muted">Format: MM/DD/YYYY (e.g., 03/15/2022)</small>
-                            <div class="invalid-feedback" id="dateError">Please enter a valid date (MM/DD/YYYY)</div>
+
+                            <!-- Country -->
+                            <div class="col-12">
+                                <label for="country" class="form-label">Country</label>
+                                <select class="form-select" id="country" name="country" onchange="autoSubmitForm()">
+                                    {% for value, label in countries %}
+                                    <option value="{{ value }}" {% if value == country %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Action Type -->
+                            <div class="col-12">
+                                <label for="action_type" class="form-label">Action Type</label>
+                                <select class="form-select" id="action_type" name="action_type"
+                                    onchange="autoSubmitForm()">
+                                    {% for value, label in action_types %}
+                                    <option value="{{ value }}" {% if value == action_type %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Submission Date -->
+                            <div class="col-12">
+                                <label for="submission_date" class="form-label">Priority Date</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="submission_date" name="submission_date"
+                                        value="{{ submission_date|date:'m/d/Y' }}" placeholder="MM/DD/YYYY"
+                                        pattern="\d{1,2}/\d{1,2}/\d{4}" inputmode="numeric" autocomplete="off"
+                                        maxlength="10">
+                                    <button class="btn btn-outline-secondary" type="button" id="datePickerBtn"
+                                        title="Open calendar">
+                                        <i class="bi bi-calendar3"></i>
+                                    </button>
+                                    <input type="date" id="datePickerHidden" class="visually-hidden" tabindex="-1"
+                                        aria-label="Hidden date picker for calendar selection">
+                                </div>
+                                <small class="form-text text-muted">Format: MM/DD/YYYY (e.g., 03/15/2022)</small>
+                                <div class="invalid-feedback" id="dateError">Please enter a valid date (MM/DD/YYYY)
+                                </div>
+                            </div>
+
+                            <!-- Update Button -->
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-arrow-clockwise"></i> Update Analysis
+                                </button>
+                            </div>
                         </div>
-                        
-                        <!-- Update Button -->
-                        <div class="col-12">
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i class="bi bi-arrow-clockwise"></i> Update Analysis
-                            </button>
-                        </div>
-                    </div>
-                </form>
+                    </form>
+                </div>
             </div>
-        </div>
-        
-        {% if not has_data %}
+
+            <!-- Latest Analysis -->
+            {% include "partials/latest_updates.html" %}
+
+            {% if not has_data %}
             <div class="alert alert-warning" role="alert">
                 <h5 class="alert-heading"><i class="bi bi-graph-up-arrow"></i> No Data Available</h5>
                 <p>No visa bulletin data found for the selected combination:</p>
@@ -102,9 +103,9 @@
                     <li>Note: Some older bulletins may not have data for all categories</li>
                 </ul>
             </div>
-        {% endif %}
-        
-        {% if has_data %}
+            {% endif %}
+
+            {% if has_data %}
             <!-- Summary table: last update and current projection per visa type -->
             {% if visa_class_data %}
             <div class="card mb-3">
@@ -124,15 +125,20 @@
                                 {% with projection=data.projection %}
                                 <tr>
                                     <td>{{ data.visa_class_label|default:data.visa_class }}</td>
-                                    <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
+                                    <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else
+                                        %}—{% endif %}</td>
                                     <td>
                                         {% if projection %}
                                         {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
-                                        Est. {{ projection.estimated_date|date:"F Y" }} <span class="text-muted small">({{ projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
+                                        Est. {{ projection.estimated_date|date:"F Y" }} <span
+                                            class="text-muted small">({{
+                                            projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
                                         {% elif projection.status == 'current' %}
-                                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> Current</span>
+                                        <span class="text-success"><i class="bi bi-check-circle-fill"></i>
+                                            Current</span>
                                         {% elif projection.status == 'no_movement' %}
-                                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> No movement</span>
+                                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> No
+                                            movement</span>
                                         {% else %}
                                         —
                                         {% endif %}
@@ -151,8 +157,10 @@
             {% endif %}
 
             <p class="small text-muted mb-3">
-                <i class="bi bi-exclamation-triangle"></i> <em>Projections are rough estimates based on historical trends. Actual processing times may vary.</em>
-                <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
+                <i class="bi bi-exclamation-triangle"></i> <em>Projections are rough estimates based on historical
+                    trends. Actual processing times may vary.</em>
+                <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;">How are projections
+                    calculated? →</a>
             </p>
 
             <!-- Chart -->
@@ -164,33 +172,38 @@
                             <span class="text-muted small me-1"><i class="bi bi-eye"></i> Show:</span>
                             {% for trace in chart_data.trace_info %}
                             <div class="form-check form-check-inline mb-0">
-                                <input class="form-check-input visa-class-toggle" 
-                                       type="checkbox" 
-                                       id="toggle-{{ trace.visa_class }}" 
-                                       data-trace-indices="{{ trace.trace_indices|join:',' }}"
-                                       checked
-                                       aria-label="Toggle {{ trace.label }} visibility">
-                                <label class="form-check-label small" for="toggle-{{ trace.visa_class }}" style="color: {{ trace.color }}; font-weight: 600; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
+                                <input class="form-check-input visa-class-toggle" type="checkbox"
+                                    id="toggle-{{ trace.visa_class }}"
+                                    data-trace-indices="{{ trace.trace_indices|join:',' }}" checked
+                                    aria-label="Toggle {{ trace.label }} visibility">
+                                <label class="form-check-label small" for="toggle-{{ trace.visa_class }}"
+                                    style="color: {{ trace.color }}; font-weight: 600; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
                                     {{ trace.label }}
                                 </label>
                             </div>
                             {% endfor %}
                             <!-- Priority date always shown (not toggleable) -->
                             <div class="form-check form-check-inline mb-0">
-                                <input class="form-check-input" type="checkbox" id="priority-date-toggle" checked disabled aria-label="Your Priority Date (always visible)">
-                                <label class="form-check-label small" for="priority-date-toggle" style="color: #cc0000; font-weight: 600; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
+                                <input class="form-check-input" type="checkbox" id="priority-date-toggle" checked
+                                    disabled aria-label="Your Priority Date (always visible)">
+                                <label class="form-check-label small" for="priority-date-toggle"
+                                    style="color: #cc0000; font-weight: 600; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
                                     Your Priority Date
                                 </label>
                             </div>
-                            <button type="button" class="btn btn-link btn-sm p-0 text-muted ms-2 ms-md-3 visa-chart-clear-all" style="font-size: 0.875rem;" aria-label="Uncheck all visa classes, show only priority date">
+                            <button type="button"
+                                class="btn btn-link btn-sm p-0 text-muted ms-2 ms-md-3 visa-chart-clear-all"
+                                style="font-size: 0.875rem;"
+                                aria-label="Uncheck all visa classes, show only priority date">
                                 Clear all
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="alert alert-light py-2 mb-3" role="alert">
                         <small class="text-muted">
-                            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> Click data points to view official bulletins.
+                            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> Click data points to view official
+                            bulletins.
                         </small>
                     </div>
                     <div id="chart-content">
@@ -201,400 +214,406 @@
                             <p class="text-muted mt-2">Loading chart...</p>
                         </div>
                         <div id="chart-plot" style="display:none;">
-                            <div id="priority-date-chart" class="plotly-graph-div" style="width:100%; max-width:100%;"></div>
+                            <div id="priority-date-chart" class="plotly-graph-div" style="width:100%; max-width:100%;">
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        {% endif %}
-        
-        {% include "webapp/includes/support_cta.html" %}
+            {% endif %}
 
-        <!-- Info Section -->
-        <div class="card mt-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Dashboard</h5>
-            </div>
-            <div class="card-body">
-                <h6>What is a Priority Date?</h6>
-                <p>
-                    The priority date is the date when your immigration petition was filed. The Visa Bulletin publishes 
-                    "cutoff dates" each month, which determine whose cases can move forward based on their priority dates.
-                    <a href="{% url 'faq' %}#headingThree" class="text-decoration-none">Learn more about priority dates →</a>
-                </p>
-                
-                <h6>How to Use This Dashboard</h6>
-                <ol>
-                    <li>Select your <strong>visa category</strong> (Family-Sponsored or Employment-Based)</li>
-                    <li>Choose your <strong>country of chargeability</strong> (birth country, not citizenship)</li>
-                    <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong> (to submit I-485). <a href="{% url 'faq' %}#headingTwo" class="text-decoration-none">What's the difference? →</a></li>
-                    <li>Enter your application <strong>priority date</strong> to see estimated processing timelines</li>
-                </ol>
-                
-                <h6>Understanding the Chart</h6>
-                <ul>
-                    <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
-                    <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                    <li><strong>Dashed projection lines</strong>: Projected timelines for each visa class based on recent trends</li>
-                    <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month</li>
-                </ul>
-                
-                <div class="alert alert-info mt-3">
-                    <i class="bi bi-question-circle"></i> <strong>Have questions?</strong> 
-                    Check out our <a href="{% url 'faq' %}" class="alert-link">Frequently Asked Questions</a> page 
-                    for answers about PERM processing, priority dates, retrogressions, and more.
+            <!-- Info Section -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Dashboard</h5>
+                </div>
+                <div class="card-body">
+                    <h6>What is a Priority Date?</h6>
+                    <p>
+                        The priority date is the date when your immigration petition was filed. The Visa Bulletin
+                        publishes
+                        "cutoff dates" each month, which determine whose cases can move forward based on their priority
+                        dates.
+                        <a href="{% url 'faq' %}#headingThree" class="text-decoration-none">Learn more about priority
+                            dates →</a>
+                    </p>
+
+                    <h6>How to Use This Dashboard</h6>
+                    <ol>
+                        <li>Select your <strong>visa category</strong> (Family-Sponsored or Employment-Based)</li>
+                        <li>Choose your <strong>country of chargeability</strong> (birth country, not citizenship)</li>
+                        <li>Choose <strong>Final Action</strong> (for green card approval) or <strong>Filing</strong>
+                            (to submit I-485). <a href="{% url 'faq' %}#headingTwo" class="text-decoration-none">What's
+                                the difference? →</a></li>
+                        <li>Enter your application <strong>priority date</strong> to see estimated processing timelines
+                        </li>
+                    </ol>
+
+                    <h6>Understanding the Chart</h6>
+                    <ul>
+                        <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
+                        <li><strong>Red dashed line</strong>: Your application's priority date</li>
+                        <li><strong>Dashed projection lines</strong>: Projected timelines for each visa class based on
+                            recent trends</li>
+                        <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
+                        </li>
+                    </ul>
+
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-question-circle"></i> <strong>Have questions?</strong>
+                        Check out our <a href="{% url 'faq' %}" class="alert-link">Frequently Asked Questions</a> page
+                        for answers about PERM processing, priority dates, retrogressions, and more.
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 </main>
 
 <script>
-// Slug mappings for readable URLs (e.g. /family-sponsored/india/ instead of ?country=3)
-const categorySlugs = {{ category_slugs_json|safe }};
-const countrySlugs = {{ country_slugs_json|safe }};
+    // Slug mappings for readable URLs (e.g. /family-sponsored/india/ instead of ?country=3)
+    const categorySlugs = {{ category_slugs_json| safe }};
+    const countrySlugs = {{ country_slugs_json| safe }};
 
-// Save scroll position before form submit
-function saveScrollPosition() {
-    sessionStorage.setItem('scrollPosition', window.scrollY || window.pageYOffset);
-}
-
-// Build readable dashboard URL from form values and navigate (keeps path in sync with filters)
-function buildDashboardUrl() {
-    const category = document.getElementById('category').value;
-    const country = document.getElementById('country').value;
-    const actionType = document.getElementById('action_type').value;
-    const submissionDate = document.getElementById('submission_date').value;
-    const catSlug = categorySlugs[category] || 'family-sponsored';
-    const countrySlug = countrySlugs[country] || 'all';
-    const path = '/' + catSlug + '/' + countrySlug + '/';
-    const params = new URLSearchParams();
-    if (actionType) params.set('action_type', actionType);
-    if (submissionDate && submissionDate.trim()) params.set('submission_date', submissionDate.trim());
-    const query = params.toString();
-    return query ? path + '?' + query : path;
-}
-
-// Auto-submit for dropdowns: navigate to readable URL so path updates (e.g. /family-sponsored/india/)
-function autoSubmitForm() {
-    saveScrollPosition();
-    window.location.href = buildDashboardUrl();
-}
-
-// Category change: navigate to readable URL so path updates
-function updateVisaClasses() {
-    saveScrollPosition();
-    window.location.href = buildDashboardUrl();
-}
-
-// Restore scroll position after page load
-window.addEventListener('load', function() {
-    const scrollPosition = sessionStorage.getItem('scrollPosition');
-    if (scrollPosition !== null) {
-        window.scrollTo({
-            top: parseInt(scrollPosition),
-            behavior: 'instant' // Instant scroll, no animation
-        });
-        sessionStorage.removeItem('scrollPosition'); // Clean up
+    // Save scroll position before form submit
+    function saveScrollPosition() {
+        sessionStorage.setItem('scrollPosition', window.scrollY || window.pageYOffset);
     }
-});
 
-// Date input handling
-document.addEventListener('DOMContentLoaded', function() {
-    const dateInput = document.getElementById('submission_date');
-    const datePickerBtn = document.getElementById('datePickerBtn');
-    const datePickerHidden = document.getElementById('datePickerHidden');
-    const dateError = document.getElementById('dateError');
-    
-    if (dateInput) {
-        // Auto-format as user types (add slashes)
-        dateInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-            let formatted = '';
-            
-            if (value.length > 0) {
-                // Month (first 2 digits)
-                formatted = value.substring(0, 2);
-                if (value.length > 2) {
-                    // Add slash and day
-                    formatted += '/' + value.substring(2, 4);
-                    if (value.length > 4) {
-                        // Add slash and year
-                        formatted += '/' + value.substring(4, 8);
+    // Build readable dashboard URL from form values and navigate (keeps path in sync with filters)
+    function buildDashboardUrl() {
+        const category = document.getElementById('category').value;
+        const country = document.getElementById('country').value;
+        const actionType = document.getElementById('action_type').value;
+        const submissionDate = document.getElementById('submission_date').value;
+        const catSlug = categorySlugs[category] || 'family-sponsored';
+        const countrySlug = countrySlugs[country] || 'all';
+        const path = '/' + catSlug + '/' + countrySlug + '/';
+        const params = new URLSearchParams();
+        if (actionType) params.set('action_type', actionType);
+        if (submissionDate && submissionDate.trim()) params.set('submission_date', submissionDate.trim());
+        const query = params.toString();
+        return query ? path + '?' + query : path;
+    }
+
+    // Auto-submit for dropdowns: navigate to readable URL so path updates (e.g. /family-sponsored/india/)
+    function autoSubmitForm() {
+        saveScrollPosition();
+        window.location.href = buildDashboardUrl();
+    }
+
+    // Category change: navigate to readable URL so path updates
+    function updateVisaClasses() {
+        saveScrollPosition();
+        window.location.href = buildDashboardUrl();
+    }
+
+    // Restore scroll position after page load
+    window.addEventListener('load', function () {
+        const scrollPosition = sessionStorage.getItem('scrollPosition');
+        if (scrollPosition !== null) {
+            window.scrollTo({
+                top: parseInt(scrollPosition),
+                behavior: 'instant' // Instant scroll, no animation
+            });
+            sessionStorage.removeItem('scrollPosition'); // Clean up
+        }
+    });
+
+    // Date input handling
+    document.addEventListener('DOMContentLoaded', function () {
+        const dateInput = document.getElementById('submission_date');
+        const datePickerBtn = document.getElementById('datePickerBtn');
+        const datePickerHidden = document.getElementById('datePickerHidden');
+        const dateError = document.getElementById('dateError');
+
+        if (dateInput) {
+            // Auto-format as user types (add slashes)
+            dateInput.addEventListener('input', function (e) {
+                let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                let formatted = '';
+
+                if (value.length > 0) {
+                    // Month (first 2 digits)
+                    formatted = value.substring(0, 2);
+                    if (value.length > 2) {
+                        // Add slash and day
+                        formatted += '/' + value.substring(2, 4);
+                        if (value.length > 4) {
+                            // Add slash and year
+                            formatted += '/' + value.substring(4, 8);
+                        }
                     }
                 }
-            }
-            
-            e.target.value = formatted;
-            validateDate();
-        });
-        
-        // Submit on Enter key
-        dateInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (validateDate()) {
-                    saveScrollPosition();
-                    document.getElementById('filterForm').submit();
-                }
-            }
-        });
-        
-        // Validate on blur
-        dateInput.addEventListener('blur', validateDate);
-    }
-    
-    // Calendar button opens native picker
-    if (datePickerBtn && datePickerHidden) {
-        datePickerBtn.addEventListener('click', function() {
-            // Sync current value to hidden picker
-            const mmddyyyy = dateInput.value;
-            if (mmddyyyy && mmddyyyy.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-                const parts = mmddyyyy.split('/');
-                datePickerHidden.value = `${parts[2]}-${parts[0]}-${parts[1]}`; // YYYY-MM-DD
-            }
-            datePickerHidden.showPicker();
-        });
-        
-        // When user selects from calendar, update text input
-        datePickerHidden.addEventListener('change', function() {
-            if (this.value) {
-                const parts = this.value.split('-'); // YYYY-MM-DD
-                dateInput.value = `${parts[1]}/${parts[2]}/${parts[0]}`; // MM/DD/YYYY
+
+                e.target.value = formatted;
                 validateDate();
+            });
+
+            // Submit on Enter key
+            dateInput.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (validateDate()) {
+                        saveScrollPosition();
+                        document.getElementById('filterForm').submit();
+                    }
+                }
+            });
+
+            // Validate on blur
+            dateInput.addEventListener('blur', validateDate);
+        }
+
+        // Calendar button opens native picker
+        if (datePickerBtn && datePickerHidden) {
+            datePickerBtn.addEventListener('click', function () {
+                // Sync current value to hidden picker
+                const mmddyyyy = dateInput.value;
+                if (mmddyyyy && mmddyyyy.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                    const parts = mmddyyyy.split('/');
+                    datePickerHidden.value = `${parts[2]}-${parts[0]}-${parts[1]}`; // YYYY-MM-DD
+                }
+                datePickerHidden.showPicker();
+            });
+
+            // When user selects from calendar, update text input
+            datePickerHidden.addEventListener('change', function () {
+                if (this.value) {
+                    const parts = this.value.split('-'); // YYYY-MM-DD
+                    dateInput.value = `${parts[1]}/${parts[2]}/${parts[0]}`; // MM/DD/YYYY
+                    validateDate();
+                }
+            });
+        }
+
+        // Validation function
+        function validateDate() {
+            const value = dateInput.value;
+
+            // Empty is valid (optional field)
+            if (!value) {
+                dateInput.classList.remove('is-invalid');
+                return true;
             }
-        });
-    }
-    
-    // Validation function
-    function validateDate() {
-        const value = dateInput.value;
-        
-        // Empty is valid (optional field)
-        if (!value) {
+
+            // Check format
+            if (!value.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+                dateInput.classList.add('is-invalid');
+                return false;
+            }
+
+            const parts = value.split('/');
+            const month = parseInt(parts[0], 10);
+            const day = parseInt(parts[1], 10);
+            const year = parseInt(parts[2], 10);
+
+            // Validate ranges
+            if (month < 1 || month > 12) {
+                dateInput.classList.add('is-invalid');
+                return false;
+            }
+
+            if (day < 1 || day > 31) {
+                dateInput.classList.add('is-invalid');
+                return false;
+            }
+
+            // Reasonable year range for priority dates (1990-2030)
+            if (year < 1990 || year > 2030) {
+                dateInput.classList.add('is-invalid');
+                return false;
+            }
+
+            // Check if date actually exists
+            const testDate = new Date(year, month - 1, day);
+            if (testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
+                dateInput.classList.add('is-invalid');
+                return false;
+            }
+
             dateInput.classList.remove('is-invalid');
             return true;
         }
-        
-        // Check format
-        if (!value.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-            dateInput.classList.add('is-invalid');
-            return false;
-        }
-        
-        const parts = value.split('/');
-        const month = parseInt(parts[0], 10);
-        const day = parseInt(parts[1], 10);
-        const year = parseInt(parts[2], 10);
-        
-        // Validate ranges
-        if (month < 1 || month > 12) {
-            dateInput.classList.add('is-invalid');
-            return false;
-        }
-        
-        if (day < 1 || day > 31) {
-            dateInput.classList.add('is-invalid');
-            return false;
-        }
-        
-        // Reasonable year range for priority dates (1990-2030)
-        if (year < 1990 || year > 2030) {
-            dateInput.classList.add('is-invalid');
-            return false;
-        }
-        
-        // Check if date actually exists
-        const testDate = new Date(year, month - 1, day);
-        if (testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
-            dateInput.classList.add('is-invalid');
-            return false;
-        }
-        
-        dateInput.classList.remove('is-invalid');
-        return true;
-    }
-    
-    // Chart initialization and checkbox handling
-    {% if chart_data %}
-    var chartInitialized = false;
-    
-    function initChart() {
-        if (typeof Plotly === 'undefined') {
-            // If Plotly hasn't loaded yet, wait and try again
-            setTimeout(initChart, 50);
-            return;
-        }
-        
-        if (chartInitialized) return;
-        chartInitialized = true;
-        
-        var chartData = {{ chart_data.chart_json|safe }};
-        
-        // Disable autorange on layout to prevent default reset behavior
-        chartData.layout.xaxis.autorange = false;
-        chartData.layout.yaxis.autorange = false;
-        
-        var config = {
-            'displayModeBar': true,
-            'displaylogo': false,
-            'responsive': true,
-            'doubleClick': false,  // Disable default double-click reset
-            'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d'],
-            'toImageButtonOptions': {
-                'format': 'png',
-                'filename': 'visa_bulletin_chart',
-                'height': 800,
-                'width': 1200,
-                'scale': 2
+
+        // Chart initialization and checkbox handling
+        {% if chart_data %}
+        var chartInitialized = false;
+
+        function initChart() {
+            if (typeof Plotly === 'undefined') {
+                // If Plotly hasn't loaded yet, wait and try again
+                setTimeout(initChart, 50);
+                return;
             }
-        };
-        
-        Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function(gd) {
-            // Store initial smart range
-            var initialRange = calculateVisibleRange();
-            
-            // Set initial range to exclude priority date line
-            if (initialRange.xMin && initialRange.xMax && initialRange.yMin && initialRange.yMax) {
-                Plotly.relayout('priority-date-chart', {
-                    'xaxis.range': [initialRange.xMin, initialRange.xMax],
-                    'yaxis.range': [initialRange.yMin, initialRange.yMax]
-                });
-            }
-            
-            // Show chart, hide loading
-            document.getElementById('chart-loading').style.display = 'none';
-            document.getElementById('chart-plot').style.display = 'block';
-            
-            // Add click handler for bulletin links
-            gd.on('plotly_click', function(data) {
-                var point = data.points[0];
-                if (point.customdata) {
-                    window.open(point.customdata, '_blank');
-                }
+
+            if (chartInitialized) return;
+            chartInitialized = true;
+
+            var chartData = {{ chart_data.chart_json| safe }};
+
+    // Disable autorange on layout to prevent default reset behavior
+    chartData.layout.xaxis.autorange = false;
+    chartData.layout.yaxis.autorange = false;
+
+    var config = {
+        'displayModeBar': true,
+        'displaylogo': false,
+        'responsive': true,
+        'doubleClick': false,  // Disable default double-click reset
+        'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d'],
+        'toImageButtonOptions': {
+            'format': 'png',
+            'filename': 'visa_bulletin_chart',
+            'height': 800,
+            'width': 1200,
+            'scale': 2
+        }
+    };
+
+    Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function (gd) {
+        // Store initial smart range
+        var initialRange = calculateVisibleRange();
+
+        // Set initial range to exclude priority date line
+        if (initialRange.xMin && initialRange.xMax && initialRange.yMin && initialRange.yMax) {
+            Plotly.relayout('priority-date-chart', {
+                'xaxis.range': [initialRange.xMin, initialRange.xMax],
+                'yaxis.range': [initialRange.yMin, initialRange.yMax]
             });
-            
-            // Intercept relayout events (including double-click resets)
-            gd.on('plotly_relayout', function(eventdata) {
-                // If autorange was triggered (e.g., by toolbar reset button)
-                if (eventdata['xaxis.autorange'] || eventdata['yaxis.autorange']) {
-                    // Override with our smart range
-                    setTimeout(function() {
-                        var range = calculateVisibleRange();
-                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
-                            Plotly.relayout('priority-date-chart', {
-                                'xaxis.range': [range.xMin, range.xMax],
-                                'yaxis.range': [range.yMin, range.yMax],
-                                'xaxis.autorange': false,
-                                'yaxis.autorange': false
-                            });
-                        }
-                    }, 10);
-                }
-            });
-            
-            // Helper to calculate range from visible data traces only
-            function calculateVisibleRange() {
-                var data = gd.data;
-                var xMin = null, xMax = null, yMin = null, yMax = null;
-                
-                // Iterate through all traces except the last one (priority date line)
-                for (var i = 0; i < data.length - 1; i++) {
-                    var trace = data[i];
-                    
-                    // Skip hidden traces
-                    if (trace.visible === 'legendonly' || trace.visible === false) {
-                        continue;
-                    }
-                    
-                    // Get min/max from this trace
-                    if (trace.x && trace.y) {
-                        for (var j = 0; j < trace.x.length; j++) {
-                            var x = new Date(trace.x[j]).getTime();
-                            var y = trace.y[j] ? new Date(trace.y[j]).getTime() : null;
-                            
-                            if (x && (xMin === null || x < xMin)) xMin = x;
-                            if (x && (xMax === null || x > xMax)) xMax = x;
-                            if (y && (yMin === null || y < yMin)) yMin = y;
-                            if (y && (yMax === null || y > yMax)) yMax = y;
-                        }
-                    }
-                }
-                
-                // Add 5% padding
-                if (xMin !== null && xMax !== null) {
-                    var xPadding = (xMax - xMin) * 0.05;
-                    xMin = new Date(xMin - xPadding);
-                    xMax = new Date(xMax + xPadding);
-                }
-                
-                if (yMin !== null && yMax !== null) {
-                    var yPadding = (yMax - yMin) * 0.05;
-                    yMin = new Date(yMin - yPadding);
-                    yMax = new Date(yMax + yPadding);
-                }
-                
-                return {
-                    xMin: xMin,
-                    xMax: xMax,
-                    yMin: yMin,
-                    yMax: yMax
-                };
-            }
-            
-            // Setup checkbox handlers for instant trace toggling
-            document.querySelectorAll('.visa-class-toggle').forEach(function(checkbox) {
-                checkbox.addEventListener('change', function() {
-                    var traceIndices = this.dataset.traceIndices.split(',').map(Number);
-                    var visible = this.checked ? true : 'legendonly';
-                    
-                    // Update trace visibility
-                    traceIndices.forEach(function(idx) {
-                        Plotly.restyle('priority-date-chart', {'visible': visible}, [idx]);
-                    });
-                    
-                    // Auto-rescale to fit visible data only (excludes priority date line)
-                    setTimeout(function() {
-                        var range = calculateVisibleRange();
-                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
-                            Plotly.relayout('priority-date-chart', {
-                                'xaxis.range': [range.xMin, range.xMax],
-                                'yaxis.range': [range.yMin, range.yMax]
-                            });
-                        }
-                    }, 50);
-                });
-            });
-            
-            // Clear all non-mandatory (uncheck all visa classes, keep priority date)
-            var clearAllBtn = document.querySelector('.visa-chart-clear-all');
-            if (clearAllBtn) {
-                clearAllBtn.addEventListener('click', function() {
-                    document.querySelectorAll('.visa-class-toggle').forEach(function(checkbox) {
-                        checkbox.checked = false;
-                        var traceIndices = checkbox.dataset.traceIndices.split(',').map(Number);
-                        traceIndices.forEach(function(idx) {
-                            Plotly.restyle('priority-date-chart', {'visible': 'legendonly'}, [idx]);
-                        });
-                    });
-                    setTimeout(function() {
-                        var range = calculateVisibleRange();
-                        if (range.xMin && range.xMax && range.yMin && range.yMax) {
-                            Plotly.relayout('priority-date-chart', {
-                                'xaxis.range': [range.xMin, range.xMax],
-                                'yaxis.range': [range.yMin, range.yMax]
-                            });
-                        }
-                    }, 50);
-                });
+        }
+
+        // Show chart, hide loading
+        document.getElementById('chart-loading').style.display = 'none';
+        document.getElementById('chart-plot').style.display = 'block';
+
+        // Add click handler for bulletin links
+        gd.on('plotly_click', function (data) {
+            var point = data.points[0];
+            if (point.customdata) {
+                window.open(point.customdata, '_blank');
             }
         });
+
+        // Intercept relayout events (including double-click resets)
+        gd.on('plotly_relayout', function (eventdata) {
+            // If autorange was triggered (e.g., by toolbar reset button)
+            if (eventdata['xaxis.autorange'] || eventdata['yaxis.autorange']) {
+                // Override with our smart range
+                setTimeout(function () {
+                    var range = calculateVisibleRange();
+                    if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                        Plotly.relayout('priority-date-chart', {
+                            'xaxis.range': [range.xMin, range.xMax],
+                            'yaxis.range': [range.yMin, range.yMax],
+                            'xaxis.autorange': false,
+                            'yaxis.autorange': false
+                        });
+                    }
+                }, 10);
+            }
+        });
+
+        // Helper to calculate range from visible data traces only
+        function calculateVisibleRange() {
+            var data = gd.data;
+            var xMin = null, xMax = null, yMin = null, yMax = null;
+
+            // Iterate through all traces except the last one (priority date line)
+            for (var i = 0; i < data.length - 1; i++) {
+                var trace = data[i];
+
+                // Skip hidden traces
+                if (trace.visible === 'legendonly' || trace.visible === false) {
+                    continue;
+                }
+
+                // Get min/max from this trace
+                if (trace.x && trace.y) {
+                    for (var j = 0; j < trace.x.length; j++) {
+                        var x = new Date(trace.x[j]).getTime();
+                        var y = trace.y[j] ? new Date(trace.y[j]).getTime() : null;
+
+                        if (x && (xMin === null || x < xMin)) xMin = x;
+                        if (x && (xMax === null || x > xMax)) xMax = x;
+                        if (y && (yMin === null || y < yMin)) yMin = y;
+                        if (y && (yMax === null || y > yMax)) yMax = y;
+                    }
+                }
+            }
+
+            // Add 5% padding
+            if (xMin !== null && xMax !== null) {
+                var xPadding = (xMax - xMin) * 0.05;
+                xMin = new Date(xMin - xPadding);
+                xMax = new Date(xMax + xPadding);
+            }
+
+            if (yMin !== null && yMax !== null) {
+                var yPadding = (yMax - yMin) * 0.05;
+                yMin = new Date(yMin - yPadding);
+                yMax = new Date(yMax + yPadding);
+            }
+
+            return {
+                xMin: xMin,
+                xMax: xMax,
+                yMin: yMin,
+                yMax: yMax
+            };
+        }
+
+        // Setup checkbox handlers for instant trace toggling
+        document.querySelectorAll('.visa-class-toggle').forEach(function (checkbox) {
+            checkbox.addEventListener('change', function () {
+                var traceIndices = this.dataset.traceIndices.split(',').map(Number);
+                var visible = this.checked ? true : 'legendonly';
+
+                // Update trace visibility
+                traceIndices.forEach(function (idx) {
+                    Plotly.restyle('priority-date-chart', { 'visible': visible }, [idx]);
+                });
+
+                // Auto-rescale to fit visible data only (excludes priority date line)
+                setTimeout(function () {
+                    var range = calculateVisibleRange();
+                    if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                        Plotly.relayout('priority-date-chart', {
+                            'xaxis.range': [range.xMin, range.xMax],
+                            'yaxis.range': [range.yMin, range.yMax]
+                        });
+                    }
+                }, 50);
+            });
+        });
+
+        // Clear all non-mandatory (uncheck all visa classes, keep priority date)
+        var clearAllBtn = document.querySelector('.visa-chart-clear-all');
+        if (clearAllBtn) {
+            clearAllBtn.addEventListener('click', function () {
+                document.querySelectorAll('.visa-class-toggle').forEach(function (checkbox) {
+                    checkbox.checked = false;
+                    var traceIndices = checkbox.dataset.traceIndices.split(',').map(Number);
+                    traceIndices.forEach(function (idx) {
+                        Plotly.restyle('priority-date-chart', { 'visible': 'legendonly' }, [idx]);
+                    });
+                });
+                setTimeout(function () {
+                    var range = calculateVisibleRange();
+                    if (range.xMin && range.xMax && range.yMin && range.yMax) {
+                        Plotly.relayout('priority-date-chart', {
+                            'xaxis.range': [range.xMin, range.xMax],
+                            'yaxis.range': [range.yMin, range.yMax]
+                        });
+                    }
+                }, 50);
+            });
+        }
+    });
     }
-    
+
     initChart();
     {% endif %}
 });
 </script>
 {% endblock %}
-

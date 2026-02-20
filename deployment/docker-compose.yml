@@ -1,33 +1,49 @@
 version: '3.8'
 
+# Single app stack for instance-rotation deployment (one host = one stack on port 8000).
+# Nginx proxies port 80 → 127.0.0.1:8000.
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: visa_bulletin_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # Expose 6379 so pipeline warm_cache on host can use redis://127.0.0.1:6379/1
+
   web:
-    # Pull pre-built image from GitHub Container Registry
-    # Override tag with: IMAGE_TAG=v1.2.3 docker-compose up
     image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
+    container_name: visa_bulletin_web
     ports:
       - "8000:8000"
     volumes:
-      # Persist cached pages and logs (PostgreSQL is used for database)
-      - ../data/bulletin/saved_pages:/app/saved_pages
+      - ./saved_pages:/app/saved_pages
       - ./logs:/app/logs
+      # Allow host settings.py override so ALLOWED_HOSTS fix (refresh health check by IP) can be applied without image rebuild
+      - ../django_config/settings.py:/app/django_config/settings.py:ro
     environment:
       - DJANGO_SETTINGS_MODULE=django_config.settings
       - PYTHONUNBUFFERED=1
-    restart: unless-stopped
-    
-  # Daily data refresh (cron-like service)
-  data-refresh:
-    # Use same image as web service
-    image: ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG:-latest}
-    command: sh -c "while true; do python3 scripts/ingest/run_pipeline.py discover-and-ingest --all-domains; sleep 86400; done"
-    volumes:
-      - ../data/bulletin/saved_pages:/app/saved_pages
-      - ./logs:/app/logs
-    environment:
-      - DJANGO_SETTINGS_MODULE=django_config.settings
-      - PYTHONUNBUFFERED=1
-    restart: unless-stopped
+      - REDIS_URL=redis://redis:6379/1
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - DB_HOST=host.docker.internal
+      - ANALYTICS_SCRIPT=<script data-goatcounter="https://vyakunin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us}
+    env_file:
+      - ../.env
     depends_on:
-      - web
-
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    mem_limit: 200m
+    memswap_limit: 200m
+    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers $${WEB_CONCURRENCY:-2} --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

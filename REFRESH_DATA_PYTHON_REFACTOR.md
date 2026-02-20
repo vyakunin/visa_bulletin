@@ -7,7 +7,7 @@ Plan: refactor `scripts/cron/refresh_data.sh` into a Python-based, unit-testable
 - **Unit-testable**: Config, checkpoint, step order, skip logic, smoke thresholds, instance lifecycle, traffic switch, and cron setup are pure or mockable; steps execute via an abstract runner.
 - **Cron-runnable**: One cron job runs the full cycle on the active instance (or both instances have cron and the script no-ops when run on inactive). Env loaded before Python (e.g. `set -a && source .env && set +a`).
 - **Full cross-instance cycle**: From bringing up a sleeping instance through refreshing data there and flipping traffic (static IP or DNS) from old prod to the refreshed instance, to scheduling cron on the newly active instance and suspending the inactive instance. No manual steps in the happy path.
-- **Behavior preserved**: One pipeline (pre-built vs bazel fallback, checkpoint/resume, all ingest/post-process/smoke steps). Where it runs is the runner (LocalRunner = this host; RemoteRunner(host) = that host via SSH). Config `single_db_on_host` controls swap step (no-op vs same-host DB swap).
+- **Behavior preserved**: One pipeline (pre-built vs bazel fallback, checkpoint/resume, all ingest/post-process/smoke steps). Where it runs is the runner (LocalRunner = this host; RemoteRunner(host) = that host via SSH). We use one database per instance; there is no DB swap step.
 ## Clean design (system-design view)
 
 **Problem:** “Run refresh on inactive instance” is conflating (a) *what* to run (the pipeline) with (b) *where* to run it (this host vs that host). That leads to “two modes” and “single DB vs two DB” special cases.
@@ -18,7 +18,7 @@ Plan: refactor `scripts/cron/refresh_data.sh` into a Python-based, unit-testable
 - **Runner** = execution backend. **LocalRunner**: run commands on this host (subprocess). **RemoteRunner(host)**: run commands on `host` (e.g. SSH + subprocess there). **MockRunner**: record calls for tests. Same pipeline, different runner—no “local mode” vs “remote mode” in the pipeline.
 - **Orchestrator** = higher-level workflow: resolve active/inactive → start inactive → wait healthy → **run the same pipeline with RemoteRunner(inactive_host)** → smoke (via runner) → traffic switch → safety → stop old → (optional) cron on new active. “Run refresh on inactive” = `run_pipeline(config, RemoteRunner(inactive_host), resume=False)`.
 
-**Config for “one DB vs two DB on host”:** On a per-instance host there is a single DB; on the current single-host setup there are two DBs and a swap. Encode that in config (e.g. `single_db_on_host: true`). The pipeline’s “swap” step is then either “restart app + update .env” (two-DB host) or no-op (single-DB host). One pipeline, one step list; only step behavior varies by config.
+**Config:** Each instance has a single database (`visa_bulletin`). No DB swap step; pipeline ends after smoke.
 
 **Industry solutions we are not using (but could):** **Temporal**, **Prefect**, **Airflow** model this as a workflow with activities (StartInstance, RunRefresh, SwitchTraffic, …). We get the same separation with a minimal custom implementation: one pipeline DAG, one runner interface, one orchestrator that composes instance lifecycle + pipeline run. If we later need retries, observability, or multi-step scheduling, we could replace the custom orchestrator with Temporal/Prefect.
 
@@ -40,7 +40,7 @@ Single entry point (e.g. `refresh_and_switch.py`) runs steps 1–9. All automate
 
 ## Architecture
 
-- **One pipeline** – Ordered steps; each step uses only `runner.run_*`. Runs the same whether the runner is LocalRunner (this host) or RemoteRunner(inactive_host). Config (e.g. `single_db_on_host`) controls step behavior (e.g. swap = no-op on single-DB host).
+- **One pipeline** – Ordered steps; each step uses only `runner.run_*`. Runs the same whether the runner is LocalRunner (this host) or RemoteRunner(inactive_host). One DB per instance; no swap step.
 - **One orchestrator** – Resolve active/inactive → start inactive → wait healthy → run pipeline with RemoteRunner(inactive) → smoke → traffic switch → safety → stop old → (optional) cron. Uses the same pipeline; the runner is the only difference.
 - **Entry points** – **(1)** Cron on active runs `refresh_and_switch.py` (orchestrator). **(2)** For single-host / legacy: cron runs `refresh_data.py` which runs the pipeline with LocalRunner (no instance lifecycle, no traffic switch).
 
@@ -86,7 +86,7 @@ flowchart LR
 ```
 
 - **Entry**: Orchestrator: `refresh_and_switch.py` (cron on active). Local-only: `refresh_data.py [--resume]` (pipeline with LocalRunner; no instance lifecycle).
-- **Config**: Paths, .env, DB name; `single_db_on_host` for swap step behavior. Orchestrator: instance names, IPs, DNS, API credentials.
+- **Config**: Paths, .env, DB name. Orchestrator: instance names, IPs, DNS, API credentials.
 - **Checkpoint**: Read/write JSON; `should_skip_step(resume_from, step)` pure. Used by the pipeline wherever it runs (local or remote); checkpoint file lives on the host where the pipeline runs.
 - **Runner**: **LocalRunner** – `run_bin`, `run_psql`, `run_sudo_psql`, `run_migrate`, … (subprocess on this host). **RemoteRunner(host)** – same interface, executes via SSH on `host`. **Orchestrator** – `start_instance`, `stop_instance`, `wait_instance_healthy`, `switch_traffic_to_instance`, `setup_cron_on_host` (Lightsail/Namecheap/SSH). **MockRunner** – records calls for tests.
 - **Pipeline**: One definition. Ordered steps; for each step, call step function `(config, runner, context)`; step uses only `runner.run_*`. Same code path for local and remote; only the runner implementation changes.
@@ -96,20 +96,19 @@ flowchart LR
 - **scripts/cron/refresh_data.py** – CLI: load config, setup logging, **run pipeline with LocalRunner** (`--resume` supported). Used when cron runs on a single host (no cross-instance). ~150–200 lines.
 - **scripts/cron/refresh_and_switch.py** – CLI: load config, **run orchestrator** (resolve active/inactive → start inactive → wait healthy → **run pipeline with RemoteRunner(inactive_host)** → smoke → traffic switch → safety → stop old → cron). Same pipeline; only the runner is RemoteRunner(inactive).
 - **scripts/cron/refresh/** – Core logic; **no `__init__.py`**; package defined by **scripts/cron/refresh/BUILD** only:
-  - **config.py** – `RefreshConfig` (paths, .env, DB name, **single_db_on_host**), `load_config(project_root)`, `get_env_value` / `update_env_value`.
+  - **config.py** – `RefreshConfig` (paths, .env, DB name), `load_config(project_root)`, `get_env_value` / `update_env_value`.
   - **checkpoint.py** – `STEPS_ORDER`, `CheckpointData`, `read_checkpoint`, `write_checkpoint` (atomic), `should_skip_step(resume_from, step)`.
-  - **runner.py** – **Runner** protocol: `run_bin`, `run_psql`, `run_sudo_psql`, `run_migrate`, `update_env`, `detect_active_env`, `check_disk_space`, `restart_docker`. **LocalRunner** (subprocess on this host). **RemoteRunner(host)** (SSH to host, run same commands there). **OrchestratorRunner** (or separate): `start_instance`, `stop_instance`, `wait_instance_healthy`, `switch_traffic_to_instance`, `setup_cron_on_host`. **MockRunner** (records calls).
-  - **steps.py** – One function per step; each calls only `runner.run_*`. Steps take `(config, runner, context)`. "swap_done" step: if `config.single_db_on_host`, no-op; else current same-host swap (update .env, restart docker).
+  - **runner.py** – **Runner** protocol: `run_bin`, `run_psql`, `run_sudo_psql`, `run_migrate`, `update_env`, `check_disk_space`, `restart_docker`. **LocalRunner** (subprocess on this host). **RemoteRunner(host)** (SSH to host, run same commands there). **OrchestratorRunner** (or separate): `start_instance`, `stop_instance`, `wait_instance_healthy`, `switch_traffic_to_instance`, `setup_cron_on_host`. **MockRunner** (records calls).
+  - **steps.py** – One function per step; each calls only `runner.run_*`. Steps take `(config, runner, context)`. No DB swap step (one DB per instance).
   - **smoke.py** – `run_smoke_tests(runner, db_name, config)`; uses runner for queries/HTTP; test with MockRunner.
   - **disk.py** – `check_disk_space(threshold_percent)`; implementation uses subprocess or runner.
   - **discovery.py** – `check_new_sources(runner)`; uses runner to run check-completeness; test with mock output.
-  - **pipeline.py** – `run_pipeline(config, runner, resume: bool) -> int`. One implementation. Loop over `STEPS_ORDER`; skip when `should_skip_step`; else run step (runner), write checkpoint. Discovery once at start; cleanup after smoke_done. Return 0 on success.
+  - **pipeline.py** – `run_pipeline(config, runner, resume: bool) -> int`. One implementation. Loop over `STEPS_ORDER`; skip when `should_skip_step`; else run step (runner), write checkpoint. Discovery once at start. Return 0 on success.
   - **instance.py** – Resolve active/inactive (DNS or static IP); start/stop/state (Lightsail API). Pure logic + runner for I/O.
   - **traffic_switch.py** – DNS (Namecheap getHosts/setHosts) or static IP (Lightsail detach/attach). Protocol/runner for tests.
   - **orchestrate.py** – `run_orchestrate(config, runner, safety_interval_sec) -> int`. Steps 1–9; step 4 = `run_pipeline(config, RemoteRunner(inactive_host), resume)`.
 
-Step order (one pipeline, same everywhere): db_created, indexes_dropped, ingest_complete, backfill_links_done, backfill_dates_done, cluster_job_titles_done, indexes_recreated, employer_stats_done, cluster_employers_done, job_title_stats_done, slugs_done, vacuum_done, warm_cache_done, smoke_done, swap_done. Cleanup (ingest cleanup) not checkpointed; run after smoke_done before swap_done.
-
+Step order (one pipeline, same everywhere): ensure_db, index_snapshot_saved, ingest_complete, backfill_*, cluster_job_titles, indexes_restored, update_employer_stats, cluster_employers, update_job_title_cluster_stats, populate_job_title_slugs, vacuum_analyze, start_services, warm_cache, smoke_tests. No swap step. 
 ## Cron and wrapper
 
 - **Cross-instance (orchestrator):** Cron runs on the **active** instance (or on both instances with script no-op when run on inactive). Wrapper invokes `refresh_and_switch.py` (or `refresh_data.py --mode=orchestrate`). Same env setup: `set -a && source .env && set +a`. Cron entry: `0 2 * * 0 cd /opt/visa_bulletin && bash scripts/cron/refresh_data.sh >> ... 2>&1` (or a dedicated `refresh_and_switch.sh` that runs the orchestrator). After traffic switch, the **newly active** instance must have cron: either **(a)** both instances have the same crontab so no "schedule cron on new active" step, or **(b)** after flip, orchestrator SSHs to new active and runs `setup-ingest-cron.sh` there.
@@ -124,7 +123,7 @@ Recommend **Option A** for local wrapper so existing cron entries keep pointing 
 - **Checkpoint path**: `config.backup_dir / "refresh_checkpoint.json"`. Atomic write: write to `.tmp` then rename.
 - **Logging**: Python script sets up logging to stdout; when run from cron, wrapper or cron redirect appends to log file. Optionally in Python: open log file and tee (current script uses `exec > >(tee -a "$LOG_FILE")`); can be done with a logging handler that writes to both file and sys.stdout.
 - **Root check**: In main, if `os.geteuid() == 0`, log error and exit 1 (same as bash).
-- **Local swap step** (single-host mode with two DBs): Archive current DB (pg_dump | gzip), prune old archives (keep MAX_BACKUPS), update_env DB_NAME to inactive, detect_active_env(), restart docker, verify DB_NAME in .env, health check; on failure rollback (update_env to current, restart docker) and exit 1. **Per-instance mode** (one DB on host): no DB swap; "swap_done" may be no-op or restart app only.
+- **No DB swap step**: Each instance has one database; pipeline ends after smoke. Traffic switch is at the instance level (DNS or static IP), not DB swap.
 - **Orchestrator – instance lifecycle**: Lightsail API (or `aws lightsail` CLI): `get_instance_state(instance_name)`, `start_instance(instance_name)`, `stop_instance(instance_name)`. Credentials: IAM user (e.g. `visa-bulletin-deploy`) with Lightsail permissions; on instance, store credentials outside repo (see BLUE_GREEN_INSTANCE_ROLLOUT.md §10). Wait for healthy: poll state until `running`; optional SSH + `curl -f http://<ip>/` with timeout (e.g. 5–10 min).
 - **Orchestrator – traffic switch**: **(a) DNS (Namecheap):** getHosts (SLD/TLD) → modify A for `@` and `www` to inactive instance’s static IP → setHosts; preserve MX, TXT, etc. API user/key and whitelisted IP required (BLUE_GREEN_INSTANCE_ROLLOUT.md §9). **(b) Static IP (Lightsail):** detach static IP from old instance, attach to refreshed instance; effectively instant cutover. Instance "rename" is not supported by Lightsail; use static IP reassignment or DNS.
 - **Orchestrator – cron on new active**: Either **(a)** both instances have the same crontab (script at start resolves "am I active?" and exits when run on inactive); or **(b)** after traffic switch, SSH to the new active instance and run `setup-ingest-cron.sh` (or equivalent) so the next weekly run is scheduled there.
@@ -191,10 +190,10 @@ These are the only open decisions; everything else is specified above.
    When the pipeline runs with **RemoteRunner(inactive_host)**, the checkpoint must live on the inactive host (so resume works there). Add to the Runner protocol: **`read_checkpoint(path) -> dict | None`** and **`write_checkpoint(path, data)`**. LocalRunner: read/write local file. RemoteRunner: SSH and read/write the file on the remote host (e.g. `cat`/redirect or a small remote command that writes JSON). Pipeline calls these after each step so checkpoint is always on the host where steps execute.
 
 2. **Checkpoint schema (match current bash)**  
-   Current script uses: `last_step`, `timestamp`, `inactive_db`, `index_snapshot` (optional; preserved across writes). Keep the same shape: **`last_step`**, **`timestamp`** (ISO UTC), **`inactive_db`** (two-DB host; for "start fresh if target DB changed") or **`db_name`** (single-DB host), **`index_snapshot`** (path to indexes YAML for resume past `indexes_dropped`). Atomic write: write to `path + ".tmp"` then rename.
+   Current script uses: `last_step`, `timestamp`, `inactive_db`, `index_snapshot` (optional; preserved across writes). Keep the same shape: **`last_step`**, **`timestamp`** (ISO UTC), **`inactive_db`** (db name used for the run; kept for backward compatibility), **`index_snapshot`** (path to indexes YAML for resume past `index_snapshot_saved`). Atomic write: write to `path + ".tmp"` then rename.
 
 3. **Config source**  
-   **Paths / backup_dir**: Same as bash: `REFRESH_BACKUP_DIR` env if set, else `/var/backups/visa-bulletin`, else `project_root/backups`. **single_db_on_host**: Env `REFRESH_SINGLE_DB_ON_HOST=1` or a small config file (e.g. `refresh_config.yaml` in project root). Recommend env for now so no new file. **Orchestrator**: Instance names, IPs, DNS domain, API credentials — env vars (e.g. `REFRESH_ACTIVE_INSTANCE`, `REFRESH_INACTIVE_INSTANCE`, `REFRESH_DOMAIN`, `NAMECHEAP_API_USER`, …) or a single YAML under `deployment/` or project root. Decide at start of implementation.
+   **Paths / backup_dir**: Same as bash: `REFRESH_BACKUP_DIR` env if set, else `/var/backups/visa-bulletin`, else `project_root/backups`. **Orchestrator**: Instance names, IPs, DNS domain, API credentials — env vars (e.g. `REFRESH_ACTIVE_INSTANCE`, `REFRESH_INACTIVE_INSTANCE`, `REFRESH_DOMAIN`, `NAMECHEAP_API_USER`, …) or a single YAML under `deployment/` or project root. Decide at start of implementation.
 
 4. **"Am I active?" for cron no-op**  
    When cron runs on both instances, the script must exit on the inactive one. **Inputs**: This host’s identity (e.g. instance name or public IP) and current traffic target (DNS A record or Lightsail static IP attachment). **Config**: e.g. `REFRESH_MY_INSTANCE_NAME` or detect from metadata (Lightsail instance name from metadata service). Resolve active/inactive (instance.py) returns which instance is active; compare to "my" identity and no-op if I’m inactive. Document the exact env vars or detection method in the orchestrator section.

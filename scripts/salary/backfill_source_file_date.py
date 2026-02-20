@@ -14,115 +14,124 @@ Usage:
 """
 
 import argparse
+import logging
 import os
+import sys
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
 import django
-
 django.setup()
 
-from lib.utils.db_utils import BatchedUpdateCollector
-from lib.utils.logging_utils import log_context
 from models.salary import SalaryRecord
+from models.ingest.data_source import DataSource
+from lib.utils.logging_utils import ScriptLogger
+from lib.utils.db_utils import BatchedUpdateCollector
+from django_config.logging_config import setup_logging
 
-log_context("Backfilling source_file_date for existing SalaryRecord records")
+setup_logging(debug=False)
+logger = logging.getLogger(__name__)
+
+script_logger = ScriptLogger(__file__)
+
+
+def _build_data_source_lookup() -> dict[str, object]:
+    """Pre-load DataSource downloaded_at indexed by local_file_path fragment."""
+    lookup: dict[str, object] = {}
+    for ds in DataSource.objects.filter(downloaded_at__isnull=False).values('local_file_path', 'downloaded_at'):
+        path = ds['local_file_path']
+        if path:
+            lookup[path] = ds['downloaded_at']
+    logger.info("Loaded %s DataSource entries with downloaded_at", f"{len(lookup):,}")
+    return lookup
 
 
 def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
-    """
-    Backfill source_file_date for existing SalaryRecord records.
-    
-    Args:
-        dry_run: If True, don't actually update records
-        limit: Maximum number of records to process (None = all)
-    """
-    # Query records without source_file_date
-    queryset = SalaryRecord.objects.filter(source_file_date__isnull=True)
+    """Backfill source_file_date for existing SalaryRecord records."""
+    queryset = SalaryRecord.objects.filter(
+        source_file_date__isnull=True
+    ).select_related('ingest_version__run')
 
     total_count = queryset.count()
     if limit:
         queryset = queryset[:limit]
-        print(f"Processing {limit:,} of {total_count:,} records without source_file_date")
+        logger.info("Processing %s of %s records without source_file_date", f"{limit:,}", f"{total_count:,}")
     else:
-        print(f"Processing {total_count:,} records without source_file_date")
+        logger.info("Processing %s records without source_file_date", f"{total_count:,}")
+
+    if total_count == 0:
+        logger.info("No records to backfill")
+        return
 
     if dry_run:
-        print("DRY RUN MODE - No records will be updated")
+        logger.info("DRY RUN MODE - No records will be updated")
 
-    # Use BatchedUpdateCollector for efficient updates
+    ds_lookup = _build_data_source_lookup()
+
     collector = BatchedUpdateCollector(
         fields=['source_file_date'],
         batch_size=1000,
         dry_run=dry_run,
-        use_transaction=True
+        use_transaction=True,
     )
 
     updated_count = 0
     skipped_count = 0
 
     for record in queryset.iterator(chunk_size=1000):
-        # Try to get source_file_date from ingest_version.run.started_at
         source_file_date = None
+
         if record.ingest_version and record.ingest_version.run:
             source_file_date = record.ingest_version.run.started_at
         elif record.source_file:
-            # Try to get from DataSource
-            from models.ingest.data_source import DataSource
-            try:
-                # Try to find DataSource by URL pattern or local_file_path
-                # This is a best-effort approach
-                data_source = DataSource.objects.filter(
-                    local_file_path__icontains=record.source_file
-                ).first()
-                if data_source and data_source.downloaded_at:
-                    source_file_date = data_source.downloaded_at
-            except Exception:
-                pass
+            for ds_path, ds_date in ds_lookup.items():
+                if record.source_file in ds_path or ds_path in record.source_file:
+                    source_file_date = ds_date
+                    break
 
-        # Fallback to created_at if nothing else available
         if not source_file_date:
-            source_file_date = record.created_at
+            if record.created_at:
+                source_file_date = record.created_at
+            else:
+                skipped_count += 1
+                continue
 
-        # Update record
         record.source_file_date = source_file_date
         collector.add(record)
         updated_count += 1
 
         if updated_count % 10000 == 0:
-            print(f"Processed {updated_count:,} records...")
+            logger.info("Processed %s records...", f"{updated_count:,}")
 
-    # Flush remaining records
     collector.flush()
 
-    print("\nBackfill complete:")
-    print(f"  Updated: {updated_count:,} records")
-    print(f"  Skipped: {skipped_count:,} records")
+    logger.info("Backfill complete:")
+    logger.info("  Updated: %s records", f"{updated_count:,}")
+    logger.info("  Skipped: %s records (no date source available)", f"{skipped_count:,}")
 
     if dry_run:
-        print("\nDRY RUN - No records were actually updated")
+        logger.info("DRY RUN - No records were actually updated")
 
 
 def main():
     parser = argparse.ArgumentParser(
         description='Backfill source_file_date for existing SalaryRecord records'
     )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Dry run mode - do not update records'
-    )
-    parser.add_argument(
-        '--limit',
-        type=int,
-        default=None,
-        help='Maximum number of records to process (default: all)'
-    )
+    parser.add_argument('--dry-run', action='store_true', help='Dry run mode - do not update records')
+    parser.add_argument('--limit', type=int, default=None, help='Maximum number of records to process (default: all)')
 
     args = parser.parse_args()
 
-    backfill_source_file_date(dry_run=args.dry_run, limit=args.limit)
+    script_logger.log_call(
+        args={'dry_run': args.dry_run, 'limit': args.limit},
+        context='Backfilling source_file_date for SalaryRecord records'
+    )
+
+    try:
+        backfill_source_file_date(dry_run=args.dry_run, limit=args.limit)
+    except Exception as e:
+        logger.error("Backfill failed: %s", e, exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
     main()
-

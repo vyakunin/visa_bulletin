@@ -1,0 +1,70 @@
+<div class="blog-post-content">
+    <p class="lead">
+        The Department of State has released the <strong>{{ bulletin.publication_date|date:"F Y" }}</strong> Visa
+        Bulletin.
+        Below is our analysis of the significant movements and how they compare to our predictions.
+    </p>
+
+    <hr>
+
+    <h3>1. The Big Surprises</h3>
+    <p><em>How did the actual bulletin differ from our AI model's predictions?</em></p>
+    {% if surprises %}
+    <ul class="list-group mb-4">
+        {% for item in surprises %}
+        <li class="list-group-item">
+            <strong>{{ item.category }} - {{ item.country }}</strong>:
+            Predicted <span class="text-muted">{{ item.predicted|date:"d M Y" }}</span>,
+            Actual <span class="fw-bold">{{ item.actual|date:"d M Y" }}</span>.
+            <br>
+            <span
+                class="badge {% if item.is_positive %}bg-success{% else %}bg-danger{% endif %} bg-opacity-10 text-dark">
+                {{ item.delta_text }}
+            </span>
+            <span class="small text-muted">{{ item.narrative }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>Our model's predictions were largely in line with this month's bulletin, with no major statistical deviations.
+    </p>
+    {% endif %}
+
+    <hr>
+
+    <h3>2. Key Movements</h3>
+    <p><em>Month-over-month changes for applicants.</em></p>
+
+    <h4>Family-Sponsored</h4>
+    {% if movements.family %}
+    <ul>
+        {% for m in movements.family %}
+        <li>{{ m }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No significant movement observed in Family-Sponsored categories.</p>
+    {% endif %}
+
+    <h4>Employment-Based</h4>
+    {% if movements.employment %}
+    <ul>
+        {% for m in movements.employment %}
+        <li>{{ m }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No significant movement observed in Employment-Based categories.</p>
+    {% endif %}
+
+    <hr>
+
+    <h3>3. Future Outlook</h3>
+    <div class="alert alert-light border">
+        {{ outlook|linebreaks }}
+    </div>
+
+    <p class="small text-muted mt-3">
+        <em>Note: This analysis is generated automatically based on the latest data.</em>
+    </p>
+</div>

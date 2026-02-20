@@ -142,7 +142,7 @@
                             </div>
                             
                             <!-- State -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="state" class="form-label">State</label>
                                 <select class="form-select" id="state" name="state">
                                     <option value="">All States</option>
@@ -155,7 +155,7 @@
                             </div>
                             
                             <!-- Visa Program -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="program" class="form-label">Visa Program</label>
                                 <select class="form-select" id="program" name="program">
                                     <option value="">All Programs</option>
@@ -165,7 +165,7 @@
                             </div>
                             
                             <!-- Fiscal Year -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="year" class="form-label">Fiscal Year</label>
                                 <select class="form-select" id="year" name="year">
                                     <option value="">All Years</option>
@@ -176,13 +176,26 @@
                                     {% endfor %}
                                 </select>
                             </div>
+
+                            <!-- Filing Year -->
+                            <div class="col-md-3">
+                                <label for="filing_year" class="form-label">Filing Year</label>
+                                <select class="form-select" id="filing_year" name="filing_year">
+                                    <option value="">All Years</option>
+                                    {% for year in filing_years %}
+                                    <option value="{{ year }}" {% if year|stringformat:"i" == filing_year_filter %}selected{% endif %}>
+                                        {{ year }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             
                             <!-- Search Button -->
                             <div class="col-12">
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-search"></i> Search
                                 </button>
-                                {% if query or employer_filter or state_filter or program_filter or year_filter %}
+                                {% if query or employer_filter or state_filter or program_filter or year_filter or filing_year_filter %}
                                 <a href="{% url 'salary_search' %}" class="btn btn-outline-secondary ms-2">
                                     <i class="bi bi-x-circle"></i> Clear Filters
                                 </a>
@@ -402,13 +415,13 @@
             {% endif %}
             
             <!-- Active Filters -->
-            {% if query or employer_filter or state_filter or program_filter or year_filter %}
+            {% if query or employer_filter or state_filter or program_filter or year_filter or filing_year_filter %}
             <div class="mb-3">
                 <span class="text-muted me-2">Active filters:</span>
                 {% if query %}
                 <span class="filter-tag">
                     Job: {{ query }}
-                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -416,7 +429,7 @@
                 {% if employer_filter %}
                 <span class="filter-tag">
                     Employer: {{ employer_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -424,7 +437,7 @@
                 {% if state_filter %}
                 <span class="filter-tag">
                     State: {{ state_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -432,7 +445,7 @@
                 {% if program_filter %}
                 <span class="filter-tag">
                     Program: {{ program_filter|upper }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -440,7 +453,15 @@
                 {% if year_filter %}
                 <span class="filter-tag">
                     Year: FY{{ year_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
+                        <i class="bi bi-x"></i>
+                    </a>
+                </span>
+                {% endif %}
+                {% if filing_year_filter %}
+                <span class="filter-tag">
+                    Filing Year: {{ filing_year_filter }}
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -461,7 +482,7 @@
                                     <th>Location</th>
                                     <th>Salary</th>
                                     <th>Program</th>
-                                    <th>Year</th>
+                                    <th>Filing Date</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -509,7 +530,13 @@
                                         <span class="badge bg-secondary">{{ record.get_visa_program_display }}</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ record.fiscal_year }}</td>
+                                    <td>
+                                        {% if record.case_submitted %}
+                                            {{ record.case_submitted|date:"M j, Y" }}
+                                        {% else %}
+                                            <span class="text-muted" title="Filing date unavailable, showing fiscal year">FY {{ record.fiscal_year }}</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% empty %}
                                 <tr>

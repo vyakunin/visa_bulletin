@@ -163,6 +163,18 @@ GROUP BY 1;
 
 The UI now excludes the "None" group from the Company Comparison and Top Employers tables so "None" is not shown as a company name; totals and other sections still include those records.
 
+## Performance (cluster_existing_employers)
+
+The refresh pipeline runs `cluster_existing_employers` on staging; the step can take a long time on 2GB instances.
+
+**Cluster statistics (biggest win):** `_update_cluster_statistics()` in `scripts/salary/cluster_existing_employers.py` uses **raw SQL aggregation** (two `UPDATE ... FROM (SELECT ... GROUP BY canonical_cluster_id)` statements) instead of loading all clusters and employers into Python. This avoids ~400s prefetch + heavy swap and bulk_update round-trips; stats update in seconds.
+
+**Step timeout:** The cluster_employers step uses an 8-hour SSH timeout (`CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC` in `scripts/cron/refresh/steps.py`) so the orchestrator does not kill the step before it finishes.
+
+**Optional tuning (trade-offs):**
+- **LSH:** Reducing `num_perm` (e.g. 128→64) in MinHashLSH speeds up index build and can reduce Phase 2 time, with some precision trade-off.
+- **BatchedUpdates batch_size:** Slightly increasing the batch size reduces flush frequency; keep memory usage in mind on 2GB instances.
+
 ## Related Files
 
 - `models/salary.py` - `Employer.normalize_name()` - Name normalization logic

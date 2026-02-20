@@ -1,0 +1,153 @@
+{% extends "webapp/base.html" %}
+{% block title %}{{ formatted_title }}{% endblock %}
+{% block content %}
+<div class="container py-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'prediction_list' %}">Predictions</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ category_label }}: {{ target_month|date:"F Y" }}
+            </li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1>{{ formatted_title }}</h1>
+        <div class="btn-group shadow-sm">
+            <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="btn btn-outline-secondary"
+                title="View Trends">
+                <i class="bi bi-graph-up"></i> Trends
+            </a>
+            {% if nav_prev %}
+            <a href="{% url 'prediction_detail_category' category nav_prev.year nav_prev.month %}"
+                class="btn btn-outline-primary" title="PrevMonth">
+                <i class="bi bi-chevron-left"></i> {{ formatted_nav_prev }}
+            </a>
+            {% else %}
+            <button class="btn btn-outline-secondary disabled">Prev</button>
+            {% endif %}
+            {% if nav_next %}
+            <a href="{% url 'prediction_detail_category' category nav_next.year nav_next.month %}"
+                class="btn btn-outline-primary" title="NextMonth">
+                {{ formatted_nav_next }} <i class="bi bi-chevron-right"></i>
+            </a>
+            {% else %}
+            <button class="btn btn-outline-secondary disabled">Next</button>
+            {% endif %}
+        </div>
+    </div>
+    {% if bulletin %}
+    <p class="text-muted">Knowledge Date: {{ bulletin.prediction_date|date:"F d, Y" }}</p>
+    <div class="alert alert-info py-2 d-flex align-items-center">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <small>Predictions relative to last month's actual bulletin. Movement (e.g. <span
+                class="badge bg-success bg-opacity-10 text-success">↑ 1m</span>) shown below.</small>
+    </div>
+    {% else %}
+    <div class="alert alert-warning py-2 d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <small>No official predictions generated. Showing actual DoS data.</small>
+    </div>
+    {% endif %}
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover shadow-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th rowspan="2" class="align-middle text-center">Preference</th>
+                    <th rowspan="2" class="align-middle text-center" style="width:1%;">Type</th>
+                    {% for c in countries %}<th colspan="2" class="text-center">{{ c.label }}</th>{% endfor %}
+                </tr>
+                <tr>
+                    {% for c in countries %}
+                    <th class="small text-center bg-secondary text-white-50">Final Action</th>
+                    <th class="small text-center bg-secondary text-white-50">Filing</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                {% if bulletin %}
+                <tr>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">{{ row.class }}</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    {% for cell in row.countries %}
+                    <td class="align-middle text-center">
+                        {% with p=cell.final_action.predicted %}
+                        {% if p and p.formatted_date %}
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">{{ p.formatted_date }}</span>
+                            {% if p.movement_delta %}
+                            <span
+                                class="badge {% if p.movement_type == 'positive' %}bg-success bg-opacity-10 text-success border border-success border-opacity-25{% elif p.movement_type == 'negative' %}bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25{% else %}bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25{% endif %}"
+                                style="font-size:0.7rem;">{{ p.movement_delta }}</span>
+                            {% endif %}
+                        </div>
+                        {% else %}-{% endif %}
+                        {% endwith %}
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10">
+                        {% with p=cell.filing.predicted %}
+                        {% if p and p.formatted_date %}
+                        <div class="d-flex flex-column align-items-center">
+                            <span class="fw-bold text-dark">{{ p.formatted_date }}</span>
+                            {% if p.movement_delta %}
+                            <span
+                                class="badge {% if p.movement_type == 'positive' %}bg-success bg-opacity-10 text-success border border-success border-opacity-25{% elif p.movement_type == 'negative' %}bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25{% else %}bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25{% endif %}"
+                                style="font-size:0.7rem;">{{ p.movement_delta }}</span>
+                            {% endif %}
+                        </div>
+                        {% else %}-{% endif %}
+                        {% endwith %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
+                    </td>
+                    {% for cell in row.countries %}
+                    <td class="align-middle text-center border-bottom-thick">
+                        {% with f=cell.final_action.formatted_actual %}
+                        {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
+                        {% endwith %}
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
+                        <div class="d-flex justify-content-center align-items-center">
+                            {% with f=cell.filing.formatted_actual %}
+                            {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
+                            {% endwith %}
+                            {% with p=cell.filing.predicted %}
+                            {% if p and p.accuracy_score is not None %}
+                            <span
+                                class="ms-1 fw-bold {% if p.accuracy_score > 0 %}text-danger{% elif p.accuracy_score < 0 %}text-success{% else %}text-muted{% endif %}"
+                                style="font-size:0.75rem;">
+                                {% if p.accuracy_score >= 0 %}+{% endif %}{{ p.accuracy_score }}d
+                            </span>
+                            {% endif %}
+                            {% endwith %}
+                        </div>
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% else %}
+                <tr>
+                    <th scope="row" class="align-middle text-center table-light">{{ row.class }}</th>
+                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 py-3 border-bottom-thick">
+                        real</td>
+                    {% for cell in row.countries %}
+                    <td class="align-middle text-center py-3 border-bottom-thick">
+                        {% with f=cell.final_action.formatted_actual %}
+                        {% if f %}<span class="text-dark">{{ f }}</span>{% else %}-{% endif %}
+                        {% endwith %}
+                    </td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 py-3 border-bottom-thick">
+                        {% with f=cell.filing.formatted_actual %}
+                        {% if f %}<span class="text-dark">{{ f }}</span>{% else %}-{% endif %}
+                        {% endwith %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -7,6 +7,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -111,18 +112,22 @@ def wait_instance_running(
 def wait_instance_healthy(
     ip: str,
     port: int = 80,
-    path: str = "/",
+    path: str = "/health/",
     timeout_sec: int = 600,
     poll_interval_sec: int = 10,
+    host_header: str | None = None,
 ) -> bool:
-    """Wait until HTTP GET to http://ip:port/path returns 200. Returns True if healthy within timeout."""
-    import urllib.error
+    """Wait until HTTP GET to http://ip:port/path returns 200. Returns True if healthy within timeout.
+    Uses /health/ by default. With nginx listen 80 default_server, requests by IP hit the app."""
     import urllib.request
+    import urllib.error
     deadline = time.monotonic() + timeout_sec
     url = f"http://{ip}:{port}{path}"
     while time.monotonic() < deadline:
         try:
             req = urllib.request.Request(url)
+            if host_header:
+                req.add_header("Host", host_header)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status == 200:
                     return True

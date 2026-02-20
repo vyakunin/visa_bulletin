@@ -1,6 +1,6 @@
 name: Deploy to Production
 
-# Manual only. Production deploys are done locally via scripts/deploy-zero-downtime.sh
+# Manual only. Production deploys are done locally via scripts/deploy.sh
 # so we don't need GitHub secrets (LIGHTSAIL_IP, LIGHTSAIL_SSH_KEY) in the repo.
 on:
   workflow_dispatch:

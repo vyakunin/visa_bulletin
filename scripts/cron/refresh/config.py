@@ -1,5 +1,5 @@
 # scripts/cron/refresh/config.py
-"""Refresh pipeline configuration: paths, .env, DB name, single_db_on_host."""
+"""Refresh pipeline configuration: paths, .env, DB name."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ class RefreshConfig:
     env_file: Path
     backup_dir: Path
     db_name: str
-    single_db_on_host: bool
     db_user: str = "visa_bulletin_user"
     db_host: str = "localhost"
     db_port: str = "5432"
@@ -49,7 +48,7 @@ class RefreshConfig:
 
 
 def load_config(project_root: Path | str | None = None) -> RefreshConfig:
-    """Load config from project root. Uses REFRESH_BACKUP_DIR and REFRESH_SINGLE_DB_ON_HOST from env."""
+    """Load config from project root. Uses REFRESH_BACKUP_DIR from env."""
     root = Path(project_root or os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")).resolve()
     env_file = root / ".env"
     if not env_file.exists():
@@ -57,7 +56,6 @@ def load_config(project_root: Path | str | None = None) -> RefreshConfig:
 
     backup_dir = _resolve_backup_dir(root)
     db_name = get_env_value(env_file, "DB_NAME") or ""
-    single_db = os.environ.get("REFRESH_SINGLE_DB_ON_HOST", "").strip().lower() in ("1", "true", "yes")
     db_user = get_env_value(env_file, "DB_USER") or "visa_bulletin_user"
     db_host = get_env_value(env_file, "DB_HOST") or "localhost"
     if db_host == "host.docker.internal":
@@ -69,7 +67,6 @@ def load_config(project_root: Path | str | None = None) -> RefreshConfig:
         env_file=root / ".env",
         backup_dir=backup_dir,
         db_name=db_name,
-        single_db_on_host=single_db,
         db_user=db_user,
         db_host=db_host,
         db_port=db_port,

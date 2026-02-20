@@ -37,6 +37,7 @@ py_binary(
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),
+        requirement("redis"),  # Django Redis cache backend when REDIS_URL/CACHE is Redis
     ],
     python_version = "PY3",
     env = {

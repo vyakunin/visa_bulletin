@@ -36,8 +36,7 @@ Profile is configured in `~/.aws/credentials` as `[visa-bulletin-deploy]`. Polic
 
 ```
 deployment/
-├── docker-compose.blue.yml    # Blue environment (port 8000)
-├── docker-compose.green.yml   # Green environment (port 8001)
+├── docker-compose.yml         # Single app stack (web + redis on port 8000)
 ├── nginx/                     # Nginx reverse proxy configs
 │   ├── visa-bulletin-nginx.conf      # Site block; uses main_timed + locations
 │   ├── visa-bulletin-locations.conf  # Location blocks; bot limit_req
@@ -179,22 +178,31 @@ The setup script configures:
 - Swap (2GB, swappiness=60)
 - Docker
 - PostgreSQL (optimized for bulk operations)
-- Blue-green databases
+- PostgreSQL (single DB per instance)
 - Monitoring (sysstat, atop, health_check.sh)
 - Bazel memory limits
 
-### Zero-Downtime Deployment
+### Deployment (instance-rotation)
+
+Deploy to a host; for zero-downtime, deploy to the inactive instance then switch traffic (DNS/static IP).
 
 ```bash
 # From your local machine
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
+./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
 ```
 
 This script:
-1. Deploys to inactive environment (blue or green)
-2. Waits for health checks
-3. Atomically switches Nginx proxy
-4. Stops old environment
+1. Pulls latest config and Docker image
+2. Starts the stack (web + redis on port 8000)
+3. Waits for health check
+4. Ensures nginx is running (port 80 → 8000)
+
+**One-time migration (staging from old blue/green):** If staging was previously running the old blue/green stack (`visa_bulletin_web_blue` / `visa_bulletin_web_green`), you can either:
+- **Do nothing:** The next time the refresh orchestrator runs, it will stop legacy containers (`visa_bulletin_web_blue`, `visa_bulletin_web_green`) and start the new stack (`visa_bulletin_web` + `visa_bulletin_redis`).
+- **Migrate now:** SSH to staging, pull code, stop old containers, start new stack:
+  ```bash
+  ssh staging_2Gb_vm "cd /opt/visa_bulletin && git pull && docker stop visa_bulletin_web_blue visa_bulletin_web_green visa_bulletin_redis 2>/dev/null || true; docker-compose -f deployment/docker-compose.yml up -d"
+  ```
 
 ## 📋 Manual Setup Steps
 
@@ -215,23 +223,23 @@ If not using the automated script, see `docs/deployment/NEW_INSTANCE_SETUP.md` f
 docker ps
 
 # View logs
-docker-compose -f deployment/docker-compose.blue.yml logs -f
+docker-compose -f deployment/docker-compose.yml logs -f
 
 # Restart service
-docker-compose -f deployment/docker-compose.blue.yml restart web-blue
+docker-compose -f deployment/docker-compose.yml restart web
 ```
 
 ### Database Operations
 
 ```bash
 # Connect to PostgreSQL
-sudo -u postgres psql -d visa_bulletin_blue
+sudo -u postgres psql -d visa_bulletin
 
 # Check database size
-sudo -u postgres psql -c "SELECT pg_size_pretty(pg_database_size('visa_bulletin_blue'));"
+sudo -u postgres psql -c "SELECT pg_size_pretty(pg_database_size('visa_bulletin'));"
 
 # Run VACUUM ANALYZE after bulk operations
-sudo -u postgres psql -d visa_bulletin_blue -c "VACUUM ANALYZE;"
+sudo -u postgres psql -d visa_bulletin -c "VACUUM ANALYZE;"
 ```
 
 ### Data Refresh
@@ -283,6 +291,46 @@ sudo -u postgres psql -c "SELECT * FROM pg_stat_activity WHERE state = 'active';
 sudo -u postgres psql -c "SELECT * FROM pg_stat_user_tables ORDER BY last_autovacuum DESC LIMIT 5;"
 ```
 
+### Database name (prod and staging)
+
+**Expected database name:** `visa_bulletin` (single DB per instance; no blue/green DBs).
+
+- **On each instance** (prod and staging), `.env` must have:
+  - `DB_NAME=visa_bulletin`
+- **On the active (prod) instance** only, for the orchestrator:
+  - `REFRESH_REMOTE_DB_NAME=visa_bulletin` (optional; defaults to `visa_bulletin` if unset)
+
+**Verify on both instances:**
+
+```bash
+# Prod: check .env and that the DB exists
+ssh prod_2Gb_vm "grep -E '^DB_NAME=' /opt/visa_bulletin/.env && sudo -u postgres psql -lqt | cut -d '|' -f 1 | tr -d ' ' | grep -x visa_bulletin && echo OK"
+
+# Staging: same
+ssh staging_2Gb_vm "grep -E '^DB_NAME=' /opt/visa_bulletin/.env && sudo -u postgres psql -lqt | cut -d '|' -f 1 | tr -d ' ' | grep -x visa_bulletin && echo OK"
+```
+
+**If either host still has `DB_NAME=visa_bulletin_blue` or `visa_bulletin_green`:**
+
+1. Create the `visa_bulletin` database if it does not exist:  
+   `sudo -u postgres psql -c "CREATE DATABASE visa_bulletin;"`  
+   (If you need to migrate data from the old DB: `pg_dump -U postgres visa_bulletin_blue | sudo -u postgres psql -d visa_bulletin` then run migrations if needed.)
+2. Update `.env`: set `DB_NAME=visa_bulletin`.
+3. Restart the app (e.g. `docker compose -f deployment/docker-compose.yml restart web` or systemd restart).
+4. Remove old DBs only after confirming the app works:  
+   `sudo -u postgres psql -c "DROP DATABASE IF EXISTS visa_bulletin_blue;"` (and `visa_bulletin_green` if present).
+
+### Orchestrator setup (instance-rotation)
+
+The orchestrator runs **on the active (prod) instance** and SSHs to the inactive (staging) to run the pipeline. On the **active** instance:
+
+1. **Required env** (e.g. in `.env` or export when running):
+   - `REFRESH_ACTIVE_INSTANCE_NAME`, `REFRESH_ACTIVE_INSTANCE_IP` = current prod (this host).
+   - `REFRESH_INACTIVE_INSTANCE_NAME`, `REFRESH_INACTIVE_INSTANCE_IP` = staging (inactive) host.
+   - `REFRESH_SSH_KEY_PATH` = path to the **private key** that the **inactive** instance accepts (e.g. `/home/ubuntu/.ssh/lightsail_visa_bulletin`). If unset, SSH uses default keys and will fail unless the inactive host has those in `authorized_keys`.
+2. **Optional:** `REFRESH_REMOTE_DB_NAME=visa_bulletin` (default); `REFRESH_ASSUME_INACTIVE_RUNNING=1` to skip AWS Lightsail instance start/state.
+3. **SSH key on prod:** Ensure the key at `REFRESH_SSH_KEY_PATH` exists on the prod host and that the **staging** host has the corresponding public key in `~/.ssh/authorized_keys`. If the key is missing on prod, copy it there once (e.g. from your machine or a secure store) and `chmod 600` it.
+
 ### Refresh pipeline logs
 
 When the instance-rotation refresh orchestrator runs (from prod), logs are in two places:
@@ -292,19 +340,64 @@ When the instance-rotation refresh orchestrator runs (from prod), logs are in tw
 | **Orchestrate log** | Prod (orchestrator) | `/tmp/orchestrate_resume.log` | Step names, resume checkpoint, and **last 80 lines** of each step’s output (tail from stage log after step completes). |
 | **Stage log** | Staging (inactive) | `/tmp/refresh_stage.log` | **Full detailed output** of the **current** step’s `run_bin` (ingest, index drop/recreate, cluster_job_titles, update_employer_stats, cluster_existing_employers, etc.). Overwritten when the next step starts. Env override: `REFRESH_STAGE_LOG_PATH`. |
 
-**Monitor progress (from your machine):**
+**Monitor progress (from your machine):** Check **both** logs—orchestrator (step list + per-step tail) and stage (live output of current step).
 
 ```bash
-# High-level: which step and last tail on prod
-ssh prod_2Gb_vm "tail -50 /tmp/orchestrate_resume.log"
+# 1. Orchestrator log (prod): step names, completion times, last 80 lines of each step when it finishes
+ssh prod_2Gb_vm "tail -80 /tmp/orchestrate_resume.log"
+# Or the log you started (e.g. /tmp/orchestrate_no_resume.log if you ran without --resume)
 
-# Detailed: full output of current step on staging (e.g. cluster_employers)
+# 2. Stage log (inactive host): full live output of the current step (ingest, indexes, cluster_employers, etc.)
+ssh staging_2Gb_vm "tail -100 /tmp/refresh_stage.log"
+# Or from prod via nested SSH:
 ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -100 /tmp/refresh_stage.log'"
-# Or follow live:
-ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -f /tmp/refresh_stage.log'"
+
+# Follow stage log live (replace staging_2Gb_vm with inactive host alias for your setup):
+ssh staging_2Gb_vm "tail -f /tmp/refresh_stage.log"
 ```
 
 After each step finishes, the orchestrator appends that step’s stage-log tail (80 lines) to the orchestrate log under `[step_name] stage output (last N lines):`.
+
+### Orchestration and health check by IP
+
+The orchestrator checks the **inactive (staging)** instance by **IP**. After starting Docker (web+redis), it **starts/reloads nginx** so port 80 proxies to the app. Nginx must use **`listen 80 default_server`** and proxy to 127.0.0.1:8000 so `http://<staging_ip>/health/` returns 200. No domain or Host header is required.
+
+**Inactive host requirement:** Nginx must be installed and the visa-bulletin site enabled (see NEW_INSTANCE_SETUP). If nginx is not running, the health check will time out; the orchestrator runs `sudo systemctl start nginx` and `reload nginx` after Docker so a stopped nginx is brought up automatically.
+
+### Orchestration and incremental refresh
+
+- **Is the old prod DB still around?** Yes. The instance that was serving prod keeps its data; only its *role* changes after a traffic switch. The **inactive** host runs the pipeline **incrementally** and then becomes the new prod.
+- **Incremental runs:** The pipeline **does not** drop or recreate the DB. Step **`ensure_db`** only ensures the database exists (creates if missing) and runs migrations; it never drops. Indexes are dropped only for bulk ingest, then restored. **`discover-and-ingest --all-domains`** ingests only **pending** sources; each run adds new/changed data.
+- **Cycle:** ensure_db → drop indexes → incremental ingest → restore indexes → backfills → clustering → … → start_services → warm_cache → smoke → (optional) traffic switch.
+
+**Employer clusters:** The pipeline **does not** drop employer clusters. Clustering is skipped when 0 salary-relevant (DOL) sources are ingested in that run (data already in DB). If the DB has 0 clustered employers but ≥100k salary records (e.g. after restore from backup), the pipeline **self-heals** by running post-processing (backfills, clustering, etc.) so clusters are populated; no manual re-run needed.
+
+**Warm cache:** The pipeline runs `warm_cache` on the host after Docker (web+redis) is up. Redis exposes port 6379 to the host (docker-compose); the step sets **REDIS_URL=redis://127.0.0.1:6379/1** so warm_cache warms the same Redis the app uses.
+
+### Manual run: staging rebuild, then orchestrator from warm/smoke (no traffic switch)
+
+To test only the post–data-prep steps (services, warm cache, health/smoke) without running the full pipeline or traffic switch:
+
+1. **Rebuild on staging** (so binaries are current):
+   ```bash
+   ssh staging_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:build_all 2>/dev/null; bazel shutdown 2>/dev/null; bash scripts/cron/build_all.sh"
+   ```
+
+2. **Stop all services on staging** (Docker, Gunicorn, Bazel) so the orchestrator starts from a clean state:
+   ```bash
+   ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker compose -f deployment/docker-compose.yml stop 2>/dev/null; pkill -f 'gunicorn.*django_config' || true; bazel shutdown 2>/dev/null; echo Done"
+   ```
+
+3. **Set checkpoint on staging** so the pipeline runs only `start_services`, `warm_cache`, `smoke_tests`. Create or overwrite the checkpoint with `last_step=vacuum_analyze`:
+   ```bash
+   ssh staging_2Gb_vm "mkdir -p /opt/visa_bulletin/backups && echo '{\"last_step\": \"vacuum_analyze\", \"timestamp\": \"$(date -Iseconds)Z\", \"inactive_db\": \"visa_bulletin\", \"index_snapshot\": \"\"}' > /opt/visa_bulletin/backups/refresh_checkpoint.json"
+   ```
+
+4. **Run orchestrator from prod** with `--resume` and `--no-traffic-switch` (ensure `REFRESH_ACTIVE_*` and `REFRESH_INACTIVE_*` are set in prod’s `.env`):
+   ```bash
+   ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts/cron:refresh_and_switch_py -- --resume --no-traffic-switch"
+   ```
+   The orchestrator will: wait for SSH and DB on staging, stop remote services (already stopped), run the pipeline (only post–vacuum steps), start Redis and Gunicorn on staging, wait for health, then exit without switching traffic.
 
 ## 🐛 Troubleshooting
 
@@ -321,7 +414,7 @@ If `curl http://<instance-ip>/` returns **400** while `curl -H 'Host: localhost'
    ```
 2. Restart the web container so it picks up the env:
    ```bash
-   cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d --force-recreate web-blue
+   cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml up -d --force-recreate web
    ```
 
 **New setups:** `scripts/setup_new_instance.sh` now detects the instance public IP (AWS metadata or ifconfig.me) and adds it to `ALLOWED_HOSTS` when creating `.env`.
@@ -372,7 +465,7 @@ sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 **Fetch app logs:**
 
 - **Systemd (current prod):** `ssh prod_2Gb_vm "journalctl -u visa-bulletin-web.service --no-pager -n 3000"`
-- **Docker:** `ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail=3000"` or `docker-compose -f deployment/docker-compose.blue.yml logs --tail=3000 web-blue`
+- **Docker:** `ssh prod_2Gb_vm "docker logs visa_bulletin_web --tail=3000"` or `docker-compose -f deployment/docker-compose.yml logs --tail=3000 web`
 
 **Find slow requests:**
 

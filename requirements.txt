@@ -34,3 +34,5 @@ ollama>=0.1.0  # Ollama Python library for HTTP API (async support for parallel 
 tqdm>=4.66.0  # Progress bar for long-running operations
 redis>=4.5.0  # Redis cache backend for Django (shared cache across gunicorn workers)
 rapidfuzz>=3.0.0  # Fast string similarity (optional for employer clustering Phase 2)
+pdfplumber>=0.10.0  # Extract tables from DOS issuance PDFs
+matplotlib>=3.8.0  # Visualization for analysis scripts

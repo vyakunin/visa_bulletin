@@ -46,6 +46,12 @@ class SalarySearchForm(forms.Form):
         choices=[],  # Will be populated dynamically in view
         widget=forms.Select(attrs={'class': 'form-select'})
     )
+    filing_year = forms.ChoiceField(
+        required=False,
+        label='Filing Year',
+        choices=[],  # Will be populated dynamically in view
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
     page = forms.IntegerField(
         required=False,
         initial=1,

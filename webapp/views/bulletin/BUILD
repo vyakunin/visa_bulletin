@@ -21,3 +21,14 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "vqs_api",
+    srcs = ["vqs_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/business/vqs:solver",
+        "//models/enums:country",
+        requirement("Django"),
+    ],
+)
