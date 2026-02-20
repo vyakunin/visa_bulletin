@@ -4,9 +4,8 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0031_salaryrecord_sr_worksite_employer'),
+        ("models", "0031_salaryrecord_sr_worksite_employer"),
     ]
 
     operations = [
@@ -20,17 +19,17 @@ class Migration(migrations.Migration):
         ),
         # Composite indexes for program=h1b and program=perm ordering
         migrations.AddIndex(
-            model_name='employercluster',
+            model_name="employercluster",
             index=models.Index(
-                fields=['-total_lca_count', 'id'],
-                name='sec_total_lca_id',
+                fields=["-total_lca_count", "id"],
+                name="sec_total_lca_id",
             ),
         ),
         migrations.AddIndex(
-            model_name='employercluster',
+            model_name="employercluster",
             index=models.Index(
-                fields=['-total_perm_count', 'id'],
-                name='sec_total_perm_id',
+                fields=["-total_perm_count", "id"],
+                name="sec_total_perm_id",
             ),
         ),
     ]

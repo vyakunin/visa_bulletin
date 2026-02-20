@@ -9,7 +9,7 @@ import argparse
 import os
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
 
 django.setup()
@@ -30,7 +30,9 @@ script_logger = ScriptLogger(__file__)
 
 def show_pending_reviews(limit: int | None = None):
     """Display pending reviews with similarity scores"""
-    reviews = EmployerClusteringReview.objects.filter(status='pending').order_by('-similarity_score')
+    reviews = EmployerClusteringReview.objects.filter(status="pending").order_by(
+        "-similarity_score"
+    )
 
     if limit:
         reviews = reviews[:limit]
@@ -49,9 +51,15 @@ def show_pending_reviews(limit: int | None = None):
         emp2 = review.employer2
         emp1_str = f"{emp1.name[:35]}..." if len(emp1.name) > 35 else emp1.name
         emp2_str = f"{emp2.name[:35]}..." if len(emp2.name) > 35 else emp2.name
-        reason = review.match_reason[:30] + "..." if len(review.match_reason) > 30 else review.match_reason
+        reason = (
+            review.match_reason[:30] + "..."
+            if len(review.match_reason) > 30
+            else review.match_reason
+        )
 
-        print(f"{review.id:<6} {emp1_str:<40} {emp2_str:<40} {review.similarity_score:<8.3f} {reason}")
+        print(
+            f"{review.id:<6} {emp1_str:<40} {emp2_str:<40} {review.similarity_score:<8.3f} {reason}"
+        )
 
     print()
 
@@ -59,10 +67,12 @@ def show_pending_reviews(limit: int | None = None):
 def process_llm_reviews(batch_size: int = 100, model: str = "llama3.2"):
     """
     Automatically review using local LLM (ollama)
-    
+
     Falls back to human review if LLM unavailable.
     """
-    reviews = EmployerClusteringReview.objects.filter(status='pending').order_by('-similarity_score')[:batch_size]
+    reviews = EmployerClusteringReview.objects.filter(status="pending").order_by(
+        "-similarity_score"
+    )[:batch_size]
 
     if not reviews.exists():
         print("No pending reviews to process.")
@@ -72,8 +82,9 @@ def process_llm_reviews(batch_size: int = 100, model: str = "llama3.2"):
 
     # Check if ollama is available
     import subprocess
+
     try:
-        result = subprocess.run(['ollama', 'list'], capture_output=True, timeout=5)
+        result = subprocess.run(["ollama", "list"], capture_output=True, timeout=5)
         if result.returncode != 0:
             print("Warning: ollama not available, skipping LLM review")
             return
@@ -86,20 +97,22 @@ def process_llm_reviews(batch_size: int = 100, model: str = "llama3.2"):
         result = llm_review_match(review.employer1, review.employer2, model)
 
         if result:
-            review.status = 'approved' if result['is_match'] else 'rejected'
-            review.reviewed_by = 'llm'
+            review.status = "approved" if result["is_match"] else "rejected"
+            review.reviewed_by = "llm"
             review.reviewed_at = timezone.now()
-            review.notes = result.get('reasoning', '')
+            review.notes = result.get("reasoning", "")
             review.save()
             processed += 1
 
     print(f"Processed {processed} reviews with LLM.")
 
 
-def llm_review_match(employer1: Employer, employer2: Employer, model: str = "llama3.2") -> dict | None:
+def llm_review_match(
+    employer1: Employer, employer2: Employer, model: str = "llama3.2"
+) -> dict | None:
     """
     Use local LLM (ollama) to determine if two employers are the same
-    
+
     Returns: {
         'is_match': bool,
         'confidence': float,
@@ -123,28 +136,31 @@ Respond with JSON only:
 
     try:
         result = subprocess.run(
-            ['ollama', 'run', model],
+            ["ollama", "run", model],
             input=prompt,
             text=True,
             capture_output=True,
-            timeout=30
+            timeout=30,
         )
 
         if result.returncode != 0:
-            logger.warning(f"LLM review failed for {employer1.name} vs {employer2.name}")
+            logger.warning(
+                f"LLM review failed for {employer1.name} vs {employer2.name}"
+            )
             return None
 
         # Parse JSON response
         output = result.stdout.strip()
         # Try to extract JSON from response (LLM might add extra text)
         import re
-        json_match = re.search(r'\{[^}]+\}', output)
+
+        json_match = re.search(r"\{[^}]+\}", output)
         if json_match:
             data = json.loads(json_match.group())
             return {
-                'is_match': data.get('is_match', False),
-                'confidence': data.get('confidence', 0.5),
-                'reasoning': data.get('reasoning', '')
+                "is_match": data.get("is_match", False),
+                "confidence": data.get("confidence", 0.5),
+                "reasoning": data.get("reasoning", ""),
             }
 
         return None
@@ -155,7 +171,9 @@ Respond with JSON only:
 
 def human_review_interactive():
     """Interactive CLI for human review"""
-    reviews = EmployerClusteringReview.objects.filter(status='pending').order_by('-similarity_score')
+    reviews = EmployerClusteringReview.objects.filter(status="pending").order_by(
+        "-similarity_score"
+    )
 
     if not reviews.exists():
         print("No pending reviews.")
@@ -181,24 +199,24 @@ def human_review_interactive():
         while True:
             choice = input("\nChoice: ").strip().lower()
 
-            if choice == 'y':
-                review.status = 'approved'
-                review.reviewed_by = 'human'
+            if choice == "y":
+                review.status = "approved"
+                review.reviewed_by = "human"
                 review.reviewed_at = timezone.now()
                 review.save()
                 print("✓ Approved - Same employer")
                 break
-            elif choice == 'n':
-                review.status = 'rejected'
-                review.reviewed_by = 'human'
+            elif choice == "n":
+                review.status = "rejected"
+                review.reviewed_by = "human"
                 review.reviewed_at = timezone.now()
                 review.save()
                 print("✗ Rejected - Different employers")
                 break
-            elif choice == 's':
+            elif choice == "s":
                 print("Skipped")
                 break
-            elif choice == 'q':
+            elif choice == "q":
                 print("Exiting review")
                 return
             else:
@@ -207,7 +225,7 @@ def human_review_interactive():
 
 def apply_approved_matches():
     """Merge employers based on approved reviews"""
-    approved = EmployerClusteringReview.objects.filter(status='approved')
+    approved = EmployerClusteringReview.objects.filter(status="approved")
 
     if not approved.exists():
         print("No approved matches to apply.")
@@ -224,9 +242,7 @@ def apply_approved_matches():
             if emp1.canonical_cluster:
                 cluster = emp1.canonical_cluster
             else:
-                cluster = EmployerCluster.objects.create(
-                    canonical_name=emp1.name
-                )
+                cluster = EmployerCluster.objects.create(canonical_name=emp1.name)
                 emp1.canonical_cluster = cluster
                 emp1.save()
 
@@ -235,11 +251,17 @@ def apply_approved_matches():
             emp2.save()
 
             # Update cluster stats
-            cluster.total_lca_count = sum(e.total_lca_count for e in cluster.employers.all())
-            cluster.total_perm_count = sum(e.total_perm_count for e in cluster.employers.all())
+            cluster.total_lca_count = sum(
+                e.total_lca_count for e in cluster.employers.all()
+            )
+            cluster.total_perm_count = sum(
+                e.total_perm_count for e in cluster.employers.all()
+            )
 
             # Calculate average salary
-            salaries = [float(e.avg_salary) for e in cluster.employers.all() if e.avg_salary]
+            salaries = [
+                float(e.avg_salary) for e in cluster.employers.all() if e.avg_salary
+            ]
             if salaries:
                 cluster.avg_salary = sum(salaries) / len(salaries)
 
@@ -249,38 +271,41 @@ def apply_approved_matches():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Review employer clustering matches')
-    parser.add_argument('action', choices=['show', 'llm', 'human', 'apply'],
-                       help='Action to perform')
-    parser.add_argument('--limit', type=int, help='Limit number of reviews to show/process')
-    parser.add_argument('--batch-size', type=int, default=100,
-                       help='Batch size for LLM processing (default: 100)')
-    parser.add_argument('--model', type=str, default='llama3.2',
-                       help='Ollama model to use (default: llama3.2)')
+    parser = argparse.ArgumentParser(description="Review employer clustering matches")
+    parser.add_argument(
+        "action", choices=["show", "llm", "human", "apply"], help="Action to perform"
+    )
+    parser.add_argument(
+        "--limit", type=int, help="Limit number of reviews to show/process"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Batch size for LLM processing (default: 100)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="llama3.2",
+        help="Ollama model to use (default: llama3.2)",
+    )
 
     args = parser.parse_args()
 
     script_logger.log_call(
-        args=vars(args),
-        context=f'Review employer clustering: {args.action}'
+        args=vars(args), context=f"Review employer clustering: {args.action}"
     )
 
-    if args.action == 'show':
+    if args.action == "show":
         show_pending_reviews(limit=args.limit)
-    elif args.action == 'llm':
+    elif args.action == "llm":
         process_llm_reviews(batch_size=args.batch_size, model=args.model)
-    elif args.action == 'human':
+    elif args.action == "human":
         human_review_interactive()
-    elif args.action == 'apply':
+    elif args.action == "apply":
         apply_approved_matches()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-
-
-
-
-
-

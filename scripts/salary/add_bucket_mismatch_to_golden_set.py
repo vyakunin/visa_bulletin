@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
 
 django.setup()
@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
 
-def find_employer_by_name(name: str, city: str = '', state: str = '') -> Employer | None:
+def find_employer_by_name(
+    name: str, city: str = "", state: str = ""
+) -> Employer | None:
     """Find employer by name, optionally matching city/state"""
     query = Employer.objects.filter(name=name)
     if city:
@@ -41,27 +43,29 @@ def find_employer_by_name(name: str, city: str = '', state: str = '') -> Employe
     if len(employers) == 1:
         return employers[0]
     elif len(employers) > 1:
-        logger.warning(f"Multiple employers found for '{name}' ({city}, {state}), using first")
+        logger.warning(
+            f"Multiple employers found for '{name}' ({city}, {state}), using first"
+        )
         return employers[0]
     return None
 
 
 def is_obviously_same(candidate: dict) -> bool:
     """Determine if candidate is obviously the same company"""
-    norm1 = candidate['emp1_normalized']
-    norm2 = candidate['emp2_normalized']
+    norm1 = candidate["emp1_normalized"]
+    norm2 = candidate["emp2_normalized"]
 
     # Normalize further: remove punctuation, extra spaces, hyphens, apostrophes
     def clean_for_comparison(s):
         s = s.lower()
         # Remove punctuation (including apostrophes)
         for char in ".,/&()-'":
-            s = s.replace(char, ' ')
+            s = s.replace(char, " ")
         # Normalize "&" to "and"
-        s = s.replace('&', ' and ')
+        s = s.replace("&", " and ")
         # Normalize spaces
         words = [w for w in s.split() if w]
-        return ' '.join(words)
+        return " ".join(words)
 
     clean1 = clean_for_comparison(norm1)
     clean2 = clean_for_comparison(norm2)
@@ -76,6 +80,7 @@ def is_obviously_same(candidate: dict) -> bool:
 
     # Filter out generic words (from shared module)
     from lib.business.salary.generic_words import ALL_GENERIC_WORDS
+
     significant1 = {w for w in words1 if len(w) > 2 and w not in ALL_GENERIC_WORDS}
     significant2 = {w for w in words2 if len(w) > 2 and w not in ALL_GENERIC_WORDS}
 
@@ -93,25 +98,37 @@ def is_obviously_same(candidate: dict) -> bool:
             for w1, w2 in zip(words1_list, words2_list):
                 if w1 != w2:
                     # Check if one is plural of the other
-                    if not (w1 + 's' == w2 or w1 == w2 + 's' or
-                            w1 + 'es' == w2 or w1 == w2 + 'es'):
+                    if not (
+                        w1 + "s" == w2
+                        or w1 == w2 + "s"
+                        or w1 + "es" == w2
+                        or w1 == w2 + "es"
+                    ):
                         mismatches += 1
             if mismatches == 0:
                 return True
 
     # Very high similarity (>= 0.98) - likely same company with typos/normalization issues
-    if candidate['similarity'] >= 0.98:
+    if candidate["similarity"] >= 0.98:
         return True
 
     # High similarity (>= 0.97) with same core structure suggests same company
-    if candidate['similarity'] >= 0.97:
+    if candidate["similarity"] >= 0.97:
         # Check if first significant word matches
-        first_word1 = next((w for w in clean1.split() if len(w) > 2 and w not in ALL_GENERIC_WORDS), None)
-        first_word2 = next((w for w in clean2.split() if len(w) > 2 and w not in ALL_GENERIC_WORDS), None)
+        first_word1 = next(
+            (w for w in clean1.split() if len(w) > 2 and w not in ALL_GENERIC_WORDS),
+            None,
+        )
+        first_word2 = next(
+            (w for w in clean2.split() if len(w) > 2 and w not in ALL_GENERIC_WORDS),
+            None,
+        )
         if first_word1 and first_word2 and first_word1 == first_word2:
             # If most words match, likely same
             common_words = significant1 & significant2
-            if len(common_words) >= min(len(significant1), len(significant2)) * 0.7:  # Lowered threshold to 70%
+            if (
+                len(common_words) >= min(len(significant1), len(significant2)) * 0.7
+            ):  # Lowered threshold to 70%
                 return True
 
     return False
@@ -120,8 +137,8 @@ def is_obviously_same(candidate: dict) -> bool:
 def is_obviously_different(candidate: dict) -> bool:
     """Determine if candidate is obviously different companies"""
     # Different core company names (not just structural words)
-    norm1 = candidate['emp1_normalized']
-    norm2 = candidate['emp2_normalized']
+    norm1 = candidate["emp1_normalized"]
+    norm2 = candidate["emp2_normalized"]
 
     # Extract first significant word (company name)
     words1 = [w for w in norm1.split() if len(w) > 2]
@@ -133,16 +150,17 @@ def is_obviously_different(candidate: dict) -> bool:
             # But check if they're just abbreviations (e.g., "c&a" vs "c and a")
             norm1_lower = norm1.lower()
             norm2_lower = norm2.lower()
-            if words1[0].lower() not in norm2_lower and words2[0].lower() not in norm1_lower:
+            if (
+                words1[0].lower() not in norm2_lower
+                and words2[0].lower() not in norm1_lower
+            ):
                 return True
 
     return False
 
 
 def add_candidates_to_golden_set(
-    candidates_file: Path,
-    dry_run: bool = False,
-    auto_approve_obvious: bool = True
+    candidates_file: Path, dry_run: bool = False, auto_approve_obvious: bool = True
 ):
     """Add bucket mismatch candidates to golden set"""
     logger.info(f"Loading candidates from {candidates_file}")
@@ -200,65 +218,70 @@ def add_candidates_to_golden_set(
     errors = 0
 
     with transaction.atomic():
-        all_candidates = obviously_same + obviously_different if auto_approve_obvious else []
+        all_candidates = (
+            obviously_same + obviously_different if auto_approve_obvious else []
+        )
         all_candidates.extend(needs_review)  # Add needs_review so user can review them
 
         for candidate in all_candidates:
             try:
                 # Find employers
                 emp1 = find_employer_by_name(
-                    candidate['emp1_name'],
-                    candidate.get('emp1_city', ''),
-                    candidate.get('emp1_state', '')
+                    candidate["emp1_name"],
+                    candidate.get("emp1_city", ""),
+                    candidate.get("emp1_state", ""),
                 )
                 emp2 = find_employer_by_name(
-                    candidate['emp2_name'],
-                    candidate.get('emp2_city', ''),
-                    candidate.get('emp2_state', '')
+                    candidate["emp2_name"],
+                    candidate.get("emp2_city", ""),
+                    candidate.get("emp2_state", ""),
                 )
 
                 if not emp1 or not emp2:
-                    logger.warning(f"Could not find employers: '{candidate['emp1_name']}' or '{candidate['emp2_name']}'")
+                    logger.warning(
+                        f"Could not find employers: '{candidate['emp1_name']}' or '{candidate['emp2_name']}'"
+                    )
                     skipped += 1
                     continue
 
                 # Check if review already exists
                 existing = EmployerClusteringReview.objects.filter(
-                    employer1=emp1,
-                    employer2=emp2
+                    employer1=emp1, employer2=emp2
                 ).first()
 
                 if existing:
-                    logger.debug(f"Review already exists for '{emp1.name}' vs '{emp2.name}'")
+                    logger.debug(
+                        f"Review already exists for '{emp1.name}' vs '{emp2.name}'"
+                    )
                     skipped += 1
                     continue
 
                 # Determine status
                 if candidate in obviously_same:
-                    status = 'approved'
-                    reviewed_by = 'auto-same'
+                    status = "approved"
+                    reviewed_by = "auto-same"
                 elif candidate in obviously_different:
-                    status = 'rejected'
-                    reviewed_by = 'auto-different'
+                    status = "rejected"
+                    reviewed_by = "auto-different"
                 else:
-                    status = 'pending'
-                    reviewed_by = 'needs-review'
+                    status = "pending"
+                    reviewed_by = "needs-review"
 
                 # Create review
                 review = EmployerClusteringReview.objects.create(
                     employer1=emp1,
                     employer2=emp2,
-                    similarity_score=candidate['similarity'],
-                    match_reason=candidate.get('reason', ''),
+                    similarity_score=candidate["similarity"],
+                    match_reason=candidate.get("reason", ""),
                     status=status,
                     reviewed_by=reviewed_by,
-                    reviewed_at=timezone.now() if status != 'pending' else None,
-                    notes=f"Bucket mismatch candidate: {candidate.get('reason', '')}"
+                    reviewed_at=timezone.now() if status != "pending" else None,
+                    notes=f"Bucket mismatch candidate: {candidate.get('reason', '')}",
                 )
 
-                if status == 'approved':
+                if status == "approved":
                     added_same += 1
-                elif status == 'rejected':
+                elif status == "rejected":
                     added_different += 1
 
             except Exception as e:
@@ -278,39 +301,36 @@ def main():
         description="Add bucket mismatch candidates to golden set"
     )
     parser.add_argument(
-        'candidates_file',
-        type=Path,
-        help='JSONL file with bucket mismatch candidates'
+        "candidates_file", type=Path, help="JSONL file with bucket mismatch candidates"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be added without actually adding'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be added without actually adding",
     )
     parser.add_argument(
-        '--no-auto-approve',
-        action='store_true',
-        help='Do not auto-approve obvious cases (add all as pending)'
+        "--no-auto-approve",
+        action="store_true",
+        help="Do not auto-approve obvious cases (add all as pending)",
     )
 
     args = parser.parse_args()
 
     script_logger.log_call(
         args={
-            'candidates_file': str(args.candidates_file),
-            'dry_run': args.dry_run,
-            'no_auto_approve': args.no_auto_approve,
+            "candidates_file": str(args.candidates_file),
+            "dry_run": args.dry_run,
+            "no_auto_approve": args.no_auto_approve,
         },
-        context='Adding bucket mismatch candidates to golden set'
+        context="Adding bucket mismatch candidates to golden set",
     )
 
     add_candidates_to_golden_set(
         args.candidates_file,
         dry_run=args.dry_run,
-        auto_approve_obvious=not args.no_auto_approve
+        auto_approve_obvious=not args.no_auto_approve,
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

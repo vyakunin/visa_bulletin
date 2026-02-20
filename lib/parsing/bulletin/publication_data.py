@@ -4,6 +4,7 @@ Data class for visa bulletin publications.
 Container: PublicationData(url, content, publication_date)
 """
 
+
 class PublicationData:
     def __init__(self, url, content, publication_date):
         self.url = url
@@ -12,14 +13,3 @@ class PublicationData:
 
     def __repr__(self):
         return f"PublicationData(url={self.url}, content_length={len(self.content)}, publication_date={self.publication_date})"
-
-
-
-
-
-
-
-
-
-
-

@@ -26,13 +26,10 @@ class TestVersioning:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
-        run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.COMPLETED
-        )
+        run = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
 
         version = create_version(run, "dol_lca_2024q4_v1")
 
@@ -46,7 +43,7 @@ class TestVersioning:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run1 = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
@@ -63,7 +60,7 @@ class TestVersioning:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run1 = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
@@ -89,7 +86,7 @@ class TestVersioning:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run1 = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
@@ -103,7 +100,7 @@ class TestVersioning:
             name="Test Employer",
             name_normalized="TEST_EMPLOYER",
             city="Test City",
-            state="CA"
+            state="CA",
         )
 
         record1 = SalaryRecord.objects.create(
@@ -114,7 +111,7 @@ class TestVersioning:
             job_title="Engineer",
             wage_annual=100000,
             source_file="test.xlsx",
-            ingest_version=version1
+            ingest_version=version1,
         )
 
         record2 = SalaryRecord.objects.create(
@@ -125,7 +122,7 @@ class TestVersioning:
             job_title="Manager",
             wage_annual=150000,
             source_file="test.xlsx",
-            ingest_version=version2
+            ingest_version=version2,
         )
 
         # Activate version2
@@ -135,9 +132,9 @@ class TestVersioning:
         result = rollback_version("v2")
 
         # Check results
-        assert result['version_tag'] == "v2"
-        assert result['salary_records_deleted'] == 1
-        assert result['previous_version_activated'] == "v1"
+        assert result["version_tag"] == "v2"
+        assert result["salary_records_deleted"] == 1
+        assert result["previous_version_activated"] == "v1"
 
         # Verify record2 deleted, record1 still exists
         assert SalaryRecord.objects.filter(case_number="CASE1").exists()
@@ -154,13 +151,3 @@ class TestVersioning:
         """Test rolling back non-existent version raises error"""
         with pytest.raises(ValueError, match="Version not found"):
             rollback_version("nonexistent")
-
-
-
-
-
-
-
-
-
-

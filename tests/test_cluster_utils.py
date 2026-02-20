@@ -12,7 +12,7 @@ class TestNormalizeCanonicalName(unittest.TestCase):
         """Test that names are converted to lowercase"""
         self.assertEqual(
             normalize_canonical_name("BBC RETAIL AND INTERNET LLC"),
-            "bbc retail and internet llc"
+            "bbc retail and internet llc",
         )
 
     def test_mixed_case_normalization(self):
@@ -32,8 +32,7 @@ class TestNormalizeCanonicalName(unittest.TestCase):
     def test_preserves_spaces_and_punctuation(self):
         """Test that spaces and punctuation are preserved"""
         self.assertEqual(
-            normalize_canonical_name("J.P. Morgan Chase & Co"),
-            "j.p. morgan chase & co"
+            normalize_canonical_name("J.P. Morgan Chase & Co"), "j.p. morgan chase & co"
         )
 
     def test_empty_string(self):
@@ -48,19 +47,14 @@ class TestNormalizeCanonicalName(unittest.TestCase):
 
     def test_numbers_preserved(self):
         """Test that numbers are preserved"""
-        self.assertEqual(
-            normalize_canonical_name("3M Company"),
-            "3m company"
-        )
+        self.assertEqual(normalize_canonical_name("3M Company"), "3m company")
 
     def test_unicode_characters(self):
         """Test that unicode characters are handled"""
         self.assertEqual(
-            normalize_canonical_name("Café Corporation"),
-            "café corporation"
+            normalize_canonical_name("Café Corporation"), "café corporation"
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-

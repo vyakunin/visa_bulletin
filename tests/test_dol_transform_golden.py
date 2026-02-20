@@ -31,26 +31,33 @@ class TestDOLTransformGolden:
     @classmethod
     def load_test_data(cls) -> list[dict]:
         """Load golden test data from YAML file"""
-        test_data_file = get_data_file_path('tests/data/dol_golden_test_data.yaml')
+        test_data_file = get_data_file_path("tests/data/dol_golden_test_data.yaml")
 
         if test_data_file is None:
             # Fallback: try workspace directory
             import os
-            workspace_dir = os.environ.get('BUILD_WORKSPACE_DIRECTORY')
+
+            workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
             if workspace_dir:
-                test_data_file = Path(workspace_dir) / 'tests' / 'data' / 'dol_golden_test_data.yaml'
+                test_data_file = (
+                    Path(workspace_dir) / "tests" / "data" / "dol_golden_test_data.yaml"
+                )
             else:
-                raise FileNotFoundError("Could not find test data file: tests/data/dol_golden_test_data.yaml")
+                raise FileNotFoundError(
+                    "Could not find test data file: tests/data/dol_golden_test_data.yaml"
+                )
 
         with open(test_data_file) as f:
             data = yaml.safe_load(f)
 
-        return data.get('test_cases', [])
+        return data.get("test_cases", [])
 
-    def serialize_record(self, record: SalaryRecord | WorksiteRecord | None) -> dict | None:
+    def serialize_record(
+        self, record: SalaryRecord | WorksiteRecord | None
+    ) -> dict | None:
         """
         Serialize record to dict for comparison.
-        
+
         Returns None if record is None, otherwise uses record.to_dict()
         """
         if record is None:
@@ -58,19 +65,16 @@ class TestDOLTransformGolden:
         return record.to_dict()
 
     def compare_records(
-        self,
-        actual: dict | None,
-        expected: dict | None,
-        record_type: str
+        self, actual: dict | None, expected: dict | None, record_type: str
     ) -> list[str]:
         """
         Compare actual and expected records, return list of differences.
-        
+
         Args:
             actual: Actual serialized record (from transform())
             expected: Expected serialized record (from YAML)
             record_type: "SalaryRecord" or "WorksiteRecord"
-        
+
         Returns:
             List of difference descriptions (empty if match)
         """
@@ -93,7 +97,7 @@ class TestDOLTransformGolden:
             expected_val = expected.get(key)
 
             # Handle employer_id specially (may differ due to get_or_create)
-            if key == 'employer_id' and record_type == 'SalaryRecord':
+            if key == "employer_id" and record_type == "SalaryRecord":
                 # For SalaryRecord, we only check that employer_id is not None if expected is not None
                 if expected_val is not None and actual_val is None:
                     differences.append(f"{key}: expected {expected_val} but got None")
@@ -119,26 +123,26 @@ class TestDOLTransformGolden:
         failures = []
 
         for i, test_case in enumerate(test_cases):
-            plugin_type = test_case.get('plugin_type')
-            record_type = test_case.get('record_type')
-            input_dict = test_case.get('input', {})
-            expected_result = test_case.get('expected_result')
-            expected_error = test_case.get('expected_error')
-            source_file = test_case.get('source_file', 'unknown')
-            row_number = test_case.get('row_number', 'unknown')
+            plugin_type = test_case.get("plugin_type")
+            record_type = test_case.get("record_type")
+            input_dict = test_case.get("input", {})
+            expected_result = test_case.get("expected_result")
+            expected_error = test_case.get("expected_error")
+            source_file = test_case.get("source_file", "unknown")
+            row_number = test_case.get("row_number", "unknown")
 
             # Skip if not annotated yet
             if record_type is None:
                 continue
 
             # Create plugin instance
-            if plugin_type == 'PERM':
+            if plugin_type == "PERM":
                 plugin = PERMSalaryDataSourcePlugin(skip_clustering=True)
-            elif plugin_type == 'H1B':
+            elif plugin_type == "H1B":
                 plugin = H1BSalaryDataSourcePlugin(skip_clustering=True)
             else:
                 failures.append(
-                    f"Case {i+1} ({source_file}:{row_number}): Unknown plugin_type: {plugin_type}"
+                    f"Case {i + 1} ({source_file}:{row_number}): Unknown plugin_type: {plugin_type}"
                 )
                 continue
 
@@ -147,22 +151,22 @@ class TestDOLTransformGolden:
                 result = plugin.transform(input_dict)
             except Exception as e:
                 failures.append(
-                    f"Case {i+1} ({source_file}:{row_number}): Exception in transform(): {e}"
+                    f"Case {i + 1} ({source_file}:{row_number}): Exception in transform(): {e}"
                 )
                 continue
 
             # Verify record type
-            if record_type == 'SalaryRecord':
+            if record_type == "SalaryRecord":
                 if not isinstance(result, SalaryRecord):
                     failures.append(
-                        f"Case {i+1} ({source_file}:{row_number}): "
+                        f"Case {i + 1} ({source_file}:{row_number}): "
                         f"Expected SalaryRecord but got {type(result).__name__}"
                     )
                     continue
-            elif record_type == 'WorksiteRecord':
+            elif record_type == "WorksiteRecord":
                 if not isinstance(result, WorksiteRecord):
                     failures.append(
-                        f"Case {i+1} ({source_file}:{row_number}): "
+                        f"Case {i + 1} ({source_file}:{row_number}): "
                         f"Expected WorksiteRecord but got {type(result).__name__}"
                     )
                     continue
@@ -172,17 +176,19 @@ class TestDOLTransformGolden:
                 # Should be None (validation failure)
                 if result is not None:
                     failures.append(
-                        f"Case {i+1} ({source_file}:{row_number}): "
+                        f"Case {i + 1} ({source_file}:{row_number}): "
                         f"Expected None (error: {expected_error}) but got {type(result).__name__}"
                     )
             else:
                 # Should succeed - compare fields
                 actual_dict = self.serialize_record(result)
-                differences = self.compare_records(actual_dict, expected_result, record_type)
+                differences = self.compare_records(
+                    actual_dict, expected_result, record_type
+                )
 
                 if differences:
                     failures.append(
-                        f"Case {i+1} ({source_file}:{row_number}): Field differences:\n"
+                        f"Case {i + 1} ({source_file}:{row_number}): Field differences:\n"
                         + "\n".join(f"  - {d}" for d in differences)
                     )
 
@@ -195,7 +201,7 @@ class TestDOLTransformGolden:
     def test_perm_cases(self):
         """Test only PERM cases"""
         test_cases = self.load_test_data()
-        perm_cases = [tc for tc in test_cases if tc.get('plugin_type') == 'PERM']
+        perm_cases = [tc for tc in test_cases if tc.get("plugin_type") == "PERM"]
 
         if not perm_cases:
             pytest.skip("No PERM test cases found")
@@ -205,12 +211,12 @@ class TestDOLTransformGolden:
         failures = []
 
         for i, test_case in enumerate(perm_cases):
-            record_type = test_case.get('record_type')
-            input_dict = test_case.get('input', {})
-            expected_result = test_case.get('expected_result')
-            expected_error = test_case.get('expected_error')
-            source_file = test_case.get('source_file', 'unknown')
-            row_number = test_case.get('row_number', 'unknown')
+            record_type = test_case.get("record_type")
+            input_dict = test_case.get("input", {})
+            expected_result = test_case.get("expected_result")
+            expected_error = test_case.get("expected_error")
+            source_file = test_case.get("source_file", "unknown")
+            row_number = test_case.get("row_number", "unknown")
 
             if record_type is None:
                 continue
@@ -219,42 +225,49 @@ class TestDOLTransformGolden:
                 result = plugin.transform(input_dict)
             except Exception as e:
                 failures.append(
-                    f"PERM case {i+1} ({source_file}:{row_number}): Exception: {e}"
+                    f"PERM case {i + 1} ({source_file}:{row_number}): Exception: {e}"
                 )
                 continue
 
             if expected_error:
                 if result is not None:
                     failures.append(
-                        f"PERM case {i+1} ({source_file}:{row_number}): "
+                        f"PERM case {i + 1} ({source_file}:{row_number}): "
                         f"Expected None (error: {expected_error}) but got {type(result).__name__}"
                     )
             else:
                 if not isinstance(result, SalaryRecord):
                     failures.append(
-                        f"PERM case {i+1} ({source_file}:{row_number}): "
+                        f"PERM case {i + 1} ({source_file}:{row_number}): "
                         f"Expected SalaryRecord but got {type(result).__name__}"
                     )
                     continue
 
                 actual_dict = self.serialize_record(result)
-                differences = self.compare_records(actual_dict, expected_result, record_type)
+                differences = self.compare_records(
+                    actual_dict, expected_result, record_type
+                )
 
                 if differences:
                     failures.append(
-                        f"PERM case {i+1} ({source_file}:{row_number}): Differences:\n"
+                        f"PERM case {i + 1} ({source_file}:{row_number}): Differences:\n"
                         + "\n".join(f"  - {d}" for d in differences)
                     )
 
         if failures:
-            pytest.fail(f"Failed {len(failures)}/{len(perm_cases)} PERM cases:\n\n" + "\n\n".join(failures))
+            pytest.fail(
+                f"Failed {len(failures)}/{len(perm_cases)} PERM cases:\n\n"
+                + "\n\n".join(failures)
+            )
 
     def test_h1b_salary_cases(self):
         """Test only H1B SalaryRecord cases"""
         test_cases = self.load_test_data()
         h1b_salary_cases = [
-            tc for tc in test_cases
-            if tc.get('plugin_type') == 'H1B' and tc.get('record_type') == 'SalaryRecord'
+            tc
+            for tc in test_cases
+            if tc.get("plugin_type") == "H1B"
+            and tc.get("record_type") == "SalaryRecord"
         ]
 
         if not h1b_salary_cases:
@@ -264,40 +277,42 @@ class TestDOLTransformGolden:
         failures = []
 
         for i, test_case in enumerate(h1b_salary_cases):
-            input_dict = test_case.get('input', {})
-            expected_result = test_case.get('expected_result')
-            expected_error = test_case.get('expected_error')
-            source_file = test_case.get('source_file', 'unknown')
-            row_number = test_case.get('row_number', 'unknown')
+            input_dict = test_case.get("input", {})
+            expected_result = test_case.get("expected_result")
+            expected_error = test_case.get("expected_error")
+            source_file = test_case.get("source_file", "unknown")
+            row_number = test_case.get("row_number", "unknown")
 
             try:
                 result = plugin.transform(input_dict)
             except Exception as e:
                 failures.append(
-                    f"H1B SalaryRecord case {i+1} ({source_file}:{row_number}): Exception: {e}"
+                    f"H1B SalaryRecord case {i + 1} ({source_file}:{row_number}): Exception: {e}"
                 )
                 continue
 
             if expected_error:
                 if result is not None:
                     failures.append(
-                        f"H1B SalaryRecord case {i+1} ({source_file}:{row_number}): "
+                        f"H1B SalaryRecord case {i + 1} ({source_file}:{row_number}): "
                         f"Expected None (error: {expected_error}) but got {type(result).__name__}"
                     )
             else:
                 if not isinstance(result, SalaryRecord):
                     failures.append(
-                        f"H1B SalaryRecord case {i+1} ({source_file}:{row_number}): "
+                        f"H1B SalaryRecord case {i + 1} ({source_file}:{row_number}): "
                         f"Expected SalaryRecord but got {type(result).__name__}"
                     )
                     continue
 
                 actual_dict = self.serialize_record(result)
-                differences = self.compare_records(actual_dict, expected_result, 'SalaryRecord')
+                differences = self.compare_records(
+                    actual_dict, expected_result, "SalaryRecord"
+                )
 
                 if differences:
                     failures.append(
-                        f"H1B SalaryRecord case {i+1} ({source_file}:{row_number}): Differences:\n"
+                        f"H1B SalaryRecord case {i + 1} ({source_file}:{row_number}): Differences:\n"
                         + "\n".join(f"  - {d}" for d in differences)
                     )
 
@@ -311,8 +326,10 @@ class TestDOLTransformGolden:
         """Test only H1B WorksiteRecord cases (I-200 routing)"""
         test_cases = self.load_test_data()
         h1b_worksite_cases = [
-            tc for tc in test_cases
-            if tc.get('plugin_type') == 'H1B' and tc.get('record_type') == 'WorksiteRecord'
+            tc
+            for tc in test_cases
+            if tc.get("plugin_type") == "H1B"
+            and tc.get("record_type") == "WorksiteRecord"
         ]
 
         if not h1b_worksite_cases:
@@ -322,40 +339,42 @@ class TestDOLTransformGolden:
         failures = []
 
         for i, test_case in enumerate(h1b_worksite_cases):
-            input_dict = test_case.get('input', {})
-            expected_result = test_case.get('expected_result')
-            expected_error = test_case.get('expected_error')
-            source_file = test_case.get('source_file', 'unknown')
-            row_number = test_case.get('row_number', 'unknown')
+            input_dict = test_case.get("input", {})
+            expected_result = test_case.get("expected_result")
+            expected_error = test_case.get("expected_error")
+            source_file = test_case.get("source_file", "unknown")
+            row_number = test_case.get("row_number", "unknown")
 
             try:
                 result = plugin.transform(input_dict)
             except Exception as e:
                 failures.append(
-                    f"H1B WorksiteRecord case {i+1} ({source_file}:{row_number}): Exception: {e}"
+                    f"H1B WorksiteRecord case {i + 1} ({source_file}:{row_number}): Exception: {e}"
                 )
                 continue
 
             if expected_error:
                 if result is not None:
                     failures.append(
-                        f"H1B WorksiteRecord case {i+1} ({source_file}:{row_number}): "
+                        f"H1B WorksiteRecord case {i + 1} ({source_file}:{row_number}): "
                         f"Expected None (error: {expected_error}) but got {type(result).__name__}"
                     )
             else:
                 if not isinstance(result, WorksiteRecord):
                     failures.append(
-                        f"H1B WorksiteRecord case {i+1} ({source_file}:{row_number}): "
+                        f"H1B WorksiteRecord case {i + 1} ({source_file}:{row_number}): "
                         f"Expected WorksiteRecord but got {type(result).__name__}"
                     )
                     continue
 
                 actual_dict = self.serialize_record(result)
-                differences = self.compare_records(actual_dict, expected_result, 'WorksiteRecord')
+                differences = self.compare_records(
+                    actual_dict, expected_result, "WorksiteRecord"
+                )
 
                 if differences:
                     failures.append(
-                        f"H1B WorksiteRecord case {i+1} ({source_file}:{row_number}): Differences:\n"
+                        f"H1B WorksiteRecord case {i + 1} ({source_file}:{row_number}): Differences:\n"
                         + "\n".join(f"  - {d}" for d in differences)
                     )
 
@@ -364,4 +383,3 @@ class TestDOLTransformGolden:
                 f"Failed {len(failures)}/{len(h1b_worksite_cases)} H1B WorksiteRecord cases:\n\n"
                 + "\n\n".join(failures)
             )
-

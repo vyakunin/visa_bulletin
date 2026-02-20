@@ -17,21 +17,21 @@ import logging
 import os
 from collections import defaultdict
 from datetime import date, timedelta
-from fractions import Fraction
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
 from django.db.utils import IntegrityError
 
 from django_config.logging_config import setup_logging
 from lib.utils.logging_utils import ScriptLogger
-from models.raw_facts import RawFactsLedger, RawFactSource
-from models.salary import SalaryRecord
-from models.enums.visa_program import VisaProgram
 from models.enums.case_status import CaseStatus
 from models.enums.country import Country
+from models.enums.visa_program import VisaProgram
+from models.raw_facts import RawFactsLedger, RawFactSource
+from models.salary import SalaryRecord
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -61,15 +61,12 @@ def compute_and_write_perm_lag(publication_date: date | None = None) -> int:
     for correct backtesting (data wasn't available instantly after the quarter).
     """
     use_historical = publication_date is None
-    qs = (
-        SalaryRecord.objects.filter(
-            visa_program=VisaProgram.PERM,
-            case_status=CaseStatus.CERTIFIED,
-            case_submitted__isnull=False,
-            decision_date__isnull=False,
-        )
-        .values_list("decision_date", "case_submitted")
-    )
+    qs = SalaryRecord.objects.filter(
+        visa_program=VisaProgram.PERM,
+        case_status=CaseStatus.CERTIFIED,
+        case_submitted__isnull=False,
+        decision_date__isnull=False,
+    ).values_list("decision_date", "case_submitted")
     by_quarter: dict[tuple[int, int], list[int]] = defaultdict(list)
     for decision_date, case_submitted in qs.iterator(chunk_size=5000):
         if not decision_date or not case_submitted:
@@ -110,13 +107,21 @@ def compute_and_write_perm_lag(publication_date: date | None = None) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute PERM lag distribution and write to raw_facts_ledger")
-    parser.add_argument("--publication-date", type=str, help="Publication date YYYY-MM-DD (default: today)")
+    parser = argparse.ArgumentParser(
+        description="Compute PERM lag distribution and write to raw_facts_ledger"
+    )
+    parser.add_argument(
+        "--publication-date",
+        type=str,
+        help="Publication date YYYY-MM-DD (default: today)",
+    )
     args = parser.parse_args()
 
     script_logger.log_call(args={}, context="VQS: Compute PERM lag distribution")
 
-    pub_date = date.fromisoformat(args.publication_date) if args.publication_date else None
+    pub_date = (
+        date.fromisoformat(args.publication_date) if args.publication_date else None
+    )
     compute_and_write_perm_lag(publication_date=pub_date)
 
 

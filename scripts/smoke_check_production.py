@@ -51,7 +51,9 @@ def check(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Production smoke check (status + content)")
+    parser = argparse.ArgumentParser(
+        description="Production smoke check (status + content)"
+    )
     parser.add_argument(
         "--base",
         default="https://visa-bulletin.us",
@@ -68,7 +70,16 @@ def main() -> int:
     timeout = args.timeout
 
     checks = [
-        ("/", 200, [("title", r"<title>[^<]*[Vv]isa [Bb]ulletin|Priority [Dd]ate[^<]*</title>")]),
+        (
+            "/",
+            200,
+            [
+                (
+                    "title",
+                    r"<title>[^<]*[Vv]isa [Bb]ulletin|Priority [Dd]ate[^<]*</title>",
+                )
+            ],
+        ),
         (
             "/employment-based/india/",
             200,
@@ -85,15 +96,30 @@ def main() -> int:
                 ("canonical slug", r"family-sponsored/philippines"),
             ],
         ),
-        ("/salaries/", 200, [("salary page", r"<title>[^<]*[Ss]alary|[Hh]-1[Bb][^<]*</title>")]),
-        ("/job-titles/", 200, [("job title page", r"<title>[^<]*[Jj]ob [Tt]itle[^<]*</title>")]),
-        ("/employers/", 200, [("employer page", r"<title>[^<]*[Ee]mployer[^<]*</title>")]),
+        (
+            "/salaries/",
+            200,
+            [("salary page", r"<title>[^<]*[Ss]alary|[Hh]-1[Bb][^<]*</title>")],
+        ),
+        (
+            "/job-titles/",
+            200,
+            [("job title page", r"<title>[^<]*[Jj]ob [Tt]itle[^<]*</title>")],
+        ),
+        (
+            "/employers/",
+            200,
+            [("employer page", r"<title>[^<]*[Ee]mployer[^<]*</title>")],
+        ),
         (
             "/sitemap.xml",
             200,
             [
                 ("sitemap urlset", r"<urlset"),
-                ("slug urls", r"employment-based/philippines|family-sponsored/philippines"),
+                (
+                    "slug urls",
+                    r"employment-based/philippines|family-sponsored/philippines",
+                ),
             ],
         ),
         ("/robots.txt", 200, [("sitemap line", r"Sitemap:\s*https?://")]),

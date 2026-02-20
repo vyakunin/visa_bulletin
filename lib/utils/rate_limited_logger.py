@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 class RateLimitedLogger:
     """
     Rate-limited logger that logs frequently at first, then reduces frequency.
-    
+
     Common pattern:
     - First N logs: always log (to confirm it's working)
     - After that: log at most once per X seconds (time-based rate limiting)
     - Optionally: log immediately if a condition is met (e.g., very significant event)
-    
+
     Example usage:
         rate_logger = RateLimitedLogger(
             initial_count=5,
@@ -28,11 +28,11 @@ class RateLimitedLogger:
             logger=logger,
             log_level=logging.INFO
         )
-        
+
         for item in items:
             if rate_logger.should_log():
                 rate_logger.log(f"Processing item {item}")
-    
+
     Or with conditional immediate logging:
         rate_logger = RateLimitedLogger(
             initial_count=5,
@@ -40,7 +40,7 @@ class RateLimitedLogger:
             logger=logger,
             immediate_condition=lambda: removed > total * 0.9  # Log immediately if >90% removed
         )
-        
+
         if rate_logger.should_log(immediate_condition_value=removed > total * 0.9):
             rate_logger.log(f"Pre-filtered {total} -> {after} records")
     """
@@ -55,7 +55,7 @@ class RateLimitedLogger:
     ):
         """
         Initialize rate-limited logger.
-        
+
         Args:
             initial_count: Number of initial logs to always emit (default: 5)
             min_interval_seconds: Minimum seconds between logs after initial_count (default: 5.0)
@@ -78,17 +78,19 @@ class RateLimitedLogger:
     def should_log(self, immediate_condition_value: bool = False) -> bool:
         """
         Check if logging should occur based on rate limiting rules.
-        
+
         Args:
             immediate_condition_value: If True, bypasses rate limiting and logs immediately
-        
+
         Returns:
             True if should log, False otherwise
         """
         current_time = time.time()
 
         # Immediate condition bypasses rate limiting
-        if immediate_condition_value or (self.immediate_condition and self.immediate_condition()):
+        if immediate_condition_value or (
+            self.immediate_condition and self.immediate_condition()
+        ):
             return True
 
         # First N logs: always log
@@ -101,10 +103,15 @@ class RateLimitedLogger:
 
         return False
 
-    def log(self, message: str, immediate_condition_value: bool = False, include_suppressed_count: bool = True):
+    def log(
+        self,
+        message: str,
+        immediate_condition_value: bool = False,
+        include_suppressed_count: bool = True,
+    ):
         """
         Log a message if rate limiting allows it.
-        
+
         Args:
             message: Message to log
             immediate_condition_value: If True, bypasses rate limiting and logs immediately
@@ -147,4 +154,3 @@ class RateLimitedLogger:
         self._log_count = 0
         self._attempt_count = 0
         self._last_log_time = 0.0
-

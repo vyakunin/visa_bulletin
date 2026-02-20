@@ -42,10 +42,18 @@ PER_CLASS_SHARE = {
 # and accelerates in Q3-Q4 (Apr-Sep) to use remaining numbers.
 # Multipliers are relative to the uniform monthly allocation (sum ≈ 12.0).
 FY_SEASONAL_MULTIPLIER = {
-    10: 0.50, 11: 0.60, 12: 0.70,
-    1: 0.80, 2: 0.85, 3: 0.90,
-    4: 1.00, 5: 1.10, 6: 1.20,
-    7: 1.30, 8: 1.50, 9: 1.55,
+    10: 0.50,
+    11: 0.60,
+    12: 0.70,
+    1: 0.80,
+    2: 0.85,
+    3: 0.90,
+    4: 1.00,
+    5: 1.10,
+    6: 1.20,
+    7: 1.30,
+    8: 1.50,
+    9: 1.55,
 }
 
 # Spillover: unused Family-Based visas spill to EB per INA §201(d).
@@ -115,7 +123,7 @@ def get_monthly_supply(
 
     # Layer 5: Spillover (FB → EB in Q4 months)
     if month.month in SPILLOVER_MONTHS:
-        monthly_adjusted *= (1.0 + SPILLOVER_BONUS_RATE)
+        monthly_adjusted *= 1.0 + SPILLOVER_BONUS_RATE
 
     # EB1 bonus: spillover from EB2/EB3 to EB1 often concentrates Apr–Sep (Q3–Q4).
     if visa_class == "1st" and month.month in (4, 5, 6, 7, 8, 9):

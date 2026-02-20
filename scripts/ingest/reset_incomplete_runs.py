@@ -26,12 +26,12 @@ def reset_runs():
     # 2. All Worksite files (had missing locations/job titles)
 
     runs_to_reset = IngestRun.objects.filter(
-        Q(source__url__icontains='PERM_FY2008') |
-        Q(source__url__icontains='Worksite') |
-        Q(checkpoint__icontains='PERM_FY2008') |
-        Q(checkpoint__icontains='Worksite')
+        Q(source__url__icontains="PERM_FY2008")
+        | Q(source__url__icontains="Worksite")
+        | Q(checkpoint__icontains="PERM_FY2008")
+        | Q(checkpoint__icontains="Worksite")
     ).exclude(
-        status=IngestStatus.PENDING # Don't reset if already pending
+        status=IngestStatus.PENDING  # Don't reset if already pending
     )
 
     count = runs_to_reset.count()
@@ -60,16 +60,18 @@ def reset_runs():
 
         new_runs = []
         for source in sources:
-            new_runs.append(IngestRun(
-                source=source,
-                status=IngestStatus.PENDING,
-                stage=IngestStage.PENDING,
-                checkpoint={}
-            ))
+            new_runs.append(
+                IngestRun(
+                    source=source,
+                    status=IngestStatus.PENDING,
+                    stage=IngestStage.PENDING,
+                    checkpoint={},
+                )
+            )
 
         IngestRun.objects.bulk_create(new_runs)
         print(f"   ✅ Created {len(new_runs)} new PENDING runs")
 
-if __name__ == '__main__':
-    reset_runs()
 
+if __name__ == "__main__":
+    reset_runs()

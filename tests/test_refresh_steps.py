@@ -46,11 +46,17 @@ def _make_config(tmp_path: Path) -> RefreshConfig:
 
 
 def _ok(stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=stdout, stderr=stderr
+    )
 
 
-def _fail(rc: int = 1, stdout: str = "", stderr: str = "error") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=rc, stdout=stdout, stderr=stderr)
+def _fail(
+    rc: int = 1, stdout: str = "", stderr: str = "error"
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=[], returncode=rc, stdout=stdout, stderr=stderr
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +105,9 @@ def test_parse_salary_relevant_count() -> None:
 def test_step_run_ingest_success(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     runner = MockRunner()
-    runner.run_bin_return = _ok(stdout="Starting pipeline for 7 sources (salary_relevant: 4)")
+    runner.run_bin_return = _ok(
+        stdout="Starting pipeline for 7 sources (salary_relevant: 4)"
+    )
     ctx = PipelineContext()
     sources, salary = step_run_ingest(config, runner, ctx)
     assert sources == 7
@@ -148,6 +156,7 @@ def test_step_restore_indexes_snapshot_file_not_found_fallback(tmp_path: Path) -
     runner = MockRunner()
 
     call_count = [0]
+
     def side_effect(rel_path, *args, **kwargs):
         runner.calls.append(("run_bin", (rel_path, *args), kwargs))
         call_count[0] += 1

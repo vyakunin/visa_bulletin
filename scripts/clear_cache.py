@@ -31,8 +31,8 @@ import logging
 import os
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -50,7 +50,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def _delete_view_cache(path: str, server_name: str = "localhost", use_https: bool = False) -> bool:
+def _delete_view_cache(
+    path: str, server_name: str = "localhost", use_https: bool = False
+) -> bool:
     """Delete cache for a single path (e.g. /sitemap.xml). Returns True if key was deleted."""
     request = HttpRequest()
     request.path = path
@@ -72,10 +74,14 @@ def _delete_view_cache(path: str, server_name: str = "localhost", use_https: boo
 
 def clear_sitemap_cache() -> None:
     """Clear only sitemap.xml and robots.txt @cache_page entries."""
-    script_logger.log_call(args={"sitemap_only": True}, context="Clearing sitemap/robots cache")
+    script_logger.log_call(
+        args={"sitemap_only": True}, context="Clearing sitemap/robots cache"
+    )
     # On prod set SITE_DOMAIN=visa-bulletin.us so the cache key matches (key is built from full URI)
     server_name = os.environ.get("SITE_DOMAIN", "localhost")
-    use_https = server_name != "localhost"  # Prod traffic comes via nginx with X-Forwarded-Proto: https
+    use_https = (
+        server_name != "localhost"
+    )  # Prod traffic comes via nginx with X-Forwarded-Proto: https
     deleted = 0
     for path in ("/sitemap.xml", "/robots.txt"):
         if _delete_view_cache(path, server_name=server_name, use_https=use_https):
@@ -110,5 +116,6 @@ def main() -> None:
         "On memory-constrained instances (e.g. 2GB): run 'bazel shutdown' after this to free ~400-500MB."
     )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

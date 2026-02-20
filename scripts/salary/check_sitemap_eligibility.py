@@ -5,7 +5,7 @@ import os
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 from models.job_title import JobTitleCluster
@@ -16,8 +16,7 @@ def main():
     with_slugs = JobTitleCluster.objects.filter(slug__isnull=False).count()
     with_filings = JobTitleCluster.objects.filter(total_filings__gte=10).count()
     eligible = JobTitleCluster.objects.filter(
-        slug__isnull=False,
-        total_filings__gte=10
+        slug__isnull=False, total_filings__gte=10
     ).count()
 
     print("Job Title Cluster Sitemap Eligibility")
@@ -36,5 +35,5 @@ def main():
         print(f"\n✅ {eligible:,} job title clusters will appear in sitemap")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

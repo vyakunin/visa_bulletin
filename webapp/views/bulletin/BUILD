@@ -15,6 +15,7 @@ py_library(
         "//django_config:cache_utils",
         "//lib/business/bulletin:chart_builder",
         "//lib/business/bulletin:cutoff_data_aggregator",
+        "//models:blog",
         "//models/enums:action_type",
         "//models/enums:country",
         "//models/enums:visa_category",

@@ -13,7 +13,7 @@ from pathlib import Path
 import django
 
 # Setup Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 from lib.utils.http_utils import compute_file_hash, get_workspace_dir
@@ -21,23 +21,20 @@ from models.ingest.data_source import DataSource
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
 
 def main():
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("Backfilling content_hash for DataSource records")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     # Find sources with local files but no hash
-    sources_needing_hash = DataSource.objects.filter(
-        local_file_path__isnull=False
-    ).exclude(
-        local_file_path=''
-    ).filter(
-        content_hash=''
+    sources_needing_hash = (
+        DataSource.objects.filter(local_file_path__isnull=False)
+        .exclude(local_file_path="")
+        .filter(content_hash="")
     )
 
     total_count = sources_needing_hash.count()
@@ -67,8 +64,8 @@ def main():
         # Strategy 3: Extract data path from Bazel runfiles
         # Path like: bazel-bin/.../runfiles/_main/lib/data/salary/dol_data/file.xlsx
         # Should become: /opt/visa_bulletin/data/salary/dol_data/file.xlsx
-        if '/data/' in path_str:
-            data_path = path_str[path_str.rindex('/data/')+1:]  # Keep 'data/...'
+        if "/data/" in path_str:
+            data_path = path_str[path_str.rindex("/data/") + 1 :]  # Keep 'data/...'
             candidate_paths.append(workspace_dir / data_path)
 
         # Find first path that exists
@@ -84,14 +81,14 @@ def main():
             logger.warning(f"  Source: {source.url}")
             logger.warning(f"  Stored path: {path_str}")
             for i, p in enumerate(candidate_paths):
-                logger.warning(f"  Try {i+1}: {p} (exists={p.exists()})")
+                logger.warning(f"  Try {i + 1}: {p} (exists={p.exists()})")
             continue
 
         # Compute hash
         try:
             content_hash = compute_file_hash(filepath)
             source.content_hash = content_hash
-            source.save(update_fields=['content_hash'])
+            source.save(update_fields=["content_hash"])
             updated_count += 1
 
             if updated_count % 10 == 0:
@@ -101,9 +98,9 @@ def main():
             logger.error(f"Error computing hash for {filepath}: {e}")
 
     logger.info("")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("BACKFILL COMPLETE")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info(f"✅ Updated {updated_count}/{total_count} sources with content_hash")
 
     if missing_files:
@@ -114,5 +111,5 @@ def main():
             logger.warning(f"  ... and {len(missing_files) - 10} more")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

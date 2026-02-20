@@ -22,15 +22,17 @@ import logging
 import os
 import sys
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
+
+from django.db import transaction
 
 from django_config.logging_config import setup_logging
 from models.bulletin import Bulletin
-from models.visa_cutoff_date import VisaCutoffDate
 from models.enums.country import Country
-from django.db import transaction
+from models.visa_cutoff_date import VisaCutoffDate
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_country(value: str) -> Country | None:
     """Parse country from CSV value (integer enum value or string label)."""
-    if not value or value.strip() == '':
+    if not value or value.strip() == "":
         return None
     stripped = value.strip()
     # Try integer enum value first (from psql COPY export)
@@ -53,7 +55,7 @@ def _parse_country(value: str) -> Country | None:
 
 def _parse_bool(value: str) -> bool:
     """Parse boolean from CSV (handles 't'/'f', '1'/'0', 'True'/'False')."""
-    return value.strip().lower() in ('t', 'true', '1', 'yes')
+    return value.strip().lower() in ("t", "true", "1", "yes")
 
 
 def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str) -> None:
@@ -69,17 +71,17 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str) -> None:
         created_count = 0
         updated_count = 0
         prod_to_local_bulletin_id: dict[int, int] = {}
-        with open(bulletin_csv, 'r') as f:
+        with open(bulletin_csv) as f:
             reader = csv.DictReader(f)
             for row in reader:
-                prod_id = int(row['id'])
-                pub_date = row['publication_date']
+                prod_id = int(row["id"])
+                pub_date = row["publication_date"]
                 bulletin, created = Bulletin.objects.update_or_create(
                     publication_date=pub_date,
                     defaults={
-                        'fetched_at': row['fetched_at'],
-                        'url': row['url'] if row['url'] else None,
-                    }
+                        "fetched_at": row["fetched_at"],
+                        "url": row["url"] if row["url"] else None,
+                    },
                 )
                 prod_to_local_bulletin_id[prod_id] = bulletin.id
                 if created:
@@ -92,52 +94,73 @@ def import_visa_bulletin_data(bulletin_csv: str, cutoff_csv: str) -> None:
         created_count = 0
         skipped_count = 0
         warn_count = 0
-        with open(cutoff_csv, 'r') as f:
+        with open(cutoff_csv) as f:
             reader = csv.DictReader(f)
             for row in reader:
-                country = _parse_country(row['country'])
+                country = _parse_country(row["country"])
                 if country is None:
                     warn_count += 1
                     if warn_count <= 5:
-                        logger.warning("Unknown country '%s', skipping row %s", row['country'], row['id'])
+                        logger.warning(
+                            "Unknown country '%s', skipping row %s",
+                            row["country"],
+                            row["id"],
+                        )
                     continue
 
-                prod_bulletin_id = int(row['bulletin_id'])
+                prod_bulletin_id = int(row["bulletin_id"])
                 local_bulletin_id = prod_to_local_bulletin_id.get(prod_bulletin_id)
                 if local_bulletin_id is None:
                     warn_count += 1
                     if warn_count <= 5:
-                        logger.warning("Bulletin ID %d not found in mapping, skipping", prod_bulletin_id)
+                        logger.warning(
+                            "Bulletin ID %d not found in mapping, skipping",
+                            prod_bulletin_id,
+                        )
                     continue
 
-                cutoff_date_val = row['cutoff_date'] if row['cutoff_date'] else None
+                cutoff_date_val = row["cutoff_date"] if row["cutoff_date"] else None
                 _, created = VisaCutoffDate.objects.get_or_create(
                     bulletin_id=local_bulletin_id,
-                    visa_category=row['visa_category'],
-                    visa_class=row['visa_class'],
-                    action_type=row['action_type'],
+                    visa_category=row["visa_category"],
+                    visa_class=row["visa_class"],
+                    action_type=row["action_type"],
                     country=country,
                     defaults={
-                        'cutoff_value': row['cutoff_value'],
-                        'cutoff_date': cutoff_date_val,
-                        'is_current': _parse_bool(row['is_current']),
-                        'is_unavailable': _parse_bool(row['is_unavailable']),
-                    }
+                        "cutoff_value": row["cutoff_value"],
+                        "cutoff_date": cutoff_date_val,
+                        "is_current": _parse_bool(row["is_current"]),
+                        "is_unavailable": _parse_bool(row["is_unavailable"]),
+                    },
                 )
                 if created:
                     created_count += 1
                 else:
                     skipped_count += 1
-        logger.info("Cutoff dates: %d created, %d already existed, %d warnings", created_count, skipped_count, warn_count)
+        logger.info(
+            "Cutoff dates: %d created, %d already existed, %d warnings",
+            created_count,
+            skipped_count,
+            warn_count,
+        )
 
-    logger.info("Import completed. Totals: %d bulletins, %d cutoff dates",
-                Bulletin.objects.count(), VisaCutoffDate.objects.count())
+    logger.info(
+        "Import completed. Totals: %d bulletins, %d cutoff dates",
+        Bulletin.objects.count(),
+        VisaCutoffDate.objects.count(),
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import visa bulletin data from CSV")
-    parser.add_argument('--bulletin', default='/tmp/bulletin.csv', help='Path to bulletin CSV')
-    parser.add_argument('--cutoff', default='/tmp/visa_cutoff_date.csv', help='Path to visa_cutoff_date CSV')
+    parser.add_argument(
+        "--bulletin", default="/tmp/bulletin.csv", help="Path to bulletin CSV"
+    )
+    parser.add_argument(
+        "--cutoff",
+        default="/tmp/visa_cutoff_date.csv",
+        help="Path to visa_cutoff_date CSV",
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.bulletin):
@@ -150,5 +173,5 @@ def main() -> None:
     import_visa_bulletin_data(args.bulletin, args.cutoff)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

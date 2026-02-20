@@ -10,12 +10,12 @@ import base64
 def encode_keyset_cursor(order_value: int, pk: int, direction: str = "next") -> str:
     """
     Encode a keyset cursor for pagination. Opaque to callers.
-    
+
     Args:
         order_value: Value used for ordering (e.g. total count or total_lca_count).
         pk: Primary key of the row (for tiebreaker).
         direction: "next" or "prev" so the view knows how to apply the cursor.
-    
+
     Returns:
         Opaque cursor string (base64-encoded "direction:order_value:pk").
     """
@@ -26,7 +26,7 @@ def encode_keyset_cursor(order_value: int, pk: int, direction: str = "next") -> 
 def decode_keyset_cursor(cursor: str) -> tuple[str, int, int] | None:
     """
     Decode a keyset cursor. Returns None if invalid.
-    
+
     Returns:
         (direction, order_value, pk) or None. direction is "next" or "prev".
     """
@@ -48,12 +48,12 @@ def decode_keyset_cursor(cursor: str) -> tuple[str, int, int] | None:
 def calculate_pagination_info(total_results: int, page: int, per_page: int) -> dict:
     """
     Calculate pagination metadata.
-    
+
     Args:
         total_results: Total number of results
         page: Current page number (1-indexed)
         per_page: Number of results per page
-        
+
     Returns:
         Dictionary with:
         - page: Normalized page number
@@ -69,58 +69,50 @@ def calculate_pagination_info(total_results: int, page: int, per_page: int) -> d
     if total_pages <= 7:
         page_range = list(range(1, total_pages + 1))
     elif page <= 4:
-        page_range = list(range(1, 6)) + ['...', total_pages]
+        page_range = list(range(1, 6)) + ["...", total_pages]
     elif page >= total_pages - 3:
-        page_range = [1, '...'] + list(range(total_pages - 4, total_pages + 1))
+        page_range = [1, "..."] + list(range(total_pages - 4, total_pages + 1))
     else:
-        page_range = [1, '...'] + list(range(page - 1, page + 2)) + ['...', total_pages]
+        page_range = [1, "..."] + list(range(page - 1, page + 2)) + ["...", total_pages]
 
     return {
-        'page': page,
-        'total_pages': total_pages,
-        'offset': offset,
-        'page_range': [p for p in page_range if p != '...'],
+        "page": page,
+        "total_pages": total_pages,
+        "offset": offset,
+        "page_range": [p for p in page_range if p != "..."],
     }
 
 
-def build_pagination_query_string(params: dict, param_mapping: dict[str, str] | None = None) -> str:
+def build_pagination_query_string(
+    params: dict, param_mapping: dict[str, str] | None = None
+) -> str:
     """
     Build query string for pagination links (without page param).
-    
+
     Args:
         params: Dictionary of filter parameters
         param_mapping: Optional mapping from param keys to URL param names.
                       If None, uses default mapping for common params.
                       Format: {'internal_key': 'url_param_name'}
-                      
+
     Returns:
         URL query string (e.g., "q=engineer&state=CA&year=2023")
     """
     if param_mapping is None:
         # Default mapping for common parameters
         param_mapping = {
-            'query': 'q',
-            'employer_filter': 'employer',
-            'city_filter': 'city',
-            'state_filter': 'state',
-            'program_filter': 'program',
-            'year_filter': 'year',
+            "query": "q",
+            "employer_filter": "employer",
+            "city_filter": "city",
+            "state_filter": "state",
+            "program_filter": "program",
+            "year_filter": "year",
         }
 
     pagination_parts = []
     for internal_key, url_param in param_mapping.items():
         value = params.get(internal_key)
         if value:
-            pagination_parts.append(f'{url_param}={value}')
+            pagination_parts.append(f"{url_param}={value}")
 
-    return '&'.join(pagination_parts)
-
-
-
-
-
-
-
-
-
-
+    return "&".join(pagination_parts)

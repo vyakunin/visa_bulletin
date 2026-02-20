@@ -75,10 +75,10 @@ class TestCalculateProjection(unittest.TestCase):
 
         result = calculate_projection(dates, cutoffs, submission)
 
-        self.assertEqual(result['status'], 'current')
-        self.assertIn('reached', result['message'])
-        self.assertIsNone(result['estimated_date'])
-        self.assertEqual(result['months_to_wait'], 0)
+        self.assertEqual(result["status"], "current")
+        self.assertIn("reached", result["message"])
+        self.assertIsNone(result["estimated_date"])
+        self.assertEqual(result["months_to_wait"], 0)
 
     def test_no_forward_movement(self):
         dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)]
@@ -87,10 +87,10 @@ class TestCalculateProjection(unittest.TestCase):
 
         result = calculate_projection(dates, cutoffs, submission)
 
-        self.assertEqual(result['status'], 'no_movement')
-        self.assertIn('No forward progress', result['message'])
-        self.assertIsNone(result['estimated_date'])
-        self.assertIsNone(result['months_to_wait'])
+        self.assertEqual(result["status"], "no_movement")
+        self.assertIn("No forward progress", result["message"])
+        self.assertIsNone(result["estimated_date"])
+        self.assertIsNone(result["months_to_wait"])
 
     def test_backward_movement(self):
         dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)]
@@ -99,7 +99,7 @@ class TestCalculateProjection(unittest.TestCase):
 
         result = calculate_projection(dates, cutoffs, submission)
 
-        self.assertEqual(result['status'], 'no_movement')
+        self.assertEqual(result["status"], "no_movement")
 
     def test_projected_status(self):
         # 12 months of data, advancing 1 month per bulletin
@@ -109,11 +109,11 @@ class TestCalculateProjection(unittest.TestCase):
 
         result = calculate_projection(dates, cutoffs, submission)
 
-        self.assertEqual(result['status'], 'projected')
-        self.assertIsNotNone(result['estimated_date'])
-        self.assertIsNotNone(result['months_to_wait'])
-        self.assertIn('month', result['message'])
-        self.assertGreater(result['avg_progress_days_per_month'], 0)
+        self.assertEqual(result["status"], "projected")
+        self.assertIsNotNone(result["estimated_date"])
+        self.assertIsNotNone(result["months_to_wait"])
+        self.assertIn("month", result["message"])
+        self.assertGreater(result["avg_progress_days_per_month"], 0)
 
     def test_filters_none_values(self):
         dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1)]
@@ -124,7 +124,7 @@ class TestCalculateProjection(unittest.TestCase):
 
         # Should work with valid points only
         self.assertIsNotNone(result)
-        self.assertIn(result['status'], ['current', 'projected'])
+        self.assertIn(result["status"], ["current", "projected"])
 
     def test_slow_progress(self):
         # Very slow progress (1 day per month)
@@ -134,9 +134,9 @@ class TestCalculateProjection(unittest.TestCase):
 
         result = calculate_projection(dates, cutoffs, submission)
 
-        self.assertEqual(result['status'], 'projected')
+        self.assertEqual(result["status"], "projected")
         # Should have a long wait time
-        self.assertGreater(result['months_to_wait'], 100)
+        self.assertGreater(result["months_to_wait"], 100)
 
 
 class TestHistoricalLinearRegression(unittest.TestCase):
@@ -150,18 +150,28 @@ class TestHistoricalLinearRegression(unittest.TestCase):
         start_cutoff = date(2010, 1, 1)
 
         for i in range(24):  # 24 months of data
-            pub = date(start_pub.year, start_pub.month + i % 12, 1) if i < 12 else date(start_pub.year + 1, (start_pub.month + i) % 12 or 12, 1)
-            cutoff = date(start_cutoff.year, start_cutoff.month + i % 12, 1) if i < 12 else date(start_cutoff.year + 1, (start_cutoff.month + i) % 12 or 12, 1)
+            pub = (
+                date(start_pub.year, start_pub.month + i % 12, 1)
+                if i < 12
+                else date(start_pub.year + 1, (start_pub.month + i) % 12 or 12, 1)
+            )
+            cutoff = (
+                date(start_cutoff.year, start_cutoff.month + i % 12, 1)
+                if i < 12
+                else date(start_cutoff.year + 1, (start_cutoff.month + i) % 12 or 12, 1)
+            )
             valid_points.append((pub, cutoff))
 
         submission_date = date(2012, 1, 1)
         last_pub = valid_points[-1][0]
 
-        result = calculate_historical_linear_regression(valid_points, submission_date, last_pub)
+        result = calculate_historical_linear_regression(
+            valid_points, submission_date, last_pub
+        )
 
         self.assertIsNotNone(result)
-        self.assertIn(result['status'], ['projected_historical', 'current'])
-        self.assertEqual(result['method'], 'historical_regression')
+        self.assertIn(result["status"], ["projected_historical", "current"])
+        self.assertEqual(result["method"], "historical_regression")
 
     def test_historical_regression_insufficient_data(self):
         """Test that historical regression returns None with insufficient data"""
@@ -172,7 +182,9 @@ class TestHistoricalLinearRegression(unittest.TestCase):
         submission_date = date(2012, 1, 1)
         last_pub = date(2020, 2, 1)
 
-        result = calculate_historical_linear_regression(valid_points, submission_date, last_pub)
+        result = calculate_historical_linear_regression(
+            valid_points, submission_date, last_pub
+        )
 
         self.assertIsNone(result)
 
@@ -199,9 +211,8 @@ class TestHistoricalLinearRegression(unittest.TestCase):
         # Should use historical regression fallback
         self.assertIsNotNone(result)
         # Either projected_historical or already current
-        self.assertIn(result['status'], ['projected_historical', 'current'])
+        self.assertIn(result["status"], ["projected_historical", "current"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-

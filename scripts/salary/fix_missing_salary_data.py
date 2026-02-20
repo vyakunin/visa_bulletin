@@ -18,8 +18,8 @@ import sys
 from decimal import Decimal
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -41,7 +41,7 @@ script_logger = ScriptLogger(__file__)
 def analyze_missing_salary_data(limit: int | None = None) -> dict:
     """
     Analyze records with missing salary data.
-    
+
     Returns:
         Dict with analysis results
     """
@@ -55,43 +55,51 @@ def analyze_missing_salary_data(limit: int | None = None) -> dict:
 
     # Categorize records
     # 1. Records with wage_from and wage_unit (can be recalculated)
-    can_recalculate = missing_wage_annual.filter(
-        wage_from__isnull=False,
-        wage_unit__isnull=False
-    ).exclude(wage_from=0).exclude(wage_unit='')
+    can_recalculate = (
+        missing_wage_annual.filter(wage_from__isnull=False, wage_unit__isnull=False)
+        .exclude(wage_from=0)
+        .exclude(wage_unit="")
+    )
 
     can_recalculate_count = can_recalculate.count()
 
     # 2. Records with no wage_from or wage_unit (cannot be recalculated)
     cannot_recalculate = missing_wage_annual.filter(
-        Q(wage_from__isnull=True) | Q(wage_from=0) | Q(wage_unit__isnull=True) | Q(wage_unit='')
+        Q(wage_from__isnull=True)
+        | Q(wage_from=0)
+        | Q(wage_unit__isnull=True)
+        | Q(wage_unit="")
     )
     cannot_recalculate_count = cannot_recalculate.count()
 
     # Get sample by employer
     sample_by_employer = list(
-        missing_wage_annual.values('employer_name')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:10]
+        missing_wage_annual.values("employer_name")
+        .annotate(count=Count("id"))
+        .order_by("-count")[:10]
     )
 
     # Get sample records that can be recalculated
     sample_recalculable = list(
-        can_recalculate.values('case_number', 'employer_name', 'wage_from', 'wage_unit', 'wage_annual')[:10]
+        can_recalculate.values(
+            "case_number", "employer_name", "wage_from", "wage_unit", "wage_annual"
+        )[:10]
     )
 
     # Get sample records that cannot be recalculated
     sample_non_recalculable = list(
-        cannot_recalculate.values('case_number', 'employer_name', 'wage_from', 'wage_unit', 'wage_annual')[:10]
+        cannot_recalculate.values(
+            "case_number", "employer_name", "wage_from", "wage_unit", "wage_annual"
+        )[:10]
     )
 
     analysis = {
-        'total_missing': total_missing,
-        'can_recalculate': can_recalculate_count,
-        'cannot_recalculate': cannot_recalculate_count,
-        'sample_by_employer': sample_by_employer,
-        'sample_recalculable': sample_recalculable,
-        'sample_non_recalculable': sample_non_recalculable,
+        "total_missing": total_missing,
+        "can_recalculate": can_recalculate_count,
+        "cannot_recalculate": cannot_recalculate_count,
+        "sample_by_employer": sample_by_employer,
+        "sample_recalculable": sample_recalculable,
+        "sample_non_recalculable": sample_non_recalculable,
     }
 
     logger.info(f"  Can be recalculated: {can_recalculate_count:,}")
@@ -108,11 +116,11 @@ def analyze_missing_salary_data(limit: int | None = None) -> dict:
 def fix_missing_salary_data(limit: int | None = None, dry_run: bool = True) -> dict:
     """
     Fix records with missing salary data by recalculating wage_annual.
-    
+
     Args:
         limit: Maximum number of records to process (None = all)
         dry_run: If True, don't actually update records
-    
+
     Returns:
         Dict with fix results
     """
@@ -122,10 +130,11 @@ def fix_missing_salary_data(limit: int | None = None, dry_run: bool = True) -> d
     missing_wage_annual = get_missing_salary_data_queryset()
 
     # Find records that can be recalculated
-    records_to_fix = missing_wage_annual.filter(
-        wage_from__isnull=False,
-        wage_unit__isnull=False
-    ).exclude(wage_from=0).exclude(wage_unit='')
+    records_to_fix = (
+        missing_wage_annual.filter(wage_from__isnull=False, wage_unit__isnull=False)
+        .exclude(wage_from=0)
+        .exclude(wage_unit="")
+    )
 
     if limit:
         records_to_fix = records_to_fix[:limit]
@@ -135,17 +144,14 @@ def fix_missing_salary_data(limit: int | None = None, dry_run: bool = True) -> d
 
     if total_to_fix == 0:
         logger.info("No records to fix")
-        return {'fixed': 0, 'errors': 0, 'skipped': 0}
+        return {"fixed": 0, "errors": 0, "skipped": 0}
 
     error_count = 0
     skipped_count = 0
 
     # Use BatchedUpdateCollector to handle batching, transactions, and counting
     collector = BatchedUpdateCollector(
-        fields=['wage_annual'],
-        batch_size=1000,
-        dry_run=dry_run,
-        use_transaction=True
+        fields=["wage_annual"], batch_size=1000, dry_run=dry_run, use_transaction=True
     )
 
     def process_batch(batch):
@@ -159,7 +165,9 @@ def fix_missing_salary_data(limit: int | None = None, dry_run: bool = True) -> d
                     continue
 
                 # Recalculate wage_annual
-                new_wage_annual = calculate_annual_wage(record.wage_from, record.wage_unit)
+                new_wage_annual = calculate_annual_wage(
+                    record.wage_from, record.wage_unit
+                )
 
                 if new_wage_annual is None:
                     skipped_count += 1
@@ -204,16 +212,16 @@ def fix_missing_salary_data(limit: int | None = None, dry_run: bool = True) -> d
         logger.info(f"Skipped: {skipped_count}")
 
     return {
-        'fixed': fixed_count,
-        'errors': error_count,
-        'skipped': skipped_count,
-        'total': total_to_fix
+        "fixed": fixed_count,
+        "errors": error_count,
+        "skipped": skipped_count,
+        "total": total_to_fix,
     }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fix records with missing salary data (wage_annual is null/0)',
+        description="Fix records with missing salary data (wage_annual is null/0)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -225,29 +233,25 @@ Examples:
   
   Actually fix records:
     bazel run //scripts/salary:fix_missing_salary_data -- --fix
-        """
+        """,
     )
 
     parser.add_argument(
-        '--fix',
-        action='store_true',
-        help='Actually fix records (default is dry-run)'
+        "--fix", action="store_true", help="Actually fix records (default is dry-run)"
     )
 
     parser.add_argument(
-        '--limit',
-        type=int,
-        help='Limit number of records to process (for testing)'
+        "--limit", type=int, help="Limit number of records to process (for testing)"
     )
 
     args = parser.parse_args()
 
     script_logger.log_call(
         args={
-            'fix': args.fix,
-            'limit': args.limit,
+            "fix": args.fix,
+            "limit": args.limit,
         },
-        context='Fixing records with missing salary data'
+        context="Fixing records with missing salary data",
     )
 
     # Analyze first
@@ -261,12 +265,11 @@ Examples:
     print(f"  Cannot be recalculated: {analysis['cannot_recalculate']:,}")
     print()
 
-    if analysis['sample_recalculable']:
+    if analysis["sample_recalculable"]:
         print("Sample records that CAN be recalculated:")
-        for rec in analysis['sample_recalculable'][:5]:
+        for rec in analysis["sample_recalculable"][:5]:
             calculated = calculate_annual_wage(
-                Decimal(str(rec['wage_from'])),
-                rec['wage_unit']
+                Decimal(str(rec["wage_from"])), rec["wage_unit"]
             )
             print(f"  Case: {rec['case_number']}, Employer: {rec['employer_name']}")
             print(f"    wage_from: {rec['wage_from']}, wage_unit: {rec['wage_unit']}")
@@ -274,15 +277,17 @@ Examples:
             print(f"    Would calculate to: {calculated}")
         print()
 
-    if analysis['sample_non_recalculable']:
+    if analysis["sample_non_recalculable"]:
         print("Sample records that CANNOT be recalculated:")
-        for rec in analysis['sample_non_recalculable'][:5]:
+        for rec in analysis["sample_non_recalculable"][:5]:
             print(f"  Case: {rec['case_number']}, Employer: {rec['employer_name']}")
-            print(f"    wage_from: {rec['wage_from']}, wage_unit: {rec['wage_unit']}, wage_annual: {rec['wage_annual']}")
+            print(
+                f"    wage_from: {rec['wage_from']}, wage_unit: {rec['wage_unit']}, wage_annual: {rec['wage_annual']}"
+            )
         print()
 
     # Fix if requested
-    if analysis['can_recalculate'] > 0:
+    if analysis["can_recalculate"] > 0:
         if args.fix:
             logger.info("=" * 80)
             logger.info("FIXING RECORDS")
@@ -310,10 +315,12 @@ Examples:
             print()
             print("To actually fix records, run with --fix flag")
     else:
-        logger.info("No records can be recalculated - all missing records have no wage_from or wage_unit")
+        logger.info(
+            "No records can be recalculated - all missing records have no wage_from or wage_unit"
+        )
 
     sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -4,10 +4,10 @@ import logging
 from datetime import date, datetime
 
 from django.http import JsonResponse
-from django.views import View
 from django.utils.decorators import method_decorator
-from django.views.decorators.http import require_GET
+from django.views import View
 from django.views.decorators.cache import cache_page
+from django.views.decorators.http import require_GET
 
 from lib.business.vqs.solver import predict_next_bulletin_and_maturity
 from models.enums.country import Country
@@ -51,9 +51,7 @@ class VQSPredictView(View):
         priority_date = None
         if priority_date_str:
             try:
-                priority_date = datetime.strptime(
-                    priority_date_str, "%Y-%m-%d"
-                ).date()
+                priority_date = datetime.strptime(priority_date_str, "%Y-%m-%d").date()
             except ValueError:
                 return JsonResponse(
                     {"error": "Invalid priority_date (use YYYY-MM-DD)"},
@@ -74,12 +72,14 @@ class VQSPredictView(View):
                 )
 
         try:
-            next_cutoff, maturity_month, _, confidence = predict_next_bulletin_and_maturity(
-                knowledge_date=knowledge_date,
-                visa_class=visa_class,
-                country=country,
-                action_type=action_type,
-                priority_date=priority_date,
+            next_cutoff, maturity_month, _, confidence = (
+                predict_next_bulletin_and_maturity(
+                    knowledge_date=knowledge_date,
+                    visa_class=visa_class,
+                    country=country,
+                    action_type=action_type,
+                    priority_date=priority_date,
+                )
             )
         except Exception as e:
             logger.exception("VQS predict failed")
@@ -88,9 +88,13 @@ class VQSPredictView(View):
                 status=500,
             )
 
-        return JsonResponse({
-            "next_cutoff": next_cutoff.isoformat() if next_cutoff else None,
-            "maturity_month": maturity_month.isoformat() if maturity_month else None,
-            "confidence": confidence,
-            "disclaimer": "Estimates use public data only; policy and allocation changes can affect outcomes.",
-        })
+        return JsonResponse(
+            {
+                "next_cutoff": next_cutoff.isoformat() if next_cutoff else None,
+                "maturity_month": maturity_month.isoformat()
+                if maturity_month
+                else None,
+                "confidence": confidence,
+                "disclaimer": "Estimates use public data only; policy and allocation changes can affect outcomes.",
+            }
+        )

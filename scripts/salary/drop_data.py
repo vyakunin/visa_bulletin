@@ -19,8 +19,8 @@ import sys
 from django.db import transaction
 
 # Setup Django early (before any model imports)
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -68,13 +68,13 @@ def drop_orphaned_employers() -> int:
 
 def delete_all_data_files() -> int:
     """Delete all data files in data/salary/dol_data/ directory"""
-    dol_data_dir = get_workspace_dir() / 'data' / 'salary' / 'dol_data'
+    dol_data_dir = get_workspace_dir() / "data" / "salary" / "dol_data"
     if not dol_data_dir.exists():
         logger.info("data/salary/dol_data/ directory does not exist, nothing to delete")
         return 0
 
     deleted_count = 0
-    for pattern in ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', '*.xls', '*.XLS']:
+    for pattern in ["*.csv", "*.CSV", "*.xlsx", "*.XLSX", "*.xls", "*.XLS"]:
         for filepath in dol_data_dir.glob(pattern):
             try:
                 filepath.unlink()
@@ -88,7 +88,7 @@ def delete_all_data_files() -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Drop all salary records and orphaned employers',
+        description="Drop all salary records and orphaned employers",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -99,27 +99,28 @@ Examples:
     bazel run //:drop_salary_data -- --force
 
 WARNING: This operation cannot be undone!
-        """
+        """,
     )
 
     parser.add_argument(
-        '--force', '-f',
-        action='store_true',
-        help='Skip confirmation prompt (use with caution)'
+        "--force",
+        "-f",
+        action="store_true",
+        help="Skip confirmation prompt (use with caution)",
     )
 
     parser.add_argument(
-        '--delete-files',
-        action='store_true',
-        help='Also delete all data files in data/salary/dol_data/ directory'
+        "--delete-files",
+        action="store_true",
+        help="Also delete all data files in data/salary/dol_data/ directory",
     )
 
     args = parser.parse_args()
 
     # Log script execution
     script_logger.log_call(
-        args={'force': args.force, 'delete_files': args.delete_files},
-        context='Dropping all salary data and orphaned employers'
+        args={"force": args.force, "delete_files": args.delete_files},
+        context="Dropping all salary data and orphaned employers",
     )
 
     # Get counts before deletion
@@ -130,11 +131,13 @@ WARNING: This operation cannot be undone!
     # Check file count if deleting files
     file_count = 0
     if args.delete_files:
-        dol_data_dir = get_workspace_dir() / 'dol_data'
+        dol_data_dir = get_workspace_dir() / "dol_data"
         if dol_data_dir.exists():
-            file_count = len(list(dol_data_dir.glob('*.csv')) +
-                            list(dol_data_dir.glob('*.xlsx')) +
-                            list(dol_data_dir.glob('*.xls')))
+            file_count = len(
+                list(dol_data_dir.glob("*.csv"))
+                + list(dol_data_dir.glob("*.xlsx"))
+                + list(dol_data_dir.glob("*.xls"))
+            )
 
     logger.info("=" * 60)
     logger.info("Salary Data Deletion")
@@ -150,13 +153,15 @@ WARNING: This operation cannot be undone!
 
     # Confirmation prompt
     if not args.force:
-        warning_msg = "WARNING: This will delete ALL salary records and orphaned employers!"
+        warning_msg = (
+            "WARNING: This will delete ALL salary records and orphaned employers!"
+        )
         if args.delete_files:
             warning_msg += "\nWARNING: This will also delete ALL data files in data/salary/dol_data/!"
         logger.warning(warning_msg)
         logger.warning("This operation cannot be undone.")
         response = input("Type 'yes' to continue: ")
-        if response.lower() != 'yes':
+        if response.lower() != "yes":
             logger.info("Operation cancelled.")
             sys.exit(0)
 
@@ -190,5 +195,5 @@ WARNING: This operation cannot be undone!
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

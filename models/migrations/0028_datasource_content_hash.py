@@ -4,15 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0027_salaryrecord_salary_reco_job_tit_5f8dff_idx'),
+        ("models", "0027_salaryrecord_salary_reco_job_tit_5f8dff_idx"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='datasource',
-            name='content_hash',
-            field=models.CharField(blank=True, db_index=True, help_text='SHA256 hash of file content (detects duplicates with different URLs)', max_length=64),
+            model_name="datasource",
+            name="content_hash",
+            field=models.CharField(
+                blank=True,
+                db_index=True,
+                help_text="SHA256 hash of file content (detects duplicates with different URLs)",
+                max_length=64,
+            ),
         ),
     ]

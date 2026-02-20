@@ -20,8 +20,12 @@ def test_run_orchestrate_no_op_when_inactive() -> None:
     os.environ["REFRESH_MY_INSTANCE_NAME"] = "Staging"
     try:
         with (
-            patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-            patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
+            patch(
+                "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+            ) as m_resolve,
+            patch(
+                "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+            ) as m_is_active,
         ):
             m_resolve.return_value = (active, inactive)
             m_is_active.return_value = False
@@ -39,10 +43,18 @@ def test_run_orchestrate_no_traffic_switch_runs_pipeline_then_exits() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
-        patch("scripts.cron.refresh.orchestrate.instance.wait_instance_healthy") as m_healthy,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.wait_instance_healthy"
+        ) as m_healthy,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
         patch("scripts.cron.refresh.orchestrate.traffic_switch") as m_switch,
     ):
@@ -59,7 +71,9 @@ def test_run_orchestrate_no_traffic_switch_runs_pipeline_then_exits() -> None:
 def test_run_orchestrate_missing_env_returns_1() -> None:
     """When REFRESH_ACTIVE_* or REFRESH_INACTIVE_* are missing, return 1."""
     config = load_config(Path("."))
-    with patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve:
+    with patch(
+        "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+    ) as m_resolve:
         m_resolve.return_value = (None, None)
         result = run_orchestrate(config, no_traffic_switch=True)
     assert result == 1
@@ -72,10 +86,18 @@ def test_run_orchestrate_ssh_db_not_ready_returns_1() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
-        patch("scripts.cron.refresh.orchestrate.services.wait_ssh_and_db_ready") as m_ssh_ready,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.services.wait_ssh_and_db_ready"
+        ) as m_ssh_ready,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
     ):
         m_resolve.return_value = (active, inactive)
@@ -94,9 +116,15 @@ def test_run_orchestrate_instance_start_failure_returns_1() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="stopped")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
         patch("scripts.cron.refresh.orchestrate.instance.start_instance") as m_start,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
     ):
@@ -116,11 +144,19 @@ def test_run_orchestrate_instance_not_running_after_start_returns_1() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="stopped")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
         patch("scripts.cron.refresh.orchestrate.instance.start_instance") as m_start,
-        patch("scripts.cron.refresh.orchestrate.instance.wait_instance_running") as m_running,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.wait_instance_running"
+        ) as m_running,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
     ):
         m_resolve.return_value = (active, inactive)
@@ -140,10 +176,18 @@ def test_run_orchestrate_health_check_failure_is_nonfatal(tmp_path: Path) -> Non
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
-        patch("scripts.cron.refresh.orchestrate.instance.wait_instance_healthy") as m_healthy,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.wait_instance_healthy"
+        ) as m_healthy,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
         patch("scripts.cron.refresh.orchestrate.services") as m_services,
     ):
@@ -164,9 +208,15 @@ def test_run_orchestrate_from_step_traffic_switch_ssh_fail() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.services.wait_ssh_and_db_ready") as m_ssh,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.services.wait_ssh_and_db_ready"
+        ) as m_ssh,
     ):
         m_resolve.return_value = (active, inactive)
         m_is_active.return_value = True
@@ -182,10 +232,18 @@ def test_run_orchestrate_pipeline_failure_returns_nonzero() -> None:
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
-        patch("scripts.cron.refresh.orchestrate.instance.wait_instance_healthy") as m_healthy,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.wait_instance_healthy"
+        ) as m_healthy,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
         patch("scripts.cron.refresh.orchestrate.traffic_switch") as m_switch,
         patch("scripts.cron.refresh.orchestrate.services") as m_services,
@@ -210,19 +268,30 @@ def test_run_orchestrate_health_check_failure_still_allows_traffic_switch() -> N
     inactive = InstanceInfo(name="Staging", ip="54.196.241.197", state="running")
 
     with (
-        patch("scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env") as m_resolve,
-        patch("scripts.cron.refresh.orchestrate.instance.is_this_host_active") as m_is_active,
-        patch("scripts.cron.refresh.orchestrate.instance.get_instance_state") as m_state,
-        patch("scripts.cron.refresh.orchestrate.instance.wait_instance_healthy") as m_healthy,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.resolve_active_inactive_from_env"
+        ) as m_resolve,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.is_this_host_active"
+        ) as m_is_active,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.get_instance_state"
+        ) as m_state,
+        patch(
+            "scripts.cron.refresh.orchestrate.instance.wait_instance_healthy"
+        ) as m_healthy,
         patch("scripts.cron.refresh.orchestrate.run_pipeline") as m_pipeline,
         patch("scripts.cron.refresh.orchestrate.traffic_switch") as m_switch,
         patch("scripts.cron.refresh.orchestrate.services") as m_services,
         patch("scripts.cron.refresh.orchestrate.RemoteRunner") as m_runner_cls,
         patch("scripts.cron.refresh.orchestrate.instance.stop_instance") as m_stop,
-        patch.dict(os.environ, {
-            "REFRESH_STATIC_IP_NAME": "VisaBulletin-ip",
-            "REFRESH_SKIP_STAGING_IP_REASSIGN": "1",
-        }),
+        patch.dict(
+            os.environ,
+            {
+                "REFRESH_STATIC_IP_NAME": "VisaBulletin-ip",
+                "REFRESH_SKIP_STAGING_IP_REASSIGN": "1",
+            },
+        ),
     ):
         m_resolve.return_value = (active, inactive)
         m_is_active.return_value = True

@@ -45,13 +45,17 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
 
     domain = DataDomain.DOL
     source_type = SourceType.PERM
-    data_dir = 'salary/dol_data'  # Override default data directory
-    filename_prefix = 'perm'
+    data_dir = "salary/dol_data"  # Override default data directory
+    filename_prefix = "perm"
 
-    def __init__(self, skip_clustering: bool = False, case_number_whitelist: set[str] | None = None):
+    def __init__(
+        self,
+        skip_clustering: bool = False,
+        case_number_whitelist: set[str] | None = None,
+    ):
         """
         Initialize plugin with employer cache
-        
+
         Args:
             skip_clustering: If True, skip employer clustering (faster for re-imports)
             case_number_whitelist: If provided, only ingest records matching these case numbers
@@ -73,15 +77,15 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
 
         logger.info("Preloading employer cache for PERM ingest.")
         employer_qs = Employer.objects.values_list(
-            'name_normalized',
-            'city',
-            'state',
-            'id',
-            'canonical_cluster_id',
+            "name_normalized",
+            "city",
+            "state",
+            "id",
+            "canonical_cluster_id",
         ).iterator(chunk_size=10000)
 
         for name_normalized, city, state, employer_id, cluster_id in employer_qs:
-            employer_key = (name_normalized, city or '', state or '')
+            employer_key = (name_normalized, city or "", state or "")
             self._employer_cache[employer_key] = EmployerCacheEntry(
                 employer_id=employer_id,
                 has_cluster=bool(cluster_id),
@@ -105,7 +109,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
             for match in matches:
                 url = urljoin(base_url, match)
 
-                fiscal_year_match = re.search(r'FY(\d{4})', match, re.IGNORECASE)
+                fiscal_year_match = re.search(r"FY(\d{4})", match, re.IGNORECASE)
                 if fiscal_year_match:
                     fiscal_year = int(fiscal_year_match.group(1))
                     # DOL formats: pre-2015 vs post-2015 (adjust based on actual format changes)
@@ -116,13 +120,15 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
                 else:
                     format_version = FormatVersion.UNKNOWN
 
-                sources.append(SourceInfo(
-                    url=url,
-                    domain=self.domain.value,
-                    source_type=self.source_type.value,
-                    format_version=format_version,
-                    metadata={'discovered_from': base_url}
-                ))
+                sources.append(
+                    SourceInfo(
+                        url=url,
+                        domain=self.domain.value,
+                        source_type=self.source_type.value,
+                        format_version=format_version,
+                        metadata={"discovered_from": base_url},
+                    )
+                )
 
             logger.info(f"Discovered {len(sources)} PERM data sources")
         except Exception as e:
@@ -140,39 +146,45 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         # Get fiscal year using sophisticated extraction that handles artificial filenames, file:// URLs,
         # reimport:// URLs, alternative DataSources, IngestRun checkpoints, and metadata
         if run.source:
-            fiscal_year = get_fiscal_year_from_datasource(filepath.name, run.source, logger_instance=logger)
+            fiscal_year = get_fiscal_year_from_datasource(
+                filepath.name, run.source, logger_instance=logger
+            )
         else:
             # Fallback to basic extraction if no DataSource available
             fiscal_year = get_fiscal_year_from_filename(filepath.name)
         source_file = filepath.name
 
-        if filepath.suffix.lower() in ['.xlsx', '.xls']:
+        if filepath.suffix.lower() in [".xlsx", ".xls"]:
             for record in self._parse_excel_streaming(filepath, run):
-                record['_fiscal_year'] = fiscal_year
-                record['_source_file'] = source_file
+                record["_fiscal_year"] = fiscal_year
+                record["_source_file"] = source_file
                 yield record
         else:
             for record in self._parse_csv_streaming(filepath, run):
-                record['_fiscal_year'] = fiscal_year
-                record['_source_file'] = source_file
+                record["_fiscal_year"] = fiscal_year
+                record["_source_file"] = source_file
                 yield record
 
     def _parse_excel_streaming(self, filepath: Path, run: IngestRun) -> Iterator[dict]:
         """Stream Excel file using openpyxl"""
-        logger.info(f"[Run {run.id}] Parsing Excel with openpyxl streaming: {filepath.name}")
+        logger.info(
+            f"[Run {run.id}] Parsing Excel with openpyxl streaming: {filepath.name}"
+        )
 
-        start_row = run.checkpoint.get('last_row', 0) + 2
+        start_row = run.checkpoint.get("last_row", 0) + 2
         if start_row > 2:
             logger.info(f"[Run {run.id}] Resuming Excel parse from row {start_row}")
 
         row_count = 0
-        for row_num, record in enumerate(read_excel_streaming(filepath, start_row=start_row), start=start_row):
+        for row_num, record in enumerate(
+            read_excel_streaming(filepath, start_row=start_row), start=start_row
+        ):
             row_count += 1
-            record['_row_num'] = row_num
+            record["_row_num"] = row_num
 
             if row_count % 10000 == 0:
-                run.checkpoint['last_row'] = row_num - 1
-                run.save(update_fields=['checkpoint'])
+                run.checkpoint["last_row"] = row_num - 1
+                run.save(update_fields=["checkpoint"])
 
             yield record
 
@@ -183,9 +195,9 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         import csv
 
         logger.info(f"[Run {run.id}] Parsing CSV: {filepath.name}")
-        start_row = run.checkpoint.get('last_row', 0)
+        start_row = run.checkpoint.get("last_row", 0)
 
-        with open(filepath, encoding='utf-8', errors='ignore') as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             reader = csv.DictReader(f)
 
             for _ in range(start_row):
@@ -197,23 +209,23 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
             row_count = start_row
             for row in reader:
                 row_count += 1
-                row['_row_num'] = row_count
+                row["_row_num"] = row_count
                 if row_count % 10000 == 0:
-                    run.checkpoint['last_row'] = row_count - 1
-                    run.save(update_fields=['checkpoint'])
+                    run.checkpoint["last_row"] = row_count - 1
+                    run.save(update_fields=["checkpoint"])
                 yield row
 
         logger.info(f"[Run {run.id}] Finished parsing {row_count:,} rows from CSV")
 
     def transform(self, record: dict) -> SalaryRecord | None:
         """Transform raw record into SalaryRecord model
-        
+
         Skips records without required data:
         - Must have case_number
         - Must have employer_name (not empty/None)
         - Must have job_title (not empty/None/"Unknown")
         - Must have salary data (wage_from and wage_unit, or wage_annual)
-        
+
         Note:
             Non-plugin-specific errors (ImportError, configuration issues, etc.) should
             propagate to the framework. The orchestrator handles exceptions and decides
@@ -221,30 +233,39 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         """
         column_mappings = PERM_COLUMN_MAPPINGS
 
-        case_number = get_column_value(record, column_mappings['case_number'])
+        case_number = get_column_value(record, column_mappings["case_number"])
         if not case_number:
             return None
         case_number_value = str(case_number).strip().upper()
-        if self.case_number_whitelist and case_number_value.upper() not in self.case_number_whitelist:
+        if (
+            self.case_number_whitelist
+            and case_number_value.upper() not in self.case_number_whitelist
+        ):
             return None
 
         # Parse employer info - REQUIRED for salary records
-        employer_name_raw = get_column_value(record, column_mappings['employer_name'])
+        employer_name_raw = get_column_value(record, column_mappings["employer_name"])
         if (
             not employer_name_raw
-            or employer_name_raw.strip() == ''
-            or employer_name_raw.strip().lower() == 'unknown'
+            or employer_name_raw.strip() == ""
+            or employer_name_raw.strip().lower() == "unknown"
         ):
             # Skip records without employer name (required for salary records)
             logger.debug(f"Skipping record {case_number_value}: missing employer_name")
             return None
 
         employer_name = employer_name_raw.strip()
-        employer_city = get_column_value(record, column_mappings['employer_city']) or ''
-        employer_state_raw = get_column_value(record, column_mappings['employer_state']) or ''
+        employer_city = get_column_value(record, column_mappings["employer_city"]) or ""
+        employer_state_raw = (
+            get_column_value(record, column_mappings["employer_state"]) or ""
+        )
         employer_state = normalize_state_code(employer_state_raw)
 
-        employer_key = (Employer.normalize_name(employer_name), employer_city, employer_state)
+        employer_key = (
+            Employer.normalize_name(employer_name),
+            employer_city,
+            employer_state,
+        )
         self._load_employer_cache()
 
         if employer_key not in self._employer_cache:
@@ -299,13 +320,17 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
             else:
                 employer_instance = Employer(id=cache_entry.employer_id)
 
-        job_title_raw = get_column_value(record, column_mappings['job_title'])
-        if not job_title_raw or job_title_raw.strip() == '' or job_title_raw.strip().lower() == 'unknown':
+        job_title_raw = get_column_value(record, column_mappings["job_title"])
+        if (
+            not job_title_raw
+            or job_title_raw.strip() == ""
+            or job_title_raw.strip().lower() == "unknown"
+        ):
             logger.debug(f"Skipping record {case_number}: missing job_title")
             return None
         job_title = job_title_raw.strip()
 
-        row_num = record.get('_row_num')
+        row_num = record.get("_row_num")
         wage_from, wage_to, wage_unit, wage_annual = _parse_wage_info(
             record, column_mappings, row_num if row_num is not None else 0
         )
@@ -313,31 +338,63 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
         # REQUIRED: Salary records must have salary data (wage_from and wage_unit, or wage_annual)
         # Skip records without any salary information
         if not wage_from and not wage_annual:
-            logger.debug(f"Skipping record {case_number_value}: missing salary data (no wage_from or wage_annual)")
+            logger.debug(
+                f"Skipping record {case_number_value}: missing salary data (no wage_from or wage_annual)"
+            )
             return None
 
         # Skip records with wage_annual outside valid range (typos, wrong unit, data errors)
         if wage_annual is not None:
             is_valid, _ = validate_wage_annual(wage_annual, row_num)
             if not is_valid:
-                logger.debug(f"Skipping record {case_number_value}: wage_annual outside valid range")
+                logger.debug(
+                    f"Skipping record {case_number_value}: wage_annual outside valid range"
+                )
                 return None
 
-        case_status, case_submitted, decision_date, employment_start, employment_end, prevailing_wage, prevailing_wage_unit = _parse_case_info(
-            record, column_mappings
-        )
+        (
+            case_status,
+            case_submitted,
+            decision_date,
+            employment_start,
+            employment_end,
+            prevailing_wage,
+            prevailing_wage_unit,
+        ) = _parse_case_info(record, column_mappings)
 
-        fiscal_year = record.get('_fiscal_year', 0)
-        source_file = record.get('_source_file', '')
+        fiscal_year = record.get("_fiscal_year", 0)
+        source_file = record.get("_source_file", "")
 
         if not fiscal_year:
-            fiscal_year = get_fiscal_year_from_filename(self._current_run.checkpoint.get('filepath', '')) if self._current_run else 0
+            fiscal_year = (
+                get_fiscal_year_from_filename(
+                    self._current_run.checkpoint.get("filepath", "")
+                )
+                if self._current_run
+                else 0
+            )
 
         salary_record = _create_salary_record(
-            record, column_mappings, case_number_value, VisaProgram.PERM, employer_instance, employer_name, job_title,
-            wage_from, wage_to, wage_unit, wage_annual,
-            case_status, case_submitted, decision_date, employment_start, employment_end,
-            prevailing_wage, prevailing_wage_unit, fiscal_year, source_file
+            record,
+            column_mappings,
+            case_number_value,
+            VisaProgram.PERM,
+            employer_instance,
+            employer_name,
+            job_title,
+            wage_from,
+            wage_to,
+            wage_unit,
+            wage_annual,
+            case_status,
+            case_submitted,
+            decision_date,
+            employment_start,
+            employment_end,
+            prevailing_wage,
+            prevailing_wage_unit,
+            fiscal_year,
+            source_file,
         )
 
         return salary_record
@@ -345,13 +402,13 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
     def get_format_version(self, filepath: Path) -> str:
         """
         Detect format version from filename.
-        
+
         Returns:
             FormatVersion enum value ('legacy', 'modern', or 'unknown')
         """
         from models.ingest.enums import FormatVersion
 
-        fiscal_year_match = re.search(r'FY(\d{4})', filepath.name, re.IGNORECASE)
+        fiscal_year_match = re.search(r"FY(\d{4})", filepath.name, re.IGNORECASE)
         if fiscal_year_match:
             fiscal_year = int(fiscal_year_match.group(1))
             # DOL formats: pre-2015 vs post-2015 (adjust based on actual format changes)
@@ -362,6 +419,7 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
 
         # Try to extract fiscal year from filename
         from lib.utils.data_source_utils import get_fiscal_year_from_filename as get_fy
+
         fiscal_year = get_fy(filepath.name)
         if fiscal_year is not None:
             if fiscal_year < 2015:
@@ -374,7 +432,5 @@ class PERMSalaryDataSourcePlugin(DataSourcePlugin):
     def validate_post_ingest(self, run: IngestRun) -> ValidationResult:
         """Validate PERM data after ingestion using shared validation logic"""
         return validate_salary_records_post_ingest(
-            run=run,
-            visa_program=VisaProgram.PERM,
-            program_name="PERM"
+            run=run, visa_program=VisaProgram.PERM, program_name="PERM"
         )

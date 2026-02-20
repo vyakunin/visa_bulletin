@@ -5,78 +5,225 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0019_remove_employercluster_unique_canonical_name_and_more'),
+        ("models", "0019_remove_employercluster_unique_canonical_name_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='JobTitleCluster',
+            name="JobTitleCluster",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('canonical_title', models.CharField(db_index=True, help_text="Canonical job title (e.g., 'Software Engineer')", max_length=500)),
-                ('total_filings', models.IntegerField(default=0, help_text='Total filings across all job titles in cluster')),
-                ('avg_salary', models.DecimalField(blank=True, decimal_places=2, help_text='Average salary across all job titles in cluster', max_digits=12, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "canonical_title",
+                    models.CharField(
+                        db_index=True,
+                        help_text="Canonical job title (e.g., 'Software Engineer')",
+                        max_length=500,
+                    ),
+                ),
+                (
+                    "total_filings",
+                    models.IntegerField(
+                        default=0,
+                        help_text="Total filings across all job titles in cluster",
+                    ),
+                ),
+                (
+                    "avg_salary",
+                    models.DecimalField(
+                        blank=True,
+                        decimal_places=2,
+                        help_text="Average salary across all job titles in cluster",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'db_table': 'salary_job_title_cluster',
-                'indexes': [models.Index(fields=['canonical_title'], name='salary_job__canonic_58038a_idx')],
+                "db_table": "salary_job_title_cluster",
+                "indexes": [
+                    models.Index(
+                        fields=["canonical_title"],
+                        name="salary_job__canonic_58038a_idx",
+                    )
+                ],
             },
         ),
         migrations.CreateModel(
-            name='JobTitle',
+            name="JobTitle",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(help_text='Original job title from filing', max_length=500)),
-                ('title_normalized', models.CharField(db_index=True, help_text='Normalized title for matching (no seniority indicators)', max_length=500)),
-                ('experience_level', models.CharField(blank=True, choices=[('', 'Not Specified'), ('entry', 'Entry Level'), ('junior', 'Junior'), ('mid', 'Mid Level'), ('senior', 'Senior'), ('staff', 'Staff'), ('principal', 'Principal'), ('lead', 'Lead'), ('manager', 'Manager'), ('director', 'Director')], db_index=True, default='', help_text='Extracted experience/seniority level', max_length=20)),
-                ('total_filings', models.IntegerField(default=0)),
-                ('avg_salary', models.DecimalField(blank=True, decimal_places=2, max_digits=12, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('canonical_cluster', models.ForeignKey(blank=True, help_text='Canonical job title cluster', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='job_titles', to='models.jobtitlecluster')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "title",
+                    models.CharField(
+                        help_text="Original job title from filing", max_length=500
+                    ),
+                ),
+                (
+                    "title_normalized",
+                    models.CharField(
+                        db_index=True,
+                        help_text="Normalized title for matching (no seniority indicators)",
+                        max_length=500,
+                    ),
+                ),
+                (
+                    "experience_level",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("", "Not Specified"),
+                            ("entry", "Entry Level"),
+                            ("junior", "Junior"),
+                            ("mid", "Mid Level"),
+                            ("senior", "Senior"),
+                            ("staff", "Staff"),
+                            ("principal", "Principal"),
+                            ("lead", "Lead"),
+                            ("manager", "Manager"),
+                            ("director", "Director"),
+                        ],
+                        db_index=True,
+                        default="",
+                        help_text="Extracted experience/seniority level",
+                        max_length=20,
+                    ),
+                ),
+                ("total_filings", models.IntegerField(default=0)),
+                (
+                    "avg_salary",
+                    models.DecimalField(
+                        blank=True, decimal_places=2, max_digits=12, null=True
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "canonical_cluster",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="Canonical job title cluster",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="job_titles",
+                        to="models.jobtitlecluster",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'salary_job_title',
+                "db_table": "salary_job_title",
             },
         ),
         migrations.AddField(
-            model_name='salaryrecord',
-            name='job_title_entity',
-            field=models.ForeignKey(blank=True, help_text='Link to normalized job title entity', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='salary_records', to='models.jobtitle'),
+            model_name="salaryrecord",
+            name="job_title_entity",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Link to normalized job title entity",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="salary_records",
+                to="models.jobtitle",
+            ),
         ),
         migrations.CreateModel(
-            name='JobTitleClusteringReview',
+            name="JobTitleClusteringReview",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('similarity_score', models.FloatField(help_text='Similarity score (0.0-1.0)')),
-                ('match_reason', models.TextField(blank=True)),
-                ('status', models.CharField(choices=[('pending', 'Pending Review'), ('same', 'Same Job Title'), ('different', 'Different Job Title'), ('skip', 'Skip')], db_index=True, default='pending', max_length=20)),
-                ('reviewed_by', models.CharField(blank=True, max_length=100)),
-                ('reviewed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('job_title1', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='review_pairs_as_first', to='models.jobtitle')),
-                ('job_title2', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='review_pairs_as_second', to='models.jobtitle')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "similarity_score",
+                    models.FloatField(help_text="Similarity score (0.0-1.0)"),
+                ),
+                ("match_reason", models.TextField(blank=True)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending Review"),
+                            ("same", "Same Job Title"),
+                            ("different", "Different Job Title"),
+                            ("skip", "Skip"),
+                        ],
+                        db_index=True,
+                        default="pending",
+                        max_length=20,
+                    ),
+                ),
+                ("reviewed_by", models.CharField(blank=True, max_length=100)),
+                ("reviewed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "job_title1",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="review_pairs_as_first",
+                        to="models.jobtitle",
+                    ),
+                ),
+                (
+                    "job_title2",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="review_pairs_as_second",
+                        to="models.jobtitle",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'salary_job_title_clustering_review',
-                'indexes': [models.Index(fields=['status'], name='salary_job__status_94ab72_idx'), models.Index(fields=['similarity_score'], name='salary_job__similar_3d311d_idx')],
-                'unique_together': {('job_title1', 'job_title2')},
+                "db_table": "salary_job_title_clustering_review",
+                "indexes": [
+                    models.Index(
+                        fields=["status"], name="salary_job__status_94ab72_idx"
+                    ),
+                    models.Index(
+                        fields=["similarity_score"],
+                        name="salary_job__similar_3d311d_idx",
+                    ),
+                ],
+                "unique_together": {("job_title1", "job_title2")},
             },
         ),
         migrations.AddIndex(
-            model_name='jobtitle',
-            index=models.Index(fields=['title_normalized'], name='salary_job__title_n_ebd2a4_idx'),
+            model_name="jobtitle",
+            index=models.Index(
+                fields=["title_normalized"], name="salary_job__title_n_ebd2a4_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='jobtitle',
-            index=models.Index(fields=['experience_level'], name='salary_job__experie_288277_idx'),
+            model_name="jobtitle",
+            index=models.Index(
+                fields=["experience_level"], name="salary_job__experie_288277_idx"
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='jobtitle',
-            unique_together={('title_normalized', 'experience_level')},
+            name="jobtitle",
+            unique_together={("title_normalized", "experience_level")},
         ),
     ]

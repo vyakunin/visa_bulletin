@@ -42,7 +42,9 @@ class TestPathBasenameFromUrl(unittest.TestCase):
 
     def test_returns_last_segment(self):
         self.assertEqual(
-            path_basename_from_url("https://www.dol.gov/agencies/eta/foreign-labor/PERM_FY2024.xlsx"),
+            path_basename_from_url(
+                "https://www.dol.gov/agencies/eta/foreign-labor/PERM_FY2024.xlsx"
+            ),
             "PERM_FY2024.xlsx",
         )
 

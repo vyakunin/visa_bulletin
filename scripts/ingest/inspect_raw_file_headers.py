@@ -29,17 +29,25 @@ def inspect_worksite_file(filepath: Path):
     """Inspect a worksite file for employer-related columns"""
     print(f"\n📁 Inspecting worksite file: {filepath.name}")
 
-    if filepath.suffix.lower() == '.xlsx':
+    if filepath.suffix.lower() == ".xlsx":
         headers = read_excel_headers(filepath)
     else:
-        with open(filepath, encoding='utf-8', errors='ignore') as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
             headers = next(reader)
 
     print(f"   Total columns: {len(headers)}")
 
     # Check for employer-related columns
-    employer_keywords = ['employer', 'business', 'company', 'organization', 'corp', 'inc', 'llc']
+    employer_keywords = [
+        "employer",
+        "business",
+        "company",
+        "organization",
+        "corp",
+        "inc",
+        "llc",
+    ]
     employer_columns = []
     for header in headers:
         header_lower = str(header).lower()
@@ -65,17 +73,25 @@ def inspect_perm_file_without_job_title(filepath: Path):
     """Inspect a PERM file that has records without job titles"""
     print(f"\n📁 Inspecting PERM file: {filepath.name}")
 
-    if filepath.suffix.lower() == '.xlsx':
+    if filepath.suffix.lower() == ".xlsx":
         headers = read_excel_headers(filepath)
     else:
-        with open(filepath, encoding='utf-8', errors='ignore') as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
             headers = next(reader)
 
     print(f"   Total columns: {len(headers)}")
 
     # Check for job title columns
-    job_keywords = ['job', 'title', 'occupation', 'position', 'role', 'pw_job', 'job_info']
+    job_keywords = [
+        "job",
+        "title",
+        "occupation",
+        "position",
+        "role",
+        "pw_job",
+        "job_info",
+    ]
     job_columns = []
     for header in headers:
         header_lower = str(header).lower()
@@ -103,13 +119,15 @@ def main():
 
     # Find sample worksite files
     workspace_dir = get_workspace_dir()
-    data_dir = workspace_dir / 'data' / 'salary' / 'dol_data'
+    data_dir = workspace_dir / "data" / "salary" / "dol_data"
     if not data_dir.exists():
         print(f"❌ Data directory not found: {data_dir}")
         return
 
     # Find worksite files
-    worksite_files = list(data_dir.glob('*Worksites*.xlsx')) + list(data_dir.glob('*worksites*.xlsx'))
+    worksite_files = list(data_dir.glob("*Worksites*.xlsx")) + list(
+        data_dir.glob("*worksites*.xlsx")
+    )
     if worksite_files:
         print(f"\n📊 Found {len(worksite_files)} worksite files")
         # Inspect first few
@@ -119,17 +137,22 @@ def main():
         print("\n⚠️  No worksite files found")
 
     # Find PERM files with missing job titles
-    perm_files = list(data_dir.glob('PERM*.xlsx'))
+    perm_files = list(data_dir.glob("PERM*.xlsx"))
     if perm_files:
         print(f"\n📊 Found {len(perm_files)} PERM files")
         # Check which PERM files have records without job titles
-        perm_without_job_title = SalaryRecord.objects.filter(
-            source_file__startswith='PERM',
-            job_title__in=['', 'Unknown']
-        ).values_list('source_file', flat=True).distinct()
+        perm_without_job_title = (
+            SalaryRecord.objects.filter(
+                source_file__startswith="PERM", job_title__in=["", "Unknown"]
+            )
+            .values_list("source_file", flat=True)
+            .distinct()
+        )
 
         if perm_without_job_title:
-            print(f"\n   PERM files with missing job titles: {list(perm_without_job_title)[:5]}")
+            print(
+                f"\n   PERM files with missing job titles: {list(perm_without_job_title)[:5]}"
+            )
             # Inspect first PERM file
             for source_file in list(perm_without_job_title)[:1]:
                 filepath = data_dir / source_file
@@ -149,6 +172,5 @@ def main():
         print("\n⚠️  No PERM files found")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

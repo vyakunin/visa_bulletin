@@ -88,7 +88,7 @@ class EmployerDirectoryViewTest(TestCase):
         self.assertContains(response, "Company A LLC")
         self.assertContains(response, "Company B Inc")
         self.assertContains(response, "10")  # H-1B count for A
-        self.assertContains(response, "5")   # PERM count for A
+        self.assertContains(response, "5")  # PERM count for A
 
     def test_keyset_next_page_different_and_ordered(self):
         """Page 1 then cursor=next_cursor returns second page; no duplicates; correct order."""
@@ -99,9 +99,7 @@ class EmployerDirectoryViewTest(TestCase):
         if not next_cursor:
             self.skipTest("Only one page of results; cannot test keyset next")
         page1_ids = [e.id for e in response1.context["employers"]]
-        response2 = self.client.get(
-            f"{url}?page=2&cursor={next_cursor}&program=all"
-        )
+        response2 = self.client.get(f"{url}?page=2&cursor={next_cursor}&program=all")
         self.assertEqual(response2.status_code, 200)
         page2_ids = [e.id for e in response2.context["employers"]]
         for pid in page2_ids:
@@ -127,9 +125,7 @@ class EmployerDirectoryViewTest(TestCase):
         self.assertEqual(response_all.status_code, 200)
         total_all = response_all.context["total_results"]
 
-        response_ca = self.client.get(
-            reverse("employer_directory") + "?state=CA"
-        )
+        response_ca = self.client.get(reverse("employer_directory") + "?state=CA")
         self.assertEqual(response_ca.status_code, 200)
         self.assertLessEqual(
             response_ca.context["total_results"],
@@ -142,15 +138,9 @@ class EmployerDirectoryViewTest(TestCase):
 
     def test_program_filter_ordering(self):
         """Program filter h1b/perm changes ordering (by total_lca_count or total_perm_count)."""
-        response_all = self.client.get(
-            reverse("employer_directory") + "?program=all"
-        )
-        response_h1b = self.client.get(
-            reverse("employer_directory") + "?program=h1b"
-        )
-        response_perm = self.client.get(
-            reverse("employer_directory") + "?program=perm"
-        )
+        response_all = self.client.get(reverse("employer_directory") + "?program=all")
+        response_h1b = self.client.get(reverse("employer_directory") + "?program=h1b")
+        response_perm = self.client.get(reverse("employer_directory") + "?program=perm")
         self.assertEqual(response_all.status_code, 200)
         self.assertEqual(response_h1b.status_code, 200)
         self.assertEqual(response_perm.status_code, 200)

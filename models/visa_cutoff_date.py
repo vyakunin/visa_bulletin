@@ -15,61 +15,50 @@ from .ingest.ingest_version import IngestVersion  # noqa: F401
 class VisaCutoffDate(models.Model):
     """
     Individual visa cutoff date entry - the core time series data
-    
+
     Represents a single data point: for a specific bulletin, category,
     class, action type, and country, what is the priority date cutoff?
-    
+
     Uses Django TextChoices for enum fields - readable strings in DB,
     type-safe enums in Python code.
     """
 
     bulletin = models.ForeignKey(
-        Bulletin,
-        on_delete=models.CASCADE,
-        related_name='cutoff_dates'
+        Bulletin, on_delete=models.CASCADE, related_name="cutoff_dates"
     )
 
     visa_category = models.CharField(
         max_length=20,
         choices=VisaCategory.choices,
-        help_text="Family-Sponsored or Employment-Based"
+        help_text="Family-Sponsored or Employment-Based",
     )
 
-    visa_class = models.CharField(
-        max_length=100,
-        help_text="F1, F2A, EB1, EB2, etc."
-    )
+    visa_class = models.CharField(max_length=100, help_text="F1, F2A, EB1, EB2, etc.")
 
     action_type = models.CharField(
         max_length=20,
         choices=ActionType.choices,
-        help_text="Final Action or Dates for Filing"
+        help_text="Final Action or Dates for Filing",
     )
 
     country = models.IntegerField(
-        choices=Country.choices,
-        help_text="Country/region for chargeability"
+        choices=Country.choices, help_text="Country/region for chargeability"
     )
 
     cutoff_value = models.CharField(
-        max_length=20,
-        help_text="Raw value: date string, 'C', or 'U'"
+        max_length=20, help_text="Raw value: date string, 'C', or 'U'"
     )
 
     cutoff_date = models.DateField(
-        null=True,
-        blank=True,
-        help_text="Parsed date (NULL for C/U)"
+        null=True, blank=True, help_text="Parsed date (NULL for C/U)"
     )
 
     is_current = models.BooleanField(
-        default=False,
-        help_text="True if cutoff is 'C' (Current)"
+        default=False, help_text="True if cutoff is 'C' (Current)"
     )
 
     is_unavailable = models.BooleanField(
-        default=False,
-        help_text="True if cutoff is 'U' (Unavailable)"
+        default=False, help_text="True if cutoff is 'U' (Unavailable)"
     )
 
     # Ingest version tracking (for rollback)
@@ -77,27 +66,34 @@ class VisaCutoffDate(models.Model):
     # No circular dependency: IngestVersion doesn't import from visa_cutoff_date
     # null=True allows None without explicit default (Django's default behavior)
     ingest_version = models.ForeignKey(
-        'models.IngestVersion',
+        "models.IngestVersion",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='cutoff_dates',
-        help_text="Ingest version this record belongs to (for rollback)"
+        related_name="cutoff_dates",
+        help_text="Ingest version this record belongs to (for rollback)",
     )
 
     class Meta:
-        ordering = ['bulletin', 'visa_category', 'visa_class', 'country']
-        unique_together = ['bulletin', 'visa_category', 'visa_class', 'action_type', 'country']
-        db_table = 'visa_cutoff_date'
+        ordering = ["bulletin", "visa_category", "visa_class", "country"]
+        unique_together = [
+            "bulletin",
+            "visa_category",
+            "visa_class",
+            "action_type",
+            "country",
+        ]
+        db_table = "visa_cutoff_date"
         indexes = [
             # For time series queries
-            models.Index(fields=['visa_class', 'country', 'action_type', 'bulletin']),
-            models.Index(fields=['visa_category', 'country']),
+            models.Index(fields=["visa_class", "country", "action_type", "bulletin"]),
+            models.Index(fields=["visa_category", "country"]),
         ]
 
     def __str__(self):
-        return f"{self.visa_class} {self.country} {self.action_type}: {self.cutoff_value}"
+        return (
+            f"{self.visa_class} {self.country} {self.action_type}: {self.cutoff_value}"
+        )
 
     def __repr__(self):
         return f"<VisaCutoffDate: {self.bulletin.publication_date} {self.visa_class} {self.country} = {self.cutoff_value}>"
-

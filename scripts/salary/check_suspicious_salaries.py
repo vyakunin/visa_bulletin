@@ -21,7 +21,7 @@ import sys
 import django
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 import argparse
@@ -42,7 +42,7 @@ MAX_REASONABLE_SALARY = 1000000  # $1M/year maximum
 def check_suspicious_salaries(verbose: bool = False, job_title: str | None = None):
     """
     Check for suspicious salary values.
-    
+
     Args:
         verbose: Show detailed records
         job_title: Filter by job title (optional)
@@ -74,11 +74,17 @@ def check_suspicious_salaries(verbose: bool = False, job_title: str | None = Non
     low_count = low_salary_records.count()
     low_percentage = (low_count / total_records * 100) if total_records > 0 else 0
 
-    print(f"\nFound {low_count:,} records ({low_percentage:.2f}%) with suspiciously low salaries")
+    print(
+        f"\nFound {low_count:,} records ({low_percentage:.2f}%) with suspiciously low salaries"
+    )
 
     if low_count > 0:
         # Group by wage_unit to see if these are miscoded hourly wages
-        by_unit = low_salary_records.values('wage_unit').annotate(count=Count('id')).order_by('-count')
+        by_unit = (
+            low_salary_records.values("wage_unit")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
         print("\nBreakdown by wage unit:")
         for item in by_unit:
             print(f"  {item['wage_unit']}: {item['count']:,} records")
@@ -89,7 +95,9 @@ def check_suspicious_salaries(verbose: bool = False, job_title: str | None = Non
                 print(f"  Case: {record.case_number}")
                 print(f"    Job: {record.job_title}")
                 print(f"    Employer: {record.employer_name}")
-                print(f"    Salary: ${record.wage_annual:,.2f} annual (from ${record.wage_from:,.2f} {record.wage_unit})")
+                print(
+                    f"    Salary: ${record.wage_annual:,.2f} annual (from ${record.wage_from:,.2f} {record.wage_unit})"
+                )
                 print(f"    Fiscal Year: {record.fiscal_year}")
                 print()
 
@@ -102,28 +110,40 @@ def check_suspicious_salaries(verbose: bool = False, job_title: str | None = Non
     high_count = high_salary_records.count()
     high_percentage = (high_count / total_records * 100) if total_records > 0 else 0
 
-    print(f"\nFound {high_count:,} records ({high_percentage:.2f}%) with suspiciously high salaries")
+    print(
+        f"\nFound {high_count:,} records ({high_percentage:.2f}%) with suspiciously high salaries"
+    )
 
     if high_count > 0:
         # Group by wage_unit
-        by_unit = high_salary_records.values('wage_unit').annotate(count=Count('id')).order_by('-count')
+        by_unit = (
+            high_salary_records.values("wage_unit")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
         print("\nBreakdown by wage unit:")
         for item in by_unit:
             print(f"  {item['wage_unit']}: {item['count']:,} records")
 
         # Show top job titles with high salaries
-        by_job = high_salary_records.values('job_title').annotate(count=Count('id')).order_by('-count')[:10]
+        by_job = (
+            high_salary_records.values("job_title")
+            .annotate(count=Count("id"))
+            .order_by("-count")[:10]
+        )
         print("\nTop job titles with high salaries:")
         for item in by_job:
             print(f"  {item['job_title']}: {item['count']:,} records")
 
         if verbose and high_count <= 20:
             print("\nSample records:")
-            for record in high_salary_records.order_by('-wage_annual')[:20]:
+            for record in high_salary_records.order_by("-wage_annual")[:20]:
                 print(f"  Case: {record.case_number}")
                 print(f"    Job: {record.job_title}")
                 print(f"    Employer: {record.employer_name}")
-                print(f"    Salary: ${record.wage_annual:,.2f} annual (from ${record.wage_from:,.2f} {record.wage_unit})")
+                print(
+                    f"    Salary: ${record.wage_annual:,.2f} annual (from ${record.wage_from:,.2f} {record.wage_unit})"
+                )
                 print(f"    Fiscal Year: {record.fiscal_year}")
                 print()
 
@@ -133,31 +153,41 @@ def check_suspicious_salaries(verbose: bool = False, job_title: str | None = Non
     print("=" * 80)
 
     suspicious_count = low_count + high_count
-    suspicious_percentage = (suspicious_count / total_records * 100) if total_records > 0 else 0
+    suspicious_percentage = (
+        (suspicious_count / total_records * 100) if total_records > 0 else 0
+    )
 
     print(f"\nTotal records: {total_records:,}")
     print(f"Suspicious records: {suspicious_count:,} ({suspicious_percentage:.2f}%)")
-    print(f"  - Too low (< ${MIN_REASONABLE_SALARY:,}): {low_count:,} ({low_percentage:.2f}%)")
-    print(f"  - Too high (> ${MAX_REASONABLE_SALARY:,}): {high_count:,} ({high_percentage:.2f}%)")
-    print(f"\nReasonable records: {total_records - suspicious_count:,} ({100 - suspicious_percentage:.2f}%)")
+    print(
+        f"  - Too low (< ${MIN_REASONABLE_SALARY:,}): {low_count:,} ({low_percentage:.2f}%)"
+    )
+    print(
+        f"  - Too high (> ${MAX_REASONABLE_SALARY:,}): {high_count:,} ({high_percentage:.2f}%)"
+    )
+    print(
+        f"\nReasonable records: {total_records - suspicious_count:,} ({100 - suspicious_percentage:.2f}%)"
+    )
 
     print("\n" + "=" * 80)
-    print("NOTE: These suspicious records are automatically filtered out in salary statistics")
+    print(
+        "NOTE: These suspicious records are automatically filtered out in salary statistics"
+    )
     print("and charts to prevent skewing the data.")
     print("=" * 80)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Check for suspicious salary values")
-    parser.add_argument('--verbose', action='store_true', help='Show detailed records')
-    parser.add_argument('--job-title', type=str, help='Filter by job title')
+    parser.add_argument("--verbose", action="store_true", help="Show detailed records")
+    parser.add_argument("--job-title", type=str, help="Filter by job title")
 
     args = parser.parse_args()
 
     # Log script execution
     script_logger.log_call(
-        args={'verbose': args.verbose, 'job_title': args.job_title},
-        context='Checking for suspicious salary values in database'
+        args={"verbose": args.verbose, "job_title": args.job_title},
+        context="Checking for suspicious salary values in database",
     )
 
     try:
@@ -165,9 +195,10 @@ def main():
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

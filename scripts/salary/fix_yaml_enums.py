@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fix YAML file by replacing Python enum objects with integer values."""
+
 import re
 import sys
 from pathlib import Path
@@ -25,9 +26,9 @@ def fix_yaml_enums(filepath: Path):
         line = lines[i]
 
         # Check if this line has a Python enum object
-        if '!!python/object/apply' in line:
+        if "!!python/object/apply" in line:
             # Extract field name and indentation
-            match = re.match(r'(\s+)(\w+):\s+!!python/object/apply:', line)
+            match = re.match(r"(\s+)(\w+):\s+!!python/object/apply:", line)
             if match:
                 indent = match.group(1)
                 field = match.group(2)
@@ -36,7 +37,7 @@ def fix_yaml_enums(filepath: Path):
                 if i + 1 < len(lines):
                     next_line = lines[i + 1]
                     # Match integer: "- 1" or string: "- year" or "- 'year'"
-                    value_match = re.match(r'(\s+)-\s+([^\n]+)', next_line)
+                    value_match = re.match(r"(\s+)-\s+([^\n]+)", next_line)
                     if value_match:
                         value = value_match.group(2).strip()
                         # Remove quotes if present
@@ -53,10 +54,10 @@ def fix_yaml_enums(filepath: Path):
         fixed_lines.append(line)
         i += 1
 
-    fixed_content = ''.join(fixed_lines)
+    fixed_content = "".join(fixed_lines)
 
     # Count remaining
-    remaining = len(re.findall(r'!!python/object/apply', fixed_content))
+    remaining = len(re.findall(r"!!python/object/apply", fixed_content))
 
     print(f"Made {replacements} replacements")
     print(f"Remaining Python objects: {remaining}")
@@ -64,7 +65,7 @@ def fix_yaml_enums(filepath: Path):
     # Always write the fixed content (even if some remain)
     if replacements > 0:
         print(f"Writing fixed content to {filepath}...")
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write(fixed_content)
 
     if remaining == 0:
@@ -75,9 +76,10 @@ def fix_yaml_enums(filepath: Path):
         print(f"Trying one more iteration to fix remaining {remaining} objects...")
         return fix_yaml_enums(filepath) if replacements > 0 else False
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     workspace = get_workspace_dir()
-    test_data_file = workspace / 'tests' / 'data' / 'dol_golden_test_data.yaml'
+    test_data_file = workspace / "tests" / "data" / "dol_golden_test_data.yaml"
 
     if fix_yaml_enums(test_data_file):
         print("\n✅ YAML file fixed! You can now re-run auto-annotation.")

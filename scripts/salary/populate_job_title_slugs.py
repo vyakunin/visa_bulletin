@@ -8,14 +8,16 @@ Usage:
 """
 
 import os
+
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 import argparse
-from models.job_title import JobTitleCluster
+
 from lib.utils.logging_utils import ScriptLogger
+from models.job_title import JobTitleCluster
 
 logger = ScriptLogger(__file__)
 
@@ -23,13 +25,16 @@ logger = ScriptLogger(__file__)
 def _derive_slug(canonical_title: str) -> str:
     """Derive the expected slug from a canonical_title."""
     from django.utils.text import slugify
+
     return slugify(canonical_title) if canonical_title else ""
 
 
 def _find_stale_slugs():
     """Find clusters whose slug doesn't match their current canonical_title."""
     stale = []
-    for cluster in JobTitleCluster.objects.exclude(canonical_title="").iterator(chunk_size=5000):
+    for cluster in JobTitleCluster.objects.exclude(canonical_title="").iterator(
+        chunk_size=5000
+    ):
         expected = _derive_slug(cluster.canonical_title)
         if cluster.slug != expected:
             stale.append(cluster)
@@ -37,17 +42,24 @@ def _find_stale_slugs():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Backfill slugs for JobTitleCluster records')
-    parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
+    parser = argparse.ArgumentParser(
+        description="Backfill slugs for JobTitleCluster records"
+    )
     parser.add_argument(
-        '--refresh-all', action='store_true',
-        help='Regenerate slugs for all clusters whose slug does not match canonical_title',
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes",
+    )
+    parser.add_argument(
+        "--refresh-all",
+        action="store_true",
+        help="Regenerate slugs for all clusters whose slug does not match canonical_title",
     )
     args = parser.parse_args()
 
     logger.log_call(
-        args={'dry_run': args.dry_run, 'refresh_all': args.refresh_all},
-        context='Backfill slugs for JobTitleCluster records',
+        args={"dry_run": args.dry_run, "refresh_all": args.refresh_all},
+        context="Backfill slugs for JobTitleCluster records",
     )
 
     if args.refresh_all:
@@ -77,7 +89,7 @@ def main():
 
     for cluster in clusters_without_slugs.iterator(chunk_size=batch_size):
         cluster.slug = cluster.generate_slug()
-        cluster.save(update_fields=['slug'])
+        cluster.save(update_fields=["slug"])
         updated_count += 1
 
         if updated_count % batch_size == 0:
@@ -99,7 +111,9 @@ def _refresh_stale_slugs(dry_run: bool) -> None:
         print("\nDRY RUN - Showing first 20 stale slugs:")
         for cluster in stale[:20]:
             expected = _derive_slug(cluster.canonical_title)
-            print(f"  '{cluster.slug}' -> '{expected}' (title: '{cluster.canonical_title}')")
+            print(
+                f"  '{cluster.slug}' -> '{expected}' (title: '{cluster.canonical_title}')"
+            )
         if len(stale) > 20:
             print(f"\n... and {len(stale) - 20} more")
         return
@@ -109,7 +123,7 @@ def _refresh_stale_slugs(dry_run: bool) -> None:
     for cluster in stale:
         cluster.slug = None
         cluster.slug = cluster.generate_slug()
-        cluster.save(update_fields=['slug'])
+        cluster.save(update_fields=["slug"])
         updated += 1
         if updated % 1000 == 0:
             print(f"  Updated {updated}/{len(stale)} clusters...")
@@ -117,5 +131,5 @@ def _refresh_stale_slugs(dry_run: bool) -> None:
     print(f"\nSuccessfully refreshed {updated} cluster slugs")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -94,7 +94,9 @@ def read_checkpoint(path: Path) -> CheckpointData | None:
         return None
 
 
-def write_checkpoint(path: Path, data: CheckpointData, merge_index_snapshot: bool = True) -> None:
+def write_checkpoint(
+    path: Path, data: CheckpointData, merge_index_snapshot: bool = True
+) -> None:
     """Write checkpoint atomically (write to .tmp then rename). Optionally preserve index_snapshot from existing file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

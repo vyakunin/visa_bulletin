@@ -12,8 +12,8 @@ import time
 from pathlib import Path
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -39,7 +39,7 @@ def benchmark_excel_reading_methods(filepath: Path, sample_rows: int = 10000):
     # Read DataFrame once
     print("Reading DataFrame...")
     df_start = time.time()
-    df = pd.read_excel(filepath, dtype=str, na_values=['', 'N/A', 'NULL', 'nan'])
+    df = pd.read_excel(filepath, dtype=str, na_values=["", "N/A", "NULL", "nan"])
     df_time = time.time() - df_start
     print(f"DataFrame read time: {df_time:.2f}s")
     print()
@@ -55,7 +55,7 @@ def benchmark_excel_reading_methods(filepath: Path, sample_rows: int = 10000):
         record = {}
         for col, val in row.items():
             if pd.isna(val) or val is None:
-                record[col] = ''
+                record[col] = ""
             else:
                 record[col] = str(val).strip()
         records_iterrows.append(record)
@@ -67,12 +67,12 @@ def benchmark_excel_reading_methods(filepath: Path, sample_rows: int = 10000):
     # Method 2: to_dict(orient='records') (new, fast)
     print("Method 2: to_dict(orient='records') (NEW - FAST)")
     start = time.time()
-    records_dict = sample_df.to_dict(orient='records')
+    records_dict = sample_df.to_dict(orient="records")
     # Clean NaN values
     for record in records_dict:
         for key, val in record.items():
             if pd.isna(val) or val is None:
-                record[key] = ''
+                record[key] = ""
             else:
                 record[key] = str(val).strip()
     to_dict_time = time.time() - start
@@ -105,9 +105,9 @@ def benchmark_excel_reading_methods(filepath: Path, sample_rows: int = 10000):
     print()
 
     return {
-        'iterrows_time': iterrows_time,
-        'to_dict_time': to_dict_time,
-        'speedup': speedup,
+        "iterrows_time": iterrows_time,
+        "to_dict_time": to_dict_time,
+        "speedup": speedup,
     }
 
 
@@ -130,26 +130,32 @@ def analyze_db_bottleneck_from_logs(log_file: Path):
     with open(log_file) as f:
         for line in f:
             # Look for batch insert timing: "bulk: X.XXXs, commit: Y.YYYs"
-            match = re.search(r'bulk: ([\d.]+)s, commit: ([\d.]+)s', line)
+            match = re.search(r"bulk: ([\d.]+)s, commit: ([\d.]+)s", line)
             if match:
                 bulk_time = float(match.group(1))
                 commit_time = float(match.group(2))
                 total_time = bulk_time + commit_time
 
                 # Extract record count if available
-                record_match = re.search(r'Imported ([\d,]+) records', line)
-                record_count = int(record_match.group(1).replace(',', '')) if record_match else 0
+                record_match = re.search(r"Imported ([\d,]+) records", line)
+                record_count = (
+                    int(record_match.group(1).replace(",", "")) if record_match else 0
+                )
 
-                batch_times.append({
-                    'records': record_count,
-                    'bulk_time': bulk_time,
-                    'commit_time': commit_time,
-                    'total_time': total_time,
-                })
+                batch_times.append(
+                    {
+                        "records": record_count,
+                        "bulk_time": bulk_time,
+                        "commit_time": commit_time,
+                        "total_time": total_time,
+                    }
+                )
 
     if not batch_times:
         print("No batch timing data found in logs")
-        print("Look for lines like: 'Imported X records... (bulk: X.XXXs, commit: Y.YYYs)'")
+        print(
+            "Look for lines like: 'Imported X records... (bulk: X.XXXs, commit: Y.YYYs)'"
+        )
         return
 
     print(f"Found {len(batch_times)} batch timing entries")
@@ -157,16 +163,22 @@ def analyze_db_bottleneck_from_logs(log_file: Path):
 
     # Analyze early vs late batches
     if len(batch_times) >= 10:
-        early_batches = batch_times[:len(batch_times)//3]
-        late_batches = batch_times[-len(batch_times)//3:]
+        early_batches = batch_times[: len(batch_times) // 3]
+        late_batches = batch_times[-len(batch_times) // 3 :]
 
-        early_avg_bulk = sum(b['bulk_time'] for b in early_batches) / len(early_batches)
-        early_avg_commit = sum(b['commit_time'] for b in early_batches) / len(early_batches)
-        early_avg_total = sum(b['total_time'] for b in early_batches) / len(early_batches)
+        early_avg_bulk = sum(b["bulk_time"] for b in early_batches) / len(early_batches)
+        early_avg_commit = sum(b["commit_time"] for b in early_batches) / len(
+            early_batches
+        )
+        early_avg_total = sum(b["total_time"] for b in early_batches) / len(
+            early_batches
+        )
 
-        late_avg_bulk = sum(b['bulk_time'] for b in late_batches) / len(late_batches)
-        late_avg_commit = sum(b['commit_time'] for b in late_batches) / len(late_batches)
-        late_avg_total = sum(b['total_time'] for b in late_batches) / len(late_batches)
+        late_avg_bulk = sum(b["bulk_time"] for b in late_batches) / len(late_batches)
+        late_avg_commit = sum(b["commit_time"] for b in late_batches) / len(
+            late_batches
+        )
+        late_avg_total = sum(b["total_time"] for b in late_batches) / len(late_batches)
 
         print("Early batches (first third):")
         print(f"  Average bulk time: {early_avg_bulk:.3f}s")
@@ -180,9 +192,21 @@ def analyze_db_bottleneck_from_logs(log_file: Path):
         print(f"  Average total time: {late_avg_total:.3f}s")
         print()
 
-        bulk_slowdown = ((late_avg_bulk - early_avg_bulk) / early_avg_bulk) * 100 if early_avg_bulk > 0 else 0
-        commit_slowdown = ((late_avg_commit - early_avg_commit) / early_avg_commit) * 100 if early_avg_commit > 0 else 0
-        total_slowdown = ((late_avg_total - early_avg_total) / early_avg_total) * 100 if early_avg_total > 0 else 0
+        bulk_slowdown = (
+            ((late_avg_bulk - early_avg_bulk) / early_avg_bulk) * 100
+            if early_avg_bulk > 0
+            else 0
+        )
+        commit_slowdown = (
+            ((late_avg_commit - early_avg_commit) / early_avg_commit) * 100
+            if early_avg_commit > 0
+            else 0
+        )
+        total_slowdown = (
+            ((late_avg_total - early_avg_total) / early_avg_total) * 100
+            if early_avg_total > 0
+            else 0
+        )
 
         print("Slowdown analysis:")
         print(f"  Bulk time slowdown: {bulk_slowdown:+.1f}%")
@@ -193,7 +217,9 @@ def analyze_db_bottleneck_from_logs(log_file: Path):
         if commit_slowdown > 20:
             print("⚠ WARNING: Significant commit time slowdown detected!")
             print("  This suggests index maintenance is the bottleneck.")
-            print("  Consider: disabling indexes during bulk import, then re-enabling after")
+            print(
+                "  Consider: disabling indexes during bulk import, then re-enabling after"
+            )
         elif bulk_slowdown > 20:
             print("⚠ WARNING: Significant bulk_create slowdown detected!")
             print("  This suggests ignore_conflicts checking is getting slower.")
@@ -203,40 +229,44 @@ def analyze_db_bottleneck_from_logs(log_file: Path):
 
     # Show trend
     print("Batch time trend (first 10 and last 10):")
-    print(f"{'Batch':<10} {'Records':<12} {'Bulk (s)':<12} {'Commit (s)':<12} {'Total (s)':<12}")
+    print(
+        f"{'Batch':<10} {'Records':<12} {'Bulk (s)':<12} {'Commit (s)':<12} {'Total (s)':<12}"
+    )
     print("-" * 60)
     for i, batch in enumerate(batch_times[:10]):
-        print(f"{i+1:<10} {batch['records']:<12,} {batch['bulk_time']:<12.3f} {batch['commit_time']:<12.3f} {batch['total_time']:<12.3f}")
+        print(
+            f"{i + 1:<10} {batch['records']:<12,} {batch['bulk_time']:<12.3f} {batch['commit_time']:<12.3f} {batch['total_time']:<12.3f}"
+        )
     if len(batch_times) > 20:
         print("...")
-        for i, batch in enumerate(batch_times[-10:], start=len(batch_times)-9):
-            print(f"{i+1:<10} {batch['records']:<12,} {batch['bulk_time']:<12.3f} {batch['commit_time']:<12.3f} {batch['total_time']:<12.3f}")
+        for i, batch in enumerate(batch_times[-10:], start=len(batch_times) - 9):
+            print(
+                f"{i + 1:<10} {batch['records']:<12,} {batch['bulk_time']:<12.3f} {batch['commit_time']:<12.3f} {batch['total_time']:<12.3f}"
+            )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Test Excel performance improvements and analyze DB bottleneck'
+        description="Test Excel performance improvements and analyze DB bottleneck"
     )
     parser.add_argument(
-        '--file', '-f',
-        type=Path,
-        help='Path to Excel file to benchmark'
+        "--file", "-f", type=Path, help="Path to Excel file to benchmark"
     )
     parser.add_argument(
-        '--sample-rows',
+        "--sample-rows",
         type=int,
         default=10000,
-        help='Number of rows to sample for benchmark (default: 10000)'
+        help="Number of rows to sample for benchmark (default: 10000)",
     )
     parser.add_argument(
-        '--analyze-logs',
+        "--analyze-logs",
         type=Path,
-        help='Path to log file to analyze for DB bottleneck'
+        help="Path to log file to analyze for DB bottleneck",
     )
     parser.add_argument(
-        '--test-import',
+        "--test-import",
         type=Path,
-        help='Run full import test on file (tracks DB performance)'
+        help="Run full import test on file (tracks DB performance)",
     )
 
     args = parser.parse_args()
@@ -244,18 +274,28 @@ def main():
     workspace_dir = get_workspace_dir()
 
     if args.file:
-        filepath = workspace_dir / args.file if not args.file.is_absolute() else args.file
+        filepath = (
+            workspace_dir / args.file if not args.file.is_absolute() else args.file
+        )
         if not filepath.exists():
             print(f"Error: File not found: {filepath}")
             sys.exit(1)
         benchmark_excel_reading_methods(filepath, args.sample_rows)
 
     if args.analyze_logs:
-        log_file = workspace_dir / args.analyze_logs if not args.analyze_logs.is_absolute() else args.analyze_logs
+        log_file = (
+            workspace_dir / args.analyze_logs
+            if not args.analyze_logs.is_absolute()
+            else args.analyze_logs
+        )
         analyze_db_bottleneck_from_logs(log_file)
 
     if args.test_import:
-        filepath = workspace_dir / args.test_import if not args.test_import.is_absolute() else args.test_import
+        filepath = (
+            workspace_dir / args.test_import
+            if not args.test_import.is_absolute()
+            else args.test_import
+        )
         if not filepath.exists():
             print(f"Error: File not found: {filepath}")
             sys.exit(1)
@@ -271,7 +311,7 @@ def main():
 
         # Determine visa program
         filename_lower = filepath.name.lower()
-        if 'perm' in filename_lower:
+        if "perm" in filename_lower:
             visa_program = VisaProgram.PERM
         else:
             visa_program = VisaProgram.H1B
@@ -299,24 +339,15 @@ def main():
         print(f"Errors: {errors:,} records")
         print(f"Total time: {total_time:.2f} seconds")
         if imported > 0:
-            print(f"Import rate: {imported/total_time:,.0f} records/second")
+            print(f"Import rate: {imported / total_time:,.0f} records/second")
         print()
         print("Check logs for detailed performance breakdown!")
 
     if not any([args.file, args.analyze_logs, args.test_import]):
-        parser.error('At least one of --file, --analyze-logs, or --test-import must be specified')
+        parser.error(
+            "At least one of --file, --analyze-logs, or --test-import must be specified"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-

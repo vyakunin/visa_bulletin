@@ -45,7 +45,16 @@ PERM_INDICATORS = [
     "PW_SOC_CODE",
 ]
 
-EMPLOYER_KEYWORDS = ["employer", "business", "company", "organization", "org", "corp", "inc", "llc"]
+EMPLOYER_KEYWORDS = [
+    "employer",
+    "business",
+    "company",
+    "organization",
+    "org",
+    "corp",
+    "inc",
+    "llc",
+]
 JOB_KEYWORDS = ["job", "title", "occupation", "position", "role"]
 
 DEFAULT_SCAN_FILES = [
@@ -149,9 +158,15 @@ def _scan_file_for_missing(
     file_type = _detect_file_type(headers)
     logger.info("File type detected: %s", file_type or "UNKNOWN")
 
-    case_columns = LCA_COLUMN_MAPPINGS.get("case_number", []) + PERM_COLUMN_MAPPINGS.get("case_number", [])
-    employer_columns = LCA_COLUMN_MAPPINGS.get("employer_name", []) + PERM_COLUMN_MAPPINGS.get("employer_name", [])
-    job_columns = LCA_COLUMN_MAPPINGS.get("job_title", []) + PERM_COLUMN_MAPPINGS.get("job_title", [])
+    case_columns = LCA_COLUMN_MAPPINGS.get(
+        "case_number", []
+    ) + PERM_COLUMN_MAPPINGS.get("case_number", [])
+    employer_columns = LCA_COLUMN_MAPPINGS.get(
+        "employer_name", []
+    ) + PERM_COLUMN_MAPPINGS.get("employer_name", [])
+    job_columns = LCA_COLUMN_MAPPINGS.get("job_title", []) + PERM_COLUMN_MAPPINGS.get(
+        "job_title", []
+    )
 
     matches = []
     for index, row in enumerate(read_excel_streaming(filepath), start=1):
@@ -161,7 +176,9 @@ def _scan_file_for_missing(
         employer_name = get_column_value(row, employer_columns)
         job_title = get_column_value(row, job_columns)
 
-        employer_missing = not employer_name or employer_name.strip().lower() == "unknown"
+        employer_missing = (
+            not employer_name or employer_name.strip().lower() == "unknown"
+        )
         job_missing = not job_title or job_title.strip().lower() == "unknown"
 
         if mode == "employer" and not employer_missing:
@@ -205,7 +222,9 @@ def _filter_columns(row: dict, keywords: list[str]) -> list[str]:
     return matches
 
 
-def _log_columns_with_values(columns: list[str], row: dict, logger: logging.Logger) -> None:
+def _log_columns_with_values(
+    columns: list[str], row: dict, logger: logging.Logger
+) -> None:
     if not columns:
         logger.info("    (none found)")
         return
@@ -274,7 +293,9 @@ def main() -> None:
             logger.info("")
             logger.info("=" * 80)
             logger.info("Scanning %s", filepath.name)
-            matches = _scan_file_for_missing(filepath, args.mode, args.limit, args.max_rows, logger)
+            matches = _scan_file_for_missing(
+                filepath, args.mode, args.limit, args.max_rows, logger
+            )
             if not matches:
                 logger.info("No missing fields found within scanned rows.")
                 continue
@@ -298,7 +319,9 @@ def main() -> None:
             logger.info("")
             logger.info("=" * 80)
             logger.info("Scanning %s", filepath.name)
-            matches = _scan_file_for_missing(filepath, args.mode, args.limit, args.max_rows, logger)
+            matches = _scan_file_for_missing(
+                filepath, args.mode, args.limit, args.max_rows, logger
+            )
             if not matches:
                 logger.info("No missing fields found within scanned rows.")
                 continue
@@ -335,7 +358,12 @@ def main() -> None:
         logger.info("Inspecting %s", filename)
         logger.info("Target cases: %s", [record["case_number"] for record in records])
 
-        _find_row_details(filepath, {record["case_number"] for record in records}, logger, len(records))
+        _find_row_details(
+            filepath,
+            {record["case_number"] for record in records},
+            logger,
+            len(records),
+        )
 
 
 if __name__ == "__main__":

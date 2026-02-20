@@ -6,7 +6,7 @@ from django.db import models
 class CaseStatus(models.IntegerChoices):
     """
     Case status from DOL disclosure data
-    
+
     Uses IntegerChoices for performance (high-volume data):
     - Stores integer in DB (0=invalid, 1-4 for valid statuses)
     - Faster comparisons and joins
@@ -26,13 +26,13 @@ class CaseStatus(models.IntegerChoices):
         if not value:
             return None
 
-        normalized = value.strip().upper().replace('-', '_').replace(' ', '_')
+        normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
         mappings = {
-            'CERTIFIED': cls.CERTIFIED,
-            'DENIED': cls.DENIED,
-            'WITHDRAWN': cls.WITHDRAWN,
-            'CERTIFIED_WITHDRAWN': cls.CERTIFIED_WITHDRAWN,
-            'CERTIFIED_EXPIRED': cls.CERTIFIED,  # Treat as certified
+            "CERTIFIED": cls.CERTIFIED,
+            "DENIED": cls.DENIED,
+            "WITHDRAWN": cls.WITHDRAWN,
+            "CERTIFIED_WITHDRAWN": cls.CERTIFIED_WITHDRAWN,
+            "CERTIFIED_EXPIRED": cls.CERTIFIED,  # Treat as certified
         }
         return mappings.get(normalized)
 
@@ -42,10 +42,9 @@ class CaseStatus(models.IntegerChoices):
         if not value:
             return None
         mappings = {
-            'certified': cls.CERTIFIED,
-            'denied': cls.DENIED,
-            'withdrawn': cls.WITHDRAWN,
-            'certified_withdrawn': cls.CERTIFIED_WITHDRAWN,
+            "certified": cls.CERTIFIED,
+            "denied": cls.DENIED,
+            "withdrawn": cls.WITHDRAWN,
+            "certified_withdrawn": cls.CERTIFIED_WITHDRAWN,
         }
         return mappings.get(value.lower())
-

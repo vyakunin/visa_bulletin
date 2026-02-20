@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 class Runner(Protocol):
     """Execution backend: run commands and read/write checkpoint on the target host."""
 
-    def run_bin(self, rel_path: str, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_bin(
+        self, rel_path: str, *args: str, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Run pre-built binary or bazel run. rel_path e.g. 'scripts/salary/cluster_job_titles'."""
         ...
 
@@ -33,7 +35,9 @@ class Runner(Protocol):
         """Run psql -t -c and return stdout."""
         ...
 
-    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_sudo_psql(
+        self, sql: str, db: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Run sudo -u postgres psql [-d db] -c sql."""
         ...
 
@@ -53,7 +57,9 @@ class Runner(Protocol):
         """Write checkpoint JSON on target host (atomic)."""
         ...
 
-    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+    def run_shell(
+        self, command: str, timeout_sec: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Run a shell command on the target host (SSH for remote, bash -c for local)."""
         ...
 
@@ -61,7 +67,9 @@ class Runner(Protocol):
 class LocalRunner:
     """Run commands on this host via subprocess."""
 
-    def __init__(self, project_root: Path, env_file: Path, env: dict[str, str] | None = None):
+    def __init__(
+        self, project_root: Path, env_file: Path, env: dict[str, str] | None = None
+    ):
         self.project_root = Path(project_root)
         self.env_file = Path(env_file)
         self._env = dict(os.environ)
@@ -117,7 +125,20 @@ class LocalRunner:
         db_user = env.get("DB_USER", "visa_bulletin_user")
         db_port = env.get("DB_PORT", "5432")
         result = subprocess.run(
-            ["psql", "-h", db_host, "-U", db_user, "-d", db_name, "-t", "-c", sql, "-p", db_port],
+            [
+                "psql",
+                "-h",
+                db_host,
+                "-U",
+                db_user,
+                "-d",
+                db_name,
+                "-t",
+                "-c",
+                sql,
+                "-p",
+                db_port,
+            ],
             env=env,
             capture_output=True,
             text=True,
@@ -125,7 +146,9 @@ class LocalRunner:
         )
         return (result.stdout or "").strip() if result.returncode == 0 else ""
 
-    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_sudo_psql(
+        self, sql: str, db: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         cmd = ["sudo", "-u", "postgres", "psql"]
         if db:
             cmd.extend(["-d", db])
@@ -152,6 +175,7 @@ class LocalRunner:
 
     def update_env(self, key: str, value: str) -> None:
         from .config import update_env_value
+
         update_env_value(self.env_file, key, value)
         self._env[key] = value
 
@@ -161,7 +185,9 @@ class LocalRunner:
     def write_checkpoint(self, path: Path, data: CheckpointData) -> None:
         write_checkpoint_file(Path(path), data)
 
-    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+    def run_shell(
+        self, command: str, timeout_sec: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
         kwargs: dict[str, Any] = {
             "cwd": str(self.project_root),
             "env": self._env,
@@ -188,7 +214,9 @@ class MockRunner:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self._checkpoint: CheckpointData | None = None
         self.run_bin_return: subprocess.CompletedProcess[str] | None = None
-        self.run_bin_side_effects: dict[str, subprocess.CompletedProcess[str] | Any] = {}
+        self.run_bin_side_effects: dict[
+            str, subprocess.CompletedProcess[str] | Any
+        ] = {}
         self.run_psql_return: str = "0"
         self.run_psql_side_effects: dict[str, str | Any] = {}
         self.run_sudo_psql_return: subprocess.CompletedProcess[str] | None = None
@@ -209,7 +237,9 @@ class MockRunner:
             return effect
         if self.run_bin_return is not None:
             return self.run_bin_return
-        return subprocess.CompletedProcess(args=[rel_path, *args], returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=[rel_path, *args], returncode=0, stdout="", stderr=""
+        )
 
     def read_stage_log_tail(self, n: int = 200) -> str:
         self.calls.append(("read_stage_log_tail", (n,), {}))
@@ -224,17 +254,23 @@ class MockRunner:
                 return value
         return self.run_psql_return
 
-    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_sudo_psql(
+        self, sql: str, db: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         self.calls.append(("run_sudo_psql", (sql,), {"db": db}))
         if self.run_sudo_psql_return is not None:
             return self.run_sudo_psql_return
-        return subprocess.CompletedProcess(args=["psql"], returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=["psql"], returncode=0, stdout="", stderr=""
+        )
 
     def run_migrate(self, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         self.calls.append(("run_migrate", (), {"cwd": cwd}))
         if self.run_migrate_return is not None:
             return self.run_migrate_return
-        return subprocess.CompletedProcess(args=["migrate"], returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=["migrate"], returncode=0, stdout="", stderr=""
+        )
 
     def update_env(self, key: str, value: str) -> None:
         self.calls.append(("update_env", (key, value), {}))
@@ -247,7 +283,9 @@ class MockRunner:
         self.calls.append(("write_checkpoint", (str(path), data), {}))
         self._checkpoint = data
 
-    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+    def run_shell(
+        self, command: str, timeout_sec: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
         self.calls.append(("run_shell", (command,), {"timeout_sec": timeout_sec}))
         stdout = ""
         if "curl" in command and "http_code" in command:
@@ -256,12 +294,17 @@ class MockRunner:
             elif "company-autocomplete" in command:
                 stdout = '[{"name":"Google LLC","slug":"google-llc","total_filings":500}]\n200'
             elif "job-titles" in command:
-                stdout = '<a href="/job-title/software-engineer/">Software Engineer</a>' * 15 + "\n200"
+                stdout = (
+                    '<a href="/job-title/software-engineer/">Software Engineer</a>' * 15
+                    + "\n200"
+                )
             elif "employers" in command:
                 stdout = '<a href="/employer/google-llc/">Google LLC</a>' * 15 + "\n200"
             else:
                 stdout = "OK\n200"
-        return subprocess.CompletedProcess(args=["run_shell"], returncode=0, stdout=stdout, stderr="")
+        return subprocess.CompletedProcess(
+            args=["run_shell"], returncode=0, stdout=stdout, stderr=""
+        )
 
 
 class RemoteRunner:
@@ -280,7 +323,9 @@ class RemoteRunner:
         self.project_root = Path(project_root)
         self.ssh_user = ssh_user
         self.ssh_key_path = ssh_key_path
-        self.env_file = Path(env_file) if isinstance(env_file, Path) else self.project_root / ".env"
+        self.env_file = (
+            Path(env_file) if isinstance(env_file, Path) else self.project_root / ".env"
+        )
         if ssh_timeout_sec is not None:
             self.ssh_timeout = ssh_timeout_sec
         else:
@@ -294,7 +339,15 @@ class RemoteRunner:
         capture_output: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         timeout = timeout_sec if timeout_sec is not None else self.ssh_timeout
-        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10"]
+        cmd = [
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "ConnectTimeout=10",
+        ]
         if self.ssh_key_path:
             cmd.extend(["-i", self.ssh_key_path])
         cmd.append(f"{self.ssh_user}@{self.host}")
@@ -373,7 +426,9 @@ class RemoteRunner:
             )
         return (result.stdout or "").strip() if result.returncode == 0 else ""
 
-    def run_sudo_psql(self, sql: str, db: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_sudo_psql(
+        self, sql: str, db: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         db_arg = f" -d {db}" if db else ""
         cmd = f"cd {self.project_root} && sudo -u postgres psql{db_arg} -c {repr(sql)}"
         return self._ssh(cmd)
@@ -393,7 +448,9 @@ class RemoteRunner:
         cmd = f"sed -i.bak 's/^{key_esc}=.*/{key_esc}={val_esc}/' {env_path} 2>/dev/null || echo '{key_esc}={val_esc}' >> {env_path}"
         self._ssh(cmd)
 
-    def run_shell(self, command: str, timeout_sec: int | None = None) -> subprocess.CompletedProcess[str]:
+    def run_shell(
+        self, command: str, timeout_sec: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Run a shell command on the remote host via SSH."""
         return self._ssh(command, timeout_sec=timeout_sec)
 

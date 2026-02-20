@@ -45,7 +45,9 @@ def calculate_yoy_trends(queryset) -> list[dict]:
     )
 
 
-def filter_growth_years(yoy_trends: list[dict], start_year: int) -> list[tuple[int, int]]:
+def filter_growth_years(
+    yoy_trends: list[dict], start_year: int
+) -> list[tuple[int, int]]:
     """Return fiscal year counts eligible for growth calculation."""
     return [
         (item["fiscal_year"], item["count"])
@@ -149,7 +151,9 @@ def calculate_salary_percentiles(queryset) -> dict:
     import time
 
     t0 = time.perf_counter()
-    salaries = list(queryset.values_list("wage_annual", flat=True).order_by("wage_annual"))
+    salaries = list(
+        queryset.values_list("wage_annual", flat=True).order_by("wage_annual")
+    )
     query_sec = time.perf_counter() - t0
 
     if not salaries:
@@ -293,7 +297,8 @@ def calculate_salary_histogram_with_overlays(
     overall_counts.append(right_bin_count)
 
     overlays = [
-        {"employer_name": name, "counts": overlay_counts[name]} for name in overlay_values
+        {"employer_name": name, "counts": overlay_counts[name]}
+        for name in overlay_values
     ]
 
     return {

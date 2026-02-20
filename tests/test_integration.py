@@ -22,14 +22,14 @@ from models.visa_cutoff_date import VisaCutoffDate
 def test_save_bulletin_from_html():
     """Test saving a real bulletin HTML to database"""
     # Load a real saved bulletin
-    with open('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', encoding='utf-8') as f:
+    with open(
+        "data/bulletin/saved_pages/visa-bulletin-for-march-2023.html", encoding="utf-8"
+    ) as f:
         html = f.read()
 
     # Create PublicationData
     pub_data = PublicationData(
-        url='/test-march-2023',
-        content=html,
-        publication_date=datetime(2023, 3, 1)
+        url="/test-march-2023", content=html, publication_date=datetime(2023, 3, 1)
     )
 
     # Save to database
@@ -46,10 +46,10 @@ def test_save_bulletin_from_html():
     # Verify specific data point (F1 Mexico Final Action) using enum values
     f1_mexico = VisaCutoffDate.objects.filter(
         bulletin=bulletin,
-        visa_class='F1',
+        visa_class="F1",
         country=Country.MEXICO.value,
         action_type=ActionType.FINAL_ACTION.value,
-        visa_category=VisaCategory.FAMILY_SPONSORED.value
+        visa_category=VisaCategory.FAMILY_SPONSORED.value,
     ).first()
 
     assert f1_mexico is not None
@@ -58,10 +58,12 @@ def test_save_bulletin_from_html():
 
 def test_idempotent_bulletin_save():
     """Test that saving same bulletin twice is idempotent"""
-    with open('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', encoding='utf-8') as f:
+    with open(
+        "data/bulletin/saved_pages/visa-bulletin-for-march-2023.html", encoding="utf-8"
+    ) as f:
         html = f.read()
 
-    pub_data = PublicationData('/test-march-2023', html, datetime(2023, 3, 1))
+    pub_data = PublicationData("/test-march-2023", html, datetime(2023, 3, 1))
 
     # Save once
     bulletin1 = db_importer.save_bulletin_to_db(pub_data)
@@ -81,24 +83,33 @@ def test_query_time_series_data():
     """Test querying time series data for specific visa class"""
     # Save multiple bulletins
     test_cases = [
-        ('data/bulletin/saved_pages/visa-bulletin-for-february-2017.html', datetime(2017, 2, 1)),
-        ('data/bulletin/saved_pages/visa-bulletin-for-march-2023.html', datetime(2023, 3, 1)),
-        ('data/bulletin/saved_pages/visa-bulletin-for-october-2021.html', datetime(2021, 10, 1)),
+        (
+            "data/bulletin/saved_pages/visa-bulletin-for-february-2017.html",
+            datetime(2017, 2, 1),
+        ),
+        (
+            "data/bulletin/saved_pages/visa-bulletin-for-march-2023.html",
+            datetime(2023, 3, 1),
+        ),
+        (
+            "data/bulletin/saved_pages/visa-bulletin-for-october-2021.html",
+            datetime(2021, 10, 1),
+        ),
     ]
 
     for filepath, pub_date in test_cases:
-        with open(filepath, encoding='utf-8') as f:
+        with open(filepath, encoding="utf-8") as f:
             html = f.read()
         pub_data = PublicationData(filepath, html, pub_date)
         db_importer.save_bulletin_to_db(pub_data)
 
     # Query F1 China Final Action across all bulletins using enum values
     f1_china_series = VisaCutoffDate.objects.filter(
-        visa_class='F1',
+        visa_class="F1",
         country=Country.CHINA.value,
         action_type=ActionType.FINAL_ACTION.value,
-        visa_category=VisaCategory.FAMILY_SPONSORED.value
-    ).order_by('bulletin__publication_date')
+        visa_category=VisaCategory.FAMILY_SPONSORED.value,
+    ).order_by("bulletin__publication_date")
 
     assert f1_china_series.count() == 3
 
@@ -108,5 +119,5 @@ def test_query_time_series_data():
 
     # Verify all are F1 China using enum values
     for record in f1_china_series:
-        assert record.visa_class == 'F1'
+        assert record.visa_class == "F1"
         assert record.country == Country.CHINA.value

@@ -25,17 +25,18 @@ from pathlib import Path
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
 from django_config.logging_config import setup_logging
 from lib.business.vqs.accuracy_metrics import (
     BulletinAccuracyRow,
     LongtermAccuracyRow,
+    aggregate_bulletin_errors_by_date,
+    aggregate_longterm_by_horizon_and_series,
+    aggregate_longterm_errors_by_month,
     compute_bulletin_accuracy,
     compute_longterm_accuracy,
-    aggregate_bulletin_errors_by_date,
-    aggregate_longterm_errors_by_month,
-    aggregate_longterm_by_horizon_and_series,
 )
 from lib.utils.logging_utils import ScriptLogger
 
@@ -66,7 +67,9 @@ def _build_bulletin_plot(
     )
     if not agg:
         fig = go.Figure()
-        fig.add_annotation(text="No data (try without filters)", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text="No data (try without filters)", x=0.5, y=0.5, showarrow=False
+        )
         return fig
     dates = [d.isoformat() for d, _, _ in agg]
     mean_errors = [e for _, e, _ in agg]
@@ -97,7 +100,9 @@ def _build_bulletin_plot(
     return fig
 
 
-def _build_bulletin_plot_with_drilldown(rows: list[BulletinAccuracyRow]) -> "plotly.graph_objects.Figure":
+def _build_bulletin_plot_with_drilldown(
+    rows: list[BulletinAccuracyRow],
+) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
 
     from models.enums.country import Country
@@ -160,7 +165,9 @@ def _build_longterm_plot(
     )
     if not agg:
         fig = go.Figure()
-        fig.add_annotation(text="No data (try without filters)", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text="No data (try without filters)", x=0.5, y=0.5, showarrow=False
+        )
         return fig
     months = [m.isoformat() for m, _, _ in agg]
     mean_errors = [e for _, e, _ in agg]
@@ -191,7 +198,9 @@ def _build_longterm_plot(
     return fig
 
 
-def _build_longterm_plot_with_drilldown(rows: list[LongtermAccuracyRow]) -> "plotly.graph_objects.Figure":
+def _build_longterm_plot_with_drilldown(
+    rows: list[LongtermAccuracyRow],
+) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
 
     from models.enums.country import Country
@@ -317,6 +326,7 @@ def main() -> None:
             )
         else:
             import csv
+
             if raw:
                 with open(
                     out_dir / "bulletin_accuracy.csv", "w", newline="", encoding="utf-8"
@@ -347,6 +357,7 @@ def main() -> None:
             )
         else:
             import csv
+
             if raw:
                 with open(
                     out_dir / "longterm_accuracy.csv", "w", newline="", encoding="utf-8"

@@ -60,6 +60,5 @@ class TestCalculateSimilarity(unittest.TestCase):
         self.assertGreater(similarity, 0.8)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-

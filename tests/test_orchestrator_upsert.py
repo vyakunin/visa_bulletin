@@ -9,7 +9,7 @@ Tests that verify:
 
 import os
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
 
 django.setup()
@@ -42,7 +42,7 @@ class TestOrchestratorUpsert(TestCase):
             name="Test Employer",
             name_normalized="test employer",
             city="Test City",
-            state="CA"
+            state="CA",
         )
 
         # Create test data source
@@ -50,14 +50,14 @@ class TestOrchestratorUpsert(TestCase):
             url="file://test.xlsx",
             domain=DataDomain.DOL.value,
             source_type=SourceType.LCA.value,
-            format_version=FormatVersion.MODERN.value
+            format_version=FormatVersion.MODERN.value,
         )
 
         # Create test ingest run
         self.ingest_run = IngestRun.objects.create(
             source=self.data_source,
             status=IngestStatus.PENDING,
-            stage=IngestStage.PENDING
+            stage=IngestStage.PENDING,
         )
 
     def test_is_newer_than_existing_incoming_newer(self):
@@ -123,10 +123,12 @@ class TestOrchestratorUpsert(TestCase):
             job_title="Software Engineer",
             fiscal_year=2024,
             source_file="test.xlsx",
-            source_file_date=datetime(2024, 1, 1, 12, 0, 0)
+            source_file_date=datetime(2024, 1, 1, 12, 0, 0),
         )
         if timezone.is_naive(existing_record.source_file_date):
-            existing_record.source_file_date = timezone.make_aware(existing_record.source_file_date)
+            existing_record.source_file_date = timezone.make_aware(
+                existing_record.source_file_date
+            )
         existing_record.save()
 
         # Create new record (not in DB)
@@ -137,7 +139,7 @@ class TestOrchestratorUpsert(TestCase):
             employer_name="Test Employer",
             job_title="Data Scientist",
             fiscal_year=2024,
-            source_file="test.xlsx"
+            source_file="test.xlsx",
         )
 
         # Create incoming record with same case_number as existing
@@ -148,7 +150,7 @@ class TestOrchestratorUpsert(TestCase):
             employer_name="Test Employer Updated",
             job_title="Senior Software Engineer",
             fiscal_year=2024,
-            source_file="test.xlsx"
+            source_file="test.xlsx",
         )
 
         records = [new_record, incoming_existing]
@@ -171,7 +173,7 @@ class TestOrchestratorUpsert(TestCase):
         source_file_date = datetime(2024, 6, 1, 12, 0, 0)
         if timezone.is_naive(source_file_date):
             source_file_date = timezone.make_aware(source_file_date)
-        self.ingest_run.checkpoint['source_file_date'] = source_file_date.isoformat()
+        self.ingest_run.checkpoint["source_file_date"] = source_file_date.isoformat()
         self.ingest_run.save()
 
         # Create new record
@@ -182,7 +184,7 @@ class TestOrchestratorUpsert(TestCase):
             employer_name="Test Employer",
             job_title="Software Engineer",
             fiscal_year=2024,
-            source_file="test.xlsx"
+            source_file="test.xlsx",
         )
 
         batch = [new_record]
@@ -215,14 +217,14 @@ class TestOrchestratorUpsert(TestCase):
             job_title="Old Job Title",
             fiscal_year=2024,
             source_file="old.xlsx",
-            source_file_date=existing_date
+            source_file_date=existing_date,
         )
 
         # Set source_file_date in checkpoint (newer than existing)
         incoming_date = datetime(2024, 6, 1, 12, 0, 0)
         if timezone.is_naive(incoming_date):
             incoming_date = timezone.make_aware(incoming_date)
-        self.ingest_run.checkpoint['source_file_date'] = incoming_date.isoformat()
+        self.ingest_run.checkpoint["source_file_date"] = incoming_date.isoformat()
         self.ingest_run.save()
 
         # Create incoming record with newer data
@@ -233,7 +235,7 @@ class TestOrchestratorUpsert(TestCase):
             employer_name="New Employer Name",
             job_title="New Job Title",
             fiscal_year=2024,
-            source_file="new.xlsx"
+            source_file="new.xlsx",
         )
 
         batch = [incoming_record]
@@ -267,14 +269,14 @@ class TestOrchestratorUpsert(TestCase):
             job_title="Current Job Title",
             fiscal_year=2024,
             source_file="current.xlsx",
-            source_file_date=existing_date
+            source_file_date=existing_date,
         )
 
         # Set source_file_date in checkpoint (older than existing)
         incoming_date = datetime(2024, 5, 1, 12, 0, 0)
         if timezone.is_naive(incoming_date):
             incoming_date = timezone.make_aware(incoming_date)
-        self.ingest_run.checkpoint['source_file_date'] = incoming_date.isoformat()
+        self.ingest_run.checkpoint["source_file_date"] = incoming_date.isoformat()
         self.ingest_run.save()
 
         # Create incoming record with older data
@@ -285,7 +287,7 @@ class TestOrchestratorUpsert(TestCase):
             employer_name="Old Employer Name",
             job_title="Old Job Title",
             fiscal_year=2024,
-            source_file="old.xlsx"
+            source_file="old.xlsx",
         )
 
         batch = [incoming_record]
@@ -301,4 +303,3 @@ class TestOrchestratorUpsert(TestCase):
         self.assertEqual(existing_record.employer_name, "Current Employer Name")
         self.assertEqual(existing_record.job_title, "Current Job Title")
         self.assertEqual(existing_record.source_file_date, existing_date)
-

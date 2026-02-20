@@ -30,14 +30,14 @@ def get_workspace_dir() -> Path:
 def fetch_page(url: str, timeout: int = 30) -> str:
     """
     Fetch HTML page content from URL.
-    
+
     Args:
         url: URL to fetch
         timeout: Request timeout in seconds
-        
+
     Returns:
         HTML content as string
-        
+
     Raises:
         requests.RequestException: If request fails
     """
@@ -50,15 +50,15 @@ def fetch_page(url: str, timeout: int = 30) -> str:
 def download_file(url: str, dest_path: Path, timeout: int = 60) -> Path:
     """
     Download a file from URL to destination path.
-    
+
     Args:
         url: URL to download from
         dest_path: Destination file path
         timeout: Request timeout in seconds
-        
+
     Returns:
         Path to downloaded file
-        
+
     Raises:
         requests.RequestException: If download fails
     """
@@ -69,14 +69,14 @@ def download_file(url: str, dest_path: Path, timeout: int = 60) -> Path:
     response.raise_for_status()
 
     # Get file size if available
-    total_size = int(response.headers.get('content-length', 0))
+    total_size = int(response.headers.get("content-length", 0))
     if total_size:
-        logger.info(f"  File size: {total_size / (1024*1024):.1f} MB")
+        logger.info(f"  File size: {total_size / (1024 * 1024):.1f} MB")
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
 
     downloaded = 0
-    with open(dest_path, 'wb') as f:
+    with open(dest_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             if chunk:
                 f.write(chunk)
@@ -92,11 +92,11 @@ def download_file(url: str, dest_path: Path, timeout: int = 60) -> Path:
 def is_file_saved(url: str, data_dir: Path) -> bool:
     """
     Check if a file from URL is already saved locally.
-    
+
     Args:
         url: URL to check
         data_dir: Directory where files are saved
-        
+
     Returns:
         True if file exists locally
     """
@@ -107,19 +107,19 @@ def is_file_saved(url: str, data_dir: Path) -> bool:
 def compute_file_hash(filepath: Path) -> str:
     """
     Compute SHA256 hash of file content.
-    
+
     This is used to detect duplicate files even when URLs change.
     Files with identical content will have the same hash regardless of URL.
-    
+
     Args:
         filepath: Path to file
-        
+
     Returns:
         SHA256 hash as hex string (64 characters)
     """
     sha256 = hashlib.sha256()
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         # Read in chunks to handle large files efficiently
-        for chunk in iter(lambda: f.read(8192), b''):
+        for chunk in iter(lambda: f.read(8192), b""):
             sha256.update(chunk)
     return sha256.hexdigest()

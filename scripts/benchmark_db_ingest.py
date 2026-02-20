@@ -14,8 +14,8 @@ import os
 import time
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -30,7 +30,7 @@ from django.db import transaction
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.salary import Employer, SalaryRecord
 
-apps.get_app_config('models').ready()
+apps.get_app_config("models").ready()
 
 
 def get_current_db_size():
@@ -42,30 +42,30 @@ def create_test_records(count: int, visa_program: int = VisaProgram.H1B) -> list
     """Create test SalaryRecord objects (not saved)"""
     # Get or create a test employer
     employer, _ = Employer.objects.get_or_create(
-        name_normalized='TEST_EMPLOYER',
-        city='Test City',
-        state='CA',
-        defaults={'name': 'Test Employer'}
+        name_normalized="TEST_EMPLOYER",
+        city="Test City",
+        state="CA",
+        defaults={"name": "Test Employer"},
     )
 
     records = []
     for i in range(count):
         record = SalaryRecord(
-            case_number=f'TEST-{visa_program}-{i}-{int(time.time())}',
+            case_number=f"TEST-{visa_program}-{i}-{int(time.time())}",
             visa_program=visa_program,
             case_status=CaseStatus.CERTIFIED,
             employer=employer,
-            employer_name='Test Employer',
-            job_title=f'Test Job {i % 100}',
-            soc_code='15-1132',
-            soc_title='Software Developers, Applications',
-            worksite_city='San Francisco',
-            worksite_state='CA',
-            wage_from=Decimal('100000') + Decimal(i % 50000),
-            wage_unit='YEAR',
-            wage_annual=Decimal('100000') + Decimal(i % 50000),
+            employer_name="Test Employer",
+            job_title=f"Test Job {i % 100}",
+            soc_code="15-1132",
+            soc_title="Software Developers, Applications",
+            worksite_city="San Francisco",
+            worksite_state="CA",
+            wage_from=Decimal("100000") + Decimal(i % 50000),
+            wage_unit="YEAR",
+            wage_annual=Decimal("100000") + Decimal(i % 50000),
             fiscal_year=2024,
-            source_file='test_benchmark.csv',
+            source_file="test_benchmark.csv",
             ingest_version=None,  # Explicitly set to None for benchmark
         )
         records.append(record)
@@ -73,8 +73,9 @@ def create_test_records(count: int, visa_program: int = VisaProgram.H1B) -> list
     return records
 
 
-def benchmark_batch_size(batch_sizes: list[int], num_records: int = 10000,
-                         ignore_conflicts: bool = True) -> dict:
+def benchmark_batch_size(
+    batch_sizes: list[int], num_records: int = 10000, ignore_conflicts: bool = True
+) -> dict:
     """Benchmark different batch sizes"""
     print("=" * 80)
     print("BATCH SIZE BENCHMARK")
@@ -89,7 +90,7 @@ def benchmark_batch_size(batch_sizes: list[int], num_records: int = 10000,
         print(f"Testing batch size: {batch_size}")
 
         # Clean up any test records from previous runs
-        SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+        SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
 
         # Create test records (track creation time)
         create_start = time.time()
@@ -102,10 +103,12 @@ def benchmark_batch_size(batch_sizes: list[int], num_records: int = 10000,
         batches = 0
         total_insert_time = 0.0
         for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
+            batch = records[i : i + batch_size]
             batch_start = time.time()
             with transaction.atomic():
-                SalaryRecord.objects.bulk_create(batch, ignore_conflicts=ignore_conflicts)
+                SalaryRecord.objects.bulk_create(
+                    batch, ignore_conflicts=ignore_conflicts
+                )
             total_insert_time += time.time() - batch_start
             batches += 1
 
@@ -119,27 +122,33 @@ def benchmark_batch_size(batch_sizes: list[int], num_records: int = 10000,
 
         print(f"  Batches: {batches}")
         print("  Time breakdown:")
-        print(f"    Record creation: {create_time:.3f}s ({create_time/total_time*100:.1f}%)")
-        print(f"    Database inserts: {insert_time:.3f}s ({insert_time/total_time*100:.1f}%)")
+        print(
+            f"    Record creation: {create_time:.3f}s ({create_time / total_time * 100:.1f}%)"
+        )
+        print(
+            f"    Database inserts: {insert_time:.3f}s ({insert_time / total_time * 100:.1f}%)"
+        )
         print(f"    Total: {total_time:.2f} seconds")
         print(f"  Time per batch: {time_per_batch:.3f} seconds")
         print(f"  Records/second: {records_per_sec:,.0f}")
-        print(f"  Time per record: {time_per_record*1000:.3f} ms")
+        print(f"  Time per record: {time_per_record * 1000:.3f} ms")
         print()
 
-        results.append({
-            'batch_size': batch_size,
-            'batches': batches,
-            'create_time': create_time,
-            'insert_time': insert_time,
-            'total_time': total_time,
-            'time_per_batch': time_per_batch,
-            'records_per_sec': records_per_sec,
-            'time_per_record': time_per_record,
-        })
+        results.append(
+            {
+                "batch_size": batch_size,
+                "batches": batches,
+                "create_time": create_time,
+                "insert_time": insert_time,
+                "total_time": total_time,
+                "time_per_batch": time_per_batch,
+                "records_per_sec": records_per_sec,
+                "time_per_record": time_per_record,
+            }
+        )
 
         # Clean up
-        SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+        SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
 
     return results
 
@@ -161,13 +170,13 @@ def benchmark_with_db_size(num_records: int = 10000, batch_size: int = 1000) -> 
 
     start_time = time.time()
     for i in range(0, len(records), batch_size):
-        batch = records[i:i + batch_size]
+        batch = records[i : i + batch_size]
         with transaction.atomic():
             SalaryRecord.objects.bulk_create(batch, ignore_conflicts=True)
     time_at_current = time.time() - start_time
 
     # Clean up
-    SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+    SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
 
     current_rate = num_records / time_at_current
     print(f"  Time: {time_at_current:.2f} seconds")
@@ -175,9 +184,9 @@ def benchmark_with_db_size(num_records: int = 10000, batch_size: int = 1000) -> 
     print()
 
     return {
-        'initial_size': initial_size,
-        'time_at_current': time_at_current,
-        'rate_at_current': current_rate,
+        "initial_size": initial_size,
+        "time_at_current": time_at_current,
+        "rate_at_current": current_rate,
     }
 
 
@@ -194,12 +203,12 @@ def benchmark_ignore_conflicts(num_records: int = 5000, batch_size: int = 1000) 
         print(f"Testing ignore_conflicts={ignore_conflicts}...")
 
         # Clean up
-        SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+        SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
 
         # Create and insert records first time
         records = create_test_records(num_records)
         for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
+            batch = records[i : i + batch_size]
             with transaction.atomic():
                 SalaryRecord.objects.bulk_create(batch, ignore_conflicts=True)
 
@@ -208,9 +217,11 @@ def benchmark_ignore_conflicts(num_records: int = 5000, batch_size: int = 1000) 
         start_time = time.time()
 
         for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
+            batch = records[i : i + batch_size]
             with transaction.atomic():
-                SalaryRecord.objects.bulk_create(batch, ignore_conflicts=ignore_conflicts)
+                SalaryRecord.objects.bulk_create(
+                    batch, ignore_conflicts=ignore_conflicts
+                )
 
         total_time = time.time() - start_time
 
@@ -219,15 +230,15 @@ def benchmark_ignore_conflicts(num_records: int = 5000, batch_size: int = 1000) 
         print()
 
         results[ignore_conflicts] = {
-            'time': total_time,
-            'rate': num_records / total_time,
+            "time": total_time,
+            "rate": num_records / total_time,
         }
 
         # Clean up
-        SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+        SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
 
-    if results[True]['time'] > 0 and results[False]['time'] > 0:
-        speedup = results[False]['time'] / results[True]['time']
+    if results[True]["time"] > 0 and results[False]["time"] > 0:
+        speedup = results[False]["time"] / results[True]["time"]
         print(f"ignore_conflicts=True is {speedup:.2f}x faster for duplicate handling")
         print()
 
@@ -236,40 +247,34 @@ def benchmark_ignore_conflicts(num_records: int = 5000, batch_size: int = 1000) 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Benchmark database ingest performance'
+        description="Benchmark database ingest performance"
     )
     parser.add_argument(
-        '--batch-sizes',
-        nargs='+',
+        "--batch-sizes",
+        nargs="+",
         type=int,
         default=[500, 1000, 2000, 5000],
-        help='Batch sizes to test (default: 500 1000 2000 5000)'
+        help="Batch sizes to test (default: 500 1000 2000 5000)",
     )
     parser.add_argument(
-        '--num-records',
+        "--num-records",
         type=int,
         default=10000,
-        help='Number of records to use for benchmark (default: 10000)'
+        help="Number of records to use for benchmark (default: 10000)",
     )
     parser.add_argument(
-        '--test-all',
-        action='store_true',
-        help='Run all benchmark tests'
+        "--test-all", action="store_true", help="Run all benchmark tests"
     )
     parser.add_argument(
-        '--test-batch-sizes',
-        action='store_true',
-        help='Test different batch sizes'
+        "--test-batch-sizes", action="store_true", help="Test different batch sizes"
     )
     parser.add_argument(
-        '--test-db-size',
-        action='store_true',
-        help='Test impact of database size'
+        "--test-db-size", action="store_true", help="Test impact of database size"
     )
     parser.add_argument(
-        '--test-conflicts',
-        action='store_true',
-        help='Test ignore_conflicts performance'
+        "--test-conflicts",
+        action="store_true",
+        help="Test ignore_conflicts performance",
     )
 
     args = parser.parse_args()
@@ -285,14 +290,18 @@ def main():
         print("=" * 80)
         print("BATCH SIZE SUMMARY")
         print("=" * 80)
-        print(f"{'Batch Size':<12} {'Batches':<10} {'Time (s)':<12} {'Records/sec':<15} {'Time/Batch (ms)':<15}")
+        print(
+            f"{'Batch Size':<12} {'Batches':<10} {'Time (s)':<12} {'Records/sec':<15} {'Time/Batch (ms)':<15}"
+        )
         print("-" * 80)
         for r in results:
-            print(f"{r['batch_size']:<12} "
-                  f"{r['batches']:<10} "
-                  f"{r['total_time']:<12.2f} "
-                  f"{r['records_per_sec']:<15,.0f} "
-                  f"{r['time_per_batch']*1000:<15.2f}")
+            print(
+                f"{r['batch_size']:<12} "
+                f"{r['batches']:<10} "
+                f"{r['total_time']:<12.2f} "
+                f"{r['records_per_sec']:<15,.0f} "
+                f"{r['time_per_batch'] * 1000:<15.2f}"
+            )
         print()
 
     if args.test_all or args.test_db_size:
@@ -302,10 +311,9 @@ def main():
         benchmark_ignore_conflicts(args.num_records // 2)
 
     # Final cleanup
-    SalaryRecord.objects.filter(source_file='test_benchmark.csv').delete()
+    SalaryRecord.objects.filter(source_file="test_benchmark.csv").delete()
     print("Benchmark complete. Test records cleaned up.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

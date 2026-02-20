@@ -4,19 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0022_populate_employer_cluster_slugs'),
+        ("models", "0022_populate_employer_cluster_slugs"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='jobtitlecluster',
-            name='slug',
-            field=models.SlugField(blank=True, help_text="URL-safe slug for job title (e.g., 'software-engineer')", max_length=255, null=True, unique=True),
+            model_name="jobtitlecluster",
+            name="slug",
+            field=models.SlugField(
+                blank=True,
+                help_text="URL-safe slug for job title (e.g., 'software-engineer')",
+                max_length=255,
+                null=True,
+                unique=True,
+            ),
         ),
         migrations.AddIndex(
-            model_name='jobtitlecluster',
-            index=models.Index(fields=['slug'], name='salary_job__slug_6ea57c_idx'),
+            model_name="jobtitlecluster",
+            index=models.Index(fields=["slug"], name="salary_job__slug_6ea57c_idx"),
         ),
     ]

@@ -19,10 +19,10 @@ class BulletinExtractor:
     def __init__(self, publication_data: PublicationData):
         """
         Initialize extractor for a specific bulletin
-        
+
         Args:
             publication_data: PublicationData object with URL, content, and date
-            
+
         Example:
             extractor = BulletinExtractor(publication_data)
         """
@@ -32,10 +32,10 @@ class BulletinExtractor:
     def extract_from_table(self, table) -> list[dict[str, any]]:
         """
         Extract structured data from a parsed Table object
-        
+
         Args:
             table: BulletinTable from lib.parsing.bulletin.bulletin_table
-            
+
         Returns:
             List of dicts ready for VisaCutoffDate model creation
         """
@@ -65,11 +65,11 @@ class BulletinExtractor:
                     continue
 
                 data = {
-                    'visa_category': visa_category.value,
-                    'visa_class': visa_class,
-                    'action_type': action_type.value,
-                    'country': country.value,
-                    **self._parse_cutoff_value(cutoff_value)
+                    "visa_category": visa_category.value,
+                    "visa_class": visa_class,
+                    "action_type": action_type.value,
+                    "country": country.value,
+                    **self._parse_cutoff_value(cutoff_value),
                 }
 
                 results.append(data)
@@ -79,41 +79,40 @@ class BulletinExtractor:
     def _parse_cutoff_value(self, value) -> dict[str, any]:
         """
         Parse a cutoff value (date, 'C', or 'U')
-        
+
         Args:
             value: Either a date object, 'C', or 'U'
-            
+
         Returns:
             Dict with cutoff_value, cutoff_date, is_current, is_unavailable
         """
         if isinstance(value, date):
             return {
-                'cutoff_value': value.strftime('%Y-%m-%d'),
-                'cutoff_date': value,
-                'is_current': False,
-                'is_unavailable': False,
+                "cutoff_value": value.strftime("%Y-%m-%d"),
+                "cutoff_date": value,
+                "is_current": False,
+                "is_unavailable": False,
             }
-        elif value == 'C':
+        elif value == "C":
             # 'C' means Current - use the bulletin's publication date
             return {
-                'cutoff_value': 'C',
-                'cutoff_date': self.publication_date,
-                'is_current': True,
-                'is_unavailable': False,
+                "cutoff_value": "C",
+                "cutoff_date": self.publication_date,
+                "is_current": True,
+                "is_unavailable": False,
             }
-        elif value == 'U':
+        elif value == "U":
             return {
-                'cutoff_value': 'U',
-                'cutoff_date': None,
-                'is_current': False,
-                'is_unavailable': True,
+                "cutoff_value": "U",
+                "cutoff_date": None,
+                "is_current": False,
+                "is_unavailable": True,
             }
         else:
             # Fallback: treat as string
             return {
-                'cutoff_value': str(value),
-                'cutoff_date': None,
-                'is_current': False,
-                'is_unavailable': False,
+                "cutoff_value": str(value),
+                "cutoff_date": None,
+                "is_current": False,
+                "is_unavailable": False,
             }
-

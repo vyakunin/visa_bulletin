@@ -49,7 +49,9 @@ class RefreshConfig:
 
 def load_config(project_root: Path | str | None = None) -> RefreshConfig:
     """Load config from project root. Uses REFRESH_BACKUP_DIR from env."""
-    root = Path(project_root or os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")).resolve()
+    root = Path(
+        project_root or os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")
+    ).resolve()
     env_file = root / ".env"
     if not env_file.exists():
         env_file = root / ".env.example"

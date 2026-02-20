@@ -69,13 +69,28 @@ def test_old_step_name_mapping_resume() -> None:
     assert OLD_STEP_NAME_TO_NEW["employer_stats_done"] == "update_employer_stats"
     # Resuming from old name (after normalization) should skip that step
     assert should_skip_step("cluster_employers", "cluster_employers") is True
-    assert should_skip_step("cluster_employers", "update_job_title_cluster_stats") is False
+    assert (
+        should_skip_step("cluster_employers", "update_job_title_cluster_stats") is False
+    )
 
 
 def test_write_checkpoint_preserves_index_snapshot(tmp_path: Path) -> None:
     path = tmp_path / "refresh_checkpoint.json"
-    path.write_text(json.dumps({"last_step": "index_snapshot_saved", "timestamp": "Z", "index_snapshot": "/keep.yaml"}))
-    data = CheckpointData(last_step="ingest_complete", timestamp="2025-01-02Z", inactive_db="visa_bulletin", index_snapshot="")
+    path.write_text(
+        json.dumps(
+            {
+                "last_step": "index_snapshot_saved",
+                "timestamp": "Z",
+                "index_snapshot": "/keep.yaml",
+            }
+        )
+    )
+    data = CheckpointData(
+        last_step="ingest_complete",
+        timestamp="2025-01-02Z",
+        inactive_db="visa_bulletin",
+        index_snapshot="",
+    )
     write_checkpoint(path, data, merge_index_snapshot=True)
     read = read_checkpoint(path)
     assert read is not None

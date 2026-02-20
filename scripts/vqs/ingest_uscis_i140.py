@@ -22,9 +22,9 @@ from pathlib import Path
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
-from django.db import transaction
 from django.db.utils import IntegrityError
 
 from django_config.logging_config import setup_logging
@@ -189,7 +189,9 @@ def _parse_xlsx(path: Path) -> list[tuple[int, int, str, int, int]]:
                                 for q in range(1, 5):
                                     q_count = per_q + (1 if q <= leftover else 0)
                                     if q_count > 0:
-                                        rows.append((fy, q, current_cat, country_val, q_count))
+                                        rows.append(
+                                            (fy, q, current_cat, country_val, q_count)
+                                        )
                 continue
     wb.close()
     return rows
@@ -228,7 +230,12 @@ def ingest_file(file_path: Path, publication_date: date | None = None) -> int:
             count += 1
         except IntegrityError:
             logger.debug("Skip duplicate %s Q%s %s", fy, q, dimensions)
-    logger.info("Inserted %d I-140 receipt rows from %s (historical_pub=%s)", count, file_path, use_historical)
+    logger.info(
+        "Inserted %d I-140 receipt rows from %s (historical_pub=%s)",
+        count,
+        file_path,
+        use_historical,
+    )
     return count
 
 
@@ -250,11 +257,23 @@ def _inspect_xlsx(path: Path, max_rows: int = 30) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest USCIS I-140 receipts into raw_facts_ledger")
-    parser.add_argument("--stub", action="store_true", help="Insert stub data for MVP testing")
+    parser = argparse.ArgumentParser(
+        description="Ingest USCIS I-140 receipts into raw_facts_ledger"
+    )
+    parser.add_argument(
+        "--stub", action="store_true", help="Insert stub data for MVP testing"
+    )
     parser.add_argument("--file", type=Path, help="Path to USCIS I-140 XLSX file")
-    parser.add_argument("--publication-date", type=str, help="Publication date YYYY-MM-DD (default: today)")
-    parser.add_argument("--inspect", action="store_true", help="Print raw rows from XLSX (with --file) and exit")
+    parser.add_argument(
+        "--publication-date",
+        type=str,
+        help="Publication date YYYY-MM-DD (default: today)",
+    )
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="Print raw rows from XLSX (with --file) and exit",
+    )
     args = parser.parse_args()
 
     script_logger.log_call(

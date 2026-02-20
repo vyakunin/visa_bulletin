@@ -4,14 +4,15 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0030_jobtitlecluster_total_filings_recent'),
+        ("models", "0030_jobtitlecluster_total_filings_recent"),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='salaryrecord',
-            index=models.Index(fields=['worksite_state', 'employer'], name='sr_worksite_employer'),
+            model_name="salaryrecord",
+            index=models.Index(
+                fields=["worksite_state", "employer"], name="sr_worksite_employer"
+            ),
         ),
     ]

@@ -11,6 +11,7 @@ import plotly.utils
 # 0.01 (1%) yields one small bucket on the left; 0.005 gave two (9 and 52).
 _SIGNIFICANT_BIN_FRACTION = 0.01
 
+
 def _trim_histogram_to_data_range(
     labels: list[str],
     counts: list[int],
@@ -55,7 +56,9 @@ def _trim_histogram_to_data_range(
     return trimmed_labels, trimmed_counts, trimmed_overlays
 
 
-def build_salary_histogram_chart(histogram_data: dict, title: str, label: str | None = None) -> str:
+def build_salary_histogram_chart(
+    histogram_data: dict, title: str, label: str | None = None
+) -> str:
     """Build salary distribution histogram with overlays."""
     bins = histogram_data.get("bins", [])
     overlays = histogram_data.get("overlays", [])
@@ -230,7 +233,8 @@ def build_geographic_chart(geographic_data: list[dict], title: str) -> str:
     states = [g["worksite_state"] for g in geographic_data]
     counts = [g["count"] for g in geographic_data]
     medians = [
-        float(g["median_salary"]) if g.get("median_salary") else 0 for g in geographic_data
+        float(g["median_salary"]) if g.get("median_salary") else 0
+        for g in geographic_data
     ]
     max_count = max(counts) if counts else 0
     y_max = max_count * 1.15
@@ -288,7 +292,8 @@ def build_geographic_median_chart(geographic_data: list[dict], title: str) -> st
     geographic_data = geographic_data[:15]
     states = [g["worksite_state"] for g in geographic_data]
     medians = [
-        float(g["median_salary"]) if g.get("median_salary") else 0 for g in geographic_data
+        float(g["median_salary"]) if g.get("median_salary") else 0
+        for g in geographic_data
     ]
     counts = [g["count"] for g in geographic_data]
     max_median = max(medians) if medians else 0
@@ -356,7 +361,9 @@ def build_salary_trend_chart(yoy_trends: list[dict], title: str) -> str | None:
         return None
 
     years = [t["fiscal_year"] for t in yoy_trends]
-    salaries = [float(t["median_salary"]) if t.get("median_salary") else 0 for t in yoy_trends]
+    salaries = [
+        float(t["median_salary"]) if t.get("median_salary") else 0 for t in yoy_trends
+    ]
     fig = go.Figure(
         data=[
             go.Scatter(

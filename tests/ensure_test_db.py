@@ -14,24 +14,25 @@ def grant_createdb() -> bool:
     Reads DB_USER, PG_SUPERUSER_USER, PG_SUPERUSER_PASSWORD (or DB_PASSWORD), DB_HOST, DB_PORT from env.
     Returns True if grant succeeded or was skipped (postgres user / no DB_USER), False on failure.
     """
-    db_user = os.environ.get('DB_USER', '')
+    db_user = os.environ.get("DB_USER", "")
     if not db_user:
         return True
-    if db_user == 'postgres':
+    if db_user == "postgres":
         return True
-    superuser = os.environ.get('PG_SUPERUSER_USER', 'postgres')
-    superpass = os.environ.get('PG_SUPERUSER_PASSWORD', '')
-    host = os.environ.get('DB_HOST', 'localhost')
-    port = os.environ.get('DB_PORT', '5432')
+    superuser = os.environ.get("PG_SUPERUSER_USER", "postgres")
+    superpass = os.environ.get("PG_SUPERUSER_PASSWORD", "")
+    host = os.environ.get("DB_HOST", "localhost")
+    port = os.environ.get("DB_PORT", "5432")
     if not superpass and superuser != db_user:
         return True
     try:
         import psycopg2
         from psycopg2 import sql
+
         conn = psycopg2.connect(
-            dbname='postgres',
+            dbname="postgres",
             user=superuser,
-            password=superpass or os.environ.get('DB_PASSWORD', ''),
+            password=superpass or os.environ.get("DB_PASSWORD", ""),
             host=host,
             port=port,
             connect_timeout=5,

@@ -16,9 +16,18 @@ def switch_traffic_static_ip(
 ) -> bool:
     """Detach static IP from current instance, attach to instance_name_to_attach. Returns True on success."""
     import subprocess
+
     reg = region or os.environ.get("REFRESH_AWS_REGION", "us-east-1")
     result = subprocess.run(
-        ["aws", "lightsail", "detach-static-ip", "--static-ip-name", static_ip_name, "--region", reg],
+        [
+            "aws",
+            "lightsail",
+            "detach-static-ip",
+            "--static-ip-name",
+            static_ip_name,
+            "--region",
+            reg,
+        ],
         capture_output=True,
         text=True,
         timeout=30,
@@ -61,9 +70,18 @@ def attach_staging_static_ip_to_old_prod(
     Returns True on success.
     """
     import subprocess
+
     reg = region or os.environ.get("REFRESH_AWS_REGION", "us-east-1")
     detach = subprocess.run(
-        ["aws", "lightsail", "detach-static-ip", "--static-ip-name", staging_static_ip_name, "--region", reg],
+        [
+            "aws",
+            "lightsail",
+            "detach-static-ip",
+            "--static-ip-name",
+            staging_static_ip_name,
+            "--region",
+            reg,
+        ],
         capture_output=True,
         text=True,
         timeout=30,
@@ -87,7 +105,13 @@ def attach_staging_static_ip_to_old_prod(
         timeout=30,
     )
     if result.returncode != 0:
-        logger.error("attach-static-ip (staging IP to old prod) failed: %s", result.stderr)
+        logger.error(
+            "attach-static-ip (staging IP to old prod) failed: %s", result.stderr
+        )
         return False
-    logger.info("Staging static IP %s attached to old prod %s", staging_static_ip_name, old_prod_instance_name)
+    logger.info(
+        "Staging static IP %s attached to old prod %s",
+        staging_static_ip_name,
+        old_prod_instance_name,
+    )
     return True

@@ -5,68 +5,168 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0014_populate_is_worksite'),
+        ("models", "0014_populate_is_worksite"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='EmployerCluster',
+            name="EmployerCluster",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('canonical_name', models.CharField(db_index=True, help_text="Canonical employer name (e.g., 'Google LLC')", max_length=255)),
-                ('total_lca_count', models.IntegerField(default=0, help_text='Total H-1B LCA applications across all employers in cluster')),
-                ('total_perm_count', models.IntegerField(default=0, help_text='Total PERM applications across all employers in cluster')),
-                ('avg_salary', models.DecimalField(blank=True, decimal_places=2, help_text='Average salary across all employers in cluster', max_digits=12, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "canonical_name",
+                    models.CharField(
+                        db_index=True,
+                        help_text="Canonical employer name (e.g., 'Google LLC')",
+                        max_length=255,
+                    ),
+                ),
+                (
+                    "total_lca_count",
+                    models.IntegerField(
+                        default=0,
+                        help_text="Total H-1B LCA applications across all employers in cluster",
+                    ),
+                ),
+                (
+                    "total_perm_count",
+                    models.IntegerField(
+                        default=0,
+                        help_text="Total PERM applications across all employers in cluster",
+                    ),
+                ),
+                (
+                    "avg_salary",
+                    models.DecimalField(
+                        blank=True,
+                        decimal_places=2,
+                        help_text="Average salary across all employers in cluster",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'db_table': 'salary_employer_cluster',
+                "db_table": "salary_employer_cluster",
             },
         ),
         migrations.AddIndex(
-            model_name='employercluster',
-            index=models.Index(fields=['canonical_name'], name='salary_empl_canonic_61c319_idx'),
+            model_name="employercluster",
+            index=models.Index(
+                fields=["canonical_name"], name="salary_empl_canonic_61c319_idx"
+            ),
         ),
         migrations.AddField(
-            model_name='employer',
-            name='canonical_cluster',
-            field=models.ForeignKey(blank=True, help_text='Canonical employer cluster this employer belongs to', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='employers', to='models.employercluster'),
+            model_name="employer",
+            name="canonical_cluster",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Canonical employer cluster this employer belongs to",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="employers",
+                to="models.employercluster",
+            ),
         ),
         migrations.AddIndex(
-            model_name='employer',
-            index=models.Index(fields=['canonical_cluster'], name='salary_empl_canonic_f9188f_idx'),
+            model_name="employer",
+            index=models.Index(
+                fields=["canonical_cluster"], name="salary_empl_canonic_f9188f_idx"
+            ),
         ),
         migrations.CreateModel(
-            name='EmployerClusteringReview',
+            name="EmployerClusteringReview",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('similarity_score', models.FloatField(help_text='Similarity score from fuzzy matching (0-1)')),
-                ('match_reason', models.TextField(blank=True, help_text='Why these employers might be the same (rule-based or LLM analysis)')),
-                ('status', models.CharField(choices=[('pending', 'Pending Review'), ('approved', 'Approved - Same Employer'), ('rejected', 'Rejected - Different Employers')], db_index=True, default='pending', max_length=20)),
-                ('reviewed_by', models.CharField(blank=True, help_text="'human' or 'llm' or username", max_length=50)),
-                ('reviewed_at', models.DateTimeField(blank=True, null=True)),
-                ('notes', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('employer1', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='review_as_employer1', to='models.employer')),
-                ('employer2', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='review_as_employer2', to='models.employer')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "similarity_score",
+                    models.FloatField(
+                        help_text="Similarity score from fuzzy matching (0-1)"
+                    ),
+                ),
+                (
+                    "match_reason",
+                    models.TextField(
+                        blank=True,
+                        help_text="Why these employers might be the same (rule-based or LLM analysis)",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending Review"),
+                            ("approved", "Approved - Same Employer"),
+                            ("rejected", "Rejected - Different Employers"),
+                        ],
+                        db_index=True,
+                        default="pending",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "reviewed_by",
+                    models.CharField(
+                        blank=True,
+                        help_text="'human' or 'llm' or username",
+                        max_length=50,
+                    ),
+                ),
+                ("reviewed_at", models.DateTimeField(blank=True, null=True)),
+                ("notes", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "employer1",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="review_as_employer1",
+                        to="models.employer",
+                    ),
+                ),
+                (
+                    "employer2",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="review_as_employer2",
+                        to="models.employer",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'salary_employer_clustering_review',
+                "db_table": "salary_employer_clustering_review",
             },
         ),
         migrations.AddIndex(
-            model_name='employerclusteringreview',
-            index=models.Index(fields=['status'], name='salary_empl_status_bd4db3_idx'),
+            model_name="employerclusteringreview",
+            index=models.Index(fields=["status"], name="salary_empl_status_bd4db3_idx"),
         ),
         migrations.AddIndex(
-            model_name='employerclusteringreview',
-            index=models.Index(fields=['similarity_score'], name='salary_empl_similar_f26845_idx'),
+            model_name="employerclusteringreview",
+            index=models.Index(
+                fields=["similarity_score"], name="salary_empl_similar_f26845_idx"
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='employerclusteringreview',
-            unique_together={('employer1', 'employer2')},
+            name="employerclusteringreview",
+            unique_together={("employer1", "employer2")},
         ),
     ]

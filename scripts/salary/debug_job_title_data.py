@@ -5,7 +5,7 @@ import os
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 from datetime import datetime
@@ -16,7 +16,7 @@ from models.salary import SalaryRecord
 
 def main():
     # Find a cluster with data
-    cluster = JobTitleCluster.objects.filter(slug='server').first()
+    cluster = JobTitleCluster.objects.filter(slug="server").first()
     if not cluster:
         print("Cluster 'server' not found")
         return
@@ -44,9 +44,11 @@ def main():
     print(f"Total records (all time): {all_records.count()}")
 
     # Check fiscal year distribution
-    fiscal_years = all_records.values('fiscal_year').annotate(
-        count=Count('id')
-    ).order_by('fiscal_year')
+    fiscal_years = (
+        all_records.values("fiscal_year")
+        .annotate(count=Count("id"))
+        .order_by("fiscal_year")
+    )
 
     print("\nFiscal year distribution (all time):")
     for fy in fiscal_years[:20]:
@@ -58,36 +60,39 @@ def main():
 
     # Check yoy_trends data
     yoy_trends = list(
-        filtered_records
-        .values('fiscal_year')
+        filtered_records.values("fiscal_year")
         .annotate(
-            count=Count('id'),
-            median_salary=Avg('wage_annual'),
+            count=Count("id"),
+            median_salary=Avg("wage_annual"),
         )
-        .order_by('fiscal_year')
+        .order_by("fiscal_year")
     )
 
     print(f"\nYear-over-year trends data: {len(yoy_trends)} years")
     for trend in yoy_trends:
-        print(f"  FY {trend['fiscal_year']}: {trend['count']:,} filings, ${trend['median_salary']:,.0f} median")
+        print(
+            f"  FY {trend['fiscal_year']}: {trend['count']:,} filings, ${trend['median_salary']:,.0f} median"
+        )
 
     # Check geographic data
     geo_data = list(
-        filtered_records
-        .exclude(worksite_state='')
-        .values('worksite_state')
+        filtered_records.exclude(worksite_state="")
+        .values("worksite_state")
         .annotate(
-            count=Count('id'),
-            median_salary=Avg('wage_annual'),
+            count=Count("id"),
+            median_salary=Avg("wage_annual"),
         )
-        .order_by('-count')[:10]
+        .order_by("-count")[:10]
     )
 
     print(f"\nGeographic data: {len(geo_data)} states")
     for geo in geo_data:
-        print(f"  {geo['worksite_state']}: {geo['count']:,} filings, ${geo['median_salary']:,.0f} median")
+        print(
+            f"  {geo['worksite_state']}: {geo['count']:,} filings, ${geo['median_salary']:,.0f} median"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from django.db.models import Avg, Count
+
     main()

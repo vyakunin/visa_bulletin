@@ -12,8 +12,8 @@ import sys
 import yaml
 
 # Setup Django
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -27,24 +27,40 @@ def categorize_file(filename: str) -> dict:
     """Categorize file type and expected output"""
     filename_lower = filename.lower()
 
-    if 'appendix' in filename_lower:
-        return {'type': 'appendix_a', 'expect': 'none', 'description': 'Appendix A (exempt workers metadata)'}
-    elif 'worksite' in filename_lower:
-        return {'type': 'worksite', 'expect': 'worksite_record', 'description': 'Worksite locations (I-200 cases)'}
-    elif 'perm' in filename_lower:
-        return {'type': 'perm', 'expect': 'salary_record', 'description': 'PERM labor certification'}
+    if "appendix" in filename_lower:
+        return {
+            "type": "appendix_a",
+            "expect": "none",
+            "description": "Appendix A (exempt workers metadata)",
+        }
+    elif "worksite" in filename_lower:
+        return {
+            "type": "worksite",
+            "expect": "worksite_record",
+            "description": "Worksite locations (I-200 cases)",
+        }
+    elif "perm" in filename_lower:
+        return {
+            "type": "perm",
+            "expect": "salary_record",
+            "description": "PERM labor certification",
+        }
     else:
-        return {'type': 'lca', 'expect': 'salary_record', 'description': 'LCA H-1B disclosure'}
+        return {
+            "type": "lca",
+            "expect": "salary_record",
+            "description": "LCA H-1B disclosure",
+        }
 
 
 def extract_samples():
     """Extract one sample row from each DoL file"""
     workspace_dir = get_workspace_dir()
-    data_dir = workspace_dir / 'data' / 'salary' / 'dol_data'
+    data_dir = workspace_dir / "data" / "salary" / "dol_data"
 
     samples = []
 
-    for filepath in sorted(data_dir.glob('*.xlsx')):
+    for filepath in sorted(data_dir.glob("*.xlsx")):
         print(f"Extracting sample from {filepath.name}...", file=sys.stderr)
 
         category = categorize_file(filepath.name)
@@ -60,29 +76,35 @@ def extract_samples():
                     else:
                         str_val = str(v)
                         # Truncate very long values
-                        sample_data[k] = str_val[:200] if len(str_val) > 200 else str_val
+                        sample_data[k] = (
+                            str_val[:200] if len(str_val) > 200 else str_val
+                        )
 
-                samples.append({
-                    'filename': filepath.name,
-                    'type': category['type'],
-                    'expect': category['expect'],
-                    'description': category['description'],
-                    'sample_row': sample_data
-                })
+                samples.append(
+                    {
+                        "filename": filepath.name,
+                        "type": category["type"],
+                        "expect": category["expect"],
+                        "description": category["description"],
+                        "sample_row": sample_data,
+                    }
+                )
                 break  # Only take first row
         except Exception as e:
             print(f"  Error: {e}", file=sys.stderr)
-            samples.append({
-                'filename': filepath.name,
-                'type': category['type'],
-                'expect': category['expect'],
-                'description': category['description'],
-                'error': str(e)
-            })
+            samples.append(
+                {
+                    "filename": filepath.name,
+                    "type": category["type"],
+                    "expect": category["expect"],
+                    "description": category["description"],
+                    "error": str(e),
+                }
+            )
 
     # Output as YAML
     print(yaml.dump(samples, default_flow_style=False, allow_unicode=True))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     extract_samples()

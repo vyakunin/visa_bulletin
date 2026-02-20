@@ -10,7 +10,6 @@ from datetime import date, timedelta
 from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
 from models.enums.country import Country
 
-
 # Fixed lag from priority date to I-140 receipt (Phase 1 naive).
 # Per-category lag (months): EB1 faster, EB3 slower; fallback 12 when class unknown.
 NAIVE_LAG_MONTHS = 12
@@ -53,7 +52,9 @@ def _country_to_enum_value(country: int | str | None) -> int | None:
     return c.value if c else None
 
 
-def _country_matches(filter_country: int | str | None, dim_country: int | str | None) -> bool:
+def _country_matches(
+    filter_country: int | str | None, dim_country: int | str | None
+) -> bool:
     """True if dimensions country matches filter. Both converted to enum value (int) first."""
     filter_value = _country_to_enum_value(filter_country)
     if filter_value is None:
@@ -64,7 +65,9 @@ def _country_matches(filter_country: int | str | None, dim_country: int | str | 
     return filter_value == dim_value
 
 
-def _perm_lag_by_quarter(facts: list, knowledge_date: date) -> dict[tuple[date, date], dict[int, float]]:
+def _perm_lag_by_quarter(
+    facts: list, knowledge_date: date
+) -> dict[tuple[date, date], dict[int, float]]:
     """Build map (ref_start, ref_end) -> {lag_days: fraction} from perm_lag_distribution facts."""
     out: dict[tuple[date, date], dict[int, float]] = {}
     for row in facts:
@@ -116,19 +119,19 @@ def build_virtual_queue_snapshot(
         pub = _get(row, "publication_date")
         if pub and pub > knowledge_date:
             continue
-            
+
         metric = _get(row, "metric")
         dims = _get(row, "dimensions") or {}
-        
+
         if visa_class and dims.get("category") != visa_class:
             continue
         if not _country_matches(country, dims.get("country")):
             continue
-            
+
         value = _get(row, "value")
         if not isinstance(value, (int, float)) or value < 0:
             continue
-            
+
         start = _get(row, "reference_period_start")
         end = _get(row, "reference_period_end")
         if not start:
@@ -137,7 +140,7 @@ def build_virtual_queue_snapshot(
             start = date.fromisoformat(start)
         if end and isinstance(end, str):
             end = date.fromisoformat(end)
-            
+
         if metric == "i140_receipts":
             n = int(value)
             dist = perm_lag.get((start, end)) if end else None
@@ -149,7 +152,9 @@ def build_virtual_queue_snapshot(
             else:
                 # Spread demand evenly across the reference period months
                 if end:
-                    n_months = max(1, (end.year - start.year) * 12 + end.month - start.month + 1)
+                    n_months = max(
+                        1, (end.year - start.year) * 12 + end.month - start.month + 1
+                    )
                 else:
                     n_months = 1
                 per_month = max(1, n // n_months)
@@ -168,16 +173,17 @@ def build_virtual_queue_snapshot(
                         lag_m += 12
                         lag_y -= 1
                     count = per_month + (1 if offset < remainder else 0)
-                    if count < 0: count = 0
+                    if count < 0:
+                        count = 0
                     snapshot.add(date(lag_y, lag_m, 1), count)
-                    
+
         elif metric == "perm_applications":
             # For PERM, we have the actual Priority Date (case_submitted)
             # Filter for Certified cases only
             status = dims.get("status", "")
             if status not in ("CERTIFIED", "CERTIFIED-EXPIRED"):
                 continue
-                
+
             # Direct addition to PD bucket (no lag estimation needed)
             pd_date = start
             bucket_date = date(pd_date.year, pd_date.month, 1)

@@ -8,27 +8,27 @@ from django.db import models, transaction
 from lib.business.salary.cluster_utils import normalize_canonical_name
 from models.salary import EmployerCluster
 
-ModelType = TypeVar('ModelType', bound=models.Model)
+ModelType = TypeVar("ModelType", bound=models.Model)
 
 
 def bulk_update_batched(
-queryset_or_list: Iterable[ModelType],
+    queryset_or_list: Iterable[ModelType],
     batch_size: int = 1000,
-    fields: list[str] | None = None
+    fields: list[str] | None = None,
 ) -> int:
     """
     Update multiple model instances in batches using bulk_update.
-    
+
     More efficient than individual save() calls in loops.
-    
+
     Args:
         queryset_or_list: Iterable of model instances to update
         batch_size: Number of records per batch (default: 1000)
         fields: List of field names to update (None = all fields)
-    
+
     Returns:
         Total number of records updated
-    
+
     Example:
         >>> employers = Employer.objects.filter(canonical_cluster__isnull=False)
         >>> for emp in employers:
@@ -49,13 +49,14 @@ queryset_or_list: Iterable[ModelType],
     # If fields not specified, update all non-pk fields
     if fields is None:
         fields = [
-            f.name for f in model_class._meta.fields
+            f.name
+            for f in model_class._meta.fields
             if not f.primary_key and not f.auto_created
         ]
 
     total_updated = 0
     for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
+        batch = items[i : i + batch_size]
         model_class.objects.bulk_update(batch, fields, batch_size=batch_size)
         total_updated += len(batch)
 
@@ -63,23 +64,21 @@ queryset_or_list: Iterable[ModelType],
 
 
 def bulk_create_batched(
-    items: list[ModelType],
-    batch_size: int = 1000,
-    ignore_conflicts: bool = False
+    items: list[ModelType], batch_size: int = 1000, ignore_conflicts: bool = False
 ) -> int:
     """
     Create multiple model instances in batches using bulk_create.
-    
+
     More efficient than individual create() calls in loops.
-    
+
     Args:
         items: List of model instances to create
         batch_size: Number of records per batch (default: 1000)
         ignore_conflicts: If True, ignore conflicts on unique constraints
-    
+
     Returns:
         Total number of records created
-    
+
     Example:
         >>> reviews = [EmployerClusteringReview(...) for ...]
         >>> bulk_create_batched(reviews, ignore_conflicts=True)
@@ -91,11 +90,9 @@ def bulk_create_batched(
     total_created = 0
 
     for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
+        batch = items[i : i + batch_size]
         model_class.objects.bulk_create(
-            batch,
-            batch_size=batch_size,
-            ignore_conflicts=ignore_conflicts
+            batch, batch_size=batch_size, ignore_conflicts=ignore_conflicts
         )
         total_created += len(batch)
 
@@ -105,14 +102,14 @@ def bulk_create_batched(
 class BatchedUpdateCollector:
     """
     Generic helper for collecting model updates and automatically flushing in batches.
-    
+
     Handles the common pattern of:
     - Collecting records to update in a list
     - Automatically flushing when batch_size is reached
     - Supporting dry_run mode
     - Wrapping updates in transactions
     - Tracking count of processed records
-    
+
     Example:
         >>> collector = BatchedUpdateCollector(
         ...     fields=['employer'],
@@ -131,11 +128,11 @@ class BatchedUpdateCollector:
         fields: list[str],
         batch_size: int = 1000,
         dry_run: bool = False,
-        use_transaction: bool = True
+        use_transaction: bool = True,
     ):
         """
         Initialize batched update collector.
-        
+
         Args:
             fields: List of field names to update
             batch_size: Number of records per batch (default: 1000)
@@ -152,10 +149,10 @@ class BatchedUpdateCollector:
     def add(self, record: ModelType) -> int:
         """
         Add a record to the batch. Automatically flushes if batch_size is reached.
-        
+
         Args:
             record: Model instance to update
-        
+
         Returns:
             Number of records flushed (0 if no flush occurred)
         """
@@ -179,9 +176,13 @@ class BatchedUpdateCollector:
 
         if self.use_transaction:
             with transaction.atomic():
-                bulk_update_batched(self.records, batch_size=self.batch_size, fields=self.fields)
+                bulk_update_batched(
+                    self.records, batch_size=self.batch_size, fields=self.fields
+                )
         else:
-            bulk_update_batched(self.records, batch_size=self.batch_size, fields=self.fields)
+            bulk_update_batched(
+                self.records, batch_size=self.batch_size, fields=self.fields
+            )
 
         self.count += flushed_count
         self.records = []
@@ -191,7 +192,7 @@ class BatchedUpdateCollector:
     def flush(self) -> int:
         """
         Flush any remaining records in the batch.
-        
+
         Returns:
             Number of records flushed
         """
@@ -201,9 +202,9 @@ class BatchedUpdateCollector:
 class BatchedUpdates:
     """
     Helper class for managing batched updates and creates with automatic flushing.
-    
+
     Prevents memory buildup by automatically flushing when batch_size is reached.
-    
+
     Example:
         >>> batched = BatchedUpdates(batch_size=1000, dry_run=False)
         >>> for employer in employers:
@@ -221,12 +222,11 @@ class BatchedUpdates:
         # Pre-load existing cluster ids and canonical names (values(), not full ORM) to save memory
         # Lazy-load full cluster instances on first use into _cluster_cache
         import logging
+
         logger = logging.getLogger(__name__)
 
         logger.info("Pre-loading existing employer clusters into cache...")
-        existing_rows = list(
-            EmployerCluster.objects.values("id", "canonical_name")
-        )
+        existing_rows = list(EmployerCluster.objects.values("id", "canonical_name"))
         # normalized_canonical_name -> id (avoids holding full ORM objects for 200k+ clusters)
         self._cluster_id_by_normalized: dict[str, int] = {
             normalize_canonical_name(row["canonical_name"]): row["id"]
@@ -240,14 +240,16 @@ class BatchedUpdates:
 
         self._clusters_to_create: list = []  # List of EmployerCluster instances to create
         # Deduplication: track employer IDs in current batch to prevent duplicate updates
-        self._employer_update_ids: set = set()  # Set of employer.pk values in current batch
+        self._employer_update_ids: set = (
+            set()
+        )  # Set of employer.pk values in current batch
 
         # Pre-load existing slugs into cache (single query at startup)
         # Prevents N+1 slug loading in flush_clusters() - was reloading ALL slugs per flush
         self._used_slugs: set[str] = set(
-            EmployerCluster.objects
-            .filter(slug__isnull=False)
-            .values_list('slug', flat=True)
+            EmployerCluster.objects.filter(slug__isnull=False).values_list(
+                "slug", flat=True
+            )
         )
         logger.info(f"Loaded {len(self._used_slugs):,} existing slugs into cache")
 
@@ -263,7 +265,7 @@ class BatchedUpdates:
         # Deduplicate by employer ID to prevent updating same employer multiple times in one batch
         # This prevents unique constraint violations when same employer appears in multiple pairs
         employer_id = employer.pk
-        if not hasattr(self, '_employer_update_ids'):
+        if not hasattr(self, "_employer_update_ids"):
             self._employer_update_ids = set()
 
         if employer_id in self._employer_update_ids:
@@ -299,7 +301,9 @@ class BatchedUpdates:
             self.flush_clusters()
 
         # Filter out any employers without primary keys (shouldn't happen, but safety check)
-        valid_employers = [emp for emp in self.employers_to_update if emp.pk is not None]
+        valid_employers = [
+            emp for emp in self.employers_to_update if emp.pk is not None
+        ]
         if len(valid_employers) != len(self.employers_to_update):
             import logging
 
@@ -311,15 +315,21 @@ class BatchedUpdates:
 
         if valid_employers:
             try:
-                bulk_update_batched(valid_employers, batch_size=self.batch_size, fields=fields)
+                bulk_update_batched(
+                    valid_employers, batch_size=self.batch_size, fields=fields
+                )
             except Exception as e:
                 # Log error details for debugging
                 import logging
+
                 logger = logging.getLogger(__name__)
 
                 # Check if it's a unique constraint violation (data integrity issue)
                 error_str = str(e)
-                if 'unique constraint' in error_str.lower() or 'duplicate key' in error_str.lower():
+                if (
+                    "unique constraint" in error_str.lower()
+                    or "duplicate key" in error_str.lower()
+                ):
                     # This is a data integrity issue - there are duplicate employers in the database
                     # Log the error but try to continue by updating employers individually
                     logger.warning(
@@ -332,7 +342,7 @@ class BatchedUpdates:
                     failed_count = 0
                     for emp in valid_employers:
                         try:
-                            emp.save(update_fields=fields or ['canonical_cluster'])
+                            emp.save(update_fields=fields or ["canonical_cluster"])
                             updated_count += 1
                         except Exception as individual_error:
                             failed_count += 1
@@ -358,7 +368,7 @@ class BatchedUpdates:
 
         self.employers_to_update = []
         # Clear the deduplication set after flushing
-        if hasattr(self, '_employer_update_ids'):
+        if hasattr(self, "_employer_update_ids"):
             self._employer_update_ids.clear()
 
     def flush_review_entries(self):
@@ -366,19 +376,21 @@ class BatchedUpdates:
         if not self.review_entries or self.dry_run:
             return
 
-        bulk_create_batched(self.review_entries, batch_size=self.batch_size, ignore_conflicts=True)
+        bulk_create_batched(
+            self.review_entries, batch_size=self.batch_size, ignore_conflicts=True
+        )
         self.review_entries = []
 
     def get_or_queue_cluster(self, canonical_name: str):
         """
         Get existing cluster from cache or queue a new one for batch creation.
-        
+
         Uses case-insensitive lookup to prevent duplicate clusters with different casing
         (e.g., "BBC RETAIL" vs "BBC Retail").
-        
+
         Returns a cluster instance (may be unsaved if queued for batch creation).
         The cluster will be created in batch when flush_clusters() is called.
-        
+
         Note: If a new cluster is created, it preserves the exact casing of canonical_name
         provided (first occurrence wins). Subsequent lookups with different casing will
         return the same cluster instance.
@@ -419,13 +431,17 @@ class BatchedUpdates:
 
         # Batch create clusters with ignore_conflicts=True to handle race conditions
         # and concurrent runs gracefully (requires unique constraint on canonical_name)
-        bulk_create_batched(self._clusters_to_create, batch_size=self.batch_size, ignore_conflicts=True)
+        bulk_create_batched(
+            self._clusters_to_create, batch_size=self.batch_size, ignore_conflicts=True
+        )
 
         # Refresh cluster instances with IDs from database
         # We need to reload them to get the IDs assigned by the database
         # Note: If ignore_conflicts skipped some, we'll get the existing ones from DB
         canonical_names = list(unsaved_by_name.keys())
-        created_clusters = EmployerCluster.objects.filter(canonical_name__in=canonical_names)
+        created_clusters = EmployerCluster.objects.filter(
+            canonical_name__in=canonical_names
+        )
 
         # ✅ FIX PART 1: Generate slugs for newly created clusters (bulk_create bypasses save())
         # bulk_create doesn't call save(), so slugs aren't auto-generated
@@ -450,9 +466,7 @@ class BatchedUpdates:
 
             # Bulk update slugs
             EmployerCluster.objects.bulk_update(
-                clusters_needing_slugs,
-                ['slug'],
-                batch_size=self.batch_size
+                clusters_needing_slugs, ["slug"], batch_size=self.batch_size
             )
 
         # ✅ FIX PART 2: Update cache and unsaved instances in ONE loop (performance optimization)
@@ -485,21 +499,21 @@ class BatchedUpdates:
 def process_in_batches(
     queryset: models.QuerySet,
     batch_size: int = 1000,
-    func: Callable[[list[ModelType]], None] | None = None
+    func: Callable[[list[ModelType]], None] | None = None,
 ) -> int:
     """
     Process a queryset in batches to avoid loading all records into memory.
-    
+
     More efficient than loading all records with list(queryset) for large datasets.
-    
+
     Args:
         queryset: Django QuerySet to process
         batch_size: Number of records per batch (default: 1000)
         func: Optional function to call on each batch
-    
+
     Returns:
         Total number of records processed
-    
+
     Example:
         >>> def process_batch(batch):
         ...     updates = []
@@ -507,7 +521,7 @@ def process_in_batches(
         ...         record.wage_annual = calculate_annual_wage(...)
         ...         updates.append(record)
         ...     bulk_update_batched(updates, fields=['wage_annual'])
-        >>> 
+        >>>
         >>> queryset = SalaryRecord.objects.filter(wage_annual__isnull=True)
         >>> process_in_batches(queryset, batch_size=1000, func=process_batch)
     """
@@ -533,23 +547,20 @@ def process_in_batches(
     return total_processed
 
 
-def bulk_delete_batched(
-    queryset: models.QuerySet,
-    batch_size: int = 1000
-) -> int:
+def bulk_delete_batched(queryset: models.QuerySet, batch_size: int = 1000) -> int:
     """
     Delete records from a queryset in batches.
-    
+
     More efficient than queryset.delete() for very large datasets as it
     processes in smaller batches to avoid long-running transactions.
-    
+
     Args:
         queryset: Django QuerySet to delete from
         batch_size: Number of records per batch (default: 1000)
-    
+
     Returns:
         Total number of records deleted
-    
+
     Example:
         >>> orphaned = Employer.objects.filter(salary_records__isnull=True)
         >>> bulk_delete_batched(orphaned, batch_size=1000)
@@ -565,7 +576,7 @@ def bulk_delete_batched(
     # Delete in batches using primary keys
     while True:
         # Get batch of primary keys
-        batch_ids = list(queryset.values_list('pk', flat=True)[:batch_size])
+        batch_ids = list(queryset.values_list("pk", flat=True)[:batch_size])
 
         if not batch_ids:
             break

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Try to import the standard Bazel runfiles library
 try:
     from rules_python.python.runfiles import runfiles
+
     _RUNFILES_AVAILABLE = True
 except ImportError:
     _RUNFILES_AVAILABLE = False
@@ -23,17 +24,17 @@ except ImportError:
 def get_data_file_path(workspace_path: str) -> Path | None:
     """
     Get the path to a Bazel data file using the standard runfiles library.
-    
+
     The standard library handles all path variations automatically (tests vs binaries,
     different platforms, etc.), so we don't need multiple path attempts.
-    
+
     Args:
         workspace_path: Path relative to workspace root (e.g., "scripts/salary/llm_prompt_template.txt")
                         The standard library will try with and without workspace prefix automatically.
-    
+
     Returns:
         Path to the file if found, None otherwise
-    
+
     Example:
         >>> template_path = get_data_file_path("scripts/salary/llm_prompt_template.txt")
         >>> if template_path:
@@ -42,12 +43,14 @@ def get_data_file_path(workspace_path: str) -> Path | None:
     """
     if not _RUNFILES_AVAILABLE:
         # Fallback for non-Bazel environments (development, direct Python execution)
-        workspace_dir = os.environ.get('BUILD_WORKSPACE_DIRECTORY')
+        workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
         if workspace_dir:
             fallback_path = Path(workspace_dir) / workspace_path
             if fallback_path.exists():
                 return fallback_path
-        logger.debug(f"Runfiles library not available, fallback failed for: {workspace_path}")
+        logger.debug(
+            f"Runfiles library not available, fallback failed for: {workspace_path}"
+        )
         return None
 
     try:
@@ -73,26 +76,20 @@ def get_data_file_path(workspace_path: str) -> Path | None:
         return None
 
 
-def get_template_file(template_name: str, template_dir: str = "scripts/salary") -> Path | None:
+def get_template_file(
+    template_name: str, template_dir: str = "scripts/salary"
+) -> Path | None:
     """
     Get the path to a template file.
-    
+
     Convenience wrapper for get_data_file_path specifically for template files.
-    
+
     Args:
         template_name: Name of the template file (e.g., "llm_prompt_template.txt")
         template_dir: Directory containing the template (default: "scripts/salary")
-    
+
     Returns:
         Path to the template file if found, None otherwise
     """
     template_path = f"{template_dir}/{template_name}"
     return get_data_file_path(template_path)
-
-
-
-
-
-
-
-

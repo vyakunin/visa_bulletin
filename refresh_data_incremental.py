@@ -25,16 +25,17 @@ from django.db import OperationalError, transaction
 # Configure logging with timestamps
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout
+    format="[%(asctime)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
     import django
+
     django.setup()
 
 from extractors.bulletin_handler import save_bulletin_to_db
@@ -43,8 +44,8 @@ from lib.parsing.bulletin.publication_data import PublicationData
 from models.bulletin import Bulletin
 
 # Get workspace directory
-WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent))
-SAVED_PAGES_DIR = WORKSPACE_DIR / 'saved_pages'
+WORKSPACE_DIR = Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", Path(__file__).parent))
+SAVED_PAGES_DIR = WORKSPACE_DIR / "saved_pages"
 
 
 def fetch_main_page(url):
@@ -56,9 +57,7 @@ def fetch_main_page(url):
 
 def get_existing_bulletin_dates():
     """Get set of publication dates already in database"""
-    return set(
-        Bulletin.objects.values_list('publication_date', flat=True)
-    )
+    return set(Bulletin.objects.values_list("publication_date", flat=True))
 
 
 def is_saved(pub_url):
@@ -72,7 +71,7 @@ def save_page_content(url, content):
     SAVED_PAGES_DIR.mkdir(exist_ok=True)
     filename = os.path.basename(urlparse(url).path)
     filepath = SAVED_PAGES_DIR / filename
-    with open(filepath, 'w', encoding='utf-8') as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
 
 
@@ -80,7 +79,7 @@ def fetch_publication(pub_url):
     """Fetch or load cached publication HTML"""
     if is_saved(pub_url):
         filename = os.path.basename(urlparse(pub_url).path)
-        with open(SAVED_PAGES_DIR / filename, encoding='utf-8') as f:
+        with open(SAVED_PAGES_DIR / filename, encoding="utf-8") as f:
             return f.read()
     else:
         response = requests.get(pub_url)
@@ -93,12 +92,12 @@ def fetch_publication(pub_url):
 def save_with_retry(publication_data, max_retries=3, base_delay=1.0):
     """
     Save bulletin to database with exponential backoff retry.
-    
+
     Args:
         publication_data: PublicationData object
         max_retries: Maximum number of retry attempts
         base_delay: Base delay in seconds (doubles each retry)
-    
+
     Returns:
         Bulletin object if successful, None if all retries failed
     """
@@ -108,9 +107,11 @@ def save_with_retry(publication_data, max_retries=3, base_delay=1.0):
                 bulletin = save_bulletin_to_db(publication_data)
                 return bulletin
         except OperationalError as e:
-            if 'database is locked' in str(e) and attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)  # Exponential backoff
-                logger.warning(f"  ⚠️  Database locked, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+            if "database is locked" in str(e) and attempt < max_retries - 1:
+                delay = base_delay * (2**attempt)  # Exponential backoff
+                logger.warning(
+                    f"  ⚠️  Database locked, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})"
+                )
                 time.sleep(delay)
             else:
                 raise
@@ -120,9 +121,9 @@ def save_with_retry(publication_data, max_retries=3, base_delay=1.0):
 def main():
     """Fetch only new bulletins not already in database"""
     start_time = datetime.now()
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("🔄 INCREMENTAL DATA REFRESH - STARTED")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     # Get existing bulletins from database
     logger.info("")
@@ -137,7 +138,9 @@ def main():
     # Fetch list of available bulletins
     logger.info("")
     logger.info("🌐 Fetching bulletin list from travel.state.gov...")
-    url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
+    url = (
+        "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
+    )
     html = fetch_main_page(url)
     publication_urls = parse_publication_links(html)
     logger.info(f"  • Available bulletins: {len(publication_urls)}")
@@ -147,9 +150,9 @@ def main():
     for pub_url in publication_urls:
         # Extract date from URL
         filename = os.path.basename(urlparse(pub_url).path)
-        date_str = filename.replace('visa-bulletin-for-', '').replace('.html', '')
+        date_str = filename.replace("visa-bulletin-for-", "").replace(".html", "")
         try:
-            publication_date = datetime.strptime(date_str, '%B-%Y').date()
+            publication_date = datetime.strptime(date_str, "%B-%Y").date()
             if publication_date not in existing_dates:
                 new_bulletins.append((pub_url, publication_date))
         except ValueError:
@@ -161,9 +164,11 @@ def main():
         logger.info("✅ No new bulletins to fetch. Database is up to date!")
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        logger.info("="*80)
-        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)")
-        logger.info("="*80)
+        logger.info("=" * 80)
+        logger.info(
+            f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)"
+        )
+        logger.info("=" * 80)
         return 0
 
     logger.info("")
@@ -182,7 +187,10 @@ def main():
     for pub_url, publication_date in new_bulletins:
         try:
             logger.info("")
-            logger.info(f"  📄 {publication_date.strftime('%B %Y')}...", extra={'no_timestamp': True})
+            logger.info(
+                f"  📄 {publication_date.strftime('%B %Y')}...",
+                extra={"no_timestamp": True},
+            )
 
             # Fetch HTML
             content = fetch_publication(pub_url)
@@ -191,7 +199,9 @@ def main():
             pub_data = PublicationData(
                 url=pub_url,
                 content=content,
-                publication_date=datetime.combine(publication_date, datetime.min.time())
+                publication_date=datetime.combine(
+                    publication_date, datetime.min.time()
+                ),
             )
 
             # Save to database with retry
@@ -215,9 +225,9 @@ def main():
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
     logger.info("")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("📊 REFRESH SUMMARY")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info(f"  • Successfully saved: {success_count}")
     logger.info(f"  • Errors: {error_count}")
     logger.info(f"  • Total bulletins now in DB: {len(existing_dates) + success_count}")
@@ -227,22 +237,28 @@ def main():
     if error_count > 0:
         logger.warning("")
         logger.warning("⚠️  Some errors occurred. Check logs above.")
-        logger.error("="*80)
-        logger.error(f"❌ CRON_FAILURE: Refresh completed with {error_count} error(s) in {duration:.1f}s")
-        logger.error("="*80)
+        logger.error("=" * 80)
+        logger.error(
+            f"❌ CRON_FAILURE: Refresh completed with {error_count} error(s) in {duration:.1f}s"
+        )
+        logger.error("=" * 80)
         return 1
     elif success_count > 0:
         logger.info("")
         logger.info("✅ Database updated successfully!")
-        logger.info("="*80)
-        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s ({success_count} new bulletin(s))")
-        logger.info("="*80)
+        logger.info("=" * 80)
+        logger.info(
+            f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s ({success_count} new bulletin(s))"
+        )
+        logger.info("=" * 80)
         return 0
     else:
         # No new bulletins case already handled above, but just in case
-        logger.info("="*80)
-        logger.info(f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)")
-        logger.info("="*80)
+        logger.info("=" * 80)
+        logger.info(
+            f"✅ CRON_SUCCESS: Refresh completed successfully in {duration:.1f}s (no new data)"
+        )
+        logger.info("=" * 80)
         return 0
 
 
@@ -263,10 +279,12 @@ if __name__ == "__main__":
             duration = (end_time - start_time).total_seconds()
         logger.error("")
         logger.error(f"❌ CRITICAL ERROR: {type(e).__name__}: {e}")
-        logger.error("="*80)
-        logger.error(f"❌ CRON_FAILURE: Refresh failed with exception in {duration:.1f}s")
-        logger.error("="*80)
+        logger.error("=" * 80)
+        logger.error(
+            f"❌ CRON_FAILURE: Refresh failed with exception in {duration:.1f}s"
+        )
+        logger.error("=" * 80)
         import traceback
+
         logger.error(traceback.format_exc())
         sys.exit(1)
-

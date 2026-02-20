@@ -11,18 +11,20 @@ from models.visa_cutoff_date import VisaCutoffDate
 logger = logging.getLogger(__name__)
 
 
-def create_version(run, version_tag: str, supersedes: IngestVersion | None = None) -> IngestVersion:
+def create_version(
+    run, version_tag: str, supersedes: IngestVersion | None = None
+) -> IngestVersion:
     """
     Create a new ingest version for a completed run.
-    
+
     Handles concurrent version creation by using get_or_create to prevent
     UNIQUE constraint violations when multiple processes complete the same run.
-    
+
     Args:
         run: Completed IngestRun
         version_tag: Human-readable version tag (e.g., 'dol_lca_2024q4_v1')
         supersedes: Previous version this supersedes (for rollback chain)
-        
+
     Returns:
         Created or existing IngestVersion instance
     """
@@ -31,16 +33,18 @@ def create_version(run, version_tag: str, supersedes: IngestVersion | None = Non
     version, created = IngestVersion.objects.get_or_create(
         run=run,
         defaults={
-            'version_tag': version_tag,
-            'is_active': False,  # Start inactive, activate after validation
-            'supersedes': supersedes
-        }
+            "version_tag": version_tag,
+            "is_active": False,  # Start inactive, activate after validation
+            "supersedes": supersedes,
+        },
     )
 
     if created:
         logger.info(f"Created version: {version_tag} for run {run.id}")
     else:
-        logger.warning(f"Version already exists for run {run.id}: {version.version_tag} (concurrent completion detected)")
+        logger.warning(
+            f"Version already exists for run {run.id}: {version.version_tag} (concurrent completion detected)"
+        )
 
     return version
 
@@ -48,17 +52,16 @@ def create_version(run, version_tag: str, supersedes: IngestVersion | None = Non
 def activate_version(version: IngestVersion):
     """
     Activate a version (make it visible to serving queries).
-    
+
     This atomically deactivates the previous version and activates the new one.
-    
+
     Args:
         version: IngestVersion to activate
     """
     with transaction.atomic():
         # Deactivate all versions for the same source
         IngestVersion.objects.filter(
-            run__source=version.run.source,
-            is_active=True
+            run__source=version.run.source, is_active=True
         ).update(is_active=False)
 
         # Activate new version
@@ -71,10 +74,10 @@ def activate_version(version: IngestVersion):
 def rollback_version(version_tag: str) -> dict:
     """
     Rollback all records from a specific ingest version.
-    
+
     Args:
         version_tag: Version tag to rollback
-        
+
     Returns:
         Dict with rollback statistics
     """
@@ -102,21 +105,15 @@ def rollback_version(version_tag: str) -> dict:
             version.supersedes.save()
             logger.info(f"Rolled back to version: {version.supersedes.version_tag}")
 
-        logger.info(f"Rolled back version {version_tag}: {salary_count} salary records, {cutoff_count} cutoff dates deleted")
+        logger.info(
+            f"Rolled back version {version_tag}: {salary_count} salary records, {cutoff_count} cutoff dates deleted"
+        )
 
         return {
-            'version_tag': version_tag,
-            'salary_records_deleted': salary_count,
-            'cutoff_dates_deleted': cutoff_count,
-            'previous_version_activated': version.supersedes.version_tag if version.supersedes else None
+            "version_tag": version_tag,
+            "salary_records_deleted": salary_count,
+            "cutoff_dates_deleted": cutoff_count,
+            "previous_version_activated": version.supersedes.version_tag
+            if version.supersedes
+            else None,
         }
-
-
-
-
-
-
-
-
-
-

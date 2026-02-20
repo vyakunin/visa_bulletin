@@ -8,15 +8,17 @@ Falls back to historical linear regression when recent data shows no progress.
 from datetime import date, timedelta
 
 
-def calculate_projection(dates: list[date], cutoff_dates: list[date | None], submission_date: date) -> dict[str, any] | None:
+def calculate_projection(
+    dates: list[date], cutoff_dates: list[date | None], submission_date: date
+) -> dict[str, any] | None:
     """
     Calculate simple projection based on recent progress rate
-    
+
     Args:
         dates: List of publication dates (bulletin release dates)
         cutoff_dates: List of cutoff dates (may contain None for unavailable)
         submission_date: Target submission date to reach
-        
+
     Returns:
         dict with projection info:
             - status: 'current' | 'no_movement' | 'projected'
@@ -24,9 +26,9 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
             - estimated_date: Projected date when submission_date will be reached (or None)
             - months_to_wait: Estimated months until processing (or None)
             - avg_progress_days_per_month: Average progress rate
-        
+
         Returns None if insufficient data for projection
-    
+
     Example:
         >>> dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)]
         >>> cutoffs = [date(2020, 1, 1), date(2020, 2, 1), date(2020, 3, 1)]
@@ -40,7 +42,8 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
 
     # Filter out None values and get recent data (last 12 months for stability)
     valid_points = [
-        (pub_date, cutoff) for pub_date, cutoff in zip(dates, cutoff_dates)
+        (pub_date, cutoff)
+        for pub_date, cutoff in zip(dates, cutoff_dates)
         if cutoff is not None
     ]
 
@@ -64,10 +67,10 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
     # Check if already current or no movement
     if last_cutoff >= submission_date:
         return {
-            'status': 'current',
-            'message': 'Your application date has already been reached!',
-            'estimated_date': None,
-            'months_to_wait': 0,
+            "status": "current",
+            "message": "Your application date has already been reached!",
+            "estimated_date": None,
+            "months_to_wait": 0,
         }
 
     if avg_days_per_month <= 0:
@@ -80,10 +83,10 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
 
         # If historical regression also fails, return no movement
         return {
-            'status': 'no_movement',
-            'message': 'No forward progress detected in recent months.',
-            'estimated_date': None,
-            'months_to_wait': None,
+            "status": "no_movement",
+            "message": "No forward progress detected in recent months.",
+            "estimated_date": None,
+            "months_to_wait": None,
         }
 
     # Calculate estimated wait time
@@ -94,25 +97,25 @@ def calculate_projection(dates: list[date], cutoff_dates: list[date | None], sub
     estimated_date = add_months_to_date(last_pub, int(months_to_wait))
 
     return {
-        'status': 'projected',
-        'message': f'Estimated processing in {int(months_to_wait)} months',
-        'estimated_date': estimated_date,
-        'months_to_wait': int(months_to_wait),
-        'avg_progress_days_per_month': round(avg_days_per_month, 1),
+        "status": "projected",
+        "message": f"Estimated processing in {int(months_to_wait)} months",
+        "estimated_date": estimated_date,
+        "months_to_wait": int(months_to_wait),
+        "avg_progress_days_per_month": round(avg_days_per_month, 1),
     }
 
 
 def calculate_months_between(start_date: date, end_date: date) -> int:
     """
     Calculate number of months between two dates
-    
+
     Args:
         start_date: Earlier date
         end_date: Later date
-        
+
     Returns:
         Number of months (integer)
-        
+
     Example:
         >>> calculate_months_between(date(2024, 1, 15), date(2024, 3, 20))
         2
@@ -125,14 +128,14 @@ def calculate_months_between(start_date: date, end_date: date) -> int:
 def add_months_to_date(start_date: date, months: int) -> date:
     """
     Add specified number of months to a date
-    
+
     Args:
         start_date: Starting date
         months: Number of months to add
-        
+
     Returns:
         New date after adding months
-        
+
     Example:
         >>> add_months_to_date(date(2024, 1, 15), 3)
         date(2024, 4, 15)
@@ -144,25 +147,23 @@ def add_months_to_date(start_date: date, months: int) -> date:
 
 
 def calculate_historical_linear_regression(
-    valid_points: list[tuple[date, date]],
-    submission_date: date,
-    last_pub_date: date
+    valid_points: list[tuple[date, date]], submission_date: date, last_pub_date: date
 ) -> dict[str, any] | None:
     """
     Calculate projection using linear regression on all historical data
-    
+
     Used as fallback when recent data shows no progress. Fits a line through
     all historical points and extrapolates when the submission_date will be reached.
-    
+
     Args:
         valid_points: List of (publication_date, cutoff_date) tuples
         submission_date: Target submission date to reach
         last_pub_date: Most recent bulletin publication date
-        
+
     Returns:
         dict with projection info (same format as calculate_projection)
         Returns None if regression slope is not positive
-        
+
     Example:
         >>> points = [(date(2020, 1, 1), date(2010, 1, 1)), ...]
         >>> submission = date(2015, 1, 1)
@@ -209,10 +210,10 @@ def calculate_historical_linear_regression(
     # Check if already reached
     if last_cutoff >= submission_date:
         return {
-            'status': 'current',
-            'message': 'Your application date has already been reached (based on historical trend)!',
-            'estimated_date': None,
-            'months_to_wait': 0,
+            "status": "current",
+            "message": "Your application date has already been reached (based on historical trend)!",
+            "estimated_date": None,
+            "months_to_wait": 0,
         }
 
     # Project when submission_date will be reached
@@ -230,11 +231,10 @@ def calculate_historical_linear_regression(
     days_per_month = slope * 30  # Rough approximation
 
     return {
-        'status': 'projected_historical',
-        'message': f'Estimated processing in {int(months_to_wait)} months (based on long-term trend)',
-        'estimated_date': projected_date,
-        'months_to_wait': int(months_to_wait),
-        'avg_progress_days_per_month': round(days_per_month, 1),
-        'method': 'historical_regression',
+        "status": "projected_historical",
+        "message": f"Estimated processing in {int(months_to_wait)} months (based on long-term trend)",
+        "estimated_date": projected_date,
+        "months_to_wait": int(months_to_wait),
+        "avg_progress_days_per_month": round(days_per_month, 1),
+        "method": "historical_regression",
     }
-

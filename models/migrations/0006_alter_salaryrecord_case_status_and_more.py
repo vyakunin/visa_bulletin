@@ -6,25 +6,53 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0007_convert_enums_to_integers'),  # Run data conversion first
+        ("models", "0007_convert_enums_to_integers"),  # Run data conversion first
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='case_status',
-            field=models.IntegerField(blank=True, choices=[(0, 'Certified'), (1, 'Denied'), (2, 'Withdrawn'), (3, 'Certified-Withdrawn')], help_text='Case status (Certified, Denied, etc.)', null=True),
+            model_name="salaryrecord",
+            name="case_status",
+            field=models.IntegerField(
+                blank=True,
+                choices=[
+                    (0, "Certified"),
+                    (1, "Denied"),
+                    (2, "Withdrawn"),
+                    (3, "Certified-Withdrawn"),
+                ],
+                help_text="Case status (Certified, Denied, etc.)",
+                null=True,
+            ),
         ),
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='visa_program',
-            field=models.IntegerField(choices=[(0, 'H-1B (Specialty Occupation)'), (1, 'H-1B1 (Chile/Singapore)'), (2, 'E-3 (Australia)'), (3, 'PERM (Permanent Labor Certification)')], db_index=True, help_text='Visa program type (H-1B, PERM, etc.)'),
+            model_name="salaryrecord",
+            name="visa_program",
+            field=models.IntegerField(
+                choices=[
+                    (0, "H-1B (Specialty Occupation)"),
+                    (1, "H-1B1 (Chile/Singapore)"),
+                    (2, "E-3 (Australia)"),
+                    (3, "PERM (Permanent Labor Certification)"),
+                ],
+                db_index=True,
+                help_text="Visa program type (H-1B, PERM, etc.)",
+            ),
         ),
         migrations.AlterField(
-            model_name='visacutoffdate',
-            name='country',
-            field=models.IntegerField(choices=[(0, 'Other Countries'), (1, 'China (mainland born)'), (2, 'India'), (3, 'Mexico'), (4, 'Philippines'), (5, 'El Salvador/Guatemala/Honduras')], help_text='Country/region for chargeability'),
+            model_name="visacutoffdate",
+            name="country",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Other Countries"),
+                    (1, "China (mainland born)"),
+                    (2, "India"),
+                    (3, "Mexico"),
+                    (4, "Philippines"),
+                    (5, "El Salvador/Guatemala/Honduras"),
+                ],
+                help_text="Country/region for chargeability",
+            ),
         ),
     ]

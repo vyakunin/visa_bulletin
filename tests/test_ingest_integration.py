@@ -52,14 +52,24 @@ class TestIngestPipelineIntegration:
         dummy_file = tmp_path / "dummy.html"
         dummy_file.write_text("test")
 
-        with patch("lib.ingest.orchestrator.PluginRegistry.get_plugin", return_value=plugin), \
-             patch("lib.ingest.orchestrator.get_data_source_filepath", return_value=None), \
-             patch("lib.ingest.orchestrator.RejectionTracker") as rejection_tracker, \
-             patch.object(orchestrator, "_download_stage", return_value=dummy_file), \
-             patch.object(orchestrator, "_parse_stage", return_value=[]), \
-             patch.object(orchestrator, "_transform_stage", return_value=[]), \
-             patch.object(orchestrator, "_load_to_db_stage", return_value=None), \
-             patch.object(orchestrator, "_validate_post_ingest", return_value=ValidationResult(passed=True)):
+        with (
+            patch(
+                "lib.ingest.orchestrator.PluginRegistry.get_plugin", return_value=plugin
+            ),
+            patch(
+                "lib.ingest.orchestrator.get_data_source_filepath", return_value=None
+            ),
+            patch("lib.ingest.orchestrator.RejectionTracker") as rejection_tracker,
+            patch.object(orchestrator, "_download_stage", return_value=dummy_file),
+            patch.object(orchestrator, "_parse_stage", return_value=[]),
+            patch.object(orchestrator, "_transform_stage", return_value=[]),
+            patch.object(orchestrator, "_load_to_db_stage", return_value=None),
+            patch.object(
+                orchestrator,
+                "_validate_post_ingest",
+                return_value=ValidationResult(passed=True),
+            ),
+        ):
             rejection_tracker.return_value.save_to_db = Mock()
             run = orchestrator.run(source, resume=False)
 
@@ -75,9 +85,17 @@ class TestIngestPipelineIntegration:
         # Create test Excel file
         wb = Workbook()
         ws = wb.active
-        ws.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'JOB_TITLE', 'WAGE_RATE_OF_PAY_FROM', 'WAGE_UNIT_OF_PAY'])
-        ws.append(['CASE001', 'Test Company', 'Software Engineer', '150000', 'Year'])
-        ws.append(['CASE002', 'Test Company', 'Data Scientist', '140000', 'Year'])
+        ws.append(
+            [
+                "CASE_NUMBER",
+                "EMPLOYER_NAME",
+                "JOB_TITLE",
+                "WAGE_RATE_OF_PAY_FROM",
+                "WAGE_UNIT_OF_PAY",
+            ]
+        )
+        ws.append(["CASE001", "Test Company", "Software Engineer", "150000", "Year"])
+        ws.append(["CASE002", "Test Company", "Data Scientist", "140000", "Year"])
 
         test_file = tmp_path / "test_lca.xlsx"
         wb.save(test_file)
@@ -87,7 +105,7 @@ class TestIngestPipelineIntegration:
             url=f"file://{test_file}",
             domain=DataDomain.DOL,
             source_type=SourceType.LCA,
-            format_version=FormatVersion.MODERN
+            format_version=FormatVersion.MODERN,
         )
 
         # Mock download to return test file
@@ -101,9 +119,7 @@ class TestIngestPipelineIntegration:
 
         # Run pipeline
         orchestrator = PipelineOrchestrator(
-            batch_size=10,
-            adaptive_batch=False,
-            prefilter_existing=False
+            batch_size=10, adaptive_batch=False, prefilter_existing=False
         )
 
         run = orchestrator.run(source, resume=False)
@@ -118,9 +134,9 @@ class TestIngestPipelineIntegration:
         assert records.count() == 2
 
         # Verify data
-        record1 = records.get(case_number='CASE001')
-        assert record1.employer_name == 'Test Company'
-        assert record1.job_title == 'Software Engineer'
+        record1 = records.get(case_number="CASE001")
+        assert record1.employer_name == "Test Company"
+        assert record1.job_title == "Software Engineer"
         assert float(record1.wage_annual) == 150000.0
 
         # Restore original method
@@ -136,17 +152,23 @@ class TestIngestPipelineIntegration:
         # Create test Excel file with many rows
         wb = Workbook()
         ws = wb.active
-        ws.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'JOB_TITLE', 'WAGE_RATE_OF_PAY_FROM', 'WAGE_UNIT_OF_PAY'])
+        ws.append(
+            [
+                "CASE_NUMBER",
+                "EMPLOYER_NAME",
+                "JOB_TITLE",
+                "WAGE_RATE_OF_PAY_FROM",
+                "WAGE_UNIT_OF_PAY",
+            ]
+        )
         for i in range(50):
-            ws.append([f'CASE{i:03d}', 'Test Company', 'Engineer', '100000', 'Year'])
+            ws.append([f"CASE{i:03d}", "Test Company", "Engineer", "100000", "Year"])
 
         test_file = tmp_path / "test_lca_large.xlsx"
         wb.save(test_file)
 
         source = DataSource.objects.create(
-            url=f"file://{test_file}",
-            domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            url=f"file://{test_file}", domain=DataDomain.DOL, source_type=SourceType.LCA
         )
 
         plugin = PluginRegistry.get_plugin(DataDomain.DOL, SourceType.LCA)
@@ -163,7 +185,7 @@ class TestIngestPipelineIntegration:
         run = orchestrator.run(source, resume=False)
 
         # Simulate interruption at row 25
-        run.checkpoint = {'last_row': 25, 'filepath': str(test_file)}
+        run.checkpoint = {"last_row": 25, "filepath": str(test_file)}
         run.stage = IngestStage.PARSING
         run.status = IngestStatus.RUNNING
         run.save()
@@ -202,7 +224,7 @@ class TestIngestPipelineIntegration:
     def test_db_error_retry(self, tmp_path):
         """
         Test that records failing to save due to database errors are saved on rerun.
-        
+
         This test simulates the scenario where:
         1. Pipeline runs but table doesn't exist (database error)
         2. Run is marked as FAILED with records_failed > 0
@@ -238,11 +260,13 @@ class TestIngestPipelineIntegration:
             url=f"file://{test_file}",
             domain=DataDomain.VISA_BULLETIN,
             source_type=SourceType.BULLETIN,
-            format_version=FormatVersion.MODERN
+            format_version=FormatVersion.MODERN,
         )
 
         # Mock download to return test file
-        plugin = PluginRegistry.get_plugin(DataDomain.VISA_BULLETIN, SourceType.BULLETIN)
+        plugin = PluginRegistry.get_plugin(
+            DataDomain.VISA_BULLETIN, SourceType.BULLETIN
+        )
         original_download = plugin.download
 
         def mock_download(s, r):
@@ -260,16 +284,16 @@ class TestIngestPipelineIntegration:
                 cursor.execute("ALTER TABLE bulletin RENAME TO bulletin_backup")
 
         orchestrator = PipelineOrchestrator(
-            batch_size=10,
-            adaptive_batch=False,
-            prefilter_existing=False
+            batch_size=10, adaptive_batch=False, prefilter_existing=False
         )
 
         # First run - should fail with database error
         try:
             run = orchestrator.run(source, resume=False)
             # Should not reach here, but if it does, verify it failed
-            assert run.status == IngestStatus.FAILED, "Expected run to fail with missing table"
+            assert run.status == IngestStatus.FAILED, (
+                "Expected run to fail with missing table"
+            )
         except Exception as e:
             # Expected - database error (SQLite: "no such table"; PostgreSQL: "does not exist" / "relation")
             err = str(e).lower()
@@ -280,14 +304,20 @@ class TestIngestPipelineIntegration:
                 or "bulletin" in err
             ), f"Expected DB error, got: {e}"
             # Get the run that was created
-            run = source.runs.order_by('-started_at').first()
+            run = source.runs.order_by("-started_at").first()
             assert run is not None
             assert run.status == IngestStatus.FAILED
-            assert run.records_failed > 0, "Should have records_failed > 0 when save fails"
+            assert run.records_failed > 0, (
+                "Should have records_failed > 0 when save fails"
+            )
 
         # Verify no records were saved
-        assert Bulletin.objects.count() == 0, "No bulletins should be saved on failed run"
-        assert VisaCutoffDate.objects.count() == 0, "No cutoff dates should be saved on failed run"
+        assert Bulletin.objects.count() == 0, (
+            "No bulletins should be saved on failed run"
+        )
+        assert VisaCutoffDate.objects.count() == 0, (
+            "No cutoff dates should be saved on failed run"
+        )
 
         # Restore table (fix the database issue)
         with connection.cursor() as cursor:
@@ -301,14 +331,22 @@ class TestIngestPipelineIntegration:
         run_retry = orchestrator.run(source, resume=True)
 
         # Verify run completed successfully
-        assert run_retry.status == IngestStatus.COMPLETED, f"Run should complete on retry, got status: {run_retry.status}"
+        assert run_retry.status == IngestStatus.COMPLETED, (
+            f"Run should complete on retry, got status: {run_retry.status}"
+        )
         assert run_retry.stage == IngestStage.COMPLETED
-        assert run_retry.records_created > 0, "Should have created records on successful retry"
-        assert run_retry.records_failed == 0, "Should have no failed records on successful retry"
+        assert run_retry.records_created > 0, (
+            "Should have created records on successful retry"
+        )
+        assert run_retry.records_failed == 0, (
+            "Should have no failed records on successful retry"
+        )
 
         # Verify records were actually saved to database
         assert Bulletin.objects.count() > 0, "Bulletins should be saved on retry"
-        assert VisaCutoffDate.objects.count() > 0, "Cutoff dates should be saved on retry"
+        assert VisaCutoffDate.objects.count() > 0, (
+            "Cutoff dates should be saved on retry"
+        )
 
         # Verify data integrity
         bulletin = Bulletin.objects.first()
@@ -318,13 +356,3 @@ class TestIngestPipelineIntegration:
 
         # Restore original method
         plugin.download = original_download
-
-
-
-
-
-
-
-
-
-

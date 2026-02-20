@@ -14,8 +14,8 @@ import os
 import time
 
 # Setup Django early
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -33,7 +33,7 @@ def explain_query(queryset):
     sql, params = queryset.query.get_compiler(queryset.db).as_sql()
     with connection.cursor() as cursor:
         cursor.execute(f"EXPLAIN ANALYZE {sql}", params)
-        return '\n'.join(row[0] for row in cursor.fetchall())
+        return "\n".join(row[0] for row in cursor.fetchall())
 
 
 def benchmark_query(name: str, queryset, show_explain: bool = False):
@@ -56,7 +56,7 @@ def benchmark_query(name: str, queryset, show_explain: bool = False):
     if show_explain:
         print("  EXPLAIN ANALYZE:")
         explain = explain_query(queryset)
-        for line in explain.split('\n')[:10]:  # First 10 lines
+        for line in explain.split("\n")[:10]:  # First 10 lines
             print(f"    {line}")
 
     print()
@@ -71,12 +71,16 @@ def benchmark_job_title_search():
     print()
 
     # Test different search terms
-    search_terms = ['engineer', 'software', 'developer', 'manager', 'analyst']
+    search_terms = ["engineer", "software", "developer", "manager", "analyst"]
 
     results = {}
     for term in search_terms:
         queryset = SalaryRecord.objects.filter(job_title__icontains=term)
-        time_taken = benchmark_query(f"job_title__icontains='{term}'", queryset, show_explain=(term == 'engineer'))
+        time_taken = benchmark_query(
+            f"job_title__icontains='{term}'",
+            queryset,
+            show_explain=(term == "engineer"),
+        )
         results[term] = time_taken
 
     return results
@@ -90,12 +94,16 @@ def benchmark_employer_search():
     print()
 
     # Test different employer searches
-    employers = ['Google', 'Microsoft', 'Amazon', 'Apple', 'Meta']
+    employers = ["Google", "Microsoft", "Amazon", "Apple", "Meta"]
 
     results = {}
     for employer in employers:
         queryset = SalaryRecord.objects.filter(employer_name__icontains=employer)
-        time_taken = benchmark_query(f"employer_name__icontains='{employer}'", queryset, show_explain=(employer == 'Google'))
+        time_taken = benchmark_query(
+            f"employer_name__icontains='{employer}'",
+            queryset,
+            show_explain=(employer == "Google"),
+        )
         results[employer] = time_taken
 
     return results
@@ -109,12 +117,14 @@ def benchmark_state_filter():
     print()
 
     # Test different states
-    states = ['CA', 'NY', 'TX', 'WA', 'FL']
+    states = ["CA", "NY", "TX", "WA", "FL"]
 
     results = {}
     for state in states:
         queryset = SalaryRecord.objects.filter(worksite_state=state)
-        time_taken = benchmark_query(f"worksite_state='{state}'", queryset, show_explain=(state == 'CA'))
+        time_taken = benchmark_query(
+            f"worksite_state='{state}'", queryset, show_explain=(state == "CA")
+        )
         results[state] = time_taken
 
     return results
@@ -130,18 +140,18 @@ def benchmark_aggregations():
     # Overall aggregations
     queryset = SalaryRecord.objects.filter(wage_annual__isnull=False, wage_annual__gt=0)
     stats = queryset.aggregate(
-        avg=Avg('wage_annual'),
-        min=Min('wage_annual'),
-        max=Max('wage_annual'),
-        count=Count('id')
+        avg=Avg("wage_annual"),
+        min=Min("wage_annual"),
+        max=Max("wage_annual"),
+        count=Count("id"),
     )
 
     start_time = time.time()
     stats = queryset.aggregate(
-        avg=Avg('wage_annual'),
-        min=Min('wage_annual'),
-        max=Max('wage_annual'),
-        count=Count('id')
+        avg=Avg("wage_annual"),
+        min=Min("wage_annual"),
+        max=Max("wage_annual"),
+        count=Count("id"),
     )
     query_time = time.time() - start_time
 
@@ -157,18 +167,26 @@ def benchmark_aggregations():
     print("Aggregations with filters:")
 
     # By state
-    queryset = SalaryRecord.objects.filter(worksite_state='CA', wage_annual__isnull=False, wage_annual__gt=0)
+    queryset = SalaryRecord.objects.filter(
+        worksite_state="CA", wage_annual__isnull=False, wage_annual__gt=0
+    )
     start_time = time.time()
-    stats = queryset.aggregate(avg=Avg('wage_annual'), count=Count('id'))
+    stats = queryset.aggregate(avg=Avg("wage_annual"), count=Count("id"))
     query_time = time.time() - start_time
-    print(f"  CA average: ${stats['avg']:,.0f} (count: {stats['count']:,}, time: {query_time:.3f}s)")
+    print(
+        f"  CA average: ${stats['avg']:,.0f} (count: {stats['count']:,}, time: {query_time:.3f}s)"
+    )
 
     # By visa program
-    queryset = SalaryRecord.objects.filter(visa_program=VisaProgram.H1B, wage_annual__isnull=False, wage_annual__gt=0)
+    queryset = SalaryRecord.objects.filter(
+        visa_program=VisaProgram.H1B, wage_annual__isnull=False, wage_annual__gt=0
+    )
     start_time = time.time()
-    stats = queryset.aggregate(avg=Avg('wage_annual'), count=Count('id'))
+    stats = queryset.aggregate(avg=Avg("wage_annual"), count=Count("id"))
     query_time = time.time() - start_time
-    print(f"  H-1B average: ${stats['avg']:,.0f} (count: {stats['count']:,}, time: {query_time:.3f}s)")
+    print(
+        f"  H-1B average: ${stats['avg']:,.0f} (count: {stats['count']:,}, time: {query_time:.3f}s)"
+    )
 
     print()
     return query_time
@@ -186,7 +204,9 @@ def benchmark_pagination():
     # Test different pages
     for page in [1, 10, 100, 1000]:
         offset = (page - 1) * per_page
-        queryset = SalaryRecord.objects.order_by('-wage_annual', '-fiscal_year')[offset:offset + per_page]
+        queryset = SalaryRecord.objects.order_by("-wage_annual", "-fiscal_year")[
+            offset : offset + per_page
+        ]
 
         start_time = time.time()
         results = list(queryset)
@@ -196,9 +216,11 @@ def benchmark_pagination():
         print(f"  Results: {len(results)}")
         print(f"  Time: {query_time:.3f} seconds")
         if page == 1:
-            explain = explain_query(SalaryRecord.objects.order_by('-wage_annual', '-fiscal_year')[:per_page])
+            explain = explain_query(
+                SalaryRecord.objects.order_by("-wage_annual", "-fiscal_year")[:per_page]
+            )
             print("  EXPLAIN ANALYZE (first page):")
-            for line in explain.split('\n')[:10]:
+            for line in explain.split("\n")[:10]:
                 print(f"    {line}")
         print()
 
@@ -212,17 +234,17 @@ def benchmark_complex_filters():
 
     # Multiple filters combined
     queryset = SalaryRecord.objects.filter(
-        job_title__icontains='engineer',
-        worksite_state='CA',
+        job_title__icontains="engineer",
+        worksite_state="CA",
         visa_program=VisaProgram.H1B,
         fiscal_year=2024,
-        wage_annual__gte=100000
+        wage_annual__gte=100000,
     )
 
     time_taken = benchmark_query(
         "job_title='engineer' AND state='CA' AND program='H1B' AND year=2024 AND wage>=100k",
         queryset,
-        show_explain=True
+        show_explain=True,
     )
 
     return time_taken
@@ -236,21 +258,35 @@ def benchmark_index_usage():
     print()
 
     queries = [
-        ("job_title search", SalaryRecord.objects.filter(job_title__icontains='engineer')),
-        ("employer search", SalaryRecord.objects.filter(employer_name__icontains='Google')),
-        ("state filter", SalaryRecord.objects.filter(worksite_state='CA')),
-        ("visa program + year", SalaryRecord.objects.filter(visa_program=VisaProgram.H1B, fiscal_year=2024)),
-        ("wage range", SalaryRecord.objects.filter(wage_annual__gte=100000, wage_annual__lte=200000)),
+        (
+            "job_title search",
+            SalaryRecord.objects.filter(job_title__icontains="engineer"),
+        ),
+        (
+            "employer search",
+            SalaryRecord.objects.filter(employer_name__icontains="Google"),
+        ),
+        ("state filter", SalaryRecord.objects.filter(worksite_state="CA")),
+        (
+            "visa program + year",
+            SalaryRecord.objects.filter(visa_program=VisaProgram.H1B, fiscal_year=2024),
+        ),
+        (
+            "wage range",
+            SalaryRecord.objects.filter(
+                wage_annual__gte=100000, wage_annual__lte=200000
+            ),
+        ),
     ]
 
     for name, queryset in queries:
         print(f"Query: {name}")
         explain = explain_query(queryset)
         # Look for index usage in explain output
-        if 'Index' in explain or 'index' in explain.lower():
+        if "Index" in explain or "index" in explain.lower():
             print("  ✓ Index used")
-            for line in explain.split('\n')[:5]:
-                if 'Index' in line or 'index' in line.lower():
+            for line in explain.split("\n")[:5]:
+                if "Index" in line or "index" in line.lower():
                     print(f"    {line.strip()}")
         else:
             print("  ✗ No index usage detected")
@@ -259,48 +295,28 @@ def benchmark_index_usage():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Benchmark database serving/query performance'
+        description="Benchmark database serving/query performance"
     )
     parser.add_argument(
-        '--test-all',
-        action='store_true',
-        help='Run all benchmark tests'
+        "--test-all", action="store_true", help="Run all benchmark tests"
     )
     parser.add_argument(
-        '--test-job-title',
-        action='store_true',
-        help='Test job title searches'
+        "--test-job-title", action="store_true", help="Test job title searches"
     )
     parser.add_argument(
-        '--test-employer',
-        action='store_true',
-        help='Test employer searches'
+        "--test-employer", action="store_true", help="Test employer searches"
+    )
+    parser.add_argument("--test-state", action="store_true", help="Test state filters")
+    parser.add_argument(
+        "--test-aggregations", action="store_true", help="Test aggregation queries"
     )
     parser.add_argument(
-        '--test-state',
-        action='store_true',
-        help='Test state filters'
+        "--test-pagination", action="store_true", help="Test pagination"
     )
     parser.add_argument(
-        '--test-aggregations',
-        action='store_true',
-        help='Test aggregation queries'
+        "--test-complex", action="store_true", help="Test complex multi-filter queries"
     )
-    parser.add_argument(
-        '--test-pagination',
-        action='store_true',
-        help='Test pagination'
-    )
-    parser.add_argument(
-        '--test-complex',
-        action='store_true',
-        help='Test complex multi-filter queries'
-    )
-    parser.add_argument(
-        '--test-indexes',
-        action='store_true',
-        help='Test index usage'
-    )
+    parser.add_argument("--test-indexes", action="store_true", help="Test index usage")
 
     args = parser.parse_args()
 
@@ -337,5 +353,5 @@ def main():
     print("Benchmark complete.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

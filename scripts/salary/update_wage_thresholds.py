@@ -34,8 +34,8 @@ except ImportError:
     np = None
 
 # Setup Django
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -51,8 +51,12 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # Use BUILD_WORKSPACE_DIRECTORY to write to actual workspace (not Bazel sandbox)
-WORKSPACE_DIR = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY', Path(__file__).parent.parent.parent))
-CONFIG_PATH = WORKSPACE_DIR / 'lib' / 'parsing' / 'salary' / 'wage_thresholds_config.yaml'
+WORKSPACE_DIR = Path(
+    os.environ.get("BUILD_WORKSPACE_DIRECTORY", Path(__file__).parent.parent.parent)
+)
+CONFIG_PATH = (
+    WORKSPACE_DIR / "lib" / "parsing" / "salary" / "wage_thresholds_config.yaml"
+)
 
 # Conversion factors
 HOURS_PER_YEAR = 2080
@@ -85,10 +89,9 @@ def convert_to_annual(wage_from: Decimal, wage_unit: str) -> float | None:
 def get_recent_fiscal_years(num_years: int = 2) -> list[int]:
     """Get the most recent N fiscal years from the database."""
     fiscal_years = (
-        SalaryRecord.objects
-        .values_list('fiscal_year', flat=True)
+        SalaryRecord.objects.values_list("fiscal_year", flat=True)
         .distinct()
-        .order_by('-fiscal_year')
+        .order_by("-fiscal_year")
     )
     return list(fiscal_years[:num_years])
 
@@ -96,17 +99,17 @@ def get_recent_fiscal_years(num_years: int = 2) -> list[int]:
 def calculate_thresholds(fiscal_years=2):
     """
     Calculate unified wage thresholds from recent data using 4σ range.
-    
+
     Strategy:
     1. Load records from recent fiscal years
     2. Convert wages to annual WITHOUT unit correction
     3. Filter out obvious errors (<$5K, >$5M)
     4. Calculate mean and std
     5. Use 4σ range (mean ± 4×std) for min/max thresholds
-    
+
     Args:
         fiscal_years: Number of recent fiscal years to analyze
-    
+
     Returns:
         dict with calculated thresholds
     """
@@ -123,16 +126,16 @@ def calculate_thresholds(fiscal_years=2):
 
     # Load records with non-null wage_from
     records = SalaryRecord.objects.filter(
-        fiscal_year__in=recent_years,
-        wage_from__isnull=False,
-        wage_unit__isnull=False
+        fiscal_year__in=recent_years, wage_from__isnull=False, wage_unit__isnull=False
     )
 
     total_records = records.count()
     logger.info(f"Total records with wage_from: {total_records:,}")
 
     if total_records < 1000:
-        logger.warning(f"Only {total_records} records found - thresholds may not be reliable")
+        logger.warning(
+            f"Only {total_records} records found - thresholds may not be reliable"
+        )
 
     # Convert all wages to annual (WITHOUT unit correction)
     logger.info("Converting wages to annual (without unit correction)...")
@@ -198,20 +201,20 @@ def calculate_thresholds(fiscal_years=2):
     logger.info("")
 
     return {
-        'min_threshold': min_threshold,
-        'max_threshold': max_threshold,
-        'mean': mean,
-        'std': std,
-        'median': median,
-        'count': len(filtered_wages),
-        'percentiles': {
-            'p1': round(p1, 2),
-            'p5': round(p5, 2),
-            'p50': round(p50, 2),
-            'p95': round(p95, 2),
-            'p99': round(p99, 2),
+        "min_threshold": min_threshold,
+        "max_threshold": max_threshold,
+        "mean": mean,
+        "std": std,
+        "median": median,
+        "count": len(filtered_wages),
+        "percentiles": {
+            "p1": round(p1, 2),
+            "p5": round(p5, 2),
+            "p50": round(p50, 2),
+            "p95": round(p95, 2),
+            "p99": round(p99, 2),
         },
-        'fiscal_years': recent_years,
+        "fiscal_years": recent_years,
     }
 
 
@@ -223,30 +226,30 @@ def update_config(thresholds, fiscal_years):
 
     # Prepare config data (new unified format)
     config_data = {
-        '_last_updated': datetime.now().strftime('%Y-%m-%d'),
-        '_source': f'Calculated from salary data distributions (without unit correction, filtered <{MIN_FILTER}, >{MAX_FILTER})',
-        'annual_wage_range': {
-            'min': thresholds['min_threshold'],
-            'max': thresholds['max_threshold'],
+        "_last_updated": datetime.now().strftime("%Y-%m-%d"),
+        "_source": f"Calculated from salary data distributions (without unit correction, filtered <{MIN_FILTER}, >{MAX_FILTER})",
+        "annual_wage_range": {
+            "min": thresholds["min_threshold"],
+            "max": thresholds["max_threshold"],
         },
-        'percentiles': thresholds['percentiles'],
-        'calculation_method': {
-            'min_threshold': 'max(MIN_FILTER, mean - 4*std)',
-            'max_threshold': 'min(MAX_FILTER, mean + 4*std)',
-            'coverage': '~99.99% (4σ)',
+        "percentiles": thresholds["percentiles"],
+        "calculation_method": {
+            "min_threshold": "max(MIN_FILTER, mean - 4*std)",
+            "max_threshold": "min(MAX_FILTER, mean + 4*std)",
+            "coverage": "~99.99% (4σ)",
         },
-        'statistics': {
-            'mean': round(thresholds['mean'], 2),
-            'std': round(thresholds['std'], 2),
-            'median': round(thresholds['median'], 2),
-            'count': thresholds['count'],
-            'fiscal_years': thresholds['fiscal_years'],
+        "statistics": {
+            "mean": round(thresholds["mean"], 2),
+            "std": round(thresholds["std"], 2),
+            "median": round(thresholds["median"], 2),
+            "count": thresholds["count"],
+            "fiscal_years": thresholds["fiscal_years"],
         },
     }
 
     # Write config file
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, 'w') as f:
+    with open(CONFIG_PATH, "w") as f:
         yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
     logger.info(f"✅ Updated config file: {CONFIG_PATH}")
@@ -256,7 +259,7 @@ def update_config(thresholds, fiscal_years):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Update wage thresholds from recent data distributions (unified 4σ approach)',
+        description="Update wage thresholds from recent data distributions (unified 4σ approach)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -268,30 +271,30 @@ Examples:
   
   Use last 3 fiscal years:
     bazel run //scripts/salary:update_wage_thresholds -- --fiscal-years 3
-        """
+        """,
     )
 
     parser.add_argument(
-        '--fiscal-years',
+        "--fiscal-years",
         type=int,
         default=2,
-        help='Number of recent fiscal years to analyze (default: 2)'
+        help="Number of recent fiscal years to analyze (default: 2)",
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Calculate thresholds but do not update config file'
+        "--dry-run",
+        action="store_true",
+        help="Calculate thresholds but do not update config file",
     )
 
     args = parser.parse_args()
 
     script_logger.log_call(
         args={
-            'fiscal_years': args.fiscal_years,
-            'dry_run': args.dry_run,
+            "fiscal_years": args.fiscal_years,
+            "dry_run": args.dry_run,
         },
-        context='Updating wage thresholds using unified 4σ approach'
+        context="Updating wage thresholds using unified 4σ approach",
     )
 
     logger.info("=" * 80)
@@ -308,12 +311,17 @@ Examples:
     logger.info("")
     if args.dry_run:
         logger.info("DRY-RUN: Config file would be updated with:")
-        logger.info(yaml.dump({
-            'annual_wage_range': {
-                'min': thresholds['min_threshold'],
-                'max': thresholds['max_threshold'],
-            },
-        }, default_flow_style=False))
+        logger.info(
+            yaml.dump(
+                {
+                    "annual_wage_range": {
+                        "min": thresholds["min_threshold"],
+                        "max": thresholds["max_threshold"],
+                    },
+                },
+                default_flow_style=False,
+            )
+        )
     else:
         update_config(thresholds, args.fiscal_years)
         logger.info("")
@@ -323,14 +331,5 @@ Examples:
         logger.info("  3. Commit the updated config file")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-

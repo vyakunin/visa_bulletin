@@ -19,7 +19,7 @@ import random
 from pathlib import Path
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
 
 django.setup()
@@ -38,7 +38,7 @@ script_logger = ScriptLogger(__file__)
 def collect_reviewed_pairs(output_file: Path, limit: int | None = None) -> int:
     """
     Collect examples from EmployerClusteringReview table.
-    
+
     Returns:
         Number of examples collected
     """
@@ -46,28 +46,30 @@ def collect_reviewed_pairs(output_file: Path, limit: int | None = None) -> int:
 
     # Query reviewed pairs (approved or rejected)
     query = EmployerClusteringReview.objects.filter(
-        status__in=['approved', 'rejected']
-    ).select_related('employer1', 'employer2')
+        status__in=["approved", "rejected"]
+    ).select_related("employer1", "employer2")
 
     if limit:
         query = query[:limit]
 
     examples = []
     for review in query:
-        examples.append({
-            'type': 'reviewed',
-            'emp1_name': review.employer1.name,
-            'emp1_city': review.employer1.city or '',
-            'emp1_state': review.employer1.state or '',
-            'emp2_name': review.employer2.name,
-            'emp2_city': review.employer2.city or '',
-            'emp2_state': review.employer2.state or '',
-            'similarity': review.similarity_score,
-            'ground_truth': 'same' if review.status == 'approved' else 'different',
-            'reviewed_by': review.reviewed_by or 'unknown',
-            'match_reason': review.match_reason or '',
-            'notes': review.notes or '',
-        })
+        examples.append(
+            {
+                "type": "reviewed",
+                "emp1_name": review.employer1.name,
+                "emp1_city": review.employer1.city or "",
+                "emp1_state": review.employer1.state or "",
+                "emp2_name": review.employer2.name,
+                "emp2_city": review.employer2.city or "",
+                "emp2_state": review.employer2.state or "",
+                "similarity": review.similarity_score,
+                "ground_truth": "same" if review.status == "approved" else "different",
+                "reviewed_by": review.reviewed_by or "unknown",
+                "match_reason": review.match_reason or "",
+                "notes": review.notes or "",
+            }
+        )
 
     logger.info(f"Collected {len(examples)} reviewed pairs")
     return examples
@@ -76,7 +78,7 @@ def collect_reviewed_pairs(output_file: Path, limit: int | None = None) -> int:
 def collect_auto_clustered_pairs(output_file: Path, sample_size: int = 1000) -> list:
     """
     Collect examples from auto-clustered employers (same canonical_cluster).
-    
+
     Returns:
         List of example pairs
     """
@@ -84,7 +86,7 @@ def collect_auto_clustered_pairs(output_file: Path, sample_size: int = 1000) -> 
 
     # Get clusters with multiple employers
     clusters = EmployerCluster.objects.annotate(
-        employer_count=Count('employers')
+        employer_count=Count("employers")
     ).filter(employer_count__gt=1)
 
     examples = []
@@ -104,24 +106,24 @@ def collect_auto_clustered_pairs(output_file: Path, sample_size: int = 1000) -> 
 
                 # Calculate similarity
                 similarity = difflib.SequenceMatcher(
-                    None,
-                    emp1.name_normalized,
-                    emp2.name_normalized
+                    None, emp1.name_normalized, emp2.name_normalized
                 ).ratio()
 
-                examples.append({
-                    'type': 'auto_clustered',
-                    'emp1_name': emp1.name,
-                    'emp1_city': emp1.city or '',
-                    'emp1_state': emp1.state or '',
-                    'emp2_name': emp2.name,
-                    'emp2_city': emp2.city or '',
-                    'emp2_state': emp2.state or '',
-                    'similarity': similarity,
-                    'ground_truth': 'same',  # They're in the same cluster
-                    'cluster_id': cluster.id,
-                    'canonical_name': cluster.canonical_name,
-                })
+                examples.append(
+                    {
+                        "type": "auto_clustered",
+                        "emp1_name": emp1.name,
+                        "emp1_city": emp1.city or "",
+                        "emp1_state": emp1.state or "",
+                        "emp2_name": emp2.name,
+                        "emp2_city": emp2.city or "",
+                        "emp2_state": emp2.state or "",
+                        "similarity": similarity,
+                        "ground_truth": "same",  # They're in the same cluster
+                        "cluster_id": cluster.id,
+                        "canonical_name": cluster.canonical_name,
+                    }
+                )
                 collected += 1
 
             if collected >= sample_size:
@@ -137,9 +139,9 @@ def collect_auto_clustered_pairs(output_file: Path, sample_size: int = 1000) -> 
 def collect_different_company_pairs(output_file: Path, sample_size: int = 500) -> list:
     """
     Collect examples of different companies (negative examples).
-    
+
     Samples pairs from different clusters or unclustered employers.
-    
+
     Returns:
         List of example pairs
     """
@@ -148,8 +150,8 @@ def collect_different_company_pairs(output_file: Path, sample_size: int = 500) -
     # Get employers from different clusters
     clustered_employers = list(
         Employer.objects.filter(canonical_cluster__isnull=False)
-        .select_related('canonical_cluster')
-        .values_list('id', 'canonical_cluster_id', named=True)
+        .select_related("canonical_cluster")
+        .values_list("id", "canonical_cluster_id", named=True)
     )
 
     # Group by cluster
@@ -176,24 +178,24 @@ def collect_different_company_pairs(output_file: Path, sample_size: int = 500) -
 
         # Calculate similarity
         similarity = difflib.SequenceMatcher(
-            None,
-            emp1.name_normalized,
-            emp2.name_normalized
+            None, emp1.name_normalized, emp2.name_normalized
         ).ratio()
 
-        examples.append({
-            'type': 'different_companies',
-            'emp1_name': emp1.name,
-            'emp1_city': emp1.city or '',
-            'emp1_state': emp1.state or '',
-            'emp2_name': emp2.name,
-            'emp2_city': emp2.city or '',
-            'emp2_state': emp2.state or '',
-            'similarity': similarity,
-            'ground_truth': 'different',
-            'cluster1_id': cluster1_id,
-            'cluster2_id': cluster2_id,
-        })
+        examples.append(
+            {
+                "type": "different_companies",
+                "emp1_name": emp1.name,
+                "emp1_city": emp1.city or "",
+                "emp1_state": emp1.state or "",
+                "emp2_name": emp2.name,
+                "emp2_city": emp2.city or "",
+                "emp2_state": emp2.state or "",
+                "similarity": similarity,
+                "ground_truth": "different",
+                "cluster1_id": cluster1_id,
+                "cluster2_id": cluster2_id,
+            }
+        )
 
     logger.info(f"Collected {len(examples)} different-company pairs")
     return examples
@@ -205,9 +207,9 @@ def save_examples(examples: list, output_file: Path):
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         for example in examples:
-            f.write(json.dumps(example) + '\n')
+            f.write(json.dumps(example) + "\n")
 
     logger.info(f"Saved examples to {output_file}")
 
@@ -217,43 +219,41 @@ def main():
         description="Collect employer clustering matching examples"
     )
     parser.add_argument(
-        '--output',
+        "--output",
         type=Path,
-        default=Path('data/clustering_examples.jsonl'),
-        help='Output JSONL file path (default: data/clustering_examples.jsonl)'
+        default=Path("data/clustering_examples.jsonl"),
+        help="Output JSONL file path (default: data/clustering_examples.jsonl)",
     )
     parser.add_argument(
-        '--reviewed-limit',
+        "--reviewed-limit",
         type=int,
         default=None,
-        help='Limit number of reviewed pairs to collect (default: all)'
+        help="Limit number of reviewed pairs to collect (default: all)",
     )
     parser.add_argument(
-        '--auto-clustered-size',
+        "--auto-clustered-size",
         type=int,
         default=1000,
-        help='Number of auto-clustered pairs to sample (default: 1000)'
+        help="Number of auto-clustered pairs to sample (default: 1000)",
     )
     parser.add_argument(
-        '--different-size',
+        "--different-size",
         type=int,
         default=500,
-        help='Number of different-company pairs to sample (default: 500)'
+        help="Number of different-company pairs to sample (default: 500)",
     )
     parser.add_argument(
-        '--skip-reviewed',
-        action='store_true',
-        help='Skip collecting reviewed pairs'
+        "--skip-reviewed", action="store_true", help="Skip collecting reviewed pairs"
     )
     parser.add_argument(
-        '--skip-auto-clustered',
-        action='store_true',
-        help='Skip collecting auto-clustered pairs'
+        "--skip-auto-clustered",
+        action="store_true",
+        help="Skip collecting auto-clustered pairs",
     )
     parser.add_argument(
-        '--skip-different',
-        action='store_true',
-        help='Skip collecting different-company pairs'
+        "--skip-different",
+        action="store_true",
+        help="Skip collecting different-company pairs",
     )
 
     args = parser.parse_args()
@@ -261,7 +261,7 @@ def main():
     # Log execution
     script_logger.log_call(
         args=vars(args),
-        context='Collecting employer clustering examples for benchmark dataset'
+        context="Collecting employer clustering examples for benchmark dataset",
     )
 
     all_examples = []
@@ -273,7 +273,9 @@ def main():
 
     # Collect auto-clustered pairs
     if not args.skip_auto_clustered:
-        auto_clustered = collect_auto_clustered_pairs(args.output, args.auto_clustered_size)
+        auto_clustered = collect_auto_clustered_pairs(
+            args.output, args.auto_clustered_size
+        )
         all_examples.extend(auto_clustered)
 
     # Collect different-company pairs
@@ -285,12 +287,18 @@ def main():
     if all_examples:
         save_examples(all_examples, args.output)
         logger.info(f"\nTotal examples collected: {len(all_examples)}")
-        logger.info(f"  - Reviewed: {sum(1 for e in all_examples if e['type'] == 'reviewed')}")
-        logger.info(f"  - Auto-clustered: {sum(1 for e in all_examples if e['type'] == 'auto_clustered')}")
-        logger.info(f"  - Different companies: {sum(1 for e in all_examples if e['type'] == 'different_companies')}")
+        logger.info(
+            f"  - Reviewed: {sum(1 for e in all_examples if e['type'] == 'reviewed')}"
+        )
+        logger.info(
+            f"  - Auto-clustered: {sum(1 for e in all_examples if e['type'] == 'auto_clustered')}"
+        )
+        logger.info(
+            f"  - Different companies: {sum(1 for e in all_examples if e['type'] == 'different_companies')}"
+        )
     else:
         logger.warning("No examples collected!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

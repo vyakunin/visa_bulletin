@@ -8,9 +8,10 @@ from django.db import models
 class JobTitleCluster(models.Model):
     """
     Canonical job title cluster - groups related JobTitle records.
-    
+
     Represents a single job title type across variations and seniority levels.
     """
+
     canonical_title = models.CharField(
         max_length=500,
         db_index=True,
@@ -24,19 +25,18 @@ class JobTitleCluster(models.Model):
         db_index=True,
         null=True,  # Allow null during migration
         blank=True,
-        help_text="URL-safe slug for job title (e.g., 'software-engineer')"
+        help_text="URL-safe slug for job title (e.g., 'software-engineer')",
     )
 
     # Aggregated statistics
     total_filings = models.IntegerField(
-        default=0,
-        help_text="Total filings across all job titles in cluster"
+        default=0, help_text="Total filings across all job titles in cluster"
     )
 
     total_filings_recent = models.IntegerField(
         default=0,
         db_index=True,
-        help_text="Filings in last N years (for autocomplete ranking); set by update_job_title_cluster_stats"
+        help_text="Filings in last N years (for autocomplete ranking); set by update_job_title_cluster_stats",
     )
 
     avg_salary = models.DecimalField(
@@ -44,17 +44,17 @@ class JobTitleCluster(models.Model):
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="Average salary across all job titles in cluster"
+        help_text="Average salary across all job titles in cluster",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'salary_job_title_cluster'
+        db_table = "salary_job_title_cluster"
         indexes = [
-            models.Index(fields=['canonical_title']),
-            models.Index(fields=['slug']),
+            models.Index(fields=["canonical_title"]),
+            models.Index(fields=["slug"]),
         ]
 
     def __str__(self):
@@ -91,7 +91,7 @@ class JobTitleCluster(models.Model):
 class JobTitle(models.Model):
     """
     Normalized job title entity.
-    
+
     Groups salary records with same job title and seniority level.
     """
 
@@ -105,28 +105,28 @@ class JobTitle(models.Model):
     title_normalized = models.CharField(
         max_length=500,
         db_index=True,
-        help_text="Normalized title for matching (no seniority indicators)"
+        help_text="Normalized title for matching (no seniority indicators)",
     )
 
     # Experience/seniority level extracted from title
     experience_level = models.CharField(
         max_length=20,
-        default='',
+        default="",
         blank=True,
         choices=[
-            ('', 'Not Specified'),
-            ('entry', 'Entry Level'),
-            ('junior', 'Junior'),
-            ('mid', 'Mid Level'),
-            ('senior', 'Senior'),
-            ('staff', 'Staff'),
-            ('principal', 'Principal'),
-            ('lead', 'Lead'),
-            ('manager', 'Manager'),
-            ('director', 'Director'),
+            ("", "Not Specified"),
+            ("entry", "Entry Level"),
+            ("junior", "Junior"),
+            ("mid", "Mid Level"),
+            ("senior", "Senior"),
+            ("staff", "Staff"),
+            ("principal", "Principal"),
+            ("lead", "Lead"),
+            ("manager", "Manager"),
+            ("director", "Director"),
         ],
         db_index=True,
-        help_text="Extracted experience/seniority level"
+        help_text="Extracted experience/seniority level",
     )
 
     # Link to canonical cluster
@@ -135,23 +135,25 @@ class JobTitle(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='job_titles',
-        help_text="Canonical job title cluster"
+        related_name="job_titles",
+        help_text="Canonical job title cluster",
     )
 
     # Aggregated statistics
     total_filings = models.IntegerField(default=0)
-    avg_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    avg_salary = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'salary_job_title'
-        unique_together = ['title_normalized', 'experience_level']
+        db_table = "salary_job_title"
+        unique_together = ["title_normalized", "experience_level"]
         indexes = [
-            models.Index(fields=['title_normalized']),
-            models.Index(fields=['experience_level']),
+            models.Index(fields=["title_normalized"]),
+            models.Index(fields=["experience_level"]),
         ]
 
     def __str__(self):
@@ -165,23 +167,25 @@ class JobTitle(models.Model):
         return self.format_experience_level(self.experience_level)
 
     @staticmethod
-    def format_experience_level(level: str | None, unspecified_label: str = "Unspecified") -> str:
+    def format_experience_level(
+        level: str | None, unspecified_label: str = "Unspecified"
+    ) -> str:
         """Format an experience level for display (handles roman numerals)."""
         if not level:
             return unspecified_label
 
         normalized = level.strip().lower()
         roman_map = {
-            'i': 'I',
-            'ii': 'II',
-            'iii': 'III',
-            'iv': 'IV',
-            'v': 'V',
+            "i": "I",
+            "ii": "II",
+            "iii": "III",
+            "iv": "IV",
+            "v": "V",
         }
         if normalized in roman_map:
             return roman_map[normalized]
 
-        return normalized.replace('_', ' ').title()
+        return normalized.replace("_", " ").title()
 
     # Clustering engine compatibility properties
     @property
@@ -198,7 +202,7 @@ class JobTitle(models.Model):
     def normalize_title(title: str) -> str:
         """
         Normalize job title for matching.
-        
+
         Removes seniority indicators, generic words, and standardizes format.
         Similar pattern to Employer.normalize_name but for job titles.
         """
@@ -208,7 +212,7 @@ class JobTitle(models.Model):
         normalized = title.lower().strip()
 
         # Standard normalization (from employer patterns)
-        normalized = re.sub(r'\s*&\s*', ' and ', normalized)
+        normalized = re.sub(r"\s*&\s*", " and ", normalized)
 
         # Handle parentheticals:
         # - Remove noise: job codes, multiple openings, ACWIA, level markers
@@ -216,107 +220,125 @@ class JobTitle(models.Model):
 
         # Patterns to REMOVE completely (noise)
         noise_parenthetical_patterns = [
-            r'\(multiple\s*(openings?|positions?)?\)',  # (Multiple Openings), (multiple positions)
-            r'\(acwia[^)]*\)',  # (ACWIA Only)
-            r'\(job\s*[#\w\s]*\)',  # (Job # 336212), (Job Code 001)
-            r'\(\d+[-\d]*\)',  # (15-1132), (4), (3) - pure numbers
-            r'\(level\s*[ivx\d]+\)',  # (Level II)
-            r'\(s\)',  # (s) - typo/noise
-            r'\(degree\)',  # (Degree)
-            r'\(senior\)',  # (Senior) - already extracted as experience level
-            r'\(lead\)',  # (Lead) - already extracted as experience level
+            r"\(multiple\s*(openings?|positions?)?\)",  # (Multiple Openings), (multiple positions)
+            r"\(acwia[^)]*\)",  # (ACWIA Only)
+            r"\(job\s*[#\w\s]*\)",  # (Job # 336212), (Job Code 001)
+            r"\(\d+[-\d]*\)",  # (15-1132), (4), (3) - pure numbers
+            r"\(level\s*[ivx\d]+\)",  # (Level II)
+            r"\(s\)",  # (s) - typo/noise
+            r"\(degree\)",  # (Degree)
+            r"\(senior\)",  # (Senior) - already extracted as experience level
+            r"\(lead\)",  # (Lead) - already extracted as experience level
         ]
         for pattern in noise_parenthetical_patterns:
-            normalized = re.sub(pattern, ' ', normalized, flags=re.IGNORECASE)
+            normalized = re.sub(pattern, " ", normalized, flags=re.IGNORECASE)
 
         # For ALL remaining parentheticals, extract content with markers to protect from seniority removal
         # This keeps specializations like (Java/J2EE), (Game Development), (.NET), (Manager), (Full Stack)
         parenthetical_contents = []
+
         def extract_parenthetical(match):
             content = match.group(1).strip()
             # Clean up the content
-            content = re.sub(r'[/\\]', ' ', content)  # Replace / and \ with space
-            content = re.sub(r'[^\w\s]', ' ', content)  # Remove special chars
-            content = re.sub(r'\s+', ' ', content).strip()
+            content = re.sub(r"[/\\]", " ", content)  # Replace / and \ with space
+            content = re.sub(r"[^\w\s]", " ", content)  # Remove special chars
+            content = re.sub(r"\s+", " ", content).strip()
             if content:
                 idx = len(parenthetical_contents)
                 parenthetical_contents.append(content)
                 # Use alphanumeric placeholder (no underscores) to survive cleanup
-                return f' XPARENX{idx}XPARENX '
-            return ' '
+                return f" XPARENX{idx}XPARENX "
+            return " "
 
-        normalized = re.sub(r'\(([^)]+)\)', extract_parenthetical, normalized)
+        normalized = re.sub(r"\(([^)]+)\)", extract_parenthetical, normalized)
 
-        normalized = re.sub(r'[-_]', ' ', normalized)
-        normalized = re.sub(r'[^\w\s]', ' ', normalized)
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        normalized = re.sub(r"[-_]", " ", normalized)
+        normalized = re.sub(r"[^\w\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
 
         # Detect level markers BEFORE removing digits
         # This ensures "Manager 2, Supply Chain" keeps "manager" because of the "2"
-        level_marker_pattern = r'\b(i{1,3}|iv|v|[1-5])\b(?!\w)'
+        level_marker_pattern = r"\b(i{1,3}|iv|v|[1-5])\b(?!\w)"
         has_level_marker = bool(re.search(level_marker_pattern, normalized))
 
         # NOW remove standalone digits (but level marker detection already happened)
-        normalized = re.sub(r'\s+\d+\s+', ' ', normalized)
-        normalized = re.sub(r'\s+\d+$', '', normalized)
-        normalized = re.sub(r'^\d+\s+', '', normalized)
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        normalized = re.sub(r"\s+\d+\s+", " ", normalized)
+        normalized = re.sub(r"\s+\d+$", "", normalized)
+        normalized = re.sub(r"^\d+\s+", "", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
 
         # Apply seniority removal (parenthetical content is protected by placeholders)
         seniority_patterns = [
-            r'\bentry[ -]level\b', r'\bentry\b', r'\bjunior\b', r'\bjr\.?\b',
-            r'\bsenior\b', r'\bsr\.?\b', r'\blead\b', r'\bleading\b',
-            r'\bstaff\b', r'\bprincipal\b',
-            r'\bmanager\b', r'\bmgr\.?\b', r'\bmanaging\b',
-            r'\bdirector\b', r'\bdir\.?\b',
-            r'\blevel\s*[i1234v5]\b',  # Remove "Level II", "Level 3" etc.
+            r"\bentry[ -]level\b",
+            r"\bentry\b",
+            r"\bjunior\b",
+            r"\bjr\.?\b",
+            r"\bsenior\b",
+            r"\bsr\.?\b",
+            r"\blead\b",
+            r"\bleading\b",
+            r"\bstaff\b",
+            r"\bprincipal\b",
+            r"\bmanager\b",
+            r"\bmgr\.?\b",
+            r"\bmanaging\b",
+            r"\bdirector\b",
+            r"\bdir\.?\b",
+            r"\blevel\s*[i1234v5]\b",  # Remove "Level II", "Level 3" etc.
         ]
 
         role_word_patterns = {
-            r'\blead\b', r'\bleading\b',
-            r'\bstaff\b',
-            r'\bprincipal\b',
-            r'\bmanager\b', r'\bmgr\.?\b', r'\bmanaging\b',
-            r'\bdirector\b', r'\bdir\.?\b',
+            r"\blead\b",
+            r"\bleading\b",
+            r"\bstaff\b",
+            r"\bprincipal\b",
+            r"\bmanager\b",
+            r"\bmgr\.?\b",
+            r"\bmanaging\b",
+            r"\bdirector\b",
+            r"\bdir\.?\b",
         }
 
         patterns_to_apply = seniority_patterns
         if has_level_marker:
             patterns_to_apply = [
-                pattern for pattern in seniority_patterns
+                pattern
+                for pattern in seniority_patterns
                 if pattern not in role_word_patterns
             ]
 
-        has_role_word = any(re.search(pattern, normalized) for pattern in role_word_patterns)
+        has_role_word = any(
+            re.search(pattern, normalized) for pattern in role_word_patterns
+        )
 
         for pattern in patterns_to_apply:
-            normalized = re.sub(pattern, ' ', normalized)
+            normalized = re.sub(pattern, " ", normalized)
 
         # Always strip level markers from normalized form so that
         # "Software Engineer II" and "Software Engineer 2" normalize identically.
         # The level is already captured separately via extract_experience_level().
         if has_level_marker:
-            normalized = re.sub(level_marker_pattern, ' ', normalized)
+            normalized = re.sub(level_marker_pattern, " ", normalized)
 
         # Restore parenthetical content
         for idx, content in enumerate(parenthetical_contents):
-            normalized = normalized.replace(f'XPARENX{idx}XPARENX', content)
+            normalized = normalized.replace(f"XPARENX{idx}XPARENX", content)
 
         # Clean up whitespace again after seniority removal and restoration
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        normalized = re.sub(r"\s+", " ", normalized).strip()
 
         # Title standardization: map common variants to a canonical form for matching.
         title_equivalents = {
-            'software developer': 'software engineer',
-            'software dev': 'software engineer',
-            'swe': 'software engineer',
-            'programmer': 'software engineer',
-            'data analyst': 'data scientist',
-            'ml engineer': 'machine learning engineer',
-            'registered nurse': 'nurse',
-            'rn': 'nurse',
-            'physician': 'doctor',
-            'md': 'doctor',
+            "software developer": "software engineer",
+            "software dev": "software engineer",
+            "swe": "software engineer",
+            "programmer": "software engineer",
+            "data analyst": "data scientist",
+            "ml engineer": "machine learning engineer",
+            "registered nurse": "nurse",
+            "rn": "nurse",
+            "physician": "doctor",
+            "md": "doctor",
         }
 
         for variant, canonical in title_equivalents.items():
@@ -333,7 +355,7 @@ class JobTitle(models.Model):
             if word not in seen:
                 seen.add(word)
                 deduped_words.append(word)
-        normalized = ' '.join(deduped_words)
+        normalized = " ".join(deduped_words)
 
         return normalized
 
@@ -341,47 +363,47 @@ class JobTitle(models.Model):
     def extract_experience_level(title: str) -> str:
         """
         Extract experience/seniority level from job title.
-        
+
         Returns: Experience level code ('junior', 'senior', etc.) or empty string
         """
         if not title:
-            return ''
+            return ""
 
         title_lower = title.lower()
 
         # Level markers take precedence over role words
         roman_levels = [
-            ('v', r'\bv\b(?!\w)'),
-            ('iv', r'\biv\b(?!\w)'),
-            ('iii', r'\biii\b(?!\w)'),
-            ('ii', r'\bii\b(?!\w)'),
-            ('i', r'\bi\b(?!\w)'),
+            ("v", r"\bv\b(?!\w)"),
+            ("iv", r"\biv\b(?!\w)"),
+            ("iii", r"\biii\b(?!\w)"),
+            ("ii", r"\bii\b(?!\w)"),
+            ("i", r"\bi\b(?!\w)"),
         ]
         for level, pattern in roman_levels:
             if re.search(pattern, title_lower):
                 return level
 
-        digit_match = re.search(r'\b([1-5])\b(?!\w)', title_lower)
+        digit_match = re.search(r"\b([1-5])\b(?!\w)", title_lower)
         if digit_match:
             digit_to_roman = {
-                '1': 'i',
-                '2': 'ii',
-                '3': 'iii',
-                '4': 'iv',
-                '5': 'v',
+                "1": "i",
+                "2": "ii",
+                "3": "iii",
+                "4": "iv",
+                "5": "v",
             }
             return digit_to_roman[digit_match.group(1)]
 
         # Seniority patterns (ordered by priority)
         seniority_checks = [
-            ('director', [r'\bdirector\b', r'\bdir\.?\b']),
-            ('manager', [r'\bmanager\b', r'\bmgr\.?\b', r'\bmanaging\b']),
-            ('principal', [r'\bprincipal\b']),
-            ('lead', [r'\blead\b', r'\bleading\b']),
-            ('staff', [r'\bstaff\b']),
-            ('senior', [r'\bsenior\b', r'\bsr\.?\b']),
-            ('junior', [r'\bjunior\b', r'\bjr\.?\b']),
-            ('entry', [r'\bentry[ -]level\b', r'\bentry\b']),
+            ("director", [r"\bdirector\b", r"\bdir\.?\b"]),
+            ("manager", [r"\bmanager\b", r"\bmgr\.?\b", r"\bmanaging\b"]),
+            ("principal", [r"\bprincipal\b"]),
+            ("lead", [r"\blead\b", r"\bleading\b"]),
+            ("staff", [r"\bstaff\b"]),
+            ("senior", [r"\bsenior\b", r"\bsr\.?\b"]),
+            ("junior", [r"\bjunior\b", r"\bjr\.?\b"]),
+            ("entry", [r"\bentry[ -]level\b", r"\bentry\b"]),
         ]
 
         for level, patterns in seniority_checks:
@@ -389,22 +411,18 @@ class JobTitle(models.Model):
                 if re.search(pattern, title_lower):
                     return level
 
-        return ''
+        return ""
 
 
 class JobTitleClusteringReview(models.Model):
     """Review queue for ambiguous job title matches"""
 
     job_title1 = models.ForeignKey(
-        JobTitle,
-        on_delete=models.CASCADE,
-        related_name='review_pairs_as_first'
+        JobTitle, on_delete=models.CASCADE, related_name="review_pairs_as_first"
     )
 
     job_title2 = models.ForeignKey(
-        JobTitle,
-        on_delete=models.CASCADE,
-        related_name='review_pairs_as_second'
+        JobTitle, on_delete=models.CASCADE, related_name="review_pairs_as_second"
     )
 
     similarity_score = models.FloatField(help_text="Similarity score (0.0-1.0)")
@@ -413,13 +431,13 @@ class JobTitleClusteringReview(models.Model):
     status = models.CharField(
         max_length=20,
         choices=[
-            ('pending', 'Pending Review'),
-            ('same', 'Same Job Title'),
-            ('different', 'Different Job Title'),
-            ('skip', 'Skip'),
+            ("pending", "Pending Review"),
+            ("same", "Same Job Title"),
+            ("different", "Different Job Title"),
+            ("skip", "Skip"),
         ],
-        default='pending',
-        db_index=True
+        default="pending",
+        db_index=True,
     )
 
     reviewed_by = models.CharField(max_length=100, blank=True)
@@ -428,10 +446,9 @@ class JobTitleClusteringReview(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'salary_job_title_clustering_review'
-        unique_together = ['job_title1', 'job_title2']
+        db_table = "salary_job_title_clustering_review"
+        unique_together = ["job_title1", "job_title2"]
         indexes = [
-            models.Index(fields=['status']),
-            models.Index(fields=['similarity_score']),
+            models.Index(fields=["status"]),
+            models.Index(fields=["similarity_score"]),
         ]
-

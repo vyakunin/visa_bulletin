@@ -105,7 +105,11 @@ def inspect_path(path: str, server_name: str, use_https: bool) -> None:
         return
 
     full_key = backend.make_key(key) if backend else key
-    exists = backend.has_key(full_key) if (backend and hasattr(backend, "has_key")) else False
+    exists = (
+        backend.has_key(full_key)
+        if (backend and hasattr(backend, "has_key"))
+        else False
+    )
 
     print(f"Path: {path}")
     print(f"Key exists: {'yes' if exists else 'no'}")
@@ -126,7 +130,9 @@ def inspect_path(path: str, server_name: str, use_https: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect cache state and TTL for a URL path")
+    parser = argparse.ArgumentParser(
+        description="Inspect cache state and TTL for a URL path"
+    )
     parser.add_argument(
         "path",
         nargs="?",

@@ -13,8 +13,8 @@ import os
 import django
 
 # Setup Django if not already configured
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 # Only call django.setup() if not already set up
 from django.apps import apps as django_apps
@@ -35,13 +35,13 @@ _TABLES_CREATED = False
 def save_bulletin_to_db(publication_data: PublicationData):
     """
     Save a bulletin and all its tables to the database (idempotent)
-    
+
     Args:
         publication_data: PublicationData object with URL, content, and date
-        
+
     Returns:
         Bulletin instance (created or retrieved)
-        
+
     Example:
         save_bulletin_to_db(publication_data)
     """
@@ -55,8 +55,7 @@ def save_bulletin_to_db(publication_data: PublicationData):
 
     # Get or create bulletin with URL
     bulletin, created = Bulletin.objects.get_or_create(
-        publication_date=publication_date,
-        defaults={'url': publication_data.url}
+        publication_date=publication_date, defaults={"url": publication_data.url}
     )
 
     # Update URL if bulletin exists but URL is missing
@@ -80,16 +79,16 @@ def save_bulletin_to_db(publication_data: PublicationData):
         for cutoff_data in cutoff_data_list:
             VisaCutoffDate.objects.update_or_create(
                 bulletin=bulletin,
-                visa_category=cutoff_data['visa_category'],
-                visa_class=cutoff_data['visa_class'],
-                action_type=cutoff_data['action_type'],
-                country=cutoff_data['country'],
+                visa_category=cutoff_data["visa_category"],
+                visa_class=cutoff_data["visa_class"],
+                action_type=cutoff_data["action_type"],
+                country=cutoff_data["country"],
                 defaults={
-                    'cutoff_value': cutoff_data['cutoff_value'],
-                    'cutoff_date': cutoff_data['cutoff_date'],
-                    'is_current': cutoff_data['is_current'],
-                    'is_unavailable': cutoff_data['is_unavailable'],
-                }
+                    "cutoff_value": cutoff_data["cutoff_value"],
+                    "cutoff_date": cutoff_data["cutoff_date"],
+                    "is_current": cutoff_data["is_current"],
+                    "is_unavailable": cutoff_data["is_unavailable"],
+                },
             )
 
     # Log summary

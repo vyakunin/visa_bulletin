@@ -21,6 +21,7 @@ def check_new_sources(
 ) -> tuple[int, str]:
     """Run check-completeness via runner; return (not_ingested_count, output)."""
     from pathlib import Path
+
     cwd = Path(project_root) if project_root else None
     result = runner.run_bin(
         "scripts/ingest/run_pipeline",

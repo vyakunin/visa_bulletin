@@ -19,10 +19,11 @@ class LocalTimeFormatter(logging.Formatter):
         tz_offset = dt.strftime("%z")
         return f"{timestamp} {tz_offset}"
 
+
 def setup_logging(debug=True):
     """
     Configure logging for the application
-    
+
     Args:
         debug: If True, set log level to DEBUG, otherwise INFO (default: True)
     """
@@ -31,9 +32,7 @@ def setup_logging(debug=True):
     # Root logger configuration
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
-        LocalTimeFormatter(
-            fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-        )
+        LocalTimeFormatter(fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     )
 
     logging.basicConfig(
@@ -43,12 +42,12 @@ def setup_logging(debug=True):
 
     # Set specific loggers
     loggers = {
-        'django': logging.WARNING,  # Reduce Django noise
-        'django.request': logging.INFO,  # Log requests
-        'django.db.backends': logging.WARNING if not debug else logging.DEBUG,
-        'webapp': log_level,
-        'lib': log_level,
-        'extractors': log_level,
+        "django": logging.WARNING,  # Reduce Django noise
+        "django.request": logging.INFO,  # Log requests
+        "django.db.backends": logging.WARNING if not debug else logging.DEBUG,
+        "webapp": log_level,
+        "lib": log_level,
+        "extractors": log_level,
     }
 
     for logger_name, level in loggers.items():
@@ -59,14 +58,3 @@ def setup_logging(debug=True):
 def get_logger(name):
     """Get a logger instance for the given name"""
     return logging.getLogger(name)
-
-
-
-
-
-
-
-
-
-
-

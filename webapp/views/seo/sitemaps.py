@@ -29,7 +29,7 @@ def robots_view(request):
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap."""
-    base_url = request.build_absolute_uri('/')[:-1]
+    base_url = request.build_absolute_uri("/")[:-1]
 
     urls = [
         f"{base_url}/",
@@ -43,8 +43,8 @@ def sitemap_view(request):
 
     # Category landing pages
     categories = [
-        ('employment_based', 'employment-based'),
-        ('family_sponsored', 'family-sponsored'),
+        ("employment_based", "employment-based"),
+        ("family_sponsored", "family-sponsored"),
     ]
 
     for _, cat_slug in categories:
@@ -62,7 +62,7 @@ def sitemap_view(request):
             EmployerCluster.objects.filter(
                 slug__isnull=False,
                 total_lca_count__gte=5,
-            ).order_by('-total_lca_count')[:10000]  # Limit to top 10,000 employers
+            ).order_by("-total_lca_count")[:10000]  # Limit to top 10,000 employers
         )
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load employer clusters for sitemap", exc_info=True)
@@ -77,7 +77,7 @@ def sitemap_view(request):
             JobTitleCluster.objects.filter(
                 slug__isnull=False,
                 total_filings__gte=10,
-            ).order_by('-total_filings')[:10000]
+            ).order_by("-total_filings")[:10000]
         )
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load job title clusters for sitemap", exc_info=True)
@@ -90,13 +90,15 @@ def sitemap_view(request):
     xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
 
     for url in urls:
-        xml_parts.extend([
-            '  <url>',
-            f'    <loc>{url}</loc>',
-            '    <changefreq>monthly</changefreq>',
-            '    <priority>0.8</priority>',
-            '  </url>',
-        ])
+        xml_parts.extend(
+            [
+                "  <url>",
+                f"    <loc>{url}</loc>",
+                "    <changefreq>monthly</changefreq>",
+                "    <priority>0.8</priority>",
+                "  </url>",
+            ]
+        )
 
-    xml_parts.append('</urlset>')
+    xml_parts.append("</urlset>")
     return HttpResponse("\n".join(xml_parts), content_type="application/xml")

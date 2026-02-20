@@ -4,14 +4,15 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0026_alter_salaryrecord_prevailing_wage_and_more'),
+        ("models", "0026_alter_salaryrecord_prevailing_wage_and_more"),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='salaryrecord',
-            index=models.Index(fields=['job_title_entity'], name='salary_reco_job_tit_5f8dff_idx'),
+            model_name="salaryrecord",
+            index=models.Index(
+                fields=["job_title_entity"], name="salary_reco_job_tit_5f8dff_idx"
+            ),
         ),
     ]

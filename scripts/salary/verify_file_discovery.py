@@ -8,6 +8,7 @@ This script:
 3. Reports which files are detected as PERM, H1B, or unknown
 4. Verifies that only Appendix A files remain unknown
 """
+
 import sys
 from pathlib import Path
 
@@ -21,14 +22,14 @@ from scripts.salary.collect_dol_golden_test_data import detect_file_type
 
 def main():
     workspace = get_workspace_dir()
-    dol_data_dir = workspace / 'data' / 'salary' / 'dol_data'
+    dol_data_dir = workspace / "data" / "salary" / "dol_data"
 
     if not dol_data_dir.exists():
         print(f"❌ Directory not found: {dol_data_dir}")
         sys.exit(1)
 
     # Find all Excel files
-    excel_files = sorted(dol_data_dir.glob('*.xlsx'))
+    excel_files = sorted(dol_data_dir.glob("*.xlsx"))
     print(f"Found {len(excel_files)} Excel files\n")
 
     # Test detection on each file
@@ -42,12 +43,12 @@ def main():
             headers = read_excel_headers(filepath)
             detected = detect_file_type(headers)
 
-            if detected == 'PERM':
+            if detected == "PERM":
                 perm_files.append(filepath.name)
-            elif detected == 'H1B':
+            elif detected == "H1B":
                 h1b_files.append(filepath.name)
             else:
-                unknown_files.append((filepath.name, 'No matching indicators'))
+                unknown_files.append((filepath.name, "No matching indicators"))
         except Exception as e:
             error_files.append((filepath.name, str(e)))
 
@@ -61,7 +62,9 @@ def main():
     print(f"❌ Error files: {len(error_files)}")
     print(f"\n📊 Total: {len(excel_files)} files")
     print(f"📊 Detected: {len(perm_files) + len(h1b_files)} files")
-    print(f"📊 Coverage: {(len(perm_files) + len(h1b_files)) / len(excel_files) * 100:.1f}%")
+    print(
+        f"📊 Coverage: {(len(perm_files) + len(h1b_files)) / len(excel_files) * 100:.1f}%"
+    )
 
     # Check if unknown files are all Appendix A
     if unknown_files:
@@ -72,7 +75,7 @@ def main():
         other_unknown = []
 
         for filename, reason in unknown_files:
-            if 'Appendix' in filename or 'APPX' in filename:
+            if "Appendix" in filename or "APPX" in filename:
                 appendix_files.append((filename, reason))
             else:
                 other_unknown.append((filename, reason))
@@ -82,7 +85,9 @@ def main():
             print(f"   - {filename}")
 
         if other_unknown:
-            print(f"\n⚠️  Other unknown files (should be investigated): {len(other_unknown)}")
+            print(
+                f"\n⚠️  Other unknown files (should be investigated): {len(other_unknown)}"
+            )
             for filename, reason in other_unknown:
                 print(f"   - {filename}: {reason}")
         else:
@@ -104,11 +109,13 @@ def main():
         print("✅ PASS: Only 6 Appendix A files are unknown (as expected)")
         return 0
     else:
-        print(f"❌ FAIL: Expected 6 unknown files (Appendix A), got {len(unknown_files)}")
+        print(
+            f"❌ FAIL: Expected 6 unknown files (Appendix A), got {len(unknown_files)}"
+        )
         if other_unknown:
             print(f"   - {len(other_unknown)} non-Appendix files are unknown")
         return 1
 
-if __name__ == '__main__':
-    sys.exit(main())
 
+if __name__ == "__main__":
+    sys.exit(main())

@@ -6,7 +6,7 @@ from django.db import migrations
 
 def shift_country_values(apps, schema_editor):
     """Shift all Country enum values by +1 (0->1, 1->2, ..., 5->6)"""
-    VisaCutoffDate = apps.get_model('models', 'VisaCutoffDate')
+    VisaCutoffDate = apps.get_model("models", "VisaCutoffDate")
 
     # Shift values: old -> new
     shifts = [
@@ -24,7 +24,7 @@ def shift_country_values(apps, schema_editor):
 
 def shift_visa_program_values(apps, schema_editor):
     """Shift all VisaProgram enum values by +1 (0->1, 1->2, 2->3, 3->4)"""
-    SalaryRecord = apps.get_model('models', 'SalaryRecord')
+    SalaryRecord = apps.get_model("models", "SalaryRecord")
 
     shifts = [
         (3, 4),  # PERM: 3 -> 4
@@ -34,12 +34,14 @@ def shift_visa_program_values(apps, schema_editor):
     ]
 
     for old_value, new_value in shifts:
-        SalaryRecord.objects.filter(visa_program=old_value).update(visa_program=new_value)
+        SalaryRecord.objects.filter(visa_program=old_value).update(
+            visa_program=new_value
+        )
 
 
 def shift_case_status_values(apps, schema_editor):
     """Shift all CaseStatus enum values by +1 (0->1, 1->2, 2->3, 3->4)"""
-    SalaryRecord = apps.get_model('models', 'SalaryRecord')
+    SalaryRecord = apps.get_model("models", "SalaryRecord")
 
     shifts = [
         (3, 4),  # CERTIFIED_WITHDRAWN: 3 -> 4
@@ -54,7 +56,7 @@ def shift_case_status_values(apps, schema_editor):
 
 def shift_ingest_status_values(apps, schema_editor):
     """Shift all IngestStatus enum values by +1 (0->1, 1->2, 2->3, 3->4, 4->5)"""
-    IngestRun = apps.get_model('models', 'IngestRun')
+    IngestRun = apps.get_model("models", "IngestRun")
 
     shifts = [
         (4, 5),  # CANCELLED: 4 -> 5
@@ -70,7 +72,7 @@ def shift_ingest_status_values(apps, schema_editor):
 
 def shift_ingest_stage_values(apps, schema_editor):
     """Shift all IngestStage enum values by +1 (0->1, 1->2, 2->3, 3->4, 4->5, 5->6)"""
-    IngestRun = apps.get_model('models', 'IngestRun')
+    IngestRun = apps.get_model("models", "IngestRun")
 
     shifts = [
         (5, 6),  # COMPLETED: 5 -> 6
@@ -87,7 +89,7 @@ def shift_ingest_stage_values(apps, schema_editor):
 
 def reverse_country_values(apps, schema_editor):
     """Reverse: shift Country enum values back by -1"""
-    VisaCutoffDate = apps.get_model('models', 'VisaCutoffDate')
+    VisaCutoffDate = apps.get_model("models", "VisaCutoffDate")
 
     shifts = [
         (1, 0),  # ALL: 1 -> 0
@@ -104,7 +106,7 @@ def reverse_country_values(apps, schema_editor):
 
 def reverse_visa_program_values(apps, schema_editor):
     """Reverse: shift VisaProgram enum values back by -1"""
-    SalaryRecord = apps.get_model('models', 'SalaryRecord')
+    SalaryRecord = apps.get_model("models", "SalaryRecord")
 
     shifts = [
         (1, 0),  # H1B: 1 -> 0
@@ -114,12 +116,14 @@ def reverse_visa_program_values(apps, schema_editor):
     ]
 
     for new_value, old_value in shifts:
-        SalaryRecord.objects.filter(visa_program=new_value).update(visa_program=old_value)
+        SalaryRecord.objects.filter(visa_program=new_value).update(
+            visa_program=old_value
+        )
 
 
 def reverse_case_status_values(apps, schema_editor):
     """Reverse: shift CaseStatus enum values back by -1"""
-    SalaryRecord = apps.get_model('models', 'SalaryRecord')
+    SalaryRecord = apps.get_model("models", "SalaryRecord")
 
     shifts = [
         (1, 0),  # CERTIFIED: 1 -> 0
@@ -134,7 +138,7 @@ def reverse_case_status_values(apps, schema_editor):
 
 def reverse_ingest_status_values(apps, schema_editor):
     """Reverse: shift IngestStatus enum values back by -1"""
-    IngestRun = apps.get_model('models', 'IngestRun')
+    IngestRun = apps.get_model("models", "IngestRun")
 
     shifts = [
         (1, 0),  # PENDING: 1 -> 0
@@ -150,7 +154,7 @@ def reverse_ingest_status_values(apps, schema_editor):
 
 def reverse_ingest_stage_values(apps, schema_editor):
     """Reverse: shift IngestStage enum values back by -1"""
-    IngestRun = apps.get_model('models', 'IngestRun')
+    IngestRun = apps.get_model("models", "IngestRun")
 
     shifts = [
         (1, 0),  # PENDING: 1 -> 0
@@ -166,9 +170,8 @@ def reverse_ingest_stage_values(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0011_alter_salaryrecord_source_file'),
+        ("models", "0011_alter_salaryrecord_source_file"),
     ]
 
     operations = [
@@ -178,13 +181,3 @@ class Migration(migrations.Migration):
         migrations.RunPython(shift_ingest_status_values, reverse_ingest_status_values),
         migrations.RunPython(shift_ingest_stage_values, reverse_ingest_stage_values),
     ]
-
-
-
-
-
-
-
-
-
-

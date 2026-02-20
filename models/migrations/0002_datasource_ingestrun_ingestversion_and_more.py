@@ -5,90 +5,305 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0001_initial'),
+        ("models", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DataSource',
+            name="DataSource",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('url', models.URLField(help_text='Source URL', unique=True)),
-                ('domain', models.CharField(choices=[('dol', 'Department of Labor'), ('visa_bulletin', 'Visa Bulletin')], help_text='Data source domain (organization/system)', max_length=50)),
-                ('source_type', models.CharField(choices=[('lca', 'LCA (H-1B)'), ('perm', 'PERM'), ('bulletin', 'Visa Bulletin')], help_text='Type of data source within domain', max_length=20)),
-                ('format_version', models.CharField(blank=True, help_text="Schema version detection (e.g., '2024q4', 'legacy_2008')", max_length=20)),
-                ('discovered_at', models.DateTimeField(auto_now_add=True, help_text='When this source was first discovered')),
-                ('downloaded_at', models.DateTimeField(blank=True, help_text='When file was last downloaded', null=True)),
-                ('local_file_path', models.CharField(blank=True, help_text='Cached local path if downloaded (for reference)', max_length=500)),
-                ('metadata', models.JSONField(blank=True, default=dict, help_text='Flexible metadata storage')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("url", models.URLField(help_text="Source URL", unique=True)),
+                (
+                    "domain",
+                    models.CharField(
+                        choices=[
+                            ("dol", "Department of Labor"),
+                            ("visa_bulletin", "Visa Bulletin"),
+                        ],
+                        help_text="Data source domain (organization/system)",
+                        max_length=50,
+                    ),
+                ),
+                (
+                    "source_type",
+                    models.CharField(
+                        choices=[
+                            ("lca", "LCA (H-1B)"),
+                            ("perm", "PERM"),
+                            ("bulletin", "Visa Bulletin"),
+                        ],
+                        help_text="Type of data source within domain",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "format_version",
+                    models.CharField(
+                        blank=True,
+                        help_text="Schema version detection (e.g., '2024q4', 'legacy_2008')",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "discovered_at",
+                    models.DateTimeField(
+                        auto_now_add=True,
+                        help_text="When this source was first discovered",
+                    ),
+                ),
+                (
+                    "downloaded_at",
+                    models.DateTimeField(
+                        blank=True, help_text="When file was last downloaded", null=True
+                    ),
+                ),
+                (
+                    "local_file_path",
+                    models.CharField(
+                        blank=True,
+                        help_text="Cached local path if downloaded (for reference)",
+                        max_length=500,
+                    ),
+                ),
+                (
+                    "metadata",
+                    models.JSONField(
+                        blank=True, default=dict, help_text="Flexible metadata storage"
+                    ),
+                ),
             ],
             options={
-                'db_table': 'ingest_data_source',
-                'ordering': ['-discovered_at'],
+                "db_table": "ingest_data_source",
+                "ordering": ["-discovered_at"],
             },
         ),
         migrations.CreateModel(
-            name='IngestRun',
+            name="IngestRun",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('status', models.CharField(choices=[('pending', 'Pending'), ('running', 'Running'), ('completed', 'Completed'), ('failed', 'Failed'), ('cancelled', 'Cancelled')], default='pending', help_text='Overall status of the ingest run', max_length=20)),
-                ('stage', models.CharField(choices=[('pending', 'Pending'), ('downloading', 'Downloading'), ('parsing', 'Parsing'), ('transforming', 'Transforming'), ('loading', 'Loading to Database'), ('completed', 'Completed')], default='pending', help_text='Current pipeline stage', max_length=20)),
-                ('started_at', models.DateTimeField(auto_now_add=True, help_text='When the ingest run started')),
-                ('completed_at', models.DateTimeField(blank=True, help_text='When the ingest run completed', null=True)),
-                ('records_processed', models.IntegerField(default=0, help_text='Total records processed across all stages')),
-                ('records_created', models.IntegerField(default=0, help_text='Records successfully created in database')),
-                ('records_updated', models.IntegerField(default=0, help_text='Records updated (if applicable)')),
-                ('records_failed', models.IntegerField(default=0, help_text='Records that failed to process')),
-                ('records_skipped', models.IntegerField(default=0, help_text='Records skipped (duplicates, etc.)')),
-                ('checkpoint', models.JSONField(blank=True, default=dict, help_text='Checkpoint data for resumption: {stage, last_row, batch, filepath, ...}')),
-                ('error_message', models.TextField(blank=True, help_text='Error message if ingest failed')),
-                ('error_traceback', models.TextField(blank=True, help_text='Full traceback if ingest failed')),
-                ('source', models.ForeignKey(help_text='Data source being ingested', on_delete=django.db.models.deletion.CASCADE, related_name='runs', to='models.datasource')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("running", "Running"),
+                            ("completed", "Completed"),
+                            ("failed", "Failed"),
+                            ("cancelled", "Cancelled"),
+                        ],
+                        default="pending",
+                        help_text="Overall status of the ingest run",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "stage",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("downloading", "Downloading"),
+                            ("parsing", "Parsing"),
+                            ("transforming", "Transforming"),
+                            ("loading", "Loading to Database"),
+                            ("completed", "Completed"),
+                        ],
+                        default="pending",
+                        help_text="Current pipeline stage",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "started_at",
+                    models.DateTimeField(
+                        auto_now_add=True, help_text="When the ingest run started"
+                    ),
+                ),
+                (
+                    "completed_at",
+                    models.DateTimeField(
+                        blank=True, help_text="When the ingest run completed", null=True
+                    ),
+                ),
+                (
+                    "records_processed",
+                    models.IntegerField(
+                        default=0, help_text="Total records processed across all stages"
+                    ),
+                ),
+                (
+                    "records_created",
+                    models.IntegerField(
+                        default=0, help_text="Records successfully created in database"
+                    ),
+                ),
+                (
+                    "records_updated",
+                    models.IntegerField(
+                        default=0, help_text="Records updated (if applicable)"
+                    ),
+                ),
+                (
+                    "records_failed",
+                    models.IntegerField(
+                        default=0, help_text="Records that failed to process"
+                    ),
+                ),
+                (
+                    "records_skipped",
+                    models.IntegerField(
+                        default=0, help_text="Records skipped (duplicates, etc.)"
+                    ),
+                ),
+                (
+                    "checkpoint",
+                    models.JSONField(
+                        blank=True,
+                        default=dict,
+                        help_text="Checkpoint data for resumption: {stage, last_row, batch, filepath, ...}",
+                    ),
+                ),
+                (
+                    "error_message",
+                    models.TextField(
+                        blank=True, help_text="Error message if ingest failed"
+                    ),
+                ),
+                (
+                    "error_traceback",
+                    models.TextField(
+                        blank=True, help_text="Full traceback if ingest failed"
+                    ),
+                ),
+                (
+                    "source",
+                    models.ForeignKey(
+                        help_text="Data source being ingested",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="runs",
+                        to="models.datasource",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'ingest_run',
-                'ordering': ['-started_at'],
+                "db_table": "ingest_run",
+                "ordering": ["-started_at"],
             },
         ),
         migrations.CreateModel(
-            name='IngestVersion',
+            name="IngestVersion",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('version_tag', models.CharField(db_index=True, help_text="Human-readable version tag (e.g., 'dol_lca_2024q4_v1')", max_length=50, unique=True)),
-                ('is_active', models.BooleanField(db_index=True, default=True, help_text='Whether this version is currently active (serving queries)')),
-                ('created_at', models.DateTimeField(auto_now_add=True, help_text='When this version was created')),
-                ('run', models.OneToOneField(help_text='Ingest run this version represents', on_delete=django.db.models.deletion.CASCADE, related_name='version', to='models.ingestrun')),
-                ('supersedes', models.ForeignKey(blank=True, help_text='Previous version this supersedes (for rollback chain)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='superseded_by', to='models.ingestversion')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "version_tag",
+                    models.CharField(
+                        db_index=True,
+                        help_text="Human-readable version tag (e.g., 'dol_lca_2024q4_v1')",
+                        max_length=50,
+                        unique=True,
+                    ),
+                ),
+                (
+                    "is_active",
+                    models.BooleanField(
+                        db_index=True,
+                        default=True,
+                        help_text="Whether this version is currently active (serving queries)",
+                    ),
+                ),
+                (
+                    "created_at",
+                    models.DateTimeField(
+                        auto_now_add=True, help_text="When this version was created"
+                    ),
+                ),
+                (
+                    "run",
+                    models.OneToOneField(
+                        help_text="Ingest run this version represents",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="version",
+                        to="models.ingestrun",
+                    ),
+                ),
+                (
+                    "supersedes",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="Previous version this supersedes (for rollback chain)",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="superseded_by",
+                        to="models.ingestversion",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'ingest_version',
-                'ordering': ['-created_at'],
+                "db_table": "ingest_version",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.AddIndex(
-            model_name='datasource',
-            index=models.Index(fields=['domain', 'source_type'], name='ingest_data_domain_7e3785_idx'),
+            model_name="datasource",
+            index=models.Index(
+                fields=["domain", "source_type"], name="ingest_data_domain_7e3785_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='datasource',
-            index=models.Index(fields=['domain', 'format_version'], name='ingest_data_domain_23c666_idx'),
+            model_name="datasource",
+            index=models.Index(
+                fields=["domain", "format_version"],
+                name="ingest_data_domain_23c666_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='ingestversion',
-            index=models.Index(fields=['is_active', 'version_tag'], name='ingest_vers_is_acti_463e17_idx'),
+            model_name="ingestversion",
+            index=models.Index(
+                fields=["is_active", "version_tag"],
+                name="ingest_vers_is_acti_463e17_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='ingestrun',
-            index=models.Index(fields=['source', 'status'], name='ingest_run_source__124440_idx'),
+            model_name="ingestrun",
+            index=models.Index(
+                fields=["source", "status"], name="ingest_run_source__124440_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='ingestrun',
-            index=models.Index(fields=['status', 'stage'], name='ingest_run_status_f0198f_idx'),
+            model_name="ingestrun",
+            index=models.Index(
+                fields=["status", "stage"], name="ingest_run_status_f0198f_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='ingestrun',
-            index=models.Index(fields=['started_at'], name='ingest_run_started_a8950b_idx'),
+            model_name="ingestrun",
+            index=models.Index(
+                fields=["started_at"], name="ingest_run_started_a8950b_idx"
+            ),
         ),
     ]

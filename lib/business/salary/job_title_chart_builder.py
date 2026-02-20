@@ -17,18 +17,18 @@ from lib.business.salary.common_chart_builder import (
 def build_job_title_profile_charts(stats: dict, job_title_name: str) -> dict:
     """
     Build Plotly chart data for job title profile page.
-    
+
     Args:
         stats: Statistics dictionary from get_job_title_statistics
         job_title_name: Canonical job title name for chart titles
-    
+
     Returns:
         Dictionary of chart data (JSON-encoded Plotly figures)
     """
     charts = {}
 
     # Chart 1: Salary Distribution Histogram with Employer Overlays
-    if stats.get('salary_histogram'):
+    if stats.get("salary_histogram"):
         charts["salary_histogram"] = build_salary_histogram_chart(
             stats["salary_histogram"],
             f"Salary Distribution - {job_title_name}",
@@ -36,21 +36,24 @@ def build_job_title_profile_charts(stats: dict, job_title_name: str) -> dict:
         )
 
     # Chart 3: Experience Level vs Salary
-    if stats.get('experience_salary_histogram') and stats.get('experience_has_levels'):
+    if stats.get("experience_salary_histogram") and stats.get("experience_has_levels"):
         charts["experience_salary"] = build_experience_salary_chart(
             stats["experience_salary_histogram"],
             f"Salary Distribution by Experience Level - {job_title_name}",
         )
 
     # Chart 4: Geographic Distribution (Bar Chart)
-    if stats.get('geographic_dist') and len(stats['geographic_dist']) > 0:
+    if stats.get("geographic_dist") and len(stats["geographic_dist"]) > 0:
         charts["geographic_dist"] = build_geographic_chart(
             stats["geographic_dist"],
             f"Filing Distribution by State - {job_title_name}",
         )
 
     # Chart 4b: Median Salary by State (Bar Chart)
-    if stats.get('geographic_dist_by_median') and len(stats['geographic_dist_by_median']) > 0:
+    if (
+        stats.get("geographic_dist_by_median")
+        and len(stats["geographic_dist_by_median"]) > 0
+    ):
         charts["geographic_dist_median"] = build_geographic_median_chart(
             stats["geographic_dist_by_median"],
             f"Median Salary by State - {job_title_name}",

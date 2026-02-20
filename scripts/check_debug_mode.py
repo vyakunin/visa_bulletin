@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
 
 django.setup()
@@ -40,4 +40,3 @@ print("=" * 70)
 print("💡 To enable production mode:")
 print("   export DJANGO_SECRET_KEY='your-production-secret-key'")
 print("=" * 70)
-

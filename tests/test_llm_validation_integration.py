@@ -21,20 +21,29 @@ from lib.business.salary.llm_verifier import call_ollama, validate_pair_with_llm
 def check_ollama_available():
     """
     Check if hermetic Ollama is available via Bazel.
-    
+
     Raises AssertionError with clear message if Ollama is not available.
     This ensures tests FAIL (not skip) if dependency is missing.
     """
     import os
 
     # Try to find hermetic Ollama binary (from @ollama//:ollama data dependency)
-    runfiles_base = os.environ.get('TEST_SRCDIR') or os.environ.get('BUILD_WORKSPACE_DIRECTORY')
+    runfiles_base = os.environ.get("TEST_SRCDIR") or os.environ.get(
+        "BUILD_WORKSPACE_DIRECTORY"
+    )
     ollama_binary = None
 
     if runfiles_base:
         possible_paths = [
-            Path(runfiles_base) / '_main' / 'external' / '+ollama_hermetic_extension+ollama' / 'ollama',
-            Path(runfiles_base) / 'external' / '+ollama_hermetic_extension+ollama' / 'ollama',
+            Path(runfiles_base)
+            / "_main"
+            / "external"
+            / "+ollama_hermetic_extension+ollama"
+            / "ollama",
+            Path(runfiles_base)
+            / "external"
+            / "+ollama_hermetic_extension+ollama"
+            / "ollama",
         ]
         for path in possible_paths:
             if path.exists() and os.access(path, os.X_OK):
@@ -57,10 +66,7 @@ def check_ollama_available():
     try:
         # Check if Ollama works (try listing models)
         list_result = subprocess.run(
-            [ollama_binary, "list"],
-            capture_output=True,
-            text=True,
-            timeout=5
+            [ollama_binary, "list"], capture_output=True, text=True, timeout=5
         )
         if list_result.returncode != 0:
             raise AssertionError(
@@ -69,7 +75,10 @@ def check_ollama_available():
             )
 
         # Check if llama3.2:3b model is available
-        if "llama3.2:3b" not in list_result.stdout and "mistral" not in list_result.stdout:
+        if (
+            "llama3.2:3b" not in list_result.stdout
+            and "mistral" not in list_result.stdout
+        ):
             raise AssertionError(
                 "Ollama is available but no suitable model found. "
                 "Install a model with: bazel run @ollama//:pull_model (hermetic) or ollama pull llama3.2:3b (system)"
@@ -112,7 +121,7 @@ class TestLLMValidationIntegration:
             emp2_name="Google LLC",
             emp2_city="Mountain View",
             emp2_state="CA",
-            similarity=0.95
+            similarity=0.95,
         )
 
         # Template is provided via Bazel data dependency (//scripts/salary:llm_prompt_template.txt)
@@ -135,7 +144,7 @@ class TestLLMValidationIntegration:
             emp2_name="Microsoft Corporation",
             emp2_city="Redmond",
             emp2_state="WA",
-            similarity=0.30
+            similarity=0.30,
         )
 
         # Template is provided via Bazel data dependency, no need to specify path
@@ -157,7 +166,7 @@ class TestLLMValidationIntegration:
             emp2_name="JP Morgan",
             emp2_city="New York",
             emp2_state="NY",
-            similarity=0.85
+            similarity=0.85,
         )
 
         # Template is provided via Bazel data dependency, no need to specify path

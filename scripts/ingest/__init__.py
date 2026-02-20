@@ -1,11 +1,3 @@
 # Ingest scripts package
 
 
-
-
-
-
-
-
-
-

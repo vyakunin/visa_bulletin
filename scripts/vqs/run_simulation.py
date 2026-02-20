@@ -18,6 +18,7 @@ from datetime import date
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
 from django_config.logging_config import setup_logging
@@ -88,15 +89,19 @@ def main() -> None:
     )
 
     knowledge_date = date.fromisoformat(args.knowledge_date)
-    priority_date = date.fromisoformat(args.priority_date) if args.priority_date else None
+    priority_date = (
+        date.fromisoformat(args.priority_date) if args.priority_date else None
+    )
 
-    next_cutoff, maturity_month, results, confidence = predict_next_bulletin_and_maturity(
-        knowledge_date=knowledge_date,
-        visa_class=args.visa_class,
-        country=args.country,
-        action_type=args.action_type,
-        priority_date=priority_date,
-        monthly_supply=args.monthly_supply,
+    next_cutoff, maturity_month, results, confidence = (
+        predict_next_bulletin_and_maturity(
+            knowledge_date=knowledge_date,
+            visa_class=args.visa_class,
+            country=args.country,
+            action_type=args.action_type,
+            priority_date=priority_date,
+            monthly_supply=args.monthly_supply,
+        )
     )
 
     print("VQS Simulation Results")

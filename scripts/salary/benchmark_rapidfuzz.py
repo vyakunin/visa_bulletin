@@ -109,7 +109,9 @@ def main() -> None:
     # Difflib
     t_difflib, ratios_difflib = bench_difflib(pairs)
     rate_difflib = n / t_difflib
-    print(f"difflib.SequenceMatcher.ratio(): {t_difflib:.3f}s  ({rate_difflib:,.0f} pairs/sec)")
+    print(
+        f"difflib.SequenceMatcher.ratio(): {t_difflib:.3f}s  ({rate_difflib:,.0f} pairs/sec)"
+    )
 
     # RapidFuzz
     try:
@@ -136,7 +138,9 @@ def main() -> None:
         for i in range(min(5, len(pairs))):
             a, b = pairs[i]
             print(f"  {a!r} vs {b!r}")
-            print(f"    difflib={ratios_difflib[i]:.4f}  rapidfuzz={ratios_rf[i]:.4f}  diff={ratios_rf[i]-ratios_difflib[i]:+.4f}")
+            print(
+                f"    difflib={ratios_difflib[i]:.4f}  rapidfuzz={ratios_rf[i]:.4f}  diff={ratios_rf[i] - ratios_difflib[i]:+.4f}"
+            )
     except ImportError as e:
         print(f"rapidfuzz not available: {e}")
         print("Install with: pip install rapidfuzz")

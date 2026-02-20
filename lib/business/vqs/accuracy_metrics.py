@@ -18,7 +18,6 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from lib.business.vqs.solver import (
-    get_cutoff_at_date,
     predict_next_bulletin_and_maturity,
 )
 
@@ -83,7 +82,9 @@ class LongtermAccuracyRow:
     actual_ready_month: date | None  # first bulletin month where cutoff reached
     error_days: int | None  # None if excluded (still unknown)
     error_note: str | None  # e.g. "no_prediction", "pred_past_not_seen", "ok"
-    horizon_months: int | None = None  # predicted horizon (knowledge -> predicted_ready)
+    horizon_months: int | None = (
+        None  # predicted horizon (knowledge -> predicted_ready)
+    )
     horizon_bucket: str | None = None  # "1-3", "3-6", "6-12", "12+"
 
 
@@ -104,10 +105,7 @@ def _save_checkpoint(path: Path, rows: list, completed_keys: set) -> None:
     """Save checkpoint: list of serialized rows + set of completed keys."""
     data = {
         "completed_keys": sorted(str(k) for k in completed_keys),
-        "rows": [
-            {k: _serialize_date(v) for k, v in asdict(r).items()}
-            for r in rows
-        ],
+        "rows": [{k: _serialize_date(v) for k, v in asdict(r).items()} for r in rows],
     }
     # Write atomically via temp file
     tmp = path.with_suffix(".tmp")
@@ -152,14 +150,11 @@ def compute_bulletin_accuracy(
     """
     from lib.business.vqs.data_cache import (
         get_all_bulletins,
-        get_cutoffs_for_series,
-        get_cutoff_at_date
+        get_cutoff_at_date,
     )
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
-    from models.bulletin import Bulletin
-    from models.visa_cutoff_date import VisaCutoffDate
     from models.raw_facts import RawFactsLedger
-    from lib.business.vqs.meta_params import VqsMetaParams # type checking
+    from models.visa_cutoff_date import VisaCutoffDate
 
     if bulletins is None:
         bulletins = [b.publication_date for b in get_all_bulletins()]
@@ -170,7 +165,9 @@ def compute_bulletin_accuracy(
     logger.info("Bulletin accuracy: %d bulletins to process", total)
 
     # Load checkpoint
-    ckpt_path = (checkpoint_dir / "bulletin_accuracy_ckpt.json") if checkpoint_dir else None
+    ckpt_path = (
+        (checkpoint_dir / "bulletin_accuracy_ckpt.json") if checkpoint_dir else None
+    )
     completed_dates: set[str] = set()
     rows: list[BulletinAccuracyRow] = []
     if ckpt_path:
@@ -178,30 +175,41 @@ def compute_bulletin_accuracy(
         if loaded:
             raw_rows, completed_dates = loaded
             for rd in raw_rows:
-                rows.append(BulletinAccuracyRow(
-                    bulletin_date=date.fromisoformat(rd["bulletin_date"]),
-                    visa_class=rd["visa_class"],
-                    country=rd["country"],
-                    action_type=rd["action_type"],
-                    predicted_cutoff=date.fromisoformat(rd["predicted_cutoff"]) if rd["predicted_cutoff"] else None,
-                    actual_cutoff=date.fromisoformat(rd["actual_cutoff"]),
-                    error_days=rd["error_days"],
-                    confidence_low=date.fromisoformat(rd["confidence_low"]) if rd.get("confidence_low") else None,
-                    confidence_high=date.fromisoformat(rd["confidence_high"]) if rd.get("confidence_high") else None,
-                ))
-            logger.info("Resumed from checkpoint: %d bulletins already done, %d rows loaded",
-                        len(completed_dates), len(rows))
+                rows.append(
+                    BulletinAccuracyRow(
+                        bulletin_date=date.fromisoformat(rd["bulletin_date"]),
+                        visa_class=rd["visa_class"],
+                        country=rd["country"],
+                        action_type=rd["action_type"],
+                        predicted_cutoff=date.fromisoformat(rd["predicted_cutoff"])
+                        if rd["predicted_cutoff"]
+                        else None,
+                        actual_cutoff=date.fromisoformat(rd["actual_cutoff"]),
+                        error_days=rd["error_days"],
+                        confidence_low=date.fromisoformat(rd["confidence_low"])
+                        if rd.get("confidence_low")
+                        else None,
+                        confidence_high=date.fromisoformat(rd["confidence_high"])
+                        if rd.get("confidence_high")
+                        else None,
+                    )
+                )
+            logger.info(
+                "Resumed from checkpoint: %d bulletins already done, %d rows loaded",
+                len(completed_dates),
+                len(rows),
+            )
 
     start_time = time.time()
     processed = 0
     skipped = 0
-    
+
     # Pre-calculate facts length if provided
     n_facts = len(facts) if facts is not None else 0
     fact_idx = 0
-    
+
     target_classes = QUEUE_DRIVEN_CLASSES if exclude_eb4 else EVALUABLE_VISA_CLASSES
-    
+
     for i, pub_date in enumerate(bulletins):
         t = pub_date if isinstance(pub_date, date) else pub_date
         date_key = t.isoformat()
@@ -210,12 +218,15 @@ def compute_bulletin_accuracy(
             continue
 
         knowledge_date = t - timedelta(days=1)
-        
+
         # Slice facts for this knowledge_date
         # Assumes 'bulletins' iteration is chronological and 'facts' is sorted by date
         current_facts = None
         if facts is not None:
-            while fact_idx < n_facts and facts[fact_idx].publication_date <= knowledge_date:
+            while (
+                fact_idx < n_facts
+                and facts[fact_idx].publication_date <= knowledge_date
+            ):
                 fact_idx += 1
             current_facts = facts[:fact_idx]
         else:
@@ -227,21 +238,23 @@ def compute_bulletin_accuracy(
             visa_category=visa_category,
             visa_class__in=target_classes,
         ).exclude(cutoff_date__isnull=True)
-        
+
         # Filter by action_type if specified
         if action_type:
             cutoffs = cutoffs.filter(action_type=action_type)
 
         for row in cutoffs:
-            next_cutoff, metadata, solver_results, _ = predict_next_bulletin_and_maturity(
-                knowledge_date=knowledge_date,
-                visa_class=row.visa_class,
-                country=row.country,
-                action_type=row.action_type,
-                monthly_supply=monthly_supply,
-                facts=current_facts,
-                meta=meta,
-                aggregator=aggregator,
+            next_cutoff, metadata, solver_results, _ = (
+                predict_next_bulletin_and_maturity(
+                    knowledge_date=knowledge_date,
+                    visa_class=row.visa_class,
+                    country=row.country,
+                    action_type=row.action_type,
+                    monthly_supply=monthly_supply,
+                    facts=current_facts,
+                    meta=meta,
+                    aggregator=aggregator,
+                )
             )
             # Use next_cutoff (horizon 1) or specific maturity result
             if horizon == 1:
@@ -264,20 +277,27 @@ def compute_bulletin_accuracy(
                 future_pub_est = t + timedelta(days=31 * (horizon - 1))
                 # Find the actual cutoff at this future date
                 from lib.business.vqs.data_cache import get_cutoff_at_date
+
                 actual = get_cutoff_at_date(
                     visa_class=row.visa_class,
                     country=row.country,
                     action_type=row.action_type,
-                    as_of=future_pub_est
+                    as_of=future_pub_est,
                 )
 
             error_days = None
             if pred_cutoff is not None and actual is not None:
                 error_days = abs((pred_cutoff - actual).days)
-            
+
             # Online Learning Update
             if aggregator and actual is not None:
-                aggregator.update(row.visa_class, row.country, knowledge_date, actual, action_type=row.action_type)
+                aggregator.update(
+                    row.visa_class,
+                    row.country,
+                    knowledge_date,
+                    actual,
+                    action_type=row.action_type,
+                )
 
             # Extract confidence intervals from metadata if available
             conf_low = None
@@ -310,7 +330,12 @@ def compute_bulletin_accuracy(
             eta_sec = remaining / rate if rate > 0 else 0
             logger.info(
                 "[Bulletin] %d/%d done (skipped %d) | %.1f bull/sec | ETA %.0fs | %d rows so far",
-                skipped + processed, total, skipped, rate, eta_sec, len(rows),
+                skipped + processed,
+                total,
+                skipped,
+                rate,
+                eta_sec,
+                len(rows),
             )
             # Save checkpoint
             if ckpt_path:
@@ -319,7 +344,11 @@ def compute_bulletin_accuracy(
     # Final checkpoint
     if ckpt_path and processed > 0:
         _save_checkpoint(ckpt_path, rows, completed_dates)
-        logger.info("Bulletin checkpoint saved: %d bulletins, %d rows", len(completed_dates), len(rows))
+        logger.info(
+            "Bulletin checkpoint saved: %d bulletins, %d rows",
+            len(completed_dates),
+            len(rows),
+        )
 
     return rows
 
@@ -344,8 +373,8 @@ def compute_longterm_accuracy(
     - If actual is still unknown (future): exclude from metric (error_days=None).
     """
     from models.bulletin import Bulletin
-    from models.visa_cutoff_date import VisaCutoffDate
     from models.raw_facts import RawFactsLedger
+    from models.visa_cutoff_date import VisaCutoffDate
 
     if today is None:
         today = date.today()
@@ -381,34 +410,51 @@ def compute_longterm_accuracy(
     total_iterations = total_months * len(distinct_series)
     logger.info(
         "Long-term accuracy: %d months x %d series = %d iterations",
-        total_months, len(distinct_series), total_iterations,
+        total_months,
+        len(distinct_series),
+        total_iterations,
     )
 
     # Load checkpoint
-    ckpt_path = (checkpoint_dir / "longterm_accuracy_ckpt.json") if checkpoint_dir else None
+    ckpt_path = (
+        (checkpoint_dir / "longterm_accuracy_ckpt.json") if checkpoint_dir else None
+    )
     completed_months: set[str] = set()
     out: list[LongtermAccuracyRow] = []
-    
+
     if ckpt_path and not force_recompute:
         loaded = _load_checkpoint(ckpt_path)
         if loaded:
             raw_rows, completed_months = loaded
             for rd in raw_rows:
-                out.append(LongtermAccuracyRow(
-                    knowledge_month=date.fromisoformat(rd["knowledge_month"]),
-                    visa_class=rd["visa_class"],
-                    country=rd["country"],
-                    action_type=rd["action_type"],
-                    predicted_ready_month=date.fromisoformat(rd["predicted_ready_month"]) if rd.get("predicted_ready_month") else None,
-                    predicted_cutoff=date.fromisoformat(rd["predicted_cutoff"]) if rd.get("predicted_cutoff") else None,
-                    actual_ready_month=date.fromisoformat(rd["actual_ready_month"]) if rd.get("actual_ready_month") else None,
-                    error_days=rd.get("error_days"),
-                    error_note=rd.get("error_note"),
-                    horizon_months=rd.get("horizon_months"),
-                    horizon_bucket=rd.get("horizon_bucket"),
-                ))
-            logger.info("Resumed from checkpoint: %d months already done, %d rows loaded",
-                        len(completed_months), len(out))
+                out.append(
+                    LongtermAccuracyRow(
+                        knowledge_month=date.fromisoformat(rd["knowledge_month"]),
+                        visa_class=rd["visa_class"],
+                        country=rd["country"],
+                        action_type=rd["action_type"],
+                        predicted_ready_month=date.fromisoformat(
+                            rd["predicted_ready_month"]
+                        )
+                        if rd.get("predicted_ready_month")
+                        else None,
+                        predicted_cutoff=date.fromisoformat(rd["predicted_cutoff"])
+                        if rd.get("predicted_cutoff")
+                        else None,
+                        actual_ready_month=date.fromisoformat(rd["actual_ready_month"])
+                        if rd.get("actual_ready_month")
+                        else None,
+                        error_days=rd.get("error_days"),
+                        error_note=rd.get("error_note"),
+                        horizon_months=rd.get("horizon_months"),
+                        horizon_bucket=rd.get("horizon_bucket"),
+                    )
+                )
+            logger.info(
+                "Resumed from checkpoint: %d months already done, %d rows loaded",
+                len(completed_months),
+                len(out),
+            )
 
     start_time = time.time()
     processed = 0
@@ -518,7 +564,12 @@ def compute_longterm_accuracy(
             eta_min = eta_sec / 60
             logger.info(
                 "[Longterm] %d/%d months done (skipped %d) | %.2f months/sec | ETA %.1f min | %d rows",
-                skipped + processed, total_months, skipped, rate, eta_min, len(out),
+                skipped + processed,
+                total_months,
+                skipped,
+                rate,
+                eta_min,
+                len(out),
             )
             # Save checkpoint
             if ckpt_path:
@@ -527,7 +578,11 @@ def compute_longterm_accuracy(
     # Final checkpoint
     if ckpt_path and processed > 0:
         _save_checkpoint(ckpt_path, out, completed_months)
-        logger.info("Longterm checkpoint saved: %d months, %d rows", len(completed_months), len(out))
+        logger.info(
+            "Longterm checkpoint saved: %d months, %d rows",
+            len(completed_months),
+            len(out),
+        )
 
     return out
 
@@ -587,9 +642,7 @@ def aggregate_longterm_by_horizon_and_series(
     from collections import defaultdict
 
     by_horizon: dict[str, list[int]] = defaultdict(list)
-    by_series: dict[str, dict[str, list[int]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
+    by_series: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
 
     for r in rows:
         if r.error_days is None or r.horizon_bucket is None:
@@ -611,10 +664,7 @@ def aggregate_longterm_by_horizon_and_series(
             bucket: stats(errs) for bucket, errs in sorted(by_horizon.items())
         },
         "by_series": {
-            series: {
-                bucket: stats(errs)
-                for bucket, errs in sorted(buckets.items())
-            }
+            series: {bucket: stats(errs) for bucket, errs in sorted(buckets.items())}
             for series, buckets in sorted(by_series.items())
         },
     }

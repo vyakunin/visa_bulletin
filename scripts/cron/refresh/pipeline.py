@@ -5,28 +5,34 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .checkpoint import CheckpointData, OLD_STEP_NAME_TO_NEW, STEPS_ORDER, should_skip_step
+from . import steps
+from .checkpoint import (
+    OLD_STEP_NAME_TO_NEW,
+    STEPS_ORDER,
+    CheckpointData,
+    should_skip_step,
+)
 from .config import RefreshConfig
 from .discovery import check_new_sources
-from . import steps
 
 # When ingest processes 0 sources (data already in DB), skip heavy post-processing.
 # Exception: if DB has 0 clustered employers but enough salary records (e.g. after reset or restore),
 # run post-processing so clustering is populated (self-heal).
-STEPS_SKIP_WHEN_ZERO_INGESTED = frozenset({
-    "backfill_job_title_links",
-    "backfill_source_file_date",
-    "cluster_job_titles",
-    "update_employer_stats",
-    "cluster_employers",
-    "update_job_title_cluster_stats",
-    "populate_job_title_slugs",
-    "vacuum_analyze",
-})
+STEPS_SKIP_WHEN_ZERO_INGESTED = frozenset(
+    {
+        "backfill_job_title_links",
+        "backfill_source_file_date",
+        "cluster_job_titles",
+        "update_employer_stats",
+        "cluster_employers",
+        "update_job_title_cluster_stats",
+        "populate_job_title_slugs",
+        "vacuum_analyze",
+    }
+)
 MIN_RECORDS_FOR_CLUSTER_SELF_HEAL = 100_000  # Same as smoke.MIN_RECORDS
 
 if TYPE_CHECKING:
@@ -73,7 +79,9 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
         ctx.index_snapshot = checkpoint_data.index_snapshot or ""
         logger.info("Resuming from checkpoint: last_step=%s", resume_from)
     elif resume:
-        logger.info("Resume requested but checkpoint missing or invalid; starting fresh")
+        logger.info(
+            "Resume requested but checkpoint missing or invalid; starting fresh"
+        )
 
     new_sources, discovery_out = check_new_sources(runner, str(config.project_root))
     ctx.new_sources_count = new_sources
@@ -82,7 +90,9 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
         stripped = line.strip()
         if "Discovered new source:" in stripped:
             logger.info("  [new] %s", stripped)
-        elif "Not ingested" in stripped or "Ingested" in stripped or "Broken" in stripped:
+        elif (
+            "Not ingested" in stripped or "Ingested" in stripped or "Broken" in stripped
+        ):
             logger.info("%s", stripped)
 
     pipeline_start = time.time()
@@ -112,7 +122,10 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
                     rec_s = runner.run_psql(db, "SELECT COUNT(*) FROM salary_record;")
                     emp_clustered = int(emp_s.strip() or 0)
                     record_count = int(rec_s.strip() or 0)
-                    if emp_clustered == 0 and record_count >= MIN_RECORDS_FOR_CLUSTER_SELF_HEAL:
+                    if (
+                        emp_clustered == 0
+                        and record_count >= MIN_RECORDS_FOR_CLUSTER_SELF_HEAL
+                    ):
                         skip_reason = None
                         logger.info(
                             "Not skipping post-processing: 0 clustered employers but %s records (re-running clustering)",
@@ -122,7 +135,7 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
                     logger.warning("Could not check cluster self-heal: %s", e)
         if skip_reason:
             logger.info("Skipping step (%s): %s", skip_reason, step_name)
-            ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             data = CheckpointData(
                 last_step=step_name,
                 timestamp=ts,
@@ -147,14 +160,21 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
                         result[1] if result[1] is not None else result[0]
                     )
                 else:
-                    ctx.sources_ingested_count = result if isinstance(result, int) else 0
+                    ctx.sources_ingested_count = (
+                        result if isinstance(result, int) else 0
+                    )
                     ctx.salary_relevant_sources_ingested_count = -1
         except Exception as e:
             logger.exception("Step %s failed: %s", step_name, e)
             raise
         step_elapsed = time.time() - step_start
-        logger.info("Step %s completed in %.1f s (%.1f min)", step_name, step_elapsed, step_elapsed / 60)
-        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        logger.info(
+            "Step %s completed in %.1f s (%.1f min)",
+            step_name,
+            step_elapsed,
+            step_elapsed / 60,
+        )
+        ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         data = CheckpointData(
             last_step=step_name,
             timestamp=ts,
@@ -163,5 +183,9 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
         )
         runner.write_checkpoint(checkpoint_path, data)
     total_elapsed = time.time() - pipeline_start
-    logger.info("Pipeline complete: all steps finished in %.1f s (%.1f min)", total_elapsed, total_elapsed / 60)
+    logger.info(
+        "Pipeline complete: all steps finished in %.1f s (%.1f min)",
+        total_elapsed,
+        total_elapsed / 60,
+    )
     return 0

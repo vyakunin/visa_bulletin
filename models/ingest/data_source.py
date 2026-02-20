@@ -12,63 +12,50 @@ class DataSource(models.Model):
     domain = models.CharField(
         max_length=50,
         choices=DataDomain.choices,
-        help_text="Data source domain (organization/system)"
+        help_text="Data source domain (organization/system)",
     )
     source_type = models.CharField(
         max_length=20,
         choices=SourceType.choices,
-        help_text="Type of data source within domain"
+        help_text="Type of data source within domain",
     )
     format_version = models.CharField(
         max_length=20,
         choices=FormatVersion.choices,
         default=FormatVersion.UNKNOWN,
-        help_text="Schema format version (determines parser selection)"
+        help_text="Schema format version (determines parser selection)",
     )
     discovered_at = models.DateTimeField(
-        auto_now_add=True,
-        help_text="When this source was first discovered"
+        auto_now_add=True, help_text="When this source was first discovered"
     )
     downloaded_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When file was last downloaded"
+        null=True, blank=True, help_text="When file was last downloaded"
     )
     local_file_path = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Cached local path if downloaded (for reference)"
+        help_text="Cached local path if downloaded (for reference)",
     )
     content_hash = models.CharField(
         max_length=64,
         blank=True,
         db_index=True,
-        help_text="SHA256 hash of file content (detects duplicates with different URLs)"
+        help_text="SHA256 hash of file content (detects duplicates with different URLs)",
     )
     metadata = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Flexible metadata storage"
+        default=dict, blank=True, help_text="Flexible metadata storage"
     )
 
     class Meta:
-        app_label = 'models'  # Explicitly set app_label for Django model resolution
-        db_table = 'ingest_data_source'
-        ordering = ['-discovered_at']
+        app_label = "models"  # Explicitly set app_label for Django model resolution
+        db_table = "ingest_data_source"
+        ordering = ["-discovered_at"]
         indexes = [
-            models.Index(fields=['domain', 'source_type']),
-            models.Index(fields=['domain', 'format_version']),
+            models.Index(fields=["domain", "source_type"]),
+            models.Index(fields=["domain", "format_version"]),
         ]
 
     def __str__(self):
-        return f"{self.get_domain_display()} {self.get_source_type_display()}: {self.url}"
-
-
-
-
-
-
-
-
-
-
+        return (
+            f"{self.get_domain_display()} {self.get_source_type_display()}: {self.url}"
+        )

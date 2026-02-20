@@ -4,23 +4,40 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0025_alter_visacutoffdate_visa_class_and_more'),
+        ("models", "0025_alter_visacutoffdate_visa_class_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='prevailing_wage',
-            field=models.DecimalField(blank=True, decimal_places=2, help_text="DOL's benchmark wage for similarly employed workers in the area", max_digits=12, null=True),
+            model_name="salaryrecord",
+            name="prevailing_wage",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=2,
+                help_text="DOL's benchmark wage for similarly employed workers in the area",
+                max_digits=12,
+                null=True,
+            ),
         ),
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='prevailing_wage_unit',
-            field=models.CharField(blank=True, choices=[('year', 'Per Year'), ('month', 'Per Month'), ('bi_weekly', 'Bi-Weekly'), ('week', 'Per Week'), ('hour', 'Per Hour')], help_text='Unit for prevailing wage (year, hour, etc.)', max_length=20, null=True),
+            model_name="salaryrecord",
+            name="prevailing_wage_unit",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("year", "Per Year"),
+                    ("month", "Per Month"),
+                    ("bi_weekly", "Bi-Weekly"),
+                    ("week", "Per Week"),
+                    ("hour", "Per Hour"),
+                ],
+                help_text="Unit for prevailing wage (year, hour, etc.)",
+                max_length=20,
+                null=True,
+            ),
         ),
         migrations.DeleteModel(
-            name='IngestRejectionStats',
+            name="IngestRejectionStats",
         ),
     ]

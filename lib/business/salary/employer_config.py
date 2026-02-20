@@ -27,15 +27,11 @@ class EmployerClusteringConfig:
         return employer_clustering._has_conflicting_structural_words(name1, name2)
 
     def should_apply_additional_filter(
-        self,
-        entity1: Employer,
-        entity2: Employer,
-        norm1: str,
-        norm2: str
+        self, entity1: Employer, entity2: Employer, norm1: str, norm2: str
     ) -> bool:
         """
         Apply location-based filtering for very generic employer names.
-        
+
         For names like "hospital", "school", "center", requires same state.
         This prevents matching generic names across different locations.
         """
@@ -75,20 +71,19 @@ class EmployerClusteringConfig:
         entity1: Employer,
         entity2: Employer,
         similarity_score: float,
-        match_reason: str
+        match_reason: str,
     ):
         """
         Create a review queue entry for ambiguous employer pairs.
-        
+
         Uses employer-specific field names (employer1, employer2).
         """
         EmployerClusteringReview.objects.get_or_create(
             employer1=entity1,
             employer2=entity2,
             defaults={
-                'similarity_score': similarity_score,
-                'match_reason': match_reason,
-                'status': 'pending'
-            }
+                "similarity_score": similarity_score,
+                "match_reason": match_reason,
+                "status": "pending",
+            },
         )
-

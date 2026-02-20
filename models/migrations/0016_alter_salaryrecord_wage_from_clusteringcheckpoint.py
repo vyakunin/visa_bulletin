@@ -4,29 +4,65 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0015_employercluster_employerclusteringreview_and_more'),
+        ("models", "0015_employercluster_employerclusteringreview_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='wage_from',
-            field=models.DecimalField(blank=True, decimal_places=2, help_text='Wage offer (from/minimum)', max_digits=12, null=True),
+            model_name="salaryrecord",
+            name="wage_from",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=2,
+                help_text="Wage offer (from/minimum)",
+                max_digits=12,
+                null=True,
+            ),
         ),
         migrations.CreateModel(
-            name='ClusteringCheckpoint',
+            name="ClusteringCheckpoint",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('phase', models.CharField(choices=[('phase1', 'Phase 1 (same normalized names)'), ('phase2', 'Phase 2 (cross-normalized matches)')], db_index=True, help_text='Which phase this checkpoint item belongs to', max_length=20)),
-                ('item_key', models.CharField(db_index=True, help_text='Unique key for the processed item (normalized name or pair key)', max_length=500)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "phase",
+                    models.CharField(
+                        choices=[
+                            ("phase1", "Phase 1 (same normalized names)"),
+                            ("phase2", "Phase 2 (cross-normalized matches)"),
+                        ],
+                        db_index=True,
+                        help_text="Which phase this checkpoint item belongs to",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "item_key",
+                    models.CharField(
+                        db_index=True,
+                        help_text="Unique key for the processed item (normalized name or pair key)",
+                        max_length=500,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'salary_clustering_checkpoint',
-                'indexes': [models.Index(fields=['phase', 'item_key'], name='salary_clus_phase_51cfc4_idx')],
-                'unique_together': {('phase', 'item_key')},
+                "db_table": "salary_clustering_checkpoint",
+                "indexes": [
+                    models.Index(
+                        fields=["phase", "item_key"],
+                        name="salary_clus_phase_51cfc4_idx",
+                    )
+                ],
+                "unique_together": {("phase", "item_key")},
             },
         ),
     ]

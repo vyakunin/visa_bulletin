@@ -21,8 +21,8 @@ import os
 from collections import defaultdict
 
 # Setup Django
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -42,53 +42,50 @@ logger = logging.getLogger(__name__)
 # Common typos and variations
 STATE_FIXES = {
     # Common typos
-    'Califonia': 'CA',
-    'Californa': 'CA',
-    'Calif': 'CA',
-    'Massachusets': 'MA',
-    'Massachussetts': 'MA',
-    'Mass': 'MA',
-    'New York': 'NY',
-    'New Jersey': 'NJ',
-    'New Mexico': 'NM',
-    'New Hampshire': 'NH',
-    'North Carolina': 'NC',
-    'North Dakota': 'ND',
-    'South Carolina': 'SC',
-    'South Dakota': 'SD',
-    'West Virginia': 'WV',
-    'Rhode Island': 'RI',
-
+    "Califonia": "CA",
+    "Californa": "CA",
+    "Calif": "CA",
+    "Massachusets": "MA",
+    "Massachussetts": "MA",
+    "Mass": "MA",
+    "New York": "NY",
+    "New Jersey": "NJ",
+    "New Mexico": "NM",
+    "New Hampshire": "NH",
+    "North Carolina": "NC",
+    "North Dakota": "ND",
+    "South Carolina": "SC",
+    "South Dakota": "SD",
+    "West Virginia": "WV",
+    "Rhode Island": "RI",
     # Common abbreviations
-    'Fla': 'FL',
-    'Tex': 'TX',
-    'Penn': 'PA',
-    'Ill': 'IL',
-    'Mich': 'MI',
-    'Wisc': 'WI',
-    'Minn': 'MN',
-    'Colo': 'CO',
-    'Ore': 'OR',
-    'Wash': 'WA',
-    'Conn': 'CT',
-    'Mass': 'MA',
-    'Vt': 'VT',
-    'N.H.': 'NH',
-    'N.J.': 'NJ',
-    'N.Y.': 'NY',
-    'N.C.': 'NC',
-    'N.D.': 'ND',
-    'S.C.': 'SC',
-    'S.D.': 'SD',
-    'W.V.': 'WV',
-    'R.I.': 'RI',
-
+    "Fla": "FL",
+    "Tex": "TX",
+    "Penn": "PA",
+    "Ill": "IL",
+    "Mich": "MI",
+    "Wisc": "WI",
+    "Minn": "MN",
+    "Colo": "CO",
+    "Ore": "OR",
+    "Wash": "WA",
+    "Conn": "CT",
+    "Mass": "MA",
+    "Vt": "VT",
+    "N.H.": "NH",
+    "N.J.": "NJ",
+    "N.Y.": "NY",
+    "N.C.": "NC",
+    "N.D.": "ND",
+    "S.C.": "SC",
+    "S.D.": "SD",
+    "W.V.": "WV",
+    "R.I.": "RI",
     # Case variations (normalize to uppercase)
-    'ca': 'CA',
-    'ny': 'NY',
-    'tx': 'TX',
-    'fl': 'FL',
-
+    "ca": "CA",
+    "ny": "NY",
+    "tx": "TX",
+    "fl": "FL",
     # Territories (may be valid but not in VALID_STATES - decide if needed)
     # 'PR': 'PR',  # Puerto Rico
     # 'VI': 'VI',  # US Virgin Islands
@@ -115,7 +112,7 @@ def normalize_state_code(state: str | None) -> str | None:
 def suggest_fix(state: str) -> str | None:
     """
     Suggest a fix for an invalid state code.
-    
+
     Returns:
         Fixed state code if fix found, None otherwise
     """
@@ -152,16 +149,21 @@ def analyze_invalid_states(limit: int | None = None) -> dict:
     """Analyze records with invalid state codes."""
     logger.info("Analyzing invalid state codes...")
 
-    invalid_records = SalaryRecord.objects.filter(
-        worksite_state__isnull=False
-    ).exclude(worksite_state__in=VALID_STATES).exclude(worksite_state='')
+    invalid_records = (
+        SalaryRecord.objects.filter(worksite_state__isnull=False)
+        .exclude(worksite_state__in=VALID_STATES)
+        .exclude(worksite_state="")
+    )
 
     if limit:
         invalid_records = invalid_records[:limit]
 
-    total_invalid = SalaryRecord.objects.filter(
-        worksite_state__isnull=False
-    ).exclude(worksite_state__in=VALID_STATES).exclude(worksite_state='').count()
+    total_invalid = (
+        SalaryRecord.objects.filter(worksite_state__isnull=False)
+        .exclude(worksite_state__in=VALID_STATES)
+        .exclude(worksite_state="")
+        .count()
+    )
 
     logger.info(f"Found {total_invalid:,} records with invalid state codes")
     if limit:
@@ -186,7 +188,7 @@ def analyze_invalid_states(limit: int | None = None) -> dict:
 
     logger.info("Breakdown by invalid state value (top 20):")
     for state, count in sorted(by_state.items(), key=lambda x: x[1], reverse=True)[:20]:
-        fix = fixable.get(state, '❌ No fix found')
+        fix = fixable.get(state, "❌ No fix found")
         logger.info(f"  '{state}': {count:,} records → {fix}")
 
     logger.info("")
@@ -197,13 +199,13 @@ def analyze_invalid_states(limit: int | None = None) -> dict:
     logger.info("")
 
     return {
-        'total_invalid': total_invalid,
-        'analyzed': invalid_records.count(),
-        'fixable_count': sum(by_state[s] for s in fixable.keys()),
-        'unfixable_count': sum(by_state[s] for s in unfixable),
-        'by_state': dict(by_state),
-        'fixable': fixable,
-        'unfixable': unfixable[:20],
+        "total_invalid": total_invalid,
+        "analyzed": invalid_records.count(),
+        "fixable_count": sum(by_state[s] for s in fixable.keys()),
+        "unfixable_count": sum(by_state[s] for s in unfixable),
+        "by_state": dict(by_state),
+        "fixable": fixable,
+        "unfixable": unfixable[:20],
     }
 
 
@@ -218,22 +220,24 @@ def fix_state_codes(dry_run=False, limit=None):
 
     analysis = analyze_invalid_states(limit=limit)
 
-    if analysis['fixable_count'] == 0:
+    if analysis["fixable_count"] == 0:
         logger.info("No fixable state codes found")
         return 0
 
-    logger.info(f"Fixing {analysis['fixable_count']:,} records with fixable state codes...")
+    logger.info(
+        f"Fixing {analysis['fixable_count']:,} records with fixable state codes..."
+    )
     logger.info("")
 
     fixed_count = 0
     failed_count = 0
 
     # Get records with fixable states
-    for invalid_state, correct_state in analysis['fixable'].items():
+    for invalid_state, correct_state in analysis["fixable"].items():
         records = SalaryRecord.objects.filter(worksite_state=invalid_state)
 
         if limit and fixed_count + records.count() > limit:
-            records = records[:limit - fixed_count]
+            records = records[: limit - fixed_count]
 
         count = records.count()
         logger.info(f"Fixing '{invalid_state}' → '{correct_state}': {count} records")
@@ -263,7 +267,9 @@ def fix_state_codes(dry_run=False, limit=None):
         logger.info(f"Failed: {failed_count:,}")
 
     if dry_run:
-        logger.info("\nDRY-RUN: No changes were made. Run without --dry-run to apply fixes.")
+        logger.info(
+            "\nDRY-RUN: No changes were made. Run without --dry-run to apply fixes."
+        )
     else:
         logger.info(f"\n✅ Fixed {fixed_count:,} records")
 
@@ -272,7 +278,7 @@ def fix_state_codes(dry_run=False, limit=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fix records with invalid state codes',
+        description="Fix records with invalid state codes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -284,33 +290,29 @@ Examples:
   
   Limit to first 1000 records:
     bazel run //scripts/salary:fix_state_codes -- --limit 1000
-        """
+        """,
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be fixed without making changes'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be fixed without making changes",
     )
 
-    parser.add_argument(
-        '--limit',
-        type=int,
-        help='Limit number of records to process'
-    )
+    parser.add_argument("--limit", type=int, help="Limit number of records to process")
 
     args = parser.parse_args()
 
     script_logger.log_call(
         args={
-            'dry_run': args.dry_run,
-            'limit': args.limit,
+            "dry_run": args.dry_run,
+            "limit": args.limit,
         },
-        context='Fixing invalid state codes'
+        context="Fixing invalid state codes",
     )
 
     fix_state_codes(dry_run=args.dry_run, limit=args.limit)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

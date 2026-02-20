@@ -7,7 +7,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,9 @@ class InstanceInfo:
     state: str  # running, stopped, pending, etc.
 
 
-def resolve_active_inactive_from_env() -> tuple[InstanceInfo | None, InstanceInfo | None]:
+def resolve_active_inactive_from_env() -> tuple[
+    InstanceInfo | None, InstanceInfo | None
+]:
     """Resolve active and inactive instances from env (REFRESH_ACTIVE_*, REFRESH_INACTIVE_*)."""
     active_name = os.environ.get("REFRESH_ACTIVE_INSTANCE_NAME", "").strip()
     active_ip = os.environ.get("REFRESH_ACTIVE_INSTANCE_IP", "").strip()
@@ -35,7 +36,9 @@ def resolve_active_inactive_from_env() -> tuple[InstanceInfo | None, InstanceInf
     )
 
 
-def is_this_host_active(my_identifier: str, active_instance: InstanceInfo | None) -> bool:
+def is_this_host_active(
+    my_identifier: str, active_instance: InstanceInfo | None
+) -> bool:
     """True if my_identifier matches the active instance (name or IP)."""
     if not active_instance:
         return True  # If not configured, assume active (local-only mode)
@@ -45,6 +48,7 @@ def is_this_host_active(my_identifier: str, active_instance: InstanceInfo | None
 def get_instance_state(instance_name: str) -> str:
     """Get Lightsail instance state via AWS CLI. Returns 'running', 'stopped', 'pending', or '' on error."""
     import subprocess
+
     result = subprocess.run(
         ["aws", "lightsail", "get-instance-state", "--instance-name", instance_name],
         capture_output=True,
@@ -55,6 +59,7 @@ def get_instance_state(instance_name: str) -> str:
         logger.warning("get-instance-state failed: %s", result.stderr)
         return ""
     import json
+
     try:
         data = json.loads(result.stdout)
         return data.get("state", {}).get("name", "")
@@ -65,6 +70,7 @@ def get_instance_state(instance_name: str) -> str:
 def start_instance(instance_name: str) -> bool:
     """Start Lightsail instance. Returns True on success."""
     import subprocess
+
     result = subprocess.run(
         ["aws", "lightsail", "start-instance", "--instance-name", instance_name],
         capture_output=True,
@@ -80,6 +86,7 @@ def start_instance(instance_name: str) -> bool:
 def stop_instance(instance_name: str) -> bool:
     """Stop Lightsail instance. Returns True on success."""
     import subprocess
+
     result = subprocess.run(
         ["aws", "lightsail", "stop-instance", "--instance-name", instance_name],
         capture_output=True,
@@ -119,8 +126,9 @@ def wait_instance_healthy(
 ) -> bool:
     """Wait until HTTP GET to http://ip:port/path returns 200. Returns True if healthy within timeout.
     Uses /health/ by default. With nginx listen 80 default_server, requests by IP hit the app."""
-    import urllib.request
     import urllib.error
+    import urllib.request
+
     deadline = time.monotonic() + timeout_sec
     url = f"http://{ip}:{port}{path}"
     while time.monotonic() < deadline:

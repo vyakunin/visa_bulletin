@@ -16,7 +16,7 @@ from models.enums.country import Country
 
 def connect_db():
     """Connect to the database"""
-    return sqlite3.connect('visa_bulletin.db')
+    return sqlite3.connect("visa_bulletin.db")
 
 
 def show_summary():
@@ -29,7 +29,9 @@ def show_summary():
     print("=" * 80)
 
     # Bulletins
-    cursor.execute("SELECT COUNT(*), MIN(publication_date), MAX(publication_date) FROM bulletin")
+    cursor.execute(
+        "SELECT COUNT(*), MIN(publication_date), MAX(publication_date) FROM bulletin"
+    )
     count, earliest, latest = cursor.fetchone()
     print(f"\n📅 Bulletins: {count} total")
     print(f"   Date range: {earliest} to {latest}")
@@ -60,9 +62,15 @@ def show_summary():
     """)
     current, unavailable, dated = cursor.fetchone()
     print("\n🎯 Status Distribution:")
-    print(f"   Current (C):       {current:6,} records ({current/total_records*100:.1f}%)")
-    print(f"   Unavailable (U):   {unavailable:6,} records ({unavailable/total_records*100:.1f}%)")
-    print(f"   With dates:        {dated:6,} records ({dated/total_records*100:.1f}%)")
+    print(
+        f"   Current (C):       {current:6,} records ({current / total_records * 100:.1f}%)"
+    )
+    print(
+        f"   Unavailable (U):   {unavailable:6,} records ({unavailable / total_records * 100:.1f}%)"
+    )
+    print(
+        f"   With dates:        {dated:6,} records ({dated / total_records * 100:.1f}%)"
+    )
 
     # Sample recent data
     cursor.execute("""
@@ -115,24 +123,27 @@ def query_data(search_term: str):
     # Parse search term (e.g., "F1 China" or "EB2 India")
     parts = search_term.upper().split()
     if len(parts) < 2:
-        print("❌ Usage: --query 'VISA_CLASS COUNTRY' (e.g., 'F1 China' or 'EB2 India')")
+        print(
+            "❌ Usage: --query 'VISA_CLASS COUNTRY' (e.g., 'F1 China' or 'EB2 India')"
+        )
         return
 
     visa_class = parts[0]
-    country_name = ' '.join(parts[1:])
+    country_name = " ".join(parts[1:])
 
     # Map country name to enum value
     country_map = {
-        'ALL': Country.ALL.value,
-        'CHINA': Country.CHINA.value,
-        'INDIA': Country.INDIA.value,
-        'MEXICO': Country.MEXICO.value,
-        'PHILIPPINES': Country.PHILIPPINES.value,
+        "ALL": Country.ALL.value,
+        "CHINA": Country.CHINA.value,
+        "INDIA": Country.INDIA.value,
+        "MEXICO": Country.MEXICO.value,
+        "PHILIPPINES": Country.PHILIPPINES.value,
     }
 
     country_value = country_map.get(country_name, country_name.lower())
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT 
             b.publication_date,
             v.visa_category,
@@ -145,7 +156,9 @@ def query_data(search_term: str):
         WHERE v.visa_class = ? AND v.country = ?
         ORDER BY b.publication_date DESC
         LIMIT 20
-    """, (visa_class, country_value))
+    """,
+        (visa_class, country_value),
+    )
 
     results = cursor.fetchall()
 
@@ -164,7 +177,9 @@ def query_data(search_term: str):
         pub_date, category, action, cutoff_val, cutoff_date, is_current = row
         current_flag = "✓" if is_current else ""
         display_date = cutoff_date if cutoff_date else cutoff_val
-        print(f"{pub_date:<12} {category:<20} {action:<15} {display_date:<12} {current_flag:<8}")
+        print(
+            f"{pub_date:<12} {category:<20} {action:<15} {display_date:<12} {current_flag:<8}"
+        )
 
     conn.close()
 
@@ -173,10 +188,10 @@ def main():
     """Main entry point"""
     if len(sys.argv) == 1:
         show_summary()
-    elif '--bulletins' in sys.argv:
+    elif "--bulletins" in sys.argv:
         list_bulletins()
-    elif '--query' in sys.argv:
-        idx = sys.argv.index('--query')
+    elif "--query" in sys.argv:
+        idx = sys.argv.index("--query")
         if idx + 1 < len(sys.argv):
             query_data(sys.argv[idx + 1])
         else:
@@ -188,6 +203,5 @@ def main():
         print("  python explore_db.py --query 'F1 China' # Search for specific data")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

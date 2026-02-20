@@ -21,40 +21,40 @@ class TestEmployerMatching(TestCase):
         """Create test employer instances"""
         # Create employers with different name variations
         self.google1 = Employer.objects.create(
-            name='Google Inc.',
-            name_normalized=Employer.normalize_name('Google Inc.'),
-            city='Mountain View',
-            state='CA'
+            name="Google Inc.",
+            name_normalized=Employer.normalize_name("Google Inc."),
+            city="Mountain View",
+            state="CA",
         )
         self.google2 = Employer.objects.create(
-            name='Google, Inc',
-            name_normalized=Employer.normalize_name('Google, Inc'),
-            city='Seattle',
-            state='WA'
+            name="Google, Inc",
+            name_normalized=Employer.normalize_name("Google, Inc"),
+            city="Seattle",
+            state="WA",
         )
         self.google3 = Employer.objects.create(
-            name='Google LLC',
-            name_normalized=Employer.normalize_name('Google LLC'),
-            city='New York',
-            state='NY'
+            name="Google LLC",
+            name_normalized=Employer.normalize_name("Google LLC"),
+            city="New York",
+            state="NY",
         )
         self.apple = Employer.objects.create(
-            name='Apple Corporation',
-            name_normalized=Employer.normalize_name('Apple Corporation'),
-            city='Cupertino',
-            state='CA'
+            name="Apple Corporation",
+            name_normalized=Employer.normalize_name("Apple Corporation"),
+            city="Cupertino",
+            state="CA",
         )
         self.jpmorgan1 = Employer.objects.create(
-            name='JPMorgan Chase',
-            name_normalized=Employer.normalize_name('JPMorgan Chase'),
-            city='New York',
-            state='NY'
+            name="JPMorgan Chase",
+            name_normalized=Employer.normalize_name("JPMorgan Chase"),
+            city="New York",
+            state="NY",
         )
         self.jpmorgan2 = Employer.objects.create(
-            name='JP Morgan',
-            name_normalized=Employer.normalize_name('JP Morgan'),
-            city='New York',
-            state='NY'
+            name="JP Morgan",
+            name_normalized=Employer.normalize_name("JP Morgan"),
+            city="New York",
+            state="NY",
         )
 
     def test_exact_normalized_match(self):
@@ -62,28 +62,28 @@ class TestEmployerMatching(TestCase):
         is_match, confidence, reason = match_employers(self.google1, self.google2)
         self.assertTrue(is_match)
         self.assertEqual(confidence, 1.0)
-        self.assertIn('Exact normalized name match', reason)
+        self.assertIn("Exact normalized name match", reason)
 
     def test_substring_match(self):
         """Test that one name being substring of another is detected"""
         # Create employer with substring name
         google_base = Employer.objects.create(
-            name='Google',
-            name_normalized=Employer.normalize_name('Google'),
-            city='Mountain View',
-            state='CA'
+            name="Google",
+            name_normalized=Employer.normalize_name("Google"),
+            city="Mountain View",
+            state="CA",
         )
         is_match, confidence, reason = match_employers(google_base, self.google1)
         self.assertTrue(is_match)
         self.assertGreaterEqual(confidence, 0.85)
-        self.assertIn('Substring match', reason)
+        self.assertIn("Substring match", reason)
 
     def test_high_similarity_match(self):
         """Test that very similar names are detected"""
         is_match, confidence, reason = match_employers(self.jpmorgan1, self.jpmorgan2)
         self.assertTrue(is_match)
         self.assertGreaterEqual(confidence, 0.85)
-        self.assertIn('similarity', reason.lower())
+        self.assertIn("similarity", reason.lower())
 
     def test_low_similarity_no_match(self):
         """Test that dissimilar names are not matched"""
@@ -97,22 +97,22 @@ class TestFuzzyMatching(TestCase):
 
     def setUp(self):
         self.employer1 = Employer.objects.create(
-            name='Microsoft Corporation',
-            name_normalized=Employer.normalize_name('Microsoft Corporation'),
-            city='Redmond',
-            state='WA'
+            name="Microsoft Corporation",
+            name_normalized=Employer.normalize_name("Microsoft Corporation"),
+            city="Redmond",
+            state="WA",
         )
         self.employer2 = Employer.objects.create(
-            name='MicroSoft Inc',
-            name_normalized=Employer.normalize_name('MicroSoft Inc'),
-            city='Redmond',
-            state='WA'
+            name="MicroSoft Inc",
+            name_normalized=Employer.normalize_name("MicroSoft Inc"),
+            city="Redmond",
+            state="WA",
         )
         self.employer3 = Employer.objects.create(
-            name='Amazon.com',
-            name_normalized=Employer.normalize_name('Amazon.com'),
-            city='Seattle',
-            state='WA'
+            name="Amazon.com",
+            name_normalized=Employer.normalize_name("Amazon.com"),
+            city="Seattle",
+            state="WA",
         )
 
     def test_fuzzy_match_returns_similarity(self):
@@ -138,22 +138,22 @@ class TestClusteringLogic(TestCase):
 
     def setUp(self):
         self.google1 = Employer.objects.create(
-            name='Google Inc.',
-            name_normalized=Employer.normalize_name('Google Inc.'),
-            city='Mountain View',
-            state='CA'
+            name="Google Inc.",
+            name_normalized=Employer.normalize_name("Google Inc."),
+            city="Mountain View",
+            state="CA",
         )
         self.google2 = Employer.objects.create(
-            name='Google, Inc',
-            name_normalized=Employer.normalize_name('Google, Inc'),
-            city='Seattle',
-            state='WA'
+            name="Google, Inc",
+            name_normalized=Employer.normalize_name("Google, Inc"),
+            city="Seattle",
+            state="WA",
         )
         self.apple = Employer.objects.create(
-            name='Apple Corporation',
-            name_normalized=Employer.normalize_name('Apple Corporation'),
-            city='Cupertino',
-            state='CA'
+            name="Apple Corporation",
+            name_normalized=Employer.normalize_name("Apple Corporation"),
+            city="Cupertino",
+            state="CA",
         )
 
     def test_auto_cluster_high_confidence(self):
@@ -179,28 +179,28 @@ class TestClusteringIntegration(TestCase):
     def setUp(self):
         """Create test employers"""
         self.google1 = Employer.objects.create(
-            name='Google Inc.',
-            name_normalized=Employer.normalize_name('Google Inc.'),
-            city='Mountain View',
-            state='CA'
+            name="Google Inc.",
+            name_normalized=Employer.normalize_name("Google Inc."),
+            city="Mountain View",
+            state="CA",
         )
         self.google2 = Employer.objects.create(
-            name='Google, Inc',
-            name_normalized=Employer.normalize_name('Google, Inc'),
-            city='Seattle',
-            state='WA'
+            name="Google, Inc",
+            name_normalized=Employer.normalize_name("Google, Inc"),
+            city="Seattle",
+            state="WA",
         )
         self.google3 = Employer.objects.create(
-            name='Google LLC',
-            name_normalized=Employer.normalize_name('Google LLC'),
-            city='New York',
-            state='NY'
+            name="Google LLC",
+            name_normalized=Employer.normalize_name("Google LLC"),
+            city="New York",
+            state="NY",
         )
         self.apple = Employer.objects.create(
-            name='Apple Corporation',
-            name_normalized=Employer.normalize_name('Apple Corporation'),
-            city='Cupertino',
-            state='CA'
+            name="Apple Corporation",
+            name_normalized=Employer.normalize_name("Apple Corporation"),
+            city="Cupertino",
+            state="CA",
         )
 
     def test_assign_to_cluster_creates_cluster(self):
@@ -229,7 +229,9 @@ class TestClusteringIntegration(TestCase):
         self.assertEqual(cluster1.id, cluster2.id)
         self.google1.refresh_from_db()
         self.google2.refresh_from_db()
-        self.assertEqual(self.google1.canonical_cluster.id, self.google2.canonical_cluster.id)
+        self.assertEqual(
+            self.google1.canonical_cluster.id, self.google2.canonical_cluster.id
+        )
 
     def test_assign_to_cluster_queues_ambiguous_matches(self):
         """Test that ambiguous matches are queued for review"""
@@ -238,16 +240,16 @@ class TestClusteringIntegration(TestCase):
 
         # Create employers with similar but not identical names
         emp1 = Employer.objects.create(
-            name='JPMorgan Chase',
-            name_normalized=Employer.normalize_name('JPMorgan Chase'),
-            city='New York',
-            state='NY'
+            name="JPMorgan Chase",
+            name_normalized=Employer.normalize_name("JPMorgan Chase"),
+            city="New York",
+            state="NY",
         )
         emp2 = Employer.objects.create(
-            name='JP Morgan',
-            name_normalized=Employer.normalize_name('JP Morgan'),
-            city='New York',
-            state='NY'
+            name="JP Morgan",
+            name_normalized=Employer.normalize_name("JP Morgan"),
+            city="New York",
+            state="NY",
         )
 
         # Assign first (creates cluster)
@@ -258,8 +260,7 @@ class TestClusteringIntegration(TestCase):
 
         # Check if review was created
         reviews = EmployerClusteringReview.objects.filter(
-            employer1__in=[emp1, emp2],
-            employer2__in=[emp1, emp2]
+            employer1__in=[emp1, emp2], employer2__in=[emp1, emp2]
         )
         # Review may or may not be created depending on similarity score
         # Just verify the function doesn't crash
@@ -289,9 +290,15 @@ class TestClusteringIntegration(TestCase):
 
         # Update cluster stats manually (normally done by migration script)
         cluster = cluster1
-        cluster.total_lca_count = sum(e.total_lca_count for e in cluster.employers.all())
-        cluster.total_perm_count = sum(e.total_perm_count for e in cluster.employers.all())
-        salaries = [float(e.avg_salary) for e in cluster.employers.all() if e.avg_salary]
+        cluster.total_lca_count = sum(
+            e.total_lca_count for e in cluster.employers.all()
+        )
+        cluster.total_perm_count = sum(
+            e.total_perm_count for e in cluster.employers.all()
+        )
+        salaries = [
+            float(e.avg_salary) for e in cluster.employers.all() if e.avg_salary
+        ]
         if salaries:
             cluster.avg_salary = sum(salaries) / len(salaries)
         cluster.save()
@@ -300,10 +307,3 @@ class TestClusteringIntegration(TestCase):
         self.assertEqual(cluster.total_lca_count, 300)
         self.assertEqual(cluster.total_perm_count, 125)
         self.assertEqual(float(cluster.avg_salary), 155000.0)
-
-
-
-
-
-
-

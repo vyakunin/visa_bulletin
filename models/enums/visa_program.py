@@ -18,7 +18,7 @@ from models.enums.wage_unit import WageUnit  # noqa: F401
 class VisaProgram(models.IntegerChoices):
     """
     Visa program type for salary records
-    
+
     Uses IntegerChoices for performance (high-volume data):
     - Stores integer in DB (0=invalid, 1-4 for valid programs)
     - Access as enum in Python (VisaProgram.H1B, VisaProgram.PERM)
@@ -39,10 +39,9 @@ class VisaProgram(models.IntegerChoices):
         if not value:
             return None
         mappings = {
-            'h1b': cls.H1B,
-            'h1b1': cls.H1B1,
-            'e3': cls.E3,
-            'perm': cls.PERM,
+            "h1b": cls.H1B,
+            "h1b1": cls.H1B1,
+            "e3": cls.E3,
+            "perm": cls.PERM,
         }
         return mappings.get(value.lower())
-

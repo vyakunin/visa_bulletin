@@ -30,8 +30,8 @@ from lib.utils.logging_utils import log_context
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ log_context("Collecting golden test data for DOL plugin transforms")
 def detect_file_type(headers: list[str]) -> str | None:
     """
     Detect file type from column headers (not filename).
-    
+
     Returns:
         "PERM", "H1B", or None (unknown)
     """
@@ -50,10 +50,16 @@ def detect_file_type(headers: list[str]) -> str | None:
 
     # PERM files have specific column patterns
     perm_indicators = [
-        'WAGE_OFFER_FROM_9089', 'WAGE_OFFERED_FROM_9089', 'JOB_OPP_WAGE_FROM',
-        'PW_JOB_TITLE_9089', 'WAGE_OFFER_UNIT_OF_PAY_9089',
-        'WAGE_OFFER_FROM', 'WAGE_OFFERED_FROM', 'WAGE_OFFER_TO',
-        'PW_SOC_CODE', 'PW_SOC_TITLE'  # PERM-specific prevailing wage columns
+        "WAGE_OFFER_FROM_9089",
+        "WAGE_OFFERED_FROM_9089",
+        "JOB_OPP_WAGE_FROM",
+        "PW_JOB_TITLE_9089",
+        "WAGE_OFFER_UNIT_OF_PAY_9089",
+        "WAGE_OFFER_FROM",
+        "WAGE_OFFERED_FROM",
+        "WAGE_OFFER_TO",
+        "PW_SOC_CODE",
+        "PW_SOC_TITLE",  # PERM-specific prevailing wage columns
     ]
     if any(ind in headers_upper for ind in perm_indicators):
         return "PERM"
@@ -63,14 +69,16 @@ def detect_file_type(headers: list[str]) -> str | None:
 
     # LCA/H1B files have LCA-specific columns or H-1B visa class
     lca_indicators = [
-        'LCA_CASE_NUMBER', 'LCA_CASE_WAGE_RATE_FROM',
-        'LCA_CASE_JOB_TITLE', 'LCA_CASE_SOC_CODE',
-        'VISA_CLASS',  # H-1B files have VISA_CLASS column
+        "LCA_CASE_NUMBER",
+        "LCA_CASE_WAGE_RATE_FROM",
+        "LCA_CASE_JOB_TITLE",
+        "LCA_CASE_SOC_CODE",
+        "VISA_CLASS",  # H-1B files have VISA_CLASS column
     ]
     if any(ind in headers_upper for ind in lca_indicators):
         # Check if worksite file (no employer fields, has worksite fields)
-        has_employer = any('EMPLOYER' in h for h in headers_upper)
-        has_worksite = any('WORKSITE' in h or 'WORK_CITY' in h for h in headers_upper)
+        has_employer = any("EMPLOYER" in h for h in headers_upper)
+        has_worksite = any("WORKSITE" in h or "WORK_CITY" in h for h in headers_upper)
 
         if not has_employer and has_worksite:
             # Worksite file - still use H1B plugin but will route to WorksiteRecord
@@ -81,12 +89,14 @@ def detect_file_type(headers: list[str]) -> str | None:
     # Fallback: Check for CASE_NUMBER with wage fields (could be H1B or PERM)
     # H1B files typically have VISA_CLASS or employment dates
     # PERM files typically have wage offer columns
-    has_case_number = any('CASE_NUMBER' in h or 'CASE_NO' in h for h in headers_upper)
-    has_wage = any('WAGE' in h for h in headers_upper)
-    has_visa_class = any('VISA_CLASS' in h or 'PROGRAM' in h for h in headers_upper)
-    has_employment_dates = any('EMPLOYMENT' in h and 'DATE' in h for h in headers_upper)
-    has_worksite_fields = any('WORKSITE' in h or 'WORK_CITY' in h for h in headers_upper)
-    has_employer = any('EMPLOYER' in h for h in headers_upper)
+    has_case_number = any("CASE_NUMBER" in h or "CASE_NO" in h for h in headers_upper)
+    has_wage = any("WAGE" in h for h in headers_upper)
+    has_visa_class = any("VISA_CLASS" in h or "PROGRAM" in h for h in headers_upper)
+    has_employment_dates = any("EMPLOYMENT" in h and "DATE" in h for h in headers_upper)
+    has_worksite_fields = any(
+        "WORKSITE" in h or "WORK_CITY" in h for h in headers_upper
+    )
+    has_employer = any("EMPLOYER" in h for h in headers_upper)
 
     if has_case_number and has_wage:
         # Worksite files: CASE_NUMBER + WAGE + WORKSITE fields (no employer)
@@ -96,7 +106,9 @@ def detect_file_type(headers: list[str]) -> str | None:
         if has_visa_class or has_employment_dates:
             return "H1B"
         # If it has employer fields and wage offer columns, could be PERM
-        has_wage_offer = any('WAGE_OFFER' in h or 'OFFERED_WAGE' in h for h in headers_upper)
+        has_wage_offer = any(
+            "WAGE_OFFER" in h or "OFFERED_WAGE" in h for h in headers_upper
+        )
         if has_employer and has_wage_offer:
             return "PERM"
         # Default to H1B if unclear (most common)
@@ -107,14 +119,11 @@ def detect_file_type(headers: list[str]) -> str | None:
 
 
 def process_file(
-    filepath: Path,
-    samples_per_file: int,
-    random_seed: int,
-    unknown_files: list[dict]
+    filepath: Path, samples_per_file: int, random_seed: int, unknown_files: list[dict]
 ) -> list[dict]:
     """
     Process a single Excel file and return test cases.
-    
+
     Returns:
         List of test case dicts
     """
@@ -138,14 +147,16 @@ def process_file(
             sample_rows = read_excel_rows(filepath, [2, 3, 4])  # First 2-3 data rows
             logger.debug(f"  Read {len(sample_rows)} sample rows")
 
-            unknown_files.append({
-                'filename': filepath.name,
-                'headers': headers[:20],  # First 20 headers
-                'sample_rows': [
-                    dict(list(row.items())[:10])  # First 10 columns
-                    for row in sample_rows
-                ],
-            })
+            unknown_files.append(
+                {
+                    "filename": filepath.name,
+                    "headers": headers[:20],  # First 20 headers
+                    "sample_rows": [
+                        dict(list(row.items())[:10])  # First 10 columns
+                        for row in sample_rows
+                    ],
+                }
+            )
             return []
 
         # Get row count
@@ -161,13 +172,19 @@ def process_file(
         # Sample random rows
         sample_size = min(samples_per_file, row_count)
         # Row numbers are 1-indexed, but data rows start at 2 (row 1 is header)
-        logger.info(f"  Sampling {sample_size} random rows from {row_count:,} total rows...")
+        logger.info(
+            f"  Sampling {sample_size} random rows from {row_count:,} total rows..."
+        )
         data_row_numbers = list(range(2, row_count + 2))
         sampled_row_numbers = random.sample(data_row_numbers, sample_size)
-        logger.debug(f"  Selected rows: {sampled_row_numbers[:5]}{'...' if len(sampled_row_numbers) > 5 else ''}")
+        logger.debug(
+            f"  Selected rows: {sampled_row_numbers[:5]}{'...' if len(sampled_row_numbers) > 5 else ''}"
+        )
 
         # Read sampled rows
-        logger.info(f"  Reading {len(sampled_row_numbers)} sampled rows from {filepath.name}...")
+        logger.info(
+            f"  Reading {len(sampled_row_numbers)} sampled rows from {filepath.name}..."
+        )
         sampled_rows = read_excel_rows(filepath, sampled_row_numbers)
         logger.debug(f"  Read {len(sampled_rows)} rows successfully")
 
@@ -178,15 +195,17 @@ def process_file(
         test_cases = []
         for row, row_num in zip(sampled_rows, sampled_row_numbers):
             test_case = {
-                'plugin_type': plugin_type,
-                'source_file': filepath.name,
-                'row_number': row_num,
-                'fiscal_year': fiscal_year,
-                'input': row,  # All column values as dict
+                "plugin_type": plugin_type,
+                "source_file": filepath.name,
+                "row_number": row_num,
+                "fiscal_year": fiscal_year,
+                "input": row,  # All column values as dict
             }
             test_cases.append(test_case)
 
-        logger.info(f"  Collected {len(test_cases)} samples from {row_count} total rows")
+        logger.info(
+            f"  Collected {len(test_cases)} samples from {row_count} total rows"
+        )
         return test_cases
 
     except Exception as e:
@@ -199,34 +218,34 @@ def main():
         description="Collect golden test data for DOL plugin transforms"
     )
     parser.add_argument(
-        '--output',
+        "--output",
         type=Path,
         default=None,  # Will be set to absolute path below
-        help='Output YAML file path (default: <workspace>/tests/data/dol_golden_test_data.yaml)'
+        help="Output YAML file path (default: <workspace>/tests/data/dol_golden_test_data.yaml)",
     )
     parser.add_argument(
-        '--samples-per-file',
+        "--samples-per-file",
         type=int,
         default=10,
-        help='Number of random rows to sample per file (default: 10)'
+        help="Number of random rows to sample per file (default: 10)",
     )
     parser.add_argument(
-        '--random-seed',
+        "--random-seed",
         type=int,
         default=42,
-        help='Random seed for reproducibility (default: 42)'
+        help="Random seed for reproducibility (default: 42)",
     )
     parser.add_argument(
-        '--unknown-output',
+        "--unknown-output",
         type=Path,
-        default=Path('tests/data/unknown_file_types.txt'),
-        help='Output file for unknown file types review (default: tests/data/unknown_file_types.txt)'
+        default=Path("tests/data/unknown_file_types.txt"),
+        help="Output file for unknown file types review (default: tests/data/unknown_file_types.txt)",
     )
     parser.add_argument(
-        '--limit-files',
+        "--limit-files",
         type=int,
         default=None,
-        help='Limit number of files to process (for testing)'
+        help="Limit number of files to process (for testing)",
     )
 
     args = parser.parse_args()
@@ -234,7 +253,7 @@ def main():
     # Resolve output path to absolute path in workspace
     workspace_dir = get_workspace_dir()
     if args.output is None:
-        args.output = workspace_dir / 'tests' / 'data' / 'dol_golden_test_data.yaml'
+        args.output = workspace_dir / "tests" / "data" / "dol_golden_test_data.yaml"
     elif not args.output.is_absolute():
         # If relative path provided, make it relative to workspace
         args.output = workspace_dir / args.output
@@ -248,7 +267,7 @@ def main():
 
     # Find data directory
     logger.info("Finding data directory...")
-    data_dir = workspace_dir / 'data' / 'salary' / 'dol_data'
+    data_dir = workspace_dir / "data" / "salary" / "dol_data"
     logger.debug(f"Data directory: {data_dir}")
 
     if not data_dir.exists():
@@ -257,7 +276,7 @@ def main():
 
     # Find all Excel files
     logger.info(f"Scanning for Excel files in {data_dir}...")
-    all_excel_files = sorted(data_dir.glob('*.xlsx')) + sorted(data_dir.glob('*.xls'))
+    all_excel_files = sorted(data_dir.glob("*.xlsx")) + sorted(data_dir.glob("*.xls"))
     logger.debug(f"Found {len(all_excel_files)} Excel files")
 
     if not all_excel_files:
@@ -267,23 +286,30 @@ def main():
     # Limit files if requested (for testing)
     # Prefer files with PERM or LCA in name for better detection
     if args.limit_files:
-        perm_files = [f for f in all_excel_files if 'PERM' in f.name.upper()]
-        lca_files = [f for f in all_excel_files if ('LCA' in f.name.upper() or 'H-1B' in f.name.upper()) and 'PERM' not in f.name.upper()]
+        perm_files = [f for f in all_excel_files if "PERM" in f.name.upper()]
+        lca_files = [
+            f
+            for f in all_excel_files
+            if ("LCA" in f.name.upper() or "H-1B" in f.name.upper())
+            and "PERM" not in f.name.upper()
+        ]
 
         # Try to get mix of PERM and LCA if available
         selected = []
         if perm_files and len(selected) < args.limit_files:
             selected.extend(perm_files[:1])
         if lca_files and len(selected) < args.limit_files:
-            selected.extend(lca_files[:args.limit_files - len(selected)])
+            selected.extend(lca_files[: args.limit_files - len(selected)])
 
         # Fill remaining slots with any files
         if len(selected) < args.limit_files:
             remaining = [f for f in all_excel_files if f not in selected]
-            selected.extend(remaining[:args.limit_files - len(selected)])
+            selected.extend(remaining[: args.limit_files - len(selected)])
 
-        excel_files = selected[:args.limit_files]
-        logger.info(f"Limited to {len(excel_files)} files (--limit-files={args.limit_files})")
+        excel_files = selected[: args.limit_files]
+        logger.info(
+            f"Limited to {len(excel_files)} files (--limit-files={args.limit_files})"
+        )
         logger.info(f"Selected files: {[f.name for f in excel_files]}")
     else:
         excel_files = all_excel_files
@@ -298,25 +324,26 @@ def main():
     for i, filepath in enumerate(excel_files, 1):
         logger.info(f"[{i}/{len(excel_files)}] Starting {filepath.name}...")
         test_cases = process_file(
-            filepath,
-            args.samples_per_file,
-            args.random_seed,
-            unknown_files
+            filepath, args.samples_per_file, args.random_seed, unknown_files
         )
         all_test_cases.extend(test_cases)
         logger.debug(f"[{i}/{len(excel_files)}] Completed {filepath.name}")
 
-    logger.info(f"Finished processing all files. Total test cases collected: {len(all_test_cases)}")
+    logger.info(
+        f"Finished processing all files. Total test cases collected: {len(all_test_cases)}"
+    )
 
     # Save test cases to YAML
     output_file = args.output
-    logger.info(f"Preparing to save {len(all_test_cases)} test cases to {output_file}...")
+    logger.info(
+        f"Preparing to save {len(all_test_cases)} test cases to {output_file}..."
+    )
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Writing YAML file (this may take a while for large datasets)...")
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         yaml.dump(
-            {'test_cases': all_test_cases},
+            {"test_cases": all_test_cases},
             f,
             default_flow_style=False,
             sort_keys=False,
@@ -329,31 +356,39 @@ def main():
     unknown_output = args.unknown_output
     unknown_output.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(unknown_output, 'w') as f:
+    with open(unknown_output, "w") as f:
         if unknown_files:
-            logger.info(f"Saving {len(unknown_files)} unknown file types to {unknown_output}...")
+            logger.info(
+                f"Saving {len(unknown_files)} unknown file types to {unknown_output}..."
+            )
             f.write("# Unknown file types - review manually\n\n")
             for unknown in unknown_files:
                 f.write(f"## {unknown['filename']}\n\n")
                 f.write("Headers (first 20):\n")
-                for i, header in enumerate(unknown['headers'], 1):
+                for i, header in enumerate(unknown["headers"], 1):
                     f.write(f"  {i}. {header}\n")
                 f.write("\nSample rows (first 10 columns):\n")
-                for i, row in enumerate(unknown['sample_rows'], 2):
+                for i, row in enumerate(unknown["sample_rows"], 2):
                     f.write(f"  Row {i}:\n")
                     for key, value in row.items():
                         f.write(f"    {key}: {value}\n")
                 f.write("\n")
-            logger.warning(f"\nFound {len(unknown_files)} unknown file types - saved to {unknown_output}")
+            logger.warning(
+                f"\nFound {len(unknown_files)} unknown file types - saved to {unknown_output}"
+            )
             logger.warning("Please review and update detect_file_type() if needed")
         else:
             f.write("# Unknown file types - review manually\n\n")
-            f.write("# No unknown file types found - all files were successfully classified.\n")
-            logger.info(f"No unknown file types found - created empty file at {unknown_output}")
+            f.write(
+                "# No unknown file types found - all files were successfully classified.\n"
+            )
+            logger.info(
+                f"No unknown file types found - created empty file at {unknown_output}"
+            )
 
     # Summary
-    perm_count = sum(1 for tc in all_test_cases if tc['plugin_type'] == 'PERM')
-    h1b_count = sum(1 for tc in all_test_cases if tc['plugin_type'] == 'H1B')
+    perm_count = sum(1 for tc in all_test_cases if tc["plugin_type"] == "PERM")
+    h1b_count = sum(1 for tc in all_test_cases if tc["plugin_type"] == "H1B")
 
     logger.info("\nSummary:")
     logger.info(f"  Total test cases: {len(all_test_cases)}")
@@ -362,10 +397,11 @@ def main():
     logger.info(f"  Unknown files: {len(unknown_files)}")
     logger.info("\nNext steps:")
     logger.info(f"  1. Review and manually annotate expected results in {output_file}")
-    logger.info("  2. Add record_type, expected_result, expected_error fields to each test case")
+    logger.info(
+        "  2. Add record_type, expected_result, expected_error fields to each test case"
+    )
     logger.info("  3. Run golden test: bazel test //tests:test_dol_transform_golden")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

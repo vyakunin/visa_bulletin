@@ -11,7 +11,7 @@ import os
 import django
 
 # Setup Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 from pathlib import Path
@@ -23,19 +23,18 @@ from models.ingest.data_source import DataSource
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
 
-def download_and_check_file(url: str, expected_type: str = 'LCA'):
+def download_and_check_file(url: str, expected_type: str = "LCA"):
     """Download file and spot-check its structure"""
-    logger.info(f"\n{'='*80}")
+    logger.info(f"\n{'=' * 80}")
     logger.info(f"Checking {expected_type} file: {url}")
-    logger.info(f"{'='*80}")
+    logger.info(f"{'=' * 80}")
 
     workspace_dir = get_workspace_dir()
-    temp_dir = workspace_dir / 'data' / 'temp_spot_check'
+    temp_dir = workspace_dir / "data" / "temp_spot_check"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     filename = Path(url).name
@@ -55,7 +54,9 @@ def download_and_check_file(url: str, expected_type: str = 'LCA'):
     # Check if this hash already exists in DB (duplicate content)
     existing_sources = list(DataSource.objects.filter(content_hash=content_hash))
     if existing_sources:
-        logger.warning(f"⚠️  DUPLICATE CONTENT - {len(existing_sources)} existing source(s) with same hash:")
+        logger.warning(
+            f"⚠️  DUPLICATE CONTENT - {len(existing_sources)} existing source(s) with same hash:"
+        )
         for src in existing_sources:
             logger.warning(f"  - {src.url}")
         logger.warning("  → This file is already ingested under a different URL")
@@ -89,7 +90,7 @@ def download_and_check_file(url: str, expected_type: str = 'LCA'):
         first_row = rows[0]
         logger.info(f"\nFound {len(first_row)} columns:")
         for key in list(first_row.keys())[:20]:  # Show first 20 columns
-            value = first_row.get(key, '')
+            value = first_row.get(key, "")
             if value and len(str(value)) > 50:
                 value = str(value)[:50] + "..."
             logger.info(f"  - {key}: {value}")
@@ -99,18 +100,34 @@ def download_and_check_file(url: str, expected_type: str = 'LCA'):
 
         # Check key columns expected for LCA/PERM
         expected_lca_columns = [
-            'CASE_NUMBER', 'CASE_STATUS', 'EMPLOYER_NAME', 'JOB_TITLE',
-            'PREVAILING_WAGE', 'PW_UNIT_OF_PAY', 'WAGE_RATE_OF_PAY_FROM',
-            'WAGE_UNIT_OF_PAY', 'WORKSITE_CITY', 'WORKSITE_STATE'
+            "CASE_NUMBER",
+            "CASE_STATUS",
+            "EMPLOYER_NAME",
+            "JOB_TITLE",
+            "PREVAILING_WAGE",
+            "PW_UNIT_OF_PAY",
+            "WAGE_RATE_OF_PAY_FROM",
+            "WAGE_UNIT_OF_PAY",
+            "WORKSITE_CITY",
+            "WORKSITE_STATE",
         ]
 
         expected_perm_columns = [
-            'CASE_NUMBER', 'CASE_STATUS', 'EMPLOYER_NAME', 'JOB_TITLE',
-            'PW_AMOUNT', 'PW_UNIT_OF_PAY', 'WAGE_OFFER_FROM',
-            'WAGE_OFFER_UNIT_OF_PAY_9089', 'WORKSITE_CITY', 'WORKSITE_STATE'
+            "CASE_NUMBER",
+            "CASE_STATUS",
+            "EMPLOYER_NAME",
+            "JOB_TITLE",
+            "PW_AMOUNT",
+            "PW_UNIT_OF_PAY",
+            "WAGE_OFFER_FROM",
+            "WAGE_OFFER_UNIT_OF_PAY_9089",
+            "WORKSITE_CITY",
+            "WORKSITE_STATE",
         ]
 
-        expected_cols = expected_lca_columns if expected_type == 'LCA' else expected_perm_columns
+        expected_cols = (
+            expected_lca_columns if expected_type == "LCA" else expected_perm_columns
+        )
 
         missing_cols = [col for col in expected_cols if col not in first_row]
         if missing_cols:
@@ -135,9 +152,9 @@ def main():
     # Sample new DOL URLs to check
     # These are from the newly discovered sources (with new URL structure)
 
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("SPOT-CHECKING NEW DOL FILE STRUCTURE")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     # Check a few recent LCA files (new URL structure)
     lca_samples = [
@@ -152,20 +169,20 @@ def main():
 
     for url in lca_samples:
         try:
-            download_and_check_file(url, 'LCA')
+            download_and_check_file(url, "LCA")
         except Exception as e:
             logger.error(f"Failed to check {url}: {e}")
 
     for url in perm_samples:
         try:
-            download_and_check_file(url, 'PERM')
+            download_and_check_file(url, "PERM")
         except Exception as e:
             logger.error(f"Failed to check {url}: {e}")
 
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("SPOT-CHECK COMPLETE")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

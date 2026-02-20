@@ -4,15 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0016_alter_salaryrecord_wage_from_clusteringcheckpoint'),
+        ("models", "0016_alter_salaryrecord_wage_from_clusteringcheckpoint"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='salaryrecord',
-            name='source_file_date',
-            field=models.DateTimeField(blank=True, db_index=True, help_text='Date when source file was created/modified (for duplicate resolution)', null=True),
+            model_name="salaryrecord",
+            name="source_file_date",
+            field=models.DateTimeField(
+                blank=True,
+                db_index=True,
+                help_text="Date when source file was created/modified (for duplicate resolution)",
+                null=True,
+            ),
         ),
     ]

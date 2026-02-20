@@ -25,22 +25,19 @@ logger = logging.getLogger(__name__)
 
 # Rate-limited logger for wage correction warnings
 _wage_correction_rate_logger = RateLimitedLogger(
-    initial_count=5,
-    min_interval_seconds=5.0,
-    logger=logger,
-    log_level=logging.WARNING
+    initial_count=5, min_interval_seconds=5.0, logger=logger, log_level=logging.WARNING
 )
 
 # Path to config file (using Bazel runfiles for proper path resolution)
-_CONFIG_PATH = get_data_file_path('lib/parsing/salary/wage_thresholds_config.yaml')
+_CONFIG_PATH = get_data_file_path("lib/parsing/salary/wage_thresholds_config.yaml")
 if _CONFIG_PATH is None:
     # Fallback for non-Bazel environments
-    _CONFIG_PATH = Path(__file__).parent / 'wage_thresholds_config.yaml'
+    _CONFIG_PATH = Path(__file__).parent / "wage_thresholds_config.yaml"
 
 # Default thresholds (fallback if config file doesn't exist or is invalid)
 # Single unified range for both correction and validation
-_DEFAULT_MIN_ANNUAL = 5000      # Absolute minimum (filters obvious errors)
-_DEFAULT_MAX_ANNUAL = 900000    # 4σ upper bound (filters outliers)
+_DEFAULT_MIN_ANNUAL = 5000  # Absolute minimum (filters obvious errors)
+_DEFAULT_MAX_ANNUAL = 900000  # 4σ upper bound (filters outliers)
 
 
 def _load_thresholds_from_config():
@@ -50,7 +47,9 @@ def _load_thresholds_from_config():
         return None
 
     if yaml is None:
-        logger.warning("PyYAML not installed, cannot load config file. Install with: pip install pyyaml")
+        logger.warning(
+            "PyYAML not installed, cannot load config file. Install with: pip install pyyaml"
+        )
         return None
 
     try:
@@ -58,13 +57,15 @@ def _load_thresholds_from_config():
             config = yaml.safe_load(f)
 
         # Extract single unified threshold range
-        annual_range = config.get('annual_wage_range', {})
+        annual_range = config.get("annual_wage_range", {})
         thresholds = {
-            'min_annual': annual_range.get('min'),
-            'max_annual': annual_range.get('max'),
+            "min_annual": annual_range.get("min"),
+            "max_annual": annual_range.get("max"),
         }
 
-        logger.debug(f"Loaded thresholds from config (last updated: {config.get('_last_updated', 'unknown')})")
+        logger.debug(
+            f"Loaded thresholds from config (last updated: {config.get('_last_updated', 'unknown')})"
+        )
         return thresholds
     except Exception as e:
         logger.warning(f"Failed to load thresholds from config: {e}, using defaults")
@@ -77,13 +78,13 @@ def _get_thresholds():
 
     if config is None:
         return {
-            'min_annual': _DEFAULT_MIN_ANNUAL,
-            'max_annual': _DEFAULT_MAX_ANNUAL,
+            "min_annual": _DEFAULT_MIN_ANNUAL,
+            "max_annual": _DEFAULT_MAX_ANNUAL,
         }
 
     return {
-        'min_annual': config.get('min_annual') or _DEFAULT_MIN_ANNUAL,
-        'max_annual': config.get('max_annual') or _DEFAULT_MAX_ANNUAL,
+        "min_annual": config.get("min_annual") or _DEFAULT_MIN_ANNUAL,
+        "max_annual": config.get("max_annual") or _DEFAULT_MAX_ANNUAL,
     }
 
 
@@ -91,8 +92,8 @@ def _get_thresholds():
 _THRESHOLDS = _get_thresholds()
 
 # Export thresholds as module-level constants
-MIN_ANNUAL = _THRESHOLDS['min_annual']
-MAX_ANNUAL = _THRESHOLDS['max_annual']
+MIN_ANNUAL = _THRESHOLDS["min_annual"]
+MAX_ANNUAL = _THRESHOLDS["max_annual"]
 
 # Backward compatibility aliases (deprecated - use MIN_ANNUAL/MAX_ANNUAL instead)
 MIN_REASONABLE_ANNUAL = MIN_ANNUAL
@@ -107,7 +108,12 @@ HOURS_PER_YEAR = 2080
 
 # When annual is too low (unit YEAR, wage_from < MIN_ANNUAL), try these units in order.
 # First unit that yields annual in [MIN_ANNUAL, MAX_ANNUAL] is used (derived from yearly range).
-_UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW = (WageUnit.HOUR, WageUnit.WEEK, WageUnit.BI_WEEKLY, WageUnit.MONTH)
+_UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW = (
+    WageUnit.HOUR,
+    WageUnit.WEEK,
+    WageUnit.BI_WEEKLY,
+    WageUnit.MONTH,
+)
 
 
 def should_correct_wage_unit(
@@ -117,16 +123,16 @@ def should_correct_wage_unit(
 ) -> bool:
     """
     Determine if a wage unit should be corrected to YEAR.
-    
+
     Strategy: Convert wage_from to implied annual using the stated unit,
     then check if it falls outside the valid range. If so, try treating
     wage_from as annual - if that's in range, correct the unit.
-    
+
     Args:
         wage_from: The wage_from value
         wage_unit: Current wage unit (HOUR, WEEK, MONTH, BI_WEEKLY, YEAR)
         wage_annual: Optional wage_annual value (ignored - kept for backward compatibility)
-    
+
     Returns:
         True if wage_unit should be corrected to YEAR, False otherwise
     """
@@ -187,10 +193,16 @@ def correct_wage_unit(
     # Up: unit YEAR but wage_from tiny — try sub-annual units (HOUR, WEEK, BI_WEEKLY, MONTH)
     if wage_unit == WageUnit.YEAR and wage_from_float < MIN_ANNUAL:
         for candidate_unit in _UNITS_TO_TRY_WHEN_ANNUAL_TOO_LOW:
-            annual_if_candidate = float(calculate_annual_wage(wage_from, candidate_unit))
+            annual_if_candidate = float(
+                calculate_annual_wage(wage_from, candidate_unit)
+            )
             if MIN_ANNUAL <= annual_if_candidate <= MAX_ANNUAL:
                 if row_num is not None and row_num != 0:
-                    unit_display = candidate_unit.value if hasattr(candidate_unit, "value") else candidate_unit
+                    unit_display = (
+                        candidate_unit.value
+                        if hasattr(candidate_unit, "value")
+                        else candidate_unit
+                    )
                     _wage_correction_rate_logger.log(
                         f"Row {row_num}: wage_from=${wage_from:,.0f} with unit=YEAR gives annual below ${MIN_ANNUAL:,} "
                         f"- treating as {unit_display} (annual=${annual_if_candidate:,.0f})"
@@ -205,7 +217,7 @@ def correct_wage_unit(
     if row_num is not None and row_num != 0:
         implied_annual = float(calculate_annual_wage(wage_from, wage_unit))
         # Extract string value if wage_unit is enum
-        unit_display = wage_unit.value if hasattr(wage_unit, 'value') else wage_unit
+        unit_display = wage_unit.value if hasattr(wage_unit, "value") else wage_unit
         message = (
             f"Row {row_num}: wage_from=${wage_from:,.0f} with unit={unit_display} "
             f"implies annual=${implied_annual:,.0f} (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range) "
@@ -216,17 +228,19 @@ def correct_wage_unit(
     return WageUnit.YEAR  # Return enum (consistent with input type)
 
 
-def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str | WageUnit) -> Decimal | None:
+def calculate_annual_wage(
+    wage_from: Decimal | None, wage_unit: str | WageUnit
+) -> Decimal | None:
     """
     Calculate annual wage from wage_from and wage_unit.
-    
+
     This is a shared function to ensure consistent annual wage calculations
     across import and fix routines.
-    
+
     Args:
         wage_from: The wage_from value
         wage_unit: Wage unit (YEAR, MONTH, BI_WEEKLY, WEEK, HOUR)
-    
+
     Returns:
         Annual wage as Decimal, or None if wage_from is None
     """
@@ -245,14 +259,16 @@ def calculate_annual_wage(wage_from: Decimal | None, wage_unit: str | WageUnit) 
     return wage_from * multiplier
 
 
-def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None) -> tuple[bool, str | None]:
+def validate_wage_annual(
+    wage_annual: Decimal | None, row_num: int | None = None
+) -> tuple[bool, str | None]:
     """
     Validate that annual wage is within acceptable range.
-    
+
     Args:
         wage_annual: Annual wage value to validate
         row_num: Optional row number for logging
-    
+
     Returns:
         Tuple of (is_valid, error_message)
         - is_valid: True if wage is valid, False if should be rejected
@@ -280,4 +296,3 @@ def validate_wage_annual(wage_annual: Decimal | None, row_num: int | None = None
         return False, message
 
     return True, None
-

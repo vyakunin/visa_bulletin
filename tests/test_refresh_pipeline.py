@@ -14,22 +14,29 @@ from pathlib import Path
 
 import pytest
 
-from scripts.cron.refresh.checkpoint import CheckpointData, STEPS_ORDER, should_skip_step
+from scripts.cron.refresh.checkpoint import (
+    should_skip_step,
+)
 from scripts.cron.refresh.config import RefreshConfig
 from scripts.cron.refresh.pipeline import (
     MIN_RECORDS_FOR_CLUSTER_SELF_HEAL,
-    STEPS_SKIP_WHEN_ZERO_INGESTED,
     run_pipeline,
 )
 from scripts.cron.refresh.runner import MockRunner
 
 
 def _ok(stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=stdout, stderr=stderr
+    )
 
 
-def _fail(rc: int = 1, stdout: str = "", stderr: str = "error") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=rc, stdout=stdout, stderr=stderr)
+def _fail(
+    rc: int = 1, stdout: str = "", stderr: str = "error"
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=[], returncode=rc, stdout=stdout, stderr=stderr
+    )
 
 
 def _make_config(tmp_path: Path) -> RefreshConfig:
@@ -48,7 +55,9 @@ def _make_config(tmp_path: Path) -> RefreshConfig:
 def _make_happy_mock() -> MockRunner:
     """MockRunner configured so all steps succeed (full pipeline completion)."""
     mock = MockRunner()
-    mock.run_bin_return = _ok(stdout="Starting pipeline for 5 sources (salary_relevant: 3)")
+    mock.run_bin_return = _ok(
+        stdout="Starting pipeline for 5 sources (salary_relevant: 3)"
+    )
     mock.run_psql_return = "100000"
     mock.run_sudo_psql_return = _ok()
     mock.run_migrate_return = _ok()
@@ -90,7 +99,9 @@ def test_step_failure_checkpoints_last_successful_step(tmp_path: Path) -> None:
     """When a step fails, checkpoint records the last SUCCESSFUL step, not the failed one."""
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
-    mock.run_bin_side_effects["scripts/salary/cluster_job_titles"] = _fail(stderr="OOM killed")
+    mock.run_bin_side_effects["scripts/salary/cluster_job_titles"] = _fail(
+        stderr="OOM killed"
+    )
     with pytest.raises(RuntimeError, match="Cluster job titles failed"):
         run_pipeline(config, mock, resume=False)
 
@@ -164,13 +175,17 @@ def test_resume_with_missing_checkpoint_starts_fresh(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_zero_ingested_skips_post_processing_when_clusters_exist(tmp_path: Path) -> None:
+def test_zero_ingested_skips_post_processing_when_clusters_exist(
+    tmp_path: Path,
+) -> None:
     """0 sources ingested + >0 clustered employers → skip post-processing steps."""
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
     # Ingest returns 0 sources
     mock.run_bin_side_effects["scripts/ingest/run_pipeline"] = (
-        lambda rel, *a: _ok(stdout="Starting pipeline for 0 sources (salary_relevant: 0)")
+        lambda rel, *a: _ok(
+            stdout="Starting pipeline for 0 sources (salary_relevant: 0)"
+        )
         if "discover-and-ingest" in a
         else _ok()
     )
@@ -188,21 +203,29 @@ def test_zero_ingested_skips_post_processing_when_clusters_exist(tmp_path: Path)
         "scripts/salary/cluster_job_titles",
         "scripts/salary/cluster_existing_employers",
     ]:
-        assert skipped_binary not in run_bin_calls, f"{skipped_binary} should be skipped"
+        assert skipped_binary not in run_bin_calls, (
+            f"{skipped_binary} should be skipped"
+        )
 
 
-def test_zero_ingested_self_heals_when_no_clusters_and_enough_records(tmp_path: Path) -> None:
+def test_zero_ingested_self_heals_when_no_clusters_and_enough_records(
+    tmp_path: Path,
+) -> None:
     """0 ingested + 0 clustered employers + 100k+ records → re-run post-processing (self-heal)."""
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
     mock.run_bin_side_effects["scripts/ingest/run_pipeline"] = (
-        lambda rel, *a: _ok(stdout="Starting pipeline for 0 sources (salary_relevant: 0)")
+        lambda rel, *a: _ok(
+            stdout="Starting pipeline for 0 sources (salary_relevant: 0)"
+        )
         if "discover-and-ingest" in a
         else _ok()
     )
     # 0 clustered employers but enough records
     mock.run_psql_side_effects["canonical_cluster_id IS NOT NULL"] = "0"
-    mock.run_psql_side_effects["FROM salary_record;"] = str(MIN_RECORDS_FOR_CLUSTER_SELF_HEAL + 1)
+    mock.run_psql_side_effects["FROM salary_record;"] = str(
+        MIN_RECORDS_FOR_CLUSTER_SELF_HEAL + 1
+    )
     # Other psql queries return a safe default
     mock.run_psql_return = "200000"
 
@@ -220,7 +243,9 @@ def test_zero_ingested_no_self_heal_when_few_records(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
     mock.run_bin_side_effects["scripts/ingest/run_pipeline"] = (
-        lambda rel, *a: _ok(stdout="Starting pipeline for 0 sources (salary_relevant: 0)")
+        lambda rel, *a: _ok(
+            stdout="Starting pipeline for 0 sources (salary_relevant: 0)"
+        )
         if "discover-and-ingest" in a
         else _ok()
     )
@@ -240,7 +265,9 @@ def test_self_heal_query_error_falls_through_to_skip(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
     mock.run_bin_side_effects["scripts/ingest/run_pipeline"] = (
-        lambda rel, *a: _ok(stdout="Starting pipeline for 0 sources (salary_relevant: 0)")
+        lambda rel, *a: _ok(
+            stdout="Starting pipeline for 0 sources (salary_relevant: 0)"
+        )
         if "discover-and-ingest" in a
         else _ok()
     )

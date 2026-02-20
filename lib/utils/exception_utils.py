@@ -7,8 +7,8 @@ from typing import ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 
-P = ParamSpec('P')
-R = TypeVar('R')
+P = ParamSpec("P")
+R = TypeVar("R")
 
 # Unrecoverable errors that should abort operations
 UNRECOVERABLE_ERRORS = (ModuleNotFoundError, ImportError)
@@ -17,10 +17,10 @@ UNRECOVERABLE_ERRORS = (ModuleNotFoundError, ImportError)
 def is_unrecoverable_error(exception: Exception) -> bool:
     """
     Check if an exception is unrecoverable (should abort operation).
-    
+
     Args:
         exception: Exception to check
-        
+
     Returns:
         True if exception is unrecoverable (ImportError, ModuleNotFoundError)
     """
@@ -32,14 +32,14 @@ def handle_unrecoverable_errors(
     logger_instance: logging.Logger | None = None,
     on_unrecoverable: Callable[[Exception], None] | None = None,
     on_recoverable: Callable[[Exception], None] | None = None,
-    suppress_recoverable: bool = False
+    suppress_recoverable: bool = False,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator to distinguish between unrecoverable and recoverable errors.
-    
+
     Unrecoverable errors (ImportError, ModuleNotFoundError) are logged and re-raised.
     Recoverable errors can be handled via callback and optionally suppressed.
-    
+
     Args:
         log_message: Custom log message for unrecoverable errors.
                     If None, uses default message with function name.
@@ -49,21 +49,21 @@ def handle_unrecoverable_errors(
                        If suppress_recoverable=True, exception is suppressed after callback.
         suppress_recoverable: If True and on_recoverable is provided, suppress recoverable
                              errors after calling callback. If False, propagate normally.
-    
+
     Example 1: Only handle unrecoverable errors (default):
         @handle_unrecoverable_errors(
             log_message=f"[Run {run.id}] Unrecoverable error in validation"
         )
         def validate_data(run):
             return plugin.validate_post_ingest(run)
-    
+
     Example 2: Handle and suppress recoverable errors:
         error_count = 0
         def handle_recoverable(e):
             nonlocal error_count
             error_count += 1
             logger.error(f"Error: {e}")
-        
+
         @handle_unrecoverable_errors(
             on_recoverable=handle_recoverable,
             suppress_recoverable=True
@@ -100,5 +100,5 @@ def handle_unrecoverable_errors(
                 raise
 
         return wrapper
-    return decorator
 
+    return decorator

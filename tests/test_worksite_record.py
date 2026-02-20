@@ -19,73 +19,73 @@ class TestWorksiteRecord(TestCase):
     def test_create_worksite_record(self):
         """Test creating a basic worksite record"""
         record = WorksiteRecord.objects.create(
-            case_number='I-200-12345-6789',
+            case_number="I-200-12345-6789",
             visa_program=VisaProgram.H1B,
             case_status=CaseStatus.CERTIFIED,
-            worksite_city='San Francisco',
-            worksite_state='CA',
-            worksite_zip='94105',
-            job_title='Software Engineer',
-            soc_code='15-1132',
-            soc_title='Software Developers, Applications',
-            wage_from=Decimal('150000'),
+            worksite_city="San Francisco",
+            worksite_state="CA",
+            worksite_zip="94105",
+            job_title="Software Engineer",
+            soc_code="15-1132",
+            soc_title="Software Developers, Applications",
+            wage_from=Decimal("150000"),
             wage_unit=WageUnit.YEAR,
             fiscal_year=2024,
-            source_file='LCA_Worksites_FY2024_Q4.xlsx'
+            source_file="LCA_Worksites_FY2024_Q4.xlsx",
         )
 
         # Check record was created
-        self.assertEqual(record.case_number, 'I-200-12345-6789')
-        self.assertEqual(record.worksite_city, 'San Francisco')
-        self.assertEqual(record.worksite_state, 'CA')
+        self.assertEqual(record.case_number, "I-200-12345-6789")
+        self.assertEqual(record.worksite_city, "San Francisco")
+        self.assertEqual(record.worksite_state, "CA")
         self.assertEqual(record.wage_annual, 150000.0)
 
     def test_worksite_record_annual_wage_calculation(self):
         """Test annual wage calculation in WorksiteRecord"""
         # Yearly wage
         record = WorksiteRecord(
-            case_number='I-200-11111-1111',
+            case_number="I-200-11111-1111",
             visa_program=VisaProgram.H1B,
-            worksite_city='Seattle',
-            worksite_state='WA',
-            job_title='Engineer',
-            wage_from=Decimal('120000'),
+            worksite_city="Seattle",
+            worksite_state="WA",
+            job_title="Engineer",
+            wage_from=Decimal("120000"),
             wage_unit=WageUnit.YEAR,
-            fiscal_year=2024
+            fiscal_year=2024,
         )
         self.assertEqual(record.calculate_annual_wage(), 120000.0)
 
         # Hourly wage
-        record.wage_from = Decimal('75')
+        record.wage_from = Decimal("75")
         record.wage_unit = WageUnit.HOUR
         self.assertEqual(record.calculate_annual_wage(), 156000.0)  # 75 * 2080
 
         # Monthly wage
-        record.wage_from = Decimal('10000')
+        record.wage_from = Decimal("10000")
         record.wage_unit = WageUnit.MONTH
         self.assertEqual(record.calculate_annual_wage(), 120000.0)  # 10000 * 12
 
         # Weekly wage
-        record.wage_from = Decimal('2500')
+        record.wage_from = Decimal("2500")
         record.wage_unit = WageUnit.WEEK
         self.assertEqual(record.calculate_annual_wage(), 130000.0)  # 2500 * 52
 
         # Bi-weekly wage
-        record.wage_from = Decimal('5000')
+        record.wage_from = Decimal("5000")
         record.wage_unit = WageUnit.BI_WEEKLY
         self.assertEqual(record.calculate_annual_wage(), 130000.0)  # 5000 * 26
 
     def test_worksite_record_save_calculates_annual_wage(self):
         """Test that save() automatically calculates wage_annual"""
         record = WorksiteRecord(
-            case_number='I-200-22222-2222',
+            case_number="I-200-22222-2222",
             visa_program=VisaProgram.H1B,
-            worksite_city='Austin',
-            worksite_state='TX',
-            job_title='Developer',
-            wage_from=Decimal('100'),
+            worksite_city="Austin",
+            worksite_state="TX",
+            job_title="Developer",
+            wage_from=Decimal("100"),
             wage_unit=WageUnit.HOUR,
-            fiscal_year=2024
+            fiscal_year=2024,
         )
         record.save()
 
@@ -95,58 +95,48 @@ class TestWorksiteRecord(TestCase):
     def test_worksite_record_str_representation(self):
         """Test string representation of WorksiteRecord"""
         record = WorksiteRecord.objects.create(
-            case_number='I-200-33333-3333',
+            case_number="I-200-33333-3333",
             visa_program=VisaProgram.H1B,
-            worksite_city='New York',
-            worksite_state='NY',
-            job_title='Data Scientist',
-            fiscal_year=2024
+            worksite_city="New York",
+            worksite_state="NY",
+            job_title="Data Scientist",
+            fiscal_year=2024,
         )
 
-        self.assertIn('I-200-33333-3333', str(record))
-        self.assertIn('New York', str(record))
-        self.assertIn('NY', str(record))
-        self.assertIn('Data Scientist', str(record))
+        self.assertIn("I-200-33333-3333", str(record))
+        self.assertIn("New York", str(record))
+        self.assertIn("NY", str(record))
+        self.assertIn("Data Scientist", str(record))
 
     def test_worksite_record_str_without_city(self):
         """Test string representation when city is missing"""
         record = WorksiteRecord.objects.create(
-            case_number='I-200-44444-4444',
+            case_number="I-200-44444-4444",
             visa_program=VisaProgram.H1B,
-            worksite_state='CA',
-            job_title='Manager',
-            fiscal_year=2024
+            worksite_state="CA",
+            job_title="Manager",
+            fiscal_year=2024,
         )
 
-        self.assertIn('I-200-44444-4444', str(record))
-        self.assertIn('CA', str(record))
+        self.assertIn("I-200-44444-4444", str(record))
+        self.assertIn("CA", str(record))
 
     def test_worksite_record_unique_case_number(self):
         """Test that case_number must be unique"""
         WorksiteRecord.objects.create(
-            case_number='I-200-55555-5555',
+            case_number="I-200-55555-5555",
             visa_program=VisaProgram.H1B,
-            worksite_state='WA',
-            job_title='Engineer',
-            fiscal_year=2024
+            worksite_state="WA",
+            job_title="Engineer",
+            fiscal_year=2024,
         )
 
         # Attempting to create duplicate should raise IntegrityError
         with self.assertRaises(Exception):  # IntegrityError
             WorksiteRecord.objects.create(
-                case_number='I-200-55555-5555',
+                case_number="I-200-55555-5555",
                 visa_program=VisaProgram.H1B,
-                worksite_state='CA',
-                job_title='Another Engineer',
-                fiscal_year=2024
+                worksite_state="CA",
+                job_title="Another Engineer",
+                fiscal_year=2024,
             )
-
-
-
-
-
-
-
-
-
-

@@ -5,95 +5,315 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0009_merge_0006_0008'),
+        ("models", "0009_merge_0006_0008"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='WorksiteRecord',
+            name="WorksiteRecord",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('case_number', models.CharField(db_index=True, help_text='DOL case number (unique identifier)', max_length=50, unique=True)),
-                ('visa_program', models.IntegerField(choices=[(0, 'H-1B (Specialty Occupation)'), (1, 'H-1B1 (Chile/Singapore)'), (2, 'E-3 (Australia)'), (3, 'PERM (Permanent Labor Certification)')], db_index=True, help_text='Visa program type (H-1B, PERM, etc.)')),
-                ('case_status', models.IntegerField(blank=True, choices=[(0, 'Certified'), (1, 'Denied'), (2, 'Withdrawn'), (3, 'Certified-Withdrawn')], help_text='Case status (Certified, Denied, etc.)', null=True)),
-                ('worksite_city', models.CharField(blank=True, db_index=True, help_text='Worksite city', max_length=100)),
-                ('worksite_state', models.CharField(blank=True, db_index=True, help_text='Worksite state (2-letter code)', max_length=2)),
-                ('worksite_zip', models.CharField(blank=True, help_text='Worksite ZIP code (if available)', max_length=10)),
-                ('job_title', models.CharField(db_index=True, help_text='Job title', max_length=255)),
-                ('soc_code', models.CharField(blank=True, db_index=True, help_text='Standard Occupational Classification code', max_length=20)),
-                ('soc_title', models.CharField(blank=True, help_text='SOC occupation title', max_length=255)),
-                ('wage_from', models.DecimalField(blank=True, decimal_places=2, help_text='Wage rate (from)', max_digits=12, null=True)),
-                ('wage_to', models.DecimalField(blank=True, decimal_places=2, help_text='Wage rate (to)', max_digits=12, null=True)),
-                ('wage_unit', models.CharField(blank=True, choices=[('year', 'Per Year'), ('month', 'Per Month'), ('bi_weekly', 'Bi-Weekly'), ('week', 'Per Week'), ('hour', 'Per Hour')], help_text='Wage unit (hour, year, etc.)', max_length=20)),
-                ('wage_annual', models.DecimalField(blank=True, db_index=True, decimal_places=2, help_text='Annual wage (calculated)', max_digits=12, null=True)),
-                ('prevailing_wage', models.DecimalField(blank=True, decimal_places=2, help_text='Prevailing wage for the position', max_digits=12, null=True)),
-                ('prevailing_wage_unit', models.CharField(blank=True, choices=[('year', 'Per Year'), ('month', 'Per Month'), ('bi_weekly', 'Bi-Weekly'), ('week', 'Per Week'), ('hour', 'Per Hour')], help_text='Prevailing wage unit', max_length=20)),
-                ('case_submitted', models.DateField(blank=True, db_index=True, help_text='Date case was submitted', null=True)),
-                ('decision_date', models.DateField(blank=True, db_index=True, help_text='Date of decision', null=True)),
-                ('employment_start', models.DateField(blank=True, help_text='Employment start date', null=True)),
-                ('employment_end', models.DateField(blank=True, help_text='Employment end date', null=True)),
-                ('fiscal_year', models.IntegerField(db_index=True, help_text='Fiscal year of the record')),
-                ('source_file', models.CharField(blank=True, help_text='Source file name', max_length=255)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "case_number",
+                    models.CharField(
+                        db_index=True,
+                        help_text="DOL case number (unique identifier)",
+                        max_length=50,
+                        unique=True,
+                    ),
+                ),
+                (
+                    "visa_program",
+                    models.IntegerField(
+                        choices=[
+                            (0, "H-1B (Specialty Occupation)"),
+                            (1, "H-1B1 (Chile/Singapore)"),
+                            (2, "E-3 (Australia)"),
+                            (3, "PERM (Permanent Labor Certification)"),
+                        ],
+                        db_index=True,
+                        help_text="Visa program type (H-1B, PERM, etc.)",
+                    ),
+                ),
+                (
+                    "case_status",
+                    models.IntegerField(
+                        blank=True,
+                        choices=[
+                            (0, "Certified"),
+                            (1, "Denied"),
+                            (2, "Withdrawn"),
+                            (3, "Certified-Withdrawn"),
+                        ],
+                        help_text="Case status (Certified, Denied, etc.)",
+                        null=True,
+                    ),
+                ),
+                (
+                    "worksite_city",
+                    models.CharField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Worksite city",
+                        max_length=100,
+                    ),
+                ),
+                (
+                    "worksite_state",
+                    models.CharField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Worksite state (2-letter code)",
+                        max_length=2,
+                    ),
+                ),
+                (
+                    "worksite_zip",
+                    models.CharField(
+                        blank=True,
+                        help_text="Worksite ZIP code (if available)",
+                        max_length=10,
+                    ),
+                ),
+                (
+                    "job_title",
+                    models.CharField(
+                        db_index=True, help_text="Job title", max_length=255
+                    ),
+                ),
+                (
+                    "soc_code",
+                    models.CharField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Standard Occupational Classification code",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "soc_title",
+                    models.CharField(
+                        blank=True, help_text="SOC occupation title", max_length=255
+                    ),
+                ),
+                (
+                    "wage_from",
+                    models.DecimalField(
+                        blank=True,
+                        decimal_places=2,
+                        help_text="Wage rate (from)",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                (
+                    "wage_to",
+                    models.DecimalField(
+                        blank=True,
+                        decimal_places=2,
+                        help_text="Wage rate (to)",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                (
+                    "wage_unit",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("year", "Per Year"),
+                            ("month", "Per Month"),
+                            ("bi_weekly", "Bi-Weekly"),
+                            ("week", "Per Week"),
+                            ("hour", "Per Hour"),
+                        ],
+                        help_text="Wage unit (hour, year, etc.)",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "wage_annual",
+                    models.DecimalField(
+                        blank=True,
+                        db_index=True,
+                        decimal_places=2,
+                        help_text="Annual wage (calculated)",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                (
+                    "prevailing_wage",
+                    models.DecimalField(
+                        blank=True,
+                        decimal_places=2,
+                        help_text="Prevailing wage for the position",
+                        max_digits=12,
+                        null=True,
+                    ),
+                ),
+                (
+                    "prevailing_wage_unit",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("year", "Per Year"),
+                            ("month", "Per Month"),
+                            ("bi_weekly", "Bi-Weekly"),
+                            ("week", "Per Week"),
+                            ("hour", "Per Hour"),
+                        ],
+                        help_text="Prevailing wage unit",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "case_submitted",
+                    models.DateField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Date case was submitted",
+                        null=True,
+                    ),
+                ),
+                (
+                    "decision_date",
+                    models.DateField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Date of decision",
+                        null=True,
+                    ),
+                ),
+                (
+                    "employment_start",
+                    models.DateField(
+                        blank=True, help_text="Employment start date", null=True
+                    ),
+                ),
+                (
+                    "employment_end",
+                    models.DateField(
+                        blank=True, help_text="Employment end date", null=True
+                    ),
+                ),
+                (
+                    "fiscal_year",
+                    models.IntegerField(
+                        db_index=True, help_text="Fiscal year of the record"
+                    ),
+                ),
+                (
+                    "source_file",
+                    models.CharField(
+                        blank=True, help_text="Source file name", max_length=255
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'db_table': 'worksite_record',
-                'ordering': ['-decision_date', '-case_submitted'],
+                "db_table": "worksite_record",
+                "ordering": ["-decision_date", "-case_submitted"],
             },
         ),
         migrations.RenameIndex(
-            model_name='visacutoffdate',
-            new_name='visa_cutoff_visa_cl_4775b9_idx',
-            old_name='visa_cutoff_visa_cl_4a8b2c_idx',
+            model_name="visacutoffdate",
+            new_name="visa_cutoff_visa_cl_4775b9_idx",
+            old_name="visa_cutoff_visa_cl_4a8b2c_idx",
         ),
         migrations.RenameIndex(
-            model_name='visacutoffdate',
-            new_name='visa_cutoff_visa_ca_3ca793_idx',
-            old_name='visa_cutoff_visa_ca_5c9d3e_idx',
+            model_name="visacutoffdate",
+            new_name="visa_cutoff_visa_ca_3ca793_idx",
+            old_name="visa_cutoff_visa_ca_5c9d3e_idx",
         ),
         migrations.AlterField(
-            model_name='datasource',
-            name='source_type',
-            field=models.CharField(choices=[('lca', 'LCA (H-1B)'), ('perm', 'PERM'), ('worksite', 'Worksite Location Data'), ('bulletin', 'Visa Bulletin')], help_text='Type of data source within domain', max_length=20),
+            model_name="datasource",
+            name="source_type",
+            field=models.CharField(
+                choices=[
+                    ("lca", "LCA (H-1B)"),
+                    ("perm", "PERM"),
+                    ("worksite", "Worksite Location Data"),
+                    ("bulletin", "Visa Bulletin"),
+                ],
+                help_text="Type of data source within domain",
+                max_length=20,
+            ),
         ),
         migrations.AddField(
-            model_name='worksiterecord',
-            name='ingest_version',
-            field=models.ForeignKey(blank=True, help_text='Ingest version this record belongs to (for rollback)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='worksite_records', to='models.ingestversion'),
+            model_name="worksiterecord",
+            name="ingest_version",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Ingest version this record belongs to (for rollback)",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="worksite_records",
+                to="models.ingestversion",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['worksite_state', 'fiscal_year'], name='worksite_re_worksit_e32810_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["worksite_state", "fiscal_year"],
+                name="worksite_re_worksit_e32810_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['worksite_city', 'worksite_state'], name='worksite_re_worksit_d61437_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["worksite_city", "worksite_state"],
+                name="worksite_re_worksit_d61437_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['job_title', 'worksite_state'], name='worksite_re_job_tit_d51008_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["job_title", "worksite_state"],
+                name="worksite_re_job_tit_d51008_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['soc_code', 'worksite_state'], name='worksite_re_soc_cod_75b493_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["soc_code", "worksite_state"],
+                name="worksite_re_soc_cod_75b493_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['visa_program', 'fiscal_year'], name='worksite_re_visa_pr_152de9_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["visa_program", "fiscal_year"],
+                name="worksite_re_visa_pr_152de9_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['wage_annual'], name='worksite_re_wage_an_60805a_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["wage_annual"], name="worksite_re_wage_an_60805a_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['decision_date'], name='worksite_re_decisio_5b41ac_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["decision_date"], name="worksite_re_decisio_5b41ac_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='worksiterecord',
-            index=models.Index(fields=['fiscal_year', 'decision_date'], name='worksite_re_fiscal__7acf8d_idx'),
+            model_name="worksiterecord",
+            index=models.Index(
+                fields=["fiscal_year", "decision_date"],
+                name="worksite_re_fiscal__7acf8d_idx",
+            ),
         ),
     ]

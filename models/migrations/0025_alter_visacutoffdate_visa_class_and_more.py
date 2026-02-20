@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0024_ingestrejectionstats'),
+        ("models", "0024_ingestrejectionstats"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='visacutoffdate',
-            name='visa_class',
-            field=models.CharField(help_text='F1, F2A, EB1, EB2, etc.', max_length=100),
+            model_name="visacutoffdate",
+            name="visa_class",
+            field=models.CharField(help_text="F1, F2A, EB1, EB2, etc.", max_length=100),
         ),
     ]

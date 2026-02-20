@@ -20,22 +20,22 @@ class TestBatchedUpdatesCaseInsensitive(TestCase):
         # Create test employers with case variations
         # Use different cities to avoid unique constraint violation on (name_normalized, city, state)
         self.emp1 = Employer.objects.create(
-            name='BBC RETAIL AND INTERNET LLC',
-            name_normalized='bbc retail and internet',
-            city='Seattle',
-            state='WA'
+            name="BBC RETAIL AND INTERNET LLC",
+            name_normalized="bbc retail and internet",
+            city="Seattle",
+            state="WA",
         )
         self.emp2 = Employer.objects.create(
-            name='BBC Retail and Internet LLC',
-            name_normalized='bbc retail and internet',
-            city='Portland',
-            state='OR'
+            name="BBC Retail and Internet LLC",
+            name_normalized="bbc retail and internet",
+            city="Portland",
+            state="OR",
         )
         self.emp3 = Employer.objects.create(
-            name='bbc retail and internet llc',
-            name_normalized='bbc retail and internet',
-            city='San Francisco',
-            state='CA'
+            name="bbc retail and internet llc",
+            name_normalized="bbc retail and internet",
+            city="San Francisco",
+            state="CA",
         )
 
     def test_get_or_queue_cluster_case_insensitive_new(self):
@@ -43,26 +43,24 @@ class TestBatchedUpdatesCaseInsensitive(TestCase):
         batched = BatchedUpdates(batch_size=1000, dry_run=False)
 
         # Get clusters for case variations
-        cluster1 = batched.get_or_queue_cluster('BBC RETAIL AND INTERNET LLC')
-        cluster2 = batched.get_or_queue_cluster('BBC Retail and Internet LLC')
-        cluster3 = batched.get_or_queue_cluster('bbc retail and internet llc')
+        cluster1 = batched.get_or_queue_cluster("BBC RETAIL AND INTERNET LLC")
+        cluster2 = batched.get_or_queue_cluster("BBC Retail and Internet LLC")
+        cluster3 = batched.get_or_queue_cluster("bbc retail and internet llc")
 
         # All should return the same cluster instance
         self.assertIs(cluster1, cluster2)
         self.assertIs(cluster2, cluster3)
 
         # First case wins for canonical_name (preserves original casing)
-        self.assertEqual(cluster1.canonical_name, 'BBC RETAIL AND INTERNET LLC')
+        self.assertEqual(cluster1.canonical_name, "BBC RETAIL AND INTERNET LLC")
 
     def test_get_or_queue_cluster_case_insensitive_existing(self):
         """Test that get_or_queue_cluster finds existing cluster regardless of case"""
         # Create a unique cluster name to avoid conflicts with production data
-        unique_name = f'TEST_COMPANY_UNIQUE_{id(self)}'
+        unique_name = f"TEST_COMPANY_UNIQUE_{id(self)}"
 
         # Create an existing cluster with one case
-        existing_cluster = EmployerCluster.objects.create(
-            canonical_name=unique_name
-        )
+        existing_cluster = EmployerCluster.objects.create(canonical_name=unique_name)
 
         # Create new BatchedUpdates (will load existing clusters)
         batched = BatchedUpdates(batch_size=1000, dry_run=False)
@@ -85,17 +83,23 @@ class TestBatchedUpdatesCaseInsensitive(TestCase):
         batched = BatchedUpdates(batch_size=1000, dry_run=False)
 
         # Assign employers to clusters with case variations
-        self.emp1.canonical_cluster = batched.get_or_queue_cluster('BBC RETAIL AND INTERNET LLC')
+        self.emp1.canonical_cluster = batched.get_or_queue_cluster(
+            "BBC RETAIL AND INTERNET LLC"
+        )
         batched.add_employer_update(self.emp1)
 
-        self.emp2.canonical_cluster = batched.get_or_queue_cluster('BBC Retail and Internet LLC')
+        self.emp2.canonical_cluster = batched.get_or_queue_cluster(
+            "BBC Retail and Internet LLC"
+        )
         batched.add_employer_update(self.emp2)
 
-        self.emp3.canonical_cluster = batched.get_or_queue_cluster('bbc retail and internet llc')
+        self.emp3.canonical_cluster = batched.get_or_queue_cluster(
+            "bbc retail and internet llc"
+        )
         batched.add_employer_update(self.emp3)
 
         # Flush all updates
-        batched.flush_all(employer_fields=['canonical_cluster'])
+        batched.flush_all(employer_fields=["canonical_cluster"])
 
         # Reload employers
         self.emp1.refresh_from_db()
@@ -109,11 +113,10 @@ class TestBatchedUpdatesCaseInsensitive(TestCase):
 
         # Only one cluster should have been created
         cluster_count = EmployerCluster.objects.filter(
-            canonical_name__iexact='BBC RETAIL AND INTERNET LLC'
+            canonical_name__iexact="BBC RETAIL AND INTERNET LLC"
         ).count()
         self.assertEqual(cluster_count, 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-

@@ -147,7 +147,11 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     )
     nginx_result = runner.run_shell(nginx_cmd, timeout_sec=30)
     if nginx_result.returncode != 0:
-        logger.warning("nginx default-server setup had non-zero exit %s (stderr: %s)", nginx_result.returncode, nginx_result.stderr)
+        logger.warning(
+            "nginx default-server setup had non-zero exit %s (stderr: %s)",
+            nginx_result.returncode,
+            nginx_result.stderr,
+        )
     else:
         logger.info("Nginx started/reloaded with default-server block for IP access")
 
@@ -180,7 +184,9 @@ def setup_https_on_remote(
     Returns True on success.
     """
     if domains is None:
-        raw = os.environ.get("REFRESH_HTTPS_DOMAINS", "visa-bulletin.us,www.visa-bulletin.us").strip()
+        raw = os.environ.get(
+            "REFRESH_HTTPS_DOMAINS", "visa-bulletin.us,www.visa-bulletin.us"
+        ).strip()
         domains = [d.strip() for d in raw.split(",") if d.strip()]
     if isinstance(domains, str):
         domains = [d.strip() for d in domains.split(",") if d.strip()]

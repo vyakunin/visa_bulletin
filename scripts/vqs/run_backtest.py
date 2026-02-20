@@ -15,10 +15,11 @@ import argparse
 import json
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
 from django_config.logging_config import setup_logging
@@ -62,9 +63,7 @@ def run_backtest(
     """
     out: list[dict] = []
     for t in reference_dates:
-        facts = list(
-            RawFactsLedger.objects.filter(publication_date__lte=t)
-        )
+        facts = list(RawFactsLedger.objects.filter(publication_date__lte=t))
         _, _, results, _ = predict_next_bulletin_and_maturity(
             knowledge_date=t,
             visa_class=visa_class,
@@ -94,20 +93,28 @@ def run_backtest(
                 error_note = "no_prediction"
             elif actual_cutoff is None:
                 error_note = "no_actual"
-            out.append({
-                "reference_date": t.isoformat(),
-                "horizon_months": h,
-                "target_month": target_month.isoformat(),
-                "predicted_cutoff": pred_cutoff.isoformat() if pred_cutoff else None,
-                "actual_cutoff": actual_cutoff.isoformat() if actual_cutoff else None,
-                "mae_days": mae_days,
-                "error_note": error_note,
-            })
+            out.append(
+                {
+                    "reference_date": t.isoformat(),
+                    "horizon_months": h,
+                    "target_month": target_month.isoformat(),
+                    "predicted_cutoff": pred_cutoff.isoformat()
+                    if pred_cutoff
+                    else None,
+                    "actual_cutoff": actual_cutoff.isoformat()
+                    if actual_cutoff
+                    else None,
+                    "mae_days": mae_days,
+                    "error_note": error_note,
+                }
+            )
     return out
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="VQS backtest: predicted vs actual cutoffs")
+    parser = argparse.ArgumentParser(
+        description="VQS backtest: predicted vs actual cutoffs"
+    )
     parser.add_argument(
         "--reference-dates",
         nargs="+",
@@ -122,10 +129,20 @@ def main() -> None:
         help="Horizons in months (default: 1 3 6)",
     )
     parser.add_argument("--visa-class", default="2nd", help="Visa class (default: 2nd)")
-    parser.add_argument("--country", type=int, default=3, help="Country enum value (default: 3 = India)")
-    parser.add_argument("--action-type", default="final_action", help="Action type (default: final_action)")
-    parser.add_argument("--monthly-supply", type=int, default=None,
-                        help="Override monthly supply (default: dynamic per-country calculation)")
+    parser.add_argument(
+        "--country", type=int, default=3, help="Country enum value (default: 3 = India)"
+    )
+    parser.add_argument(
+        "--action-type",
+        default="final_action",
+        help="Action type (default: final_action)",
+    )
+    parser.add_argument(
+        "--monthly-supply",
+        type=int,
+        default=None,
+        help="Override monthly supply (default: dynamic per-country calculation)",
+    )
     parser.add_argument("--output", choices=["json", "text"], default="text")
     args = parser.parse_args()
 

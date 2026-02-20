@@ -16,15 +16,15 @@ _config = EmployerClusteringConfig()
 def _get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
     """
     Generate multiple bucket candidates for fuzzy matching.
-    
+
     This helps catch typos and variations that normalize to different buckets.
     Returns a set of bucket keys that should be checked for potential matches.
-    
+
     Strategy:
     1. Exact normalized name (primary bucket)
     2. Word initials (catches typos like "CONNEC" vs "Connect")
     3. First 3 chars + last 3 chars (catches variations in middle)
-    
+
     Returns: Set of bucket candidate strings
     """
     candidates = {normalized_name}
@@ -33,7 +33,9 @@ def _get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
     # This catches typos in the middle of words
     words = normalized_name.split()
     if len(words) >= 2:
-        initials = ''.join(w[0] if w else '' for w in words[:5])  # First letter of first 5 words
+        initials = "".join(
+            w[0] if w else "" for w in words[:5]
+        )  # First letter of first 5 words
         if len(initials) >= 2:  # Only use if at least 2 words
             candidates.add(initials)
 
@@ -50,9 +52,9 @@ def _get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
 def _extract_structural_words(name: str) -> set[str]:
     """
     Extract structural/generic words that could distinguish companies.
-    
+
     These are words that, if different between two names, suggest different entities.
-    
+
     Note: This includes GENERIC_WORDS plus additional distinguishing words (geographic,
     distinguishing generic words, etc.) that can help identify different companies.
     """
@@ -64,16 +66,22 @@ def _extract_structural_words(name: str) -> set[str]:
     # Words that distinguish company types/structures
     # Includes GENERIC_WORDS (which can distinguish when different) plus additional words
     STRUCTURAL_WORDS = (
-        GENERIC_WORDS | DISTINGUISHING_GENERIC_WORDS | {
-            'north', 'south', 'east', 'west',  # Geographic qualifiers can distinguish
-            'america', 'americas',  # "North America" vs other regions
+        GENERIC_WORDS
+        | DISTINGUISHING_GENERIC_WORDS
+        | {
+            "north",
+            "south",
+            "east",
+            "west",  # Geographic qualifiers can distinguish
+            "america",
+            "americas",  # "North America" vs other regions
         }
     )
 
     # Normalize and extract words
     normalized = name.lower()
     # Remove punctuation, keep words
-    words = set(re.findall(r'\b\w+\b', normalized))
+    words = set(re.findall(r"\b\w+\b", normalized))
 
     # Return intersection with structural words
     return words & STRUCTURAL_WORDS
@@ -82,7 +90,7 @@ def _extract_structural_words(name: str) -> set[str]:
 def _has_conflicting_structural_words(name1: str, name2: str) -> bool:
     """
     Check if two names have conflicting structural words that suggest different entities.
-    
+
     Examples:
     - "Macro Consultants" vs "Macro International" → True (Consultants ≠ International)
     - "SYNAPSE GROUP" vs "SYNAPSE TECHNOLOGIES" → True (Group ≠ Technologies)
@@ -94,25 +102,37 @@ def _has_conflicting_structural_words(name1: str, name2: str) -> bool:
     # Equivalent corporate suffixes - these don't conflict (all mean "company")
     # Use subset of GENERIC_WORDS for corporate suffixes
     equivalent_suffixes = {
-        'corporation', 'corp', 'incorporated', 'inc', 'llc', 'limited', 'ltd', 'company', 'co'
+        "corporation",
+        "corp",
+        "incorporated",
+        "inc",
+        "llc",
+        "limited",
+        "ltd",
+        "company",
+        "co",
     }  # Subset of GENERIC_WORDS - corporate entity types
 
     # Equivalent word variants (singular/plural, verb forms, etc.)
     # PRECISION FIX: Reduced equivalent variants - many of these should actually conflict
     # Only keep truly equivalent variants (singular/plural, verb forms of same word)
     equivalent_variants = [
-        {'consultants', 'consulting', 'consultant'},  # Same concept: consulting business
-        {'technologies', 'technology', 'tech'},  # Same concept: tech company
-        {'industries', 'industry'},  # Same concept: industry
-        {'enterprises', 'enterprise'},  # Same concept: enterprise
-        {'holdings', 'holding'},  # Same concept: holding company
-        {'groups', 'group'},  # Same concept: group
-        {'solutions', 'solution'},  # Same concept: solution provider
-        {'services', 'service'},  # Same concept: service provider
-        {'systems', 'system'},  # Same concept: system provider
-        {'america', 'americas'},  # Same concept: geographic region
-        {'us', 'usa'},  # Same concept: United States (BBC News US vs BBC News USA)
-        {'global', 'international'},  # Same concept: worldwide operations
+        {
+            "consultants",
+            "consulting",
+            "consultant",
+        },  # Same concept: consulting business
+        {"technologies", "technology", "tech"},  # Same concept: tech company
+        {"industries", "industry"},  # Same concept: industry
+        {"enterprises", "enterprise"},  # Same concept: enterprise
+        {"holdings", "holding"},  # Same concept: holding company
+        {"groups", "group"},  # Same concept: group
+        {"solutions", "solution"},  # Same concept: solution provider
+        {"services", "service"},  # Same concept: service provider
+        {"systems", "system"},  # Same concept: system provider
+        {"america", "americas"},  # Same concept: geographic region
+        {"us", "usa"},  # Same concept: United States (BBC News US vs BBC News USA)
+        {"global", "international"},  # Same concept: worldwide operations
     ]
 
     # PRECISION FIX: Add conflicting word pairs that indicate different companies
@@ -120,15 +140,15 @@ def _has_conflicting_structural_words(name1: str, name2: str) -> bool:
     # Format: each set contains words that conflict with each other
     conflicting_word_groups = [
         # Business type conflicts - these indicate different company types
-        {'management', 'holdings'},  # Management company vs holding company
-        {'management', 'corporation'},  # Management vs corporation (when both present)
-        {'technologies', 'consulting'},  # Tech company vs consulting firm
-        {'technologies', 'partners'},  # Tech company vs partnership
-        {'consulting', 'partners'},  # Consulting vs partnership
-        {'management', 'partners'},  # Management vs partnership
+        {"management", "holdings"},  # Management company vs holding company
+        {"management", "corporation"},  # Management vs corporation (when both present)
+        {"technologies", "consulting"},  # Tech company vs consulting firm
+        {"technologies", "partners"},  # Tech company vs partnership
+        {"consulting", "partners"},  # Consulting vs partnership
+        {"management", "partners"},  # Management vs partnership
         # Industry/domain conflicts
-        {'capital', 'holdings'},  # Capital management vs holdings
-        {'capital', 'partners'},  # Capital vs partnership
+        {"capital", "holdings"},  # Capital management vs holdings
+        {"capital", "partners"},  # Capital vs partnership
     ]
 
     # Normalize: replace equivalent words with a canonical form
@@ -177,21 +197,24 @@ def _check_hyphen_variation(
 ) -> tuple[bool, float, str] | None:
     """
     Check if names are hyphen variations (e.g., "HI-TEK" vs "HITEK").
-    
+
     Returns: (is_match, confidence, reason) if hyphen variation detected, None otherwise
     """
-    name1_has_hyphen = '-' in employer1.name
-    name2_has_hyphen = '-' in employer2.name
-    is_hyphen_variation = (name1_has_hyphen and not name2_has_hyphen) or (name2_has_hyphen and not name1_has_hyphen)
+    name1_has_hyphen = "-" in employer1.name
+    name2_has_hyphen = "-" in employer2.name
+    is_hyphen_variation = (name1_has_hyphen and not name2_has_hyphen) or (
+        name2_has_hyphen and not name1_has_hyphen
+    )
 
     if not (is_hyphen_variation and norm1 == norm2):
         return None
 
     from lib.utils.location_utils import normalize_state_code
+
     state1 = normalize_state_code(employer1.state)
     state2 = normalize_state_code(employer2.state)
-    city1 = (employer1.city or '').upper().strip()
-    city2 = (employer2.city or '').upper().strip()
+    city1 = (employer1.city or "").upper().strip()
+    city2 = (employer2.city or "").upper().strip()
 
     if state1 and state2 and state1 == state2:
         if city1 and city2 and city1 == city2:
@@ -202,9 +225,17 @@ def _check_hyphen_variation(
         if city1 and city2 and city1 == city2:
             return (True, 0.95, "Hyphen variation with same city (state missing)")
         else:
-            return (False, 0.0, "Hyphen variation with different/missing locations - likely different companies")
+            return (
+                False,
+                0.0,
+                "Hyphen variation with different/missing locations - likely different companies",
+            )
     else:
-        return (False, 0.0, "Hyphen variation with different states - likely different companies")
+        return (
+            False,
+            0.0,
+            "Hyphen variation with different states - likely different companies",
+        )
 
 
 def _check_exact_match(
@@ -212,7 +243,7 @@ def _check_exact_match(
 ) -> tuple[bool, float, str] | None:
     """
     Check if names match exactly after normalization.
-    
+
     Returns: (is_match, confidence, reason) if exact match, None otherwise
     """
     if norm1 != norm2:
@@ -224,14 +255,14 @@ def _check_exact_match(
     words1 = norm1.split()
     words2 = norm2.split()
 
-    is_very_generic = (
-        any(word in VERY_GENERIC_WORDS for word in words1) or
-        any(word in VERY_GENERIC_WORDS for word in words2)
+    is_very_generic = any(word in VERY_GENERIC_WORDS for word in words1) or any(
+        word in VERY_GENERIC_WORDS for word in words2
     )
 
     is_single_word_generic = (
-        len(words1) == 1 and len(words2) == 1 and
-        (words1[0] in VERY_GENERIC_WORDS or words2[0] in VERY_GENERIC_WORDS)
+        len(words1) == 1
+        and len(words2) == 1
+        and (words1[0] in VERY_GENERIC_WORDS or words2[0] in VERY_GENERIC_WORDS)
     )
 
     if not (is_very_generic or is_single_word_generic):
@@ -239,20 +270,36 @@ def _check_exact_match(
 
     state1 = normalize_state_code(employer1.state)
     state2 = normalize_state_code(employer2.state)
-    city1 = (employer1.city or '').upper().strip()
-    city2 = (employer2.city or '').upper().strip()
+    city1 = (employer1.city or "").upper().strip()
+    city2 = (employer2.city or "").upper().strip()
 
     if state1 and state2 and state1 == state2:
         return (True, 1.0, "Exact normalized name match (same state)")
     elif not state1 or not state2:
         if city1 and city2 and city1 == city2:
-            return (True, 0.90, "Exact normalized name match (same city, state missing - lower confidence)")
+            return (
+                True,
+                0.90,
+                "Exact normalized name match (same city, state missing - lower confidence)",
+            )
         elif city1 and city2:
-            return (True, 0.85, "Exact normalized name match (cities differ, state missing - lower confidence)")
+            return (
+                True,
+                0.85,
+                "Exact normalized name match (cities differ, state missing - lower confidence)",
+            )
         else:
-            return (True, 0.80, "Exact normalized name match (location data missing - very low confidence)")
+            return (
+                True,
+                0.80,
+                "Exact normalized name match (location data missing - very low confidence)",
+            )
     else:
-        return (False, 0.0, f"Exact normalized name match but different states ({state1} vs {state2}) - very generic name requires same state")
+        return (
+            False,
+            0.0,
+            f"Exact normalized name match but different states ({state1} vs {state2}) - very generic name requires same state",
+        )
 
 
 def _check_substring_match(
@@ -281,33 +328,58 @@ def _check_substring_match(
     qualifiers2 = {q for q in GEOGRAPHIC_QUALIFIERS if q in name2_lower}
 
     if (qualifiers1 and not qualifiers2) or (qualifiers2 and not qualifiers1):
-        return (False, 0.0, "Substring match rejected: geographic qualifiers differ (indicates different entities)")
+        return (
+            False,
+            0.0,
+            "Substring match rejected: geographic qualifiers differ (indicates different entities)",
+        )
     if qualifiers1 and qualifiers2 and qualifiers1 != qualifiers2:
-        return (False, 0.0, "Substring match rejected: different geographic qualifiers (indicates different entities)")
+        return (
+            False,
+            0.0,
+            "Substring match rejected: different geographic qualifiers (indicates different entities)",
+        )
 
     has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
     if has_conflict:
-        return (False, 0.0, "Substring match rejected: conflicting structural words indicate different entities")
+        return (
+            False,
+            0.0,
+            "Substring match rejected: conflicting structural words indicate different entities",
+        )
 
     longer = norm1 if len(norm1) > len(norm2) else norm2
     shorter = norm1 if len(norm1) <= len(norm2) else norm2
 
     if longer.startswith(shorter):
-        diff = longer[len(shorter):].strip()
+        diff = longer[len(shorter) :].strip()
         from lib.business.salary.generic_words import GENERIC_WORDS
+
         diff_words = set(diff.split())
 
         if diff_words.issubset(GENERIC_WORDS) or not diff_words:
-            return (True, 0.95, f"Substring match: '{shorter}' in '{longer}' (difference: generic words only)")
+            return (
+                True,
+                0.95,
+                f"Substring match: '{shorter}' in '{longer}' (difference: generic words only)",
+            )
 
         # Check if difference is very small (typo/abbreviation like "connec" vs "connect")
         # Small differences (1-3 chars) are likely typos, not different entities
         if len(diff) <= 3:
-            return (True, 0.90, f"Substring match with small difference ({len(diff)} chars)")
+            return (
+                True,
+                0.90,
+                f"Substring match with small difference ({len(diff)} chars)",
+            )
 
         # Difference contains significant non-generic words - these likely indicate different entities
         # (e.g., "bbc" vs "bbc innovation" - "innovation" is significant)
-        return (False, 0.0, f"Substring match rejected: difference contains significant words: {' '.join(diff_words)}")
+        return (
+            False,
+            0.0,
+            f"Substring match rejected: difference contains significant words: {' '.join(diff_words)}",
+        )
 
     # If not a simple prefix/suffix match, reject (e.g., "bbc" in middle of "innovation bbc corporation")
     return (False, 0.0, "Substring match rejected: not a simple prefix/suffix match")
@@ -377,7 +449,11 @@ def match_employers(
     if result is not None:
         return result
     result = _check_similarity_match(
-        employer1, employer2, norm1, norm2, precomputed_similarity=precomputed_similarity
+        employer1,
+        employer2,
+        norm1,
+        norm2,
+        precomputed_similarity=precomputed_similarity,
     )
     if result is not None:
         return result
@@ -387,7 +463,7 @@ def match_employers(
 def fuzzy_match(employer1: Employer, employer2: Employer) -> tuple[float, str]:
     """
     Fuzzy string matching for ambiguous cases
-    
+
     Returns: (similarity_score, reason)
     - similarity_score: 0.0-1.0 (higher = more similar)
     - reason: Explanation of similarity
@@ -437,17 +513,20 @@ def should_auto_cluster(
     return (confidence >= threshold, confidence, reason)
 
 
-def assign_to_cluster(employer: Employer, auto_approve_threshold: float = 0.95) -> Optional['EmployerCluster']:
+def assign_to_cluster(
+    employer: Employer, auto_approve_threshold: float = 0.95
+) -> Optional["EmployerCluster"]:
     """
     Find existing cluster or create new one for an employer
-    
+
     Searches for existing clusters with similar normalized names.
     If high-confidence match found → assign to existing cluster
     If ambiguous → create new cluster, add to review queue
     If no match → create new cluster
-    
+
     Returns: EmployerCluster instance
     """
     # Delegate to generic framework
-    return clustering_engine.assign_to_cluster(employer, _config, auto_approve_threshold)
-
+    return clustering_engine.assign_to_cluster(
+        employer, _config, auto_approve_threshold
+    )

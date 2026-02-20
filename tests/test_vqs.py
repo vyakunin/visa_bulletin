@@ -2,8 +2,6 @@
 
 from datetime import date, timedelta
 
-import pytest
-
 from lib.business.vqs.demand import build_virtual_queue_snapshot
 from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
 from lib.business.vqs.solver import run_monthly_loop
@@ -65,7 +63,9 @@ class TestBuildVirtualQueueSnapshot:
                 "publication_date": date(2024, 7, 1),
             },
         ]
-        snapshot = build_virtual_queue_snapshot(date(2024, 8, 1), facts, visa_class="2nd", country="India")
+        snapshot = build_virtual_queue_snapshot(
+            date(2024, 8, 1), facts, visa_class="2nd", country="India"
+        )
         assert snapshot.get_total_demand() == 1000
         assert snapshot.get_demand_between(date(2023, 4, 1), date(2023, 4, 30)) == 1000
 
@@ -88,7 +88,9 @@ class TestBuildVirtualQueueSnapshot:
                 "publication_date": date(2024, 7, 1),
             },
         ]
-        snapshot = build_virtual_queue_snapshot(date(2024, 8, 1), facts, visa_class="2nd", country="India")
+        snapshot = build_virtual_queue_snapshot(
+            date(2024, 8, 1), facts, visa_class="2nd", country="India"
+        )
         assert snapshot.get_total_demand() == 500
 
     def test_convolution_uses_perm_lag_when_available(self):
@@ -112,7 +114,9 @@ class TestBuildVirtualQueueSnapshot:
                 "publication_date": date(2024, 7, 1),
             },
         ]
-        snapshot = build_virtual_queue_snapshot(date(2024, 8, 1), facts, visa_class="2nd", country="India")
+        snapshot = build_virtual_queue_snapshot(
+            date(2024, 8, 1), facts, visa_class="2nd", country="India"
+        )
         assert snapshot.get_total_demand() == 1000
         pd_180 = q_start - timedelta(days=180)
         pd_270 = q_start - timedelta(days=270)
@@ -133,7 +137,9 @@ class TestBuildVirtualQueueSnapshot:
                 "publication_date": date(2024, 7, 1),
             },
         ]
-        snapshot = build_virtual_queue_snapshot(date(2024, 8, 1), facts, visa_class="2nd", country="India")
+        snapshot = build_virtual_queue_snapshot(
+            date(2024, 8, 1), facts, visa_class="2nd", country="India"
+        )
         assert snapshot.get_total_demand() == 800
         assert snapshot.get_demand_between(date(2023, 4, 1), date(2023, 4, 30)) == 800
 

@@ -4,15 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0010_worksiterecord_and_more'),
+        ("models", "0010_worksiterecord_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='source_file',
-            field=models.CharField(blank=True, db_index=True, help_text='Source CSV file name', max_length=255),
+            model_name="salaryrecord",
+            name="source_file",
+            field=models.CharField(
+                blank=True,
+                db_index=True,
+                help_text="Source CSV file name",
+                max_length=255,
+            ),
         ),
     ]

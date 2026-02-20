@@ -28,8 +28,8 @@ from datetime import datetime
 from pathlib import Path
 
 # Setup Django early (before any model imports)
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -48,7 +48,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
 
-TARGET_TABLES = ('salary_record', 'worksite_record')
+TARGET_TABLES = ("salary_record", "worksite_record")
 
 
 def _quote_ident(value: str) -> str:
@@ -56,10 +56,12 @@ def _quote_ident(value: str) -> str:
 
 
 def _indexdef_with_if_not_exists(indexdef: str) -> str:
-    if indexdef.startswith('CREATE UNIQUE INDEX '):
-        return indexdef.replace('CREATE UNIQUE INDEX ', 'CREATE UNIQUE INDEX IF NOT EXISTS ', 1)
-    if indexdef.startswith('CREATE INDEX '):
-        return indexdef.replace('CREATE INDEX ', 'CREATE INDEX IF NOT EXISTS ', 1)
+    if indexdef.startswith("CREATE UNIQUE INDEX "):
+        return indexdef.replace(
+            "CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ", 1
+        )
+    if indexdef.startswith("CREATE INDEX "):
+        return indexdef.replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
     return indexdef
 
 
@@ -93,12 +95,12 @@ def _fetch_index_metadata() -> list[dict]:
         rows = cursor.fetchall()
     return [
         {
-            'schema': row[0],
-            'table': row[1],
-            'name': row[2],
-            'indexdef': row[3],
-            'is_unique': bool(row[4]),
-            'is_primary': bool(row[5]),
+            "schema": row[0],
+            "table": row[1],
+            "name": row[2],
+            "indexdef": row[3],
+            "is_unique": bool(row[4]),
+            "is_primary": bool(row[5]),
         }
         for row in rows
     ]
@@ -112,12 +114,12 @@ def _log_index_summary(indexes: list[dict]) -> None:
     logger.info("Index inventory:")
     for index in indexes:
         flags = []
-        if index['is_primary']:
-            flags.append('PRIMARY')
-        if index['is_unique']:
-            flags.append('UNIQUE')
+        if index["is_primary"]:
+            flags.append("PRIMARY")
+        if index["is_unique"]:
+            flags.append("UNIQUE")
         flag_str = f" ({', '.join(flags)})" if flags else ""
-        logger.info("  %s.%s%s", index['table'], index['name'], flag_str)
+        logger.info("  %s.%s%s", index["table"], index["name"], flag_str)
 
 
 def list_indexes() -> None:
@@ -128,15 +130,15 @@ def list_indexes() -> None:
 def _snapshot_path(path_arg: str | None) -> Path:
     if path_arg:
         return Path(path_arg)
-    return get_workspace_dir() / 'data' / 'index_snapshots' / 'salary_indexes.yaml'
+    return get_workspace_dir() / "data" / "index_snapshots" / "salary_indexes.yaml"
 
 
 def _write_snapshot(path: Path, indexes: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = {
-        'generated_at': datetime.utcnow().isoformat(),
-        'tables': list(TARGET_TABLES),
-        'indexes': indexes,
+        "generated_at": datetime.utcnow().isoformat(),
+        "tables": list(TARGET_TABLES),
+        "indexes": indexes,
     }
     path.write_text(yaml.safe_dump(snapshot, sort_keys=False))
     logger.info("Wrote index snapshot to %s", path)
@@ -147,7 +149,7 @@ def _read_snapshot(path: Path) -> list[dict]:
         logger.error("Snapshot file not found: %s", path)
         sys.exit(1)
     snapshot = yaml.safe_load(path.read_text()) or {}
-    indexes = snapshot.get('indexes', [])
+    indexes = snapshot.get("indexes", [])
     if not indexes:
         logger.error("Snapshot file has no indexes to recreate: %s", path)
         sys.exit(1)
@@ -159,8 +161,7 @@ def drop_indexes(snapshot_path: Path, overwrite: bool, force: bool = False) -> N
         _ensure_no_running_ingests()
     indexes = _fetch_index_metadata()
     droppable = [
-        index for index in indexes
-        if not index['is_unique'] and not index['is_primary']
+        index for index in indexes if not index["is_unique"] and not index["is_primary"]
     ]
 
     if not droppable:
@@ -178,9 +179,9 @@ def drop_indexes(snapshot_path: Path, overwrite: bool, force: bool = False) -> N
 
     with connection.cursor() as cursor:
         for index in droppable:
-            schema = _quote_ident(index['schema'])
-            name = _quote_ident(index['name'])
-            logger.info("Dropping index: %s.%s", index['schema'], index['name'])
+            schema = _quote_ident(index["schema"])
+            name = _quote_ident(index["name"])
+            logger.info("Dropping index: %s.%s", index["schema"], index["name"])
             cursor.execute(f"DROP INDEX IF EXISTS {schema}.{name};")
 
     logger.info("Dropped %d non-unique indexes.", len(droppable))
@@ -193,8 +194,8 @@ def recreate_indexes(snapshot_path: Path, force: bool = False) -> None:
 
     with connection.cursor() as cursor:
         for index in indexes:
-            indexdef = _indexdef_with_if_not_exists(index['indexdef'])
-            logger.info("Recreating index: %s.%s", index['table'], index['name'])
+            indexdef = _indexdef_with_if_not_exists(index["indexdef"])
+            logger.info("Recreating index: %s.%s", index["table"], index["name"])
             cursor.execute(indexdef)
 
     logger.info("Recreated %d indexes.", len(indexes))
@@ -219,7 +220,7 @@ def create_clustering_indexes() -> None:
     with connection.cursor() as cursor:
         for indexdef in clustering_indexes:
             # Extract index name from SQL
-            index_name = indexdef.split('EXISTS ')[1].split(' ON ')[0]
+            index_name = indexdef.split("EXISTS ")[1].split(" ON ")[0]
             logger.info("Creating index: %s", index_name)
             cursor.execute(indexdef)
 
@@ -228,38 +229,53 @@ def create_clustering_indexes() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Manage non-unique indexes on salary_record/worksite_record',
+        description="Manage non-unique indexes on salary_record/worksite_record",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     action_group = parser.add_mutually_exclusive_group(required=True)
-    action_group.add_argument('--list', action='store_true', help='List indexes for target tables')
-    action_group.add_argument('--drop', action='store_true', help='Drop non-unique indexes')
-    action_group.add_argument('--recreate', action='store_true', help='Recreate dropped indexes from snapshot')
-    action_group.add_argument('--create-clustering-indexes', action='store_true',
-                              help='Create minimal indexes required for clustering (job_title, employer_name)')
-    parser.add_argument(
-        '--snapshot',
-        help='Path to snapshot YAML (default: data/index_snapshots/salary_indexes.yaml)',
+    action_group.add_argument(
+        "--list", action="store_true", help="List indexes for target tables"
+    )
+    action_group.add_argument(
+        "--drop", action="store_true", help="Drop non-unique indexes"
+    )
+    action_group.add_argument(
+        "--recreate", action="store_true", help="Recreate dropped indexes from snapshot"
+    )
+    action_group.add_argument(
+        "--create-clustering-indexes",
+        action="store_true",
+        help="Create minimal indexes required for clustering (job_title, employer_name)",
     )
     parser.add_argument(
-        '--overwrite',
-        action='store_true',
-        help='Overwrite existing snapshot when dropping indexes',
+        "--snapshot",
+        help="Path to snapshot YAML (default: data/index_snapshots/salary_indexes.yaml)",
     )
     parser.add_argument(
-        '--force',
-        action='store_true',
-        help='Skip check for running ingests (use only in controlled refresh pipeline)',
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing snapshot when dropping indexes",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip check for running ingests (use only in controlled refresh pipeline)",
     )
 
     args = parser.parse_args()
     snapshot_path = _snapshot_path(args.snapshot)
 
     script_logger.log_call(
-        args={'list': args.list, 'drop': args.drop, 'recreate': args.recreate,
-              'create_clustering_indexes': args.create_clustering_indexes,
-              'snapshot': str(snapshot_path), 'overwrite': args.overwrite, 'force': args.force},
-        context='Manage salary/worksite indexes for bulk ingest',
+        args={
+            "list": args.list,
+            "drop": args.drop,
+            "recreate": args.recreate,
+            "create_clustering_indexes": args.create_clustering_indexes,
+            "snapshot": str(snapshot_path),
+            "overwrite": args.overwrite,
+            "force": args.force,
+        },
+        context="Manage salary/worksite indexes for bulk ingest",
     )
 
     if args.list:
@@ -276,5 +292,5 @@ def main() -> None:
         return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

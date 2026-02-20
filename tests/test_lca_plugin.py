@@ -49,49 +49,53 @@ class TestLCAPluginAttributes:
 class TestLCADiscovery:
     """Tests for source discovery"""
 
-    @patch('lib.ingest.plugins.dol_lca.fetch_page')
+    @patch("lib.ingest.plugins.dol_lca.fetch_page")
     def test_discover_sources_finds_lca_files(self, mock_fetch):
         """Test source discovery finds LCA files"""
         plugin = H1BSalaryDataSourcePlugin()
 
         # Mock HTML response with LCA links
-        mock_fetch.return_value = '''
+        mock_fetch.return_value = """
         <html>
         <a href="LCA_Disclosure_Data_FY2024.xlsx">Download</a>
         <a href="LCA_FY2013.xlsx">Download</a>
         <a href="PERM_Disclosure_Data_FY2024.xlsx">Download</a>
         </html>
-        '''
+        """
 
         sources = plugin.discover_sources()
 
         # Should find LCA files (not PERM files)
-        lca_sources = [s for s in sources if 'LCA' in s.url and 'worksite' not in s.url.lower()]
+        lca_sources = [
+            s for s in sources if "LCA" in s.url and "worksite" not in s.url.lower()
+        ]
         assert len(lca_sources) == 2
         assert all(s.domain == DataDomain.DOL.value for s in lca_sources)
         assert all(s.source_type == SourceType.LCA.value for s in lca_sources)
 
-    @patch('lib.ingest.plugins.dol_lca.fetch_page')
+    @patch("lib.ingest.plugins.dol_lca.fetch_page")
     def test_discover_sources_finds_worksite_files(self, mock_fetch):
         """Test source discovery finds worksite files"""
         plugin = H1BSalaryDataSourcePlugin()
 
         # Mock HTML response with worksite links
-        mock_fetch.return_value = '''
+        mock_fetch.return_value = """
         <html>
         <a href="LCA_Worksites_FY2024.xlsx">Download</a>
         <a href="LCA_Worksites_FY2023_Q4.xlsx">Download</a>
         <a href="LCA_Disclosure_Data_FY2024.xlsx">Download</a>
         </html>
-        '''
+        """
 
         sources = plugin.discover_sources()
 
         # Should find both LCA and worksite files
-        worksite_sources = [s for s in sources if 'worksite' in s.url.lower()]
+        worksite_sources = [s for s in sources if "worksite" in s.url.lower()]
         assert len(worksite_sources) == 2
         assert all(s.domain == DataDomain.DOL.value for s in worksite_sources)
-        assert all(s.source_type == SourceType.LCA.value for s in worksite_sources)  # Combined plugin uses LCA source_type
+        assert all(
+            s.source_type == SourceType.LCA.value for s in worksite_sources
+        )  # Combined plugin uses LCA source_type
 
 
 class TestLCATransformRouting:
@@ -104,15 +108,15 @@ class TestLCATransformRouting:
 
         # Mock record with I-200 case number
         record = {
-            'LCA_CASE_NUMBER': 'I-200-11111-1111',
-            'WORKSITE_CITY': 'Austin',
-            'WORKSITE_STATE': 'TX',
-            'JOB_TITLE': 'Data Scientist',
-            'SOC_CODE': '15-2051',
-            'WAGE_RATE_OF_PAY_FROM': '120000',
-            'WAGE_UNIT_OF_PAY': 'Year',
-            '_fiscal_year': 2024,
-            '_source_file': 'LCA_FY2024.xlsx'
+            "LCA_CASE_NUMBER": "I-200-11111-1111",
+            "WORKSITE_CITY": "Austin",
+            "WORKSITE_STATE": "TX",
+            "JOB_TITLE": "Data Scientist",
+            "SOC_CODE": "15-2051",
+            "WAGE_RATE_OF_PAY_FROM": "120000",
+            "WAGE_UNIT_OF_PAY": "Year",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_FY2024.xlsx",
         }
 
         result = plugin.transform(record)
@@ -120,10 +124,10 @@ class TestLCATransformRouting:
         # Should create WorksiteRecord, not SalaryRecord
         assert result is not None
         assert isinstance(result, WorksiteRecord)
-        assert result.case_number == 'I-200-11111-1111'
-        assert result.worksite_city == 'Austin'
-        assert result.worksite_state == 'TX'
-        assert result.job_title == 'Data Scientist'
+        assert result.case_number == "I-200-11111-1111"
+        assert result.worksite_city == "Austin"
+        assert result.worksite_state == "TX"
+        assert result.job_title == "Data Scientist"
         assert result.wage_annual == 120000.0
 
     def test_transform_routes_non_i200_to_salary_record(self):
@@ -133,16 +137,16 @@ class TestLCATransformRouting:
 
         # Mock record with G-200 case number (regular LCA)
         record = {
-            'LCA_CASE_NUMBER': 'G-200-22222-2222',
-            'LCA_CASE_EMPLOYER_NAME': 'Tech Corp',
-            'EMPLOYER_CITY': 'Seattle',
-            'EMPLOYER_STATE': 'WA',
-            'JOB_TITLE': 'Software Engineer',
-            'SOC_CODE': '15-1132',
-            'WAGE_RATE_OF_PAY_FROM': '150000',
-            'WAGE_UNIT_OF_PAY': 'Year',
-            '_fiscal_year': 2024,
-            '_source_file': 'LCA_FY2024.xlsx'
+            "LCA_CASE_NUMBER": "G-200-22222-2222",
+            "LCA_CASE_EMPLOYER_NAME": "Tech Corp",
+            "EMPLOYER_CITY": "Seattle",
+            "EMPLOYER_STATE": "WA",
+            "JOB_TITLE": "Software Engineer",
+            "SOC_CODE": "15-1132",
+            "WAGE_RATE_OF_PAY_FROM": "150000",
+            "WAGE_UNIT_OF_PAY": "Year",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_FY2024.xlsx",
         }
 
         result = plugin.transform(record)
@@ -150,9 +154,9 @@ class TestLCATransformRouting:
         # Should create SalaryRecord, not WorksiteRecord
         assert result is not None
         assert isinstance(result, SalaryRecord)
-        assert result.case_number == 'G-200-22222-2222'
-        assert result.employer_name == 'Tech Corp'
-        assert result.job_title == 'Software Engineer'
+        assert result.case_number == "G-200-22222-2222"
+        assert result.employer_name == "Tech Corp"
+        assert result.job_title == "Software Engineer"
         assert result.wage_annual == 150000.0
 
     def test_transform_filters_missing_case_number(self):
@@ -160,8 +164,8 @@ class TestLCATransformRouting:
         plugin = H1BSalaryDataSourcePlugin()
 
         record = {
-            'WORKSITE_CITY': 'Seattle',
-            'WORKSITE_STATE': 'WA',
+            "WORKSITE_CITY": "Seattle",
+            "WORKSITE_STATE": "WA",
             # Missing CASE_NUMBER
         }
 
@@ -175,12 +179,12 @@ class TestLCATransformRouting:
 
         # Record with case number but no employer name
         record = {
-            'LCA_CASE_NUMBER': 'G-200-11111-1111',
-            'JOB_TITLE': 'Engineer',
-            'WAGE_RATE_OF_PAY_FROM': '120000',
-            'WAGE_UNIT_OF_PAY': 'Year',
-            '_fiscal_year': 2024,
-            '_source_file': 'LCA_FY2024.xlsx'
+            "LCA_CASE_NUMBER": "G-200-11111-1111",
+            "JOB_TITLE": "Engineer",
+            "WAGE_RATE_OF_PAY_FROM": "120000",
+            "WAGE_UNIT_OF_PAY": "Year",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_FY2024.xlsx",
             # Missing EMPLOYER_NAME
         }
 
@@ -194,13 +198,13 @@ class TestLCATransformRouting:
 
         # Record with employer but no salary data
         record = {
-            'LCA_CASE_NUMBER': 'G-200-11111-1111',
-            'LCA_CASE_EMPLOYER_NAME': 'Tech Corp',
-            'EMPLOYER_CITY': 'Seattle',
-            'EMPLOYER_STATE': 'WA',
-            'JOB_TITLE': 'Engineer',
-            '_fiscal_year': 2024,
-            '_source_file': 'LCA_FY2024.xlsx'
+            "LCA_CASE_NUMBER": "G-200-11111-1111",
+            "LCA_CASE_EMPLOYER_NAME": "Tech Corp",
+            "EMPLOYER_CITY": "Seattle",
+            "EMPLOYER_STATE": "WA",
+            "JOB_TITLE": "Engineer",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_FY2024.xlsx",
             # Missing WAGE_RATE_OF_PAY_FROM and WAGE_UNIT_OF_PAY
         }
 
@@ -214,22 +218,22 @@ class TestLCATransformRouting:
 
         # Record with all required fields
         record = {
-            'LCA_CASE_NUMBER': 'G-200-11111-1111',
-            'LCA_CASE_EMPLOYER_NAME': 'Tech Corp',
-            'EMPLOYER_CITY': 'Seattle',
-            'EMPLOYER_STATE': 'WA',
-            'JOB_TITLE': 'Engineer',
-            'WAGE_RATE_OF_PAY_FROM': '120000',
-            'WAGE_UNIT_OF_PAY': 'Year',
-            '_fiscal_year': 2024,
-            '_source_file': 'LCA_FY2024.xlsx'
+            "LCA_CASE_NUMBER": "G-200-11111-1111",
+            "LCA_CASE_EMPLOYER_NAME": "Tech Corp",
+            "EMPLOYER_CITY": "Seattle",
+            "EMPLOYER_STATE": "WA",
+            "JOB_TITLE": "Engineer",
+            "WAGE_RATE_OF_PAY_FROM": "120000",
+            "WAGE_UNIT_OF_PAY": "Year",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_FY2024.xlsx",
         }
 
         result = plugin.transform(record)
         assert result is not None
         assert isinstance(result, SalaryRecord)
-        assert result.case_number == 'G-200-11111-1111'
-        assert result.employer_name == 'Tech Corp'
+        assert result.case_number == "G-200-11111-1111"
+        assert result.employer_name == "Tech Corp"
         assert result.wage_annual == 120000.0
 
 
@@ -242,11 +246,42 @@ class TestLCAParse:
 
         # Create a simple Excel file
         from openpyxl import Workbook
+
         wb = Workbook()
         ws = wb.active
-        ws.append(['LCA_CASE_NUMBER', 'LCA_CASE_EMPLOYER_NAME', 'WORKSITE_CITY', 'WORKSITE_STATE', 'JOB_TITLE', 'WAGE_RATE_OF_PAY_FROM', 'WAGE_UNIT_OF_PAY'])
-        ws.append(['I-200-12345-6789', 'Company A', 'San Francisco', 'CA', 'Engineer', '150000', 'Year'])
-        ws.append(['G-200-98765-4321', 'Company B', 'Seattle', 'WA', 'Developer', '100', 'Hour'])
+        ws.append(
+            [
+                "LCA_CASE_NUMBER",
+                "LCA_CASE_EMPLOYER_NAME",
+                "WORKSITE_CITY",
+                "WORKSITE_STATE",
+                "JOB_TITLE",
+                "WAGE_RATE_OF_PAY_FROM",
+                "WAGE_UNIT_OF_PAY",
+            ]
+        )
+        ws.append(
+            [
+                "I-200-12345-6789",
+                "Company A",
+                "San Francisco",
+                "CA",
+                "Engineer",
+                "150000",
+                "Year",
+            ]
+        )
+        ws.append(
+            [
+                "G-200-98765-4321",
+                "Company B",
+                "Seattle",
+                "WA",
+                "Developer",
+                "100",
+                "Hour",
+            ]
+        )
 
         test_file = tmp_path / "test_lca.xlsx"
         wb.save(test_file)
@@ -254,25 +289,23 @@ class TestLCAParse:
         source = DataSource.objects.create(
             url="https://example.com/test_lca.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.PENDING,
-            checkpoint={}
+            source=source, status=IngestStatus.PENDING, checkpoint={}
         )
 
         records = list(plugin.parse(test_file, run))
 
         assert len(records) == 2
-        assert records[0]['LCA_CASE_NUMBER'] == 'I-200-12345-6789'
-        assert records[0]['WORKSITE_CITY'] == 'San Francisco'
-        assert records[1]['LCA_CASE_NUMBER'] == 'G-200-98765-4321'
-        assert records[1]['WORKSITE_STATE'] == 'WA'
+        assert records[0]["LCA_CASE_NUMBER"] == "I-200-12345-6789"
+        assert records[0]["WORKSITE_CITY"] == "San Francisco"
+        assert records[1]["LCA_CASE_NUMBER"] == "G-200-98765-4321"
+        assert records[1]["WORKSITE_STATE"] == "WA"
         # Should have fiscal year and source file
-        assert records[0].get('_fiscal_year') is not None
-        assert records[0].get('_source_file') == 'test_lca.xlsx'
+        assert records[0].get("_fiscal_year") is not None
+        assert records[0].get("_source_file") == "test_lca.xlsx"
 
 
 class TestLCAValidation:
@@ -287,7 +320,7 @@ class TestLCAValidation:
         source = DataSource.objects.create(
             url="https://example.com/test_mixed.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         # Create a run with checkpoint
@@ -295,31 +328,31 @@ class TestLCAValidation:
             source=source,
             status=IngestStatus.COMPLETED,
             records_created=2,
-            checkpoint={'filepath': '/tmp/test_mixed.xlsx'}
+            checkpoint={"filepath": "/tmp/test_mixed.xlsx"},
         )
 
         # Create test records (both types)
         SalaryRecord.objects.create(
-            case_number='G-200-11111-1111',
+            case_number="G-200-11111-1111",
             visa_program=VisaProgram.H1B,
-            employer_name='Company A',
-            worksite_city='Austin',
-            worksite_state='TX',
-            job_title='Engineer',
+            employer_name="Company A",
+            worksite_city="Austin",
+            worksite_state="TX",
+            job_title="Engineer",
             wage_annual=120000,
             fiscal_year=2024,
-            source_file='test_mixed.xlsx'
+            source_file="test_mixed.xlsx",
         )
 
         WorksiteRecord.objects.create(
-            case_number='I-200-22222-2222',
+            case_number="I-200-22222-2222",
             visa_program=VisaProgram.H1B,
-            worksite_city='Seattle',
-            worksite_state='WA',
-            job_title='Developer',
+            worksite_city="Seattle",
+            worksite_state="WA",
+            job_title="Developer",
             wage_annual=100000,
             fiscal_year=2024,
-            source_file='test_mixed.xlsx'
+            source_file="test_mixed.xlsx",
         )
 
         # Run validation
@@ -328,8 +361,8 @@ class TestLCAValidation:
         assert result.passed is True
         assert len(result.errors) == 0
         # Should have details for both record types
-        assert 'salary_records' in result.details
-        assert 'worksite_records' in result.details
+        assert "salary_records" in result.details
+        assert "worksite_records" in result.details
 
     def test_validate_post_ingest_no_records(self):
         """Test validation when no records were created"""
@@ -340,18 +373,17 @@ class TestLCAValidation:
         source = DataSource.objects.create(
             url="https://example.com/empty.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
             source=source,
             status=IngestStatus.COMPLETED,
             records_created=0,
-            checkpoint={'filepath': '/tmp/empty.xlsx'}
+            checkpoint={"filepath": "/tmp/empty.xlsx"},
         )
 
         result = plugin.validate_post_ingest(run)
 
         assert result.passed is False
         assert len(result.errors) > 0
-

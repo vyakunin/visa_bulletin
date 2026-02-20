@@ -16,6 +16,7 @@ from models.ingest.ingest_run import IngestRun
 @dataclass
 class SourceInfo:
     """Information about a discovered data source"""
+
     url: str
     domain: str
     source_type: str
@@ -31,13 +32,14 @@ class SourceInfo:
 class ValidationResult:
     """
     Result of post-ingest validation.
-    
+
     Attributes:
         passed: True if validation passed (no errors)
         errors: List of critical errors that should abort the pipeline
         warnings: List of non-critical warnings that should be logged but not abort
         details: Optional dict with additional validation details (for reporting)
     """
+
     passed: bool
     errors: list[str] = None
     warnings: list[str] = None
@@ -65,7 +67,9 @@ class DataSourcePlugin(ABC):
 
     # Optional: Override in subclass to customize download behavior
     data_dir: str | None = None  # Relative to workspace/data/ (e.g., 'salary/dol_data')
-    filename_prefix: str = ''  # Fallback filename prefix (e.g., 'lca', 'perm', 'bulletin')
+    filename_prefix: str = (
+        ""  # Fallback filename prefix (e.g., 'lca', 'perm', 'bulletin')
+    )
 
     def __init__(self):
         """Initialize plugin with rejection tracker placeholder"""
@@ -74,10 +78,10 @@ class DataSourcePlugin(ABC):
     def set_rejection_tracker(self, tracker):
         """
         Set rejection tracker for this run.
-        
+
         Called by orchestrator before transform stage to enable rejection tracking.
         Plugins can use this to record why records are rejected.
-        
+
         Args:
             tracker: RejectionTracker instance
         """
@@ -86,14 +90,14 @@ class DataSourcePlugin(ABC):
     def generate_filename(self, source: DataSource, url_path: str) -> str | None:
         """
         Generate custom filename from URL (optional override).
-        
+
         If this returns None, the base implementation will use the URL path name
         or generate from filename_prefix.
-        
+
         Args:
             source: DataSource instance
             url_path: Path portion of the URL (from urlparse)
-            
+
         Returns:
             Filename string or None to use default logic
         """
@@ -102,13 +106,13 @@ class DataSourcePlugin(ABC):
     def download(self, source: DataSource, run: IngestRun) -> Path:
         """
         Download source with resume support (default implementation).
-        
+
         Subclasses can override if they need custom download logic.
-        
+
         Args:
             source: DataSource to download
             run: IngestRun for progress tracking
-            
+
         Returns:
             Path to downloaded file
         """
@@ -123,10 +127,12 @@ class DataSourcePlugin(ABC):
 
         # Determine data directory
         if self.data_dir:
-            data_dir = workspace_dir / 'data' / self.data_dir
+            data_dir = workspace_dir / "data" / self.data_dir
         else:
             # Default: use domain/source_type
-            data_dir = workspace_dir / 'data' / self.domain.value / self.source_type.value
+            data_dir = (
+                workspace_dir / "data" / self.domain.value / self.source_type.value
+            )
 
         data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,8 +146,14 @@ class DataSourcePlugin(ABC):
             filename = custom_filename
         elif not filename:
             # Fallback: generate from prefix and source ID
-            ext = '.xlsx' if self.source_type in [SourceType.LCA, SourceType.PERM] else '.html'
-            filename = f"{self.filename_prefix or self.source_type.value}_{source.id}{ext}"
+            ext = (
+                ".xlsx"
+                if self.source_type in [SourceType.LCA, SourceType.PERM]
+                else ".html"
+            )
+            filename = (
+                f"{self.filename_prefix or self.source_type.value}_{source.id}{ext}"
+            )
 
         dest_path = data_dir / filename
 
@@ -149,28 +161,37 @@ class DataSourcePlugin(ABC):
         # Check file existence first (works even if DB was reset and downloaded_at is None)
         if dest_path.exists():
             if source.downloaded_at:
-                logger.info(f"[Run {run.id}] File already downloaded (from DB record): {dest_path}")
+                logger.info(
+                    f"[Run {run.id}] File already downloaded (from DB record): {dest_path}"
+                )
             else:
-                logger.info(f"[Run {run.id}] File exists locally, skipping download: {dest_path}")
+                logger.info(
+                    f"[Run {run.id}] File exists locally, skipping download: {dest_path}"
+                )
 
             # Compute hash if not already stored (for existing files)
             from lib.utils.http_utils import compute_file_hash
+
             if not source.content_hash:
                 content_hash = compute_file_hash(dest_path)
-                logger.info(f"[Run {run.id}] Computing hash for existing file: {content_hash}")
+                logger.info(
+                    f"[Run {run.id}] Computing hash for existing file: {content_hash}"
+                )
                 source.content_hash = content_hash
 
             # Update source record to reflect that file exists
             if not source.downloaded_at:
                 source.downloaded_at = timezone.now()
                 source.local_file_path = str(dest_path)
-                source.save(update_fields=['downloaded_at', 'local_file_path', 'content_hash'])
+                source.save(
+                    update_fields=["downloaded_at", "local_file_path", "content_hash"]
+                )
             elif not source.content_hash:
-                source.save(update_fields=['content_hash'])
+                source.save(update_fields=["content_hash"])
             return dest_path
 
         # Download file
-        if source.url.startswith('file://'):
+        if source.url.startswith("file://"):
             # Handle local file URL
             # Note: urlparse(file://...).path returns absolute path on POSIX, but might be just filename here
             # register_local_files.py creates URLs like file://filename.xlsx
@@ -185,6 +206,7 @@ class DataSourcePlugin(ABC):
                 # Let's copy it to data_dir/filename if it's not already there
                 if src_path.absolute() != dest_path.absolute():
                     import shutil
+
                     logger.info(f"[Run {run.id}] Copying local file to: {dest_path}")
                     shutil.copy2(src_path, dest_path)
 
@@ -192,27 +214,31 @@ class DataSourcePlugin(ABC):
                 if not source.downloaded_at:
                     source.downloaded_at = timezone.now()
                     source.local_file_path = str(dest_path)
-                    source.save(update_fields=['downloaded_at', 'local_file_path'])
+                    source.save(update_fields=["downloaded_at", "local_file_path"])
 
                 return dest_path
             else:
                 # Try to parse path from URL
-                path_from_url = source.url.replace('file://', '')
+                path_from_url = source.url.replace("file://", "")
                 if Path(path_from_url).exists():
                     src_path = Path(path_from_url)
                     logger.info(f"[Run {run.id}] Found local file from URL: {src_path}")
                     if src_path.absolute() != dest_path.absolute():
                         import shutil
+
                         shutil.copy2(src_path, dest_path)
                     return dest_path
                 else:
-                    raise FileNotFoundError(f"Local file not found for URL: {source.url} (path: {path_from_url})")
+                    raise FileNotFoundError(
+                        f"Local file not found for URL: {source.url} (path: {path_from_url})"
+                    )
 
         logger.info(f"[Run {run.id}] Downloading: {source.url}")
         download_file(source.url, dest_path)
 
         # Compute content hash for duplicate detection
         from lib.utils.http_utils import compute_file_hash
+
         content_hash = compute_file_hash(dest_path)
         logger.info(f"[Run {run.id}] Content hash: {content_hash}")
 
@@ -220,7 +246,7 @@ class DataSourcePlugin(ABC):
         source.downloaded_at = timezone.now()
         source.local_file_path = str(dest_path)
         source.content_hash = content_hash
-        source.save(update_fields=['downloaded_at', 'local_file_path', 'content_hash'])
+        source.save(update_fields=["downloaded_at", "local_file_path", "content_hash"])
 
         return dest_path
 
@@ -228,7 +254,7 @@ class DataSourcePlugin(ABC):
     def discover_sources(self) -> list[SourceInfo]:
         """
         Discover new data sources (scrape URLs, check APIs).
-        
+
         Returns:
             List of SourceInfo objects for discovered sources
         """
@@ -238,11 +264,11 @@ class DataSourcePlugin(ABC):
     def parse(self, filepath: Path, run: IngestRun) -> Iterator[dict]:
         """
         Stream parse file, yield dicts, update checkpoint.
-        
+
         Args:
             filepath: Path to file to parse
             run: IngestRun for checkpoint updates
-            
+
         Yields:
             Dictionary records from the file
         """
@@ -252,48 +278,48 @@ class DataSourcePlugin(ABC):
     def transform(self, record: dict) -> models.Model | None:
         """
         Apply corrections, validation, enrichment.
-        
+
         Args:
             record: Raw record dictionary from parse stage
-            
+
         Returns:
             Django model instance or None if record should be filtered out
         """
         ...
 
     @abstractmethod
-    def get_format_version(self, filepath: Path) -> 'FormatVersion':
+    def get_format_version(self, filepath: Path) -> "FormatVersion":
         """
         Detect format version for schema changes.
-        
+
         Args:
             filepath: Path to file
-            
+
         Returns:
             FormatVersion enum value ('legacy', 'modern', or 'unknown')
         """
         ...
 
     @abstractmethod
-    def validate_post_ingest(self, run: IngestRun) -> 'ValidationResult':
+    def validate_post_ingest(self, run: IngestRun) -> "ValidationResult":
         """
         Validate data after ingestion completes.
-        
+
         This method is called automatically by the pipeline after the load stage.
         It should check for both critical errors (that should abort the pipeline)
         and warnings (non-critical issues).
-        
+
         Args:
             run: IngestRun instance with completed ingestion
-            
+
         Returns:
             ValidationResult with errors (abort) and warnings (non-critical)
-            
+
         Examples of errors (should abort):
         - No records created when expected
         - Required fields missing across all records
         - Data integrity violations (duplicates, invalid references)
-        
+
         Examples of warnings (should not abort):
         - Some files produced no records (may be expected)
         - Unusual value distributions (may be legitimate)
@@ -301,13 +327,3 @@ class DataSourcePlugin(ABC):
         - Records outside expected ranges (may be valid edge cases)
         """
         ...
-
-
-
-
-
-
-
-
-
-

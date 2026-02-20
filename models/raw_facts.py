@@ -5,6 +5,7 @@ Used for backtesting: load only facts with publication_date <= T to reconstruct 
 """
 
 import uuid
+
 from django.db import models
 
 
@@ -66,14 +67,22 @@ class RawFactsLedger(models.Model):
         ordering = ["-publication_date", "-reference_period_end"]
         constraints = [
             models.UniqueConstraint(
-                fields=["source", "metric", "dimensions", "reference_period_start", "reference_period_end"],
+                fields=[
+                    "source",
+                    "metric",
+                    "dimensions",
+                    "reference_period_start",
+                    "reference_period_end",
+                ],
                 name="raw_facts_ledger_unique_fact",
             ),
         ]
         indexes = [
             models.Index(fields=["publication_date"], name="rfl_publication_date"),
             models.Index(fields=["source", "metric"], name="rfl_source_metric"),
-            models.Index(fields=["reference_period_start"], name="rfl_ref_period_start"),
+            models.Index(
+                fields=["reference_period_start"], name="rfl_ref_period_start"
+            ),
         ]
 
     def __str__(self):

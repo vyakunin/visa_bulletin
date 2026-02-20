@@ -4,50 +4,129 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0012_reserve_zero_for_invalid_enums'),
+        ("models", "0012_reserve_zero_for_invalid_enums"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='salaryrecord',
-            name='is_worksite',
-            field=models.BooleanField(db_index=True, default=False, help_text='True if this record is from a worksite file (for efficient filtering)'),
+            model_name="salaryrecord",
+            name="is_worksite",
+            field=models.BooleanField(
+                db_index=True,
+                default=False,
+                help_text="True if this record is from a worksite file (for efficient filtering)",
+            ),
         ),
         migrations.AlterField(
-            model_name='ingestrun',
-            name='stage',
-            field=models.IntegerField(choices=[(0, 'Invalid/Unknown'), (1, 'Pending'), (2, 'Downloading'), (3, 'Parsing'), (4, 'Transforming'), (5, 'Loading to Database'), (6, 'Completed')], default=1, help_text='Current pipeline stage'),
+            model_name="ingestrun",
+            name="stage",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "Pending"),
+                    (2, "Downloading"),
+                    (3, "Parsing"),
+                    (4, "Transforming"),
+                    (5, "Loading to Database"),
+                    (6, "Completed"),
+                ],
+                default=1,
+                help_text="Current pipeline stage",
+            ),
         ),
         migrations.AlterField(
-            model_name='ingestrun',
-            name='status',
-            field=models.IntegerField(choices=[(0, 'Invalid/Unknown'), (1, 'Pending'), (2, 'Running'), (3, 'Completed'), (4, 'Failed'), (5, 'Cancelled')], default=1, help_text='Overall status of the ingest run'),
+            model_name="ingestrun",
+            name="status",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "Pending"),
+                    (2, "Running"),
+                    (3, "Completed"),
+                    (4, "Failed"),
+                    (5, "Cancelled"),
+                ],
+                default=1,
+                help_text="Overall status of the ingest run",
+            ),
         ),
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='case_status',
-            field=models.IntegerField(blank=True, choices=[(0, 'Invalid/Unknown'), (1, 'Certified'), (2, 'Denied'), (3, 'Withdrawn'), (4, 'Certified-Withdrawn')], help_text='Case status (Certified, Denied, etc.)', null=True),
+            model_name="salaryrecord",
+            name="case_status",
+            field=models.IntegerField(
+                blank=True,
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "Certified"),
+                    (2, "Denied"),
+                    (3, "Withdrawn"),
+                    (4, "Certified-Withdrawn"),
+                ],
+                help_text="Case status (Certified, Denied, etc.)",
+                null=True,
+            ),
         ),
         migrations.AlterField(
-            model_name='salaryrecord',
-            name='visa_program',
-            field=models.IntegerField(choices=[(0, 'Invalid/Unknown'), (1, 'H-1B (Specialty Occupation)'), (2, 'H-1B1 (Chile/Singapore)'), (3, 'E-3 (Australia)'), (4, 'PERM (Permanent Labor Certification)')], db_index=True, help_text='Visa program type (H-1B, PERM, etc.)'),
+            model_name="salaryrecord",
+            name="visa_program",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "H-1B (Specialty Occupation)"),
+                    (2, "H-1B1 (Chile/Singapore)"),
+                    (3, "E-3 (Australia)"),
+                    (4, "PERM (Permanent Labor Certification)"),
+                ],
+                db_index=True,
+                help_text="Visa program type (H-1B, PERM, etc.)",
+            ),
         ),
         migrations.AlterField(
-            model_name='visacutoffdate',
-            name='country',
-            field=models.IntegerField(choices=[(0, 'Invalid/Unknown'), (1, 'Other Countries'), (2, 'China (mainland born)'), (3, 'India'), (4, 'Mexico'), (5, 'Philippines'), (6, 'El Salvador/Guatemala/Honduras')], help_text='Country/region for chargeability'),
+            model_name="visacutoffdate",
+            name="country",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "Other Countries"),
+                    (2, "China (mainland born)"),
+                    (3, "India"),
+                    (4, "Mexico"),
+                    (5, "Philippines"),
+                    (6, "El Salvador/Guatemala/Honduras"),
+                ],
+                help_text="Country/region for chargeability",
+            ),
         ),
         migrations.AlterField(
-            model_name='worksiterecord',
-            name='case_status',
-            field=models.IntegerField(blank=True, choices=[(0, 'Invalid/Unknown'), (1, 'Certified'), (2, 'Denied'), (3, 'Withdrawn'), (4, 'Certified-Withdrawn')], help_text='Case status (Certified, Denied, etc.)', null=True),
+            model_name="worksiterecord",
+            name="case_status",
+            field=models.IntegerField(
+                blank=True,
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "Certified"),
+                    (2, "Denied"),
+                    (3, "Withdrawn"),
+                    (4, "Certified-Withdrawn"),
+                ],
+                help_text="Case status (Certified, Denied, etc.)",
+                null=True,
+            ),
         ),
         migrations.AlterField(
-            model_name='worksiterecord',
-            name='visa_program',
-            field=models.IntegerField(choices=[(0, 'Invalid/Unknown'), (1, 'H-1B (Specialty Occupation)'), (2, 'H-1B1 (Chile/Singapore)'), (3, 'E-3 (Australia)'), (4, 'PERM (Permanent Labor Certification)')], db_index=True, help_text='Visa program type (H-1B, PERM, etc.)'),
+            model_name="worksiterecord",
+            name="visa_program",
+            field=models.IntegerField(
+                choices=[
+                    (0, "Invalid/Unknown"),
+                    (1, "H-1B (Specialty Occupation)"),
+                    (2, "H-1B1 (Chile/Singapore)"),
+                    (3, "E-3 (Australia)"),
+                    (4, "PERM (Permanent Labor Certification)"),
+                ],
+                db_index=True,
+                help_text="Visa program type (H-1B, PERM, etc.)",
+            ),
         ),
     ]

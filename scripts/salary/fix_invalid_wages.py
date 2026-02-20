@@ -29,16 +29,16 @@ After running: Re-compute stats that depend on wage_annual (see scripts/README.m
 Usage:
     # Fix all invalid wages (both high and low)
     bazel run //scripts/salary:fix_invalid_wages
-    
+
     # Dry-run to see what would be fixed
     bazel run //scripts/salary:fix_invalid_wages -- --dry-run
-    
+
     # Fix only parsing errors (wrong units)
     bazel run //scripts/salary:fix_invalid_wages -- --category parsing
-    
+
     # Fix only data errors (mark as invalid)
     bazel run //scripts/salary:fix_invalid_wages -- --category data
-    
+
     # Limit to first 100 records (for testing)
     bazel run //scripts/salary:fix_invalid_wages -- --limit 100
 """
@@ -49,8 +49,8 @@ import os
 from decimal import Decimal
 
 # Setup Django
-if not os.environ.get('DJANGO_SETTINGS_MODULE'):
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 
 import django
 
@@ -80,10 +80,10 @@ MAX_ANNUAL_DECIMAL = Decimal(str(MAX_ANNUAL))
 def categorize_invalid_wage_records(records):
     """
     Categorize invalid wage records (both high and low) into fixable categories.
-    
+
     Uses shared `should_correct_wage_unit()` logic from wage_unit_correction module
     to ensure consistent categorization with ingest.
-    
+
     Returns:
         dict with categories: 'parsing_errors', 'data_errors', 'edge_cases', 'unknown'
         - parsing_errors: Wrong wage unit, can be automatically corrected
@@ -92,10 +92,10 @@ def categorize_invalid_wage_records(records):
         - unknown: Can't determine category
     """
     categories = {
-        'parsing_errors': [],  # Can be automatically fixed (wrong unit)
-        'data_errors': [],      # Mark as invalid (unrealistic even with correct unit)
-        'edge_cases': [],       # Possibly legitimate, need review
-        'unknown': [],          # Can't determine category
+        "parsing_errors": [],  # Can be automatically fixed (wrong unit)
+        "data_errors": [],  # Mark as invalid (unrealistic even with correct unit)
+        "edge_cases": [],  # Possibly legitimate, need review
+        "unknown": [],  # Can't determine category
     }
 
     for record in records:
@@ -105,7 +105,7 @@ def categorize_invalid_wage_records(records):
         # Use shared logic from wage_unit_correction module
         if record.wage_from and record.wage_unit != WageUnit.YEAR:
             if should_correct_wage_unit(record.wage_from, record.wage_unit):
-                categories['parsing_errors'].append(record)
+                categories["parsing_errors"].append(record)
                 continue
 
         # If wage is extremely high or low and unit is YEAR, check if it's a data error
@@ -113,13 +113,13 @@ def categorize_invalid_wage_records(records):
             if wage_annual_float > MAX_ANNUAL or wage_annual_float < MIN_ANNUAL:
                 # Check if it's possibly legitimate (edge case)
                 if _is_possibly_legitimate(record):
-                    categories['edge_cases'].append(record)
+                    categories["edge_cases"].append(record)
                 else:
-                    categories['data_errors'].append(record)
+                    categories["data_errors"].append(record)
                 continue
 
         # If we get here, couldn't categorize
-        categories['unknown'].append(record)
+        categories["unknown"].append(record)
 
     return categories
 
@@ -128,8 +128,8 @@ def _is_possibly_legitimate(record):
     """Check if record might be legitimate (very high-paying executive role)."""
     # Very few roles legitimately pay >$1M
     # These would typically be C-level executives at major companies
-    high_paying_keywords = ['ceo', 'chief executive', 'president', 'chief', 'executive']
-    job_lower = (record.job_title or '').lower()
+    high_paying_keywords = ["ceo", "chief executive", "president", "chief", "executive"]
+    job_lower = (record.job_title or "").lower()
 
     # Check if job title suggests executive role
     if any(keyword in job_lower for keyword in high_paying_keywords):
@@ -144,7 +144,7 @@ def _is_possibly_legitimate(record):
 def fix_parsing_error_record(record, dry_run=False):
     """
     Fix a record where wage_unit is wrong (parsing error).
-    
+
     Strategy: If wage_from is reasonable for the unit, treat it as correct and recalculate annual.
     Otherwise, mark as invalid.
     """
@@ -172,7 +172,10 @@ def fix_parsing_error_record(record, dry_run=False):
 
     elif record.wage_unit == WageUnit.BI_WEEKLY:
         if wage_from_float > 20000:  # Unrealistic bi-weekly rate
-            return False, f"Unrealistic bi-weekly rate ${wage_from_float:,.2f}/bi-weekly"
+            return (
+                False,
+                f"Unrealistic bi-weekly rate ${wage_from_float:,.2f}/bi-weekly",
+            )
         new_annual = calculate_annual_wage(record.wage_from, record.wage_unit)
 
     else:
@@ -188,7 +191,7 @@ def fix_parsing_error_record(record, dry_run=False):
 def fix_data_error_record(record, dry_run=False):
     """
     Fix a record with data entry error (YEAR unit but unrealistic value).
-    
+
     Strategy: Mark as invalid (set wage_annual to NULL or 0) since we can't determine correct value.
     """
     if not dry_run:
@@ -203,7 +206,9 @@ def fix_data_error_record(record, dry_run=False):
 def analyze_and_fix(dry_run=False, category=None, limit=None):
     """Analyze invalid wage records (both high and low) and fix them."""
     logger.info("=" * 80)
-    logger.info(f"FIXING INVALID WAGE RECORDS (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range)")
+    logger.info(
+        f"FIXING INVALID WAGE RECORDS (outside ${MIN_ANNUAL:,}-${MAX_ANNUAL:,} range)"
+    )
     logger.info("=" * 80)
     if dry_run:
         logger.info("DRY-RUN MODE - No changes will be made")
@@ -211,16 +216,19 @@ def analyze_and_fix(dry_run=False, category=None, limit=None):
 
     # Find all invalid wage records (both high AND low)
     from django.db.models import Q
+
     invalid_wage_records = SalaryRecord.objects.filter(
         Q(wage_annual__gt=MAX_ANNUAL_DECIMAL) | Q(wage_annual__lt=MIN_ANNUAL_DECIMAL)
-    ).order_by('-wage_annual')
+    ).order_by("-wage_annual")
 
     if limit:
         invalid_wage_records = invalid_wage_records[:limit]
 
     total_count = invalid_wage_records.count()
     high_count = SalaryRecord.objects.filter(wage_annual__gt=MAX_ANNUAL_DECIMAL).count()
-    low_count = SalaryRecord.objects.filter(wage_annual__lt=MIN_ANNUAL_DECIMAL, wage_annual__gt=0).count()
+    low_count = SalaryRecord.objects.filter(
+        wage_annual__lt=MIN_ANNUAL_DECIMAL, wage_annual__gt=0
+    ).count()
 
     logger.info(f"Found {total_count} records with invalid wages:")
     logger.info(f"  Too high (>${MAX_ANNUAL:,}): {high_count:,}")
@@ -239,34 +247,35 @@ def analyze_and_fix(dry_run=False, category=None, limit=None):
 
     # Filter by category if specified
     if category:
-        if category == 'parsing':
-            records_to_fix = categories['parsing_errors']
-        elif category == 'data':
-            records_to_fix = categories['data_errors']
-        elif category == 'edge':
-            records_to_fix = categories['edge_cases']
+        if category == "parsing":
+            records_to_fix = categories["parsing_errors"]
+        elif category == "data":
+            records_to_fix = categories["data_errors"]
+        elif category == "edge":
+            records_to_fix = categories["edge_cases"]
         else:
             logger.error(f"Unknown category: {category}")
             return
-        logger.info(f"Filtering to category '{category}': {len(records_to_fix)} records")
+        logger.info(
+            f"Filtering to category '{category}': {len(records_to_fix)} records"
+        )
     else:
         # Fix parsing errors and data errors, skip edge cases
-        records_to_fix = categories['parsing_errors'] + categories['data_errors']
-        logger.info(f"Fixing parsing errors and data errors: {len(records_to_fix)} records")
+        records_to_fix = categories["parsing_errors"] + categories["data_errors"]
+        logger.info(
+            f"Fixing parsing errors and data errors: {len(records_to_fix)} records"
+        )
 
     logger.info("")
 
     # Determine fields to update based on what might be changed
-    fields_to_update = ['wage_annual']
-    if any(r in categories['data_errors'] for r in records_to_fix):
-        fields_to_update.append('wage_from')
+    fields_to_update = ["wage_annual"]
+    if any(r in categories["data_errors"] for r in records_to_fix):
+        fields_to_update.append("wage_from")
 
     # Use BatchedUpdateCollector to handle batching, transactions, and counting
     collector = BatchedUpdateCollector(
-        fields=fields_to_update,
-        batch_size=1000,
-        dry_run=dry_run,
-        use_transaction=True
+        fields=fields_to_update, batch_size=1000, dry_run=dry_run, use_transaction=True
     )
 
     # Fix records
@@ -280,14 +289,16 @@ def analyze_and_fix(dry_run=False, category=None, limit=None):
         logger.info(f"\n[{i}/{len(records_to_fix)}] Case: {record.case_number}")
         logger.info(f"  Employer: {record.employer_name[:60]}")
         logger.info(f"  Job: {record.job_title[:60]}")
-        logger.info(f"  Current: wage_from=${record.wage_from:,.2f}, unit={record.wage_unit}, annual=${record.wage_annual:,.2f}")
+        logger.info(
+            f"  Current: wage_from=${record.wage_from:,.2f}, unit={record.wage_unit}, annual=${record.wage_annual:,.2f}"
+        )
 
         # Determine fix strategy based on category
-        if record in categories['parsing_errors']:
+        if record in categories["parsing_errors"]:
             success, message = fix_parsing_error_record(record, dry_run)
             if success:
                 collector.add(record)
-        elif record in categories['data_errors']:
+        elif record in categories["data_errors"]:
             success, message = fix_data_error_record(record, dry_run)
             if success:
                 collector.add(record)
@@ -317,14 +328,16 @@ def analyze_and_fix(dry_run=False, category=None, limit=None):
     logger.info(f"  Failed: {failed_count}")
     logger.info(f"  Skipped: {skipped_count}")
     if dry_run:
-        logger.info("\nDRY-RUN: No changes were made. Run without --dry-run to apply fixes.")
+        logger.info(
+            "\nDRY-RUN: No changes were made. Run without --dry-run to apply fixes."
+        )
     else:
         logger.info(f"\n✅ Fixed {fixed_count} records")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fix records with invalid wages (both too high and too low)',
+        description="Fix records with invalid wages (both too high and too low)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -342,46 +355,39 @@ Examples:
   
   Limit to first 100 records (for testing):
     bazel run //scripts/salary:fix_invalid_wages -- --limit 100
-        """
+        """,
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be fixed without making changes'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be fixed without making changes",
     )
 
     parser.add_argument(
-        '--category',
-        choices=['parsing', 'data', 'edge'],
-        help='Only fix records in this category'
+        "--category",
+        choices=["parsing", "data", "edge"],
+        help="Only fix records in this category",
     )
 
-    parser.add_argument(
-        '--limit',
-        type=int,
-        help='Limit number of records to process'
-    )
+    parser.add_argument("--limit", type=int, help="Limit number of records to process")
 
     args = parser.parse_args()
 
     script_logger.log_call(
         args={
-            'dry_run': args.dry_run,
-            'category': args.category,
-            'limit': args.limit,
+            "dry_run": args.dry_run,
+            "category": args.category,
+            "limit": args.limit,
         },
-        context='Fixing high-wage records (>$1M)'
+        context="Fixing high-wage records (>$1M)",
     )
 
-    analyze_and_fix(
-        dry_run=args.dry_run,
-        category=args.category,
-        limit=args.limit
-    )
+    analyze_and_fix(dry_run=args.dry_run, category=args.category, limit=args.limit)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     main()

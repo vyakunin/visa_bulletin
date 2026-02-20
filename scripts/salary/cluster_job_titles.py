@@ -20,22 +20,23 @@ When to use:
 - Before analyzing job title trends or salary distributions
 """
 
-import django
 import os
 import sys
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+import django
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
-from django.db.models import Count
-from models.salary import SalaryRecord
-from models.job_title import JobTitle, JobTitleCluster
-from lib.business.salary.job_title_config import JobTitleClusteringConfig
-from lib.business import clustering_engine
-from lib.utils.logging_utils import ScriptLogger
-from lib.utils.db_utils import bulk_create_batched, bulk_update_batched
 import logging
+
 from django_config.logging_config import setup_logging
+from lib.business import clustering_engine
+from lib.business.salary.job_title_config import JobTitleClusteringConfig
+from lib.utils.db_utils import bulk_create_batched, bulk_update_batched
+from lib.utils.logging_utils import ScriptLogger
+from models.job_title import JobTitle
+from models.salary import SalaryRecord
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -53,8 +54,8 @@ def _phase1_create_job_titles():
     Returns (created_count, existing_count).
     """
     unique_titles_qs = (
-        SalaryRecord.objects.order_by('job_title')
-        .values_list('job_title', flat=True)
+        SalaryRecord.objects.order_by("job_title")
+        .values_list("job_title", flat=True)
         .distinct()
     )
     total_unique = unique_titles_qs.count()
@@ -76,7 +77,8 @@ def _phase1_create_job_titles():
         existing_total += e
         logger.info(
             "Phase 1 progress: %s created, %s existing so far",
-            f"{created_total:,}", f"{existing_total:,}",
+            f"{created_total:,}",
+            f"{existing_total:,}",
         )
         chunk = []
 
@@ -100,22 +102,22 @@ def _process_phase1_chunk(raw_titles: list[str]) -> tuple[int, int]:
 
     norm_values = [k[0] for k in normalized_map]
     existing_keys: set[tuple[str, str]] = set()
-    for row in (
-        JobTitle.objects
-        .filter(title_normalized__in=norm_values)
-        .values_list('title_normalized', 'experience_level')
+    for row in JobTitle.objects.filter(title_normalized__in=norm_values).values_list(
+        "title_normalized", "experience_level"
     ):
         existing_keys.add((row[0], row[1]))
 
     to_create = []
     for key, raw_title in normalized_map.items():
         if key not in existing_keys:
-            to_create.append(JobTitle(
-                title=raw_title,
-                title_normalized=key[0],
-                experience_level=key[1],
-                total_filings=0,
-            ))
+            to_create.append(
+                JobTitle(
+                    title=raw_title,
+                    title_normalized=key[0],
+                    experience_level=key[1],
+                    total_filings=0,
+                )
+            )
 
     if to_create:
         bulk_create_batched(to_create, batch_size=1000, ignore_conflicts=True)
@@ -132,8 +134,10 @@ def _phase2_cluster(config: JobTitleClusteringConfig):
     Returns (auto_clustered, new_clusters).
     """
     # Build bucket index from all JobTitles (needs full objects for clustering engine)
-    all_job_titles = list(JobTitle.objects.select_related('canonical_cluster'))
-    logger.info("Building bucket index for %s job titles...", f"{len(all_job_titles):,}")
+    all_job_titles = list(JobTitle.objects.select_related("canonical_cluster"))
+    logger.info(
+        "Building bucket index for %s job titles...", f"{len(all_job_titles):,}"
+    )
 
     bucket_index, normalized_cache, bucket_cache = clustering_engine.build_bucket_index(
         all_job_titles, config
@@ -145,7 +149,11 @@ def _phase2_cluster(config: JobTitleClusteringConfig):
 
     for i, job_title in enumerate(all_job_titles, 1):
         if i % 5000 == 0:
-            logger.info("Phase 2 progress: %s/%s job titles", f"{i:,}", f"{len(all_job_titles):,}")
+            logger.info(
+                "Phase 2 progress: %s/%s job titles",
+                f"{i:,}",
+                f"{len(all_job_titles):,}",
+            )
 
         if job_title.canonical_cluster:
             continue
@@ -168,11 +176,17 @@ def _phase2_cluster(config: JobTitleClusteringConfig):
 
             flush_batch.append(job_title)
             if len(flush_batch) >= PHASE2_FLUSH_SIZE:
-                bulk_update_batched(flush_batch, fields=['canonical_cluster'], batch_size=PHASE2_FLUSH_SIZE)
+                bulk_update_batched(
+                    flush_batch,
+                    fields=["canonical_cluster"],
+                    batch_size=PHASE2_FLUSH_SIZE,
+                )
                 flush_batch = []
 
     if flush_batch:
-        bulk_update_batched(flush_batch, fields=['canonical_cluster'], batch_size=PHASE2_FLUSH_SIZE)
+        bulk_update_batched(
+            flush_batch, fields=["canonical_cluster"], batch_size=PHASE2_FLUSH_SIZE
+        )
 
     return auto_clustered, new_clusters
 
@@ -184,9 +198,11 @@ def _phase3_link_records():
     """
     logger.info("Building JobTitle lookup index...")
     job_title_lookup: dict[tuple[str, str], int] = {}
-    for jt_data in JobTitle.objects.values('id', 'title_normalized', 'experience_level'):
-        key = (jt_data['title_normalized'], jt_data['experience_level'])
-        job_title_lookup[key] = jt_data['id']
+    for jt_data in JobTitle.objects.values(
+        "id", "title_normalized", "experience_level"
+    ):
+        key = (jt_data["title_normalized"], jt_data["experience_level"])
+        job_title_lookup[key] = jt_data["id"]
     logger.info("Built index with %s JobTitle entities", f"{len(job_title_lookup):,}")
 
     total_unlinked = SalaryRecord.objects.filter(job_title_entity__isnull=True).count()
@@ -196,7 +212,9 @@ def _phase3_link_records():
     batch: list[SalaryRecord] = []
     batch_size = 10000
 
-    for record in SalaryRecord.objects.filter(job_title_entity__isnull=True).iterator(chunk_size=10000):
+    for record in SalaryRecord.objects.filter(job_title_entity__isnull=True).iterator(
+        chunk_size=10000
+    ):
         normalized = JobTitle.normalize_title(record.job_title)
         experience_level = JobTitle.extract_experience_level(record.job_title)
         key = (normalized, experience_level)
@@ -206,18 +224,23 @@ def _phase3_link_records():
             batch.append(record)
 
             if len(batch) >= batch_size:
-                SalaryRecord.objects.bulk_update(batch, ['job_title_entity_id'], batch_size=batch_size)
+                SalaryRecord.objects.bulk_update(
+                    batch, ["job_title_entity_id"], batch_size=batch_size
+                )
                 linked_count += len(batch)
                 if total_unlinked > 0:
                     logger.info(
                         "  Linked %s/%s records (%.1f%%)",
-                        f"{linked_count:,}", f"{total_unlinked:,}",
+                        f"{linked_count:,}",
+                        f"{total_unlinked:,}",
                         linked_count / total_unlinked * 100,
                     )
                 batch = []
 
     if batch:
-        SalaryRecord.objects.bulk_update(batch, ['job_title_entity_id'], batch_size=batch_size)
+        SalaryRecord.objects.bulk_update(
+            batch, ["job_title_entity_id"], batch_size=batch_size
+        )
         linked_count += len(batch)
 
     return linked_count
@@ -282,14 +305,18 @@ def cluster_job_titles(dry_run: bool = False):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Cluster job titles using the generic clustering framework")
-    parser.add_argument('--dry-run', action='store_true', help='Dry run mode (don\'t commit changes)')
+    parser = argparse.ArgumentParser(
+        description="Cluster job titles using the generic clustering framework"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Dry run mode (don't commit changes)"
+    )
 
     args = parser.parse_args()
 
     script_logger.log_call(
-        args={'dry_run': args.dry_run},
-        context='Clustering job titles using generic clustering framework'
+        args={"dry_run": args.dry_run},
+        context="Clustering job titles using generic clustering framework",
     )
 
     try:
@@ -299,5 +326,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

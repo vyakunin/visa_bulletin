@@ -22,21 +22,20 @@ class WageUnit(models.TextChoices):
 
         normalized = value.strip().upper()
         mappings = {
-            'YEAR': cls.YEAR,
-            'YEARLY': cls.YEAR,
-            'YR': cls.YEAR,
-            'MONTH': cls.MONTH,
-            'MONTHLY': cls.MONTH,
-            'MTH': cls.MONTH,
-            'BI-WEEKLY': cls.BI_WEEKLY,
-            'BIWEEKLY': cls.BI_WEEKLY,
-            'BW': cls.BI_WEEKLY,
-            'WEEK': cls.WEEK,
-            'WEEKLY': cls.WEEK,
-            'WK': cls.WEEK,
-            'HOUR': cls.HOUR,
-            'HOURLY': cls.HOUR,
-            'HR': cls.HOUR,  # FIX: Handle 'HR' abbreviation (found in PERM_FY2008.xlsx)
+            "YEAR": cls.YEAR,
+            "YEARLY": cls.YEAR,
+            "YR": cls.YEAR,
+            "MONTH": cls.MONTH,
+            "MONTHLY": cls.MONTH,
+            "MTH": cls.MONTH,
+            "BI-WEEKLY": cls.BI_WEEKLY,
+            "BIWEEKLY": cls.BI_WEEKLY,
+            "BW": cls.BI_WEEKLY,
+            "WEEK": cls.WEEK,
+            "WEEKLY": cls.WEEK,
+            "WK": cls.WEEK,
+            "HOUR": cls.HOUR,
+            "HOURLY": cls.HOUR,
+            "HR": cls.HOUR,  # FIX: Handle 'HR' abbreviation (found in PERM_FY2008.xlsx)
         }
         return mappings.get(normalized)
-

@@ -23,10 +23,20 @@ from scripts.cron.refresh.runner import LocalRunner
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run data refresh pipeline (local)")
-    parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
-    parser.add_argument("--project-root", type=Path, default=None, help="Project root (default: BUILD_WORKSPACE_DIRECTORY or .)")
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume from last checkpoint"
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=None,
+        help="Project root (default: BUILD_WORKSPACE_DIRECTORY or .)",
+    )
     args = parser.parse_args()
-    root = args.project_root or Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")).resolve()
+    root = (
+        args.project_root
+        or Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")).resolve()
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s %(name)s: %(message)s",
@@ -41,6 +51,7 @@ def main() -> int:
         logger.error("DB_NAME not found in .env")
         return 1
     from scripts.cron.refresh.config import get_env_value
+
     env = dict(os.environ)
     for key in ("DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT", "DB_NAME"):
         v = get_env_value(config.env_file, key)

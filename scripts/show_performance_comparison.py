@@ -19,7 +19,9 @@ def show_comparison():
     print("-" * 80)
     print()
     print("File Processing:")
-    print("  Largest Excel file: H-1B_Disclosure_Data_FY15_Q4.xlsx (143.9 MB, 618,804 rows)")
+    print(
+        "  Largest Excel file: H-1B_Disclosure_Data_FY15_Q4.xlsx (143.9 MB, 618,804 rows)"
+    )
     print("  File read time: 433 seconds")
     print("  Read rate: 1,429 rows/second")
     print("  Estimated memory: 360 MB (file_size × 2.5)")
@@ -96,7 +98,9 @@ def show_comparison():
     print("-" * 80)
     print()
     print("1. Run test import:")
-    print("   bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain dol")
+    print(
+        "   bazel run //scripts/ingest:run_pipeline -- discover-and-ingest --domain dol"
+    )
     print()
     print("2. Check logs for performance breakdown:")
     print("   tail -f logs/run_pipeline.log | grep 'Performance breakdown'")
@@ -118,7 +122,5 @@ def show_comparison():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     show_comparison()
-
-

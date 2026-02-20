@@ -4,18 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('models', '0018_add_unique_constraint_canonical_name'),
+        ("models", "0018_add_unique_constraint_canonical_name"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='employercluster',
-            name='unique_canonical_name',
+            model_name="employercluster",
+            name="unique_canonical_name",
         ),
         migrations.AddIndex(
-            model_name='salaryrecord',
-            index=models.Index(fields=['employer', 'is_worksite'], name='salary_reco_employe_892342_idx'),
+            model_name="salaryrecord",
+            index=models.Index(
+                fields=["employer", "is_worksite"],
+                name="salary_reco_employe_892342_idx",
+            ),
         ),
     ]

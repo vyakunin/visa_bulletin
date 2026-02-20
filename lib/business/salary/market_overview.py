@@ -28,23 +28,22 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
     current_year = datetime.now().year
     start_year = current_year - years
 
-    records = (
-        SalaryRecord.objects.filter(
-            fiscal_year__gte=start_year,
-            wage_annual__isnull=False,
-            wage_annual__gt=0,
-            is_worksite=False,
-        )
-        .exclude(employer_name="Unknown")
-    )
+    records = SalaryRecord.objects.filter(
+        fiscal_year__gte=start_year,
+        wage_annual__isnull=False,
+        wage_annual__gt=0,
+        is_worksite=False,
+    ).exclude(employer_name="Unknown")
     records = apply_program_filter(records, program_filter)
 
     basic_stats = calculate_market_overview_stats(records)
     salary_percentiles = calculate_salary_percentiles(records)
     yoy_trends = calculate_yoy_trends(records)
-    yoy_growth, growth_start_year, growth_end_year, used_partial_year = calculate_yoy_growth(
-        yoy_trends,
-        start_year,
+    yoy_growth, growth_start_year, growth_end_year, used_partial_year = (
+        calculate_yoy_growth(
+            yoy_trends,
+            start_year,
+        )
     )
     geographic_dist, geographic_dist_by_median = calculate_geographic_distributions(
         records,

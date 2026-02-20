@@ -15,12 +15,13 @@ from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def django_db_setup(django_db_setup, django_db_blocker):
     """Create database tables once per test session"""
     # Mark tables as already created to prevent handler from trying (optional dep)
     try:
         from extractors import bulletin_handler
+
         bulletin_handler._TABLES_CREATED = True
     except ImportError:
         pass
@@ -32,6 +33,7 @@ def django_db_setup(django_db_setup, django_db_blocker):
 
         from models.bulletin import Bulletin
         from models.visa_cutoff_date import VisaCutoffDate
+
         logger = logging.getLogger(__name__)
 
         with connection.schema_editor() as schema_editor:
@@ -39,12 +41,18 @@ def django_db_setup(django_db_setup, django_db_blocker):
                 schema_editor.create_model(Bulletin)
             except Exception as e:
                 # Table already exists - expected in test setup
-                logger.error(f"Failed to create model Bulletin (may already exist): {e}", exc_info=True)
+                logger.error(
+                    f"Failed to create model Bulletin (may already exist): {e}",
+                    exc_info=True,
+                )
             try:
                 schema_editor.create_model(VisaCutoffDate)
             except Exception as e:
                 # Table already exists - expected in test setup
-                logger.error(f"Failed to create model VisaCutoffDate (may already exist): {e}", exc_info=True)
+                logger.error(
+                    f"Failed to create model VisaCutoffDate (may already exist): {e}",
+                    exc_info=True,
+                )
 
 
 @pytest.fixture
@@ -75,12 +83,11 @@ def sample_bulletin(db):
 
 
 # Mark all tests to use database by default
-pytest_plugins = ['pytest_django']
+pytest_plugins = ["pytest_django"]
 
 
 def pytest_collection_modifyitems(items):
     """Automatically mark all tests that need database access"""
     for item in items:
-        if 'test_' in item.nodeid:
+        if "test_" in item.nodeid:
             item.add_marker(pytest.mark.django_db)
-

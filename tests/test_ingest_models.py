@@ -23,7 +23,7 @@ class TestDataSource:
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
             source_type=SourceType.LCA,
-            format_version="2024q4"
+            format_version="2024q4",
         )
 
         assert source.url == "https://example.com/data.xlsx"
@@ -36,7 +36,7 @@ class TestDataSource:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         assert "DOL" in str(source)
@@ -52,13 +52,11 @@ class TestIngestRun:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.PENDING,
-            stage=IngestStage.PENDING
+            source=source, status=IngestStatus.PENDING, stage=IngestStage.PENDING
         )
 
         assert run.source == source
@@ -71,13 +69,11 @@ class TestIngestRun:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.RUNNING,
-            stage=IngestStage.LOADING
+            source=source, status=IngestStatus.RUNNING, stage=IngestStage.LOADING
         )
 
         run.mark_completed()
@@ -90,13 +86,11 @@ class TestIngestRun:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.RUNNING,
-            stage=IngestStage.PARSING
+            source=source, status=IngestStatus.RUNNING, stage=IngestStage.PARSING
         )
 
         error = ValueError("Test error")
@@ -111,17 +105,21 @@ class TestIngestRun:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run = IngestRun.objects.create(
             source=source,
-            checkpoint={'last_row': 50000, 'batch': 50, 'filepath': '/path/to/file.xlsx'}
+            checkpoint={
+                "last_row": 50000,
+                "batch": 50,
+                "filepath": "/path/to/file.xlsx",
+            },
         )
 
-        assert run.checkpoint['last_row'] == 50000
-        assert run.checkpoint['batch'] == 50
-        assert run.checkpoint['filepath'] == '/path/to/file.xlsx'
+        assert run.checkpoint["last_row"] == 50000
+        assert run.checkpoint["batch"] == 50
+        assert run.checkpoint["filepath"] == "/path/to/file.xlsx"
 
 
 @pytest.mark.django_db
@@ -132,18 +130,13 @@ class TestIngestVersion:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
-        run = IngestRun.objects.create(
-            source=source,
-            status=IngestStatus.COMPLETED
-        )
+        run = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
 
         version = IngestVersion.objects.create(
-            run=run,
-            version_tag="dol_lca_2024q4_v1",
-            is_active=True
+            run=run, version_tag="dol_lca_2024q4_v1", is_active=True
         )
 
         assert version.run == run
@@ -155,34 +148,19 @@ class TestIngestVersion:
         source = DataSource.objects.create(
             url="https://example.com/data.xlsx",
             domain=DataDomain.DOL,
-            source_type=SourceType.LCA
+            source_type=SourceType.LCA,
         )
 
         run1 = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
         run2 = IngestRun.objects.create(source=source, status=IngestStatus.COMPLETED)
 
         version1 = IngestVersion.objects.create(
-            run=run1,
-            version_tag="v1",
-            is_active=False
+            run=run1, version_tag="v1", is_active=False
         )
 
         version2 = IngestVersion.objects.create(
-            run=run2,
-            version_tag="v2",
-            is_active=True,
-            supersedes=version1
+            run=run2, version_tag="v2", is_active=True, supersedes=version1
         )
 
         assert version2.supersedes == version1
         assert version1.superseded_by.first() == version2
-
-
-
-
-
-
-
-
-
-

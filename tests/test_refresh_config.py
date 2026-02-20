@@ -1,7 +1,6 @@
 # tests/test_refresh_config.py
 """Unit tests for scripts/cron/refresh config: load_config, get_env_value, update_env_value."""
 
-import os
 from pathlib import Path
 
 from scripts.cron.refresh.config import (
@@ -45,5 +44,3 @@ def test_load_config_project_root(tmp_path: Path) -> None:
     assert config.project_root == tmp_path.resolve()
     assert config.db_name == "visa_bulletin"
     assert config.env_file == tmp_path / ".env"
-
-

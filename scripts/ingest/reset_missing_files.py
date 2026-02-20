@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 
@@ -39,13 +38,18 @@ def reset_missing_files():
         total_records = salary_count + worksite_count
 
         if total_records == 0:
-            print(f"Source {filename} (ID: {source.id}) has completed runs but NO records in DB. Resetting runs.")
+            print(
+                f"Source {filename} (ID: {source.id}) has completed runs but NO records in DB. Resetting runs."
+            )
             # Mark runs as FAILED so they are picked up by all_pending (which excludes sources with COMPLETED runs)
             # Actually, delete them or mark failed.
             # If we mark as FAILED, all_pending logic:
             # sources_with_completed = set(DataSource.objects.filter(runs__status=IngestStatus.COMPLETED)...)
             # So if we change status to FAILED, it won't be in sources_with_completed.
-            completed_runs.update(status=IngestStatus.FAILED, error_message="Reset by reset_missing_files script: No records in DB")
+            completed_runs.update(
+                status=IngestStatus.FAILED,
+                error_message="Reset by reset_missing_files script: No records in DB",
+            )
             reset_count += 1
         else:
             # print(f"Source {filename} has {total_records} records. OK.")
@@ -53,6 +57,6 @@ def reset_missing_files():
 
     print(f"Reset {reset_count} sources.")
 
+
 if __name__ == "__main__":
     reset_missing_files()
-

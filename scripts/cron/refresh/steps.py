@@ -8,9 +8,7 @@ import os
 import re
 import shlex
 import subprocess
-import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,7 +27,9 @@ class PipelineContext:
     record_count: str = ""
     new_sources_count: int = 0
     sources_ingested_count: int = -1  # Set by ingest_complete; -1 = not run yet
-    salary_relevant_sources_ingested_count: int = -1  # DOL sources in this run; -1 = unknown, 0 = skip clustering
+    salary_relevant_sources_ingested_count: int = (
+        -1
+    )  # DOL sources in this run; -1 = unknown, 0 = skip clustering
 
 
 SYNC_CODE_TIMEOUT_SEC = 600
@@ -38,7 +38,9 @@ SYNC_CODE_TIMEOUT_SEC = 600
 BUILD_PIPELINE_BINARIES_SSH_TIMEOUT_SEC = 7200
 
 
-def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_sync_code(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Sync code from the orchestrator host (active) to the target host (inactive) via rsync.
 
     Prevents code drift that causes stale BUILD deps, wrong enum values, etc.
@@ -47,6 +49,7 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
     No-op for local/mock runners.
     """
     from .runner import RemoteRunner
+
     if not isinstance(runner, RemoteRunner):
         return
 
@@ -54,10 +57,19 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
     remote_root = str(config.project_root)
 
     excludes = [
-        ".env", ".env.bak", "bazel-*", "logs/", "saved_pages/", "backups/",
-        "__pycache__/", "*.pyc", ".git/", "populate_log.txt",
+        ".env",
+        ".env.bak",
+        "bazel-*",
+        "logs/",
+        "saved_pages/",
+        "backups/",
+        "__pycache__/",
+        "*.pyc",
+        ".git/",
+        "populate_log.txt",
         "deployment/docker-compose.override.yml",
-        "data/salary/dol_data/", "data/bulletin/",
+        "data/salary/dol_data/",
+        "data/bulletin/",
     ]
     exclude_args = " ".join(f"--exclude={shlex.quote(e)}" for e in excludes)
 
@@ -69,13 +81,24 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
         f"rsync -az --delete -e '{ssh_opts}' {exclude_args} "
         f"{local_root}/ {runner.ssh_user}@{runner.host}:{remote_root}/"
     )
-    logger.info("Syncing code from %s to %s@%s:%s", local_root, runner.ssh_user, runner.host, remote_root)
+    logger.info(
+        "Syncing code from %s to %s@%s:%s",
+        local_root,
+        runner.ssh_user,
+        runner.host,
+        remote_root,
+    )
     result = subprocess.run(
         ["bash", "-c", rsync_cmd],
-        capture_output=True, text=True, timeout=SYNC_CODE_TIMEOUT_SEC, check=False,
+        capture_output=True,
+        text=True,
+        timeout=SYNC_CODE_TIMEOUT_SEC,
+        check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Code sync failed (rc={result.returncode}): {result.stderr[:2000]}")
+        raise RuntimeError(
+            f"Code sync failed (rc={result.returncode}): {result.stderr[:2000]}"
+        )
     logger.info("Code synced successfully")
 
     # Docker/gunicorn uses standard Python which requires __init__.py for packages.
@@ -84,7 +107,7 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
     runner.run_shell(
         f"find {remote_root}/webapp {remote_root}/models {remote_root}/lib {remote_root}/extractors "
         f"-type d ! -path '*/__pycache__/*' "
-        f"-exec sh -c 'test ! -f \"$1/__init__.py\" && touch \"$1/__init__.py\"' _ {{}} \\;",
+        f'-exec sh -c \'test ! -f "$1/__init__.py" && touch "$1/__init__.py"\' _ {{}} \\;',
         timeout_sec=15,
     )
     logger.info("Ensured __init__.py files exist for Docker/gunicorn compatibility")
@@ -95,7 +118,9 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
     # 3. Has the inactive host's IP in ALLOWED_HOSTS (prevents Django 400)
     override_path = f"{remote_root}/deployment/docker-compose.override.yml"
     host_ip = runner.host
-    allowed_hosts = f"{host_ip},localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us"
+    allowed_hosts = (
+        f"{host_ip},localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us"
+    )
     override_content = (
         "version: '3.8'\n"
         "services:\n"
@@ -112,10 +137,14 @@ def step_sync_code(config: RefreshConfig, runner: Runner, context: PipelineConte
         f"cat > {shlex.quote(override_path)} << 'OVERRIDE_EOF'\n{override_content}OVERRIDE_EOF",
         timeout_sec=10,
     )
-    logger.info("Created docker-compose.override.yml (volume mount, ALLOWED_HOSTS=%s)", host_ip)
+    logger.info(
+        "Created docker-compose.override.yml (volume mount, ALLOWED_HOSTS=%s)", host_ip
+    )
 
 
-def step_build_pipeline_binaries(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_build_pipeline_binaries(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Build all pipeline binaries on the target host so runfiles include all deps (e.g. redis for warm_cache)."""
     root = config.project_root
     script = root / "scripts" / "cron" / "build_all.sh"
@@ -128,7 +157,9 @@ def step_build_pipeline_binaries(config: RefreshConfig, runner: Runner, context:
         )
 
 
-def step_create_db(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_create_db(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Create fresh DB, grant privileges, set DB_NAME in .env, run migrations. Drops DB if exists (full reset only)."""
     db = context.db_name or config.db_name
     runner.run_sudo_psql(f"DROP DATABASE IF EXISTS {db};")
@@ -141,7 +172,9 @@ def step_create_db(config: RefreshConfig, runner: Runner, context: PipelineConte
         raise RuntimeError("Migrations failed")
 
 
-def step_ensure_db(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_ensure_db(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Ensure DB exists (create only if missing), grant privileges, fix ownership, set DB_NAME, run migrations."""
     db = context.db_name or config.db_name
     check = runner.run_sudo_psql(
@@ -157,7 +190,9 @@ def step_ensure_db(config: RefreshConfig, runner: Runner, context: PipelineConte
     runner.update_env("DB_NAME", db)
     result = runner.run_migrate(config.project_root)
     if result.returncode != 0:
-        logger.error("Migrations failed: stdout=%s stderr=%s", result.stdout, result.stderr)
+        logger.error(
+            "Migrations failed: stdout=%s stderr=%s", result.stdout, result.stderr
+        )
         raise RuntimeError("Migrations failed")
 
 
@@ -189,23 +224,30 @@ def step_drop_indexes_save_snapshot(
 ) -> str:
     """Drop indexes, save snapshot path. Returns snapshot path for context."""
     from datetime import datetime
+
     db = context.db_name or config.db_name
     # Clear stale RUNNING ingest runs so drop-index check passes (controlled refresh pipeline).
     runner.run_sudo_psql("UPDATE ingest_run SET status = 4 WHERE status = 2", db=db)
     backup_dir = config.backup_dir
     # Create backup dir on target host (local or remote) so snapshot path exists there.
     runner.run_shell(f"mkdir -p {shlex.quote(str(backup_dir))}")
-    snapshot = backup_dir / f"salary_indexes_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.yaml"
+    snapshot = (
+        backup_dir
+        / f"salary_indexes_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.yaml"
+    )
     result = runner.run_bin(
         "scripts/salary/manage_salary_indexes",
         "--drop",
-        "--snapshot", str(snapshot),
+        "--snapshot",
+        str(snapshot),
         "--overwrite",
         cwd=config.project_root,
     )
     if result.returncode != 0:
         tail = _get_stage_tail(runner, result)
-        raise RuntimeError(f"Drop indexes failed: {tail[-2000:] if tail else 'no output'}")
+        raise RuntimeError(
+            f"Drop indexes failed: {tail[-2000:] if tail else 'no output'}"
+        )
     return str(snapshot)
 
 
@@ -234,7 +276,9 @@ def _log_stage_tail_text(tail_text: str, step_name: str, last_n: int = 80) -> No
 # Ingest can take many hours (full LCA/PERM). Use 12h so SSH does not time out.
 INGEST_SSH_TIMEOUT_SEC = 43200
 # Employer clustering (Phase 1 + Phase 2 + _update_cluster_statistics) can exceed 4h on 2GB instances
-CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC = 24 * 3600  # 24 hours (Phase 1 + Phase 2 can take 8h+ on 2GB)
+CLUSTER_EMPLOYERS_SSH_TIMEOUT_SEC = (
+    24 * 3600
+)  # 24 hours (Phase 1 + Phase 2 can take 8h+ on 2GB)
 # Backfill, cluster_job_titles, update_employer_stats, etc. can exceed default 4h SSH timeout
 HEAVY_STEP_SSH_TIMEOUT_SEC = 8 * 3600  # 8 hours
 
@@ -251,7 +295,9 @@ def _parse_salary_relevant_count(tail: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def step_run_ingest(config: RefreshConfig, runner: Runner, context: PipelineContext) -> tuple[int, int | None]:
+def step_run_ingest(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> tuple[int, int | None]:
     """Run discover-and-ingest --all-domains. Returns (sources_count, salary_relevant_count or None)."""
     result = runner.run_bin(
         "scripts/ingest/run_pipeline",
@@ -269,7 +315,9 @@ def step_run_ingest(config: RefreshConfig, runner: Runner, context: PipelineCont
     return sources_count, salary_relevant
 
 
-def step_backfill_job_title_links(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_backfill_job_title_links(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/backfill_job_title_links",
         cwd=config.project_root,
@@ -278,10 +326,14 @@ def step_backfill_job_title_links(config: RefreshConfig, runner: Runner, context
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "backfill_job_title_links", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Backfill job title links failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Backfill job title links failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_backfill_source_file_date(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_backfill_source_file_date(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/backfill_source_file_date",
         cwd=config.project_root,
@@ -290,10 +342,14 @@ def step_backfill_source_file_date(config: RefreshConfig, runner: Runner, contex
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "backfill_source_file_date", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Backfill source file date failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Backfill source file date failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_cluster_job_titles(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_cluster_job_titles(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/cluster_job_titles",
         cwd=config.project_root,
@@ -302,7 +358,9 @@ def step_cluster_job_titles(config: RefreshConfig, runner: Runner, context: Pipe
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "cluster_job_titles", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Cluster job titles failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Cluster job titles failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
 def step_restore_indexes(
@@ -312,14 +370,17 @@ def step_restore_indexes(
     runner.run_sudo_psql("UPDATE ingest_run SET status = 4 WHERE status = 2", db=db)
     snapshot = context.index_snapshot
     if not snapshot:
-        raise RuntimeError("Index snapshot path not set (index_snapshot_saved may not have run)")
+        raise RuntimeError(
+            "Index snapshot path not set (index_snapshot_saved may not have run)"
+        )
     # Do not check Path(snapshot).exists() here: when using RemoteRunner the snapshot lives on
     # the remote host; this code runs on the orchestrator host, so a local exists() check is wrong.
     # If the file is missing on the remote, run_bin will fail with a clear error from manage_salary_indexes.
     result = runner.run_bin(
         "scripts/salary/manage_salary_indexes",
         "--recreate",
-        "--snapshot", snapshot,
+        "--snapshot",
+        snapshot,
         cwd=config.project_root,
     )
     tail = _get_stage_tail(runner, result)
@@ -337,17 +398,23 @@ def step_restore_indexes(
                 cwd=config.project_root,
             )
             fallback_tail = _get_stage_tail(runner, fallback)
-            _log_stage_tail_text(fallback_tail, "indexes_restored (fallback)", last_n=40)
+            _log_stage_tail_text(
+                fallback_tail, "indexes_restored (fallback)", last_n=40
+            )
             if fallback.returncode != 0:
                 raise RuntimeError(
                     f"Recreate indexes failed (snapshot missing) and create-clustering-indexes fallback failed: "
                     f"{fallback_tail[-2000:] if fallback_tail else fallback.stderr}"
                 )
             return
-        raise RuntimeError(f"Recreate indexes failed: {tail_str[-2000:] if tail_str else result.stderr}")
+        raise RuntimeError(
+            f"Recreate indexes failed: {tail_str[-2000:] if tail_str else result.stderr}"
+        )
 
 
-def step_update_employer_stats(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_update_employer_stats(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/update_employer_stats",
         cwd=config.project_root,
@@ -356,10 +423,14 @@ def step_update_employer_stats(config: RefreshConfig, runner: Runner, context: P
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "update_employer_stats", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Update employer stats failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Update employer stats failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_cluster_employers(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_cluster_employers(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Run employer clustering. Assumes indexes were restored (runs after indexes_restored)."""
     result = runner.run_bin(
         "scripts/salary/cluster_existing_employers",
@@ -369,10 +440,14 @@ def step_cluster_employers(config: RefreshConfig, runner: Runner, context: Pipel
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "cluster_employers", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Cluster employers failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Cluster employers failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_update_job_title_cluster_stats(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_update_job_title_cluster_stats(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/update_job_title_cluster_stats",
         cwd=config.project_root,
@@ -381,10 +456,14 @@ def step_update_job_title_cluster_stats(config: RefreshConfig, runner: Runner, c
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "update_job_title_cluster_stats", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Update job title cluster stats failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Update job title cluster stats failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_populate_job_title_slugs(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_populate_job_title_slugs(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     result = runner.run_bin(
         "scripts/salary/populate_job_title_slugs",
         cwd=config.project_root,
@@ -393,21 +472,30 @@ def step_populate_job_title_slugs(config: RefreshConfig, runner: Runner, context
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "populate_job_title_slugs", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Populate job title slugs failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Populate job title slugs failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_vacuum_analyze(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_vacuum_analyze(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     db = context.db_name or config.db_name
     runner.run_psql(db, "VACUUM ANALYZE;")
 
 
-def step_start_services(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_start_services(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     """Start Redis and Gunicorn on the target host so warm_cache HTTP page warming and smoke can reach the app."""
     from . import services
+
     services.start_remote_services(runner, config.project_root)
 
 
-def step_warm_cache(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_warm_cache(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     # Pipeline runs after start_services (Docker up); Redis is exposed as 127.0.0.1:6379 so warm_cache warms the same Redis the app uses.
     env_override = {"REDIS_URL": "redis://127.0.0.1:6379/1"}
     result = runner.run_bin(
@@ -418,10 +506,15 @@ def step_warm_cache(config: RefreshConfig, runner: Runner, context: PipelineCont
     tail = _get_stage_tail(runner, result)
     _log_stage_tail_text(tail, "warm_cache", last_n=80)
     if result.returncode != 0:
-        raise RuntimeError(f"Warm cache failed: {tail[-2000:] if tail else result.stderr}")
+        raise RuntimeError(
+            f"Warm cache failed: {tail[-2000:] if tail else result.stderr}"
+        )
 
 
-def step_run_smoke_tests(config: RefreshConfig, runner: Runner, context: PipelineContext) -> None:
+def step_run_smoke_tests(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
     from .smoke import run_smoke_tests
+
     db = context.db_name or config.db_name
     run_smoke_tests(runner, db, config)

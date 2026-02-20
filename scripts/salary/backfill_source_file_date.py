@@ -18,15 +18,16 @@ import logging
 import os
 import sys
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
+
 django.setup()
 
-from models.salary import SalaryRecord
-from models.ingest.data_source import DataSource
-from lib.utils.logging_utils import ScriptLogger
-from lib.utils.db_utils import BatchedUpdateCollector
 from django_config.logging_config import setup_logging
+from lib.utils.db_utils import BatchedUpdateCollector
+from lib.utils.logging_utils import ScriptLogger
+from models.ingest.data_source import DataSource
+from models.salary import SalaryRecord
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
@@ -37,10 +38,12 @@ script_logger = ScriptLogger(__file__)
 def _build_data_source_lookup() -> dict[str, object]:
     """Pre-load DataSource downloaded_at indexed by local_file_path fragment."""
     lookup: dict[str, object] = {}
-    for ds in DataSource.objects.filter(downloaded_at__isnull=False).values('local_file_path', 'downloaded_at'):
-        path = ds['local_file_path']
+    for ds in DataSource.objects.filter(downloaded_at__isnull=False).values(
+        "local_file_path", "downloaded_at"
+    ):
+        path = ds["local_file_path"]
         if path:
-            lookup[path] = ds['downloaded_at']
+            lookup[path] = ds["downloaded_at"]
     logger.info("Loaded %s DataSource entries with downloaded_at", f"{len(lookup):,}")
     return lookup
 
@@ -49,14 +52,20 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
     """Backfill source_file_date for existing SalaryRecord records."""
     queryset = SalaryRecord.objects.filter(
         source_file_date__isnull=True
-    ).select_related('ingest_version__run')
+    ).select_related("ingest_version__run")
 
     total_count = queryset.count()
     if limit:
         queryset = queryset[:limit]
-        logger.info("Processing %s of %s records without source_file_date", f"{limit:,}", f"{total_count:,}")
+        logger.info(
+            "Processing %s of %s records without source_file_date",
+            f"{limit:,}",
+            f"{total_count:,}",
+        )
     else:
-        logger.info("Processing %s records without source_file_date", f"{total_count:,}")
+        logger.info(
+            "Processing %s records without source_file_date", f"{total_count:,}"
+        )
 
     if total_count == 0:
         logger.info("No records to backfill")
@@ -68,7 +77,7 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
     ds_lookup = _build_data_source_lookup()
 
     collector = BatchedUpdateCollector(
-        fields=['source_file_date'],
+        fields=["source_file_date"],
         batch_size=1000,
         dry_run=dry_run,
         use_transaction=True,
@@ -106,7 +115,9 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
 
     logger.info("Backfill complete:")
     logger.info("  Updated: %s records", f"{updated_count:,}")
-    logger.info("  Skipped: %s records (no date source available)", f"{skipped_count:,}")
+    logger.info(
+        "  Skipped: %s records (no date source available)", f"{skipped_count:,}"
+    )
 
     if dry_run:
         logger.info("DRY RUN - No records were actually updated")
@@ -114,16 +125,23 @@ def backfill_source_file_date(dry_run: bool = False, limit: int | None = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Backfill source_file_date for existing SalaryRecord records'
+        description="Backfill source_file_date for existing SalaryRecord records"
     )
-    parser.add_argument('--dry-run', action='store_true', help='Dry run mode - do not update records')
-    parser.add_argument('--limit', type=int, default=None, help='Maximum number of records to process (default: all)')
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Dry run mode - do not update records"
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum number of records to process (default: all)",
+    )
 
     args = parser.parse_args()
 
     script_logger.log_call(
-        args={'dry_run': args.dry_run, 'limit': args.limit},
-        context='Backfilling source_file_date for SalaryRecord records'
+        args={"dry_run": args.dry_run, "limit": args.limit},
+        context="Backfilling source_file_date for SalaryRecord records",
     )
 
     try:
@@ -133,5 +151,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

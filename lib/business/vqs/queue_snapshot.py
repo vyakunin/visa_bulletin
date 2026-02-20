@@ -4,8 +4,8 @@ Histogram of applicants waiting, binned by priority date (e.g. by month).
 Used by the solver to consume demand from the head of the queue.
 """
 
-from datetime import date
 from collections import defaultdict
+from datetime import date
 
 
 class VirtualQueueSnapshot:
@@ -43,7 +43,9 @@ class VirtualQueueSnapshot:
         """Return total demand across all buckets."""
         return sum(self._buckets.values())
 
-    def advance_cutoff(self, current_cutoff: date, supply: int) -> tuple[date | None, int]:
+    def advance_cutoff(
+        self, current_cutoff: date, supply: int
+    ) -> tuple[date | None, int]:
         """
         Consume up to supply applicants from the head of the queue (starting at current_cutoff).
         Deducts consumed amounts from buckets so the next month does not double-count.

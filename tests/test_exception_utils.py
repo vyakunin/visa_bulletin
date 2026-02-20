@@ -47,9 +47,9 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_unrecoverable_error_is_re_raised(self):
         """Test that unrecoverable errors are logged and re-raised"""
+
         @handle_unrecoverable_errors(
-            log_message="Test unrecoverable error",
-            logger_instance=self.mock_logger
+            log_message="Test unrecoverable error", logger_instance=self.mock_logger
         )
         def test_func():
             raise ImportError("module not found")
@@ -61,7 +61,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
         self.mock_logger.error.assert_called_once()
         call_args = self.mock_logger.error.call_args
         self.assertIn("Test unrecoverable error", call_args[0][0])
-        self.assertTrue(call_args[1].get('exc_info', False))
+        self.assertTrue(call_args[1].get("exc_info", False))
 
     def test_unrecoverable_error_calls_on_unrecoverable_callback(self):
         """Test that on_unrecoverable callback is called before re-raising"""
@@ -70,7 +70,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
         @handle_unrecoverable_errors(
             log_message="Test error",
             logger_instance=self.mock_logger,
-            on_unrecoverable=lambda e: callback_called.append(e)
+            on_unrecoverable=lambda e: callback_called.append(e),
         )
         def test_func():
             raise ModuleNotFoundError("module not found")
@@ -83,9 +83,8 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_recoverable_error_propagates_by_default(self):
         """Test that recoverable errors propagate normally by default"""
-        @handle_unrecoverable_errors(
-            logger_instance=self.mock_logger
-        )
+
+        @handle_unrecoverable_errors(logger_instance=self.mock_logger)
         def test_func():
             raise ValueError("invalid value")
 
@@ -103,7 +102,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
         @handle_unrecoverable_errors(
             logger_instance=self.mock_logger,
             on_recoverable=lambda e: callback_called.append(e),
-            suppress_recoverable=False
+            suppress_recoverable=False,
         )
         def test_func():
             raise ValueError("invalid value")
@@ -121,7 +120,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
         @handle_unrecoverable_errors(
             logger_instance=self.mock_logger,
             on_recoverable=lambda e: callback_called.append(e),
-            suppress_recoverable=True
+            suppress_recoverable=True,
         )
         def test_func():
             raise ValueError("invalid value")
@@ -134,6 +133,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_successful_execution_returns_value(self):
         """Test that successful execution returns the function's return value"""
+
         @handle_unrecoverable_errors()
         def test_func():
             return "success"
@@ -143,9 +143,9 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_successful_execution_with_suppress_recoverable(self):
         """Test that successful execution works even with suppress_recoverable=True"""
+
         @handle_unrecoverable_errors(
-            on_recoverable=lambda e: None,
-            suppress_recoverable=True
+            on_recoverable=lambda e: None, suppress_recoverable=True
         )
         def test_func():
             return "success"
@@ -155,9 +155,8 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_default_log_message_uses_function_name(self):
         """Test that default log message includes function name"""
-        @handle_unrecoverable_errors(
-            logger_instance=self.mock_logger
-        )
+
+        @handle_unrecoverable_errors(logger_instance=self.mock_logger)
         def my_test_function():
             raise ImportError("test error")
 
@@ -169,9 +168,9 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_custom_log_message_is_used(self):
         """Test that custom log message is used when provided"""
+
         @handle_unrecoverable_errors(
-            log_message="Custom error message",
-            logger_instance=self.mock_logger
+            log_message="Custom error message", logger_instance=self.mock_logger
         )
         def test_func():
             raise ImportError("test error")
@@ -193,7 +192,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
         @handle_unrecoverable_errors(
             logger_instance=self.mock_logger,
             on_recoverable=handle_recoverable,
-            suppress_recoverable=True
+            suppress_recoverable=True,
         )
         def test_func():
             raise ValueError("error 1")
@@ -217,7 +216,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
             logger_instance=self.mock_logger,
             on_unrecoverable=lambda e: unrecoverable_called.append(e),
             on_recoverable=lambda e: recoverable_called.append(e),
-            suppress_recoverable=True
+            suppress_recoverable=True,
         )
         def test_func():
             raise ImportError("unrecoverable")
@@ -232,6 +231,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_function_arguments_passed_through(self):
         """Test that function arguments are passed through correctly"""
+
         @handle_unrecoverable_errors()
         def test_func(arg1, arg2, kwarg1=None):
             return f"{arg1}-{arg2}-{kwarg1}"
@@ -241,6 +241,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
     def test_function_keyword_arguments_passed_through(self):
         """Test that keyword arguments are passed through correctly"""
+
         @handle_unrecoverable_errors()
         def test_func(**kwargs):
             return kwargs
@@ -254,14 +255,14 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
         @handle_unrecoverable_errors(
             logger_instance=self.mock_logger,
-            on_unrecoverable=lambda e: errors_raised.append(type(e).__name__)
+            on_unrecoverable=lambda e: errors_raised.append(type(e).__name__),
         )
         def test_func_import():
             raise ImportError("import error")
 
         @handle_unrecoverable_errors(
             logger_instance=self.mock_logger,
-            on_unrecoverable=lambda e: errors_raised.append(type(e).__name__)
+            on_unrecoverable=lambda e: errors_raised.append(type(e).__name__),
         )
         def test_func_module_not_found():
             raise ModuleNotFoundError("module not found")
@@ -280,7 +281,7 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
         @handle_unrecoverable_errors(
             on_recoverable=lambda e: callback_called.append(type(e).__name__),
-            suppress_recoverable=True
+            suppress_recoverable=True,
         )
         def test_func():
             raise ValueError("value error")
@@ -290,11 +291,10 @@ class TestHandleUnrecoverableErrorsDecorator(unittest.TestCase):
 
         @handle_unrecoverable_errors(
             on_recoverable=lambda e: callback_called.append(type(e).__name__),
-            suppress_recoverable=True
+            suppress_recoverable=True,
         )
         def test_func2():
             raise KeyError("key error")
 
         test_func2()
         self.assertEqual(callback_called, ["ValueError", "KeyError"])
-

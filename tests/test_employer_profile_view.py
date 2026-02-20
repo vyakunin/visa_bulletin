@@ -53,7 +53,7 @@ class EmployerProfileViewTest(TestCase):
 
     def test_basic_rendering(self):
         """Test that profile page renders successfully for valid slug"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -72,62 +72,62 @@ class EmployerProfileViewTest(TestCase):
         )
 
         # Try accessing with non-canonical slug
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-inc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-inc"})
         response = self.client.get(url)
 
         # Should redirect to canonical slug
         self.assertEqual(response.status_code, 301)
-        self.assertIn('/employer/test-company-llc/', response.url)
+        self.assertIn("/employer/test-company-llc/", response.url)
 
     def test_404_handling(self):
         """Test that non-existent employer returns 404"""
-        url = reverse('employer_profile', kwargs={'slug': 'non-existent-company'})
+        url = reverse("employer_profile", kwargs={"slug": "non-existent-company"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 404)
 
     def test_statistics_accuracy(self):
         """Test that approval rate and median salary computed correctly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
 
         # Check that stats are in context
-        self.assertIn('stats', response.context)
-        stats = response.context['stats']
+        self.assertIn("stats", response.context)
+        stats = response.context["stats"]
 
         # Check basic stats
-        self.assertEqual(stats['basic']['total_filings'], 10)
-        self.assertEqual(stats['basic']['approved_filings'], 8)
+        self.assertEqual(stats["basic"]["total_filings"], 10)
+        self.assertEqual(stats["basic"]["approved_filings"], 8)
 
         # Check approval rate (8 out of 10 certified = 80%)
-        self.assertAlmostEqual(stats['approval_rate'], 80.0, places=1)
+        self.assertAlmostEqual(stats["approval_rate"], 80.0, places=1)
 
         # Check median salary (should be around 145000)
-        self.assertIsNotNone(stats['basic']['median_salary'])
+        self.assertIsNotNone(stats["basic"]["median_salary"])
 
     def test_program_filter_h1b(self):
         """Test that program filter (H-1B) works correctly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
-        response = self.client.get(url, {'program': 'h1b'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
+        response = self.client.get(url, {"program": "h1b"})
 
         self.assertEqual(response.status_code, 200)
-        stats = response.context['stats']
+        stats = response.context["stats"]
 
         # Should only count H-1B records (7 out of 10)
-        self.assertEqual(stats['basic']['total_filings'], 7)
+        self.assertEqual(stats["basic"]["total_filings"], 7)
 
     def test_program_filter_perm(self):
         """Test that program filter (PERM) works correctly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
-        response = self.client.get(url, {'program': 'perm'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
+        response = self.client.get(url, {"program": "perm"})
 
         self.assertEqual(response.status_code, 200)
-        stats = response.context['stats']
+        stats = response.context["stats"]
 
         # Should only count PERM records (3 out of 10)
-        self.assertEqual(stats['basic']['total_filings'], 3)
+        self.assertEqual(stats["basic"]["total_filings"], 3)
 
     def test_year_range_filter(self):
         """Test that configurable year range filters data correctly"""
@@ -146,11 +146,11 @@ class EmployerProfileViewTest(TestCase):
             )
 
         # Test with 3 year range
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
-        response = self.client.get(url, {'years': 3})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
+        response = self.client.get(url, {"years": 3})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context['years'], 3)
+        self.assertEqual(response.context["years"], 3)
 
     def test_empty_data_handling(self):
         """Test graceful handling when employer has no filings"""
@@ -168,7 +168,7 @@ class EmployerProfileViewTest(TestCase):
             canonical_cluster=empty_cluster,
         )
 
-        url = reverse('employer_profile', kwargs={'slug': 'empty-company'})
+        url = reverse("employer_profile", kwargs={"slug": "empty-company"})
         response = self.client.get(url)
 
         # Should render without errors
@@ -177,43 +177,42 @@ class EmployerProfileViewTest(TestCase):
 
     def test_top_job_titles(self):
         """Test that top job titles are displayed correctly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        stats = response.context['stats']
+        stats = response.context["stats"]
 
         # Should have top titles
-        self.assertIn('top_titles', stats)
-        self.assertGreater(len(stats['top_titles']), 0)
+        self.assertIn("top_titles", stats)
+        self.assertGreater(len(stats["top_titles"]), 0)
 
         # Should be ordered by count
-        if len(stats['top_titles']) > 1:
+        if len(stats["top_titles"]) > 1:
             self.assertGreaterEqual(
-                stats['top_titles'][0]['count'],
-                stats['top_titles'][1]['count']
+                stats["top_titles"][0]["count"], stats["top_titles"][1]["count"]
             )
 
     def test_geographic_distribution(self):
         """Test geographic distribution data"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        stats = response.context['stats']
+        stats = response.context["stats"]
 
         # Should have state distribution
-        self.assertIn('state_dist', stats)
-        self.assertGreater(len(stats['state_dist']), 0)
+        self.assertIn("state_dist", stats)
+        self.assertGreater(len(stats["state_dist"]), 0)
 
         # Should contain CA and NY states
-        states = [s['worksite_state'] for s in stats['state_dist']]
-        self.assertIn('CA', states)
-        self.assertIn('NY', states)
+        states = [s["worksite_state"] for s in stats["state_dist"]]
+        self.assertIn("CA", states)
+        self.assertIn("NY", states)
 
     def test_cache_effectiveness(self):
         """Test that caching works correctly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
 
         # First request (cold cache)
         response1 = self.client.get(url)
@@ -228,43 +227,43 @@ class EmployerProfileViewTest(TestCase):
 
     def test_seo_metadata(self):
         """Test that SEO metadata is present"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
 
         # Check that SEO context is present
-        self.assertIn('seo', response.context)
-        seo = response.context['seo']
+        self.assertIn("seo", response.context)
+        seo = response.context["seo"]
 
         # Check required SEO fields
-        self.assertIn('title', seo)
-        self.assertIn('description', seo)
-        self.assertIn('canonical_url', seo)
+        self.assertIn("title", seo)
+        self.assertIn("description", seo)
+        self.assertIn("canonical_url", seo)
 
         # Check that title contains company name
-        self.assertIn("Test Company LLC", seo['title'])
+        self.assertIn("Test Company LLC", seo["title"])
 
     def test_chart_data_generated(self):
         """Test that chart data is generated for Plotly"""
-        url = reverse('employer_profile', kwargs={'slug': 'test-company-llc'})
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
 
         # Check that chart data is in context
-        self.assertIn('chart_data', response.context)
-        chart_data = response.context['chart_data']
+        self.assertIn("chart_data", response.context)
+        chart_data = response.context["chart_data"]
 
         # Should have at least some chart data
         self.assertIsInstance(chart_data, dict)
-        self.assertIn('state_filings', chart_data)
-        self.assertIn('state_median_salary', chart_data)
-        self.assertIn('salary_histogram', chart_data)
+        self.assertIn("state_filings", chart_data)
+        self.assertIn("state_median_salary", chart_data)
+        self.assertIn("salary_histogram", chart_data)
 
-        stats = response.context['stats']
-        self.assertIn('salary_percentiles', stats)
-        self.assertIn('salary_histogram', stats)
+        stats = response.context["stats"]
+        self.assertIn("salary_percentiles", stats)
+        self.assertIn("salary_histogram", stats)
 
 
 class EmployerSlugGenerationTest(TestCase):
@@ -272,9 +271,7 @@ class EmployerSlugGenerationTest(TestCase):
 
     def test_slug_auto_generated_on_save(self):
         """Test that slug is auto-generated when creating new cluster"""
-        cluster = EmployerCluster.objects.create(
-            canonical_name="Google LLC"
-        )
+        cluster = EmployerCluster.objects.create(canonical_name="Google LLC")
 
         self.assertIsNotNone(cluster.slug)
         self.assertEqual(cluster.slug, "google-llc")
@@ -282,28 +279,20 @@ class EmployerSlugGenerationTest(TestCase):
     def test_slug_uniqueness(self):
         """Test that slugs are unique with counter suffix"""
         # Create first cluster
-        cluster1 = EmployerCluster.objects.create(
-            canonical_name="Test Company"
-        )
+        cluster1 = EmployerCluster.objects.create(canonical_name="Test Company")
         self.assertEqual(cluster1.slug, "test-company")
 
         # Create second cluster with same name
-        cluster2 = EmployerCluster.objects.create(
-            canonical_name="Test Company"
-        )
+        cluster2 = EmployerCluster.objects.create(canonical_name="Test Company")
         self.assertEqual(cluster2.slug, "test-company-1")
 
         # Create third cluster with same name
-        cluster3 = EmployerCluster.objects.create(
-            canonical_name="Test Company"
-        )
+        cluster3 = EmployerCluster.objects.create(canonical_name="Test Company")
         self.assertEqual(cluster3.slug, "test-company-2")
 
     def test_slug_from_special_characters(self):
         """Test that special characters are handled in slug"""
-        cluster = EmployerCluster.objects.create(
-            canonical_name="AT&T Corp."
-        )
+        cluster = EmployerCluster.objects.create(canonical_name="AT&T Corp.")
 
         # Should convert to URL-safe format
         self.assertEqual(cluster.slug, "att-corp")
@@ -326,15 +315,15 @@ class SitemapTest(TestCase):
 
     def test_sitemap_includes_employer_profiles(self):
         """Test that sitemap includes employer profile URLs"""
-        response = self.client.get('/sitemap.xml')
+        response = self.client.get("/sitemap.xml")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Content-Type'], 'application/xml')
+        self.assertEqual(response["Content-Type"], "application/xml")
 
         # Check that employer profile URLs are included
-        content = response.content.decode('utf-8')
-        self.assertIn('/employer/company-0/', content)
-        self.assertIn('/employer/company-4/', content)
+        content = response.content.decode("utf-8")
+        self.assertIn("/employer/company-0/", content)
+        self.assertIn("/employer/company-4/", content)
 
     def test_sitemap_excludes_low_filing_employers(self):
         """Test that employers with < 5 filings are excluded"""
@@ -345,9 +334,8 @@ class SitemapTest(TestCase):
             total_lca_count=2,
         )
 
-        response = self.client.get('/sitemap.xml')
-        content = response.content.decode('utf-8')
+        response = self.client.get("/sitemap.xml")
+        content = response.content.decode("utf-8")
 
         # Should not include low-volume employer
-        self.assertNotIn('/employer/low-volume-company/', content)
-
+        self.assertNotIn("/employer/low-volume-company/", content)

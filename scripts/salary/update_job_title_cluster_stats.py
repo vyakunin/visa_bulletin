@@ -30,7 +30,7 @@ import os
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 import argparse
@@ -169,6 +169,7 @@ def _recent_filings_by_cluster() -> list[tuple[int, int]]:
     Used for autocomplete ranking so recent titles rank higher.
     """
     from datetime import datetime
+
     start_year = datetime.now().year - RECENT_YEARS
     sql = """
     SELECT
@@ -187,43 +188,59 @@ def _recent_filings_by_cluster() -> list[tuple[int, int]]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Update JobTitleCluster and JobTitle stats and representative titles'
+        description="Update JobTitleCluster and JobTitle stats and representative titles"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Log what would be done without making changes',
+        "--dry-run",
+        action="store_true",
+        help="Log what would be done without making changes",
     )
     args = parser.parse_args()
 
     script_logger.log_call(
-        args={'dry_run': args.dry_run},
-        context='Update JobTitleCluster and JobTitle stats and representative titles from SalaryRecords',
+        args={"dry_run": args.dry_run},
+        context="Update JobTitleCluster and JobTitle stats and representative titles from SalaryRecords",
     )
 
     logger.info("Updating JobTitleCluster and JobTitle statistics...")
     logger.info("=" * 80)
 
     if args.dry_run:
-        logger.info("DRY RUN: would run 4 bulk SQL queries then batch-update JobTitle and JobTitleCluster")
+        logger.info(
+            "DRY RUN: would run 4 bulk SQL queries then batch-update JobTitle and JobTitleCluster"
+        )
         n_jt = _most_frequent_raw_title_per_job_title()
         n_cl = _most_frequent_raw_title_per_cluster()
         n_st = _stats_by_cluster()
         n_recent = _recent_filings_by_cluster()
         logger.info("  JobTitle representative titles: %s rows", f"{len(n_jt):,}")
-        logger.info("  JobTitleCluster representative titles: %s rows", f"{len(n_cl):,}")
+        logger.info(
+            "  JobTitleCluster representative titles: %s rows", f"{len(n_cl):,}"
+        )
         logger.info("  Stats by cluster: %s rows", f"{len(n_st):,}")
-        logger.info("  Recent filings by cluster (last %s years): %s rows", RECENT_YEARS, f"{len(n_recent):,}")
+        logger.info(
+            "  Recent filings by cluster (last %s years): %s rows",
+            RECENT_YEARS,
+            f"{len(n_recent):,}",
+        )
         if n_jt:
-            logger.info("  Sample JobTitle update: id=%s -> %s", n_jt[0][0], n_jt[0][1][:50])
+            logger.info(
+                "  Sample JobTitle update: id=%s -> %s", n_jt[0][0], n_jt[0][1][:50]
+            )
         if n_cl:
-            logger.info("  Sample cluster canonical_title: id=%s -> %s", n_cl[0][0], n_cl[0][1][:50])
+            logger.info(
+                "  Sample cluster canonical_title: id=%s -> %s",
+                n_cl[0][0],
+                n_cl[0][1][:50],
+            )
         return
 
     # 1) Bulk SQL: most frequent raw title per JobTitle
     logger.info("Query 1/4: Most frequent raw title per JobTitle...")
     job_title_updates = _most_frequent_raw_title_per_job_title()
-    logger.info("  Got %s JobTitle representative titles", f"{len(job_title_updates):,}")
+    logger.info(
+        "  Got %s JobTitle representative titles", f"{len(job_title_updates):,}"
+    )
 
     # 2) Bulk SQL: most frequent raw title per cluster
     logger.info("Query 2/4: Most frequent raw title per cluster...")
@@ -257,14 +274,29 @@ def main():
                 jt.title = new_title
                 title_updated_count += 1
         if job_titles:
-            bulk_update_batched(job_titles, batch_size=JOB_TITLE_BATCH_SIZE, fields=['title'])
-        if (i + JOB_TITLE_BATCH_SIZE) % 10000 < JOB_TITLE_BATCH_SIZE or i + JOB_TITLE_BATCH_SIZE >= len(job_title_updates):
-            logger.info("  Processed %s/%s JobTitle batches", f"{(i + JOB_TITLE_BATCH_SIZE):,}", f"{len(job_title_updates):,}")
-    logger.info("  Updated %s JobTitle titles to most frequent raw title", f"{title_updated_count:,}")
+            bulk_update_batched(
+                job_titles, batch_size=JOB_TITLE_BATCH_SIZE, fields=["title"]
+            )
+        if (
+            i + JOB_TITLE_BATCH_SIZE
+        ) % 10000 < JOB_TITLE_BATCH_SIZE or i + JOB_TITLE_BATCH_SIZE >= len(
+            job_title_updates
+        ):
+            logger.info(
+                "  Processed %s/%s JobTitle batches",
+                f"{(i + JOB_TITLE_BATCH_SIZE):,}",
+                f"{len(job_title_updates):,}",
+            )
+    logger.info(
+        "  Updated %s JobTitle titles to most frequent raw title",
+        f"{title_updated_count:,}",
+    )
 
     # 5) Batch-update JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)
     # total_filings/avg_salary from stats_by_cluster; total_filings_recent for autocomplete ranking.
-    logger.info("Updating JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)...")
+    logger.info(
+        "Updating JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)..."
+    )
     all_cluster_ids = list(
         JobTitleCluster.objects.order_by("id").values_list("id", flat=True)
     )
@@ -287,11 +319,22 @@ def main():
             bulk_update_batched(
                 clusters,
                 batch_size=CLUSTER_BATCH_SIZE,
-                fields=['total_filings', 'avg_salary', 'canonical_title', 'total_filings_recent', 'slug'],
+                fields=[
+                    "total_filings",
+                    "avg_salary",
+                    "canonical_title",
+                    "total_filings_recent",
+                    "slug",
+                ],
             )
         processed += len(clusters)
         if processed % 5000 == 0 or processed == len(all_cluster_ids):
-            logger.info("  Processed %s/%s clusters (%s%%)", f"{processed:,}", f"{len(all_cluster_ids):,}", f"{(processed / len(all_cluster_ids) * 100):.1f}")
+            logger.info(
+                "  Processed %s/%s clusters (%s%%)",
+                f"{processed:,}",
+                f"{len(all_cluster_ids):,}",
+                f"{(processed / len(all_cluster_ids) * 100):.1f}",
+            )
 
     logger.info("=" * 80)
     logger.info(
@@ -300,5 +343,5 @@ def main():
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -9,9 +9,7 @@ import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import instance
-from . import services
-from . import traffic_switch
+from . import instance, services, traffic_switch
 from .config import RefreshConfig, load_config
 from .pipeline import run_pipeline
 from .runner import RemoteRunner
@@ -33,6 +31,7 @@ def _wait_app_healthy_via_ssh(
     HTTP→HTTPS redirects, and security group restrictions on port 8000.
     """
     import time
+
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
         result = runner.run_shell(
@@ -56,7 +55,9 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
     recycle via --max-requests, because the volume mount exposes host files to the container.
     """
     override_path = project_root / "deployment" / "docker-compose.override.yml"
-    allowed_hosts = f"{host_ip},localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us"
+    allowed_hosts = (
+        f"{host_ip},localhost,127.0.0.1,visa-bulletin.us,www.visa-bulletin.us"
+    )
     override_content = (
         "version: '3.8'\n"
         "services:\n"
@@ -74,7 +75,9 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
     logger.info("Wrote prod-safe override (no volume mount) at %s", override_path)
 
     compose_file = project_root / "deployment" / "docker-compose.yml"
-    compose_args = f"-f {shlex.quote(str(compose_file))} -f {shlex.quote(str(override_path))}"
+    compose_args = (
+        f"-f {shlex.quote(str(compose_file))} -f {shlex.quote(str(override_path))}"
+    )
     restart_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && "
         f"cd {shlex.quote(str(project_root))} && "
@@ -82,9 +85,15 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
     )
     result = runner.run_shell(restart_cmd, timeout_sec=120)
     if result.returncode != 0:
-        logger.warning("Container restart after override cleanup failed (rc=%s): %s", result.returncode, result.stderr)
+        logger.warning(
+            "Container restart after override cleanup failed (rc=%s): %s",
+            result.returncode,
+            result.stderr,
+        )
     else:
-        logger.info("Restarted web container with prod-safe override (using Docker image code)")
+        logger.info(
+            "Restarted web container with prod-safe override (using Docker image code)"
+        )
 
 
 def run_orchestrate(
@@ -105,15 +114,26 @@ def run_orchestrate(
     """
     active_info, inactive_info = instance.resolve_active_inactive_from_env()
     if not active_info or not inactive_info:
-        logger.error("Orchestrator requires REFRESH_ACTIVE_* and REFRESH_INACTIVE_* env vars")
+        logger.error(
+            "Orchestrator requires REFRESH_ACTIVE_* and REFRESH_INACTIVE_* env vars"
+        )
         return 1
 
-    my_id = os.environ.get("REFRESH_MY_INSTANCE_NAME", "").strip() or os.environ.get("REFRESH_MY_INSTANCE_IP", "").strip()
+    my_id = (
+        os.environ.get("REFRESH_MY_INSTANCE_NAME", "").strip()
+        or os.environ.get("REFRESH_MY_INSTANCE_IP", "").strip()
+    )
     if my_id and not instance.is_this_host_active(my_id, active_info):
         logger.info("This host is inactive; no-op (orchestrator should run on active)")
         return 0
 
-    logger.info("Active: %s (%s), Inactive: %s (%s)", active_info.name, active_info.ip, inactive_info.name, inactive_info.ip)
+    logger.info(
+        "Active: %s (%s), Inactive: %s (%s)",
+        active_info.name,
+        active_info.ip,
+        inactive_info.name,
+        inactive_info.ip,
+    )
 
     project_root = os.environ.get("REFRESH_REMOTE_PROJECT_ROOT", "/opt/visa_bulletin")
     ssh_user = os.environ.get("REFRESH_SSH_USER", "ubuntu")
@@ -132,18 +152,32 @@ def run_orchestrate(
 
     skip_to_traffic_switch = from_step == "traffic_switch"
     if skip_to_traffic_switch:
-        logger.info("--from-step traffic_switch: skipping instance start, pipeline; ensuring SSH and services, then switch")
+        logger.info(
+            "--from-step traffic_switch: skipping instance start, pipeline; ensuring SSH and services, then switch"
+        )
         if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=120):
-            logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
+            logger.error(
+                "Instance %s (%s): SSH or DB not ready",
+                inactive_info.name,
+                inactive_info.ip,
+            )
             return 1
         logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
         services.start_remote_services(remote, remote_root)
         if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
-            logger.warning("Instance %s (%s) HTTP not healthy (non-fatal)", inactive_info.name, inactive_info.ip)
+            logger.warning(
+                "Instance %s (%s) HTTP not healthy (non-fatal)",
+                inactive_info.name,
+                inactive_info.ip,
+            )
     else:
-        assume_running = os.environ.get("REFRESH_ASSUME_INACTIVE_RUNNING", "").strip().lower() in ("1", "true", "yes")
+        assume_running = os.environ.get(
+            "REFRESH_ASSUME_INACTIVE_RUNNING", ""
+        ).strip().lower() in ("1", "true", "yes")
         if assume_running:
-            logger.info("REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)")
+            logger.info(
+                "REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)"
+            )
         else:
             state = instance.get_instance_state(inactive_info.name)
             if state != "running":
@@ -151,14 +185,22 @@ def run_orchestrate(
                 if not instance.start_instance(inactive_info.name):
                     logger.error("Failed to start %s", inactive_info.name)
                     return 1
-                if not instance.wait_instance_running(inactive_info.name, timeout_sec=600):
-                    logger.error("Instance %s did not reach running state", inactive_info.name)
+                if not instance.wait_instance_running(
+                    inactive_info.name, timeout_sec=600
+                ):
+                    logger.error(
+                        "Instance %s did not reach running state", inactive_info.name
+                    )
                     return 1
             else:
                 logger.info("Inactive instance %s already running", inactive_info.name)
 
         if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=600):
-            logger.error("Instance %s (%s): SSH or DB not ready", inactive_info.name, inactive_info.ip)
+            logger.error(
+                "Instance %s (%s): SSH or DB not ready",
+                inactive_info.name,
+                inactive_info.ip,
+            )
             return 1
         logger.info("Inactive instance SSH and DB ready at %s", inactive_info.ip)
 
@@ -178,10 +220,16 @@ def run_orchestrate(
         logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
         services.start_remote_services(remote, remote_root)
         if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
-            logger.warning("Instance %s (%s) HTTP not healthy after start_services (non-fatal)", inactive_info.name, inactive_info.ip)
+            logger.warning(
+                "Instance %s (%s) HTTP not healthy after start_services (non-fatal)",
+                inactive_info.name,
+                inactive_info.ip,
+            )
 
     if no_traffic_switch:
-        logger.info("--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron")
+        logger.info(
+            "--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron"
+        )
         return 0
 
     static_ip_name = os.environ.get("REFRESH_STATIC_IP_NAME", "")
@@ -192,39 +240,58 @@ def run_orchestrate(
         logger.error("Static IP switch failed")
         return 1
 
-    logger.info("Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)")
+    logger.info(
+        "Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)"
+    )
     remote.update_env("REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
     remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
     remote.update_env("REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
     remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
     remote.update_env("REFRESH_MY_INSTANCE_NAME", inactive_info.name)
 
-    setup_https = os.environ.get("REFRESH_SKIP_HTTPS_SETUP", "").strip().lower() not in ("1", "true", "yes")
+    setup_https = os.environ.get(
+        "REFRESH_SKIP_HTTPS_SETUP", ""
+    ).strip().lower() not in ("1", "true", "yes")
     if setup_https:
         logger.info("Setting up HTTPS on new prod (certbot --nginx)")
         if not services.setup_https_on_remote(remote, timeout_sec=120):
-            logger.warning("HTTPS setup failed (non-fatal); run certbot manually on new prod")
+            logger.warning(
+                "HTTPS setup failed (non-fatal); run certbot manually on new prod"
+            )
     else:
         logger.info("REFRESH_SKIP_HTTPS_SETUP: skipping HTTPS setup on new prod")
 
-    reassign_staging_ip = os.environ.get("REFRESH_SKIP_STAGING_IP_REASSIGN", "").strip().lower() not in ("1", "true", "yes")
+    reassign_staging_ip = os.environ.get(
+        "REFRESH_SKIP_STAGING_IP_REASSIGN", ""
+    ).strip().lower() not in ("1", "true", "yes")
     if reassign_staging_ip:
         staging_static_ip = os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "").strip()
         if not staging_static_ip:
-            logger.warning("REFRESH_STAGING_STATIC_IP_NAME not set; skipping staging IP reassign")
+            logger.warning(
+                "REFRESH_STAGING_STATIC_IP_NAME not set; skipping staging IP reassign"
+            )
         else:
-            logger.info("Re-assigning staging static IP %s to old prod %s", staging_static_ip, active_info.name)
-            if not traffic_switch.attach_staging_static_ip_to_old_prod(staging_static_ip, active_info.name):
+            logger.info(
+                "Re-assigning staging static IP %s to old prod %s",
+                staging_static_ip,
+                active_info.name,
+            )
+            if not traffic_switch.attach_staging_static_ip_to_old_prod(
+                staging_static_ip, active_info.name
+            ):
                 logger.warning("Staging IP reassign failed (non-fatal)")
     else:
         logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
 
-    logger.info("Replacing docker-compose.override.yml on new prod with prod-safe version (no volume mount)")
+    logger.info(
+        "Replacing docker-compose.override.yml on new prod with prod-safe version (no volume mount)"
+    )
     _write_prod_safe_override(remote, remote_root, inactive_info.ip)
     if not _wait_app_healthy_via_ssh(remote, timeout_sec=120):
         logger.warning("New prod not healthy after override cleanup (non-fatal)")
 
     import time
+
     logger.info("Safety interval: %s sec", safety_interval_sec)
     time.sleep(safety_interval_sec)
 

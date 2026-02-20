@@ -25,7 +25,9 @@ MIN_AUTOCOMPLETE_RESULTS = 1
 MIN_DIRECTORY_ENTRIES = 10
 
 
-def _curl_localhost(runner: Runner, path: str, timeout_sec: int = 10) -> tuple[int, str]:
+def _curl_localhost(
+    runner: Runner, path: str, timeout_sec: int = 10
+) -> tuple[int, str]:
     """Curl localhost:8000 via runner.run_shell. Returns (http_status_code, body)."""
     result = runner.run_shell(
         f"curl -s -w '\\n%{{http_code}}' --max-time {timeout_sec} 'http://localhost:8000{path}'",
@@ -117,7 +119,12 @@ def _run_db_smoke_tests(runner: Runner, db_name: str) -> None:
     with_slugs = int(with_slugs_s.strip()) if with_slugs_s.strip() else 0
     if total_clusters > 0:
         slug_pct = with_slugs * 100 // total_clusters
-        logger.info("Employer clusters: %s total, %s with slugs (%s%%)", total_clusters, with_slugs, slug_pct)
+        logger.info(
+            "Employer clusters: %s total, %s with slugs (%s%%)",
+            total_clusters,
+            with_slugs,
+            slug_pct,
+        )
         if slug_pct < MIN_SLUG_PERCENT:
             raise RuntimeError(
                 f"Too many employer clusters without slugs: {total_clusters - with_slugs} missing"
@@ -136,7 +143,10 @@ def _run_db_smoke_tests(runner: Runner, db_name: str) -> None:
     if jt_total > 0:
         jt_slug_pct = jt_with_slugs * 100 // jt_total
         logger.info(
-            "Job title clusters: %s total, %s with slugs (%s%%)", jt_total, jt_with_slugs, jt_slug_pct,
+            "Job title clusters: %s total, %s with slugs (%s%%)",
+            jt_total,
+            jt_with_slugs,
+            jt_slug_pct,
         )
         if jt_slug_pct < MIN_SLUG_PERCENT:
             raise RuntimeError(
@@ -170,7 +180,9 @@ def _run_db_smoke_tests(runner: Runner, db_name: str) -> None:
 
 
 def _validate_autocomplete_fields(
-    results: list[dict], label: str, required_fields: list[str],
+    results: list[dict],
+    label: str,
+    required_fields: list[str],
 ) -> None:
     """Validate that autocomplete results contain required non-null fields."""
     for item in results:
@@ -201,7 +213,9 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Homepage: OK (200)")
 
-    status, body = _curl_localhost(runner, "/api/job-title-autocomplete/?q=software&limit=5")
+    status, body = _curl_localhost(
+        runner, "/api/job-title-autocomplete/?q=software&limit=5"
+    )
     if status != 200:
         raise RuntimeError(
             f"Job title autocomplete returned HTTP {status}. "
@@ -215,14 +229,20 @@ def _run_http_smoke_tests(runner: Runner) -> None:
                 f"for 'software' (expected >= {MIN_AUTOCOMPLETE_RESULTS}). "
                 "Did update_job_title_cluster_stats populate total_filings?"
             )
-        _validate_autocomplete_fields(results, "Job title", required_fields=["title", "slug", "total_filings"])
+        _validate_autocomplete_fields(
+            results, "Job title", required_fields=["title", "slug", "total_filings"]
+        )
     except json.JSONDecodeError:
         raise RuntimeError(
             f"Job title autocomplete returned invalid JSON. Body: {body[:500]}"
         )
-    logger.info("[HTTP] Job title autocomplete: OK (%d results, fields validated)", len(results))
+    logger.info(
+        "[HTTP] Job title autocomplete: OK (%d results, fields validated)", len(results)
+    )
 
-    status, body = _curl_localhost(runner, "/api/company-autocomplete/?q=google&limit=5")
+    status, body = _curl_localhost(
+        runner, "/api/company-autocomplete/?q=google&limit=5"
+    )
     if status != 200:
         raise RuntimeError(
             f"Employer autocomplete returned HTTP {status}. "
@@ -236,12 +256,16 @@ def _run_http_smoke_tests(runner: Runner) -> None:
                 f"for 'google' (expected >= {MIN_AUTOCOMPLETE_RESULTS}). "
                 "Did update_employer_stats populate filing counts?"
             )
-        _validate_autocomplete_fields(results, "Employer", required_fields=["name", "slug", "count"])
+        _validate_autocomplete_fields(
+            results, "Employer", required_fields=["name", "slug", "count"]
+        )
     except json.JSONDecodeError:
         raise RuntimeError(
             f"Employer autocomplete returned invalid JSON. Body: {body[:500]}"
         )
-    logger.info("[HTTP] Employer autocomplete: OK (%d results, fields validated)", len(results))
+    logger.info(
+        "[HTTP] Employer autocomplete: OK (%d results, fields validated)", len(results)
+    )
 
     status, body = _curl_localhost(runner, "/job-titles/")
     if status != 200:

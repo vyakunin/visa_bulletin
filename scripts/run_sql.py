@@ -147,9 +147,15 @@ Examples:
     )
     parser.add_argument("--query", "-q", help="SQL query to execute")
     parser.add_argument("--table", "-t", help="Table name to explore")
-    parser.add_argument("--limit", type=int, default=10, help="Limit for table exploration")
-    parser.add_argument("--dry-run", action="store_true", help="Log mutation without executing")
-    parser.add_argument("--yes", action="store_true", help="Skip confirmation for mutations")
+    parser.add_argument(
+        "--limit", type=int, default=10, help="Limit for table exploration"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Log mutation without executing"
+    )
+    parser.add_argument(
+        "--yes", action="store_true", help="Skip confirmation for mutations"
+    )
     args = parser.parse_args()
 
     script_logger.log_call(
