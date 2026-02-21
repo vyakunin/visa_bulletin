@@ -30,6 +30,7 @@ class PipelineContext:
     salary_relevant_sources_ingested_count: int = (
         -1
     )  # DOL sources in this run; -1 = unknown, 0 = skip clustering
+    domain: str | None = None  # Scope ingest to a single domain (e.g. "visa_bulletin")
 
 
 SYNC_CODE_TIMEOUT_SEC = 600
@@ -41,9 +42,13 @@ BUILD_PIPELINE_BINARIES_SSH_TIMEOUT_SEC = 7200
 def step_sync_code(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:
-    """Sync code from the orchestrator host (active) to the target host (inactive) via rsync.
+    """Sync code on the target host (inactive) by pulling from the configured git branch.
 
-    Prevents code drift that causes stale BUILD deps, wrong enum values, etc.
+    Uses REFRESH_SYNC_BRANCH (default: "staging") — runs git fetch + reset --hard on the
+    target so it has the exact code from that branch.  More robust than rsync: works even
+    when the orchestrator host is on a different branch, and .git history is preserved for
+    rollback / inspection.
+
     Also creates deployment/docker-compose.override.yml on the target so the web container
     mounts the host's code directory instead of using the (potentially stale) Docker image code.
     No-op for local/mock runners.
@@ -53,53 +58,23 @@ def step_sync_code(
     if not isinstance(runner, RemoteRunner):
         return
 
-    local_root = os.environ.get("REFRESH_LOCAL_PROJECT_ROOT", "/opt/visa_bulletin")
     remote_root = str(config.project_root)
+    branch = os.environ.get("REFRESH_SYNC_BRANCH", "staging")
 
-    excludes = [
-        ".env",
-        ".env.bak",
-        "bazel-*",
-        "logs/",
-        "saved_pages/",
-        "backups/",
-        "__pycache__/",
-        "*.pyc",
-        ".git/",
-        "populate_log.txt",
-        "deployment/docker-compose.override.yml",
-        "data/salary/dol_data/",
-        "data/bulletin/",
-    ]
-    exclude_args = " ".join(f"--exclude={shlex.quote(e)}" for e in excludes)
-
-    ssh_opts = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
-    if runner.ssh_key_path:
-        ssh_opts += f" -i {runner.ssh_key_path}"
-
-    rsync_cmd = (
-        f"rsync -az --delete -e '{ssh_opts}' {exclude_args} "
-        f"{local_root}/ {runner.ssh_user}@{runner.host}:{remote_root}/"
+    git_cmd = (
+        f"cd {remote_root} && "
+        f"git fetch origin {shlex.quote(branch)} && "
+        f"git checkout -f {shlex.quote(branch)} 2>/dev/null || git checkout -b {shlex.quote(branch)} origin/{shlex.quote(branch)} && "
+        f"git reset --hard origin/{shlex.quote(branch)}"
     )
-    logger.info(
-        "Syncing code from %s to %s@%s:%s",
-        local_root,
-        runner.ssh_user,
-        runner.host,
-        remote_root,
-    )
-    result = subprocess.run(
-        ["bash", "-c", rsync_cmd],
-        capture_output=True,
-        text=True,
-        timeout=SYNC_CODE_TIMEOUT_SEC,
-        check=False,
-    )
+    logger.info("Syncing code on %s via git (branch=%s)", runner.host, branch)
+    result = runner.run_shell(git_cmd, timeout_sec=SYNC_CODE_TIMEOUT_SEC)
     if result.returncode != 0:
         raise RuntimeError(
-            f"Code sync failed (rc={result.returncode}): {result.stderr[:2000]}"
+            f"Code sync (git pull) failed (rc={result.returncode}): "
+            f"{(result.stderr or result.stdout or '')[:2000]}"
         )
-    logger.info("Code synced successfully")
+    logger.info("Code synced successfully (branch=%s)", branch)
 
     # Docker/gunicorn uses standard Python which requires __init__.py for packages.
     # Bazel handles imports via runfiles and doesn't need them, so they're not in the
@@ -298,11 +273,17 @@ def _parse_salary_relevant_count(tail: str) -> int | None:
 def step_run_ingest(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> tuple[int, int | None]:
-    """Run discover-and-ingest --all-domains. Returns (sources_count, salary_relevant_count or None)."""
+    """Run discover-and-ingest. Uses --domain if scoped, otherwise --all-domains. Returns (sources_count, salary_relevant_count or None)."""
+    domain_args: list[str] = []
+    if context.domain:
+        domain_args = ["--domain", context.domain]
+        logger.info("Ingest scoped to domain: %s", context.domain)
+    else:
+        domain_args = ["--all-domains"]
     result = runner.run_bin(
         "scripts/ingest/run_pipeline",
         "discover-and-ingest",
-        "--all-domains",
+        *domain_args,
         cwd=config.project_root,
         timeout_sec=INGEST_SSH_TIMEOUT_SEC,
     )
