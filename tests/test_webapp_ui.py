@@ -48,18 +48,12 @@ class TestDashboardUIBehavior(unittest.TestCase):
                 "webapp.views.bulletin.dashboard.get_aggregated_visa_class_data"
             ) as mock_service:
                 mock_service.return_value = ([], False)
-                with patch(
-                    "webapp.views.bulletin.dashboard.BlogPost"
-                ) as mock_blog:
-                    mock_blog.objects.filter.return_value.order_by.return_value.first.return_value = (
-                        None
-                    )
-                    dashboard_view(request)
+                dashboard_view(request)
 
-                    self.assertTrue(mock_render.called)
-                    context = mock_render.call_args[0][2]
-                    self.assertIn("submission_date", context)
-                    self.assertEqual(context["submission_date"], date(2024, 1, 1))
+                self.assertTrue(mock_render.called)
+                context = mock_render.call_args[0][2]
+                self.assertIn("submission_date", context)
+                self.assertEqual(context["submission_date"], date(2024, 1, 1))
 
     def test_dropdown_fields_have_auto_submit(self):
         """
@@ -105,17 +99,11 @@ class TestDashboardUIBehavior(unittest.TestCase):
                 "webapp.views.bulletin.dashboard.get_aggregated_visa_class_data"
             ) as mock_service:
                 mock_service.return_value = ([], False)
-                with patch(
-                    "webapp.views.bulletin.dashboard.BlogPost"
-                ) as mock_blog:
-                    mock_blog.objects.filter.return_value.order_by.return_value.first.return_value = (
-                        None
-                    )
-                    dashboard_view(request)
+                dashboard_view(request)
 
-                    context = mock_render.call_args[0][2]
-                    self.assertIn("submission_date", context)
-                    self.assertIsInstance(context["submission_date"], date)
+                context = mock_render.call_args[0][2]
+                self.assertIn("submission_date", context)
+                self.assertIsInstance(context["submission_date"], date)
 
     def test_update_button_allows_manual_submission(self):
         """

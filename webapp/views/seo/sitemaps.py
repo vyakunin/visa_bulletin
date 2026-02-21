@@ -1,4 +1,4 @@
-"""Robots and sitemap views."""
+"""Robots, sitemap views."""
 
 import logging
 

@@ -51,7 +51,6 @@ def expert_persistence(
 
     # Filter valid cutoffs before knowledge_date
     # (Note: cutoffs list is already ordered by bulletin date)
-    candidates = []
     # Optimization: slice from end? No, need to check date.
     # Let's verify assumption: cutoffs are ordered.
     # So the last one with date < knowledge_date is the persistence value.
@@ -346,7 +345,7 @@ def expert_recency_seasonal(
     return expert_seasonal_median(visa_class, country, action_type, knowledge_date)
 
 
-from functools import lru_cache
+from functools import lru_cache  # noqa: E402
 
 
 def _physics_prediction_impl(
@@ -493,7 +492,6 @@ def expert_supply_aware(
         # 3. Predict: Advance by (Pace * Ratio * 30 days) ?
         # Pace is in "days/month".
         # If ratio is 1.5, we advance 1.5x speed.
-        days_adv = pace * ratio
         # Cap at 365 days? No, theoretical max is high.
 
         # Project forward
@@ -672,4 +670,193 @@ ALL_EXPERTS = {
     "supply_aware": expert_supply_aware,
     "dos_historical": expert_dos_historical,
     "demand_signal": expert_demand_signal,
+}
+
+
+# ---------------------------------------------------------------------------
+# Multi-step trajectory functions
+# ---------------------------------------------------------------------------
+# Each returns list[date | None] of length `steps`, representing the
+# expert's prediction for months 1..steps ahead of knowledge_date.
+
+def _get_pace(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, lookback_days: int,
+) -> float | None:
+    """Extract monthly pace (days/month) from trailing cutoff history."""
+    all_cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
+    start = knowledge_date - timedelta(days=lookback_days)
+    window = [c for c in all_cutoffs
+              if start <= c.bulletin.publication_date < knowledge_date]
+    if len(window) < 2:
+        return None
+    first, last = window[0], window[-1]
+    months = ((last.bulletin.publication_date.year - first.bulletin.publication_date.year) * 12
+              + (last.bulletin.publication_date.month - first.bulletin.publication_date.month))
+    if months < 1:
+        months = 1
+    return (last.cutoff_date - first.cutoff_date).days / months
+
+
+def _pace_trajectory(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int, lookback_days: int,
+) -> list[date | None]:
+    """Linear extrapolation trajectory at a fixed pace."""
+    current = expert_persistence(visa_class, country, action_type, knowledge_date)
+    pace = _get_pace(visa_class, country, action_type, knowledge_date, lookback_days)
+    if current is None or pace is None:
+        return [None] * steps
+    return [current + timedelta(days=int(pace * (i + 1))) for i in range(steps)]
+
+
+def _seasonal_chain_trajectory(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int,
+) -> list[date | None]:
+    """Chain monthly seasonal median predictions forward."""
+    current = expert_persistence(visa_class, country, action_type, knowledge_date)
+    if current is None:
+        return [None] * steps
+    trajectory: list[date | None] = []
+    cutoff = current
+    for i in range(steps):
+        target_month = ((knowledge_date.month + i) % 12) + 1
+        move = get_seasonal_prediction(
+            visa_class, country, action_type,
+            knowledge_date=knowledge_date,
+            target_month=target_month, min_samples=3,
+        )
+        if move is not None:
+            cutoff = cutoff + timedelta(days=move)
+        trajectory.append(cutoff)
+    return trajectory
+
+
+def trajectory_persistence(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    current = expert_persistence(visa_class, country, action_type, knowledge_date, facts)
+    return [current] * steps if current else [None] * steps
+
+
+def trajectory_linear_extrap(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    return _pace_trajectory(visa_class, country, action_type, knowledge_date, steps, 370)
+
+
+def trajectory_momentum_3m(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    return _pace_trajectory(visa_class, country, action_type, knowledge_date, steps, 130)
+
+
+def trajectory_seasonal_median(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    return _seasonal_chain_trajectory(visa_class, country, action_type, knowledge_date, steps)
+
+
+def trajectory_october_rule(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    """Persistence except at October transitions; uses seasonal there."""
+    current = expert_persistence(visa_class, country, action_type, knowledge_date, facts)
+    if current is None:
+        return [None] * steps
+    trajectory: list[date | None] = []
+    cutoff = current
+    for i in range(steps):
+        target_month = ((knowledge_date.month + i) % 12) + 1
+        if target_month == 10:
+            pred = expert_seasonal_median(visa_class, country, action_type, knowledge_date, facts)
+            cutoff = pred if pred else cutoff
+        trajectory.append(cutoff)
+    return trajectory
+
+
+def trajectory_fy_reset(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    """October retrogression + Q1 recovery, persistence otherwise."""
+    current = expert_persistence(visa_class, country, action_type, knowledge_date, facts)
+    if current is None:
+        return [None] * steps
+    trajectory: list[date | None] = []
+    cutoff = current
+    for i in range(steps):
+        target_month = ((knowledge_date.month + i) % 12) + 1
+        if target_month == 10:
+            retro = get_median_october_retrogression(
+                visa_class, country, action_type, knowledge_date)
+            if retro > 0:
+                cutoff = cutoff - timedelta(days=retro)
+        elif target_month in (11, 12, 1):
+            recovery = get_median_post_retro_recovery(
+                visa_class, country, action_type, knowledge_date, target_month)
+            if recovery > 0:
+                cutoff = cutoff + timedelta(days=recovery)
+        trajectory.append(cutoff)
+    return trajectory
+
+
+def trajectory_physics(
+    visa_class: str, country: int, action_type: str,
+    knowledge_date: date, steps: int = 12, facts: list | None = None,
+) -> list[date | None]:
+    """Run the physics engine for N steps to get a full trajectory."""
+    from lib.business.vqs.data_cache import get_cutoff_at_date
+    from lib.business.vqs.solver import (
+        build_virtual_queue_snapshot,
+        calibrate_queue_depth,
+        get_monthly_supply,
+        run_monthly_loop,
+    )
+    if facts is None:
+        from models.raw_facts import RawFactsLedger
+        facts = list(RawFactsLedger.objects.filter(publication_date__lte=knowledge_date))
+    current = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
+    if not current:
+        return [None] * steps
+    queue = build_virtual_queue_snapshot(knowledge_date, facts, visa_class, country)
+    supply = get_monthly_supply(knowledge_date, country=country, visa_class=visa_class)
+    calibrate_queue_depth(
+        queue, current, knowledge_date, supply, visa_class, country, action_type)
+    results: list[date | None] = []
+    for res in run_monthly_loop(queue, current, supply, start_month=knowledge_date, max_months=steps):
+        results.append(res.cutoff_date)
+    while len(results) < steps:
+        results.append(results[-1] if results else None)
+    return results
+
+
+def _identity_trajectory(expert_fn):
+    """Wrap a single-step expert into a trajectory by repeating step-1 for all steps."""
+    def _traj(visa_class, country, action_type, knowledge_date, steps=12, facts=None):
+        expert_fn(visa_class, country, action_type, knowledge_date, facts)
+        return _seasonal_chain_trajectory(visa_class, country, action_type, knowledge_date, steps)
+    return _traj
+
+
+ALL_EXPERT_TRAJECTORIES = {
+    "persistence": trajectory_persistence,
+    "seasonal_median": trajectory_seasonal_median,
+    "linear_extrap": trajectory_linear_extrap,
+    "momentum_3m": trajectory_momentum_3m,
+    "october_rule": trajectory_october_rule,
+    "fy_reset": trajectory_fy_reset,
+    "seasonal_directional": trajectory_seasonal_median,  # same chain logic
+    "vol_gated": trajectory_seasonal_median,  # base is seasonal
+    "recency_seasonal": trajectory_seasonal_median,
+    "physics": trajectory_physics,
+    "supply_aware": trajectory_linear_extrap,  # pace-based, supply ratio is step-1 only
+    "dos_historical": trajectory_seasonal_median,
+    "demand_signal": trajectory_seasonal_median,
 }

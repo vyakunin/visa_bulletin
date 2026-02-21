@@ -38,8 +38,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    mem_limit: 200m
-    memswap_limit: 200m
+    mem_limit: 512m
+    memswap_limit: 512m
     command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers $${WEB_CONCURRENCY:-2} --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"]

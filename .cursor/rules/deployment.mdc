@@ -89,6 +89,27 @@ aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
 
 **Rationale:** Documenting IAM and instance credentials avoids ad-hoc key creation and keeps Lightsail API access consistent for deployment and blue-green automation.
 
+## Rule: Never Edit Files Directly on Instances
+
+**🚨 CRITICAL: NEVER SSH into an instance and edit files (sed, vi, echo >>, etc.) as a fix. ALL changes go through git branches.**
+
+**When fixing an instance issue (e.g. OOM, bad config, missing feature):**
+1. Make the fix on `main` (Cursor workspace)
+2. Commit on `main`
+3. Cherry-pick to the target branch via worktree (`visa_bulletin_staging/` or `visa_bulletin_prod/`)
+4. Push the branch
+5. `git fetch && git reset --hard origin/<branch>` on the instance
+6. Restart the container
+
+**One-time instance-specific config** (ALLOWED_HOSTS with instance IP, WEB_CONCURRENCY tuning) belongs in `deployment/docker-compose.override.yml` on the instance (not tracked in git). But **base config in `docker-compose.yml` must be sane enough to work without overrides** — e.g. memory limits that don't OOM-kill workers.
+
+**Note:** `docker-compose -f deployment/docker-compose.yml up` does NOT auto-load `docker-compose.override.yml`. Overrides only auto-load when running `docker-compose up` from inside `deployment/`. Since we invoke with `-f`, the base file is what determines runtime behavior. Keep it correct.
+
+**❌ BAD:** `ssh staging_2Gb_vm "sed -i 's/200m/512m/' deployment/docker-compose.yml"` (lost on next `git reset --hard`)
+**✅ GOOD:** Fix in main → commit → cherry-pick to staging → push → pull on instance
+
+**Incident reference (2026-02-21):** Staging had `mem_limit: 200m` in base docker-compose.yml. Workers OOM-killed on every request. Fix was applied directly via `sed` on the instance, but would have been lost on next deploy. Proper fix: update base file on `main`, cherry-pick through branches.
+
 ## Rule: Audit Container Topology Before ANY Docker Operation on Prod
 
 **🚨 CRITICAL: Never run `docker-compose up/down/stop/rm`, `docker stop`, or `docker rm` on prod without first understanding what is actually serving traffic.**
