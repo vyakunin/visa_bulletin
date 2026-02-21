@@ -525,6 +525,10 @@
         document.getElementById('chart-loading').style.display = 'none';
         document.getElementById('chart-plot').style.display = 'block';
 
+        // Plotly can't determine container width when rendered in display:none;
+        // trigger resize now that the container is visible
+        Plotly.Plots.resize('priority-date-chart');
+
         // Add click handler for bulletin links
         gd.on('plotly_click', function (data) {
             var point = data.points[0];
