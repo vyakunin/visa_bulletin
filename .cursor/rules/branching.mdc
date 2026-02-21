@@ -10,7 +10,7 @@ alwaysApply: true
 
 - **`main`** — Development. Can be messy, broken, WIP. Nothing deploys from `main`.
 - **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to staging instance. Data refreshes run here. Patched until ready for graduation.
-- **`prod`** — Production. Almost frozen. Updated only for: graduation (IP flip), critical hotfixes, or automated data refresh.
+- **`prod`** — **Mirror of production. NEVER update unless the change is actually deployed to the prod-serving instance.** Updated only in two cases: (1) graduation — fast-forward to match `staging` after IP flip, (2) critical hotfix — fix deployed directly to the prod-serving instance. The branch must always reflect exactly what's running in production.
 
 ## Separation of Concerns
 
@@ -22,11 +22,11 @@ Three independent operations — never conflate them:
 
 ## Workflows (Summary)
 
-**Feature:** `main` → cherry-pick to `staging` → deploy to staging instance → test → iterate
+**Feature:** `main` → cherry-pick to `staging` → deploy to staging instance → test → iterate. **Never to `prod`.**
 
-**Graduation:** tag `staging` → IP flip → verify prod → `git checkout prod && git merge staging` → bring new staging up to date
+**Graduation:** tag `staging` → IP flip → verify prod → fast-forward `prod` to `staging` → bring new staging up to date
 
-**Hotfix:** fix on `prod` → deploy to prod-serving instance → cherry-pick to `staging` + `main`
+**Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod-serving instance → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
 **Data refresh:** orchestrator on staging → graduation (IP flip) if promoting fresh data to prod
 
@@ -60,8 +60,8 @@ git push origin prod
 
 - **Never scp files to servers.** All changes through git branches.
 - **Never check out staging/prod in the main workspace.** Use worktrees.
-- **`prod` branch = what's in production.** View via `visa_bulletin_prod/` worktree.
-- **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree.
+- **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only graduation (fast-forward from staging) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving instance, it doesn't belong on the `prod` branch.
+- **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree. All features go through staging first.
 - **Tags mark releases.** `v1.X.Y` on `staging` before IP flip, then on `prod` after fast-forward.
 - **Code deploy ≠ data refresh.** Quick code fix = commit + push + git pull + restart. Data refresh = orchestrator pipeline (hours).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving.

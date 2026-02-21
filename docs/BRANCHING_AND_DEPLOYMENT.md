@@ -14,17 +14,17 @@ Three long-lived branches:
 |--------|---------|------------|
 | `main` | Development. WIP, experimental, can be broken. | High — changes frequently |
 | `staging` | Release candidate. Real server, real data testing. Data refreshes run here. | Medium — patched until ready |
-| `prod` | Production. Almost frozen. Exact code serving live traffic. | Low — hotfixes and graduations only |
+| `prod` | **Mirror of production. NEVER update unless the change is deployed to prod.** | Low — graduations and critical hotfixes only |
 
 **`main`** is the development workspace. Features are built here, tests run locally, code can be incoherent. Nothing deploys from `main` directly.
 
-**`staging`** accepts cherry-picks from `main`. It gets deployed to the staging instance for end-to-end validation with real data. Data refreshes (orchestrator pipeline) run against the staging instance. `staging` can be patched many times before it's deemed ready.
+**`staging`** accepts cherry-picks from `main`. It gets deployed to the staging instance for end-to-end validation with real data. Data refreshes (orchestrator pipeline) run against the staging instance. `staging` can be patched many times before it's deemed ready. **All features and non-critical fixes go through `staging`, never directly to `prod`.**
 
-**`prod`** tracks exactly what's serving production traffic. Updated only for:
-- **Graduation**: staging proven stable, IP flip makes it prod, `prod` branch fast-forwards to match
-- **Critical hotfix**: 5xx errors, crashes — fix committed directly to `prod`, deployed to the serving instance
-- **Orchestrator / pipeline script hotfix**: fix orchestrator or data-processing code without touching the web container (see [Orchestrator Hotfix](#orchestrator-hotfix-pipeline-or-script-fix))
-- **Automated data refresh**: orchestrator runs on the prod host as a Bazel binary, driving the pipeline on the staging host remotely via SSH
+**`prod`** is a strict mirror of what's running on the production-serving instance. It must always reflect exactly what's deployed. Updated only in two cases:
+- **Graduation**: staging proven stable → IP flip → `prod` branch fast-forwards to match `staging`
+- **Critical hotfix**: 5xx errors, crashes, production-down situations — fix on `main`, cherry-pick to `prod`, deploy directly to the prod-serving instance, then cherry-pick to `staging`
+
+**`prod` is NEVER updated for:** features, non-critical fixes, orchestrator scripts, or any code that isn't actually deployed to the prod-serving instance. If it's not running in production, it doesn't belong on the `prod` branch.
 
 ---
 
@@ -120,7 +120,7 @@ Orchestrator pipeline ingests new data, runs post-processing (clustering, stats,
 
 **Trigger**: new data available from DOL/State Dept sources (eventually cron-automated).
 
-**Where it runs**: the orchestrator binary runs on the **prod host** (Bazel-built, not Docker) and drives all pipeline steps on the **staging host** remotely via SSH. The pipeline (see [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md)) handles: code sync (rsync from prod to staging), DB migrations, ingest, post-processing, smoke tests.
+**Where it runs**: the orchestrator binary runs on the **prod host** (Bazel-built, not Docker) and drives all pipeline steps on the **staging host** remotely via SSH. The pipeline (see [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md)) handles: code sync (git pull on staging), DB migrations, ingest, post-processing, smoke tests.
 
 **Scope**: database content. Code is synced as a prerequisite (step_sync_code), not as the primary goal.
 
@@ -189,14 +189,14 @@ Hotfixes go to `prod` first, then propagate back. You fix what's serving traffic
 ### Data Refresh (No Code Change)
 
 1. Orchestrator runs on the **prod host** (Bazel binary, not Docker) and drives the pipeline on the **staging host** via SSH
-2. Pipeline handles: code sync (rsync from prod to staging), ingest, post-processing, smoke
+2. Pipeline handles: code sync (git pull on staging), ingest, post-processing, smoke
 3. After success on staging: graduation flow (IP flip) to promote fresh data to prod
 
 See [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md) for pipeline steps, failure modes, and resuming.
 
 ### Orchestrator Hotfix (Pipeline or Script Fix)
 
-For fixes to the orchestrator or data-processing scripts — code that gunicorn never imports. Safe to deploy directly to prod without affecting the web container.
+For **critical** fixes to the orchestrator or data-processing scripts that need to be deployed to the prod host during an active pipeline run. This is a form of prod hotfix — only use when the pipeline is broken and needs an immediate fix on the prod host.
 
 **Which files are safe?** `scripts/cron/refresh/`, `scripts/salary/`, `scripts/ingest/`, `scripts/cache/`, `scripts/oneoff/`, build files (`BUILD`, `MODULE.bazel`, `build_all.sh`). For `lib/` files, verify gunicorn doesn't import them: `rg "from lib.the_module" webapp/ models/`.
 
@@ -210,7 +210,9 @@ For fixes to the orchestrator or data-processing scripts — code that gunicorn 
    cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging
 ```
 
-The web container is untouched — gunicorn never imports script files. The next orchestrator run rsyncs the fixed code to staging automatically via `step_sync_code`.
+**Important:** This follows the same principle — `prod` branch is only updated when the code is actually deployed to the prod host. Non-critical script fixes should go through `staging` and wait for the next graduation.
+
+The web container is untouched — gunicorn never imports script files. The next orchestrator run syncs the fixed code to staging automatically via `step_sync_code` (git pull).
 
 **When NOT to use this path:** if the change also touches `webapp/`, `models/`, `django_config/`, or templates. Use the staging graduation path instead. See [Which Deployment Path?](#which-deployment-path) below.
 
@@ -321,6 +323,13 @@ The scp + volume mount pattern was a historical workaround that caused drift bet
 - `git log prod` shows the full history of what was deployed
 - `git diff staging prod` shows what's different between environments
 - **Never check out staging/prod in the main workspace** — use worktrees to preserve AI rules
+
+### `prod` branch is sacred — mirror of production only
+
+- **NEVER** cherry-pick features or non-critical fixes to `prod`
+- **NEVER** update `prod` unless the code is actually deployed to the prod-serving instance
+- Only two operations touch `prod`: graduation (fast-forward from `staging`) and critical hotfixes (deployed directly)
+- If you're unsure, the answer is: go through `staging` first
 
 ### Tags mark production releases
 

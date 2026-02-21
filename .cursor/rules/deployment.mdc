@@ -16,6 +16,49 @@ alwaysApply: true
 - What's running there (Docker vs direct gunicorn)
 - Database being used (blue vs green)
 
+## Docker Image Strategy
+
+### How Images Are Built and Tagged
+
+Docker images are built by GitHub Actions (`.github/workflows/docker-build-push.yml`) on pushes to `staging` and `prod` branches or version tags (`v*.*.*`).
+
+**Tag assignment:**
+- `:latest` — Only assigned to **`prod` branch** builds. This is what `docker-compose.yml` uses by default (`${IMAGE_TAG:-latest}`).
+- `staging-<sha>` / `prod-<sha>` — Branch-specific SHA tags for every build.
+- `v1.2.3`, `v1.2`, `v1` — Semantic version tags from `v*.*.*` git tags.
+
+### What the Image Provides vs What the Host Provides
+
+The Docker image contains: Python runtime, system deps (libpq5), pip packages (requirements.txt), gunicorn, and **baked-in app code** from the Bazel build.
+
+**Production** — runs baked-in image code. Only `settings.py` is mounted from host (for `ALLOWED_HOSTS` tweaks). To deploy code changes, you must rebuild the image (push to `prod` branch → wait for CI → `docker pull` + restart on instance).
+
+**Staging** — uses `docker-compose.override.yml` with `../:/app` volume mount, which **overrides all image code** with the host git checkout. To deploy code changes, just `git reset --hard` + restart. Image rebuild only needed for dependency changes.
+
+### Deployment Workflow by Instance Type
+
+**Prod (image-based):**
+1. Cherry-pick to `prod` branch via worktree → push
+2. Wait for GitHub Actions to build and push new `:latest`
+3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:latest && docker restart visa_bulletin_web`
+4. `git fetch && git reset --hard origin/prod` (keeps host checkout in sync for settings.py mount)
+
+**Staging (volume-mount-based):**
+1. Cherry-pick to `staging` branch via worktree → push
+2. On instance: `git fetch && git reset --hard origin/staging`
+3. `docker restart visa_bulletin_web` (picks up new code via mount)
+
+### When Image Rebuild Is Required (Both Instances)
+
+- `requirements.txt` changes (new/updated Python packages)
+- `Dockerfile` changes (system deps, build process)
+- NOT needed for app code changes on staging (volume mount handles it)
+- IS needed for app code changes on prod (code is baked into image)
+
+### Transient CI Failures
+
+Bazel builds inside Docker can fail due to transient network errors (e.g., 502 from GitHub when downloading `rules_python`). These are not code bugs — retry the workflow via GitHub Actions UI or re-push the branch.
+
 ## Rule: Always Verify Target Instance Before SSH Commands
 
 **CRITICAL: Always use the correct SSH alias based on the target instance.**
@@ -110,6 +153,26 @@ aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
 
 **Incident reference (2026-02-21):** Staging had `mem_limit: 200m` in base docker-compose.yml. Workers OOM-killed on every request. Fix was applied directly via `sed` on the instance, but would have been lost on next deploy. Proper fix: update base file on `main`, cherry-pick through branches.
 
+## Rule: Never Restart or Recreate Prod Containers Without Explicit User Instruction
+
+**🚨 CRITICAL: NEVER run `docker-compose up/restart`, `docker restart`, or any container lifecycle command on the production-serving instance unless the user explicitly asks you to.**
+
+**"Graduate staging to prod"** means updating the **git branch** (merge/fast-forward), NOT restarting containers.
+**"Deploy to prod"** means the user wants code live — ask for confirmation before touching containers.
+
+**Why:**
+- Recreating containers may pull a different `:latest` image with different (possibly broken) code
+- `docker-compose up` on docker-compose 1.29.2 triggers the `ContainerConfig` KeyError bug, killing the running container
+- Even a "safe" restart causes brief downtime
+
+**What to do instead:**
+1. Update the git branch (merge/cherry-pick + push)
+2. `git fetch && git reset --hard` on the instance
+3. **Stop and ask the user** before touching any containers
+4. If the user confirms, prefer `docker restart <name>` over `docker-compose up -d` to avoid the ContainerConfig bug
+
+**Incident reference (2026-02-21):** Agent ran `docker-compose up -d web` on prod unprompted after graduating staging to prod. This (a) recreated the container (potentially pulling a different image layer), (b) hit ContainerConfig KeyError (docker-compose 1.29.2 bug) killing the running container, causing ~15 min of 500 errors. Required emergency IP swap to restore service. The `country="all"` bug mentioned in earlier notes was investigated and **not found** in the current `:latest` image or any branch — the code correctly uses `Country.from_string()` and integer enum values.
+
 ## Rule: Audit Container Topology Before ANY Docker Operation on Prod
 
 **🚨 CRITICAL: Never run `docker-compose up/down/stop/rm`, `docker stop`, or `docker rm` on prod without first understanding what is actually serving traffic.**
@@ -163,23 +226,23 @@ docker restart <serving-container-name>
 - Catches bugs before users see them.
 - Reduces rollbacks and hotfixes.
 
-## Rule: Deploy to Production After Implementing User-Requested Changes
+## Rule: Deploy to Staging After Implementing User-Requested Changes
 
-**Deploy by default** after implementing code changes. Use the branch-based deployment workflow (see `.cursor/rules/branching.mdc` and `docs/BRANCHING_AND_DEPLOYMENT.md`).
+**Deploy to staging by default** after implementing code changes. **Never deploy to prod directly** — all changes go through staging first, then graduate via IP flip. The `prod` branch is a mirror of production and must only be updated when code is actually deployed to the prod-serving instance (graduation or critical hotfix).
 
 **Workflow:**
 1. Implement the change locally on `main` (Cursor workspace — rules stay available).
 2. Run relevant tests (`bazel test //tests:...`).
 3. Verify locally.
-4. Cherry-pick to target branch via worktree (never checkout staging/prod in the IDE):
-   - Staging: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
-   - Prod hotfix: `cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <hash> && git push origin prod`
-5. `ssh <instance> "cd /opt/visa_bulletin && git fetch origin <branch> && git reset --hard origin/<branch>"`
-6. Restart container: `docker-compose -f deployment/docker-compose.yml restart web`
-7. Verify: `curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us/`
+4. Cherry-pick to `staging` via worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
+5. Deploy to staging: `ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git reset --hard origin/staging"` then `docker restart visa_bulletin_web`
+6. Verify on staging.
+
+**Critical hotfix (prod-down only):** Cherry-pick to `prod` via worktree → push → deploy to prod-serving instance → cherry-pick to staging. Only for crashes/5xx.
 
 **Never scp files to servers.** All code changes go through git branches.
 **Never check out staging/prod in the main workspace.** Use worktrees to preserve AI rules.
+**Never update `prod` branch for features or non-critical fixes.** It must mirror production.
 
 **Do NOT deploy when:** user says "local only", change is docs-only, or user only asked to plan/document.
 
