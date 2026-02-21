@@ -117,22 +117,23 @@
                                 <tr>
                                     <th scope="col">Visa Type</th>
                                     <th scope="col">Last Update</th>
-                                    <th scope="col">Current Projection</th>
+                                    <th scope="col">Linear Projection</th>
+                                    {% if vqs_predictions %}
+                                    <th scope="col">Queue Model <span class="badge bg-info text-dark" style="font-size:0.65em; vertical-align:middle;" title="Virtual Queue Simulation — predicts cutoff movement using I-140 demand data and supply modeling">Beta</span></th>
+                                    {% endif %}
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for data in visa_class_data %}
-                                {% with projection=data.projection %}
+                                {% with projection=data.projection label=data.visa_class_label|default:data.visa_class %}
                                 <tr>
-                                    <td>{{ data.visa_class_label|default:data.visa_class }}</td>
-                                    <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else
-                                        %}—{% endif %}</td>
+                                    <td>{{ label }}</td>
+                                    <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
                                     <td>
                                         {% if projection %}
                                         {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
-                                        Est. {{ projection.estimated_date|date:"F Y" }} <span
-                                            class="text-muted small">({{
-                                            projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
+                                        Est. {{ projection.estimated_date|date:"F Y" }}
+                                        <span class="text-muted small">({{ projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
                                         {% elif projection.status == 'current' %}
                                         <span class="text-success"><i class="bi bi-check-circle-fill"></i>
                                             Current</span>
@@ -146,6 +147,39 @@
                                         —
                                         {% endif %}
                                     </td>
+                                    {% if vqs_predictions %}
+                                    <td>
+                                        {% with vqs=vqs_predictions|dictsort:label %}
+                                        {% if label in vqs_predictions %}
+                                        {% with vpred=vqs_predictions %}
+                                        {% for vqs_label, vqs_data in vpred.items %}
+                                        {% if vqs_label == label %}
+                                        {% if vqs_data.next_cutoff %}
+                                        <span title="Next predicted cutoff: {{ vqs_data.next_cutoff|date:'M d, Y' }}{% if vqs_data.confidence_low and vqs_data.confidence_high %} (range: {{ vqs_data.confidence_low|date:'M d, Y' }} – {{ vqs_data.confidence_high|date:'M d, Y' }}){% endif %}">
+                                            {{ vqs_data.next_cutoff|date:"M d, Y" }}
+                                            {% if vqs_data.confidence == "high" %}
+                                            <i class="bi bi-circle-fill text-success" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                            {% elif vqs_data.confidence == "medium" %}
+                                            <i class="bi bi-circle-fill text-warning" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                            {% else %}
+                                            <i class="bi bi-circle-fill text-secondary" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>
+                                            {% endif %}
+                                        </span>
+                                        {% if vqs_data.confidence_low and vqs_data.confidence_high %}
+                                        <br><span class="text-muted small">Range: {{ vqs_data.confidence_low|date:"M d" }} – {{ vqs_data.confidence_high|date:"M d, Y" }}</span>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">—</span>
+                                        {% endif %}
+                                        {% endif %}
+                                        {% endfor %}
+                                        {% endwith %}
+                                        {% else %}
+                                        <span class="text-muted">—</span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </td>
+                                    {% endif %}
                                 </tr>
                                 {% endwith %}
                                 {% endfor %}
@@ -157,8 +191,11 @@
             {% endif %}
 
             <p class="small text-muted mb-3">
-                <i class="bi bi-exclamation-triangle"></i> <em>Projections are rough estimates based on historical
-                    trends. Actual processing times may vary.</em>
+                <i class="bi bi-exclamation-triangle"></i> <em>Projections are estimates based on historical trends
+                    and public data. Actual processing times may vary due to policy changes.</em>
+                {% if vqs_predictions %}
+                <em>Queue Model uses I-140 demand data and visa supply modeling.</em>
+                {% endif %}
                 <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;">How are projections
                     calculated? →</a>
             </p>
@@ -266,6 +303,7 @@
                     </div>
                 </div>
             </div>
+            {% include "webapp/includes/support_cta.html" %}
         </div>
     </div>
 </main>
