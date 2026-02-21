@@ -435,9 +435,12 @@ class RemoteRunner:
 
     def run_migrate(self, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         root = str(cwd or self.project_root)
+        bin_path = f"{root}/bazel-bin/migrate"
         cmd = (
             f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
-            f"DB_HOST=localhost ./bazel-bin/migrate migrate --noinput"
+            f"export DB_HOST=localhost && "
+            f"if [ -x {bin_path} ]; then {bin_path} migrate --noinput; "
+            f"else bazel run //:migrate -- --noinput; fi"
         )
         return self._ssh(cmd)
 
