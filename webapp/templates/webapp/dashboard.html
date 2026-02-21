@@ -207,6 +207,12 @@
                     <div class="mb-3">
                         <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
                             <span class="text-muted small me-1"><i class="bi bi-eye"></i> Show:</span>
+                            <button type="button"
+                                class="btn btn-link btn-sm p-0 text-muted me-1 visa-chart-clear-all"
+                                style="font-size: 0.875rem;"
+                                aria-label="Uncheck all visa classes, show only priority date">
+                                Clear all
+                            </button>
                             {% for trace in chart_data.trace_info %}
                             <div class="form-check form-check-inline mb-0">
                                 <input class="form-check-input visa-class-toggle" type="checkbox"
@@ -228,12 +234,6 @@
                                     Your Priority Date
                                 </label>
                             </div>
-                            <button type="button"
-                                class="btn btn-link btn-sm p-0 text-muted ms-2 ms-md-3 visa-chart-clear-all"
-                                style="font-size: 0.875rem;"
-                                aria-label="Uncheck all visa classes, show only priority date">
-                                Clear all
-                            </button>
                         </div>
                     </div>
 

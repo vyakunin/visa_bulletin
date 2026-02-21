@@ -207,6 +207,7 @@
         /* Reserve space for dashboard content to prevent CLS - only on pages with charts */
         .dashboard-container {
             min-height: 1800px !important; /* Increased and forced to prevent any container shift */
+            max-width: 100% !important;
         }
         
         /* CLS is now fixed by loading Bootstrap synchronously - no aggressive min-heights needed */
