@@ -62,6 +62,8 @@ def stop_remote_services(runner: Runner, project_root: Path) -> None:
         f"({compose_with_override})",
         "(docker stop visa_bulletin_web visa_bulletin_web_blue visa_bulletin_web_green visa_bulletin_redis 2>/dev/null || true)",
         "(docker rm -f visa_bulletin_web_blue visa_bulletin_web_green 2>/dev/null || true)",
+        # Stop system-level redis-server (non-Docker) so Docker Redis can bind to port 6379 later.
+        "(sudo systemctl stop redis-server 2>/dev/null; sudo systemctl disable redis-server 2>/dev/null; sudo pkill redis-server 2>/dev/null) || true",
         # Use pgrep + kill excluding $$ so we don't kill the SSH-invoked shell (pkill -f matches
         # the shell's command line and would kill it, causing SSH exit 255).
         "(pgrep -f 'gunicorn.*django_config' | grep -v ^$$ | xargs -r kill 2>/dev/null) || true",
@@ -104,11 +106,13 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     compose_args = f"-f {shlex.quote(compose_file)}"
     # Force remove old containers first (prevents 'ContainerConfig' KeyError
     # when old containers have metadata from a different compose file version).
-    down_cmd = (
+    # docker-compose down can itself trigger the bug, so we also rm -f known container names.
+    cleanup_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
+        f"docker rm -f visa_bulletin_web visa_bulletin_redis 2>/dev/null; "
         f"docker-compose {compose_args} down --remove-orphans 2>/dev/null || true"
     )
-    runner.run_shell(down_cmd, timeout_sec=60)
+    runner.run_shell(cleanup_cmd, timeout_sec=60)
     cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
         f"if [ -f {shlex.quote(override_file)} ]; then "
