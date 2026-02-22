@@ -3,7 +3,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("models", "0035_blogpost"),
+        ("models", "0036_delete_blogpost"),
     ]
 
     operations = [
