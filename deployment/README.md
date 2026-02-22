@@ -41,7 +41,7 @@ deployment/
 │   ├── visa-bulletin-nginx.conf      # Site block; uses main_timed + locations
 │   ├── visa-bulletin-locations.conf  # Location blocks; bot limit_req
 │   ├── visa-bulletin-log-format.conf # Log format with $request_time (→ conf.d)
-│   ├── gptbot-rate-limit.conf        # Bots 0.1 qps per IP (→ conf.d)
+│   ├── gptbot-rate-limit.conf        # Bots 15 req/min per /16 subnet (→ conf.d)
 │   └── rate-limiting.conf            # Optional general rate limits
 ├── cron/                      # Cron job setup
 │   └── setup-ingest-cron.sh
@@ -73,6 +73,8 @@ The 2GB instance requires careful memory management:
 |-----------|-------|---------|
 | Swap | 2GB | Prevent OOM kills |
 | Swappiness | 60 | Swap before OOM |
+| Redis | 512MB maxmemory | Cache ceiling; allkeys-lru eviction |
+| Web container | 512MB mem_limit | Gunicorn workers |
 | Bazel | 1GB RAM, 2 jobs | Limit build memory |
 | PostgreSQL | Tuned for bulk ops | Reduce autovacuum spikes |
 
@@ -310,7 +312,7 @@ ssh prod_2Gb_vm "grep -E '^DB_NAME=' /opt/visa_bulletin/.env && sudo -u postgres
 ssh staging_2Gb_vm "grep -E '^DB_NAME=' /opt/visa_bulletin/.env && sudo -u postgres psql -lqt | cut -d '|' -f 1 | tr -d ' ' | grep -x visa_bulletin && echo OK"
 ```
 
-**If either host still has `DB_NAME=visa_bulletin_blue` or `visa_bulletin_green`:**
+**If either host still has `DB_NAME=visa_bulletin_blue` or `visa_bulletin_green` (old blue-green DB pattern, no longer used):**
 
 1. Create the `visa_bulletin` database if it does not exist:  
    `sudo -u postgres psql -c "CREATE DATABASE visa_bulletin;"`  
@@ -504,7 +506,7 @@ sudo -u postgres psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
 | **Postgres SSL errors** | ✅ Implemented: `CONN_MAX_AGE = 60` in `django_config/settings_production.py`. |
 | **Gunicorn access log** | ✅ `--access-log-format` includes `%(L)s` (response time) for slow-request analysis. |
 | **Nginx timing** | ✅ Implemented: `main_timed` log format with `$request_time`; see `deployment/nginx/visa-bulletin-log-format.conf`. |
-| **Bot throttle** | ✅ Implemented: 0.1 qps per IP for common bots (GPTBot, Googlebot, etc.) via `gptbot-rate-limit.conf`; see `docs/PRODUCTION_TRAFFIC_PATTERNS_RESEARCH.md`. |
+| **Bot throttle** | ✅ Implemented: 15 req/min per /16 subnet for known crawlers (GPTBot, OAI-SearchBot, ChatGPT-User, meta-externalagent, Googlebot, etc.) via `gptbot-rate-limit.conf`. Subnet keying ensures multiple IPs from the same crawler network share one rate-limit bucket. |
 | **Gunicorn timeout** | `--timeout 60`; employer cold path can exceed 60s on large employers; consider Redis so cache hits are fast. |
 
 ## 🔒 Security
