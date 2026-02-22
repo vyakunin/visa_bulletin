@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
     # Expose 6379 so pipeline warm_cache on host can use redis://127.0.0.1:6379/1
 
   web:
