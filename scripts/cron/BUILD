@@ -1,6 +1,7 @@
 # Cron jobs and automated maintenance scripts
 
 load("@rules_python//python:defs.bzl", "py_binary")
+load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_binary(
     name = "refresh_data_py",
@@ -20,6 +21,32 @@ py_binary(
     deps = [
         "//scripts/cron/refresh:refresh",
     ],
+)
+
+py_binary(
+    name = "refresh_bulletin",
+    srcs = ["refresh_bulletin.py"],
+    main = "refresh_bulletin.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:orchestrator",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:visa_bulletin",
+        "//lib/utils:logging_utils",
+        "//lib/utils:url_utils",
+        "//models/ingest:ingest",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
 )
 
 sh_binary(

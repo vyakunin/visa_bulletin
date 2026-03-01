@@ -492,6 +492,20 @@ def step_warm_cache(
         )
 
 
+def step_clear_sitemap_cache(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
+    result = runner.run_bin(
+        "scripts/clear_cache",
+        "--sitemap-only",
+        cwd=config.project_root,
+    )
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "clear_sitemap_cache", last_n=20)
+    if result.returncode != 0:
+        logger.warning("Clear sitemap cache failed (non-fatal): %s", tail[-500:] if tail else result.stderr)
+
+
 def step_run_smoke_tests(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:

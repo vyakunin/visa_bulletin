@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster
@@ -21,55 +22,75 @@ def robots_view(request):
     lines = [
         "User-agent: *",
         "Allow: /",
+        "Disallow: /api/",
         f"Sitemap: {request.build_absolute_uri(reverse('sitemap'))}",
     ]
     return HttpResponse("\n".join(lines), content_type="text/plain")
+
+
+def _get_latest_bulletin_date() -> str | None:
+    """Return ISO date string of the latest bulletin publication, or None."""
+    try:
+        pub = Bulletin.objects.order_by("-publication_date").values_list(
+            "publication_date", flat=True
+        ).first()
+        return pub.isoformat() if pub else None
+    except (OperationalError, ProgrammingError):
+        return None
+
+
+def _url_entry(loc: str, lastmod: str | None = None, changefreq: str = "monthly", priority: str = "0.8") -> list[str]:
+    parts = ["  <url>", f"    <loc>{loc}</loc>"]
+    if lastmod:
+        parts.append(f"    <lastmod>{lastmod}</lastmod>")
+    parts.extend([f"    <changefreq>{changefreq}</changefreq>", f"    <priority>{priority}</priority>", "  </url>"])
+    return parts
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap."""
     base_url = request.build_absolute_uri("/")[:-1]
+    bulletin_lastmod = _get_latest_bulletin_date()
 
-    urls = [
-        f"{base_url}/",
-        f"{base_url}/salaries/",
-        f"{base_url}/employers/",
-        f"{base_url}/job-titles/",
-        f"{base_url}/faq/",
-        f"{base_url}/about/",
-        f"{base_url}/contact/",
+    xml_parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ]
 
-    # Category landing pages
+    # Static pages (dashboard changes when new bulletin arrives)
+    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/about/", "/contact/"):
+        lm = bulletin_lastmod if path == "/" else None
+        xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=lm))
+
+    # Category landing pages (updated when new bulletin arrives)
     categories = [
         ("employment_based", "employment-based"),
         ("family_sponsored", "family-sponsored"),
     ]
-
     for _, cat_slug in categories:
-        urls.append(f"{base_url}/{cat_slug}/")
+        xml_parts.extend(_url_entry(f"{base_url}/{cat_slug}/", lastmod=bulletin_lastmod))
         for c in Country:
             if c.value == Country.INVALID:
                 continue
             slug = Country.slug_for_value(c.value)
             if slug:
-                urls.append(f"{base_url}/{cat_slug}/{slug}/")
+                xml_parts.extend(_url_entry(f"{base_url}/{cat_slug}/{slug}/", lastmod=bulletin_lastmod))
 
-    # Employer profile pages (only include employers with 5+ filings)
+    # Employer profile pages (top 10,000 by filing count)
     try:
         employer_clusters = list(
             EmployerCluster.objects.filter(
                 slug__isnull=False,
                 total_lca_count__gte=5,
-            ).order_by("-total_lca_count")[:10000]  # Limit to top 10,000 employers
+            ).order_by("-total_lca_count")[:10000]
         )
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load employer clusters for sitemap", exc_info=True)
         employer_clusters = []
 
     for cluster in employer_clusters:
-        urls.append(f"{base_url}/employer/{cluster.slug}/")
+        xml_parts.extend(_url_entry(f"{base_url}/employer/{cluster.slug}/"))
 
     # Job title profile pages (top 10,000 by filing count)
     try:
@@ -84,21 +105,7 @@ def sitemap_view(request):
         job_title_clusters = []
 
     for cluster in job_title_clusters:
-        urls.append(f"{base_url}/job-title/{cluster.slug}/")
-
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
-    xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-
-    for url in urls:
-        xml_parts.extend(
-            [
-                "  <url>",
-                f"    <loc>{url}</loc>",
-                "    <changefreq>monthly</changefreq>",
-                "    <priority>0.8</priority>",
-                "  </url>",
-            ]
-        )
+        xml_parts.extend(_url_entry(f"{base_url}/job-title/{cluster.slug}/"))
 
     xml_parts.append("</urlset>")
     return HttpResponse("\n".join(xml_parts), content_type="application/xml")

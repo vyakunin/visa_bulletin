@@ -13,6 +13,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//django_config:cache_utils",
+        "//models:bulletin",
         "//models/enums:country",
         "//models:job_title",
         "//models:salary",

@@ -1,8 +1,9 @@
 #!/bin/bash
-# Setup cron jobs for unified ingest pipeline
+# Setup cron jobs for ingest pipeline
 #
-# This script adds a single cron job for end-to-end refresh:
-# - Weekly refresh (Sunday 2 AM UTC)
+# Cron jobs:
+# - Hourly visa bulletin refresh (lightweight, runs on serving instance)
+# - Weekly full refresh (Sunday 2 AM UTC)
 #
 # Usage:
 #   cd /opt/visa_bulletin
@@ -11,26 +12,42 @@
 set -e
 
 PROJECT_ROOT="/opt/visa_bulletin"
-LOG_DIR="$PROJECT_ROOT/logs"
+LOG_DIR="/var/log/visa-bulletin"
 
 echo "Setting up cron jobs for ingest pipeline..."
 
 # Create logs directory
 mkdir -p "$LOG_DIR"
 
+# Hourly visa bulletin refresh (lightweight, on serving instance)
+BULLETIN_CRON="0 * * * * cd $PROJECT_ROOT && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin >> $LOG_DIR/bulletin_refresh.log 2>&1"
+
 # Weekly end-to-end refresh (Sunday 2 AM UTC)
 REFRESH_CRON="0 2 * * 0 cd $PROJECT_ROOT && bash scripts/cron/refresh_data.sh >> $LOG_DIR/refresh.log 2>&1"
 
 # Remove old cron jobs if they exist
-crontab -l 2>/dev/null | grep -v "refresh_data.sh\|refresh_data_incremental\|update_salary_data\|import_salary_data\|run_pipeline.*discover-and-ingest\|cluster_existing_employers" | crontab - 2>/dev/null || true
+crontab -l 2>/dev/null | grep -v "refresh_data.sh\|refresh_data_incremental\|update_salary_data\|import_salary_data\|run_pipeline.*discover-and-ingest\|cluster_existing_employers\|refresh_bulletin" | crontab - 2>/dev/null || true
 
-# Check if refresh cron job already exists
-if crontab -l 2>/dev/null | grep -q "scripts/cron/refresh_data.sh"; then
-    echo "✓ Refresh cron job already exists"
+# Add cron jobs
+CRON_ENTRIES=""
+
+if ! crontab -l 2>/dev/null | grep -q "refresh_bulletin"; then
+    CRON_ENTRIES="$BULLETIN_CRON"
+    echo "✓ Bulletin refresh cron job added (hourly)"
 else
-    # Add to crontab
-    (crontab -l 2>/dev/null; echo "$REFRESH_CRON") | crontab -
-    echo "✓ Refresh cron job added (weekly at 2 AM UTC)"
+    echo "✓ Bulletin refresh cron job already exists"
+fi
+
+if ! crontab -l 2>/dev/null | grep -q "scripts/cron/refresh_data.sh"; then
+    CRON_ENTRIES="$CRON_ENTRIES
+$REFRESH_CRON"
+    echo "✓ Full refresh cron job added (weekly at 2 AM UTC)"
+else
+    echo "✓ Full refresh cron job already exists"
+fi
+
+if [ -n "$CRON_ENTRIES" ]; then
+    (crontab -l 2>/dev/null; echo "$CRON_ENTRIES") | crontab -
 fi
 
 echo ""
@@ -41,9 +58,12 @@ echo ""
 echo "✓ Setup complete!"
 echo ""
 echo "Monitor logs:"
-echo "  tail -f $LOG_DIR/refresh.log"
+echo "  tail -f $LOG_DIR/bulletin_refresh.log  # Hourly bulletin refresh"
+echo "  tail -f $LOG_DIR/refresh.log           # Weekly full refresh"
 echo ""
-echo "Test manually:"
-echo "  cd $PROJECT_ROOT"
-echo "  bash scripts/cron/refresh_data.sh"
+echo "Test bulletin refresh manually:"
+echo "  cd $PROJECT_ROOT && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin"
+echo ""
+echo "Build the binary first (if not built):"
+echo "  cd $PROJECT_ROOT && bazel build //scripts/cron:refresh_bulletin && bazel shutdown"
 

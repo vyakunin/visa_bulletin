@@ -57,13 +57,20 @@ STEP_FUNCS = {
     "vacuum_analyze": steps.step_vacuum_analyze,
     "start_services": steps.step_start_services,
     "warm_cache": steps.step_warm_cache,
+    "clear_sitemap_cache": steps.step_clear_sitemap_cache,
     "smoke_tests": steps.step_run_smoke_tests,
 }
 
 
-def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
+def run_pipeline(
+    config: RefreshConfig,
+    runner: Runner,
+    resume: bool,
+    domain: str | None = None,
+) -> int:
     """Run pipeline: discovery, then steps in order; skip when should_skip_step; write checkpoint after each. Return 0 on success."""
     ctx = steps.PipelineContext()
+    ctx.domain = domain
     checkpoint_path = config.checkpoint_path
     resume_from: str | None = None
     ctx.db_name = config.db_name
@@ -83,7 +90,9 @@ def run_pipeline(config: RefreshConfig, runner: Runner, resume: bool) -> int:
             "Resume requested but checkpoint missing or invalid; starting fresh"
         )
 
-    new_sources, discovery_out = check_new_sources(runner, str(config.project_root))
+    new_sources, discovery_out = check_new_sources(
+        runner, str(config.project_root), domain=domain
+    )
     ctx.new_sources_count = new_sources
     logger.info("Discovery: %s new sources", new_sources)
     for line in discovery_out.splitlines():

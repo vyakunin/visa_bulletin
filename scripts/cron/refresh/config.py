@@ -36,6 +36,7 @@ class RefreshConfig:
                 "scripts/salary/update_job_title_cluster_stats",
                 "scripts/salary/populate_job_title_slugs",
                 "scripts/cache/warm_cache",
+                "scripts/clear_cache",
             ]
 
     @property

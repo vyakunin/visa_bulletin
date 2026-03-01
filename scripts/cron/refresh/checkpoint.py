@@ -40,6 +40,7 @@ STEPS_ORDER: tuple[str, ...] = (
     "vacuum_analyze",
     "start_services",
     "warm_cache",
+    "clear_sitemap_cache",
     "smoke_tests",
 )
 
