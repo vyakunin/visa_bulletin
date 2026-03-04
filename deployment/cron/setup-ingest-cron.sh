@@ -16,11 +16,15 @@ LOG_DIR="/var/log/visa-bulletin"
 
 echo "Setting up cron jobs for ingest pipeline..."
 
-# Create logs directory
-mkdir -p "$LOG_DIR"
+# Create logs directory (may need sudo for /var/log)
+if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+    sudo mkdir -p "$LOG_DIR"
+    sudo chown "$(whoami):$(whoami)" "$LOG_DIR"
+fi
 
 # Hourly visa bulletin refresh (lightweight, on serving instance)
-BULLETIN_CRON="0 * * * * cd $PROJECT_ROOT && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin >> $LOG_DIR/bulletin_refresh.log 2>&1"
+# Use `. .env` (not `source`) — cron uses /bin/sh (dash) where `source` is a bashism
+BULLETIN_CRON="0 * * * * cd $PROJECT_ROOT && set -a && . ./.env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin >> $LOG_DIR/bulletin_refresh.log 2>&1"
 
 # Weekly end-to-end refresh (Sunday 2 AM UTC)
 REFRESH_CRON="0 2 * * 0 cd $PROJECT_ROOT && bash scripts/cron/refresh_data.sh >> $LOG_DIR/refresh.log 2>&1"
@@ -62,7 +66,7 @@ echo "  tail -f $LOG_DIR/bulletin_refresh.log  # Hourly bulletin refresh"
 echo "  tail -f $LOG_DIR/refresh.log           # Weekly full refresh"
 echo ""
 echo "Test bulletin refresh manually:"
-echo "  cd $PROJECT_ROOT && set -a && source .env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin"
+echo "  cd $PROJECT_ROOT && set -a && . ./.env && set +a && DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin"
 echo ""
 echo "Build the binary first (if not built):"
 echo "  cd $PROJECT_ROOT && bazel build //scripts/cron:refresh_bulletin && bazel shutdown"

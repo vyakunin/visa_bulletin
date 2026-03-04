@@ -177,6 +177,36 @@ def ensure_postgres_connections_clean(runner: Runner, db_name: str) -> None:
         logger.debug("No idle connections to terminate (db=%s)", db_name)
 
 
+def setup_bulletin_cron_on_remote(runner: Runner, project_root: Path) -> bool:
+    """Set up the hourly visa bulletin refresh cron job on the target host.
+
+    Builds the refresh_bulletin binary (if missing), creates the log directory,
+    and runs deployment/cron/setup-ingest-cron.sh to install the cron entries.
+    Returns True on success.
+    """
+    root = shlex.quote(str(project_root))
+    cmd = (
+        f"cd {root} && "
+        "sudo mkdir -p /var/log/visa-bulletin && "
+        "sudo chown $(whoami):$(whoami) /var/log/visa-bulletin && "
+        # Build binary if not present
+        "if [ ! -x bazel-bin/scripts/cron/refresh_bulletin ]; then "
+        "  bazel build //scripts/cron:refresh_bulletin && bazel shutdown; "
+        "fi && "
+        "bash deployment/cron/setup-ingest-cron.sh"
+    )
+    result = runner.run_shell(cmd, timeout_sec=300)
+    if result.returncode != 0:
+        logger.warning(
+            "setup_bulletin_cron_on_remote failed (rc=%s): %s",
+            result.returncode,
+            ((result.stderr or "") + (result.stdout or ""))[:500],
+        )
+        return False
+    logger.info("Bulletin cron job set up on remote host")
+    return True
+
+
 def setup_https_on_remote(
     runner: Runner,
     domains: str | list[str] | None = None,

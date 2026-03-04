@@ -13,8 +13,8 @@ Usage:
     # Or via pre-built binary:
     ./bazel-bin/scripts/cron/refresh_bulletin
 
-Cron (hourly):
-    0 * * * * cd /opt/visa_bulletin && set -a && source .env && set +a && \
+Cron (hourly, uses `. .env` not `source` for /bin/sh compatibility):
+    0 * * * * cd /opt/visa_bulletin && set -a && . ./.env && set +a && \
         DB_HOST=localhost ./bazel-bin/scripts/cron/refresh_bulletin \
         >> /var/log/visa-bulletin/bulletin_refresh.log 2>&1
 """
@@ -40,7 +40,10 @@ from lib.ingest.orchestrator import PipelineOrchestrator  # noqa: E402
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin  # noqa: E402
 from lib.ingest.registry import PluginRegistry  # noqa: E402
 from lib.utils.logging_utils import ScriptLogger  # noqa: E402
-from lib.utils.url_utils import normalize_source_url, path_basename_from_url  # noqa: E402
+from lib.utils.url_utils import (  # noqa: E402
+    normalize_source_url,
+    path_basename_from_url,
+)
 from models.ingest.data_source import DataSource  # noqa: E402
 from models.ingest.enums import DataDomain, IngestStatus  # noqa: E402
 from models.ingest.ingest_run import IngestRun  # noqa: E402
@@ -144,8 +147,11 @@ def main() -> None:
 
     if ingested > 0:
         logger.info("Ingested %d bulletin(s). Clearing caches...", ingested)
-        cache.clear()
-        logger.info("Django cache cleared. New bulletin data is live.")
+        try:
+            cache.clear()
+            logger.info("Django cache cleared. New bulletin data is live.")
+        except Exception:
+            logger.warning("Cache clear failed (non-fatal, Redis may be unavailable)", exc_info=True)
     else:
         logger.warning("No bulletins were successfully ingested.")
         sys.exit(1)

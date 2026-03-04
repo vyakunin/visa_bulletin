@@ -521,7 +521,7 @@ echo "  5. Run: ./scripts/cron/refresh_data.sh  (migrations + full data ingest; 
 echo "  6. Start app with Docker: docker-compose -f deployment/docker-compose.yml up -d"
 echo "  7. Verify: curl -I http://localhost/"
 echo "  8. Setup SSL: sudo certbot --nginx -d your-domain.com"
-echo "  9. Set up cron jobs: ./scripts/cron/setup-ingest-cron.sh"
+echo "  9. Set up cron jobs: bash deployment/cron/setup-ingest-cron.sh"
 echo "  10. Open AWS firewall ports 80 and 443 (Lightsail: instance Networking)"
 echo "  11. For instance-rotation refresh: copy AWS credentials to this instance (e.g. scp ~/.aws/credentials from your machine to this host), uncomment REFRESH_* and AWS_* in .env, copy SSH key to REFRESH_SSH_KEY_PATH"
 echo ""
@@ -551,4 +551,18 @@ else
     echo "⚠️  Docker start failed (e.g. permission - need to log out and back in for docker group)"
     echo "   After re-login, run: cd $PROJECT_ROOT && docker-compose -f deployment/docker-compose.yml up -d"
 fi
+echo ""
+
+# =============================================================================
+# Step 11: Set up cron jobs (hourly bulletin refresh + weekly full refresh)
+# =============================================================================
+echo "--------------------------------------------------------------"
+echo "Setting up cron jobs..."
+echo "--------------------------------------------------------------"
+cd "$PROJECT_ROOT"
+mkdir -p /var/log/visa-bulletin 2>/dev/null || sudo mkdir -p /var/log/visa-bulletin
+sudo chown "$USER:$USER" /var/log/visa-bulletin 2>/dev/null || true
+bash deployment/cron/setup-ingest-cron.sh
+echo "Note: Cron entries are installed. The bulletin refresh binary must be built"
+echo "  before the hourly cron will work (run: ./scripts/cron/build_all.sh)"
 echo ""

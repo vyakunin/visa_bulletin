@@ -42,6 +42,7 @@ py_binary(
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),
+        requirement("redis"),
     ],
     python_version = "PY3",
     env = {

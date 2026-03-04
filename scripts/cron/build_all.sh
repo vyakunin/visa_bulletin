@@ -34,6 +34,7 @@ bazel build \
     //scripts/salary:update_job_title_cluster_stats \
     //scripts/salary:populate_job_title_slugs \
     //scripts/cache:warm_cache \
+    //scripts/cron:refresh_bulletin \
     2>&1
 
 log "Build complete"
@@ -69,6 +70,7 @@ BINARIES=(
     "bazel-bin/scripts/salary/update_job_title_cluster_stats"
     "bazel-bin/scripts/salary/populate_job_title_slugs"
     "bazel-bin/scripts/cache/warm_cache"
+    "bazel-bin/scripts/cron/refresh_bulletin"
 )
 
 ALL_OK=true

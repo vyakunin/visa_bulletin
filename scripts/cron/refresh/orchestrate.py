@@ -1,23 +1,28 @@
 # scripts/cron/refresh/orchestrate.py
-"""Orchestrator: resolve active/inactive, start inactive, run pipeline on inactive, smoke, (optional) traffic switch, stop old."""
+"""Orchestrator: resolve active/inactive, start inactive, run pipeline on inactive,
+smoke, (optional) traffic switch + graduation, stop old."""
 
 from __future__ import annotations
 
 import logging
 import os
 import shlex
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import instance, services, traffic_switch
-from .config import RefreshConfig, load_config
+from .config import RefreshConfig, load_config, update_env_value
 from .pipeline import run_pipeline
 from .runner import RemoteRunner
+from .steps import PipelineContext, step_run_smoke_tests, step_warm_cache
 
 if TYPE_CHECKING:
     from .runner import Runner
 
 logger = logging.getLogger(__name__)
+
+GRADUATION_STEPS = ("warm_cache", "smoke_tests", "traffic_switch")
 
 
 def _wait_app_healthy_via_ssh(
@@ -96,20 +101,138 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
         )
 
 
+def _smoke_test_public_url(
+    domain: str = "visa-bulletin.us",
+    timeout_sec: int = 120,
+    poll_interval_sec: int = 10,
+) -> bool:
+    """Smoke test public URL after IP swap to verify the new prod serves traffic.
+
+    Runs locally on the orchestrator machine (not via SSH) — the domain should
+    resolve to the new prod after the static IP swap.
+    """
+    import time
+
+    logger.info("Smoke-testing public URL: https://%s/", domain)
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                [
+                    "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                    "--max-time", "10", f"https://{domain}/",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            code = (result.stdout or "").strip()
+            if code == "200":
+                logger.info("Public URL smoke: https://%s/ returned 200", domain)
+                return True
+            logger.info("Public URL smoke: HTTP %s (retrying...)", code)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            logger.info("Public URL smoke: %s (retrying...)", e)
+        time.sleep(poll_interval_sec)
+    logger.warning(
+        "Public URL smoke FAILED: https://%s/ did not return 200 within %ds",
+        domain,
+        timeout_sec,
+    )
+    return False
+
+
+def _update_local_env_swap_roles(
+    env_file: Path,
+    active_info: instance.InstanceInfo,
+    inactive_info: instance.InstanceInfo,
+) -> None:
+    """Update .env on the orchestrator machine (now staging after IP swap) to swap roles."""
+    update_env_value(env_file, "REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
+    update_env_value(env_file, "REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
+    update_env_value(env_file, "REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
+    update_env_value(env_file, "REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
+    update_env_value(env_file, "REFRESH_MY_INSTANCE_NAME", active_info.name)
+    logger.info(
+        "Updated local .env (orchestrator/staging): active=%s, inactive=%s, my=%s",
+        inactive_info.name,
+        active_info.name,
+        active_info.name,
+    )
+
+
+def _update_git_branch_on_new_prod(
+    runner: Runner,
+    project_root: Path,
+    source_branch: str = "staging",
+    target_branch: str = "prod",
+) -> bool:
+    """Push prod=staging to origin and switch new prod's checkout to prod branch.
+
+    The push requires git credentials on the instance (deploy key or token).
+    If push fails, logs a warning — the user can push manually from their worktree.
+    The checkout switch is local-only and always safe (same code, no reload).
+    """
+    push_result = runner.run_shell(
+        f"cd {project_root} && "
+        f"git push origin {shlex.quote(source_branch)}:{shlex.quote(target_branch)} --force",
+        timeout_sec=60,
+    )
+    if push_result.returncode != 0:
+        logger.warning(
+            "git push %s:%s failed (may lack credentials): %s. Push manually from worktree.",
+            source_branch,
+            target_branch,
+            ((push_result.stderr or "") + (push_result.stdout or ""))[:500],
+        )
+    else:
+        logger.info(
+            "Pushed %s branch to match %s on origin", target_branch, source_branch
+        )
+
+    checkout_result = runner.run_shell(
+        f"cd {project_root} && "
+        f"git fetch origin {shlex.quote(target_branch)} && "
+        f"git checkout -B {shlex.quote(target_branch)} origin/{shlex.quote(target_branch)}",
+        timeout_sec=60,
+    )
+    if checkout_result.returncode != 0:
+        logger.warning(
+            "git checkout %s on new prod failed: %s",
+            target_branch,
+            ((checkout_result.stderr or "") + (checkout_result.stdout or ""))[:500],
+        )
+        return False
+    logger.info("New prod switched to %s branch (no reload)", target_branch)
+    return True
+
+
+def _make_remote_config(remote_root: Path, db_name: str) -> RefreshConfig:
+    """Create a RefreshConfig for the remote host (used when calling pipeline step functions outside the pipeline)."""
+    remote_config = load_config(None)
+    remote_config.project_root = remote_root
+    remote_config.env_file = remote_root / ".env"
+    remote_config.backup_dir = remote_root / "backups"
+    remote_config.db_name = db_name
+    return remote_config
+
+
 def run_orchestrate(
     config: RefreshConfig,
     safety_interval_sec: int = 1800,
     no_traffic_switch: bool = False,
     resume: bool = False,
     from_step: str | None = None,
+    domain: str | None = None,
 ) -> int:
     """
     Full cycle: resolve active/inactive -> start inactive -> wait healthy
     -> run pipeline with RemoteRunner(inactive) -> smoke -> (optional) traffic switch
-    -> update new prod .env -> safety interval -> stop old.
-    If no_traffic_switch is True, skip traffic switch and following steps (first validation).
-    If from_step=="traffic_switch", skip instance start, pipeline, and pre-switch setup;
-    assume inactive is up and pipeline done; ensure services, then do traffic switch and rest.
+    -> graduation steps -> safety interval -> stop old.
+
+    --from-step warm_cache|smoke_tests|traffic_switch: skip pipeline, start from
+    the specified graduation step (assumes pipeline already completed on inactive).
+    --no-traffic-switch: skip traffic switch and all post-switch steps.
     Returns 0 on success.
     """
     active_info, inactive_info = instance.resolve_active_inactive_from_env()
@@ -150,10 +273,12 @@ def run_orchestrate(
     remote_root = Path(project_root)
     db_name = os.environ.get("REFRESH_REMOTE_DB_NAME", "visa_bulletin")
 
-    skip_to_traffic_switch = from_step == "traffic_switch"
-    if skip_to_traffic_switch:
+    # --from-step: skip pipeline, jump to a graduation step
+    skip_to_graduation = from_step in GRADUATION_STEPS
+    if skip_to_graduation:
         logger.info(
-            "--from-step traffic_switch: skipping instance start, pipeline; ensuring SSH and services, then switch"
+            "--from-step %s: skipping pipeline; ensuring SSH, services, then graduation",
+            from_step,
         )
         if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=120):
             logger.error(
@@ -162,7 +287,8 @@ def run_orchestrate(
                 inactive_info.ip,
             )
             return 1
-        logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
+
+        logger.info("Starting services on inactive host for graduation")
         services.start_remote_services(remote, remote_root)
         if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
             logger.warning(
@@ -170,30 +296,34 @@ def run_orchestrate(
                 inactive_info.name,
                 inactive_info.ip,
             )
+
+        remote_config = _make_remote_config(remote_root, db_name)
+        ctx = PipelineContext(db_name=db_name)
+
+        if from_step == "warm_cache":
+            logger.info("Running cache warming on inactive host")
+            step_warm_cache(remote_config, remote, ctx)
+
+        if from_step in ("warm_cache", "smoke_tests"):
+            logger.info("Running smoke tests on inactive host")
+            step_run_smoke_tests(remote_config, remote, ctx)
     else:
-        assume_running = os.environ.get(
-            "REFRESH_ASSUME_INACTIVE_RUNNING", ""
-        ).strip().lower() in ("1", "true", "yes")
-        if assume_running:
-            logger.info(
-                "REFRESH_ASSUME_INACTIVE_RUNNING: skipping instance state/start (assume inactive already running)"
-            )
+        # Normal flow: start inactive instance, run full pipeline
+        state = instance.get_instance_state(inactive_info.name)
+        if state != "running":
+            logger.info("Starting inactive instance %s", inactive_info.name)
+            if not instance.start_instance(inactive_info.name):
+                logger.error("Failed to start %s", inactive_info.name)
+                return 1
+            if not instance.wait_instance_running(
+                inactive_info.name, timeout_sec=600
+            ):
+                logger.error(
+                    "Instance %s did not reach running state", inactive_info.name
+                )
+                return 1
         else:
-            state = instance.get_instance_state(inactive_info.name)
-            if state != "running":
-                logger.info("Starting inactive instance %s", inactive_info.name)
-                if not instance.start_instance(inactive_info.name):
-                    logger.error("Failed to start %s", inactive_info.name)
-                    return 1
-                if not instance.wait_instance_running(
-                    inactive_info.name, timeout_sec=600
-                ):
-                    logger.error(
-                        "Instance %s did not reach running state", inactive_info.name
-                    )
-                    return 1
-            else:
-                logger.info("Inactive instance %s already running", inactive_info.name)
+            logger.info("Inactive instance %s already running", inactive_info.name)
 
         if not services.wait_ssh_and_db_ready(remote, db_name, timeout_sec=600):
             logger.error(
@@ -209,13 +339,9 @@ def run_orchestrate(
         services.ensure_postgres_connections_clean(remote, db_name)
 
         logger.info("Running pipeline on inactive host %s", inactive_info.ip)
-        remote_config = load_config(None)
-        remote_config.project_root = remote_root
-        remote_config.env_file = remote_root / ".env"
-        remote_config.backup_dir = remote_root / "backups"
-        remote_config.db_name = db_name
-        run_pipeline(remote_config, remote, resume=resume)
-        logger.info("Pipeline complete on inactive; smoke already run in pipeline")
+        remote_config = _make_remote_config(remote_root, db_name)
+        run_pipeline(remote_config, remote, resume=resume, domain=domain)
+        logger.info("Pipeline complete on inactive; warm_cache + smoke ran in pipeline")
 
         logger.info("Starting Redis and Gunicorn on inactive host for traffic switch")
         services.start_remote_services(remote, remote_root)
@@ -226,12 +352,14 @@ def run_orchestrate(
                 inactive_info.ip,
             )
 
+    # === GATE: no-traffic-switch exits here (nothing irreversible happened) ===
     if no_traffic_switch:
         logger.info(
-            "--no-traffic-switch: skipping traffic switch, safety interval, stop old, cron"
+            "--no-traffic-switch: skipping traffic switch, cron setup, safety interval, stop old"
         )
         return 0
 
+    # === TRAFFIC SWITCH (irreversible — all steps after this are non-fatal) ===
     static_ip_name = os.environ.get("REFRESH_STATIC_IP_NAME", "")
     if not static_ip_name:
         logger.error("REFRESH_STATIC_IP_NAME not set; cannot switch traffic")
@@ -240,15 +368,9 @@ def run_orchestrate(
         logger.error("Static IP switch failed")
         return 1
 
-    logger.info(
-        "Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)"
-    )
-    remote.update_env("REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
-    remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
-    remote.update_env("REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
-    remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
-    remote.update_env("REFRESH_MY_INSTANCE_NAME", inactive_info.name)
+    # === POST-SWITCH: all non-fatal (IP swap already happened) ===
 
+    # HTTPS on new prod (certbot) so public URL works with valid cert
     setup_https = os.environ.get(
         "REFRESH_SKIP_HTTPS_SETUP", ""
     ).strip().lower() not in ("1", "true", "yes")
@@ -261,6 +383,35 @@ def run_orchestrate(
     else:
         logger.info("REFRESH_SKIP_HTTPS_SETUP: skipping HTTPS setup on new prod")
 
+    # Public URL smoke test (verify site works end-to-end via domain)
+    site_domain = os.environ.get("REFRESH_DOMAIN", "visa-bulletin.us").strip()
+    if site_domain:
+        if not _smoke_test_public_url(site_domain):
+            logger.warning(
+                "Public URL smoke test failed (non-fatal); verify manually at https://%s/",
+                site_domain,
+            )
+    else:
+        logger.info("REFRESH_DOMAIN empty: skipping public URL smoke test")
+
+    # Update .env on new prod (swap active/inactive roles)
+    logger.info(
+        "Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)"
+    )
+    remote.update_env("REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
+    remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
+    remote.update_env("REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
+    remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
+    remote.update_env("REFRESH_MY_INSTANCE_NAME", inactive_info.name)
+
+    # Update .env on orchestrator machine (old active, now staging after IP swap)
+    logger.info("Updating local .env (orchestrator, now staging) to swap roles")
+    try:
+        _update_local_env_swap_roles(config.env_file, active_info, inactive_info)
+    except OSError as e:
+        logger.warning("Local .env update failed (non-fatal): %s", e)
+
+    # Staging IP reassignment (so old prod has a stable IP for the next cycle)
     reassign_staging_ip = os.environ.get(
         "REFRESH_SKIP_STAGING_IP_REASSIGN", ""
     ).strip().lower() not in ("1", "true", "yes")
@@ -283,6 +434,7 @@ def run_orchestrate(
     else:
         logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
 
+    # Prod-safe override: drop volume mount so prod uses baked-in Docker image code
     logger.info(
         "Replacing docker-compose.override.yml on new prod with prod-safe version (no volume mount)"
     )
@@ -290,14 +442,32 @@ def run_orchestrate(
     if not _wait_app_healthy_via_ssh(remote, timeout_sec=120):
         logger.warning("New prod not healthy after override cleanup (non-fatal)")
 
+    # Set up hourly bulletin refresh cron on new prod
+    logger.info("Setting up bulletin refresh cron job on new prod")
+    if not services.setup_bulletin_cron_on_remote(remote, remote_root):
+        logger.warning("Bulletin cron setup failed (non-fatal); run manually on new prod")
+
+    # Git branch update: push prod=staging, switch new prod checkout to prod
+    skip_git = os.environ.get(
+        "REFRESH_SKIP_GIT_UPDATE", ""
+    ).strip().lower() in ("1", "true", "yes")
+    if not skip_git:
+        logger.info(
+            "Updating git branches: push prod=staging, switch new prod to prod branch"
+        )
+        _update_git_branch_on_new_prod(remote, remote_root)
+    else:
+        logger.info("REFRESH_SKIP_GIT_UPDATE: skipping git branch update")
+
     import time
 
     logger.info("Safety interval: %s sec", safety_interval_sec)
     time.sleep(safety_interval_sec)
 
-    logger.info("Stopping old instance %s", active_info.name)
+    # Stop old instance (the orchestrator's machine, now staging)
+    logger.info("Stopping old instance %s (this host, now staging)", active_info.name)
     if not instance.stop_instance(active_info.name):
         logger.warning("Failed to stop %s (non-fatal)", active_info.name)
 
-    logger.info("Orchestrate complete")
+    logger.info("Graduation complete")
     return 0
