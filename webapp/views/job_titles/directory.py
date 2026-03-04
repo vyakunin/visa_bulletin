@@ -145,7 +145,7 @@ def job_title_directory_view(request):
         "page_range": pagination["page_range"],
         "page_title": "Job Title Directory - Salary Data by Role | U.S. Immigration Data",
         "page_description": "Explore salary and sponsorship data by job title. Browse top roles, view average salaries, and jump to detailed job title profiles.",
-        # Autocomplete URL
+        "canonical_url": request.build_absolute_uri(),
         "job_title_autocomplete_url": request.build_absolute_uri(
             reverse("job_title_autocomplete")
         ),

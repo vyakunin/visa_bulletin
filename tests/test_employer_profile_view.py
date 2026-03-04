@@ -226,7 +226,7 @@ class EmployerProfileViewTest(TestCase):
         self.assertEqual(response1.content, response2.content)
 
     def test_seo_metadata(self):
-        """Test that SEO metadata is present"""
+        """Test that SEO metadata is present in context AND rendered in HTML"""
         url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
         response = self.client.get(url)
 
@@ -243,6 +243,13 @@ class EmployerProfileViewTest(TestCase):
 
         # Check that title contains company name
         self.assertIn("Test Company LLC", seo["title"])
+
+        # Verify SEO tags are actually rendered in HTML (not silently dropped)
+        content = response.content.decode()
+        self.assertIn('<meta name="description"', content)
+        self.assertIn('<link rel="canonical"', content)
+        self.assertIn('<meta property="og:title"', content)
+        self.assertIn("application/ld+json", content)
 
     def test_chart_data_generated(self):
         """Test that chart data is generated for Plotly"""
@@ -307,7 +314,7 @@ class SitemapTest(TestCase):
 
         # Create test employer clusters
         for i in range(5):
-            cluster = EmployerCluster.objects.create(
+            _cluster = EmployerCluster.objects.create(
                 canonical_name=f"Company {i}",
                 slug=f"company-{i}",
                 total_lca_count=10 + i,  # All have >= 5 filings
@@ -328,7 +335,7 @@ class SitemapTest(TestCase):
     def test_sitemap_excludes_low_filing_employers(self):
         """Test that employers with < 5 filings are excluded"""
         # Create employer with only 2 filings
-        low_cluster = EmployerCluster.objects.create(
+        _low_cluster = EmployerCluster.objects.create(
             canonical_name="Low Volume Company",
             slug="low-volume-company",
             total_lca_count=2,

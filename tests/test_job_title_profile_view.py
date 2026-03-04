@@ -1229,5 +1229,30 @@ class TestJobTitleCoherenceE2E(TestCase):
             jt.delete()
 
 
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        }
+    }
+)
+class TestJobTitleDirectoryCanonical(TestCase):
+    """Test that the job title directory page renders a canonical URL tag."""
+
+    def setUp(self):
+        self.client = Client()
+        JobTitleCluster.objects.create(
+            canonical_title="Software Engineer",
+            slug="software-engineer",
+            total_filings=100,
+        )
+
+    def test_canonical_url_present(self):
+        response = self.client.get(reverse("job_title_directory"))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('<link rel="canonical"', content)
+
+
 if __name__ == "__main__":
     unittest.main()

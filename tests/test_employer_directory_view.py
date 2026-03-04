@@ -136,6 +136,13 @@ class EmployerDirectoryViewTest(TestCase):
         for emp in response_ca.context["employers"]:
             self.assertIsNotNone(emp.slug)
 
+    def test_canonical_url_present(self):
+        """Canonical link tag rendered in HTML to prevent duplicate indexing."""
+        response = self.client.get(reverse("employer_directory"))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('<link rel="canonical"', content)
+
     def test_program_filter_ordering(self):
         """Program filter h1b/perm changes ordering (by total_lca_count or total_perm_count)."""
         response_all = self.client.get(reverse("employer_directory") + "?program=all")

@@ -248,6 +248,7 @@ def employer_directory_view(request):
         "has_prev": has_prev,
         "page_title": "Employer Directory - H-1B & PERM Sponsors | U.S. Immigration Data",
         "page_description": "Browse top employers sponsoring H-1B and PERM visas. Search by company name, filter by state and visa program.",
+        "canonical_url": request.build_absolute_uri(),
     }
 
     return render(request, "webapp/employer_directory.html", context)
