@@ -296,6 +296,23 @@ def step_run_ingest(
     return sources_count, salary_relevant
 
 
+def step_populate_case_submitted(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
+    """Backfill case_submitted and decision_date from DOL source files."""
+    result = runner.run_bin(
+        "scripts/salary/populate_case_submitted",
+        cwd=config.project_root,
+        timeout_sec=HEAVY_STEP_SSH_TIMEOUT_SEC,
+    )
+    tail = _get_stage_tail(runner, result)
+    _log_stage_tail_text(tail, "populate_case_submitted", last_n=80)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Populate case_submitted failed: {tail[-2000:] if tail else result.stderr}"
+        )
+
+
 def step_backfill_job_title_links(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:

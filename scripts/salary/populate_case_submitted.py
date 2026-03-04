@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Populate case_submitted field for existing SalaryRecord records.
+Populate case_submitted and decision_date fields for existing SalaryRecord records.
 
-This script reads DOL source files and updates the case_submitted field
-for existing records that are missing this data.
+This script reads DOL source files and updates the case_submitted and decision_date
+fields for existing records that are missing this data.
 
 Usage:
     bazel run //scripts/salary:populate_case_submitted
@@ -58,13 +58,37 @@ def get_date_columns(file_path: Path) -> tuple[list[str], bool]:
         return LCA_COLUMN_MAPPINGS, False
 
 
+def _extract_dates_from_row(
+    record: dict,
+    column_mappings: dict,
+    needs_case_submitted: set[str],
+    needs_decision_date: set[str],
+) -> dict[str, object] | None:
+    """Extract case_submitted and/or decision_date from a source row, only for fields that need backfill."""
+    dates: dict[str, object] = {}
+    case_number = get_column_value(record, column_mappings["case_number"])
+    if not case_number:
+        return None
+
+    if case_number in needs_case_submitted:
+        val = parse_date(get_column_value(record, column_mappings["case_submitted"]))
+        if val:
+            dates["case_submitted"] = val
+    if case_number in needs_decision_date:
+        val = parse_date(get_column_value(record, column_mappings["decision_date"]))
+        if val:
+            dates["decision_date"] = val
+
+    return dates if dates else None
+
+
 def populate_dates_from_file(
     file_path: Path,
     dry_run: bool = False,
     batch_size: int = 5000,
 ) -> tuple[int, int, int]:
     """
-    Read source file and update case_submitted for matching records.
+    Read source file and update case_submitted and decision_date for matching records.
 
     Returns:
         Tuple of (updated_count, skipped_count, error_count)
@@ -76,23 +100,28 @@ def populate_dates_from_file(
     source_file = file_path.name
     column_mappings, is_perm = get_date_columns(file_path)
 
-    # Get records that need updating (case_submitted is NULL)
-    records_to_update = set(
+    needs_case_submitted = set(
         SalaryRecord.objects.filter(
             source_file=source_file, case_submitted__isnull=True
         ).values_list("case_number", flat=True)
     )
+    needs_decision_date = set(
+        SalaryRecord.objects.filter(
+            source_file=source_file, decision_date__isnull=True
+        ).values_list("case_number", flat=True)
+    )
+    needs_update = needs_case_submitted | needs_decision_date
 
-    if not records_to_update:
+    if not needs_update:
         logger.info(f"No records need updating for {source_file}")
         return 0, 0, 0
 
     logger.info(
-        f"Found {len(records_to_update):,} records without case_submitted in {source_file}"
+        f"Found {len(needs_case_submitted):,} without case_submitted, "
+        f"{len(needs_decision_date):,} without decision_date in {source_file}"
     )
 
-    # Read source file and extract case_number -> date mappings
-    case_dates = {}
+    case_dates: dict[str, dict[str, object]] = {}
     row_count = 0
 
     logger.info(f"Reading {source_file}...")
@@ -101,22 +130,16 @@ def populate_dates_from_file(
         for record in read_excel_streaming(file_path, read_only=True, data_only=True):
             row_count += 1
             case_number = get_column_value(record, column_mappings["case_number"])
-            if not case_number:
+            if not case_number or case_number not in needs_update:
                 continue
-
-            if case_number not in records_to_update:
-                continue
-
-            # Get case_submitted date
-            case_submitted = parse_date(
-                get_column_value(record, column_mappings["case_submitted"])
+            dates = _extract_dates_from_row(
+                record, column_mappings, needs_case_submitted, needs_decision_date
             )
-            if case_submitted:
-                case_dates[case_number] = case_submitted
-
+            if dates:
+                case_dates[case_number] = dates
             if row_count % 100000 == 0:
                 logger.info(
-                    f"  Processed {row_count:,} rows, found {len(case_dates):,} dates..."
+                    f"  Processed {row_count:,} rows, found {len(case_dates):,} records with dates..."
                 )
     else:
         import csv
@@ -126,34 +149,28 @@ def populate_dates_from_file(
             for record in reader:
                 row_count += 1
                 case_number = get_column_value(record, column_mappings["case_number"])
-                if not case_number:
+                if not case_number or case_number not in needs_update:
                     continue
-
-                if case_number not in records_to_update:
-                    continue
-
-                case_submitted = parse_date(
-                    get_column_value(record, column_mappings["case_submitted"])
+                dates = _extract_dates_from_row(
+                    record, column_mappings, needs_case_submitted, needs_decision_date
                 )
-                if case_submitted:
-                    case_dates[case_number] = case_submitted
-
+                if dates:
+                    case_dates[case_number] = dates
                 if row_count % 100000 == 0:
                     logger.info(
-                        f"  Processed {row_count:,} rows, found {len(case_dates):,} dates..."
+                        f"  Processed {row_count:,} rows, found {len(case_dates):,} records with dates..."
                     )
 
-    logger.info(f"Found {len(case_dates):,} dates to update from {row_count:,} rows")
+    logger.info(f"Found {len(case_dates):,} records to update from {row_count:,} rows")
 
     if not case_dates:
         logger.info(f"No dates found in {source_file}")
-        return 0, len(records_to_update), 0
+        return 0, len(needs_update), 0
 
     if dry_run:
         logger.info(f"[DRY RUN] Would update {len(case_dates):,} records")
         return 0, 0, 0
 
-    # Update records in batches
     updated = 0
     case_numbers = list(case_dates.keys())
 
@@ -162,17 +179,16 @@ def populate_dates_from_file(
 
         with transaction.atomic():
             for case_number in batch:
-                date_value = case_dates[case_number]
+                dates = case_dates[case_number]
                 count = SalaryRecord.objects.filter(
                     case_number=case_number,
                     source_file=source_file,
-                    case_submitted__isnull=True,
-                ).update(case_submitted=date_value)
+                ).update(**dates)
                 updated += count
 
         logger.info(f"  Updated {updated:,} records...")
 
-    skipped = len(records_to_update) - updated
+    skipped = len(needs_update) - updated
     return updated, skipped, 0
 
 
@@ -203,7 +219,7 @@ def get_source_files(data_dir: Path, specific_file: str | None = None) -> list[P
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Populate case_submitted field for existing SalaryRecord records"
+        description="Populate case_submitted and decision_date fields for existing SalaryRecord records"
     )
     parser.add_argument(
         "--dry-run",
@@ -222,7 +238,7 @@ def main():
     )
 
     args = parser.parse_args()
-    script_logger.log_call(args=vars(args), context="Populate case_submitted")
+    script_logger.log_call(args=vars(args), context="Populate case_submitted and decision_date")
 
     data_dir = get_workspace_dir() / "data" / "salary" / "dol_data"
 

@@ -17,15 +17,21 @@ _NOT_INGESTED_RE = re.compile(r"Not ingested \(available\):\s*(\d+)")
 
 
 def check_new_sources(
-    runner: Runner, project_root: str | None = None
+    runner: Runner,
+    project_root: str | None = None,
+    domain: str | None = None,
 ) -> tuple[int, str]:
     """Run check-completeness via runner; return (not_ingested_count, output)."""
     from pathlib import Path
 
     cwd = Path(project_root) if project_root else None
+    extra_args: list[str] = []
+    if domain:
+        extra_args = ["--domain", domain]
     result = runner.run_bin(
         "scripts/ingest/run_pipeline",
         "check-completeness",
+        *extra_args,
         cwd=cwd,
     )
     out = getattr(result, "stdout", "") or ""

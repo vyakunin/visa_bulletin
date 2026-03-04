@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+
 
 @dataclass
 class InstanceInfo:
@@ -50,7 +52,11 @@ def get_instance_state(instance_name: str) -> str:
     import subprocess
 
     result = subprocess.run(
-        ["aws", "lightsail", "get-instance-state", "--instance-name", instance_name],
+        [
+            "aws", "lightsail", "get-instance-state",
+            "--instance-name", instance_name,
+            "--region", AWS_REGION,
+        ],
         capture_output=True,
         text=True,
         timeout=30,
@@ -72,7 +78,11 @@ def start_instance(instance_name: str) -> bool:
     import subprocess
 
     result = subprocess.run(
-        ["aws", "lightsail", "start-instance", "--instance-name", instance_name],
+        [
+            "aws", "lightsail", "start-instance",
+            "--instance-name", instance_name,
+            "--region", AWS_REGION,
+        ],
         capture_output=True,
         text=True,
         timeout=60,
@@ -88,7 +98,11 @@ def stop_instance(instance_name: str) -> bool:
     import subprocess
 
     result = subprocess.run(
-        ["aws", "lightsail", "stop-instance", "--instance-name", instance_name],
+        [
+            "aws", "lightsail", "stop-instance",
+            "--instance-name", instance_name,
+            "--region", AWS_REGION,
+        ],
         capture_output=True,
         text=True,
         timeout=60,

@@ -29,6 +29,7 @@ STEPS_ORDER: tuple[str, ...] = (
     "ensure_db",
     "index_snapshot_saved",
     "ingest_complete",
+    "populate_case_submitted",
     "backfill_job_title_links",
     "backfill_source_file_date",
     "cluster_job_titles",

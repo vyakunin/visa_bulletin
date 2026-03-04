@@ -26,6 +26,7 @@ bazel build \
     //scripts/ingest:run_pipeline \
     //:migrate \
     //scripts/salary:manage_salary_indexes \
+    //scripts/salary:populate_case_submitted \
     //scripts/salary:backfill_job_title_links \
     //scripts/salary:backfill_source_file_date \
     //scripts/salary:cluster_job_titles \
@@ -62,6 +63,7 @@ BINARIES=(
     "bazel-bin/scripts/ingest/run_pipeline"
     "bazel-bin/migrate"
     "bazel-bin/scripts/salary/manage_salary_indexes"
+    "bazel-bin/scripts/salary/populate_case_submitted"
     "bazel-bin/scripts/salary/backfill_job_title_links"
     "bazel-bin/scripts/salary/backfill_source_file_date"
     "bazel-bin/scripts/salary/cluster_job_titles"

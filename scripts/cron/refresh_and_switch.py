@@ -37,8 +37,13 @@ def main() -> int:
         "--from-step",
         type=str,
         default=None,
-        choices=["traffic_switch"],
-        help="Start from this step (skip pipeline). Use traffic_switch after validating with --no-traffic-switch.",
+        choices=["warm_cache", "smoke_tests", "traffic_switch"],
+        help=(
+            "Start from this graduation step (skip pipeline). "
+            "warm_cache: re-warm cache, smoke, then traffic switch + full graduation. "
+            "smoke_tests: re-run smoke, then traffic switch + full graduation. "
+            "traffic_switch: skip directly to IP swap + full graduation."
+        ),
     )
     parser.add_argument(
         "--safety-interval",
@@ -46,12 +51,14 @@ def main() -> int:
         default=1800,
         help="Seconds to wait after traffic switch (default 1800)",
     )
-    parser.add_argument(
-        "--skip-stop-old",
-        action="store_true",
-        help="Keep old instance running after switch (graduation mode)",
-    )
     parser.add_argument("--project-root", type=Path, default=None, help="Project root")
+    parser.add_argument(
+        "--domain",
+        type=str,
+        default=None,
+        choices=["dol", "visa_bulletin", "uscis", "dos"],
+        help="Scope discovery and ingest to a single domain (default: all domains)",
+    )
     args = parser.parse_args()
     root = (
         args.project_root
@@ -73,7 +80,7 @@ def main() -> int:
         no_traffic_switch=args.no_traffic_switch,
         resume=args.resume,
         from_step=args.from_step,
-        skip_stop_old=args.skip_stop_old,
+        domain=args.domain,
     )
 
 

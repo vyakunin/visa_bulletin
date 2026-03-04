@@ -36,6 +36,9 @@ test --cache_test_results=yes
 # Speed up JVM startup
 startup --host_jvm_args=-XX:+UseParallelGC
 
-# Reuse analysis cache when possible
-build --experimental_reuse_sandbox_directories
+# Avoid darwin-sandbox for tests: intermittent segfaults in generate-xml.sh
+# during full suite runs (macOS sandbox instability with Python/C extensions).
+# Tests still run in isolated processes; only the sandbox wrapper is skipped.
+test --spawn_strategy=local
+test --flaky_test_attempts=2
 

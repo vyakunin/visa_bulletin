@@ -30,7 +30,7 @@ def switch_traffic_static_ip(
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=120,
     )
     if result.returncode != 0:
         logger.error("detach-static-ip failed: %s", result.stderr)
@@ -49,7 +49,7 @@ def switch_traffic_static_ip(
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=120,
     )
     if result.returncode != 0:
         logger.error("attach-static-ip failed: %s", result.stderr)
@@ -84,7 +84,7 @@ def attach_staging_static_ip_to_old_prod(
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=120,
     )
     if detach.returncode != 0 and "not attached" not in (detach.stderr or "").lower():
         logger.warning("detach-static-ip (staging IP) failed: %s", detach.stderr)
@@ -102,7 +102,7 @@ def attach_staging_static_ip_to_old_prod(
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=120,
     )
     if result.returncode != 0:
         logger.error(
