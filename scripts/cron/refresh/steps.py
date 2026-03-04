@@ -506,6 +506,26 @@ def step_clear_sitemap_cache(
         logger.warning("Clear sitemap cache failed (non-fatal): %s", tail[-500:] if tail else result.stderr)
 
 
+_SITEMAP_PING_URLS = [
+    "https://www.google.com/ping?sitemap=https://visa-bulletin.us/sitemap.xml",
+    "https://www.bing.com/ping?sitemap=https://visa-bulletin.us/sitemap.xml",
+]
+
+
+def step_ping_search_engines(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
+    """Notify Google and Bing that the sitemap has been updated."""
+    import urllib.request
+
+    for url in _SITEMAP_PING_URLS:
+        try:
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                logger.info("Sitemap ping %s → %s", url.split("?")[0].split("//")[1].split("/")[0], resp.status)
+        except Exception as e:
+            logger.warning("Sitemap ping failed for %s: %s", url, e)
+
+
 def step_run_smoke_tests(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:

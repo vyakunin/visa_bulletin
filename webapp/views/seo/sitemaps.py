@@ -58,10 +58,9 @@ def sitemap_view(request):
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ]
 
-    # Static pages (dashboard changes when new bulletin arrives)
+    # Static pages — all reflect data that changes on each pipeline refresh
     for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/about/", "/contact/"):
-        lm = bulletin_lastmod if path == "/" else None
-        xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=lm))
+        xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=bulletin_lastmod))
 
     # Category landing pages (updated when new bulletin arrives)
     categories = [
@@ -90,7 +89,7 @@ def sitemap_view(request):
         employer_clusters = []
 
     for cluster in employer_clusters:
-        xml_parts.extend(_url_entry(f"{base_url}/employer/{cluster.slug}/"))
+        xml_parts.extend(_url_entry(f"{base_url}/employer/{cluster.slug}/", lastmod=bulletin_lastmod))
 
     # Job title profile pages (top 10,000 by filing count)
     try:
@@ -105,7 +104,7 @@ def sitemap_view(request):
         job_title_clusters = []
 
     for cluster in job_title_clusters:
-        xml_parts.extend(_url_entry(f"{base_url}/job-title/{cluster.slug}/"))
+        xml_parts.extend(_url_entry(f"{base_url}/job-title/{cluster.slug}/", lastmod=bulletin_lastmod))
 
     xml_parts.append("</urlset>")
     return HttpResponse("\n".join(xml_parts), content_type="application/xml")

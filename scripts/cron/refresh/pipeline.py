@@ -58,6 +58,7 @@ STEP_FUNCS = {
     "start_services": steps.step_start_services,
     "warm_cache": steps.step_warm_cache,
     "clear_sitemap_cache": steps.step_clear_sitemap_cache,
+    "ping_search_engines": steps.step_ping_search_engines,
     "smoke_tests": steps.step_run_smoke_tests,
 }
 
