@@ -21,20 +21,12 @@ py_library(
     srcs = ["prediction_views.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//webapp/views/bulletin:dashboard",
-        "//webapp/views/bulletin:vqs_api",
-        "//webapp/views/employers:directory",
-        "//webapp/views/employers:profile",
-        "//webapp/views/job_titles:directory",
-        "//webapp/views/job_titles:profile",
-        "//webapp/views/salary:search",
-        "//webapp/views/seo:sitemaps",
-        "//webapp/views/static:pages",
-        "//models:vqs",
+        "//lib/business/vqs:prediction_loader",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
         "//models/enums:country",
-        "//models/enums:action_type",
+        "//models/enums:family_preference",
         "//models/enums:visa_category",
-
     ],
 )
 

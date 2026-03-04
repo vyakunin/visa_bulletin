@@ -49,6 +49,7 @@
             <div class="mb-4">
                 <h1>{{ cluster.canonical_name }}</h1>
                 <p class="text-muted">H-1B & PERM Sponsorship Data</p>
+                <small class="text-muted d-block mb-2">Source: US Dept of Labor. Represents Base Salary only. Excludes RSUs, signing bonuses, and variable compensation.</small>
                 <a href="{% url 'salary_search' %}?employer={{ cluster.canonical_name|urlencode }}" 
                    class="btn btn-outline-primary">
                     <i class="bi bi-search"></i> View All Salary Records
@@ -123,6 +124,117 @@
                 {% endif %}
             </div>
             
+            <!-- H-1B vs PERM Breakdown -->
+            {% if stats.program_breakdown %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Sponsorship Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-4">
+                            <div class="fs-3 fw-bold text-primary">{{ stats.program_breakdown.h1b_count|intcomma }}</div>
+                            <div class="text-muted">H-1B Filings</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="fs-3 fw-bold" style="color: rgb(26, 118, 255)">{{ stats.program_breakdown.perm_count|intcomma }}</div>
+                            <div class="text-muted">PERM (Green Card) Filings</div>
+                        </div>
+                        <div class="col-md-4">
+                            {% if stats.program_breakdown.perm_ratio >= 20 %}
+                            <div class="fs-3 fw-bold text-success">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
+                            {% elif stats.program_breakdown.perm_ratio >= 5 %}
+                            <div class="fs-3 fw-bold text-warning">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
+                            {% else %}
+                            <div class="fs-3 fw-bold text-danger">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
+                            {% endif %}
+                            <div class="text-muted">PERM Ratio</div>
+                            <small class="text-muted">Higher = stronger Green Card commitment</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Recent Filing Activity -->
+            {% if stats.recent_activity %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Recent Filing Activity</h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.recent_activity.by_program %}
+                    <h6>By Program Type</h6>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Program</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last FY{% endif %}</th>
+                                    <th class="text-end">Total Filings</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in stats.recent_activity.by_program %}
+                                <tr>
+                                    <td>
+                                        {% if row.visa_program == 1 %}H-1B{% elif row.visa_program == 5 %}PERM{% elif row.visa_program == 2 %}H-1B1{% elif row.visa_program == 3 %}E-3{% else %}Other{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if stats.recent_activity.has_exact_dates %}
+                                            {{ row.last_filing|date:"M j, Y" }}
+                                        {% else %}
+                                            FY {{ row.last_year }}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ row.count|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    {% if stats.recent_activity.by_title %}
+                    <h6>By Job Title (Most Recent)</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Job Title</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last FY{% endif %}</th>
+                                    <th class="text-end">Filings</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in stats.recent_activity.by_title %}
+                                <tr>
+                                    <td>
+                                        {% if row.job_title_entity__canonical_cluster__slug %}
+                                        <a href="{% url 'job_title_profile' slug=row.job_title_entity__canonical_cluster__slug %}" class="text-decoration-none">
+                                            {{ row.job_title_entity__canonical_cluster__canonical_title }}
+                                        </a>
+                                        {% else %}
+                                            {{ row.job_title_entity__canonical_cluster__canonical_title }}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if stats.recent_activity.has_exact_dates %}
+                                            {{ row.last_filing|date:"M j, Y" }}
+                                        {% else %}
+                                            FY {{ row.last_year }}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ row.count|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Top Job Titles -->
             {% if stats.top_titles %}
             <div class="card mb-4">
@@ -247,14 +359,95 @@
             </div>
             {% endif %}
             
+            <!-- Filing Pace by Program -->
+            {% if chart_data.filing_pace %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Filing Pace by Program</h5>
+                </div>
+                <div class="card-body">
+                    {% include "webapp/includes/chart_loading_container.html" with element_id="chart-filing-pace" %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Year-over-Year Trends Table -->
             {% if stats.yoy_trends %}
             {% include "webapp/includes/yoy_trends_table.html" with yoy_trends=stats.yoy_trends %}
             {% endif %}
-            
+
+            <!-- Processing Time -->
+            {% if stats.processing_latency %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Processing Time (Filing to Decision)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-3">
+                        <div class="col-md-3">
+                            <div class="fs-4 fw-bold text-primary">{{ stats.processing_latency.median_days }}</div>
+                            <div class="text-muted">Median Days</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="fs-4 fw-bold">{{ stats.processing_latency.avg_days }}</div>
+                            <div class="text-muted">Average Days</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="fs-4 fw-bold text-muted">{{ stats.processing_latency.p25_days }}&ndash;{{ stats.processing_latency.p75_days }}</div>
+                            <div class="text-muted">P25&ndash;P75 Range</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="fs-4 fw-bold text-muted">{{ stats.processing_latency.count|intcomma }}</div>
+                            <div class="text-muted">Cases with Data</div>
+                        </div>
+                    </div>
+                    {% if stats.processing_latency.per_program %}
+                    <h6>By Program</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Program</th>
+                                    <th class="text-end">Median Days</th>
+                                    <th class="text-end">Avg Days</th>
+                                    <th class="text-end">P25&ndash;P75</th>
+                                    <th class="text-end">Cases</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for prog_name, prog_stats in stats.processing_latency.per_program.items %}
+                                <tr>
+                                    <td>{{ prog_name }}</td>
+                                    <td class="text-end">{{ prog_stats.median_days }}</td>
+                                    <td class="text-end">{{ prog_stats.avg_days }}</td>
+                                    <td class="text-end">{{ prog_stats.p25_days }}&ndash;{{ prog_stats.p75_days }}</td>
+                                    <td class="text-end">{{ prog_stats.count|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Latency Trend -->
+            {% if chart_data.latency_trend %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Processing Time Trend</h5>
+                </div>
+                <div class="card-body">
+                    {% include "webapp/includes/chart_loading_container.html" with element_id="chart-latency-trend" %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
                 <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 
+                Represents Base Salary only (excludes RSUs, signing bonuses, and variable compensation).
                 Data shown for fiscal years {{ start_year }} to present. 
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
             </div>
@@ -325,7 +518,9 @@ function initEmployerCharts() {
             state_filings: {% if chart_data.state_filings %}true{% else %}false{% endif %},
             state_median_salary: {% if chart_data.state_median_salary %}true{% else %}false{% endif %},
             filing_volume: {% if chart_data.filing_volume %}true{% else %}false{% endif %},
-            salary_trend: {% if chart_data.salary_trend %}true{% else %}false{% endif %}
+            salary_trend: {% if chart_data.salary_trend %}true{% else %}false{% endif %},
+            filing_pace: {% if chart_data.filing_pace %}true{% else %}false{% endif %},
+            latency_trend: {% if chart_data.latency_trend %}true{% else %}false{% endif %}
         });
 
         {% if chart_data.salary_histogram %}
@@ -351,6 +546,16 @@ function initEmployerCharts() {
         {% if chart_data.salary_trend %}
         var salaryTrendData = {{ chart_data.salary_trend|safe }};
         renderChart('chart-salary-trend', salaryTrendData);
+        {% endif %}
+
+        {% if chart_data.filing_pace %}
+        var filingPaceData = {{ chart_data.filing_pace|safe }};
+        renderChart('chart-filing-pace', filingPaceData);
+        {% endif %}
+
+        {% if chart_data.latency_trend %}
+        var latencyTrendData = {{ chart_data.latency_trend|safe }};
+        renderChart('chart-latency-trend', latencyTrendData);
         {% endif %}
 
         console.log('Employer profile chart init complete');
@@ -386,6 +591,14 @@ function initEmployerCharts() {
         {% if chart_data.salary_trend %}
         var el = document.getElementById('chart-salary-trend');
         if (el) Plotly.Plots.resize('chart-salary-trend');
+        {% endif %}
+        {% if chart_data.filing_pace %}
+        var el = document.getElementById('chart-filing-pace');
+        if (el) Plotly.Plots.resize('chart-filing-pace');
+        {% endif %}
+        {% if chart_data.latency_trend %}
+        var el = document.getElementById('chart-latency-trend');
+        if (el) Plotly.Plots.resize('chart-latency-trend');
         {% endif %}
     });
 }

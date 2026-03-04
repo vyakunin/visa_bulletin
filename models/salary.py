@@ -553,6 +553,19 @@ class SalaryRecord(models.Model):
             ),
             # Clustering: Index for job title entity lookups (prevents slow COUNTs during clustering)
             models.Index(fields=["job_title_entity"]),
+            # Filing-date-based employer queries (pace, recent activity, latency)
+            models.Index(
+                fields=["employer", "case_submitted"],
+                name="sr_emp_case_sub",
+            ),
+            models.Index(
+                fields=["employer", "visa_program", "case_submitted"],
+                name="sr_emp_prog_case_sub",
+            ),
+            models.Index(
+                fields=["employer", "case_submitted", "decision_date"],
+                name="sr_emp_sub_dec",
+            ),
         ]
 
     def __str__(self):

@@ -14,6 +14,12 @@ from django.urls import reverse
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
+    calculate_filing_pace,
+    calculate_filing_pace_by_fiscal_year,
+    calculate_latency_trend,
+    calculate_processing_latency,
+    calculate_program_breakdown,
+    calculate_recent_filing_activity,
     calculate_salary_histogram_with_overlays,
     calculate_salary_percentiles,
     calculate_yoy_growth,
@@ -184,6 +190,53 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
     )
     yoy_growth, _, _, _ = calculate_yoy_growth(yoy_trends, start_year)
 
+    t0 = time.perf_counter()
+    program_breakdown = calculate_program_breakdown(records)
+    logger.info(
+        "[employer_profile] program_breakdown slug=%s took %.3fs",
+        slug,
+        time.perf_counter() - t0,
+    )
+
+    t0 = time.perf_counter()
+    recent_activity = calculate_recent_filing_activity(records)
+    logger.info(
+        "[employer_profile] recent_activity slug=%s took %.3fs",
+        slug,
+        time.perf_counter() - t0,
+    )
+
+    t0 = time.perf_counter()
+    filing_pace = calculate_filing_pace(records)
+    if not filing_pace:
+        filing_pace_fallback = calculate_filing_pace_by_fiscal_year(records)
+    else:
+        filing_pace_fallback = []
+    logger.info(
+        "[employer_profile] filing_pace slug=%s exact=%s took %.3fs",
+        slug,
+        bool(filing_pace),
+        time.perf_counter() - t0,
+    )
+
+    t0 = time.perf_counter()
+    processing_latency = calculate_processing_latency(records)
+    logger.info(
+        "[employer_profile] processing_latency slug=%s available=%s took %.3fs",
+        slug,
+        processing_latency is not None,
+        time.perf_counter() - t0,
+    )
+
+    t0 = time.perf_counter()
+    latency_trend = calculate_latency_trend(records)
+    logger.info(
+        "[employer_profile] latency_trend slug=%s points=%d took %.3fs",
+        slug,
+        len(latency_trend),
+        time.perf_counter() - t0,
+    )
+
     return {
         "basic": basic_stats,
         "approval_rate": approval_rate,
@@ -194,6 +247,12 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
         "job_title_histograms": title_histograms,
         "state_dist": state_dist,
         "yoy_trends": yoy_trends,
+        "program_breakdown": program_breakdown,
+        "recent_activity": recent_activity,
+        "filing_pace": filing_pace,
+        "filing_pace_fallback": filing_pace_fallback,
+        "processing_latency": processing_latency,
+        "latency_trend": latency_trend,
     }
 
 
@@ -551,6 +610,63 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
                 len(charts["salary_trend"]),
             )
 
+    # Chart 5: Filing Pace by Program (quarterly or fiscal year fallback)
+    filing_pace = stats.get("filing_pace") or []
+    filing_pace_fallback = stats.get("filing_pace_fallback") or []
+
+    if filing_pace:
+        t0 = time.perf_counter()
+        _build_filing_pace_chart_quarterly(charts, filing_pace)
+        if log_slug:
+            logger.info(
+                "[employer_profile] build_chart filing_pace slug=%s took %.3fs",
+                log_slug,
+                time.perf_counter() - t0,
+            )
+    elif filing_pace_fallback:
+        t0 = time.perf_counter()
+        _build_filing_pace_chart_fiscal_year(charts, filing_pace_fallback)
+        if log_slug:
+            logger.info(
+                "[employer_profile] build_chart filing_pace_fy slug=%s took %.3fs",
+                log_slug,
+                time.perf_counter() - t0,
+            )
+
+    # Chart 6: Latency Trend
+    latency_trend = stats.get("latency_trend") or []
+    if latency_trend and len(latency_trend) > 1:
+        t0 = time.perf_counter()
+        labels = [pt["period_label"] for pt in latency_trend]
+        medians = [pt["median_days"] for pt in latency_trend]
+        fig = go.Figure(
+            data=[
+                go.Scatter(
+                    x=labels,
+                    y=medians,
+                    mode="lines+markers",
+                    line=dict(color="rgb(255, 127, 14)", width=3),
+                    marker=dict(size=8),
+                    hovertemplate="<b>%{x}</b><br>Median: %{y} days<extra></extra>",
+                )
+            ]
+        )
+        fig.update_layout(
+            title="Processing Time Trend",
+            xaxis_title="Quarter",
+            yaxis_title="Median Days",
+            height=350,
+            template="plotly_white",
+            showlegend=False,
+        )
+        charts["latency_trend"] = fig.to_json()
+        if log_slug:
+            logger.info(
+                "[employer_profile] build_chart latency_trend slug=%s took %.3fs",
+                log_slug,
+                time.perf_counter() - t0,
+            )
+
     total_charts_size = sum(len(v) for v in charts.values() if isinstance(v, str))
     if log_slug:
         logger.info(
@@ -560,6 +676,110 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
             list(charts.keys()),
         )
     return charts
+
+
+def _build_filing_pace_chart_quarterly(charts: dict, pace_data: list[dict]):
+    """Build quarterly filing pace chart split by H-1B vs PERM."""
+    import plotly.graph_objs as go
+
+    from models.enums.visa_program import VisaProgram
+
+    h1b_programs = {VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3}
+    periods = sorted({r["period"] for r in pace_data})
+    period_labels = [f"Q{(p.month - 1) // 3 + 1} {p.year}" for p in periods]
+    period_map = {p: i for i, p in enumerate(periods)}
+
+    h1b_counts = [0] * len(periods)
+    perm_counts = [0] * len(periods)
+    for row in pace_data:
+        idx = period_map.get(row["period"])
+        if idx is None:
+            continue
+        if row["visa_program"] in h1b_programs:
+            h1b_counts[idx] += row["count"]
+        elif row["visa_program"] == VisaProgram.PERM:
+            perm_counts[idx] += row["count"]
+
+    traces = []
+    if any(h1b_counts):
+        traces.append(
+            go.Scatter(
+                x=period_labels, y=h1b_counts, mode="lines+markers",
+                name="H-1B", line=dict(color="rgb(55, 83, 109)", width=2),
+                hovertemplate="<b>%{x}</b><br>H-1B: %{y:,}<extra></extra>",
+            )
+        )
+    if any(perm_counts):
+        traces.append(
+            go.Scatter(
+                x=period_labels, y=perm_counts, mode="lines+markers",
+                name="PERM", line=dict(color="rgb(26, 118, 255)", width=2),
+                hovertemplate="<b>%{x}</b><br>PERM: %{y:,}<extra></extra>",
+            )
+        )
+    if not traces:
+        return
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        title="Filing Pace by Program (Quarterly)",
+        xaxis_title="Quarter", yaxis_title="Filings",
+        height=350, template="plotly_white", showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    charts["filing_pace"] = fig.to_json()
+
+
+def _build_filing_pace_chart_fiscal_year(charts: dict, pace_data: list[dict]):
+    """Fallback filing pace chart using fiscal_year split by program."""
+    import plotly.graph_objs as go
+
+    from models.enums.visa_program import VisaProgram
+
+    h1b_programs = {VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3}
+    years = sorted({r["fiscal_year"] for r in pace_data})
+    year_map = {y: i for i, y in enumerate(years)}
+    year_labels = [str(y) for y in years]
+
+    h1b_counts = [0] * len(years)
+    perm_counts = [0] * len(years)
+    for row in pace_data:
+        idx = year_map.get(row["fiscal_year"])
+        if idx is None:
+            continue
+        if row["visa_program"] in h1b_programs:
+            h1b_counts[idx] += row["count"]
+        elif row["visa_program"] == VisaProgram.PERM:
+            perm_counts[idx] += row["count"]
+
+    traces = []
+    if any(h1b_counts):
+        traces.append(
+            go.Scatter(
+                x=year_labels, y=h1b_counts, mode="lines+markers",
+                name="H-1B", line=dict(color="rgb(55, 83, 109)", width=2),
+                hovertemplate="<b>FY %{x}</b><br>H-1B: %{y:,}<extra></extra>",
+            )
+        )
+    if any(perm_counts):
+        traces.append(
+            go.Scatter(
+                x=year_labels, y=perm_counts, mode="lines+markers",
+                name="PERM", line=dict(color="rgb(26, 118, 255)", width=2),
+                hovertemplate="<b>FY %{x}</b><br>PERM: %{y:,}<extra></extra>",
+            )
+        )
+    if not traces:
+        return
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        title="Filing Pace by Program (Annual)",
+        xaxis_title="Fiscal Year", yaxis_title="Filings",
+        height=350, template="plotly_white", showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    charts["filing_pace"] = fig.to_json()
 
 
 def _build_employer_salary_histograms(

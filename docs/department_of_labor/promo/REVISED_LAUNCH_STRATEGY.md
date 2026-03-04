@@ -12,19 +12,34 @@ Do not post in your morning.
 
 ## Phase 1: Pre-Flight (Do this immediately)
 
-### The "Integrity" Badge
+### The "Integrity" Badge -- DONE
 
-Add a visible tooltip or text near the main search bar on `/salaries/` and the top of Employer Profiles:
+Disclaimer text added to:
+- `/salaries/` search card header
+- Employer profile page header (below company name)
+- Employer profile data source footer (enhanced with base-salary-only note)
 
-> "Source: US Dept of Labor. Represents Base Salary only. Excludes RSUs, signing bonuses, and variable compensation."
+### Employer Profile Enhancements -- DONE
+
+New sections on every employer profile page (`/employer/<slug>/`):
+
+- **Sponsorship Breakdown card** — H-1B count, PERM count, PERM ratio (color-coded: green >=20%, yellow >=5%, red <5%). Answers "does this company actually file PERMs?"
+- **Recent Filing Activity** — Last filing date per program type (H-1B / PERM) and per top-5 job titles. Falls back to fiscal year when exact dates unavailable. Answers "when did they last file?"
+- **Filing Pace by Program chart** — Quarterly (or annual fallback) filing volume split by H-1B vs PERM. Shows whether sponsorship activity is growing or shrinking.
+- **Processing Time stats** — Filing-to-decision latency: median, average, P25-P75 range, with per-program breakdown. Answers "how long does this company's processing take?"
+- **Processing Time Trend chart** — Quarterly median processing days over time. Shows if processing is getting faster or slower.
+
+**Note:** Processing time and quarterly filing pace require `case_submitted` and `decision_date` backfill (currently 0% populated on prod). These sections gracefully hide when data is unavailable and will appear automatically after running `populate_case_submitted.py`.
 
 ### Asset Generation
 
-You cannot launch with text alone. Create these 3 screenshots:
+You cannot launch with text alone. Create these screenshots:
 
 - **Asset A (The Histogram):** A screenshot of Microsoft's Employer Profile showing the "Salary Distribution" chart. (Shows density/validity).
 - **Asset B (The Comparison):** A screenshot of Google's stats next to a WITCH company (e.g., Infosys or Tata). You can just take two screenshots and stitch them side-by-side in Paint/Figma. Label it: "High Base + PERM" vs "Low Base + H-1B Only".
 - **Asset C (The Map):** A screenshot of the "Filings by State" map/chart from a major employer to show geographic breadth.
+- **Asset D (Sponsorship Breakdown):** Screenshot of the new "Sponsorship Breakdown" card showing H-1B vs PERM counts and PERM ratio.
+- **Asset E (Filing Pace):** Screenshot of the "Filing Pace by Program" chart showing H-1B vs PERM trends over time.
 
 ---
 
@@ -49,7 +64,8 @@ I built a free searchable database of 1.5M Dept of Labor filings to answer this.
 **Important Data Note:** This is official DOL data, which means it lists **Base Salary Only**. It excludes RSUs and bonuses. For Big Tech, the numbers will look lower than Levels.fyi/Blind.
 
 **However, it is the most accurate source to:**
-* **Verify Sponsorship Patterns:** Look at a company's "PERM" count vs "H-1B" count. Some companies hire thousands on H-1B but file almost zero PERMs.
+* **Verify Sponsorship Patterns:** Every employer profile now shows a Sponsorship Breakdown: H-1B count, PERM count, and PERM ratio. Some companies hire thousands on H-1B but file almost zero PERMs.
+* **See Filing Activity:** Check when a company last filed, how their filing pace is changing, and their processing times.
 * **Check the "Floor":** See the legal prevailing wage minimums for your role/location.
 * **Filter by State:** See where companies are actually filing LCAs (e.g., are they hiring remote in Texas or just California?).
 
@@ -77,11 +93,12 @@ While sites like Levels.fyi track total compensation, they often miss the immigr
 It allows you to look under the hood of a potential employer.
 
 🔍 What you can check:
-1. PERM (Green Card) Volume: Does this employer support long-term residency, or is it a "churn and burn" H-1B shop?
-2. Base Salary Floors: Official base pay data submitted to the government (excludes RSUs/Bonuses).
-3. Location Data: Where are they actually filing LCAs?
+1. PERM (Green Card) Volume: Every profile shows H-1B vs PERM breakdown with a PERM ratio. Does this employer support long-term residency, or is it a "churn and burn" H-1B shop?
+2. Filing Activity: When did they last file? Is their sponsorship volume growing or shrinking? What titles are they filing for?
+3. Base Salary Floors: Official base pay data submitted to the government (excludes RSUs/Bonuses).
+4. Location Data: Where are they actually filing LCAs?
 
-Before you interview, check the employer's profile to see their filing history and approval rates.
+Before you interview, check the employer's profile to see their sponsorship breakdown and filing trends.
 
 Link: https://visa-bulletin.us/employers/
 
@@ -157,9 +174,9 @@ Search 1.5M records here: https://visa-bulletin.us/salaries/
 **Reply Template (Customize slightly each time):**
 
 ```text
-You should check their actual filing history. According to DOL data, they filed [X] LCAs last year but only [Y] PERMs. Their median base salary filing for that title was $[Z]k (obviously excludes stock).
+You should check their actual filing history. According to DOL data, they filed [X] H-1Bs but only [Y] PERMs ([Z]% PERM ratio). Their median base salary filing for that title was $[W]k (obviously excludes stock). Their last PERM filing was [date/FY]. You can also see how their filing pace is trending.
 
-You can see the full breakdown here: https://visa-bulletin.us/employer/[slug]/
+Full breakdown here: https://visa-bulletin.us/employer/[slug]/
 ```
 
 ---
@@ -236,8 +253,14 @@ Best,
 
 ## Summary Checklist
 
-- [ ] UI: Add "Base Salary Only" disclaimer text.
-- [ ] Assets: Screenshot Microsoft profile (Chart), Google vs WITCH (Comparison).
+- [x] UI: Add "Base Salary Only" disclaimer text on `/salaries/` and employer profiles.
+- [x] UI: Sponsorship Breakdown card (H-1B vs PERM counts + ratio) on employer profiles.
+- [x] UI: Recent Filing Activity section (last filing per program/title) on employer profiles.
+- [x] UI: Filing Pace by Program chart (H-1B vs PERM trend) on employer profiles.
+- [x] UI: Processing Time stats and trend chart on employer profiles.
+- [x] DB: Composite indexes for filing-date-based queries (migration 0040).
+- [ ] DB: Backfill `case_submitted` and `decision_date` on prod (run `populate_case_submitted.py`). Until then, processing time and quarterly pace sections are hidden.
+- [ ] Assets: Screenshot Microsoft profile (Chart), Google vs WITCH (Comparison), Sponsorship Breakdown, Filing Pace.
 - [ ] Reddit: Post to r/h1b at 15:30 CET.
 - [ ] Blind: Find 3 recent threads about "Sponsorship" and drop a comment with data.
 - [ ] Twitter: Post thread with chart image.

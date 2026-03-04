@@ -5,7 +5,8 @@ Shared salary statistics utilities for profile and landing pages.
 import logging
 from datetime import datetime
 
-from django.db.models import Avg, Count, Max, Min, Q, StdDev
+from django.db.models import Avg, Count, F, Max, Min, Q, StdDev
+from django.db.models.functions import TruncQuarter
 
 from models.enums.visa_program import VisaProgram
 
@@ -398,3 +399,225 @@ def calculate_salary_histogram_with_experience_overlays(
         ],
         "label": "All Levels",
     }
+
+
+def calculate_program_breakdown(queryset) -> dict:
+    """Count filings per visa program (H-1B vs PERM)."""
+    rows = list(
+        queryset.values("visa_program").annotate(count=Count("id")).order_by()
+    )
+    h1b_count = sum(
+        r["count"]
+        for r in rows
+        if r["visa_program"]
+        in (VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3)
+    )
+    perm_count = sum(
+        r["count"] for r in rows if r["visa_program"] == VisaProgram.PERM
+    )
+    total = h1b_count + perm_count
+    perm_ratio = (perm_count / total * 100) if total > 0 else 0
+    return {
+        "h1b_count": h1b_count,
+        "perm_count": perm_count,
+        "total": total,
+        "perm_ratio": perm_ratio,
+    }
+
+
+def calculate_recent_filing_activity(queryset) -> dict:
+    """
+    Last filing dates per program type and per top job title.
+
+    Uses case_submitted when available, falls back to fiscal_year.
+    """
+    has_dates = queryset.filter(case_submitted__isnull=False).exists()
+
+    if has_dates:
+        by_program = list(
+            queryset.filter(case_submitted__isnull=False)
+            .values("visa_program")
+            .annotate(last_filing=Max("case_submitted"), count=Count("id"))
+            .order_by("-last_filing")
+        )
+        by_title = list(
+            queryset.filter(
+                case_submitted__isnull=False,
+                job_title_entity__isnull=False,
+                job_title_entity__canonical_cluster__isnull=False,
+            )
+            .values(
+                "job_title_entity__canonical_cluster__canonical_title",
+                "job_title_entity__canonical_cluster__slug",
+            )
+            .annotate(last_filing=Max("case_submitted"), count=Count("id"))
+            .order_by("-last_filing")[:5]
+        )
+    else:
+        by_program = list(
+            queryset.values("visa_program")
+            .annotate(last_year=Max("fiscal_year"), count=Count("id"))
+            .order_by("-last_year")
+        )
+        by_title = list(
+            queryset.filter(
+                job_title_entity__isnull=False,
+                job_title_entity__canonical_cluster__isnull=False,
+            )
+            .values(
+                "job_title_entity__canonical_cluster__canonical_title",
+                "job_title_entity__canonical_cluster__slug",
+            )
+            .annotate(last_year=Max("fiscal_year"), count=Count("id"))
+            .order_by("-last_year")[:5]
+        )
+
+    return {
+        "by_program": by_program,
+        "by_title": by_title,
+        "has_exact_dates": has_dates,
+    }
+
+
+def calculate_filing_pace(queryset) -> list[dict]:
+    """
+    Quarterly filing pace using case_submitted.
+
+    Returns empty list if case_submitted data not available.
+    Split by visa_program (H-1B vs PERM).
+    """
+    dated_qs = queryset.filter(case_submitted__isnull=False)
+    if not dated_qs.exists():
+        return []
+
+    rows = list(
+        dated_qs.annotate(period=TruncQuarter("case_submitted"))
+        .values("period", "visa_program")
+        .annotate(count=Count("id"))
+        .order_by("period", "visa_program")
+    )
+    return rows
+
+
+def calculate_filing_pace_by_fiscal_year(queryset) -> list[dict]:
+    """Fallback filing pace grouped by fiscal_year and visa_program."""
+    return list(
+        queryset.values("fiscal_year", "visa_program")
+        .annotate(count=Count("id"))
+        .order_by("fiscal_year", "visa_program")
+    )
+
+
+def calculate_processing_latency(queryset) -> dict | None:
+    """
+    Filing-to-decision processing time stats.
+
+    Returns None if insufficient data (case_submitted or decision_date missing).
+    """
+    latency_qs = queryset.filter(
+        case_submitted__isnull=False,
+        decision_date__isnull=False,
+        decision_date__gte=F("case_submitted"),
+    )
+    count = latency_qs.count()
+    if count < 10:
+        return None
+
+    days_list = sorted(
+        (r["decision_date"] - r["case_submitted"]).days
+        for r in latency_qs.values("case_submitted", "decision_date").iterator(
+            chunk_size=5000
+        )
+    )
+    if not days_list:
+        return None
+
+    def _percentile(data: list[int], p: float) -> int:
+        k = (len(data) - 1) * (p / 100.0)
+        f = int(k)
+        if f >= len(data) - 1:
+            return data[-1]
+        return int(data[f] + (data[f + 1] - data[f]) * (k - f))
+
+    overall = {
+        "count": count,
+        "avg_days": int(sum(days_list) / len(days_list)),
+        "median_days": _percentile(days_list, 50),
+        "p25_days": _percentile(days_list, 25),
+        "p75_days": _percentile(days_list, 75),
+    }
+
+    # Per-program breakdown
+    per_program = {}
+    for prog_val, prog_label in [
+        (VisaProgram.H1B, "H-1B"),
+        (VisaProgram.PERM, "PERM"),
+    ]:
+        prog_qs = latency_qs.filter(visa_program=prog_val)
+        prog_days = sorted(
+            (r["decision_date"] - r["case_submitted"]).days
+            for r in prog_qs.values(
+                "case_submitted", "decision_date"
+            ).iterator(chunk_size=5000)
+        )
+        if len(prog_days) >= 5:
+            per_program[prog_label] = {
+                "count": len(prog_days),
+                "avg_days": int(sum(prog_days) / len(prog_days)),
+                "median_days": _percentile(prog_days, 50),
+                "p25_days": _percentile(prog_days, 25),
+                "p75_days": _percentile(prog_days, 75),
+            }
+
+    return {**overall, "per_program": per_program}
+
+
+def calculate_latency_trend(queryset) -> list[dict]:
+    """
+    Quarterly median processing time trend.
+
+    Returns empty list if insufficient data.
+    """
+    latency_qs = queryset.filter(
+        case_submitted__isnull=False,
+        decision_date__isnull=False,
+        decision_date__gte=F("case_submitted"),
+    )
+    if not latency_qs.exists():
+        return []
+
+    rows = list(
+        latency_qs.annotate(period=TruncQuarter("case_submitted"))
+        .values("period")
+        .annotate(count=Count("id"))
+        .order_by("period")
+    )
+
+    result = []
+    for row in rows:
+        if row["count"] < 5:
+            continue
+        period_qs = latency_qs.filter(
+            case_submitted__gte=row["period"],
+            case_submitted__lt=row["period"].replace(month=row["period"].month + 3)
+            if row["period"].month <= 9
+            else row["period"].replace(year=row["period"].year + 1, month=(row["period"].month + 3 - 12)),
+        )
+        days = sorted(
+            (r["decision_date"] - r["case_submitted"]).days
+            for r in period_qs.values(
+                "case_submitted", "decision_date"
+            ).iterator(chunk_size=5000)
+        )
+        if days:
+            median = days[len(days) // 2]
+            result.append(
+                {
+                    "period": row["period"].isoformat(),
+                    "period_label": f"Q{(row['period'].month - 1) // 3 + 1} {row['period'].year}",
+                    "median_days": median,
+                    "count": len(days),
+                }
+            )
+
+    return result
