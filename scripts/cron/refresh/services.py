@@ -16,6 +16,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def get_nginx_default_server_conf() -> str:
+    """
+    Nginx default_server block so the app is reachable by IP (not just visa-bulletin.us).
+    Must include /static/ so that employer/job-title autocomplete JS loads when using IP (e.g. staging).
+    Must use unescaped $host, $remote_addr, etc. so nginx passes correct Host header.
+    """
+    return (
+        "server {\\n"
+        "    listen 80 default_server;\\n"
+        "    server_name _;\\n"
+        "    location ^~ /static/ {\\n"
+        "        alias /opt/visa_bulletin/webapp/static/;\\n"
+        "        expires 30d;\\n"
+        "        add_header Cache-Control \"public, no-transform\";\\n"
+        "        access_log off;\\n"
+        "    }\\n"
+        "    location / {\\n"
+        "        proxy_pass http://127.0.0.1:8000;\\n"
+        "        proxy_set_header Host $host;\\n"
+        "        proxy_set_header X-Real-IP $remote_addr;\\n"
+        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\\n"
+        "        proxy_set_header X-Forwarded-Proto $scheme;\\n"
+        "        proxy_read_timeout 60s;\\n"
+        "    }\\n"
+        "}\\n"
+    )
+
+
 def wait_ssh_and_db_ready(
     runner: Runner,
     db_name: str,
@@ -129,20 +157,7 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     # Ensure nginx has a default server block so the app is reachable by IP (not just
     # visa-bulletin.us).  Without this, nginx returns 404 for requests to the raw IP
     # because only the domain-based vhost is configured.
-    default_server_conf = (
-        "server {\\n"
-        "    listen 80 default_server;\\n"
-        "    server_name _;\\n"
-        "    location / {\\n"
-        "        proxy_pass http://127.0.0.1:8000;\\n"
-        "        proxy_set_header Host \\$host;\\n"
-        "        proxy_set_header X-Real-IP \\$remote_addr;\\n"
-        "        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\\n"
-        "        proxy_set_header X-Forwarded-Proto \\$scheme;\\n"
-        "        proxy_read_timeout 60s;\\n"
-        "    }\\n"
-        "}\\n"
-    )
+    default_server_conf = get_nginx_default_server_conf()
     nginx_cmd = (
         f"echo -e {shlex.quote(default_server_conf)} | sudo tee /etc/nginx/sites-enabled/default-server > /dev/null"
         " && sudo nginx -t 2>/dev/null"
