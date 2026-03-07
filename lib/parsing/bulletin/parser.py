@@ -124,9 +124,12 @@ def extract_table_legacy(table):
     """
     Extract table from old bulletin format (2001-2015).
     These bulletins have simpler structure:
-    - First cell identifies table: "Family-Sponsored" or "Employment-Based"
-    - Only one table per category (equivalent to final_action)
-    - No underlined titles before tables
+    - Table type identified by "Family-Sponsored" or "Employment-Based" in the first column.
+    - In 2004+ format: first row's first cell contains the type.
+    - In 2001-2003 format: first row is country headers (empty first cell), second row's
+      first cell contains "Family" or "Employment- Based"; data starts at row 3.
+    - Only one table per category (equivalent to final_action).
+    - No underlined titles before tables.
 
     Note: Normalizes visa class names to match modern format for consistency.
     """
@@ -134,17 +137,28 @@ def extract_table_legacy(table):
     if not table_rows or len(table_rows) <= 1:
         return None
 
-    # Check first row, first cell to identify table type
+    # Determine which row has the table type and which rows are header vs data
     first_row = table_rows[0]
     cells = first_row.find_all(["td", "th"])
     if not cells:
         return None
 
     first_cell_text = normalize(cells[0].get_text(separator=" ", strip=True)).lower()
-
-    # Determine table type from first cell
     is_family = "family" in first_cell_text
     is_employment = "employment" in first_cell_text
+
+    if not is_family and not is_employment:
+        # 2001-2003 format: type may be in second row's first cell
+        if len(table_rows) >= 2:
+            row1_cells = table_rows[1].find_all(["td", "th"])
+            if row1_cells:
+                row1_first = normalize(
+                    row1_cells[0].get_text(separator=" ", strip=True)
+                ).lower()
+                if "family" in row1_first:
+                    is_family = True
+                elif "employment" in row1_first:
+                    is_employment = True
 
     if is_family:
         title = "family_sponsored_final_actions"
@@ -153,15 +167,23 @@ def extract_table_legacy(table):
     else:
         return None
 
-    # Extract rows (skip header row)
+    # Header row: row 0 in 2004+ format; in 2001-2003 row 0 is header, row 1 is type
+    if first_cell_text and (is_family or is_employment):
+        data_start_idx = 1
+        header_cells = cells
+    else:
+        data_start_idx = 2
+        header_cells = first_row.find_all(["td", "th"])
+
+    headers = [normalize(th.get_text(separator=" ", strip=True)) for th in header_cells]
+
     rows = []
-    for row in table_rows[1:]:  # Skip first row (header)
+    for row in table_rows[data_start_idx:]:
         cols = [
             convert_to_date(td.get_text(separator=" ", strip=True))
             for td in row.find_all("td")
         ]
         if cols and len(cols) > 1:  # Must have visa class + at least one country
-            # Normalize visa class for family tables using enum mapping
             if is_family and cols[0]:
                 from models.enums.family_preference import FamilyPreference
 
@@ -171,8 +193,6 @@ def extract_table_legacy(table):
             rows.append(tuple(cols))
 
     if rows:
-        # Extract headers from first row
-        headers = [normalize(th.get_text(separator=" ", strip=True)) for th in cells]
         return BulletinTable(title, headers, rows)
 
     return None
