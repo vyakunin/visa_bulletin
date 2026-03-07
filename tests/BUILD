@@ -142,6 +142,7 @@ py_test(
         ":conftest_lib",
         ":django_setup",
         "//lib/parsing/bulletin:bulletin_table",
+        "//lib/parsing/bulletin:parser",
         "//lib/parsing/bulletin:publication_data",
         "//models:bulletin",
         "//models:visa_cutoff_date",
@@ -989,6 +990,27 @@ py_test(
 )
 
 py_test(
+    name = "test_visa_program",
+    size = "small",
+    srcs = ["test_visa_program.py"],
+    deps = [
+        ":django_setup",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_test(
     name = "test_employer_directory_view",
     size = "small",
     srcs = ["test_employer_directory_view.py"],
@@ -1149,4 +1171,38 @@ py_test(
     deps = [
         "//lib/utils:url_utils",
     ],
+)
+
+py_test(
+    name = "test_vqs_regime",
+    size = "small",
+    srcs = ["test_vqs_regime.py"],
+    deps = [
+        "//lib/business/vqs:regime",
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_vqs_metrics",
+    size = "small",
+    srcs = ["test_vqs_metrics.py"],
+    deps = [
+        "//lib/business/vqs:metric_config",
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "test_data_cache",
+    size = "small",
+    srcs = ["test_data_cache.py"],
+    deps = [
+        "//lib/business/vqs:data_cache",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
 )

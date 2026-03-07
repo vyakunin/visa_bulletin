@@ -440,6 +440,8 @@ def calculate_recent_filing_activity(queryset) -> dict:
             .annotate(last_filing=Max("case_submitted"), count=Count("id"))
             .order_by("-last_filing")
         )
+        for row in by_program:
+            row["program_display"] = VisaProgram.short_display(row.get("visa_program"))
         by_title = list(
             queryset.filter(
                 case_submitted__isnull=False,
@@ -459,6 +461,8 @@ def calculate_recent_filing_activity(queryset) -> dict:
             .annotate(last_year=Max("fiscal_year"), count=Count("id"))
             .order_by("-last_year")
         )
+        for row in by_program:
+            row["program_display"] = VisaProgram.short_display(row.get("visa_program"))
         by_title = list(
             queryset.filter(
                 job_title_entity__isnull=False,

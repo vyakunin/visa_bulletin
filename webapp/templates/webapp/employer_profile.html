@@ -177,9 +177,7 @@
                             <tbody>
                                 {% for row in stats.recent_activity.by_program %}
                                 <tr>
-                                    <td>
-                                        {% if row.visa_program == 1 %}H-1B{% elif row.visa_program == 5 %}PERM{% elif row.visa_program == 2 %}H-1B1{% elif row.visa_program == 3 %}E-3{% else %}Other{% endif %}
-                                    </td>
+                                    <td>{{ row.program_display }}</td>
                                     <td class="text-end">
                                         {% if stats.recent_activity.has_exact_dates %}
                                             {{ row.last_filing|date:"M j, Y" }}

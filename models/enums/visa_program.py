@@ -15,6 +15,15 @@ from models.enums.case_status import CaseStatus  # noqa: F401
 from models.enums.wage_unit import WageUnit  # noqa: F401
 
 
+# Compact labels for UI (table headers, charts). Keyed by enum value.
+_VISA_PROGRAM_SHORT_LABELS = {
+    1: "H-1B",
+    2: "H-1B1",
+    3: "E-3",
+    4: "PERM",
+}
+
+
 class VisaProgram(models.IntegerChoices):
     """
     Visa program type for salary records
@@ -32,6 +41,16 @@ class VisaProgram(models.IntegerChoices):
     H1B1 = 2, "H-1B1 (Chile/Singapore)"
     E3 = 3, "E-3 (Australia)"
     PERM = 4, "PERM (Permanent Labor Certification)"
+
+    @classmethod
+    def short_display(cls, value: int | None) -> str:
+        """Return compact label for UI (e.g. 'H-1B', 'PERM'). Unknown/invalid -> 'Other'."""
+        if value is None:
+            return "Other"
+        try:
+            return _VISA_PROGRAM_SHORT_LABELS.get(int(value), "Other")
+        except (TypeError, ValueError):
+            return "Other"
 
     @classmethod
     def from_string(cls, value: str):

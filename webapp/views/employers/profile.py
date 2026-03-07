@@ -726,6 +726,7 @@ def _build_filing_pace_chart_quarterly(charts: dict, pace_data: list[dict]):
         xaxis_title="Quarter", yaxis_title="Filings",
         height=350, template="plotly_white", showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=70, b=60, l=60, r=60),
     )
     charts["filing_pace"] = fig.to_json()
 
@@ -778,6 +779,7 @@ def _build_filing_pace_chart_fiscal_year(charts: dict, pace_data: list[dict]):
         xaxis_title="Fiscal Year", yaxis_title="Filings",
         height=350, template="plotly_white", showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=70, b=60, l=60, r=60),
     )
     charts["filing_pace"] = fig.to_json()
 

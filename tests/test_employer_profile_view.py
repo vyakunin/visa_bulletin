@@ -129,6 +129,19 @@ class EmployerProfileViewTest(TestCase):
         # Should only count PERM records (3 out of 10)
         self.assertEqual(stats["basic"]["total_filings"], 3)
 
+    def test_recent_activity_program_display_uses_enum_labels(self):
+        """Recent filing activity by_program rows have program_display from VisaProgram.short_display."""
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        by_program = response.context["stats"].get("recent_activity", {}).get("by_program") or []
+        self.assertGreater(len(by_program), 0)
+        program_labels = {row["program_display"] for row in by_program}
+        self.assertIn("H-1B", program_labels)
+        self.assertIn("PERM", program_labels)
+        for row in by_program:
+            self.assertIn(row["program_display"], ("H-1B", "H-1B1", "E-3", "PERM", "Other"))
+
     def test_year_range_filter(self):
         """Test that configurable year range filters data correctly"""
         # Create records for different years
