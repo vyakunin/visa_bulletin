@@ -22,6 +22,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bulletin_table",
+        "//models/enums:family_preference",
         requirement("beautifulsoup4"),
         requirement("soupsieve"),
     ],
