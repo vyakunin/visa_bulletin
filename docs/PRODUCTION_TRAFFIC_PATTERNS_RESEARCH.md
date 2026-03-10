@@ -195,3 +195,58 @@ sudo nginx -t && sudo systemctl reload nginx
 **Existing production:** Same one-time steps as [Response time logging](#response-time-logging) (copy both conf.d files and updated site/locations).
 
 **Effect:** Bot IPs are limited to 0.1 qps each; other traffic is unchanged. Throttled requests receive 429.
+
+---
+
+## 11. 5xx and worker overload
+
+**Can we see in logs if workers are often overwhelmed leading to 5xx?**
+
+**What we have today (prod):**
+
+- **Nginx access log** (`/var/log/nginx/access.log`): status, path, body_bytes_sent. On current prod the log format does **not** include `$request_time` (main_timed is in repo but may not be active on the server). So we cannot see “502 after 60s” (timeout) vs “502 immediately” (connection reset).
+- **Gunicorn access log**: The image uses `--access-logformat '...(r)s %(s)s %(b)s %(L)s'` (includes request time `%(L)s`), but access lines do **not** appear in `docker logs visa_bulletin_web` (only lifecycle and Django logs). So we cannot count slow requests (e.g. L>30s) or correlate 5xx with high L from current docker logs.
+
+**What we can do: correlate 502 with worker restarts**
+
+Gunicorn runs with `--max-requests 1000 --max-requests-jitter 100` and 3 workers by default (see §12). When a worker hits that limit it logs “Autorestarting worker after current request” then exits; the master starts a new worker (~1–2s gap). Requests that hit during that window can get 502 (connection reset or no worker ready). So 502s often cluster in the same minute as a “Booting worker” event.
+
+**Commands to check “502s near restarts” on prod:**
+
+```bash
+# 502 timestamps (UTC) from nginx
+ssh prod_2Gb_vm "sudo awk '/ 502 /{for(i=1;i<=NF;i++) if(\$i ~ /^\[/) {gsub(/\[|\]/,\"\",\$i); split(\$i,a,\":\"); print a[1], a[2]\":\"a[3]\":\"a[4]; break}}' /var/log/nginx/access.log"
+
+# Worker restart times (UTC) from gunicorn
+ssh prod_2Gb_vm "docker logs visa_bulletin_web 2>&1 | grep 'Booting worker' | grep '+0000' | sed -nE 's/.*\[([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}) \+0000\].*/\1 \2:\3:\4/p'"
+```
+
+Compare the two lists: 502s that fall in the same minute (or within ~90s before) a “Booting worker” time are likely from the n-1-workers restart window rather than from a backlog of slow requests.
+
+**Example (2026-03-10):** 40 502s in the nginx log; many align exactly or within 1s of a Booting event (e.g. 502 at 21:01:51, Booting at 21:01:52). That supports “502 = restart window” rather than “workers chronically overloaded.”
+
+**To see “workers overwhelmed” in the future:**
+
+Timing is already configured in the repo; on prod it may just not be deployed yet.
+
+1. **Nginx:** `main_timed` (with `$request_time`) is defined in `deployment/nginx/visa-bulletin-log-format.conf` and used by `visa-bulletin-locations.conf` / `visa-bulletin-nginx.conf`. To enable on prod (one-time): copy the log-format file into `http` context and reload nginx:
+   ```bash
+   sudo cp /opt/visa_bulletin/deployment/nginx/visa-bulletin-log-format.conf /etc/nginx/conf.d/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+   Then 502s with request_time ≈ 60s indicate upstream timeout (nginx gave up); 502s with request_time &lt; 1s indicate connection reset (restart window).
+
+2. **Gunicorn:** The image already uses `--access-logformat` with `%(L)s` (request time in seconds) and logs to stdout. If access lines don’t appear in `docker logs`, the container may be capturing only stderr; otherwise they should be there. No config change needed in repo. You can then count requests with L&gt;30s or L&gt;55s and correlate with 502s.
+
+---
+
+## 12. Load and safety for more workers / higher max-requests
+
+**Snapshot (2026-03-10):** Host 1.9GB RAM, ~750Mi used, ~853Mi available; load 0.05–0.54. Web container **128.9MiB / 512MiB (25%)**, CPU 14% (momentary). Nginx ~55k requests in current log (order of ~2–3 req/s average).
+
+**Verdict:**
+
+- **Increase max-requests:** Safe. Current 500+ jitter causes a worker restart every ~10 min and 502s cluster at those times. Raising to **1000** (or 2000) halves (or quarters) restart frequency and reduces 502 windows. No extra memory; workers still recycle, just less often.
+- **Add one more worker (2 → 3):** Safe at current usage. Container has ~384MiB headroom; each worker is on the order of ~65MiB, so a third worker fits. After changing, monitor `docker stats` and host `free -h`; if the container approaches 450MiB or the host gets tight, revert to 2 workers or raise container/host memory.
+
+**Applied in repo:** `deployment/docker-compose.yml` uses `WEB_CONCURRENCY=${WEB_CONCURRENCY:-3}` and `--max-requests 1000` (jitter 100). Override with `WEB_CONCURRENCY=2` in `.env` if you need to revert.
