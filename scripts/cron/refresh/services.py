@@ -16,34 +16,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_nginx_default_server_conf() -> str:
-    """
-    Nginx default_server block so the app is reachable by IP (not just visa-bulletin.us).
-    Must include /static/ so that employer/job-title autocomplete JS loads when using IP (e.g. staging).
-    Must use unescaped $host, $remote_addr, etc. so nginx passes correct Host header.
-    """
-    return (
-        "server {\\n"
-        "    listen 80 default_server;\\n"
-        "    server_name _;\\n"
-        "    location ^~ /static/ {\\n"
-        "        alias /opt/visa_bulletin/webapp/static/;\\n"
-        "        expires 30d;\\n"
-        "        add_header Cache-Control \"public, no-transform\";\\n"
-        "        access_log off;\\n"
-        "    }\\n"
-        "    location / {\\n"
-        "        proxy_pass http://127.0.0.1:8000;\\n"
-        "        proxy_set_header Host $host;\\n"
-        "        proxy_set_header X-Real-IP $remote_addr;\\n"
-        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\\n"
-        "        proxy_set_header X-Forwarded-Proto $scheme;\\n"
-        "        proxy_read_timeout 60s;\\n"
-        "    }\\n"
-        "}\\n"
-    )
-
-
 def wait_ssh_and_db_ready(
     runner: Runner,
     db_name: str,
@@ -120,49 +92,60 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     """
     On the target host: start Docker web+redis (compose up -d), then ensure nginx is running
     so port 80 proxies to the app (orchestrator health check uses http://ip:80/health/).
-    Uses REFRESH_REMOTE_COMPOSE_FILE or defaults to deployment/docker-compose.yml.
+    Uses image from CI: IMAGE_TAG=<branch>-<short_sha> (e.g. staging-d696786). No volume mount.
     """
     root = project_root if isinstance(project_root, Path) else Path(project_root)
     compose_file = os.environ.get(
         "REFRESH_REMOTE_COMPOSE_FILE",
         str(root / "deployment" / "docker-compose.yml"),
     )
-    # Use docker-compose (standalone) and explicit DOCKER_HOST so remote host (e.g. staging)
-    # talks to local daemon; avoids "Not supported URL scheme http+docker" from docker-compose v1.
-    # Include override file (host volume mount) if present so the web container uses current code.
     override_file = str(root / "deployment" / "docker-compose.override.yml")
     compose_args = f"-f {shlex.quote(compose_file)}"
-    # Force remove old containers first (prevents 'ContainerConfig' KeyError
-    # when old containers have metadata from a different compose file version).
-    # docker-compose down can itself trigger the bug, so we also rm -f known container names.
     cleanup_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
         f"docker rm -f visa_bulletin_web visa_bulletin_redis 2>/dev/null; "
         f"docker-compose {compose_args} down --remove-orphans 2>/dev/null || true"
     )
     runner.run_shell(cleanup_cmd, timeout_sec=60)
-    cmd = (
-        f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
-        f"if [ -f {shlex.quote(override_file)} ]; then "
-        f"  docker-compose {compose_args} -f {shlex.quote(override_file)} up -d; "
-        f"else "
-        f"  docker-compose {compose_args} up -d; "
-        f"fi"
+    # Use image built from current branch (staging-<sha> or prod-<sha>).
+    image_tag_cmd = (
+        f"cd {shlex.quote(str(root))} && "
+        "BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) && "
+        "SHA=$(git rev-parse --short HEAD 2>/dev/null) && "
+        'echo "${BRANCH}-${SHA}"'
     )
-    result = runner.run_shell(cmd, timeout_sec=180)
+    tag_result = runner.run_shell(image_tag_cmd, timeout_sec=5)
+    image_tag = (tag_result.stdout or "").strip() or "latest"
+    pull_and_up_cmd = (
+        f"export DOCKER_HOST=unix:///var/run/docker.sock && "
+        f"cd {shlex.quote(str(root))} && "
+        "set -a && [ -f .env ] && source .env; set +a && "
+        f"export IMAGE_TAG={shlex.quote(image_tag)} && "
+        f"docker pull ghcr.io/vyakunin/visa_bulletin:{shlex.quote(image_tag)} && "
+        f"( [ -f {shlex.quote(override_file)} ] && "
+        f"  docker-compose {compose_args} -f {shlex.quote(override_file)} up -d || "
+        f"  docker-compose {compose_args} up -d )"
+    )
+    result = runner.run_shell(pull_and_up_cmd, timeout_sec=300)
     if result.returncode != 0:
         logger.error("start_remote_services failed: %s", result.stderr)
         raise RuntimeError(f"Failed to start remote services: {result.stderr}")
     logger.info("Started remote services (Docker compose)")
+    # Ensure nginx conf.d has log format and gptbot zone so any site config that uses
+    # main_timed or limit_req zone=gptbot (e.g. visa-bulletin-locations.conf) works.
+    nginx_confd_cmd = (
+        f"sudo cp {shlex.quote(str(root))}/deployment/nginx/visa-bulletin-log-format.conf /etc/nginx/conf.d/ && "
+        f"sudo cp {shlex.quote(str(root))}/deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/"
+    )
+    runner.run_shell(nginx_confd_cmd, timeout_sec=10)
     # Ensure nginx has a default server block so the app is reachable by IP (not just
-    # visa-bulletin.us).  Without this, nginx returns 404 for requests to the raw IP
-    # because only the domain-based vhost is configured.
-    default_server_conf = get_nginx_default_server_conf()
+    # visa-bulletin.us). Use repo file to avoid shell-escaping of $host etc.
+    default_server_src = str(root / "deployment" / "nginx" / "default-server.conf")
     nginx_cmd = (
-        f"echo -e {shlex.quote(default_server_conf)} | sudo tee /etc/nginx/sites-enabled/default-server > /dev/null"
-        " && sudo nginx -t 2>/dev/null"
-        " && sudo systemctl start nginx 2>/dev/null || true"
-        " && sudo systemctl reload nginx 2>/dev/null || true"
+        f"sudo cp {shlex.quote(default_server_src)} /etc/nginx/sites-enabled/default-server && "
+        "sudo nginx -t 2>/dev/null "
+        "&& sudo systemctl start nginx 2>/dev/null || true "
+        "&& sudo systemctl reload nginx 2>/dev/null || true"
     )
     nginx_result = runner.run_shell(nginx_cmd, timeout_sec=30)
     if nginx_result.returncode != 0:

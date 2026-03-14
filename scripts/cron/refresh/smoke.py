@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -26,11 +27,20 @@ MIN_DIRECTORY_ENTRIES = 10
 
 
 def _curl_localhost(
-    runner: Runner, path: str, timeout_sec: int = 10
+    runner: Runner,
+    path: str,
+    timeout_sec: int = 10,
+    host_header: str | None = None,
 ) -> tuple[int, str]:
-    """Curl localhost:8000 via runner.run_shell. Returns (http_status_code, body)."""
+    """Curl localhost:8000 via runner.run_shell. Returns (http_status_code, body).
+
+    When host_header is set (e.g. runner.host for RemoteRunner), send that as Host
+    so Django ALLOWED_HOSTS accepts the request when checking the inactive host.
+    """
+    host_opt = f" -H {shlex.quote('Host: ' + host_header)}" if host_header else ""
     result = runner.run_shell(
-        f"curl -s -w '\\n%{{http_code}}' --max-time {timeout_sec} 'http://localhost:8000{path}'",
+        f"curl -s -w '\\n%{{http_code}}' --max-time {timeout_sec}{host_opt} "
+        f"'http://localhost:8000{path}'",
         timeout_sec=timeout_sec + 5,
     )
     output = (result.stdout or "").strip()
@@ -205,7 +215,8 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     - Salaries page renders without errors
     - Dashboard page renders without errors
     """
-    status, _ = _curl_localhost(runner, "/")
+    host_header = getattr(runner, "host", None)
+    status, _ = _curl_localhost(runner, "/", host_header=host_header)
     if status != 200:
         raise RuntimeError(
             f"Homepage returned HTTP {status} (expected 200). "
@@ -214,7 +225,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Homepage: OK (200)")
 
     status, body = _curl_localhost(
-        runner, "/api/job-title-autocomplete/?q=software&limit=5"
+        runner, "/api/job-title-autocomplete/?q=software&limit=5", host_header=host_header
     )
     if status != 200:
         raise RuntimeError(
@@ -241,7 +252,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     )
 
     status, body = _curl_localhost(
-        runner, "/api/company-autocomplete/?q=google&limit=5"
+        runner, "/api/company-autocomplete/?q=google&limit=5", host_header=host_header
     )
     if status != 200:
         raise RuntimeError(
@@ -267,7 +278,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         "[HTTP] Employer autocomplete: OK (%d results, fields validated)", len(results)
     )
 
-    status, body = _curl_localhost(runner, "/job-titles/")
+    status, body = _curl_localhost(runner, "/job-titles/", host_header=host_header)
     if status != 200:
         raise RuntimeError(f"Job title directory returned HTTP {status}.")
     if body.count("/job-title/") < MIN_DIRECTORY_ENTRIES:
@@ -277,7 +288,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Job title directory: OK (has entries)")
 
-    status, body = _curl_localhost(runner, "/employers/")
+    status, body = _curl_localhost(runner, "/employers/", host_header=host_header)
     if status != 200:
         raise RuntimeError(f"Employer directory returned HTTP {status}.")
     if body.count("/employer/") < MIN_DIRECTORY_ENTRIES:
@@ -287,7 +298,9 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Employer directory: OK (has entries)")
 
-    status, _ = _curl_localhost(runner, "/salaries/", timeout_sec=30)
+    status, _ = _curl_localhost(
+        runner, "/salaries/", timeout_sec=30, host_header=host_header
+    )
     if status != 200:
         raise RuntimeError(
             f"Salaries page returned HTTP {status} (expected 200). "
@@ -295,7 +308,9 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Salaries page: OK (200)")
 
-    status, _ = _curl_localhost(runner, "/", timeout_sec=30)
+    status, _ = _curl_localhost(
+        runner, "/", timeout_sec=30, host_header=host_header
+    )
     if status != 200:
         raise RuntimeError(
             f"Dashboard returned HTTP {status} (expected 200). "
