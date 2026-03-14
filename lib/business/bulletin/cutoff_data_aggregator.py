@@ -63,7 +63,10 @@ def get_visa_classes_for_category(category: str) -> list[tuple[str, str]]:
 
 
 def get_aggregated_visa_class_data(
-    category: str, country: str, action_type: str, submission_date: date
+    category: str,
+    country: str | int,
+    action_type: str,
+    submission_date: date,
 ) -> tuple[list[dict], bool]:
     """
     Query and aggregate visa class data with normalized names
@@ -73,13 +76,24 @@ def get_aggregated_visa_class_data(
 
     Args:
         category: Visa category (family_sponsored, employment_based)
-        country: Country code
+        country: Country code (int enum value, or string slug e.g. "all" -> Country.ALL)
         action_type: Action type (final_action, dates_for_filing)
         submission_date: User's priority date for projection calculation
 
     Returns:
         Tuple of (list of visa class data dicts, has_any_data bool)
     """
+    # Normalize country to int (DB uses IntegerChoices); accept string slug for robustness
+    if isinstance(country, str):
+        if country.isdigit():
+            country = int(country)
+        else:
+            ce = Country.from_string(country)
+            country = ce.value if ce is not None else Country.ALL.value
+    valid = [c.value for c in Country]
+    if country not in valid:
+        country = Country.ALL.value
+
     # Query all cutoff data in one go
     all_cutoff_data = (
         VisaCutoffDate.objects.filter(
