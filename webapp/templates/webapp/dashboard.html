@@ -217,7 +217,7 @@
                             <div class="form-check form-check-inline mb-0">
                                 <input class="form-check-input visa-class-toggle" type="checkbox"
                                     id="toggle-{{ trace.visa_class }}"
-                                    data-trace-indices="{{ trace.trace_indices|join:',' }}" checked
+                                    data-trace-indices="{{ trace.trace_indices|join:',' }}" {% if trace.label in default_visible_classes %}checked{% endif %}
                                     aria-label="Toggle {{ trace.label }} visibility">
                                 <label class="form-check-label small" for="toggle-{{ trace.visa_class }}"
                                     style="color: {{ trace.color }}; font-weight: 600; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
@@ -489,6 +489,11 @@
             chartInitialized = true;
 
             var chartData = {{ chart_data.chart_json| safe }};
+
+    // Hide non-default series before rendering
+    {% for trace in chart_data.trace_info %}{% if trace.label not in default_visible_classes %}
+    [{{ trace.trace_indices|join:',' }}].forEach(function(idx) { chartData.data[idx].visible = 'legendonly'; });
+    {% endif %}{% endfor %}
 
     // Disable autorange on layout to prevent default reset behavior
     chartData.layout.xaxis.autorange = false;

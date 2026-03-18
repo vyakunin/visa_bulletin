@@ -193,12 +193,12 @@
                     </div>
                     {% endif %}
                     {% if stats.recent_activity.by_title %}
-                    <h6>By Job Title (Most Recent)</h6>
+                    <h6>By Role (Most Recent)</h6>
                     <div class="table-responsive">
                         <table class="table table-sm">
                             <thead>
                                 <tr>
-                                    <th>Job Title</th>
+                                    <th>Role</th>
                                     <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last FY{% endif %}</th>
                                     <th class="text-end">Total (FY{{ start_year }}–Present)</th>
                                 </tr>
@@ -237,14 +237,14 @@
             {% if stats.top_titles %}
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0">Top Job Titles by Filings</h5>
+                    <h5 class="mb-0">Top Roles by Filings</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-striped table-hover sortable-table" data-initial-sort-col="1" data-initial-sort-dir="desc">
                             <thead>
                                 <tr>
-                                    <th data-sort-col="0" data-sort-type="text">Job Title</th>
+                                    <th data-sort-col="0" data-sort-type="text">Role</th>
                                     <th class="text-end" data-sort-col="1" data-sort-type="number">Count</th>
                                     <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
                                     <th class="text-end" data-sort-col="3" data-sort-type="number">Min</th>
@@ -280,7 +280,7 @@
             {% if stats.salary_percentiles or chart_data.salary_histogram %}
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0">Salary Distribution (All Filings + Job Title Overlays)</h5>
+                    <h5 class="mb-0">Salary Distribution (All Filings + Role Overlays)</h5>
                 </div>
                 <div class="card-body">
                     {% if stats.salary_percentiles %}

@@ -143,8 +143,8 @@ def job_title_directory_view(request):
         "has_pagination": pagination["total_pages"] > 1,
         "pagination_query": build_pagination_query_string(params),
         "page_range": pagination["page_range"],
-        "page_title": "Job Title Directory - Salary Data by Role | U.S. Immigration Data",
-        "page_description": "Explore salary and sponsorship data by job title. Browse top roles, view average salaries, and jump to detailed job title profiles.",
+        "page_title": "Role Directory - Salary Data by Occupation | U.S. Immigration Data",
+        "page_description": "Explore salary and sponsorship data by role. Browse top roles, view average salaries, and jump to detailed role profiles.",
         "canonical_url": request.build_absolute_uri(),
         "job_title_autocomplete_url": request.build_absolute_uri(
             reverse("job_title_autocomplete")

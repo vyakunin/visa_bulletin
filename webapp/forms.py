@@ -10,7 +10,7 @@ class SalarySearchForm(forms.Form):
 
     q = forms.CharField(
         required=False,
-        label="Job Title / Keywords",
+        label="Role / Keywords",
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
@@ -73,7 +73,7 @@ class WorksiteSearchForm(forms.Form):
 
     q = forms.CharField(
         required=False,
-        label="Job Title / Keywords",
+        label="Role / Keywords",
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",

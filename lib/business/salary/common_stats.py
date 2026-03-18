@@ -143,57 +143,67 @@ def calculate_geographic_distributions(
     return geographic_by_count, geographic_by_median
 
 
+def _percentile_from_list(data: list, p: float) -> float:
+    """Return the p-th percentile (0-100) from a sorted list."""
+    if not data:
+        return 0.0
+    k = (len(data) - 1) * (p / 100.0)
+    f = int(k)
+    c = f + 1
+    if c >= len(data):
+        return float(data[-1])
+    return float(data[f]) + (float(data[c]) - float(data[f])) * (k - f)
+
+
 def calculate_salary_percentiles(queryset) -> dict:
     """
     Calculate salary percentiles (10th, 25th, 50th, 75th, 90th).
 
-    Uses a simple list-based percentile calculation.
+    On PostgreSQL uses a raw subquery with percentile_cont() to avoid loading all
+    rows into Python. Falls back to a Python sort for SQLite (tests).
     """
-    import time
+    from django.db import connection
 
-    t0 = time.perf_counter()
-    salaries = list(
-        queryset.values_list("wage_annual", flat=True).order_by("wage_annual")
-    )
-    query_sec = time.perf_counter() - t0
+    empty = {"p10": 0, "p25": 0, "p50": 0, "p75": 0, "p90": 0}
 
-    if not salaries:
+    if connection.vendor == "postgresql":
+        inner_sql, params = queryset.values("wage_annual").query.sql_with_params()
+        raw_sql = f"""
+            SELECT
+                percentile_cont(0.10) WITHIN GROUP (ORDER BY wage_annual),
+                percentile_cont(0.25) WITHIN GROUP (ORDER BY wage_annual),
+                percentile_cont(0.50) WITHIN GROUP (ORDER BY wage_annual),
+                percentile_cont(0.75) WITHIN GROUP (ORDER BY wage_annual),
+                percentile_cont(0.90) WITHIN GROUP (ORDER BY wage_annual)
+            FROM ({inner_sql}) AS q
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(raw_sql, params)
+            row = cursor.fetchone()
+        if row is None or row[0] is None:
+            return empty
         return {
-            "p10": 0,
-            "p25": 0,
-            "p50": 0,
-            "p75": 0,
-            "p90": 0,
+            "p10": float(row[0]),
+            "p25": float(row[1]),
+            "p50": float(row[2]),
+            "p75": float(row[3]),
+            "p90": float(row[4]),
         }
 
-    def percentile(data, p):
-        if not data:
-            return 0
-        k = (len(data) - 1) * (p / 100.0)
-        f = int(k)
-        c = f + 1
-        if c >= len(data):
-            return float(data[-1])
-        d0 = float(data[f])
-        d1 = float(data[c])
-        return d0 + (d1 - d0) * (k - f)
-
-    t1 = time.perf_counter()
-    result = {
-        "p10": percentile(salaries, 10),
-        "p25": percentile(salaries, 25),
-        "p50": percentile(salaries, 50),
-        "p75": percentile(salaries, 75),
-        "p90": percentile(salaries, 90),
-    }
-    python_sec = time.perf_counter() - t1
-    logger.info(
-        "[salary_percentiles] rows=%d query_sec=%.3f python_sec=%.3f",
-        len(salaries),
-        query_sec,
-        python_sec,
+    salaries = sorted(
+        float(v)
+        for v in queryset.values_list("wage_annual", flat=True)
+        if v is not None
     )
-    return result
+    if not salaries:
+        return empty
+    return {
+        "p10": _percentile_from_list(salaries, 10),
+        "p25": _percentile_from_list(salaries, 25),
+        "p50": _percentile_from_list(salaries, 50),
+        "p75": _percentile_from_list(salaries, 75),
+        "p90": _percentile_from_list(salaries, 90),
+    }
 
 
 # Cap histogram X-axis at this percentile so the chart focuses on where data is

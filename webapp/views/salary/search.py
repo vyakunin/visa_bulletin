@@ -97,6 +97,9 @@ def salary_search_view(request):
     form.fields["year"].choices = [("", "All Years")] + [
         (str(y), f"FY {y}") for y in fiscal_years
     ]
+    form.fields["filing_year"].choices = [("", "All Years")] + [
+        (str(y), str(y)) for y in filing_years
+    ]
 
     per_page = 50
 
@@ -332,7 +335,7 @@ def salary_search_view(request):
         "page_range": pagination["page_range"],
         # SEO
         "page_title": "H-1B & PERM Salary Database | U.S. Immigration Data",
-        "page_description": "Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by job title, employer, and location.",
+        "page_description": "Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by role, employer, and location.",
         # Autocomplete URLs (shared component used for both Job Title and Employer)
         "company_autocomplete_url": request.build_absolute_uri(
             reverse("company_autocomplete")
@@ -487,7 +490,7 @@ def worksite_search_view(request):
         "page_range": pagination["page_range"],
         # SEO
         "page_title": "Worksite Location Data | U.S. Immigration Data",
-        "page_description": "Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and job title.",
+        "page_description": "Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and role.",
     }
 
     return render(request, "webapp/worksite_search.html", context)
