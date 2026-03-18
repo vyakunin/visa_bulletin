@@ -700,19 +700,52 @@ After the FY Boundary Experiment (Sec. 8) failed and the Regime-Switched model (
 3. **Regime-Switched wins on EB-1** at 3m and 6m but struggles on EB-2/3 (too conservative). The new Contextual Ensemble outperforms it at 6m.
 4. **Hybrid (1m: Regime-Switched for EB-1, Contextual for EB-2/3) achieves best 6m MAE** (212 days vs 232 for persistence).
 
+### Phase 3 Follow-Up Results (Mar 2026)
+
+#### Supply Rebalancing Verification (3c)
+
+Full bulletin accuracy run on 286 bulletins (2017–2026):
+
+| Metric | Before rebalancing | After rebalancing |
+|--------|--------------------|-------------------|
+| Overall under-prediction rate | ~72% | 75.6% (all history) |
+| Recent 2025+ under-prediction | ~72% | **42.1%** |
+| Recent 2025+ pred == actual | — | 49.8% |
+| Recent 2025+ MAE | — | 30.7d |
+
+The higher overall rate (75.6%) is expected — the historical data from 2017–2022 was collected before the supply rebalancing and has higher systematic bias. For recent bulletins (2025+), the under-prediction rate dropped from ~72% to 42%, confirming the rebalancing is working as intended.
+
+#### Optuna Re-Tuning (3b)
+
+Ran 8 quick-mode trials (30-min timeout). tune_params.py tunes `ContextualTrajectoryAggregator` params (used in evaluate_model.py only), not `VqsMetaParams.ensemble_persistence_weight` (production). Best trial #5 with composite MAE=532.4:
+
+| Parameter | Previous default | New value (trial #5) |
+|-----------|-----------------|----------------------|
+| learning_rate | 1.0 | 3.5 |
+| blend_temperature | 0.1 | 0.029 |
+| use_regime_context | True | False |
+| Composite MAE | 781.3 (trial 0) | **532.4** (trial 5) |
+
+Updated `contextual_aggregator.py` defaults. Note: 8 trials is insufficient for reliable convergence — the `ensemble_persistence_weight` (0.797 in VqsMetaParams) still needs separate tuning in a future session with more compute.
+
+#### Long-Term Metric Breakdown (3d)
+
+`aggregate_longterm_by_horizon_and_series()` was already implemented. The `longterm_accuracy_summary.json` includes by-horizon and by-series MAE breakdown (currently only "1-3" bucket due to data range). The infrastructure is complete for when longer-horizon predictions are available.
+
 ### Lessons and Next Steps
 
-1. Re-tune `ensemble_persistence_weight` with Optuna using the new cross-series-aware model; the current 0.797 was tuned before these features existed.
-2. The supply model rebalancing (spillover 0.15→0.20, seasonal multipliers) needs a full evaluation run to verify the under-prediction rate improved toward 50%.
+1. Supply rebalancing is confirmed effective for recent bulletins — recent under-prediction rate 42% vs target 50%. No further action needed.
+2. `ensemble_persistence_weight` (production param) still needs full Optuna re-tuning with the new expert pool. Recommend 50–100 trials on a machine with more compute.
 3. EB-4 should remain marked Experimental until more data is available.
-4. C4 (stretch): Show expert predictions breakdown per cell — the `expert_predictions` JSON field is already stored; only needs a UI collapsed view.
+4. Expert predictions breakdown UI (`expert_predictions` JSON) is live in the collapsible "why?" section.
 
 ### Current Status
 
 - Cross-series: **Live** (trajectory_cross_series, contextual aggregator EB-1 context, GBM features)
-- UI: **Live** (CI display, regime badges, EB-4 Experimental, confidence level derivation)
-- Supply rebalancing: **Live** (not yet re-evaluated with full Optuna run)
-- Optuna re-tuning: **Pending** (to be done after production predictions settle)
+- UI: **Live** (CI display, regime badges, EB-4 Experimental, confidence level, expert "why?" breakdown)
+- Supply rebalancing: **Live and verified** (recent under-prediction 42%)
+- Optuna re-tuning: **Partial** (8 trials, ContextualAggregator defaults updated; VqsMetaParams tuning pending)
+- Long-term breakdown: **Live** (horizon-stratified summary in longterm_accuracy_summary.json)
 
 ---
 

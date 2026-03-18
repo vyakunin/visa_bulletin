@@ -22,9 +22,9 @@ class ContextualTrajectoryAggregator:
 
     def __init__(
         self,
-        learning_rate: float = 1.0,
-        blend_temperature: float = 0.1,
-        use_regime_context: bool = True,
+        learning_rate: float = 3.5,
+        blend_temperature: float = 0.029,
+        use_regime_context: bool = False,
     ):
         self.learning_rate = learning_rate
         self.blend_temperature = blend_temperature
@@ -97,11 +97,11 @@ class ContextualTrajectoryAggregator:
 
         # Softmax blending
         model_weights = self.weights[context_key]
-        
+
         # Compute softmax over valid models
         valid_weights = {k: model_weights[k] for k in valid_preds}
         max_w = max(valid_weights.values())
-        
+
         exp_weights = {}
         for k, w in valid_weights.items():
             # Apply temperature
@@ -111,7 +111,7 @@ class ContextualTrajectoryAggregator:
             # clamp to avoid overflow/underflow
             scaled_w = max(-500, min(500, scaled_w))
             exp_weights[k] = math.exp(scaled_w)
-            
+
         sum_exp = sum(exp_weights.values())
         softmax_weights = {k: ew / sum_exp for k, ew in exp_weights.items()}
 
@@ -161,20 +161,20 @@ class ContextualTrajectoryAggregator:
 
         current_weights = self.weights[context_key]
         new_weights = {}
-        
+
         for name, w in current_weights.items():
             pred = preds.get(name)
             if pred is None:
                 new_weights[name] = w
                 continue
-                
+
             error_days = abs((pred - actual_date).days)
             # Loss function: squared error scaled to years
             loss = (error_days / 365.0) ** 2
-            
+
             # Hedge update
             new_weights[name] = w * math.exp(-self.learning_rate * loss)
-            
+
         # Normalize
         total_w = sum(new_weights.values())
         if total_w > 0:
@@ -184,34 +184,33 @@ class ContextualTrajectoryAggregator:
             n = len(new_weights)
             for name in new_weights:
                 new_weights[name] = 1.0 / n
-                
+
         self.weights[context_key] = new_weights
 
     def warmup_history(self, visa_class: str, country: int, action_type: str, knowledge_date: date, horizons: list[int]):
         """Warm up weights using historical data up to knowledge_date."""
-        from models.bulletin import Bulletin
         from lib.business.vqs.data_cache import get_all_bulletins
-        
+
         if not hasattr(self, "_last_warmup_date"):
             self._last_warmup_date = {}
-            
+
         series_key = (visa_class, country, action_type)
         last_date = self._last_warmup_date.get(series_key)
-        
+
         if last_date and last_date >= knowledge_date:
             # Already warmed up to this date or beyond
             return
-            
+
         bulletins = get_all_bulletins()
         # Sort chronologically
         bulletins = sorted(bulletins, key=lambda b: b.publication_date)
-        
+
         for b in bulletins:
             if last_date and b.publication_date <= last_date:
                 continue
             if b.publication_date > knowledge_date:
                 continue
-                
+
             target_date = b.publication_date
             actual_obj = VisaCutoffDate.objects.filter(
                 bulletin=b,
@@ -219,12 +218,12 @@ class ContextualTrajectoryAggregator:
                 country=country,
                 action_type=action_type,
             ).first()
-            
+
             if not actual_obj or not actual_obj.cutoff_date:
                 continue
-                
+
             actual_date = actual_obj.cutoff_date
-            
+
             for h in horizons:
                 self.update_weights(
                     visa_class=visa_class,
@@ -234,6 +233,6 @@ class ContextualTrajectoryAggregator:
                     horizon=h,
                     actual_date=actual_date,
                 )
-                
+
         self._last_warmup_date[series_key] = knowledge_date
 

@@ -163,16 +163,16 @@ This document proposes **new** improvements to address remaining gaps and edge c
 | Priority | Suggestion | Status | Effort | Impact |
 |----------|------------|--------|--------|--------|
 | ✅ Done | GBM expert (9) | Implemented in gbm_expert.py | — | LightGBM as ensemble member |
-| ✅ Done | Calibrated intervals (3) | 80% CI in calibration.py, stored in DB | — | UI display pending |
-| ✅ Done | EB4 low-confidence flag (1) | Solver returns confidence=low | — | UI de-emphasis pending |
-| 1 | EB4 UI de-emphasis (1) | Pending | Low | Removes noise from predictions page |
-| 2 | Display confidence intervals (3) | Pending | Low | Better UX, show uncertainty to users |
-| 3 | Rebalance supply (2) | Pending | Low | Bring under-prediction rate toward 50% |
-| 4 | More I-140 data (4) | Pending | Medium | Better queue depth and historical accuracy |
-| 5 | Retrogression from history (6) | Pending | Medium | More accurate October behavior |
-| 6 | EB1 India tweaks (5) | Pending | Low–Medium | Reduces largest remaining EB1–EB3 error |
-| 7 | Long-term metric breakdown (7) | Pending | Low | Clearer view of long-horizon reliability |
-| 8 | Full I-140 ingestion for demand-supply baseline | Pending | Medium | Replaces hardcoded constants in evaluate_model.py |
+| ✅ Done | Calibrated intervals (3) | 80% CI in calibration.py, stored in DB; displayed on prediction detail | — | — |
+| ✅ Done | EB4 low-confidence flag (1) | Solver returns confidence=low; Experimental badge on UI | — | — |
+| ✅ Done | EB4 UI de-emphasis (1) | Experimental badge + muted row style on prediction detail | — | — |
+| ✅ Done | Display confidence intervals (3) | CI range shown below predicted date on prediction detail | — | — |
+| ✅ Done | Rebalance supply (2) | Spillover 0.15→0.20, seasonal multipliers +0.05 (Oct–Feb) | — | Under-prediction rate verification pending (Phase 3c) |
+| ✅ Done | Full I-140 ingestion for demand-supply baseline (8) | Real I-140 data from RawFactsLedger in evaluate_model.py | — | — |
+| In Progress | More I-140 data (4) | FY2020–FY2025 download/ingest (Phase 4a) | Medium | Better queue depth and historical accuracy |
+| In Progress | Retrogression from history (6) | Historical Sept/Oct deltas to replace fixed constants (Phase 4b) | Medium | More accurate October behavior |
+| In Progress | EB1 India tweaks (5) | Lookback alignment + supply bonus evaluation (Phase 4c) | Low–Medium | Reduces largest remaining EB1–EB3 error |
+| In Progress | Long-term metric breakdown (7) | Horizon-stratified accuracy by series (Phase 3d) | Low | Clearer view of long-horizon reliability |
 ---
 
 ## How to Re-Run Accuracy After Changes
