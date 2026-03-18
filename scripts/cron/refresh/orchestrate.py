@@ -25,6 +25,64 @@ logger = logging.getLogger(__name__)
 GRADUATION_STEPS = ("warm_cache", "smoke_tests", "traffic_switch")
 
 
+def _verify_post_graduation(
+    remote: "Runner",
+    remote_root: str,
+    active_info: instance.InstanceInfo,
+    staging_static_ip_name: str | None,
+    skip_staging_ip: bool,
+) -> None:
+    """
+    Non-fatal verification that all post-graduation steps completed correctly.
+    Logs errors with manual recovery commands for any failed checks.
+    Called after all post-switch steps, before the safety interval.
+    """
+    issues: list[str] = []
+
+    # 1. Staging IP attached to old prod (active_info = orchestrator host, now staging)
+    if not skip_staging_ip and staging_static_ip_name:
+        if not traffic_switch.verify_staging_ip_attached(
+            staging_static_ip_name, active_info.name
+        ):
+            issues.append(
+                f"Staging IP {staging_static_ip_name!r} not attached to {active_info.name!r}. "
+                f"Manual fix: aws lightsail attach-static-ip "
+                f"--static-ip-name {staging_static_ip_name} "
+                f"--instance-name {active_info.name} --region us-east-1"
+            )
+    else:
+        logger.info("Skipping staging IP check (reassign skipped or IP name unset)")
+
+    # 2. Git branch on new prod should be 'prod'
+    try:
+        result = remote.run_shell(
+            f"cd {remote_root} && git rev-parse --abbrev-ref HEAD",
+            timeout_sec=10,
+        )
+        branch = (result.stdout or "").strip()
+        if branch != "prod":
+            issues.append(
+                f"New prod git branch is {branch!r}, expected 'prod'. "
+                f"Manual fix: ssh new_prod 'cd {remote_root} && git fetch origin prod && "
+                f"git checkout prod && git reset --hard origin/prod'"
+            )
+    except Exception as e:
+        issues.append(f"Could not check git branch on new prod: {e}")
+
+    # 3. New prod HTTP health
+    if not _wait_app_healthy_via_ssh(remote, timeout_sec=30):
+        issues.append("New prod HTTP health check failed (curl localhost:8000 not returning 200)")
+
+    if issues:
+        logger.error(
+            "POST-GRADUATION VERIFICATION: %d issue(s) found — manual intervention required:\n  - %s",
+            len(issues),
+            "\n  - ".join(issues),
+        )
+    else:
+        logger.info("Post-graduation verification: all checks passed")
+
+
 def _wait_app_healthy_via_ssh(
     runner: Runner,
     timeout_sec: int = 300,
@@ -205,6 +263,67 @@ def _update_git_branch_on_new_prod(
         return False
     logger.info("New prod switched to %s branch (no reload)", target_branch)
     return True
+
+
+def _update_local_git_to_prod_branch(project_root: Path, target_branch: str = "prod") -> bool:
+    """Switch the orchestrator (staging instance) checkout to prod branch.
+
+    Run after _update_git_branch_on_new_prod so origin/prod is updated; then this host
+    (old prod, now staging) fetches and checks out prod. Ensures git branch consistency:
+    prod branch = what prod runs; staging instance has prod checked out before stop.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "fetch",
+                "origin",
+                target_branch,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "git fetch origin %s on staging instance failed: %s",
+                target_branch,
+                (result.stderr or "")[:300],
+            )
+            return False
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "checkout",
+                "-B",
+                target_branch,
+                f"origin/{target_branch}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "git checkout %s on staging instance failed: %s",
+                target_branch,
+                (result.stderr or "")[:300],
+            )
+            return False
+        logger.info(
+            "Staging instance switched to %s branch (consistent with prod before stop)",
+            target_branch,
+        )
+        return True
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.warning("Update local git to prod branch failed: %s", e)
+        return False
 
 
 def _make_remote_config(remote_root: Path, db_name: str) -> RefreshConfig:
@@ -418,8 +537,10 @@ def run_orchestrate(
     if reassign_staging_ip:
         staging_static_ip = os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "").strip()
         if not staging_static_ip:
-            logger.warning(
-                "REFRESH_STAGING_STATIC_IP_NAME not set; skipping staging IP reassign"
+            logger.error(
+                "REFRESH_STAGING_STATIC_IP_NAME not set; cannot reattach staging IP to old prod. "
+                "Set it in .env on the instance that runs the orchestrator (current prod). "
+                "Get the staging static IP name from: aws lightsail get-static-ips --region us-east-1"
             )
         else:
             logger.info(
@@ -430,7 +551,12 @@ def run_orchestrate(
             if not traffic_switch.attach_staging_static_ip_to_old_prod(
                 staging_static_ip, active_info.name
             ):
-                logger.warning("Staging IP reassign failed (non-fatal)")
+                logger.error(
+                    "Staging IP reassign failed. Old prod (staging) is unreachable until you run: "
+                    "aws lightsail attach-static-ip --static-ip-name %s --instance-name %s --region us-east-1",
+                    staging_static_ip,
+                    active_info.name,
+                )
     else:
         logger.info("REFRESH_SKIP_STAGING_IP_REASSIGN: skipping staging IP reassign")
 
@@ -447,7 +573,7 @@ def run_orchestrate(
     if not services.setup_bulletin_cron_on_remote(remote, remote_root):
         logger.warning("Bulletin cron setup failed (non-fatal); run manually on new prod")
 
-    # Git branch update: push prod=staging, switch new prod checkout to prod
+    # Git branch update: push prod=staging, switch new prod checkout to prod, then switch staging instance to prod
     skip_git = os.environ.get(
         "REFRESH_SKIP_GIT_UPDATE", ""
     ).strip().lower() in ("1", "true", "yes")
@@ -456,8 +582,19 @@ def run_orchestrate(
             "Updating git branches: push prod=staging, switch new prod to prod branch"
         )
         _update_git_branch_on_new_prod(remote, remote_root)
+        logger.info("Switching staging instance (this host) to prod branch before stop")
+        _update_local_git_to_prod_branch(config.project_root)
     else:
         logger.info("REFRESH_SKIP_GIT_UPDATE: skipping git branch update")
+
+    # Post-graduation verification: check all housekeeping steps landed correctly
+    _verify_post_graduation(
+        remote,
+        remote_root,
+        active_info,
+        staging_static_ip_name=os.environ.get("REFRESH_STAGING_STATIC_IP_NAME", "").strip() or None,
+        skip_staging_ip=not reassign_staging_ip,
+    )
 
     import time
 

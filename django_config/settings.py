@@ -111,6 +111,11 @@ if os.environ.get("ALLOWED_HOSTS"):
     for ip in _refresh_ips:
         if ip not in _allowed:
             _allowed.append(ip)
+    # Always allow loopback so Docker health checks (curl localhost:8000) work regardless
+    # of what ALLOWED_HOSTS is set to in .env.
+    for h in ("localhost", "127.0.0.1"):
+        if h not in _allowed:
+            _allowed.append(h)
     ALLOWED_HOSTS = _allowed
 else:
     ALLOWED_HOSTS = _default_allowed_hosts + _refresh_ips
