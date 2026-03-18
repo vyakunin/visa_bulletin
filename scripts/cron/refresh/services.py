@@ -187,10 +187,10 @@ def setup_bulletin_cron_on_remote(runner: Runner, project_root: Path) -> bool:
         f"cd {root} && "
         "sudo mkdir -p /var/log/visa-bulletin && "
         "sudo chown $(whoami):$(whoami) /var/log/visa-bulletin && "
-        # Build binary if not present
-        "if [ ! -x bazel-bin/scripts/cron/refresh_bulletin ]; then "
-        "  bazel build //scripts/cron:refresh_bulletin && bazel shutdown; "
-        "fi && "
+        # Always rebuild so the cron binary reflects code after the git branch switch,
+        # not the potentially-stale binary built earlier in the pipeline from staging code.
+        # Bazel uses its action cache so this is fast (~5s) if nothing changed.
+        "bazel build //scripts/cron:refresh_bulletin && bazel shutdown && "
         "bash deployment/cron/setup-ingest-cron.sh"
     )
     result = runner.run_shell(cmd, timeout_sec=300)
