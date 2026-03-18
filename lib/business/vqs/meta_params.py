@@ -28,7 +28,9 @@ class VqsMetaParams:
 
     # Lookback window (months) for historical advancement rate
     lookback_months_default: int = 24
-    lookback_months_eb1_india: int = 24
+    # EB1 India uses longer lookback: its advancement rate is noisy due to premium
+    # processing spikes. 36m gives a more stable estimate than 24m.
+    lookback_months_eb1_india: int = 36
 
     # Recency weight for advancement rate: blend of recent (last 6 months) vs full lookback
     # 0.0 = use only full lookback average, 1.0 = use only recent 6 months

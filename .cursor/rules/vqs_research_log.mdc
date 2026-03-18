@@ -60,6 +60,8 @@ alwaysApply: true
 - Section 10: Granular Multi-Dimensional Metrics (Mar 2026) — Stratified evaluation
 - Section 11: Post-Tune Analysis (March 2026) — Optuna trial #13 results; honest assessment that VQS ≈ persistence at 1m for EB-2/3; demand_signal beats persistence in advancing/volatile regimes; hybrid selector and regime-based selector recommendations
 - Section 12: Appendix — File inventory (active production files, VQS system files, documentation)
+- Section 13: Cross-Series Spillover and UI Enhancements (Mar 2026) — Cross-series GBM features, CI display, regime badges, supply rebalancing; Phase 3 follow-up confirms 2025+ under-prediction 42%; Optuna 8 trials updated ContextualAggregator defaults
+- Section 14: Phase 4 Deferred Tasks (Mar 2026) — I-140 expansion already done; historical retrogression already done; EB-1 India lookback 24→36m
 
 **Related files:**
 - `docs/PREDICTIONS_ASSESSMENT.md` — The research log

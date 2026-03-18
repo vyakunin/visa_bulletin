@@ -167,12 +167,12 @@ This document proposes **new** improvements to address remaining gaps and edge c
 | ✅ Done | EB4 low-confidence flag (1) | Solver returns confidence=low; Experimental badge on UI | — | — |
 | ✅ Done | EB4 UI de-emphasis (1) | Experimental badge + muted row style on prediction detail | — | — |
 | ✅ Done | Display confidence intervals (3) | CI range shown below predicted date on prediction detail | — | — |
-| ✅ Done | Rebalance supply (2) | Spillover 0.15→0.20, seasonal multipliers +0.05 (Oct–Feb) | — | Under-prediction rate verification pending (Phase 3c) |
+| ✅ Done | Rebalance supply (2) | Spillover 0.15→0.20, seasonal multipliers +0.05 (Oct–Feb) | — | Verified: 2025+ under-prediction rate 42% (down from 72%) |
 | ✅ Done | Full I-140 ingestion for demand-supply baseline (8) | Real I-140 data from RawFactsLedger in evaluate_model.py | — | — |
-| In Progress | More I-140 data (4) | FY2020–FY2025 download/ingest (Phase 4a) | Medium | Better queue depth and historical accuracy |
-| In Progress | Retrogression from history (6) | Historical Sept/Oct deltas to replace fixed constants (Phase 4b) | Medium | More accurate October behavior |
-| In Progress | EB1 India tweaks (5) | Lookback alignment + supply bonus evaluation (Phase 4c) | Low–Medium | Reduces largest remaining EB1–EB3 error |
-| In Progress | Long-term metric breakdown (7) | Horizon-stratified accuracy by series (Phase 3d) | Low | Clearer view of long-horizon reliability |
+| ✅ Done | More I-140 data (4) | FY2014–FY2025 complete in raw_facts_ledger (576 rows) | — | Already ingested in Phase 1 |
+| ✅ Done | Retrogression from history (6) | `get_retrogression_months_from_history()` in solver.py uses VisaCutoffDate; `_RETROGRESSING_SERIES` is fallback only | — | Already done in Phase 1 |
+| ✅ Done | EB1 India tweaks (5) | `lookback_months_eb1_india` 24→36; +5% supply bonus Apr–Sep already in estimators.py | — | Regime-Switched beats persistence at all horizons |
+| ✅ Done | Long-term metric breakdown (7) | Horizon-stratified summary in longterm_accuracy_summary.json | — | Already implemented |
 ---
 
 ## How to Re-Run Accuracy After Changes

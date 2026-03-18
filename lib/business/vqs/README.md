@@ -46,11 +46,20 @@ Deterministic queue-based simulation for predicting Visa Bulletin movements and 
 - **scripts/vqs/tune_params.py** – Parameter tuning for meta-parameters.
 - **scripts/publish_predictions.py** – Publish VQS predictions to DB (`PredictedBulletin`/`PredictedCutoff`). Supports single-month and backfill modes. Uses hybrid dispatch: regime-switched for EB-1 (India/China), VQS ensemble for EB-2/3. Calibrated 80% CI via `calibration.py`.
 
+## Current Accuracy Status (Mar 2026)
+
+- **I-140 data**: FY2014–FY2025 complete in `raw_facts_ledger` (576 rows, 12 series × 4Q × 12 years)
+- **Supply rebalancing**: `SPILLOVER_BONUS_RATE` 0.15→0.20, early-FY seasonal multipliers +0.05. **Result**: 2025+ under-prediction rate 42% (down from 72%)
+- **EB-1 India lookback**: 24m→36m (smoother advancement rate estimate, less noise from recent stalls)
+- **Historical retrogression**: `get_retrogression_months_from_history()` queries VisaCutoffDate, `_RETROGRESSING_SERIES` is fallback only
+- **ContextualAggregator defaults**: Updated to Optuna trial #5 best (learning_rate=3.5, blend_temperature=0.029, use_regime_context=False)
+- **Published predictions**: April 2026 (70 rows) with calibrated 80% CI and regime/explanation
+
 ## How to Improve Accuracy
 
-1. **Add I-140 data** – Ingest all available USCIS I-140 quarterly reports (FY2020–FY2025+) via `scripts/vqs/ingest_uscis_i140.py` with correct `--publication-date`. More history improves queue depth and backtesting.
-2. **Tune constants** – In `estimators.py`: per-class share, `FY_SEASONAL_MULTIPLIER`, `SPILLOVER_BONUS_RATE`, EB1 bonus. In `solver.py`: `_RETROGRESSING_SERIES` (fallback when history has few Sept/Oct transitions).
-3. **Re-run accuracy** – After changes, clear checkpoint and run `bazel run //scripts/vqs:compute_prediction_accuracy -- --metric both --output-dir /tmp/vqs_accuracy --checkpoint-dir /tmp/vqs_ckpt`. Compare `bulletin_accuracy.json` (mean error, over/under rate) and `longterm_accuracy_summary.json` (by horizon and series).
+1. **Tune VqsMetaParams** – Run 50–100 Optuna trials targeting `ensemble_persistence_weight`, `ensemble_trajectory_blend/decay`, `stickiness_stall_days`. The current 0.797 was tuned before cross-series experts existed.
+2. **Re-run accuracy** – After changes, clear checkpoint and run `bazel run //scripts/vqs:compute_prediction_accuracy -- --metric both --output-dir /tmp/vqs_accuracy --checkpoint-dir /tmp/vqs_ckpt`. Compare `bulletin_accuracy.json` (mean error, over/under rate) and `longterm_accuracy_summary.json` (by horizon and series).
+3. **Spaghetti/metric report** – Regenerate after any model change: `./bazel-bin/scripts/vqs/evaluate_model --quick`.
 
 See **docs/future_features/VQS_RUNBOOK.md** for step-by-step "add I-140 file" and "re-run accuracy" commands.
 

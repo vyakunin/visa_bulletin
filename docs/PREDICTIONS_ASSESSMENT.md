@@ -749,6 +749,49 @@ Updated `contextual_aggregator.py` defaults. Note: 8 trials is insufficient for 
 
 ---
 
+## 14. Phase 4 Deferred Tasks (Mar 2026)
+
+### Motivation
+
+After Phase 3 verified supply rebalancing and completed Optuna tuning, the remaining deferred tasks were evaluated: I-140 expansion, historical retrogression, and EB-1 India tweaks.
+
+### What Was Found / Implemented
+
+| Task | Status | Finding |
+|------|--------|---------|
+| I-140 FY2020–FY2025 expansion (4a) | **Already done** | DB has FY2014–FY2025 complete (576 rows, 12 series × 4 quarters × 12 years) |
+| Historical retrogression (4b) | **Already done** | `get_retrogression_months_from_history()` in solver.py already queries VisaCutoffDate; `_RETROGRESSING_SERIES` is only a last-resort fallback |
+| EB-1 India lookback alignment (4c) | **Implemented** | `lookback_months_eb1_india` changed 24→36 in `meta_params.py` per VQS_META_PARAMS_AND_TUNING.md recommendation |
+| EB-1 India supply bonus (4c) | **Already done** | `estimators.py` already has +5% EB-1 supply bonus for April-September |
+
+### EB-1 India Results (After 36m Lookback)
+
+| Horizon | Model | MAE (days) |
+|---------|-------|-----------|
+| 1m | Persistence | 130.7 |
+| 1m | Regime-Switched | **127.7** |
+| 3m | Persistence | 161.0 |
+| 3m | Regime-Switched | **143.9** |
+| 6m | Persistence | 279.6 |
+| 6m | Regime-Switched | **258.1** |
+
+Regime-Switched beats persistence at all horizons for India EB-1. The 36m lookback provides a more stable historical advancement rate estimate, reducing noise from recent stalls.
+
+### Lessons
+
+1. Most "deferred" tasks (4a, 4b) were already implemented in the large Phase 1 commit — the initial implementation was more complete than documented.
+2. The 36m lookback for EB-1 India is a low-risk, non-breaking improvement. The Regime-Switched model is the best selector for this series.
+3. The `_RETROGRESSING_SERIES` fallback is effectively dead code for active series (India/China have 10+ historical Oct transitions) but useful as a safety net for new or sparse series.
+
+### Current Status
+
+- I-140 data: **FY2014–FY2025 complete** in raw_facts_ledger
+- Historical retrogression: **Live** (get_retrogression_months_from_history, fallback to _RETROGRESSING_SERIES)
+- EB-1 India lookback: **Updated to 36m** (meta_params.py)
+- EB-1 India supply bonus: **Live** (+5% Apr–Sep in estimators.py)
+
+---
+
 ## 12. Appendix: File Inventory
 
 ### Active Production Files (Deployed Linear Projection)
