@@ -94,7 +94,7 @@ def main():
 Examples:
   Drop all data (with confirmation):
     bazel run //:drop_salary_data
-  
+
   Drop all data without confirmation:
     bazel run //:drop_salary_data -- --force
 

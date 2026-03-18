@@ -26,7 +26,7 @@ GRADUATION_STEPS = ("warm_cache", "smoke_tests", "traffic_switch")
 
 
 def _verify_post_graduation(
-    remote: "Runner",
+    remote: Runner,
     remote_root: str,
     active_info: instance.InstanceInfo,
     staging_static_ip_name: str | None,

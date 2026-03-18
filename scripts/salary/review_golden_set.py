@@ -309,7 +309,7 @@ def main():
                 # Clear case - auto-approve/reject
                 if not args.dry_run:
                     with transaction.atomic():
-                        review = create_or_update_review(
+                        _review = create_or_update_review(
                             result["emp1"],
                             result["emp2"],
                             result["should_approve"],
@@ -378,7 +378,7 @@ def main():
 
                 if not args.dry_run:
                     with transaction.atomic():
-                        review = create_or_update_review(
+                        _review = create_or_update_review(
                             case["result"]["emp1"],
                             case["result"]["emp2"],
                             should_approve,

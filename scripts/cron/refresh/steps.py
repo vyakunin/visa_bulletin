@@ -49,8 +49,8 @@ def step_sync_code(
     when the orchestrator host is on a different branch, and .git history is preserved for
     rollback / inspection.
 
-    Also creates deployment/docker-compose.override.yml on the target so the web container
-    mounts the host's code directory instead of using the (potentially stale) Docker image code.
+    Also creates deployment/docker-compose.override.yml on the target with memory and
+    ALLOWED_HOSTS only (no volume mount). The web container runs from the Docker image.
     No-op for local/mock runners.
     """
     from .runner import RemoteRunner
@@ -87,10 +87,7 @@ def step_sync_code(
     )
     logger.info("Ensured __init__.py files exist for Docker/gunicorn compatibility")
 
-    # Ensure docker-compose.override.yml exists so the web container:
-    # 1. Uses host code (volume mount) instead of stale Docker image code
-    # 2. Has enough memory for query-heavy pages (512m vs default 200m)
-    # 3. Has the inactive host's IP in ALLOWED_HOSTS (prevents Django 400)
+    # Override: memory and ALLOWED_HOSTS only (no volume mount — container runs from image).
     override_path = f"{remote_root}/deployment/docker-compose.override.yml"
     host_ip = runner.host
     allowed_hosts = (
@@ -100,8 +97,6 @@ def step_sync_code(
         "version: '3.8'\n"
         "services:\n"
         "  web:\n"
-        "    volumes:\n"
-        "      - ../:/app\n"
         "    mem_limit: 512m\n"
         "    memswap_limit: 768m\n"
         "    environment:\n"
@@ -113,7 +108,8 @@ def step_sync_code(
         timeout_sec=10,
     )
     logger.info(
-        "Created docker-compose.override.yml (volume mount, ALLOWED_HOSTS=%s)", host_ip
+        "Created docker-compose.override.yml (mem + ALLOWED_HOSTS=%s, no volume)",
+        host_ip,
     )
 
 

@@ -151,7 +151,7 @@ def run_import_test(filepath: Path, visa_program: str, max_rows: int = None):
     total_time = time.time() - start_time
 
     final_count = SalaryRecord.objects.count()
-    actual_imported = final_count - initial_count
+    _actual_imported = final_count - initial_count
 
     print()
     print("=" * 80)

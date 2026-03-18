@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Import evaluator (now uses async parallel HTTP API)
 from lib.business.salary.clustering_evaluator import ClusteringEvaluator
+from lib.business.salary.llm_verifier import validate_pair_with_llm
 
 
 def load_pairs_from_jsonl(jsonl_file: str) -> tuple[list, list]:

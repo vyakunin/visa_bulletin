@@ -69,8 +69,8 @@ One-page reference for adding I-140 data and re-running accuracy.
 
 The naive baseline (next cutoff = previous cutoff) currently has **lower mean error** than the model. To improve and validate:
 
-- **Proposal:** `docs/future_features/VQS_BEAT_NO_CHANGE_PROPOSAL.md` – root cause, stickiness/threshold, caps, low-confidence fallback, blend, calibration.
-- **Compare model vs baseline:** Run accuracy, then compare mean error and win rate (see proposal § Validation).
+- **Beat no-change strategy:** Stickiness/threshold, caps, low-confidence fallback, blend, calibration — all implemented. See `docs/PREDICTIONS_ASSESSMENT.md` §8-9 for results.
+- **Compare model vs baseline:** Run accuracy, then compare mean error and win rate.
 
 ---
 

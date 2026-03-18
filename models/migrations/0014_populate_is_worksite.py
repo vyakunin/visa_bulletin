@@ -5,10 +5,10 @@ from django.db import migrations
 
 def populate_is_worksite(apps, schema_editor):
     """Populate is_worksite field based on source_file pattern"""
-    SalaryRecord = apps.get_model("models", "SalaryRecord")
+    _SalaryRecord = apps.get_model("models", "SalaryRecord")
 
     # Update all records in batches to avoid memory issues
-    batch_size = 10000
+    _batch_size = 10000
     total_updated = 0
 
     # Get all records that should be marked as worksite
@@ -20,19 +20,19 @@ def populate_is_worksite(apps, schema_editor):
         db_vendor = schema_editor.connection.vendor
         if db_vendor == "postgresql":
             cursor.execute("""
-                UPDATE salary_record 
-                SET is_worksite = true 
-                WHERE (source_file LIKE 'LCA_Worksites%' 
-                       OR source_file LIKE '%_Worksites_%' 
+                UPDATE salary_record
+                SET is_worksite = true
+                WHERE (source_file LIKE 'LCA_Worksites%'
+                       OR source_file LIKE '%_Worksites_%'
                        OR source_file LIKE '%worksite%')
                 AND is_worksite = false
             """)
         else:
             cursor.execute("""
-                UPDATE salary_record 
-                SET is_worksite = 1 
-                WHERE (source_file LIKE 'LCA_Worksites%' 
-                       OR source_file LIKE '%_Worksites_%' 
+                UPDATE salary_record
+                SET is_worksite = 1
+                WHERE (source_file LIKE 'LCA_Worksites%'
+                       OR source_file LIKE '%_Worksites_%'
                        OR source_file LIKE '%worksite%')
                 AND is_worksite = 0
             """)

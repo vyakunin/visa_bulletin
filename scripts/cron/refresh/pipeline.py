@@ -23,7 +23,6 @@ from .discovery import check_new_sources
 # run post-processing so clustering is populated (self-heal).
 STEPS_SKIP_WHEN_ZERO_INGESTED = frozenset(
     {
-        "populate_case_submitted",
         "backfill_job_title_links",
         "backfill_source_file_date",
         "cluster_job_titles",

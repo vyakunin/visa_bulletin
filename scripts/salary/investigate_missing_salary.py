@@ -370,7 +370,7 @@ def main():
 Examples:
   Run full investigation:
     bazel run //scripts/salary:investigate_missing_salary
-  
+
   Sample more records:
     bazel run //scripts/salary:investigate_missing_salary -- --sample-size 50
         """,

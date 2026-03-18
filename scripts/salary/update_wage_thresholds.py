@@ -265,10 +265,10 @@ def main():
 Examples:
   Update using last 2 fiscal years (default):
     bazel run //scripts/salary:update_wage_thresholds
-  
+
   Dry-run to see what would be calculated:
     bazel run //scripts/salary:update_wage_thresholds -- --dry-run
-  
+
   Use last 3 fiscal years:
     bazel run //scripts/salary:update_wage_thresholds -- --fiscal-years 3
         """,

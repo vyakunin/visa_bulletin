@@ -72,21 +72,32 @@ class VQSPredictView(View):
                 )
 
         try:
-            next_cutoff, maturity_month, _, confidence = (
-                predict_next_bulletin_and_maturity(
-                    knowledge_date=knowledge_date,
-                    visa_class=visa_class,
-                    country=country,
-                    action_type=action_type,
-                    priority_date=priority_date,
-                )
+            outcome = predict_next_bulletin_and_maturity(
+                knowledge_date=knowledge_date,
+                visa_class=visa_class,
+                country=country,
+                action_type=action_type,
+                priority_date=priority_date,
             )
+            next_cutoff = outcome.predicted_cutoff
+            maturity_month = outcome.maturity_month
+            results = outcome.results
+            confidence = outcome.confidence
         except Exception as e:
             logger.exception("VQS predict failed")
             return JsonResponse(
                 {"error": "Prediction failed", "detail": str(e)},
                 status=500,
             )
+
+        confidence_low = None
+        confidence_high = None
+        if results:
+            first = results[0]
+            if first.confidence_low:
+                confidence_low = first.confidence_low.isoformat()
+            if first.confidence_high:
+                confidence_high = first.confidence_high.isoformat()
 
         return JsonResponse(
             {
@@ -95,6 +106,8 @@ class VQSPredictView(View):
                 if maturity_month
                 else None,
                 "confidence": confidence,
+                "confidence_low": confidence_low,
+                "confidence_high": confidence_high,
                 "disclaimer": "Estimates use public data only; policy and allocation changes can affect outcomes.",
             }
         )

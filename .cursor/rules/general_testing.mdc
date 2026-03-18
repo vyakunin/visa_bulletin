@@ -65,13 +65,13 @@ bazel test //tests:...
 
 ## Rule: Write Tests for Bug Fixes
 
-**ALWAYS write a test that reproduces the bug before fixing it, then verify the fix.**
+**ALWAYS start bug fixes with a failing test.** Write a test that reproduces the bug first, then fix the code.
 
 **Process:**
-1. ✅ **Reproduce the bug** - Write a test that fails due to the bug
-2. ✅ **Fix the bug** - Implement the fix
-3. ✅ **Verify the fix** - Run the test to confirm it passes
-4. ✅ **Add regression test** - Keep the test to prevent future regressions
+1. ✅ **Start with a failing test** - Write a test that fails due to the bug (red)
+2. ✅ **Fix the bug** - Implement the fix so the test passes (green)
+3. ✅ **Verify** - Run the test to confirm it passes; run full suite before commit
+4. ✅ **Keep the test** - Leave it in place as a regression test
 
 **✅ GOOD - Test-first approach:**
 ```python

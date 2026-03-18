@@ -39,6 +39,8 @@ Each instance runs: one PostgreSQL database (`visa_bulletin`), one app stack (`d
 
 One instance holds the **production static IP** (serves live traffic). The other holds the **staging static IP** (testing/refresh). Which instance is which **swaps on each graduation**.
 
+**AWS instance names are sticky** (VisaBulletin2GB, VisaBulletinStaging do not change). SSH aliases are keyed by **IP**: `prod_2Gb_vm` = prod static IP, `staging_2Gb_vm` = staging static IP. After a successful graduation, the instance that had the staging IP gets the prod IP (becomes prod), and the instance that had the prod IP gets the staging IP (becomes staging) and is **stopped** by the orchestrator. So after rotation: prod_2Gb_vm connects to the old staging instance (e.g. VisaBulletinStaging); staging_2Gb_vm connects to the old prod instance (e.g. VisaBulletin2GB), which is typically **stopped** and unreachable until the next pipeline. Verify with `aws lightsail get-static-ips` and `get-instance` / `get-instance-state`.
+
 ---
 
 ## Local Worktree Layout
@@ -155,24 +157,75 @@ main (develop) --> staging (cherry-pick) --> staging instance (deploy + test)
 
 ### Graduation (Staging to Prod)
 
+Graduation is automated by the orchestrator. Run it on the **current prod instance** with `--from-step warm_cache` (skips the data pipeline, jumps straight to graduation).
+
 ```
-staging instance validated --> IP flip --> ex-staging is now prod
-                                      --> ex-prod is now staging
-                                      --> update prod branch
-                                      --> bring new staging up to date
+orchestrator on prod --> warm cache on inactive
+                     --> smoke test on inactive (DB + HTTP)
+                     --> [GATE: if smoke fails, STOP - nothing irreversible happened]
+                     --> swap static IPs (inactive becomes new prod)
+                     --> [from here, orchestrator is on staging since IPs swapped]
+                     --> HTTPS setup on new prod (certbot)
+                     --> smoke test via public URL (visa-bulletin.us)
+                     --> update .env on new prod (swap active/inactive roles)
+                     --> update .env on orchestrator/new staging (swap roles)
+                     --> staging IP reassign to old prod
+                     --> prod-safe override (drop volume mount, restart container)
+                     --> git branch update (push prod=staging; new prod checks out prod; staging instance checks out prod branch — after health checks, before stop)
+                     --> safety interval
+                     --> stop old instance (orchestrator's machine, now staging)
 ```
 
-1. Verify staging instance is stable (smoke tests pass, manual verification)
+**To run graduation:**
+
+```bash
+# On prod instance (where orchestrator runs):
+cd /opt/visa_bulletin && set -a && source .env && set +a
+./bazel-bin/scripts/cron/refresh_and_switch --from-step warm_cache --safety-interval 600
+```
+
+**Key flags:**
+- `--from-step warm_cache`: start from cache warming (skip full pipeline)
+- `--from-step smoke_tests`: start from smoke tests (skip cache warming)
+- `--from-step traffic_switch`: skip directly to IP swap
+- `--safety-interval N`: seconds to wait after swap before stopping old instance (default 1800)
+
+**What happens at each step:**
+
+1. **Warm cache**: pre-populates Redis cache (market overview, directories, page caches) on the inactive instance
+2. **Smoke tests**: verifies DB health (record counts, clustering, slugs) and HTTP endpoints (homepage, autocomplete, directories) on the inactive instance via localhost
+3. **IP swap**: detaches prod static IP from current prod, attaches to inactive — traffic now flows to new prod. **This is the irreversible point.** All subsequent steps are non-fatal (warnings only).
+4. **HTTPS setup**: runs certbot on new prod so SSL works
+5. **Public URL smoke**: curls `https://visa-bulletin.us/` to verify end-to-end
+6. **Env update (both)**: swaps `REFRESH_ACTIVE_*` / `REFRESH_INACTIVE_*` on both instances so the next cycle knows which is which
+7. **Staging IP reassign**: gives the old prod a stable staging IP for access
+8. **Prod-safe override**: replaces `docker-compose.override.yml` (drops volume mount), restarts container to use baked-in Docker image code
+9. **Git branch update**: Pushes `prod` branch to match `staging` on origin; new prod checks out `prod` branch (no reload — same code); **then** staging instance (orchestrator host, old prod) fetches and checks out `prod` branch — so `origin/prod` = what prod runs, and staging has `prod` checked out before it is stopped.
+10. **Safety interval**: waits to detect issues before shutting down
+11. **Stop old instance**: stops the orchestrator's machine (now staging) via AWS API
+
+**Post-rotation checks** (verify both hosts are consistent after graduation):
+
+| Check | Prod (prod_2Gb_vm) | Staging (staging_2Gb_vm) |
+|-------|--------------------|--------------------------|
+| **.env** | `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletinStaging); `REFRESH_ACTIVE_*` = this instance; `REFRESH_INACTIVE_*` = the other; `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` set | `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletin2GB); `REFRESH_ACTIVE_*` = prod instance; `REFRESH_INACTIVE_*` = this instance |
+| **Git** | `origin/prod` = code running on prod; this host has `prod` branch checked out | This host has `prod` branch checked out (orchestrator switched it after health checks, before stop) |
+| **Static IP** | Prod static IP attached to this instance | Staging static IP attached to this instance |
+
+**Git branch consistency:** The `prod` branch on origin points to what the prod container is running (the old staging branch content after the push). The new prod host checks out `prod`. The staging instance (old prod) is updated to `prod` branch **after** health checks pass and **before** the orchestrator stops it — so when staging is started again for the next pipeline, it has `prod` checked out until the pipeline syncs it to `staging`.
+
+**Manual graduation** (if the orchestrator isn't available):
+
+1. Verify staging is stable (smoke tests pass, manual verification)
 2. Tag on `staging` branch: `git tag -a v1.X.Y -m "Release 1.X.Y: ..."`
 3. Push tag: `git push origin v1.X.Y`
-4. **IP flip**: swap static IPs (see [IP Flip Procedure](#ip-flip-procedure))
-5. Verify production responds on the new instance
-6. Fast-forward `prod` branch via worktree: `cd ~/cursor_projects/visa_bulletin_prod && git merge staging && git push origin prod`
-7. Bring new staging (ex-prod) up to date: deploy `staging` branch to it
+4. IP flip: swap static IPs (see [IP Flip Procedure](#ip-flip-procedure))
+5. Verify production responds at `https://visa-bulletin.us/`
+6. Fast-forward `prod` via worktree: `cd ~/cursor_projects/visa_bulletin_prod && git reset --hard origin/staging && git push origin prod --force-with-lease`
+7. Replace override on new prod (see orchestrator's `_write_prod_safe_override`)
+8. Update `.env` on both instances (swap active/inactive roles)
 
-8. **Replace override on new prod**: the ex-staging has `docker-compose.override.yml` with a `../:/app` volume mount (created by `step_sync_code`). Replace it with a prod-safe version (no volume mount) and restart the container so it uses Docker image code. This is automated by the orchestrator after traffic switch. Without this, `git pull` on prod could bleed into gunicorn workers when they recycle via `--max-requests`.
-
-After step 8, both instances run the same code. Next cycle starts with new feature development on `main`.
+After graduation, both instances have their roles swapped. Next cycle starts with new development on `main`.
 
 ### Critical Hotfix (Prod Bug)
 

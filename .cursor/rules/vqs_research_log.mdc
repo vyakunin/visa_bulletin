@@ -1,0 +1,67 @@
+---
+alwaysApply: true
+---
+# VQS Research Log Rule
+
+## Rule: Maintain a Research Log for Prediction Experiments
+
+**Every prediction/VQS experiment MUST be logged in `docs/PREDICTIONS_ASSESSMENT.md` as a numbered section.** This is the single source of truth for what was tried, what worked, what didn't, and why.
+
+**Each experiment section MUST include:**
+
+1. **Motivation** — Why this was tried (hypothesis, gap addressed)
+2. **What Was Implemented** — Specific files changed, approach taken (table format)
+3. **Results** — Quantitative metrics (MAE, win rate, per-series breakdown) in tables
+4. **Why It Worked/Failed** — Root cause analysis with specific numbers
+5. **Lessons and Next Steps** — What to try next based on findings
+6. **Current Status** — Is it enabled? Flags? Production impact?
+
+**Format:**
+
+```markdown
+## N. Experiment Name (Month Year)
+
+### Motivation
+[1-2 paragraphs]
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| ... | ... | ... |
+
+### Results
+[Tables with before/after metrics]
+
+### Why It Worked/Failed
+[Numbered list of causes]
+
+### Lessons and Next Steps
+[Numbered list]
+
+### Current Status
+[Is it enabled? What flags control it?]
+```
+
+**When to log:**
+- Any change to solver logic, expert pool, meta-params, or loss function
+- Any new baseline model added to evaluate_model.py
+- Any tuning run (Optuna or manual) with results
+- Any new data source ingested that affects predictions
+- Any metric/evaluation methodology change
+
+**Do NOT:**
+- Create separate `*_EXPERIMENT.md` or `*_RESULTS.md` files — consolidate into PREDICTIONS_ASSESSMENT.md
+- Delete old experiment sections — they are the research log (git history is harder to search)
+- Log trivial changes (typos, formatting) — only substantive model/eval changes
+
+**Existing sections (as of March 2026):**
+- Section 8: FY Boundary Experiment (Feb 2026) — Failed
+- Section 9: Regime-Switched Model (Mar 2026) — Small improvement
+- Section 10: Granular Multi-Dimensional Metrics (Mar 2026) — Stratified evaluation
+- Section 11: Post-Tune Analysis (March 2026) — Optuna trial #13 results; honest assessment that VQS ≈ persistence at 1m for EB-2/3; demand_signal beats persistence in advancing/volatile regimes; hybrid selector and regime-based selector recommendations
+- Section 12: Appendix — File inventory (active production files, VQS system files, documentation)
+
+**Related files:**
+- `docs/PREDICTIONS_ASSESSMENT.md` — The research log
+- `lib/business/vqs/README.md` — Code-level docs (update when adding components)
+- `docs/future_features/VQS_NEW_SUGGESTIONS.md` — Active improvement ideas (not experiments)

@@ -40,13 +40,15 @@ def debug_vqs(visa_class, country, action_type, target_date, months_prior):
     print(f"Facts for Target ({country}, {visa_class}): {target_facts}")
 
     try:
-        next_cutoff, maturity, results, confidence = predict_next_bulletin_and_maturity(
+        outcome = predict_next_bulletin_and_maturity(
             knowledge_date=simulation_date,
             visa_class=visa_class,
             country=country,
             action_type=action_type,
-            force_physics=True,  # Test the physics engine
+            force_physics=True,
         )
+        next_cutoff = outcome.predicted_cutoff
+        results = outcome.results
 
         print(f"Solver Result: {len(results)} steps.")
         for res in results:

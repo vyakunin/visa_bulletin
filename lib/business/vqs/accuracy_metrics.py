@@ -8,16 +8,23 @@ Metric 2 – Long-term "final ready date": For each month M and each (visa_class
 country, action_type), with data as of M predict when the next cutoff will
 appear. Compare to first bulletin where that cutoff was reached. If predicted
 date is past but cutoff not yet seen, estimate error >= 1.5 * (last_bulletin - pred).
+
+Metric 3 – Multi-horizon composite: For each knowledge date, predict at
+horizons h=1,3,6,12 months; combine horizon-weighted errors with period
+discounting and optional trend (direction) scoring.
 """
 
 import json
 import logging
 import time
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.solver import (
+    SolverOutcome,
     predict_next_bulletin_and_maturity,
 )
 
@@ -88,6 +95,23 @@ class LongtermAccuracyRow:
     horizon_bucket: str | None = None  # "1-3", "3-6", "6-12", "12+"
 
 
+@dataclass
+class MultiHorizonRow:
+    """One prediction vs actual at a specific horizon from a single knowledge date."""
+
+    knowledge_date: date
+    bulletin_date: date  # actual bulletin at knowledge_date + horizon
+    visa_class: str
+    country: int
+    action_type: str
+    horizon: int  # months ahead (1, 3, 6, 12)
+    predicted_cutoff: date | None
+    actual_cutoff: date | None
+    error_days: int | None
+    direction_correct: bool | None = None  # did we predict the right sign of movement?
+    current_cutoff: date | None = None  # cutoff at knowledge_date (baseline)
+
+
 def _last_day_of_month(d: date) -> date:
     if d.month == 12:
         return date(d.year, 12, 31)
@@ -125,17 +149,46 @@ def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]] | None:
         return None
 
 
+def _build_actuals_by_horizon(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    pub_date: date,
+    horizon_weights: dict[int, float],
+) -> dict[int, date] | None:
+    """Look up actual cutoffs at h=3,6,12 months ahead for online learning."""
+    from lib.business.vqs.data_cache import get_cutoff_at_date
+
+    horizons_needed = [h for h in horizon_weights if h > 1]
+    if not horizons_needed:
+        return None
+    abh: dict[int, date] = {}
+    for h in horizons_needed:
+        target_pub = _add_months(pub_date, h - 1)
+        future_actual = get_cutoff_at_date(
+            visa_class=visa_class,
+            country=country,
+            action_type=action_type,
+            as_of=target_pub,
+        )
+        if future_actual is not None:
+            abh[h] = future_actual
+    return abh if abh else None
+
+
 def compute_bulletin_accuracy(
     bulletins=None,
     visa_category: str = "employment_based",
     monthly_supply: int | None = None,
     checkpoint_dir: Path | None = None,
-    meta: "VqsMetaParams | None" = None,
-    aggregator: "ExpertAggregator | None" = None,
+    meta: "VqsMetaParams | None" = None,  # noqa: F821
+    aggregator: "ExpertAggregator | None" = None,  # noqa: F821
     facts: list | None = None,
     exclude_eb4: bool = False,
     action_type: str | None = None,
     horizon: int = 1,
+    metric_config: MetricConfig | None = None,
+    use_contextual_ensemble: bool = False,
 ) -> list[BulletinAccuracyRow]:
     """
     Compute accuracy metrics for a set of bulletins.
@@ -153,6 +206,7 @@ def compute_bulletin_accuracy(
         get_cutoff_at_date,
     )
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
+    from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
     from models.raw_facts import RawFactsLedger
     from models.visa_cutoff_date import VisaCutoffDate
 
@@ -244,18 +298,20 @@ def compute_bulletin_accuracy(
             cutoffs = cutoffs.filter(action_type=action_type)
 
         for row in cutoffs:
-            next_cutoff, metadata, solver_results, _ = (
-                predict_next_bulletin_and_maturity(
-                    knowledge_date=knowledge_date,
-                    visa_class=row.visa_class,
-                    country=row.country,
-                    action_type=row.action_type,
-                    monthly_supply=monthly_supply,
-                    facts=current_facts,
-                    meta=meta,
-                    aggregator=aggregator,
-                )
+            outcome = predict_next_bulletin_and_maturity(
+                knowledge_date=knowledge_date,
+                visa_class=row.visa_class,
+                country=row.country,
+                action_type=row.action_type,
+                monthly_supply=monthly_supply,
+                facts=current_facts,
+                meta=meta,
+                aggregator=aggregator,
+                metric_config=metric_config,
             )
+            next_cutoff = outcome.predicted_cutoff
+            metadata = outcome.metadata
+            solver_results = outcome.results
             # Use next_cutoff (horizon 1) or specific maturity result
             if horizon == 1:
                 pred_cutoff = next_cutoff
@@ -289,14 +345,19 @@ def compute_bulletin_accuracy(
             if pred_cutoff is not None and actual is not None:
                 error_days = abs((pred_cutoff - actual).days)
 
-            # Online Learning Update
+            # Online Learning Update with multi-horizon actuals
             if aggregator and actual is not None:
+                abh = _build_actuals_by_horizon(
+                    row.visa_class, row.country, row.action_type, t,
+                    aggregator.metric_config.horizon_weights,
+                )
                 aggregator.update(
                     row.visa_class,
                     row.country,
                     knowledge_date,
                     actual,
                     action_type=row.action_type,
+                    actuals_by_horizon=abh,
                 )
 
             # Extract confidence intervals from metadata if available
@@ -476,7 +537,7 @@ def compute_longterm_accuracy(
         )
 
         for visa_class, country in distinct_series:
-            next_cutoff, _, results, _ = predict_next_bulletin_and_maturity(
+            outcome = predict_next_bulletin_and_maturity(
                 knowledge_date=knowledge_date,
                 visa_class=visa_class,
                 country=country,
@@ -484,6 +545,8 @@ def compute_longterm_accuracy(
                 monthly_supply=monthly_supply,
                 facts=facts,
             )
+            next_cutoff = outcome.predicted_cutoff
+            results = outcome.results
             pred_ready_month = results[0].month if results else None
             pred_cutoff = results[0].cutoff_date if results else next_cutoff
 
@@ -587,6 +650,448 @@ def compute_longterm_accuracy(
     return out
 
 
+def compare_to_no_change_baseline(
+    rows: list[BulletinAccuracyRow],
+    exclude_eb4: bool = True,
+    recent_only: bool = False,
+    recent_cutoff: date | None = None,
+) -> dict:
+    """
+    Compare model predictions to the no-change baseline (prev cutoff = next cutoff).
+
+    Returns dict with:
+        model_mean_error, baseline_mean_error, model_wins, baseline_wins,
+        ties, total, model_win_pct, rows_where_differ, model_mean_when_differ,
+        baseline_mean_when_differ.
+    """
+    from lib.business.vqs.data_cache import get_cutoff_at_date
+
+    if recent_cutoff is None and recent_only:
+        recent_cutoff = date(2024, 1, 1)
+
+    filtered = rows
+    if exclude_eb4:
+        filtered = [r for r in filtered if r.visa_class != "4th"]
+    if recent_only and recent_cutoff:
+        filtered = [r for r in filtered if r.bulletin_date >= recent_cutoff]
+
+    model_errors = []
+    baseline_errors = []
+    model_wins = 0
+    baseline_wins = 0
+    ties = 0
+    differ_model = []
+    differ_baseline = []
+
+    for r in filtered:
+        if r.error_days is None or r.predicted_cutoff is None:
+            continue
+
+        prev_cutoff = get_cutoff_at_date(
+            r.visa_class, r.country, r.action_type,
+            r.bulletin_date - timedelta(days=1),
+        )
+        if prev_cutoff is None:
+            continue
+
+        baseline_err = abs((prev_cutoff - r.actual_cutoff).days)
+        model_err = r.error_days
+
+        model_errors.append(model_err)
+        baseline_errors.append(baseline_err)
+
+        if model_err < baseline_err:
+            model_wins += 1
+        elif baseline_err < model_err:
+            baseline_wins += 1
+        else:
+            ties += 1
+
+        if r.predicted_cutoff != prev_cutoff:
+            differ_model.append(model_err)
+            differ_baseline.append(baseline_err)
+
+    total = len(model_errors)
+    return {
+        "total": total,
+        "model_mean_error": round(sum(model_errors) / total, 1) if total else None,
+        "baseline_mean_error": round(sum(baseline_errors) / total, 1) if total else None,
+        "model_wins": model_wins,
+        "baseline_wins": baseline_wins,
+        "ties": ties,
+        "model_win_pct": round(100 * model_wins / total, 1) if total else None,
+        "rows_where_differ": len(differ_model),
+        "model_mean_when_differ": round(sum(differ_model) / len(differ_model), 1) if differ_model else None,
+        "baseline_mean_when_differ": round(sum(differ_baseline) / len(differ_baseline), 1) if differ_baseline else None,
+        "beats_baseline": (sum(model_errors) / total < sum(baseline_errors) / total) if total else False,
+    }
+
+
+def _add_months(d: date, months: int) -> date:
+    """Return first day of month d + months."""
+    year, month = d.year, d.month
+    month += months
+    while month > 12:
+        month -= 12
+        year += 1
+    while month < 1:
+        month += 12
+        year -= 1
+    return date(year, month, 1)
+
+
+def compute_multi_horizon_accuracy(
+    bulletins: list[date] | None = None,
+    visa_category: str = "employment_based",
+    horizons: list[int] | None = None,
+    monthly_supply: int | None = None,
+    meta: "VqsMetaParams | None" = None,  # noqa: F821
+    aggregator: "ExpertAggregator | None" = None,  # noqa: F821
+    facts: list | None = None,
+    exclude_eb4: bool = True,
+    action_type: str | None = None,
+    metric_config: MetricConfig | None = None,
+    use_contextual_ensemble: bool = False,
+) -> list[MultiHorizonRow]:
+    """Predict at multiple horizons from each knowledge date, compare to actuals.
+
+    For each bulletin_date B and each (visa_class, country) series:
+    1. Set knowledge_date = B - 1 day.
+    2. Call solver once to get solver_results (list of monthly steps).
+    3. For each horizon h in horizons: extract prediction at step h-1,
+       look up actual cutoff at B + h months, record error.
+    """
+    from lib.business.vqs.data_cache import get_all_bulletins, get_cutoff_at_date
+    from lib.business.vqs.solver import predict_next_bulletin_and_maturity
+    from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
+    from models.raw_facts import RawFactsLedger
+    from models.visa_cutoff_date import VisaCutoffDate
+
+    if horizons is None:
+        horizons = [1, 3, 6, 12]
+
+    if bulletins is None:
+        bulletins = [b.publication_date for b in get_all_bulletins()]
+    else:
+        bulletins = list(bulletins)
+
+    max_horizon = max(horizons)
+    # Trim bulletins so we have room for the longest horizon
+    all_pub_dates = sorted(bulletins)
+    if not all_pub_dates:
+        return []
+    last_available = all_pub_dates[-1]
+    eval_bulletins = [
+        b for b in all_pub_dates if _add_months(b, max_horizon) <= last_available
+    ]
+
+    target_classes = QUEUE_DRIVEN_CLASSES if exclude_eb4 else EVALUABLE_VISA_CLASSES
+
+    total = len(eval_bulletins)
+    logger.info(
+        "Multi-horizon accuracy: %d bulletins, horizons=%s", total, horizons
+    )
+
+    n_facts = len(facts) if facts is not None else 0
+    fact_idx = 0
+    rows: list[MultiHorizonRow] = []
+    start_time = time.time()
+
+    for i, pub_date in enumerate(eval_bulletins):
+        knowledge_date = pub_date - timedelta(days=1)
+
+        current_facts = None
+        if facts is not None:
+            while fact_idx < n_facts and facts[fact_idx].publication_date <= knowledge_date:
+                fact_idx += 1
+            current_facts = facts[:fact_idx]
+        else:
+            current_facts = list(
+                RawFactsLedger.objects.filter(publication_date__lte=knowledge_date)
+            )
+
+        cutoffs = VisaCutoffDate.objects.filter(
+            bulletin__publication_date=pub_date,
+            visa_category=visa_category,
+            visa_class__in=target_classes,
+        ).exclude(cutoff_date__isnull=True)
+
+        if action_type:
+            cutoffs = cutoffs.filter(action_type=action_type)
+
+        for row in cutoffs:
+            current_cutoff = row.cutoff_date
+            
+            if use_contextual_ensemble:
+                # Update weights up to knowledge_date
+                # We can just call warmup_history which is idempotent and fast if we optimize it,
+                # but ContextualTrajectoryAggregator doesn't have a fast path yet.
+                # Actually, we can just call it.
+                aggregator.warmup_history(
+                    visa_class=row.visa_class,
+                    country=row.country,
+                    action_type=row.action_type,
+                    knowledge_date=knowledge_date,
+                    horizons=horizons,
+                )
+                
+                for h in horizons:
+                    target_month = _add_months(pub_date, h - 1)
+                    pred, _ = aggregator.predict(
+                        visa_class=row.visa_class,
+                        country=row.country,
+                        action_type=row.action_type,
+                        target_date=target_month,
+                        horizon=h,
+                    )
+                    
+                    actual = get_cutoff_at_date(
+                        visa_class=row.visa_class,
+                        country=row.country,
+                        action_type=row.action_type,
+                        as_of=target_month,
+                    )
+                    
+                    error = None
+                    direction_correct = None
+                    if pred is not None and actual is not None:
+                        error = abs((pred - actual).days)
+                        if current_cutoff is not None:
+                            pred_move = (pred - current_cutoff).days
+                            actual_move = (actual - current_cutoff).days
+                            if actual_move == 0 and pred_move == 0:
+                                direction_correct = True
+                            elif actual_move != 0:
+                                direction_correct = (
+                                    (pred_move > 0 and actual_move > 0)
+                                    or (pred_move < 0 and actual_move < 0)
+                                )
+                                
+                    rows.append(
+                        MultiHorizonRow(
+                            knowledge_date=knowledge_date,
+                            bulletin_date=target_month,
+                            visa_class=row.visa_class,
+                            country=row.country,
+                            action_type=row.action_type,
+                            horizon=h,
+                            predicted_cutoff=pred,
+                            actual_cutoff=actual,
+                            error_days=error,
+                            direction_correct=direction_correct,
+                            current_cutoff=current_cutoff,
+                        )
+                    )
+                continue
+                
+            outcome = predict_next_bulletin_and_maturity(
+                knowledge_date=knowledge_date,
+                visa_class=row.visa_class,
+                country=row.country,
+                action_type=row.action_type,
+                monthly_supply=monthly_supply,
+                facts=current_facts,
+                meta=meta,
+                aggregator=aggregator,
+                metric_config=metric_config,
+            )
+            next_cutoff = outcome.predicted_cutoff
+            solver_results = outcome.results
+
+            for h in horizons:
+                # Prediction at horizon h
+                if h == 1:
+                    pred = next_cutoff
+                else:
+                    idx = h - 1
+                    pred = solver_results[idx].cutoff_date if idx < len(solver_results) else None
+
+                # Actual cutoff at horizon h
+                target_pub = _add_months(pub_date, h - 1)
+                actual = get_cutoff_at_date(
+                    visa_class=row.visa_class,
+                    country=row.country,
+                    action_type=row.action_type,
+                    as_of=target_pub,
+                )
+
+                error = None
+                direction_correct = None
+                if pred is not None and actual is not None:
+                    error = abs((pred - actual).days)
+
+                    if current_cutoff is not None:
+                        pred_move = (pred - current_cutoff).days
+                        actual_move = (actual - current_cutoff).days
+                        if actual_move == 0 and pred_move == 0:
+                            direction_correct = True
+                        elif actual_move != 0:
+                            direction_correct = (
+                                (pred_move > 0 and actual_move > 0)
+                                or (pred_move < 0 and actual_move < 0)
+                            )
+
+                rows.append(
+                    MultiHorizonRow(
+                        knowledge_date=knowledge_date,
+                        bulletin_date=target_pub,
+                        visa_class=row.visa_class,
+                        country=row.country,
+                        action_type=row.action_type,
+                        horizon=h,
+                        predicted_cutoff=pred,
+                        actual_cutoff=actual,
+                        error_days=error,
+                        direction_correct=direction_correct,
+                        current_cutoff=current_cutoff,
+                    )
+                )
+
+        if (i + 1) % 10 == 0 or (i + 1) == total:
+            elapsed = time.time() - start_time
+            rate = (i + 1) / elapsed if elapsed > 0 else 0
+            logger.info(
+                "[MultiHorizon] %d/%d bulletins | %.1f/sec | %d rows",
+                i + 1, total, rate, len(rows),
+            )
+
+    return rows
+
+
+def compute_composite_metric(
+    rows: list[MultiHorizonRow],
+    config: MetricConfig | None = None,
+    use_predictability_weight: bool = False,
+    facts: list | None = None,
+) -> dict:
+    """Compute the weighted composite metric from multi-horizon rows.
+
+    Returns dict with per-horizon MAE, composite score, trend score,
+    and overall weighted metric.
+
+    When use_predictability_weight=True, each data point is additionally
+    weighted by I-140 coverage and recent cutoff volatility, focusing
+    the metric on series where the model can realistically be accurate.
+    """
+    if config is None:
+        config = MetricConfig.defaults()
+
+    pred_weight_cache: dict[tuple[str, int, str], float] = {}
+
+    by_horizon: dict[int, list[tuple[float, float]]] = defaultdict(list)
+
+    for r in rows:
+        if r.error_days is None:
+            continue
+
+        actual_move = None
+        if r.actual_cutoff and r.current_cutoff:
+            actual_move = (r.actual_cutoff - r.current_cutoff).days
+
+        w = config.composite_weight(
+            d=r.knowledge_date,
+            visa_class=r.visa_class,
+            country=r.country,
+            target_month=r.bulletin_date.month if r.bulletin_date else None,
+            actual_move_days=actual_move,
+        )
+
+        if use_predictability_weight:
+            cache_key = (r.visa_class, r.country, r.knowledge_date.isoformat())
+            if cache_key not in pred_weight_cache:
+                pred_weight_cache[cache_key] = predictability_weight(
+                    r.visa_class, r.country, r.knowledge_date,
+                    facts=facts, config=config,
+                )
+            w *= pred_weight_cache[cache_key]
+
+        by_horizon[r.horizon].append((float(r.error_days), w))
+
+    per_horizon: dict[int, dict] = {}
+    for h in sorted(by_horizon.keys()):
+        errors_weights = by_horizon[h]
+        total_w = sum(w for _, w in errors_weights)
+        if total_w == 0:
+            continue
+        weighted_mae = sum(e * w for e, w in errors_weights) / total_w
+        count = len(errors_weights)
+        per_horizon[h] = {"mae": round(weighted_mae, 1), "count": count}
+
+    composite = 0.0
+    total_hw = 0.0
+    for h, stats in per_horizon.items():
+        hw = config.horizon_weights.get(h, 0.0)
+        composite += hw * stats["mae"]
+        total_hw += hw
+    if total_hw > 0:
+        composite /= total_hw
+
+    # Trend (direction) score per horizon
+    trend_by_horizon: dict[int, dict] = {}
+    for h in sorted(by_horizon.keys()):
+        h_rows = [r for r in rows if r.horizon == h and r.direction_correct is not None]
+        if h_rows:
+            correct = sum(1 for r in h_rows if r.direction_correct)
+            trend_by_horizon[h] = {
+                "direction_accuracy": round(correct / len(h_rows), 3),
+                "count": len(h_rows),
+            }
+
+    overall_trend = 0.0
+    trend_total_hw = 0.0
+    for h, stats in trend_by_horizon.items():
+        hw = config.horizon_weights.get(h, 0.0)
+        overall_trend += hw * stats["direction_accuracy"]
+        trend_total_hw += hw
+    if trend_total_hw > 0:
+        overall_trend /= trend_total_hw
+
+    # Final blended metric: lower is better.
+    # composite MAE (lower = better) vs direction (higher = better),
+    # so we use (1 - direction_accuracy) scaled by composite for the trend term.
+    alpha = config.trend_weight
+    if alpha > 0 and composite > 0:
+        final = (1.0 - alpha) * composite + alpha * composite * (1.0 - overall_trend)
+    else:
+        final = composite
+
+    return {
+        "composite_mae": round(composite, 1),
+        "overall_trend_accuracy": round(overall_trend, 3),
+        "blended_metric": round(final, 1),
+        "per_horizon": per_horizon,
+        "trend_by_horizon": trend_by_horizon,
+    }
+
+
+def predictability_weight(
+    visa_class: str,
+    country: int,
+    knowledge_date: date,
+    facts: list | None = None,
+    config: MetricConfig | None = None,
+) -> float:
+    """Weight reflecting how predictable a (series, time) cell is.
+
+    Combines I-140 data confidence with recent cutoff volatility.
+    """
+    from lib.business.vqs.seasonal_predictor import get_last_N_moves
+    from lib.business.vqs.solver import compute_confidence
+
+    if config is None:
+        config = MetricConfig.defaults()
+
+    conf = compute_confidence(facts or [], visa_class, country)
+    conf_w = {"high": 1.0, "medium": 0.6, "low": 0.2}.get(conf, 0.2)
+
+    recent_moves = get_last_N_moves(
+        visa_class, country, "final_action", knowledge_date, 6
+    )
+    vol_w = config.volatility_weight([float(m) for m in recent_moves] if recent_moves else [])
+
+    return conf_w * vol_w
+
+
 def aggregate_bulletin_errors_by_date(
     rows: list[BulletinAccuracyRow],
     filter_visa_class: str | None = None,
@@ -639,8 +1144,6 @@ def aggregate_longterm_by_horizon_and_series(
       by_horizon: { "1-3": { mean_error_days, count, n_ok }, ... }
       by_series: { "2nd/3": { "1-3": { mean_error_days, count }, ... }, ... }
     """
-    from collections import defaultdict
-
     by_horizon: dict[str, list[int]] = defaultdict(list)
     by_series: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
 
@@ -669,3 +1172,73 @@ def aggregate_longterm_by_horizon_and_series(
         },
     }
     return summary
+
+
+@dataclass
+class CICoverageResult:
+    """Confidence interval calibration metrics."""
+
+    total_with_ci: int
+    hits: int
+    coverage_rate: float
+    mean_ci_width_days: float
+    by_series: dict[str, dict]
+
+
+def compute_ci_coverage(
+    rows: list[BulletinAccuracyRow],
+    exclude_eb4: bool = True,
+) -> CICoverageResult:
+    """Measure how often actual cutoffs fall within predicted confidence intervals.
+
+    Target coverage: ~80%. If actual coverage is much lower, the CI computation
+    (asymmetric 30%/70% spread in solver.py) needs widening. If much higher,
+    the intervals are too conservative and could be tightened.
+    """
+    filtered = rows
+    if exclude_eb4:
+        filtered = [r for r in filtered if r.visa_class != "4th"]
+
+    total_with_ci = 0
+    hits = 0
+    ci_widths: list[int] = []
+    by_series: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "hits": 0, "widths": []})
+
+    for r in filtered:
+        if r.confidence_low is None or r.confidence_high is None:
+            continue
+        if r.actual_cutoff is None:
+            continue
+        total_with_ci += 1
+        width = (r.confidence_high - r.confidence_low).days
+        ci_widths.append(width)
+        key = f"{r.visa_class}/{r.country}"
+        by_series[key]["total"] += 1
+        by_series[key]["widths"].append(width)
+
+        if r.confidence_low <= r.actual_cutoff <= r.confidence_high:
+            hits += 1
+            by_series[key]["hits"] += 1
+
+    coverage = hits / total_with_ci if total_with_ci > 0 else 0.0
+    mean_width = sum(ci_widths) / len(ci_widths) if ci_widths else 0.0
+
+    series_summary = {}
+    for key, data in sorted(by_series.items()):
+        t = data["total"]
+        h = data["hits"]
+        w = data["widths"]
+        series_summary[key] = {
+            "total": t,
+            "hits": h,
+            "coverage_rate": round(h / t, 3) if t > 0 else 0.0,
+            "mean_ci_width_days": round(sum(w) / len(w), 1) if w else 0.0,
+        }
+
+    return CICoverageResult(
+        total_with_ci=total_with_ci,
+        hits=hits,
+        coverage_rate=round(coverage, 3),
+        mean_ci_width_days=round(mean_width, 1),
+        by_series=series_summary,
+    )

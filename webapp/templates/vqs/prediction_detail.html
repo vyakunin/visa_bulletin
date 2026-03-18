@@ -34,19 +34,15 @@
             {% endif %}
         </div>
     </div>
-    {% if bulletin %}
-    <p class="text-muted">Knowledge Date: {{ bulletin.prediction_date|date:"F d, Y" }}</p>
-    <div class="alert alert-info py-2 d-flex align-items-center">
-        <i class="bi bi-info-circle-fill me-2"></i>
-        <small>Predictions relative to last month's actual bulletin. Movement (e.g. <span
-                class="badge bg-success bg-opacity-10 text-success">↑ 1m</span>) shown below.</small>
+    <p class="text-muted">Knowledge Date: {{ knowledge_date|date:"F d, Y" }}</p>
+    <div class="alert alert-info py-2 d-flex align-items-start">
+        <i class="bi bi-info-circle-fill me-2 mt-1"></i>
+        <div class="small">
+            <p class="mb-1">Predictions relative to last month's actual bulletin. Movement (e.g. <span
+                    class="badge bg-success text-white">↑ 1m</span>), regime (e.g. <span class="badge bg-success bg-opacity-75 text-white">Advancing</span>), and confidence range (e.g. <span class="text-muted">Jan–Mar 2026</span>) shown when available.</p>
+            <p class="mb-0 text-muted">The model is tuned to be conservative (bias toward little or no change) to reduce false moves; large actual movements (e.g. October fiscal-year resets) may be under-predicted. <span class="badge bg-warning text-dark">Experimental</span> rows (EB-4) have limited data and lower accuracy.</p>
+        </div>
     </div>
-    {% else %}
-    <div class="alert alert-warning py-2 d-flex align-items-center">
-        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        <small>No official predictions generated. Showing actual DoS data.</small>
-    </div>
-    {% endif %}
     <div class="table-responsive">
         <table class="table table-bordered table-hover shadow-sm">
             <thead class="table-dark">
@@ -64,20 +60,38 @@
             </thead>
             <tbody>
                 {% for row in table_rows %}
-                {% if bulletin %}
-                <tr>
-                    <th scope="row" rowspan="2" class="align-middle text-center table-light">{{ row.class }}</th>
+                <tr {% if row.class_full == '4th' %}class="table-secondary opacity-75"{% endif %}>
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light">
+                        {{ row.class }}
+                        {% if row.class_full == '4th' %}<div><span class="badge bg-warning text-dark" style="font-size:0.65rem;">Experimental</span></div>{% endif %}
+                    </th>
                     <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
                     {% for cell in row.countries %}
                     <td class="align-middle text-center">
                         {% with p=cell.final_action.predicted %}
                         {% if p and p.formatted_date %}
-                        <div class="d-flex flex-column align-items-center">
-                            <span class="fw-bold text-dark">{{ p.formatted_date }}</span>
+                        <div class="d-flex flex-column align-items-center gap-1">
+                            <span class="fw-bold {% if row.class_full == '4th' %}text-muted{% else %}text-dark{% endif %}"
+                                {% if p.confidence_low_fmt and p.confidence_high_fmt %}
+                                title="Range: {{ p.confidence_low_fmt }} – {{ p.confidence_high_fmt }}"
+                                data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span>
                             {% if p.movement_delta %}
-                            <span
-                                class="badge {% if p.movement_type == 'positive' %}bg-success bg-opacity-10 text-success border border-success border-opacity-25{% elif p.movement_type == 'negative' %}bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25{% else %}bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25{% endif %}"
-                                style="font-size:0.7rem;">{{ p.movement_delta }}</span>
+                            <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
+                            {% endif %}
+                            {% if p.regime_label %}
+                            <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
+                            {% endif %}
+                            {% if p.confidence_low_fmt %}
+                            <span class="text-muted" style="font-size:0.6rem;">{{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}</span>
+                            {% endif %}
+                            {% if p.explanation_text %}
+                            <details class="text-start" style="font-size:0.6rem;max-width:140px;">
+                                <summary class="text-muted" style="cursor:pointer;">why?</summary>
+                                <div class="text-muted mt-1">{{ p.explanation_text }}</div>
+                                {% if p.top_experts %}
+                                <div class="mt-1">{% for name, wt in p.top_experts %}<span class="badge bg-light text-dark border me-1">{{ name }} {{ wt }}</span>{% endfor %}</div>
+                                {% endif %}
+                            </details>
                             {% endif %}
                         </div>
                         {% else %}-{% endif %}
@@ -86,12 +100,28 @@
                     <td class="align-middle text-center bg-light bg-opacity-10">
                         {% with p=cell.filing.predicted %}
                         {% if p and p.formatted_date %}
-                        <div class="d-flex flex-column align-items-center">
-                            <span class="fw-bold text-dark">{{ p.formatted_date }}</span>
+                        <div class="d-flex flex-column align-items-center gap-1">
+                            <span class="fw-bold {% if row.class_full == '4th' %}text-muted{% else %}text-dark{% endif %}"
+                                {% if p.confidence_low_fmt and p.confidence_high_fmt %}
+                                title="Range: {{ p.confidence_low_fmt }} – {{ p.confidence_high_fmt }}"
+                                data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span>
                             {% if p.movement_delta %}
-                            <span
-                                class="badge {% if p.movement_type == 'positive' %}bg-success bg-opacity-10 text-success border border-success border-opacity-25{% elif p.movement_type == 'negative' %}bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25{% else %}bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25{% endif %}"
-                                style="font-size:0.7rem;">{{ p.movement_delta }}</span>
+                            <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
+                            {% endif %}
+                            {% if p.regime_label %}
+                            <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
+                            {% endif %}
+                            {% if p.confidence_low_fmt %}
+                            <span class="text-muted" style="font-size:0.6rem;">{{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}</span>
+                            {% endif %}
+                            {% if p.explanation_text %}
+                            <details class="text-start" style="font-size:0.6rem;max-width:140px;">
+                                <summary class="text-muted" style="cursor:pointer;">why?</summary>
+                                <div class="text-muted mt-1">{{ p.explanation_text }}</div>
+                                {% if p.top_experts %}
+                                <div class="mt-1">{% for name, wt in p.top_experts %}<span class="badge bg-light text-dark border me-1">{{ name }} {{ wt }}</span>{% endfor %}</div>
+                                {% endif %}
+                            </details>
                             {% endif %}
                         </div>
                         {% else %}-{% endif %}
@@ -109,45 +139,23 @@
                         {% endwith %}
                     </td>
                     <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
-                        <div class="d-flex justify-content-center align-items-center">
-                            {% with f=cell.filing.formatted_actual %}
-                            {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
-                            {% endwith %}
-                            {% with p=cell.filing.predicted %}
-                            {% if p and p.accuracy_score is not None %}
-                            <span
-                                class="ms-1 fw-bold {% if p.accuracy_score > 0 %}text-danger{% elif p.accuracy_score < 0 %}text-success{% else %}text-muted{% endif %}"
-                                style="font-size:0.75rem;">
-                                {% if p.accuracy_score >= 0 %}+{% endif %}{{ p.accuracy_score }}d
-                            </span>
-                            {% endif %}
-                            {% endwith %}
-                        </div>
-                    </td>
-                    {% endfor %}
-                </tr>
-                {% else %}
-                <tr>
-                    <th scope="row" class="align-middle text-center table-light">{{ row.class }}</th>
-                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 py-3 border-bottom-thick">
-                        real</td>
-                    {% for cell in row.countries %}
-                    <td class="align-middle text-center py-3 border-bottom-thick">
-                        {% with f=cell.final_action.formatted_actual %}
-                        {% if f %}<span class="text-dark">{{ f }}</span>{% else %}-{% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="align-middle text-center bg-light bg-opacity-10 py-3 border-bottom-thick">
                         {% with f=cell.filing.formatted_actual %}
-                        {% if f %}<span class="text-dark">{{ f }}</span>{% else %}-{% endif %}
+                        {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
                         {% endwith %}
                     </td>
                     {% endfor %}
                 </tr>
-                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var tooltipEls = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltipEls.forEach(function (el) { new bootstrap.Tooltip(el); });
+  });
+</script>
 {% endblock %}

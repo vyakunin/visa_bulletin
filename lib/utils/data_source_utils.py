@@ -347,7 +347,7 @@ def get_fiscal_year_from_filename(
 
 def get_fiscal_year_from_datasource(
     source_file: str,
-    data_source: "DataSource",
+    data_source: "DataSource",  # noqa: F821
     logger_instance: logging.Logger | None = None,
 ) -> int | None:
     """
@@ -452,7 +452,7 @@ def get_fiscal_year_from_datasource(
     return fiscal_year
 
 
-def get_source_file_date(filepath: Path, data_source: "DataSource") -> datetime | None:
+def get_source_file_date(filepath: Path, data_source: "DataSource") -> datetime | None:  # noqa: F821
     """
     Get source file date with validation against filename-extracted year.
 

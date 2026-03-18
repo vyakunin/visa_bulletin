@@ -1,73 +1,69 @@
+import calendar
+import logging
+import re
 from datetime import date
 
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import render
 
+from lib.business.vqs.prediction_loader import (
+    PredictionResult,
+    get_all_predictions_for_month,
+)
+from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
 from models.enums.visa_category import VisaCategory
-from models.vqs import PredictedBulletin
+from models.visa_cutoff_date import VisaCutoffDate
+
+logger = logging.getLogger(__name__)
+
+_REGIME_DISPLAY = {
+    "ADVANCING": ("Advancing", "success"),
+    "STALLED": ("Stalled", "secondary"),
+    "RETROGRESSING": ("Retrogrressing", "danger"),
+    "RECOVERING": ("Recovering", "info"),
+    "VOLATILE": ("Volatile", "warning"),
+}
+
+_EB4_CLASSES = {"4th"}
+_OVERSUBSCRIBED_EB23_COUNTRIES = {Country.INDIA.value, Country.CHINA.value}
 
 
 def prediction_list(request: HttpRequest) -> HttpResponse:
-    """List all available historical predictions."""
-    bulletins = PredictedBulletin.objects.order_by("-target_bulletin_month")
-
-    context = {
-        "bulletins": bulletins,
-    }
+    """List all bulletin months available for prediction browsing."""
+    months = (
+        Bulletin.objects.order_by("-publication_date")
+        .values_list("publication_date", flat=True)
+    )
+    context = {"months": list(months)}
     return render(request, "vqs/prediction_list.html", context)
 
 
-import calendar
-
-from models.bulletin import Bulletin
-from models.visa_cutoff_date import VisaCutoffDate
+def _add_months(sourcedate: date, months: int) -> date:
+    m = sourcedate.month - 1 + months
+    y = sourcedate.year + m // 12
+    mon = m % 12 + 1
+    day = min(sourcedate.day, calendar.monthrange(y, mon)[1])
+    return date(y, mon, day)
 
 
 def prediction_detail(
     request: HttpRequest, year: int, month: int, category: str = "employment_based"
 ) -> HttpResponse:
-    """Detailed view of a specific month's data (Prediction + Bulletin)."""
+    """Detailed view: backtested predictions + actual bulletin for a month."""
     target_date = date(year, month, 1)
 
-    # Try to find prediction
-    bulletin = PredictedBulletin.objects.filter(
-        target_bulletin_month=target_date
-    ).first()
-
-    # Try to find actual bulletin
     actual_bulletin = Bulletin.objects.filter(publication_date=target_date).first()
+    if not actual_bulletin:
+        from django.http import Http404
 
-    # If neither exists, 404
-    if not bulletin and not actual_bulletin:
-        get_object_or_404(
-            PredictedBulletin, target_bulletin_month=target_date
-        )  # Trigger 404
+        raise Http404(f"No bulletin found for {target_date.strftime('%B %Y')}")
 
-    # Navigation context - manual month math
-    def add_months(sourcedate, months):
-        m = sourcedate.month - 1 + months
-        y = sourcedate.year + m // 12
-        mon = m % 12 + 1
-        day = min(sourcedate.day, calendar.monthrange(y, mon)[1])
-        return date(y, mon, day)
-
-    # Improved navigation: find nearest available months in either table
-    prev_bulletin = (
-        PredictedBulletin.objects.filter(target_bulletin_month__lt=target_date)
-        .order_by("-target_bulletin_month")
-        .first()
-    )
+    # Navigation: prev/next actual bulletin
     prev_actual = (
         Bulletin.objects.filter(publication_date__lt=target_date)
         .order_by("-publication_date")
-        .first()
-    )
-
-    next_bulletin_obj = (
-        PredictedBulletin.objects.filter(target_bulletin_month__gt=target_date)
-        .order_by("target_bulletin_month")
         .first()
     )
     next_actual = (
@@ -75,45 +71,25 @@ def prediction_detail(
         .order_by("publication_date")
         .first()
     )
+    nav_prev = prev_actual.publication_date if prev_actual else None
+    nav_next = next_actual.publication_date if next_actual else None
 
-    # Pick the closest prev/next
-    nav_prev = None
-    if prev_bulletin and prev_actual:
-        nav_prev = max(
-            prev_bulletin.target_bulletin_month, prev_actual.publication_date
-        )
-    elif prev_bulletin:
-        nav_prev = prev_bulletin.target_bulletin_month
-    elif prev_actual:
-        nav_prev = prev_actual.publication_date
-
-    nav_next = None
-    if next_bulletin_obj and next_actual:
-        nav_next = min(
-            next_bulletin_obj.target_bulletin_month, next_actual.publication_date
-        )
-    elif next_bulletin_obj:
-        nav_next = next_bulletin_obj.target_bulletin_month
-    elif next_actual:
-        nav_next = next_actual.publication_date
-
-    # Get previous month's actual bulletin for delta calculation
-    last_actual_month = add_months(target_date, -1)
+    # Previous month's actuals for delta calculation
+    last_actual_month = _add_months(target_date, -1)
     last_actual_bulletin = Bulletin.objects.filter(
         publication_date=last_actual_month
     ).first()
-    last_actual_cutoffs = {}
+    last_actual_cutoffs: dict[str, date] = {}
     if last_actual_bulletin:
         for cutoff in VisaCutoffDate.objects.filter(bulletin=last_actual_bulletin):
             key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
             last_actual_cutoffs[key] = cutoff.cutoff_date
 
-    # Get current month's actual cutoffs
-    current_actual_cutoffs = {}
-    if actual_bulletin:
-        for cutoff in VisaCutoffDate.objects.filter(bulletin=actual_bulletin):
-            key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
-            current_actual_cutoffs[key] = cutoff.cutoff_date
+    # Current month's actual cutoffs
+    current_actual_cutoffs: dict[str, date] = {}
+    for cutoff in VisaCutoffDate.objects.filter(bulletin=actual_bulletin):
+        key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
+        current_actual_cutoffs[key] = cutoff.cutoff_date
 
     if category == VisaCategory.FAMILY_SPONSORED.value:
         classes = [f[0] for f in FamilyPreference.choices]
@@ -137,9 +113,18 @@ def prediction_detail(
         Country.MEXICO,
         Country.PHILIPPINES,
     ]
+    action_types = ["final_action", "filing"]
 
-    # Build a dense matrix
-    matrix = {}
+    # Load predictions (stored DB or solver backtest)
+    predictions, knowledge_date = get_all_predictions_for_month(
+        target_date,
+        classes,
+        [c.value for c in countries],
+        action_types,
+    )
+
+    # Build matrix
+    matrix: dict = {}
     for vc in classes:
         matrix[vc] = {}
         for c in countries:
@@ -148,49 +133,22 @@ def prediction_detail(
                 "filing": {"predicted": None, "actual_date": None},
             }
 
-    # Populate predictions if they exist
-    if bulletin:
-        for cutoff in bulletin.cutoffs.all():
-            if cutoff.visa_class in matrix:
-                if cutoff.country in matrix[cutoff.visa_class]:
-                    atype = (
-                        "filing" if "filing" in cutoff.action_type else "final_action"
-                    )
+    # Populate predictions
+    for (vc, cval, atype), pred_result in predictions.items():
+        if vc not in matrix or cval not in matrix.get(vc, {}):
+            continue
+        cell = matrix[vc][cval][atype]
 
-                    # Calculate movement delta
-                    key = f"{cutoff.visa_class}_{cutoff.country}_{atype}"
-                    last_actual_date = last_actual_cutoffs.get(key)
-                    if last_actual_date and cutoff.predicted_date:
-                        delta = (cutoff.predicted_date - last_actual_date).days
-                        if delta == 0:
-                            cutoff.movement_delta = "0"
-                            cutoff.movement_type = "neutral"
-                        elif delta >= 30:
-                            cutoff.movement_delta = f"↑ {delta // 30}m"
-                            cutoff.movement_type = "positive"
-                        elif delta > 0:
-                            cutoff.movement_delta = f"↑ {delta}d"
-                            cutoff.movement_type = "positive"
-                        elif delta <= -30:
-                            cutoff.movement_delta = f"↓ {abs(delta) // 30}m"
-                            cutoff.movement_type = "negative"
-                        else:
-                            cutoff.movement_delta = f"↓ {abs(delta)}d"
-                            cutoff.movement_type = "negative"
+        if pred_result.predicted_date:
+            key = f"{vc}_{cval}_{atype}"
+            last_actual_date = last_actual_cutoffs.get(key)
+            pred_obj = _make_prediction_display(pred_result, last_actual_date, visa_class=vc, country=cval)
+            cell["predicted"] = pred_obj
 
-                    if cutoff.predicted_date:
-                        cutoff.formatted_date = cutoff.predicted_date.strftime(
-                            "%d %b %Y"
-                        )
-
-                    matrix[cutoff.visa_class][cutoff.country][atype]["predicted"] = (
-                        cutoff
-                    )
-
-    # Populate actual dates
+    # Populate actuals
     for vc in classes:
         for c in countries:
-            for atype in ["final_action", "filing"]:
+            for atype in action_types:
                 key = f"{vc}_{c.value}_{atype}"
                 if key in current_actual_cutoffs:
                     d = current_actual_cutoffs[key]
@@ -199,7 +157,7 @@ def prediction_detail(
                         d.strftime("%d %b %Y") if d else None
                     )
 
-    # Convert matrix to list of rows for template
+    # Convert to template rows
     table_rows = []
     for vc in classes:
         row_data = {
@@ -220,19 +178,17 @@ def prediction_detail(
 
     formatted_title = (
         f"{category_label} Predictions for {target_date.strftime('%B %Y')}"
-        if bulletin
-        else f"{category_label} Bulletin: {target_date.strftime('%B %Y')}"
     )
     formatted_nav_prev = nav_prev.strftime("%b %Y") if nav_prev else None
     formatted_nav_next = nav_next.strftime("%b %Y") if nav_next else None
 
     context = {
-        "bulletin": bulletin,
+        "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
         "target_month": target_date,
         "table_rows": table_rows,
         "classes": classes,
-        "countries": [c for c in countries],
+        "countries": list(countries),
         "nav_prev": nav_prev,
         "nav_next": nav_next,
         "formatted_title": formatted_title,
@@ -244,17 +200,172 @@ def prediction_detail(
     return render(request, "vqs/prediction_detail.html", context)
 
 
+class _PredDisplay:
+    """Lightweight container for template rendering of a prediction cell."""
+
+    __slots__ = (
+        "predicted_date",
+        "formatted_date",
+        "movement_delta",
+        "movement_type",
+        "accuracy_score",
+        "confidence_low_fmt",
+        "confidence_high_fmt",
+        "ci_spread_days",
+        "regime_label",
+        "regime_color",
+        "confidence_level",
+        "is_experimental",
+        "explanation_text",
+        "top_experts",
+    )
+
+    def __init__(self):
+        self.predicted_date = None
+        self.formatted_date = None
+        self.movement_delta = None
+        self.movement_type = None
+        self.accuracy_score = None
+        self.confidence_low_fmt = None
+        self.confidence_high_fmt = None
+        self.ci_spread_days = None
+        self.regime_label = None
+        self.regime_color = None
+        self.confidence_level = None
+        self.is_experimental = False
+        self.explanation_text = None
+        self.top_experts = None
+
+
+def _parse_regime_from_explanation(explanation: str | None) -> str | None:
+    if not explanation:
+        return None
+    m = re.search(r"\*\*Regime: (\w+)\*\*", explanation)
+    return m.group(1).upper() if m else None
+
+
+def _make_prediction_display(
+    pred: PredictionResult,
+    last_actual_date: date | None,
+    visa_class: str = "",
+    country: int = 0,
+) -> _PredDisplay:
+    obj = _PredDisplay()
+    obj.predicted_date = pred.predicted_date
+    obj.formatted_date = (
+        pred.predicted_date.strftime("%d %b %Y") if pred.predicted_date else None
+    )
+
+    if last_actual_date and pred.predicted_date:
+        delta = (pred.predicted_date - last_actual_date).days
+        if delta == 0:
+            obj.movement_delta = "0"
+            obj.movement_type = "neutral"
+        elif delta >= 30:
+            obj.movement_delta = f"↑ {delta // 30}m"
+            obj.movement_type = "positive"
+        elif delta > 0:
+            obj.movement_delta = f"↑ {delta}d"
+            obj.movement_type = "positive"
+        elif delta <= -30:
+            obj.movement_delta = f"↓ {abs(delta) // 30}m"
+            obj.movement_type = "negative"
+        else:
+            obj.movement_delta = f"↓ {abs(delta)}d"
+            obj.movement_type = "negative"
+
+    # Confidence intervals (from stored predictions only)
+    if pred.confidence_low and pred.confidence_high:
+        obj.confidence_low_fmt = pred.confidence_low.strftime("%b %Y")
+        obj.confidence_high_fmt = pred.confidence_high.strftime("%b %Y")
+        obj.ci_spread_days = (pred.confidence_high - pred.confidence_low).days
+
+    # Regime (parsed from explanation_markdown)
+    regime_raw = _parse_regime_from_explanation(pred.explanation_markdown)
+    if regime_raw and regime_raw in _REGIME_DISPLAY:
+        obj.regime_label, obj.regime_color = _REGIME_DISPLAY[regime_raw]
+
+    # Explanation text (strip markdown bold for cleaner display)
+    if pred.explanation_markdown:
+        obj.explanation_text = re.sub(r"\*\*([^*]+)\*\*", r"\1", pred.explanation_markdown)
+
+    # Top experts from expert_predictions dict
+    if pred.expert_predictions and isinstance(pred.expert_predictions, dict):
+        top = sorted(
+            ((k, v.get("weight", 0)) for k, v in pred.expert_predictions.items() if isinstance(v, dict)),
+            key=lambda x: -x[1],
+        )[:4]
+        if top:
+            obj.top_experts = [(k, f"{v:.0%}") for k, v in top if v >= 0.05]
+
+    # Confidence level and EB-4 experimental flag
+    if visa_class in _EB4_CLASSES:
+        obj.is_experimental = True
+        obj.confidence_level = "Experimental"
+    elif obj.ci_spread_days is not None:
+        if obj.ci_spread_days <= 30:
+            obj.confidence_level = "High"
+        elif obj.ci_spread_days <= 90:
+            obj.confidence_level = "Moderate"
+        else:
+            obj.confidence_level = "Low"
+    elif pred.source == "stored":
+        # Stored but no CI: moderately confident
+        obj.confidence_level = "Moderate" if country in _OVERSUBSCRIBED_EB23_COUNTRIES else "High"
+
+    return obj
+
+
 def spaghetti_view(request):
-    """Temporary view for backtest visualization"""
+    """View for spaghetti backtest visualization (static HTML generated by evaluate_model)."""
     import os
 
     from django.conf import settings
-    from django.http import HttpResponse
 
-    # Path to the file we copied
     file_path = os.path.join(settings.BASE_DIR, "webapp", "templates", "spaghetti.html")
-
     with open(file_path, encoding="utf-8") as f:
         content = f.read()
-
     return HttpResponse(content, content_type="text/html")
+
+
+def metric_report_view(request):
+    """View for static metric report (generated by generate_metric_report)."""
+    import os
+
+    from django.conf import settings
+
+    try:
+        # Prefer WORKSPACE_DIR (source tree) so we find the file written by generate_metric_report;
+        # fall back to BASE_DIR for runserver/runfiles.
+        base = getattr(settings, "WORKSPACE_DIR", None) or getattr(settings, "BASE_DIR", None)
+        if base is None:
+            return HttpResponse(
+                "<h1>Configuration error</h1><p>BASE_DIR not set.</p>",
+                content_type="text/html",
+                status=500,
+            )
+        file_path = os.path.join(os.fspath(base), "webapp", "templates", "metric_report.html")
+        if not os.path.isfile(file_path):
+            return HttpResponse(
+                "<h1>Metric report not generated yet</h1>"
+                "<p>Run: <code>bazel run //scripts/vqs:generate_metric_report</code></p>",
+                content_type="text/html",
+                status=404,
+            )
+        with open(file_path, encoding="utf-8") as f:
+            content = f.read()
+        return HttpResponse(content, content_type="text/html")
+    except OSError as e:
+        logger.exception("Error serving metric report: %s", e)
+        return HttpResponse(
+            "<h1>Error loading metric report</h1><p>Could not read file.</p>",
+            content_type="text/html",
+            status=500,
+        )
+    except Exception as e:
+        logger.exception("Unexpected error in metric_report_view: %s", e)
+        return HttpResponse(
+            "<h1>Error loading metric report</h1><p>An unexpected error occurred. Check server logs.</p>",
+            content_type="text/html",
+            status=500,
+        )

@@ -1,0 +1,1104 @@
+"""VQS Model Evaluation and Comparison.
+
+Runs the current VQS model against persistence and dashboard-trend baselines,
+outputs a metrics table, and generates an interactive HTML visualization
+showing predictions at multiple horizons vs actuals with cumulative error.
+
+Includes per-regime, per-FY-phase, and per-movement-magnitude stratified
+metrics to reveal where each model adds value vs where it is just persistence.
+
+Usage:
+    bazel run //scripts/vqs:evaluate_model
+    bazel run //scripts/vqs:evaluate_model -- --quick
+    bazel run //scripts/vqs:evaluate_model -- --series "India EB-2"
+    bazel run //scripts/vqs:evaluate_model -- --horizons 1,3,6,12
+"""
+
+import argparse
+import datetime
+import json
+import logging
+import os
+import time
+from collections import defaultdict
+
+import django
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
+django.setup()
+
+from dateutil.relativedelta import relativedelta
+from django.conf import settings
+
+from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
+from lib.business.vqs.prediction_loader import (
+    build_regime_switched_cache,
+    build_solver_cache,
+    build_solver_cache_ablated,
+    get_actual_cutoffs,
+    load_stored_predictions_bulk,
+)
+from lib.business.vqs.regime import classify_regime, get_fy_phase
+from lib.business.vqs.seasonal_predictor import get_last_N_moves
+from models.enums.country import Country
+from models.raw_facts import RawFactsLedger
+from models.visa_cutoff_date import VisaCutoffDate
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("lib.business.vqs.solver").setLevel(logging.WARNING)
+logging.getLogger("lib.business.vqs.aggregator").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+
+FY_BOUNDARY_MONTHS = {9, 10, 11}
+
+# Historical EB visa supply by fiscal year (base + spillover estimates).
+# Source: DOS annual reports + community estimates (arika1447, Oppenheim).
+FY_EB_SUPPLY = {
+    2016: 140_000,
+    2017: 140_000,
+    2018: 140_000,
+    2019: 140_000,
+    2020: 140_000,
+    2021: 170_000,
+    2022: 280_000,
+    2023: 197_000,
+    2024: 161_000,
+    2025: 150_000,
+    2026: 140_000,
+}
+
+SERIES = [
+    (Country.INDIA.value, "2nd", "India EB-2"),
+    (Country.INDIA.value, "3rd", "India EB-3"),
+    (Country.CHINA.value, "2nd", "China EB-2"),
+    (Country.CHINA.value, "3rd", "China EB-3"),
+    (Country.CHINA.value, "1st", "China EB-1"),
+    (Country.INDIA.value, "1st", "India EB-1"),
+]
+
+ACTION_TYPE = "filing"
+DEFAULT_HORIZONS = [1, 3, 6]
+
+
+def forecast_persistence(visa_class, country, target_date, horizon):
+    """Static/persistence: predicts no change from horizon months ago."""
+    knowledge_date = target_date - relativedelta(months=horizon)
+    latest = (
+        VisaCutoffDate.objects.filter(
+            visa_class=visa_class, country=country, action_type=ACTION_TYPE,
+            bulletin__publication_date__lte=knowledge_date,
+        )
+        .order_by("-bulletin__publication_date")
+        .first()
+    )
+    return latest.cutoff_date if latest and latest.cutoff_date else None
+
+
+def forecast_dashboard(visa_class, country, target_date, horizon):
+    """Dashboard trend: 12-month moving average pace projected forward."""
+    knowledge_date = target_date - relativedelta(months=horizon)
+    history = VisaCutoffDate.objects.filter(
+        visa_class=visa_class, country=country, action_type=ACTION_TYPE,
+        bulletin__publication_date__lte=knowledge_date,
+    ).order_by("bulletin__publication_date")
+
+    cutoff_12m_ago = knowledge_date - datetime.timedelta(days=366)
+    recent = [
+        (h.bulletin.publication_date, h.cutoff_date)
+        for h in history if h.cutoff_date and h.bulletin.publication_date > cutoff_12m_ago
+    ]
+    if len(recent) < 2:
+        return recent[-1][1] if recent else None
+
+    first_date, first_val = recent[0]
+    last_date, last_val = recent[-1]
+    months_diff = max(1, (last_date.year - first_date.year) * 12 + last_date.month - first_date.month)
+    rate = (last_val - first_val).days / months_diff
+
+    if rate <= 0:
+        return last_val
+    return last_val + datetime.timedelta(days=int(rate * horizon))
+
+
+
+def build_contextual_cache(
+    visa_class: str,
+    country: int,
+    knowledge_dates: list[datetime.date],
+    horizons: list[int],
+    action_type: str = "filing",
+) -> dict[tuple[datetime.date, int], datetime.date]:
+    cache = {}
+    aggregator = ContextualTrajectoryAggregator()
+
+    # We need to process knowledge dates chronologically
+    # For each knowledge date, we first update the aggregator with any new actuals that became known
+    # since the last knowledge date, then we predict.
+
+    from lib.business.vqs.data_cache import get_all_bulletins
+    all_b = sorted(get_all_bulletins(), key=lambda x: x.publication_date)
+
+    last_kd = None
+    for kd in sorted(knowledge_dates):
+        # Update weights with bulletins that became known between last_kd and kd
+        # Actually, just call warmup_history up to kd. It's idempotent if we just recreate or we can optimize.
+        # Let's just recreate and warmup for simplicity, or we can optimize by only updating.
+        # To optimize:
+        new_bulletins = [b for b in all_b if (last_kd is None or b.publication_date > last_kd) and b.publication_date <= kd]
+        for b in new_bulletins:
+            actual_obj = VisaCutoffDate.objects.filter(
+                bulletin=b,
+                visa_class=visa_class,
+                country=country,
+                action_type=action_type,
+            ).first()
+            if actual_obj and actual_obj.cutoff_date:
+                for h in horizons:
+                    aggregator.update_weights(
+                        visa_class=visa_class,
+                        country=country,
+                        action_type=action_type,
+                        target_date=b.publication_date,
+                        horizon=h,
+                        actual_date=actual_obj.cutoff_date,
+                    )
+
+        last_kd = kd
+
+        # Now predict for all horizons
+        for h in horizons:
+            target_date = kd + relativedelta(months=h)
+            pred, _ = aggregator.predict(
+                visa_class=visa_class,
+                country=country,
+                action_type=action_type,
+                target_date=target_date,
+                horizon=h,
+            )
+            if pred:
+                cache[(kd, h)] = pred
+
+    return cache
+
+def compute_metrics(dates, actuals, predictions, label, error_start):
+    """Compute metrics for a model's predictions.
+
+    Includes:
+    - MAE (mean absolute error, days)
+    - direction_acc: % of non-zero actual moves where predicted direction matches
+    - big_move_capture_rate: % of actual big moves (>90d) where model predicted a big move (>90d)
+    - regime_change_detection_acc: When actual regime changed vs prior, did model predict
+      movement in the correct direction?
+    """
+    errors = []
+    direction_correct = 0
+    direction_total = 0
+    big_move_predicted = 0
+    big_move_actual = 0
+    regime_change_correct = 0
+    regime_change_total = 0
+
+    for i, d in enumerate(dates):
+        if d < error_start or actuals[i] is None or predictions[i] is None:
+            continue
+        err = abs((predictions[i] - actuals[i]).days)
+        errors.append(err)
+
+        if i > 0 and actuals[i - 1] is not None and predictions[i] is not None:
+            actual_move = (actuals[i] - actuals[i - 1]).days
+            pred_move = (predictions[i] - actuals[i - 1]).days
+
+            if actual_move != 0:
+                direction_total += 1
+                if (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0):
+                    direction_correct += 1
+
+            # Big-move capture: actual move >90d in either direction
+            if abs(actual_move) > 90:
+                big_move_actual += 1
+                if abs(pred_move) > 90 and (
+                    (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
+                ):
+                    big_move_predicted += 1
+
+            # Regime change detection: actual moved after prior stall (prev move ≈0, current ≠0)
+            if i >= 2 and actuals[i - 2] is not None:
+                prior_move = (actuals[i - 1] - actuals[i - 2]).days
+                is_regime_change = abs(prior_move) <= 5 and abs(actual_move) > 30
+                if is_regime_change:
+                    regime_change_total += 1
+                    if (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0):
+                        regime_change_correct += 1
+
+    if not errors:
+        return {
+            "label": label, "mae": None, "cumulative": 0,
+            "direction_acc": None, "count": 0,
+            "big_move_capture_rate": None, "regime_change_detection_acc": None,
+        }
+
+    return {
+        "label": label,
+        "mae": round(sum(errors) / len(errors), 1),
+        "cumulative": sum(errors),
+        "direction_acc": round(direction_correct / direction_total * 100, 1) if direction_total > 0 else None,
+        "count": len(errors),
+        "big_move_capture_rate": round(big_move_predicted / big_move_actual * 100, 1) if big_move_actual > 0 else None,
+        "big_move_actual_count": big_move_actual,
+        "regime_change_detection_acc": round(regime_change_correct / regime_change_total * 100, 1) if regime_change_total > 0 else None,
+    }
+
+
+def forecast_pace(visa_class, country, target_date, horizon):
+    """Constant-pace baseline: Charlie Oppenheim's rule of thumb.
+
+    Applies category-specific daily pace per month based on historical
+    averages. This is the "domain expert benchmark" approach.
+    """
+    pace_days_per_month = {
+        (Country.INDIA.value, "2nd"): 7,
+        (Country.INDIA.value, "3rd"): 7,
+        (Country.INDIA.value, "1st"): 14,
+        (Country.CHINA.value, "2nd"): 14,
+        (Country.CHINA.value, "3rd"): 21,
+        (Country.CHINA.value, "1st"): 21,
+    }
+    knowledge_date = target_date - relativedelta(months=horizon)
+    latest = (
+        VisaCutoffDate.objects.filter(
+            visa_class=visa_class, country=country, action_type=ACTION_TYPE,
+            bulletin__publication_date__lte=knowledge_date,
+        )
+        .order_by("-bulletin__publication_date")
+        .first()
+    )
+    if not latest or not latest.cutoff_date:
+        return None
+
+    pace = pace_days_per_month.get((country, visa_class), 7)
+    return latest.cutoff_date + datetime.timedelta(days=pace * horizon)
+
+
+_I140_DEMAND_CACHE: dict[tuple, float] = {}
+
+# Calibrated baseline queue density (applicants per priority-date-day).
+# Used when I-140 data is unavailable. Derived from historical queue depth estimates.
+_DEMAND_BASELINE = {
+    (Country.INDIA.value, "2nd"): 25.0,
+    (Country.INDIA.value, "3rd"): 15.0,
+    (Country.INDIA.value, "1st"): 8.0,
+    (Country.CHINA.value, "2nd"): 10.0,
+    (Country.CHINA.value, "3rd"): 5.0,
+    (Country.CHINA.value, "1st"): 4.0,
+}
+
+
+def _get_i140_demand_per_day(
+    visa_class: str,
+    country: int,
+    knowledge_date: "datetime.date",
+) -> float:
+    """Estimate demand per priority-date-day using real I-140 receipts from ledger.
+
+    Uses baseline queue density scaled by the recent I-140 trend ratio (recent
+    2 quarters vs historical average).  Falls back to baseline constant when
+    fewer than 4 quarterly data points are available.
+    """
+    cache_key = (visa_class, country, knowledge_date)
+    if cache_key in _I140_DEMAND_CACHE:
+        return _I140_DEMAND_CACHE[cache_key]
+
+    baseline = _DEMAND_BASELINE.get((country, visa_class), 10.0)
+
+    rows = list(
+        RawFactsLedger.objects.filter(
+            metric="i140_receipts",
+            publication_date__lte=knowledge_date,
+        ).order_by("reference_period_start")
+    )
+    country_rows = [r for r in rows if str(r.dimensions.get("country")) == str(country)]
+
+    if len(country_rows) < 4:
+        _I140_DEMAND_CACHE[cache_key] = baseline
+        return baseline
+
+    def _val(r) -> float:
+        v = r.value
+        if isinstance(v, (list, tuple)) and v:
+            v = v[0]
+        try:
+            return max(0.0, float(v))
+        except (TypeError, ValueError):
+            return 0.0
+
+    recent = country_rows[-2:]
+    hist = country_rows[:-2]
+    recent_avg = sum(_val(r) for r in recent) / max(len(recent), 1)
+    hist_avg = sum(_val(r) for r in hist) / max(len(hist), 1)
+
+    if hist_avg <= 0:
+        _I140_DEMAND_CACHE[cache_key] = baseline
+        return baseline
+
+    # Scale baseline by trend: if recent filings are 20% above historical, assume 20% more demand.
+    # Clamped to [0.5, 2.0] to avoid extreme swings from sparse data.
+    i140_ratio = max(0.5, min(2.0, recent_avg / hist_avg))
+    demand = baseline * i140_ratio
+
+    _I140_DEMAND_CACHE[cache_key] = demand
+    return demand
+
+
+def forecast_demand_supply(visa_class, country, target_date, horizon):
+    """Demand-supply heuristic (PhoenixCTB approach).
+
+    Estimates how fast the FAD should move based on the ratio of
+    annual EB supply (for this country+class) to approximate backlog depth.
+    Falls back to persistence when data is insufficient.
+
+    The heuristic: monthly_advance = (annual_supply_share / backlog_months) * 30 days
+    where backlog_months is a rough approximation from the gap between
+    FAD and current date divided by historical pace.
+
+    Demand is now derived from real I-140 receipt data (trend-scaled baseline),
+    replacing the previously static hardcoded constants.
+    """
+    from lib.business.vqs.estimators import (
+        DEFAULT_ANNUAL_EB_LIMIT,
+        PER_CLASS_SHARE,
+        PER_COUNTRY_SHARE,
+    )
+
+    knowledge_date = target_date - relativedelta(months=horizon)
+    latest = (
+        VisaCutoffDate.objects.filter(
+            visa_class=visa_class, country=country, action_type=ACTION_TYPE,
+            bulletin__publication_date__lte=knowledge_date,
+        )
+        .order_by("-bulletin__publication_date")
+        .first()
+    )
+    if not latest or not latest.cutoff_date:
+        return None
+
+    current_fad = latest.cutoff_date
+    fad_gap_days = (knowledge_date - current_fad).days
+    if fad_gap_days <= 0:
+        return current_fad + datetime.timedelta(days=horizon * 30)
+
+    fy = target_date.year if target_date.month >= 10 else target_date.year
+    annual_supply = FY_EB_SUPPLY.get(fy, DEFAULT_ANNUAL_EB_LIMIT)
+
+    class_share = PER_CLASS_SHARE.get(visa_class, 0.286)
+    country_share = PER_COUNTRY_SHARE
+    monthly_visa_budget = (annual_supply * class_share * country_share) / 12.0
+
+    demand_per_day = _get_i140_demand_per_day(visa_class, country, knowledge_date)
+
+    if demand_per_day <= 0:
+        return current_fad
+
+    monthly_pace_days = monthly_visa_budget / demand_per_day
+    total_advance = int(monthly_pace_days * horizon)
+
+    return current_fad + datetime.timedelta(days=total_advance)
+
+
+def classify_move_magnitude(move_days: int) -> str:
+    """Classify movement magnitude into buckets."""
+    abs_move = abs(move_days)
+    if abs_move == 0:
+        return "none"
+    if abs_move <= 30:
+        return "small"
+    if abs_move <= 90:
+        return "medium"
+    return "big"
+
+
+def classify_data_point(
+    visa_class: str, country: int, target_date: datetime.date, horizon: int,
+    actual: datetime.date | None, previous_actual: datetime.date | None,
+) -> dict:
+    """Classify a single data point by regime, FY phase, and movement magnitude."""
+    knowledge_date = target_date - relativedelta(months=horizon)
+    moves = get_last_N_moves(visa_class, country, ACTION_TYPE, knowledge_date, 6)
+    regime_state = classify_regime(moves)
+    fy_phase = get_fy_phase(target_date.month)
+
+    actual_move_days = 0
+    if actual and previous_actual:
+        actual_move_days = (actual - previous_actual).days
+
+    return {
+        "regime": regime_state.regime.value,
+        "fy_phase": fy_phase.value,
+        "move_mag": classify_move_magnitude(actual_move_days),
+        "actual_move_days": actual_move_days,
+    }
+
+
+def compute_stratified_metrics(
+    plot_dates: list[datetime.date],
+    actual_list: list[datetime.date | None],
+    model_lists: dict[str, list[datetime.date | None]],
+    point_meta: list[dict],
+    error_start: datetime.date,
+) -> dict:
+    """Compute metrics broken down by regime, FY phase, and movement magnitude.
+
+    Returns a nested dict: {dimension: {value: {model: {mae, dir_acc, count, win_rate}}}}
+    """
+    dimensions = {
+        "regime": lambda m: m["regime"],
+        "fy_phase": lambda m: m["fy_phase"],
+        "move_mag": lambda m: m["move_mag"],
+    }
+    result = {}
+
+    for dim_name, dim_fn in dimensions.items():
+        buckets: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+
+        for i, d in enumerate(plot_dates):
+            if d < error_start or actual_list[i] is None:
+                continue
+            meta = point_meta[i]
+            bucket_key = dim_fn(meta)
+
+            for model_name, preds in model_lists.items():
+                pred = preds[i]
+                if pred is None:
+                    continue
+                err = abs((pred - actual_list[i]).days)
+                persist_pred = model_lists["Persistence"][i]
+                persist_err = abs((persist_pred - actual_list[i]).days) if persist_pred else None
+
+                dir_correct = None
+                if i > 0 and actual_list[i - 1] is not None:
+                    actual_move = (actual_list[i] - actual_list[i - 1]).days
+                    pred_move = (pred - actual_list[i - 1]).days
+                    if actual_move != 0:
+                        dir_correct = (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
+
+                buckets[bucket_key][model_name].append({
+                    "err": err,
+                    "persist_err": persist_err,
+                    "dir_correct": dir_correct,
+                })
+
+        dim_result = {}
+        for bucket_key, model_data in sorted(buckets.items()):
+            bucket_models = {}
+            for model_name, entries in model_data.items():
+                errors = [e["err"] for e in entries]
+                mae = sum(errors) / len(errors) if errors else None
+                dir_entries = [e["dir_correct"] for e in entries if e["dir_correct"] is not None]
+                dir_acc = (sum(dir_entries) / len(dir_entries) * 100) if dir_entries else None
+
+                wins = sum(1 for e in entries if e["persist_err"] is not None and e["err"] < e["persist_err"])
+                losses = sum(1 for e in entries if e["persist_err"] is not None and e["err"] > e["persist_err"])
+                decisions = wins + losses
+                win_rate = (wins / decisions * 100) if decisions > 0 else None
+
+                bucket_models[model_name] = {
+                    "mae": round(mae, 1) if mae is not None else None,
+                    "dir_acc": round(dir_acc, 1) if dir_acc is not None else None,
+                    "count": len(errors),
+                    "win_rate": round(win_rate, 1) if win_rate is not None else None,
+                }
+            dim_result[bucket_key] = bucket_models
+        result[dim_name] = dim_result
+
+    return result
+
+
+def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int]):
+    """Print stratified metrics tables per series and horizon."""
+    # Detect ablation model from data
+    has_ablation = any(
+        "VQS No Cross-Series" in bucket_models
+        for horizon_data in all_stratified.values()
+        for strat in horizon_data.values()
+        for dim_data in strat.values()
+        for bucket_models in dim_data.values()
+    )
+    models = MODELS_ABLATE if has_ablation else MODELS
+
+    for series_label, horizon_data in sorted(all_stratified.items()):
+        for h, strat in sorted(horizon_data.items(), key=lambda x: int(x[0])):
+            print(f"\n{'='*100}")
+            print(f"  {series_label} — {h}-month horizon — STRATIFIED BREAKDOWN")
+            print(f"{'='*100}")
+
+            for dim_name in ["regime", "fy_phase", "move_mag"]:
+                if dim_name not in strat:
+                    continue
+                dim_data = strat[dim_name]
+                dim_label = {"regime": "REGIME", "fy_phase": "FY PHASE", "move_mag": "MOVE SIZE"}[dim_name]
+                print(f"\n  --- By {dim_label} ---")
+                print(f"  {'Bucket':<16} {'Model':<18} {'MAE':>8} {'DirAcc':>8} {'WinRate':>8} {'N':>6}")
+                print(f"  {'-'*70}")
+
+                for bucket_key, bucket_models in sorted(dim_data.items()):
+                    for model in models:
+                        m = bucket_models.get(model)
+                        if not m or m["count"] == 0:
+                            continue
+                        mae_s = f"{m['mae']:.1f}" if m["mae"] is not None else "N/A"
+                        da_s = f"{m['dir_acc']:.1f}%" if m["dir_acc"] is not None else "N/A"
+                        wr_s = f"{m['win_rate']:.1f}%" if m["win_rate"] is not None else "—"
+                        print(f"  {bucket_key:<16} {model:<18} {mae_s:>8} {da_s:>8} {wr_s:>8} {m['count']:>6}")
+                    print()
+
+
+_CROSS_SERIES_EXPERTS = frozenset({"cross_series", "gbm"})
+
+
+def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False):
+    """Run evaluation across all series and horizons, return chart data and metrics."""
+    chart_data = {}
+    all_metrics = []
+    all_stratified = {}
+
+    vqs_start = None
+    if RawFactsLedger.objects.exists():
+        vqs_start = RawFactsLedger.objects.order_by("publication_date").first().publication_date
+
+    max_horizon = max(horizons)
+    error_start = start_date + relativedelta(months=max_horizon + 12)
+
+    for country, visa_class, label in SERIES:
+        if series_filter and label != series_filter:
+            continue
+        logger.info(f"Processing {label}...")
+        t0 = time.time()
+
+        true_data = get_actual_cutoffs(visa_class, country, ACTION_TYPE)
+        sorted_dates = sorted(true_data.keys())
+        plot_dates = [d for d in sorted_dates if start_date <= d <= end_date][::step]
+
+        stored_vqs = load_stored_predictions_bulk(visa_class, country, ACTION_TYPE)
+        stored_count = sum(1 for d in plot_dates if d in stored_vqs)
+        logger.info(f"  Stored VQS predictions available: {stored_count}/{len(plot_dates)}")
+
+        all_knowledge_dates = set()
+        for h in horizons:
+            for d in plot_dates:
+                if h == 1 and d in stored_vqs:
+                    continue
+                all_knowledge_dates.add(d - relativedelta(months=h))
+        vqs_cache = build_solver_cache(visa_class, country, sorted(all_knowledge_dates), ACTION_TYPE)
+        logger.info(f"  VQS cache built: {len(vqs_cache)} entries from {len(all_knowledge_dates)} knowledge dates")
+
+        # Build regime-switched cache (undampened selector)
+        all_kd_for_rs = set()
+        for h in horizons:
+            for d in plot_dates:
+                all_kd_for_rs.add(d - relativedelta(months=h))
+        rs_cache = build_regime_switched_cache(visa_class, country, sorted(all_kd_for_rs), ACTION_TYPE)
+        ctx_cache = build_contextual_cache(visa_class, country, sorted(all_kd_for_rs), horizons, ACTION_TYPE)
+        logger.info(f"  Contextual cache built: {len(ctx_cache)} entries")
+        logger.info(f"  Regime-switched cache built: {len(rs_cache)} entries")
+
+        ablation_cache = {}
+        if ablate:
+            ablation_cache = build_solver_cache_ablated(
+                visa_class, country, sorted(all_knowledge_dates), ACTION_TYPE,
+                excluded_experts=_CROSS_SERIES_EXPERTS,
+            )
+            logger.info(f"  Ablation cache built: {len(ablation_cache)} entries (no cross-series/GBM)")
+
+        dates_str = [d.strftime("%Y-%m-%d") for d in plot_dates]
+        actual_vals = [
+            true_data.get(d).strftime("%Y-%m-%d") if true_data.get(d) else None
+            for d in plot_dates
+        ]
+        actual_list = [true_data.get(d) for d in plot_dates]
+
+        per_horizon = {}
+        stratified_by_horizon = {}
+        for h in horizons:
+            persist_vals = []
+            dash_vals = []
+            vqs_vals = []
+            rs_vals = []
+            pace_vals = []
+            dsupply_vals = []
+            ctx_vals = []
+            hybrid_vals = []
+            ablation_vals = []
+            persist_list = []
+            dash_list = []
+            vqs_list = []
+            rs_list = []
+            pace_list = []
+            dsupply_list = []
+            ctx_list = []
+            hybrid_list = []
+            ablation_list = []
+
+            for d in plot_dates:
+                persist = forecast_persistence(visa_class, country, d, h)
+                dash = forecast_dashboard(visa_class, country, d, h)
+                kd = d - relativedelta(months=h)
+
+                if h == 1 and d in stored_vqs:
+                    vqs = stored_vqs[d]
+                else:
+                    vqs = vqs_cache.get((kd, d.year, d.month))
+
+                rs = rs_cache.get((kd, d.year, d.month))
+                pace = forecast_pace(visa_class, country, d, h)
+                dsupply = forecast_demand_supply(visa_class, country, d, h)
+                ctx = ctx_cache.get((kd, h))
+
+                # Hybrid: RS for EB-1, VQS for EB-2/3 at 1m/3m, Pace for EB-2/3 at 6m+
+                if label in _EB1_LABELS:
+                    hybrid = rs
+                elif h >= 6:
+                    hybrid = pace
+                else:
+                    hybrid = vqs
+
+                abl = ablation_cache.get((kd, d.year, d.month)) if ablate else None
+
+                persist_vals.append(persist.strftime("%Y-%m-%d") if persist else None)
+                dash_vals.append(dash.strftime("%Y-%m-%d") if dash else None)
+                vqs_vals.append(vqs.strftime("%Y-%m-%d") if vqs else None)
+                rs_vals.append(rs.strftime("%Y-%m-%d") if rs else None)
+                pace_vals.append(pace.strftime("%Y-%m-%d") if pace else None)
+                dsupply_vals.append(dsupply.strftime("%Y-%m-%d") if dsupply else None)
+                ctx_vals.append(ctx.strftime("%Y-%m-%d") if ctx else None)
+                hybrid_vals.append(hybrid.strftime("%Y-%m-%d") if hybrid else None)
+                ablation_vals.append(abl.strftime("%Y-%m-%d") if abl else None)
+
+                persist_list.append(persist)
+                dash_list.append(dash)
+                vqs_list.append(vqs)
+                rs_list.append(rs)
+                pace_list.append(pace)
+                dsupply_list.append(dsupply)
+                ctx_list.append(ctx)
+                hybrid_list.append(hybrid)
+                ablation_list.append(abl)
+
+            # Classify each data point by regime, FY phase, movement magnitude
+            point_meta = []
+            regime_labels = []
+            fy_phase_labels = []
+            for i, d in enumerate(plot_dates):
+                prev_actual = actual_list[i - 1] if i > 0 else None
+                meta = classify_data_point(
+                    visa_class, country, d, h, actual_list[i], prev_actual,
+                )
+                point_meta.append(meta)
+                regime_labels.append(meta["regime"])
+                fy_phase_labels.append(meta["fy_phase"])
+
+            h_data = {
+                "persist": persist_vals,
+                "dash": dash_vals,
+                "vqs": vqs_vals,
+                "rs": rs_vals,
+                "pace": pace_vals,
+                "dsupply": dsupply_vals,
+                "ctx": ctx_vals,
+                "hybrid": hybrid_vals,
+                "regime": regime_labels,
+                "fy_phase": fy_phase_labels,
+            }
+            if ablate:
+                h_data["ablation"] = ablation_vals
+            per_horizon[str(h)] = h_data
+
+            # Compute stratified metrics for this horizon
+            model_lists = {
+                "Persistence": persist_list,
+                "Dashboard": dash_list,
+                "VQS Ensemble": vqs_list,
+                "Regime-Switched": rs_list,
+                "Pace": pace_list,
+                "Demand-Supply": dsupply_list,
+                "Contextual Ensemble": ctx_list,
+                "Hybrid": hybrid_list,
+            }
+            if ablate:
+                model_lists["VQS No Cross-Series"] = ablation_list
+            stratified_by_horizon[str(h)] = compute_stratified_metrics(
+                plot_dates, actual_list, model_lists, point_meta, error_start,
+            )
+
+            # --- diagnostic: show where RS diverges from persistence ---
+            if h == 1 and diagnostic:
+                rs_better = 0
+                rs_worse = 0
+                rs_same = 0
+                for i, d in enumerate(plot_dates):
+                    actual = actual_list[i]
+                    p = persist_list[i]
+                    r = rs_list[i]
+                    if actual and p and r and r != p:
+                        p_err = abs((actual - p).days)
+                        r_err = abs((actual - r).days)
+                        delta = r_err - p_err
+                        tag = "WORSE" if delta > 0 else "BETTER"
+                        if delta > 0:
+                            rs_worse += 1
+                        else:
+                            rs_better += 1
+                        print(
+                            f"  {d.strftime('%Y-%m')} actual={actual} "
+                            f"persist={p} rs={r} "
+                            f"p_err={p_err}d r_err={r_err}d Δ={delta:+d}d {tag}"
+                        )
+                    elif actual and p and r:
+                        rs_same += 1
+                total_div = rs_better + rs_worse
+                print(
+                    f"  --- RS diverges: {total_div}/{rs_same + total_div} months | "
+                    f"better={rs_better} worse={rs_worse} same={rs_same}"
+                )
+            # --- end diagnostic ---
+
+            model_eval_pairs = [
+                (persist_list, "Persistence"),
+                (dash_list, "Dashboard"),
+                (vqs_list, "VQS Ensemble"),
+                (rs_list, "Regime-Switched"),
+                (pace_list, "Pace"),
+                (dsupply_list, "Demand-Supply"),
+                (ctx_list, "Contextual Ensemble"),
+                (hybrid_list, "Hybrid"),
+            ]
+            if ablate:
+                model_eval_pairs.append((ablation_list, "VQS No Cross-Series"))
+            for model_list, model_label in model_eval_pairs:
+                m = compute_metrics(plot_dates, actual_list, model_list, model_label, error_start)
+                m["series"] = label
+                m["horizon"] = h
+                all_metrics.append(m)
+
+        all_stratified[label] = stratified_by_horizon
+
+        chart_data[label] = {
+            "dates": dates_str,
+            "actual": actual_vals,
+            "horizons": per_horizon,
+            "vqs_start": vqs_start.strftime("%Y-%m-%d") if vqs_start else "N/A",
+            "stratified": stratified_by_horizon,
+        }
+
+        logger.info(f"  {label} done in {time.time() - t0:.1f}s ({len(plot_dates)} points x {len(horizons)} horizons)")
+
+    return chart_data, all_metrics, all_stratified
+
+
+MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid"]
+MODELS_ABLATE = MODELS + ["VQS No Cross-Series"]
+
+# EB-1 series where Regime-Switched beats VQS Ensemble
+_EB1_LABELS = {"India EB-1", "China EB-1"}
+
+
+def print_metrics_table(metrics, horizons):
+    """Print a comparison table of model metrics per horizon."""
+    series_set = sorted(set(m["series"] for m in metrics))
+    # Include ablation model if present in metrics
+    models = MODELS_ABLATE if any(m["label"] == "VQS No Cross-Series" for m in metrics) else MODELS
+
+    for h in horizons:
+        print("\n" + "=" * 100)
+        print(f"Model Comparison ({h}-month horizon, {ACTION_TYPE})")
+        print("=" * 100)
+        print(f"\n{'Series':<20} {'Model':<22} {'MAE (days)':<12} {'Dir Acc %':<12} {'BigMove%':<10} {'RegiChg%':<10} {'Cumul Error':<12}")
+        print("-" * 98)
+
+        for series in series_set:
+            for model in models:
+                m = next((x for x in metrics if x["series"] == series and x["label"] == model and x["horizon"] == h), None)
+                if m:
+                    mae = f"{m['mae']}" if m["mae"] is not None else "N/A"
+                    da = f"{m['direction_acc']}" if m["direction_acc"] is not None else "N/A"
+                    bm = f"{m.get('big_move_capture_rate', 'N/A')}" if m.get("big_move_capture_rate") is not None else "N/A"
+                    rc = f"{m.get('regime_change_detection_acc', 'N/A')}" if m.get("regime_change_detection_acc") is not None else "N/A"
+                    ce = f"{m['cumulative']:,}" if m["cumulative"] else "N/A"
+                    print(f"{series:<20} {model:<22} {mae:<12} {da:<12} {bm:<10} {rc:<10} {ce:<12}")
+            print()
+
+        print("--- AGGREGATE ---")
+        for model in models:
+            model_metrics = [m for m in metrics if m["label"] == model and m["horizon"] == h and m["mae"] is not None]
+            if model_metrics:
+                avg_mae = sum(m["mae"] for m in model_metrics) / len(model_metrics)
+                total_cumul = sum(m["cumulative"] for m in model_metrics)
+                dir_accs = [m["direction_acc"] for m in model_metrics if m["direction_acc"] is not None]
+                avg_dir = sum(dir_accs) / len(dir_accs) if dir_accs else None
+                bm_rates = [m.get("big_move_capture_rate") for m in model_metrics if m.get("big_move_capture_rate") is not None]
+                avg_bm = sum(bm_rates) / len(bm_rates) if bm_rates else None
+                print(
+                    f"{'ALL':<20} {model:<22} {avg_mae:<12.1f} "
+                    f"{f'{avg_dir:.1f}' if avg_dir else 'N/A':<12} "
+                    f"{f'{avg_bm:.1f}%' if avg_bm is not None else 'N/A':<10} "
+                    f"{total_cumul:,}"
+                )
+
+        for model_name in ["VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid"]:
+            m_wins = 0
+            p_wins = 0
+            for series in series_set:
+                v = next((x for x in metrics if x["series"] == series and x["label"] == model_name and x["horizon"] == h), None)
+                p = next((x for x in metrics if x["series"] == series and x["label"] == "Persistence" and x["horizon"] == h), None)
+                if v and p and v["mae"] is not None and p["mae"] is not None:
+                    if v["mae"] < p["mae"]:
+                        m_wins += 1
+                    elif p["mae"] < v["mae"]:
+                        p_wins += 1
+            total = m_wins + p_wins
+            if total > 0:
+                print(f"{model_name} beats persistence: {m_wins}/{total} series ({100*m_wins/total:.0f}%)")
+
+
+def generate_html(chart_data, horizons, output_path):
+    """Generate interactive Plotly HTML visualization with stratified metrics panel."""
+    json_data = json.dumps(chart_data)
+    default_series = list(chart_data.keys())[0] if chart_data else ""
+    default_horizon = str(horizons[0])
+    horizon_options = "".join(
+        f'<option value="{h}"{" selected" if h == horizons[0] else ""}>{h} month{"s" if h != 1 else ""}</option>'
+        for h in horizons
+    )
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VQS Model Evaluation</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; max-width: 1400px; margin: 0 auto; }}
+        .controls {{ margin-bottom: 20px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }}
+        select {{ padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }}
+        .stats {{
+            margin-top: 10px; padding: 10px;
+            background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;
+            display: flex; gap: 20px; font-weight: bold; flex-wrap: wrap;
+        }}
+        .strat-panel {{
+            margin-top: 20px; padding: 15px;
+            background: #fff; border: 1px solid #dee2e6; border-radius: 6px;
+        }}
+        .strat-panel h3 {{ margin: 0 0 12px 0; font-size: 16px; color: #333; }}
+        .strat-tabs {{ display: flex; gap: 8px; margin-bottom: 12px; }}
+        .strat-tabs button {{
+            padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px;
+            background: #f8f9fa; cursor: pointer; font-size: 13px;
+        }}
+        .strat-tabs button.active {{ background: #0d6efd; color: #fff; border-color: #0d6efd; }}
+        table.strat {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+        table.strat th, table.strat td {{ padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; }}
+        table.strat th {{ background: #f8f9fa; font-weight: 600; text-align: left; }}
+        table.strat td:first-child {{ text-align: left; font-weight: 500; }}
+        table.strat tr.bucket-header td {{ background: #f0f4f8; font-weight: 600; text-align: left; border-top: 2px solid #dee2e6; }}
+        .win {{ color: #198754; }}
+        .lose {{ color: #dc3545; }}
+        .neutral {{ color: #6c757d; }}
+    </style>
+</head>
+<body>
+    <h1>VQS Model Evaluation</h1>
+    <div class="controls">
+        <div>
+            <label for="sel">Series:</label>
+            <select id="sel" onchange="updateAll()">
+                {"".join(f'<option value="{k}">{k}</option>' for k in chart_data.keys())}
+            </select>
+        </div>
+        <div>
+            <label for="horizon">Horizon:</label>
+            <select id="horizon" onchange="updateAll()">
+                {horizon_options}
+            </select>
+        </div>
+    </div>
+    <div id="note" style="color:#666;margin-top:5px"></div>
+    <div id="stats" class="stats"></div>
+    <div id="chart" style="width:100%;height:900px;"></div>
+    <div class="strat-panel">
+        <h3>Stratified Accuracy Breakdown</h3>
+        <div class="strat-tabs">
+            <button class="active" onclick="switchTab(this,'regime')">By Regime</button>
+            <button onclick="switchTab(this,'fy_phase')">By FY Phase</button>
+            <button onclick="switchTab(this,'move_mag')">By Move Size</button>
+        </div>
+        <div id="stratTable"></div>
+    </div>
+    <script>
+        const D = {json_data};
+        const ERR_START = new Date("2017-07-01");
+        let currentDim = 'regime';
+
+        function cumErr(dates, actuals, preds) {{
+            let c = [], s = 0;
+            for (let i = 0; i < dates.length; i++) {{
+                let d = new Date(dates[i]);
+                if (d >= ERR_START && actuals[i] && preds[i]) {{
+                    s += Math.abs(Math.ceil((new Date(preds[i]) - new Date(actuals[i])) / 86400000));
+                }}
+                c.push(s);
+            }}
+            return c;
+        }}
+
+        function switchTab(btn, dim) {{
+            currentDim = dim;
+            document.querySelectorAll('.strat-tabs button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            updateStratTable();
+        }}
+
+        function updateStratTable() {{
+            const s = document.getElementById('sel').value;
+            const h = document.getElementById('horizon').value;
+            const d = D[s];
+            if (!d.stratified || !d.stratified[h] || !d.stratified[h][currentDim]) {{
+                document.getElementById('stratTable').innerHTML = '<p style="color:#666">No stratified data available</p>';
+                return;
+            }}
+
+            const dimData = d.stratified[h][currentDim];
+            const models = ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid'];
+            const dimLabels = {{
+                'regime': {{'advancing':'Advancing','stalled':'Stalled','retrogressing':'Retrogressing','recovering':'Recovering','volatile':'Volatile'}},
+                'fy_phase': {{'fy_reset':'FY Reset (Oct)','conservative':'Conservative (Nov-Mar)','acceleration':'Acceleration (Apr-Jun)','end_of_fy':'End of FY (Jul-Sep)','normal':'Normal'}},
+                'move_mag': {{'big':'Big (>90d)','medium':'Medium (30-90d)','small':'Small (1-30d)','none':'No Change (0d)'}},
+            }};
+            const labels = dimLabels[currentDim] || {{}};
+
+            let html = '<table class="strat"><tr><th>Bucket</th><th>Model</th><th>MAE (d)</th><th>Dir Acc</th><th>vs Persist</th><th>N</th></tr>';
+
+            const buckets = Object.keys(dimData).sort();
+            for (const bk of buckets) {{
+                const bm = dimData[bk];
+                const displayLabel = labels[bk] || bk;
+                html += `<tr class="bucket-header"><td colspan="6">${{displayLabel}}</td></tr>`;
+                for (const model of models) {{
+                    const m = bm[model];
+                    if (!m || m.count === 0) continue;
+                    const mae = m.mae !== null ? m.mae.toFixed(1) : '—';
+                    const da = m.dir_acc !== null ? m.dir_acc.toFixed(1) + '%' : '—';
+                    let wr = '—';
+                    let wrClass = 'neutral';
+                    if (model !== 'Persistence' && m.win_rate !== null) {{
+                        wr = m.win_rate.toFixed(1) + '%';
+                        wrClass = m.win_rate > 50 ? 'win' : m.win_rate < 50 ? 'lose' : 'neutral';
+                    }}
+                    html += `<tr><td>${{model === 'Persistence' ? '' : ''}}</td><td style="text-align:left">${{model}}</td><td>${{mae}}</td><td>${{da}}</td><td class="${{wrClass}}">${{wr}}</td><td>${{m.count}}</td></tr>`;
+                }}
+            }}
+            html += '</table>';
+            document.getElementById('stratTable').innerHTML = html;
+        }}
+
+        function updateChart() {{
+            const s = document.getElementById('sel').value;
+            const h = document.getElementById('horizon').value;
+            const d = D[s];
+            const hd = d.horizons[h];
+            document.getElementById('note').innerText = "VQS data from: " + d.vqs_start + " | Horizon: " + h + " month(s) ahead";
+
+            const eP = cumErr(d.dates, d.actual, hd.persist);
+            const eD = cumErr(d.dates, d.actual, hd.dash);
+            const eV = cumErr(d.dates, d.actual, hd.vqs);
+            const eR = cumErr(d.dates, d.actual, hd.rs);
+            const eC = cumErr(d.dates, d.actual, hd.ctx);
+            const ePace = cumErr(d.dates, d.actual, hd.pace);
+            const eDS = cumErr(d.dates, d.actual, hd.dsupply);
+            const eH = hd.hybrid ? cumErr(d.dates, d.actual, hd.hybrid) : [];
+
+            document.getElementById('stats').innerHTML = [
+                '<span style="color:green">Persistence: ' + (eP[eP.length-1]||0).toLocaleString() + 'd</span>',
+                '<span style="color:blue">Dashboard: ' + (eD[eD.length-1]||0).toLocaleString() + 'd</span>',
+                '<span style="color:purple">VQS: ' + (eV[eV.length-1]||0).toLocaleString() + 'd</span>',
+                '<span style="color:red">Regime-SW: ' + (eR[eR.length-1]||0).toLocaleString() + 'd</span>',
+                '<span style="color:orange">Pace: ' + (ePace[ePace.length-1]||0).toLocaleString() + 'd</span>',
+                '<span style="color:teal">D-S: ' + (eDS[eDS.length-1]||0).toLocaleString() + 'd</span>',
+                eH.length ? '<span style="color:#c0392b;font-weight:bold">Hybrid: ' + (eH[eH.length-1]||0).toLocaleString() + 'd</span>' : '',
+            ].filter(Boolean).join('');
+
+            const traces = [
+                {{x:d.dates, y:d.actual, mode:'lines+markers', name:'Actual', line:{{color:'black',width:3}}, marker:{{size:4}}, legendgroup:'a'}},
+                {{x:d.dates, y:hd.persist, mode:'lines', name:'Persistence ('+h+'m)', line:{{color:'green',width:1,dash:'dot'}}, legendgroup:'p'}},
+                {{x:d.dates, y:hd.dash, mode:'lines', name:'Dashboard ('+h+'m)', line:{{color:'blue',width:2,dash:'dash'}}, legendgroup:'d'}},
+                {{x:d.dates, y:hd.vqs, mode:'lines', name:'VQS Ensemble ('+h+'m)', line:{{color:'purple',width:3}}, legendgroup:'v'}},
+                {{x:d.dates, y:hd.rs, mode:'lines', name:'Regime-Switched ('+h+'m)', line:{{color:'red',width:3}}, legendgroup:'r'}},
+                {{x:d.dates, y:hd.pace, mode:'lines', name:'Pace ('+h+'m)', line:{{color:'orange',width:2,dash:'dashdot'}}, legendgroup:'pc'}},
+                {{x:d.dates, y:hd.dsupply, mode:'lines', name:'Demand-Supply ('+h+'m)', line:{{color:'teal',width:2,dash:'longdash'}}, legendgroup:'ds'}},
+                ...(hd.hybrid ? [{{x:d.dates, y:hd.hybrid, mode:'lines', name:'Hybrid ('+h+'m)', line:{{color:'#c0392b',width:3,dash:'solid'}}, legendgroup:'hy'}}] : []),
+                {{x:d.dates, y:eP, mode:'lines', name:'Err: Persist', line:{{color:'green',width:1,dash:'dot'}}, xaxis:'x', yaxis:'y2', legendgroup:'p', showlegend:false}},
+                {{x:d.dates, y:eD, mode:'lines', name:'Err: Dashboard', line:{{color:'blue',width:2,dash:'dash'}}, xaxis:'x', yaxis:'y2', legendgroup:'d', showlegend:false}},
+                {{x:d.dates, y:eV, mode:'lines', name:'Err: VQS', line:{{color:'purple',width:2}}, xaxis:'x', yaxis:'y2', legendgroup:'v', showlegend:false}},
+                {{x:d.dates, y:eR, mode:'lines', name:'Err: Regime-SW', line:{{color:'red',width:2}}, xaxis:'x', yaxis:'y2', legendgroup:'r', showlegend:false}},
+                {{x:d.dates, y:ePace, mode:'lines', name:'Err: Pace', line:{{color:'orange',width:1,dash:'dashdot'}}, xaxis:'x', yaxis:'y2', legendgroup:'pc', showlegend:false}},
+                {{x:d.dates, y:eDS, mode:'lines', name:'Err: D-S', line:{{color:'teal',width:1,dash:'longdash'}}, xaxis:'x', yaxis:'y2', legendgroup:'ds', showlegend:false}},
+                ...(eH.length ? [{{x:d.dates, y:eH, mode:'lines', name:'Err: Hybrid', line:{{color:'#c0392b',width:2}}, xaxis:'x', yaxis:'y2', legendgroup:'hy', showlegend:false}}] : []),
+            ];
+
+            Plotly.newPlot('chart', traces, {{
+                title: s + ' \\u2014 ' + h + '-Month Forecast Accuracy',
+                grid: {{rows:2, columns:1, pattern:'independent', roworder:'top to bottom'}},
+                xaxis: {{title:'Bulletin Date'}},
+                yaxis: {{title:'Cutoff Date', domain:[0.55,1]}},
+                yaxis2: {{title:'Cumulative Error (Days)', domain:[0,0.45]}},
+                template: 'plotly_white',
+                hovermode: 'x unified',
+                height: 900,
+                legend: {{tracegroupgap:0}},
+            }});
+        }}
+
+        function updateAll() {{
+            updateChart();
+            updateStratTable();
+        }}
+
+        document.getElementById('sel').value = "{default_series}";
+        document.getElementById('horizon').value = "{default_horizon}";
+        updateAll();
+    </script>
+</body>
+</html>"""
+    with open(output_path, "w") as f:
+        f.write(html)
+    logger.info(f"Visualization saved to {output_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="VQS Model Evaluation")
+    parser.add_argument("--start", type=str, default="2016-01-01")
+    parser.add_argument("--end", type=str, default="2026-03-01")
+    parser.add_argument("--series", type=str, default=None, help="Filter to one series label")
+    parser.add_argument("--quick", action="store_true", help="Evaluate every 3rd bulletin")
+    parser.add_argument("--horizons", type=str, default="1,3,6", help="Comma-separated months ahead (e.g. 1,3,6,12)")
+    parser.add_argument("--output", type=str, default=None, help="HTML output path")
+    parser.add_argument("--diagnostic", action="store_true", help="Print per-month RS vs persistence divergences")
+    parser.add_argument("--ablate", action="store_true", help="Compare VQS with vs without cross-series/GBM experts")
+    args = parser.parse_args()
+
+    start = datetime.date.fromisoformat(args.start)
+    end = datetime.date.fromisoformat(args.end)
+    step = 3 if args.quick else 1
+    horizons = [int(h.strip()) for h in args.horizons.split(",")]
+
+    output_path = args.output or os.path.join(
+        settings.BASE_DIR, "webapp", "templates", "spaghetti.html"
+    )
+
+    chart_data, metrics, stratified = run_evaluation(start, end, horizons, series_filter=args.series, step=step, diagnostic=args.diagnostic, ablate=args.ablate)
+    print_metrics_table(metrics, horizons)
+    print_stratified_table(stratified, horizons)
+    generate_html(chart_data, horizons, output_path)
+    logger.info("View at http://localhost:8000/spaghetti/")
+
+
+if __name__ == "__main__":
+    main()

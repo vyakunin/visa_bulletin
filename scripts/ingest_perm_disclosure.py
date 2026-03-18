@@ -88,7 +88,7 @@ def normalize_visa_class(row: dict, extra_mappings: dict) -> str:
             )
             if exp_months >= 60:
                 return "2nd"
-        except:
+        except (ValueError, TypeError):
             pass
         return "3rd"
 
@@ -102,7 +102,7 @@ def process_file(filepath: Path, publication_date: date):
     logger.info(f"Processing {filepath} (Pub Date: {publication_date})")
 
     # Local mappings for fields not in db_importer (which focuses on Salary)
-    EXTRA_MAPPINGS = {
+    EXTRA_MAPPINGS = {  # noqa: N806
         "country": [
             "COUNTRY_OF_CITIZENSHIP",
             "Country_of_Citizenship",

@@ -129,14 +129,15 @@ def generate_vqs_forecast_at_horizon(
         # The `results` list contains SolverResult(month=..., cutoff=...).
         # We want the result where result.month == target_date.
 
-        next_cutoff, maturity, results, confidence = predict_next_bulletin_and_maturity(
+        outcome = predict_next_bulletin_and_maturity(
             knowledge_date=simulation_date,
             visa_class=visa_class,
             country=country,
             action_type=action_type,
-            # We don't have a priority_date, so maturity is irrelevant here.
-            force_physics=False,  # Use the Ensemble (persistence, seasonal, etc.)
+            force_physics=False,
         )
+        next_cutoff = outcome.predicted_cutoff
+        results = outcome.results
 
         for res in results:
             # Solver results are usually the 1st of the month
@@ -220,7 +221,7 @@ def run_lagged_chart_multi_series():
             "WARNING: No RawFactsLedger data found. VQS will yield flat lines (persistence)."
         )
 
-    SERIES_TO_ANALYZE = [
+    SERIES_TO_ANALYZE = [  # noqa: N806
         (Country.INDIA.value, "2nd", "India EB-2 (Filing)"),
         (Country.INDIA.value, "3rd", "India EB-3 (Filing)"),
         (Country.CHINA.value, "2nd", "China EB-2 (Filing)"),
@@ -231,8 +232,8 @@ def run_lagged_chart_multi_series():
 
     action_type = "filing"
 
-    START_PLOT = datetime.date(2016, 1, 1)
-    END_PLOT = datetime.date(2025, 2, 1)
+    START_PLOT = datetime.date(2016, 1, 1)  # noqa: N806
+    END_PLOT = datetime.date(2025, 2, 1)  # noqa: N806
 
     # Master data structure for JSON
     chart_data = {}
@@ -299,11 +300,11 @@ def run_lagged_chart_multi_series():
             .controls {{ margin-bottom: 20px; }}
             select {{ padding: 8px; font-size: 16px; }}
             .note {{ color: #666; font-style: italic; margin-top: 10px; }}
-            .stats {{ 
-                margin-top: 15px; 
-                padding: 10px; 
-                background-color: #f8f9fa; 
-                border: 1px solid #dee2e6; 
+            .stats {{
+                margin-top: 15px;
+                padding: 10px;
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
                 border-radius: 4px;
                 display: flex;
                 gap: 20px;
@@ -321,9 +322,9 @@ def run_lagged_chart_multi_series():
             <div class="note" id="dataNote"></div>
             <div id="statsBox" class="stats"></div>
         </div>
-        
+
         <div id="chart" style="width:100%;height:900px;"></div>
-        
+
         <script>
             const chartData = {json_data};
             // 18 months after Jan 2016 = July 2017
@@ -334,13 +335,13 @@ def run_lagged_chart_multi_series():
                 let sum = 0;
                 for (let i = 0; i < dates.length; i++) {{
                     let dDate = new Date(dates[i]);
-                    
+
                     // Only start accumulating error after start date
                     if (dDate >= ERROR_START_DATE && actuals[i] && preds[i]) {{
                         let d1 = new Date(actuals[i]);
                         let d2 = new Date(preds[i]);
                         let diffTime = Math.abs(d2 - d1);
-                        let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                        let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         sum += diffDays;
                     }}
                     cumulative.push(sum);
@@ -351,10 +352,10 @@ def run_lagged_chart_multi_series():
             function updateChart() {{
                 const selected = document.getElementById('seriesSelect').value;
                 const data = chartData[selected];
-                
-                document.getElementById('dataNote').innerText = 
+
+                document.getElementById('dataNote').innerText =
                     "VQS Data Available From: " + data.vqs_start + ". Accumulating error from July 2017 (18m after start).";
-                
+
                 // Calculate Errors
                 const errDash = calculateCumulativeError(data.dates, data.actual, data.dash6);
                 const errVqs = calculateCumulativeError(data.dates, data.actual, data.vqs6);
@@ -364,7 +365,7 @@ def run_lagged_chart_multi_series():
                 const totalDash = errDash[errDash.length - 1] || 0;
                 const totalVqs = errVqs[errVqs.length - 1] || 0;
                 const totalStatic = errStatic[errStatic.length - 1] || 0;
-                
+
                 document.getElementById('statsBox').innerHTML = `
                     <span class="stat-item" style="color: blue">Dashboard Error: ${{totalDash.toLocaleString()}} days</span>
                     <span class="stat-item" style="color: purple">VQS Error: ${{totalVqs.toLocaleString()}} days</span>
@@ -381,7 +382,7 @@ def run_lagged_chart_multi_series():
                     marker: {{size: 6, color: 'black'}},
                     legendgroup: 'actual'
                 }};
-                
+
                 const traceDash6 = {{
                     x: data.dates,
                     y: data.dash6,
@@ -390,7 +391,7 @@ def run_lagged_chart_multi_series():
                     line: {{color: 'blue', width: 2, dash: 'dash'}},
                     legendgroup: 'dashboard'
                 }};
-                
+
                 const traceVqs6 = {{
                     x: data.dates,
                     y: data.vqs6,
@@ -399,7 +400,7 @@ def run_lagged_chart_multi_series():
                     line: {{color: 'purple', width: 3}},
                     legendgroup: 'vqs'
                 }};
-                
+
                 const traceStatic6 = {{
                     x: data.dates,
                     y: data.static6,
@@ -446,7 +447,7 @@ def run_lagged_chart_multi_series():
                     legendgroup: 'static',
                     showlegend: false
                 }};
-                
+
                 const layout = {{
                     title: 'Forecast Accuracy & Cost of Optimism: ' + selected,
                     grid: {{rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom'}},
@@ -458,13 +459,13 @@ def run_lagged_chart_multi_series():
                     height: 900,
                     legend: {{tracegroupgap: 0}}
                 }};
-                
+
                 Plotly.newPlot('chart', [
                     traceActual, traceDash6, traceVqs6, traceStatic6,
                     traceErrDash, traceErrVqs, traceErrStatic
                 ], layout);
             }}
-            
+
             // Initial Load
             document.getElementById('seriesSelect').value = "{default_series}";
             updateChart();

@@ -428,7 +428,7 @@ def main():
             similarity = confidence
 
             with transaction.atomic():
-                review = create_or_update_review(
+                _review = create_or_update_review(
                     emp1,
                     emp2,
                     should_approve,

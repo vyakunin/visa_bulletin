@@ -16,6 +16,7 @@ from webapp.views.job_titles.directory import (
 )
 from webapp.views.job_titles.profile import job_title_profile_view
 from webapp.views.prediction_views import (
+    metric_report_view,
     prediction_detail,
     prediction_list,
     spaghetti_view,
@@ -27,6 +28,7 @@ urlpatterns = [
     path("analysis/", blog_list, name="blog_list"),
     path("analysis/<slug:slug>/", blog_detail, name="blog_detail"),
     path("spaghetti/", spaghetti_view, name="spaghetti"),
+    path("metric-report/", metric_report_view, name="metric_report"),
     path("", dashboard_view, name="dashboard"),
     path("predictions/", prediction_list, name="prediction_list"),
     path(

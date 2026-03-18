@@ -10,14 +10,9 @@ The system has a blue-green deployment flipover via `scripts/cron/refresh/orches
 
 ### A1. Eliminate hardcoded IPs and instance names
 
-**Problem:** `deployment/docker-compose.yml` line 33 hardcodes `ALLOWED_HOSTS` with `54.196.241.197`, `44.209.204.255`. `orchestrate.py` line 157 hardcodes staging static IP name `VisaBulletinStaging-ip`. `services.py` line 58 hardcodes legacy container names.
+**Problem:** `deployment/docker-compose.yml` line 33 hardcodes `ALLOWED_HOSTS` with `54.196.241.197`, `44.209.204.255`. `services.py` line 58 hardcodes legacy container names.
 
-**Fix:** Move all IPs/names to `.env` variables. Use `${ALLOWED_HOSTS}` in docker-compose. Remove legacy container name references.
-
-**Files:**
-- `deployment/docker-compose.yml` -- replace hardcoded ALLOWED_HOSTS
-- `scripts/cron/refresh/services.py` -- remove legacy container names
-- `scripts/cron/refresh/orchestrate.py` -- use env var for staging static IP
+**Fix:** Move all IPs/names to `.env` variables. Use `${ALLOWED_HOSTS}` in docker-compose. Remove legacy container name references. (Staging static IP name: `orchestrate.py` now requires `REFRESH_STAGING_STATIC_IP_NAME` in `.env`; `setup_new_instance.sh` adds the placeholder.)
 
 ### A2. Add health-check gate between index restore and read-heavy steps
 
@@ -135,7 +130,7 @@ Then `bulk_update_batched()` all at once.
 
 **Problem:** Currently code updates to the inactive host require manual `scp` of changed files or `git pull`. The orchestrator builds binaries on the remote host but doesn't ensure the latest code is there.
 
-**Fix:** Add a `step_sync_code()` as the first pipeline step that runs `git pull --ff-only` on the inactive host (or `rsync` from a known-good source). This ensures the inactive host always has the latest code before building.
+**Fix:** Add a `step_sync_code()` as the first pipeline step that runs `git pull` (git fetch + git reset --hard) on the inactive host. The branch is controlled by `REFRESH_SYNC_BRANCH` env var (default: "staging"). This ensures the inactive host always has the latest code before building.
 
 **Files:**
 - `scripts/cron/refresh/steps.py` -- add `step_sync_code()`

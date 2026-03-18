@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VQS Prediction Metric Report</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px 40px; max-width: 1200px; margin: 0 auto; color: #333; }
+        h1 { border-bottom: 2px solid #0d6efd; padding-bottom: 10px; }
+        h2 { margin-top: 30px; color: #555; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 14px; }
+        th { background: #f0f4f8; padding: 8px 12px; text-align: center; border: 1px solid #dee2e6; font-weight: 600; }
+        td { padding: 8px 12px; text-align: center; border: 1px solid #dee2e6; }
+        .series-label { text-align: left; font-weight: 500; white-space: nowrap; }
+        .cell { min-width: 70px; }
+        .cell small { color: #888; font-size: 11px; }
+        .win { background: #d4edda; color: #155724; }
+        .lose { background: #f8d7da; color: #721c24; }
+        .neutral { background: #fff3cd; color: #856404; }
+        .empty { background: #f8f9fa; color: #aaa; }
+        .summary { background: #e7f1ff; border: 1px solid #b6d4fe; border-radius: 6px; padding: 15px 20px; margin: 15px 0; }
+        .summary ul { margin: 5px 0 0 0; padding-left: 20px; }
+        .summary li { margin: 5px 0; line-height: 1.5; }
+        .meta { color: #666; font-size: 13px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <h1>VQS Prediction Metric Report</h1>
+    <p class="meta">Generated 2026-03-18 | Horizon: 1-month | Series: 6</p>
+
+    <div class="summary">
+        <strong>Where Does the Model Add Value?</strong>
+        <ul><li>VQS adds value for: China EB-1 (+1.5d)</li><li>VQS is essentially persistence for: China EB-2, China EB-3, India EB-1, India EB-2, India EB-3</li></ul>
+    </div>
+
+    <h2>Series x Regime Heat Map (VQS advantage over Persistence, days)</h2>
+    <p style="font-size:13px;color:#666">Green = VQS better by &gt;3d, Red = VQS worse by &gt;3d, Yellow = within 3d. Hover for details.</p>
+    <table>
+        <tr><th>Series</th><th>Advancing</th><th>Stalled</th><th>Retrogressing</th><th>Recovering</th><th>Volatile</th></tr>
+        <tr><td class="series-label">China EB-1</td><td class="cell win" title="Regime-Switched: 47.3d MAE (N=48)">+4d<br><small>N=48</small></td><td class="cell neutral" title="Persistence: 9.2d MAE (N=31)">+0d<br><small>N=31</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=7)">+0d<br><small>N=7</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=3)">+0d<br><small>N=3</small></td><td class="cell neutral" title="Persistence: 39.5d MAE (N=15)">+0d<br><small>N=15</small></td></tr><tr><td class="series-label">China EB-2</td><td class="cell neutral" title="Persistence: 47.6d MAE (N=48)">+0d<br><small>N=48</small></td><td class="cell neutral" title="Persistence: 21.9d MAE (N=17)">+0d<br><small>N=17</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=4)">+0d<br><small>N=4</small></td><td class="cell empty">—</td><td class="cell neutral" title="Persistence: 27.6d MAE (N=35)">+0d<br><small>N=35</small></td></tr><tr><td class="series-label">China EB-3</td><td class="cell neutral" title="Persistence: 55.8d MAE (N=33)">+0d<br><small>N=33</small></td><td class="cell neutral" title="VQS Ensemble: 37.4d MAE (N=17)">+0d<br><small>N=17</small></td><td class="cell neutral" title="Persistence: 5.2d MAE (N=6)">+0d<br><small>N=6</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=3)">+0d<br><small>N=3</small></td><td class="cell neutral" title="Persistence: 32.4d MAE (N=45)">+0d<br><small>N=45</small></td></tr><tr><td class="series-label">India EB-1</td><td class="cell win" title="Regime-Switched: 48.9d MAE (N=54)">+4d<br><small>N=54</small></td><td class="cell neutral" title="VQS Ensemble: 91.6d MAE (N=19)">+2d<br><small>N=19</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=7)">+0d<br><small>N=7</small></td><td class="cell neutral" title="Persistence: 30.0d MAE (N=3)">+0d<br><small>N=3</small></td><td class="cell neutral" title="Persistence: 53.0d MAE (N=21)">+0d<br><small>N=21</small></td></tr><tr><td class="series-label">India EB-2</td><td class="cell neutral" title="Regime-Switched: 90.3d MAE (N=25)">+0d<br><small>N=25</small></td><td class="cell neutral" title="VQS Ensemble: 6.4d MAE (N=41)">+0d<br><small>N=41</small></td><td class="cell empty">—</td><td class="cell empty">—</td><td class="cell neutral" title="Persistence: 31.1d MAE (N=38)">+0d<br><small>N=38</small></td></tr><tr><td class="series-label">India EB-3</td><td class="cell neutral" title="Persistence: 36.0d MAE (N=38)">+0d<br><small>N=38</small></td><td class="cell neutral" title="Persistence: 103.7d MAE (N=30)">+0d<br><small>N=30</small></td><td class="cell neutral" title="Persistence: 0.0d MAE (N=2)">+0d<br><small>N=2</small></td><td class="cell empty">—</td><td class="cell neutral" title="Persistence: 27.8d MAE (N=34)">+0d<br><small>N=34</small></td></tr>
+    </table>
+
+    <h2>FY Boundary vs Steady-State</h2>
+    <p style="font-size:13px;color:#666">Comparing persistence and VQS MAE during FY boundary months (Aug-Oct) vs steady-state (Nov-Jul).</p>
+    <table>
+        <tr>
+            <th rowspan="2">Series</th>
+            <th colspan="3">FY Boundary (Aug-Oct)</th>
+            <th colspan="3">Steady-State (Nov-Jul)</th>
+        </tr>
+        <tr>
+            <th>Persist</th><th>VQS</th><th>Advantage</th>
+            <th>Persist</th><th>VQS</th><th>Advantage</th>
+        </tr>
+        <tr><td class="series-label">China EB-1</td><td>57.8</td><td>55.8</td><td class="neutral">+2.0d</td><td>18.6</td><td>17.3</td><td class="neutral">+1.3d</td></tr><tr><td class="series-label">China EB-2</td><td>48.1</td><td>47.9</td><td class="neutral">+0.2d</td><td>27.8</td><td>28.0</td><td class="neutral">-0.2d</td></tr><tr><td class="series-label">China EB-3</td><td>70.6</td><td>70.9</td><td class="neutral">-0.4d</td><td>21.0</td><td>21.2</td><td class="neutral">-0.1d</td></tr><tr><td class="series-label">India EB-1</td><td>113.0</td><td>114.9</td><td class="neutral">-1.9d</td><td>25.7</td><td>24.6</td><td class="neutral">+1.1d</td></tr><tr><td class="series-label">India EB-2</td><td>74.0</td><td>74.2</td><td class="neutral">-0.1d</td><td>15.4</td><td>15.6</td><td class="neutral">-0.2d</td></tr><tr><td class="series-label">India EB-3</td><td>106.6</td><td>107.0</td><td class="neutral">-0.4d</td><td>23.3</td><td>24.1</td><td class="neutral">-0.9d</td></tr>
+    </table>
+
+    <p class="meta">
+        Report data: <code>144 metric rows across 6 series x 3 horizons</code>
+    </p>
+</body>
+</html>

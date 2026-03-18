@@ -129,7 +129,7 @@ def main():
                 )
                 ids = ",".join(str(emp_id) for emp_id, _ in batch)
                 cursor.execute(f"""
-                    UPDATE salary_employer 
+                    UPDATE salary_employer
                     SET total_lca_count = CASE id {case_sql} END
                     WHERE id IN ({ids})
                 """)
@@ -177,7 +177,7 @@ def main():
                 )
                 ids = ",".join(str(emp_id) for emp_id, _ in batch)
                 cursor.execute(f"""
-                    UPDATE salary_employer 
+                    UPDATE salary_employer
                     SET total_perm_count = CASE id {case_sql} END
                     WHERE id IN ({ids})
                 """)
@@ -225,7 +225,7 @@ def main():
                 )
                 ids = ",".join(str(emp_id) for emp_id, _ in batch)
                 cursor.execute(f"""
-                    UPDATE salary_employer 
+                    UPDATE salary_employer
                     SET avg_salary = CASE id {case_sql} END
                     WHERE id IN ({ids})
                 """)

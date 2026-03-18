@@ -150,11 +150,22 @@ def _parse_xlsx(path: Path) -> list[tuple[int, int, str, int, int]]:
         country_val = _country_from_sheet_name(sheet.title)
         if country_val is None:
             continue
-        # Row 3: ('Petitions by Employment Preference', 2014, 2015, ..., 2025, 'TOTAL')
         sheet_rows = list(sheet.iter_rows(values_only=True))
         if len(sheet_rows) < 5:
             continue
-        header_row = sheet_rows[3]
+        # Find header row dynamically — some files have it at row 3, others at row 4
+        header_idx = None
+        for idx in range(min(10, len(sheet_rows))):
+            row_cells = sheet_rows[idx]
+            year_count = sum(
+                1 for c in row_cells if isinstance(c, int) and 2010 <= c <= 2030
+            )
+            if year_count >= 3:
+                header_idx = idx
+                break
+        if header_idx is None:
+            continue
+        header_row = sheet_rows[header_idx]
         fy_columns: list[tuple[int, int]] = []  # (col_index, year)
         for i, cell in enumerate(header_row):
             if isinstance(cell, int) and 2010 <= cell <= 2030:
@@ -162,7 +173,7 @@ def _parse_xlsx(path: Path) -> list[tuple[int, int, str, int, int]]:
         if not fy_columns:
             continue
         current_cat: str | None = None
-        for row in sheet_rows[4:]:
+        for row in sheet_rows[header_idx + 1:]:
             if not row or len(row) <= fy_columns[0][0]:
                 continue
             label = (row[0] or "").strip() if isinstance(row[0], str) else ""

@@ -177,23 +177,35 @@ except Exception:
 
 ## Rule: Prefer Named Structures Over Tuples for Return Values
 
-**Use dataclasses or NamedTuple instead of tuples when returning 2+ related values.**
+**Use dataclasses or NamedTuple instead of tuples when returning 2+ related values. NEVER return 3+ element tuples — callers have to guess positional meaning.**
 
-**✅ GOOD:**
+**❌ BAD — positional soup, caller must memorize order:**
+```python
+def solve(...) -> tuple[date | None, dict, date | None, list[SolverResult], str]:
+    ...
+    return predicted_date, diagnostics, maturity_month, step_results, regime_label
+
+# Caller: which date is which? What's the dict?
+pred, diag, mat, steps, regime = solve(...)
+```
+
+**✅ GOOD — named fields, self-documenting:**
 ```python
 @dataclass
-class EvaluationOutcome:
-    is_valid: bool | None
-    response: str | None
+class SolverOutcome:
+    predicted_date: date | None
+    diagnostics: dict
+    maturity_month: date | None
+    step_results: list[SolverResult]
+    regime_label: str
 
-def validate() -> EvaluationOutcome:
-    return EvaluationOutcome(is_valid=True, response="OK")
+def solve(...) -> SolverOutcome:
+    ...
+    return SolverOutcome(predicted_date=..., diagnostics=..., ...)
+
+# Caller: clear what each field is
+outcome = solve(...)
+outcome.predicted_date  # unambiguous
 ```
 
-**❌ BAD:**
-```python
-def validate() -> tuple[bool | None, str | None]:
-    return True, "OK"  # Unclear what each value means
-```
-
-**Tuples are OK for:** simple coordinate pairs `(x, y)`, key-value pairs, standard Python patterns (`divmod()`).
+**Tuples are OK for:** simple coordinate pairs `(x, y)`, key-value pairs, standard Python patterns (`divmod()`), exactly 2 values with obvious meaning from context.

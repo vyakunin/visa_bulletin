@@ -339,8 +339,8 @@ def assign_to_cluster(
     if entity.canonical_cluster:
         return entity.canonical_cluster
 
-    EntityModel = config.get_entity_model()
-    ClusterModel = config.get_cluster_model()
+    EntityModel = config.get_entity_model()  # noqa: N806
+    ClusterModel = config.get_cluster_model()  # noqa: N806
 
     if normalized_cache is not None and entity.id in normalized_cache:
         entity_normalized = normalized_cache[entity.id]

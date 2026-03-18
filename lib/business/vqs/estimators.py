@@ -41,25 +41,27 @@ PER_CLASS_SHARE = {
 # Fiscal year seasonality: DOS issues visas conservatively early in FY (Oct)
 # and accelerates in Q3-Q4 (Apr-Sep) to use remaining numbers.
 # Multipliers are relative to the uniform monthly allocation (sum ≈ 12.0).
+# Mar 2026: slightly increased Oct-Feb to reduce early-FY under-prediction (from 72% toward 50%).
 FY_SEASONAL_MULTIPLIER = {
-    10: 0.50,
-    11: 0.60,
-    12: 0.70,
-    1: 0.80,
-    2: 0.85,
+    10: 0.55,
+    11: 0.65,
+    12: 0.75,
+    1: 0.85,
+    2: 0.90,
     3: 0.90,
     4: 1.00,
     5: 1.10,
     6: 1.20,
-    7: 1.30,
-    8: 1.50,
-    9: 1.55,
+    7: 1.25,
+    8: 1.40,
+    9: 1.45,
 }
 
 # Spillover: unused Family-Based visas spill to EB per INA §201(d).
 # Typically ~30K-50K additional EB visas per year, concentrated in Q4 (Jul-Sep).
+# Mar 2026: increased from 0.15 to 0.20 to better reflect actual FB→EB spillover volume.
 SPILLOVER_MONTHS = {7, 8, 9}
-SPILLOVER_BONUS_RATE = 0.15
+SPILLOVER_BONUS_RATE = 0.20
 
 
 def get_monthly_retention_lambda(

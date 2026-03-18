@@ -178,9 +178,9 @@ class TestClusteringCacheBugFix(TestCase):
         batched = BatchedUpdates(batch_size=1000, dry_run=False)
 
         # Queue multiple clusters
-        cluster1 = batched.get_or_queue_cluster("ACME CORPORATION")
-        cluster2 = batched.get_or_queue_cluster("BETA INDUSTRIES")
-        cluster3 = batched.get_or_queue_cluster("GAMMA TECHNOLOGIES")
+        _cluster1 = batched.get_or_queue_cluster("ACME CORPORATION")
+        _cluster2 = batched.get_or_queue_cluster("BETA INDUSTRIES")
+        _cluster3 = batched.get_or_queue_cluster("GAMMA TECHNOLOGIES")
 
         # Flush to create clusters
         batched.flush_clusters()

@@ -2,56 +2,46 @@
 
 This directory contains design documents for features that are planned but not yet implemented.
 
-## Overview
+## VQS / Prediction Documents
 
-These documents represent well-researched feature proposals that may be implemented in the future. They are kept separate from current documentation to avoid confusion about what is currently available vs what is planned.
+The main research log and assessment lives in **`docs/PREDICTIONS_ASSESSMENT.md`** (not in this directory). It contains numbered experiment sections documenting what was tried, results, and lessons.
 
-## Documentation Files
+| File | Status | Content |
+|------|--------|---------|
+| **VQS_RUNBOOK.md** | Current | Operational runbook: how to add I-140 data, re-run accuracy |
+| **VQS_NEW_SUGGESTIONS.md** | Current | Active improvement ideas (EB4, supply rebalance, I-140 data, retrogression, tabular ML, community baselines) |
+| **VQS_META_PARAMS_AND_TUNING.md** | Current | Meta-parameter design, tuning strategy, search space, critique/risks |
+| **VQS_FAMILY_EXTENSION_DESIGN.md** | Current | Design for extending VQS to family-based categories (not implemented) |
 
-### Company Report Card
-- **COMPANY_REPORT_CARD_DESIGN.md** - Comprehensive design for a company green card sponsorship grading system
-  - **What:** A data-driven grading system ranking companies on green card sponsorship friendliness
-  - **Value Proposition:** "Glassdoor for Immigration" using objective DOL PERM data
-  - **Key Metrics:** Volume, speed, success rates, salary levels
-  - **Status:** Design phase, not implemented
-  - **Estimated Effort:** 3-4 weeks implementation time
-  - **Market Potential:** 150K+ monthly visitors, high PR potential
+### Deleted (March 2026 cleanup)
 
-### Smart Predictions (Visa Bulletin / Green Card Readiness)
-- **SMART_PREDICTIONS_PROPOSALS.md** - Proposals for better priority-date and green-card readiness predictions
-  - **What:** Goals (next bulletin; maturity date), current approach, Reddit proposals, data not yet used, ML design (loss, features, model, validation), alternatives
-  - **Data:** Existing bulletin/cutoff data; optional DOS/USCIS ingestion
-  - **Status:** Design/proposal phase, not implemented
-  - **Related:** FEATURE_IDEAS.md (Feature 2: Wait Time Calculator), `lib/business/bulletin/cutoff_projection.py`
-- **SMART_PREDICTIONS_VQS_PROPOSAL.md** - Virtual Queue Simulation (VQS) alternative
-  - **What:** Deterministic queue simulation (demand vs supply); ML limited to hidden parameters (demand de-aggregator, attrition, supply forecaster); bi-temporal "Time Machine" data layer; Solver monthly loop
-  - **Status:** Proposal only, not implemented
-  - **See also:** SMART_PREDICTIONS_PROPOSALS.md Section 6.5 (Alternatives: VQS)
-- **VQS_TEST_REPORT.md** - VQS accuracy test report (v2 baseline; v3 improvements implemented)
-- **VQS_NEW_SUGGESTIONS.md** - Post–v3 improvement suggestions (EB4 handling, confidence, supply rebalance, more I-140 data, retrogression from history, EB1 India, long-term metrics, docs)
-- **VQS_RUNBOOK.md** - One-page runbook: how to add a new I-140 file and re-run accuracy (paths, commands, checkpoint dir)
-- **VQS_FAMILY_EXTENSION_DESIGN.md** - Design for extending VQS to family-based categories
+The following files were superseded by `docs/PREDICTIONS_ASSESSMENT.md` and deleted. Their content is preserved in git history and key ideas were extracted into the documents above.
+
+- `VQS_PROPOSAL.md` — Feature status/overview (superseded by PREDICTIONS_ASSESSMENT §3)
+- `VQS_TEST_REPORT.md` — V2 accuracy results (superseded by PREDICTIONS_ASSESSMENT §7-9)
+- `VQS_BEAT_NO_CHANGE_PROPOSAL.md` — Strategy to beat persistence (all proposals implemented; outcome in PREDICTIONS_ASSESSMENT §8-9)
+- `VQS_META_PARAMS_CRITIQUE.md` — Design critique (merged into VQS_META_PARAMS_AND_TUNING.md §6)
+- `SMART_PREDICTIONS_PROPOSALS.md` — Original ML prediction design (unexplored ML ideas extracted to VQS_NEW_SUGGESTIONS.md §9)
+- `SMART_PREDICTIONS_VQS_PROPOSAL.md` — Original VQS design (implementation is the source of truth)
+
+## Other Feature Documents
+
+| File | Status | Content |
+|------|--------|---------|
+| **COMPANY_REPORT_CARD_DESIGN.md** | Design phase | Company green card sponsorship grading system |
+| **PHASE2_CLUSTERING_OPTIMIZATION.md** | Current | Employer clustering Phase 2 performance optimization |
 
 ## When to Implement
 
-Features in this directory should be prioritized based on:
-1. **User demand** - How many users are requesting this feature?
-2. **Data availability** - Do we have the necessary data?
-3. **Implementation complexity** - How much effort is required?
-4. **Strategic value** - Does it align with product goals?
-5. **Dependencies** - What existing features must be in place first?
-
-## Moving Features Out
-
-When a feature is implemented:
-1. Move implementation details to appropriate directory (e.g., `docs/department_of_labor/`)
-2. Update the feature design doc to reference the implementation
-3. Consider deleting the design doc if fully integrated into other documentation
-4. Update `FEATURE_IDEAS.md` in the root docs directory
+Features should be prioritized based on:
+1. **User demand** — How many users are requesting this feature?
+2. **Data availability** — Do we have the necessary data?
+3. **Implementation complexity** — How much effort is required?
+4. **Strategic value** — Does it align with product goals?
+5. **Dependencies** — What existing features must be in place first?
 
 ## Related
 
-- **FEATURE_IDEAS.md** - Shorter feature ideas that may become full design docs
-- **docs/department_of_labor/** - Implemented DOL data features
-- **docs/ingest/** - Implemented ingest pipeline features
-
+- **docs/PREDICTIONS_ASSESSMENT.md** — Main prediction research log (experiments, results, lessons)
+- **lib/business/vqs/README.md** — VQS code-level documentation
+- **docs/FEATURE_IDEAS.md** — Shorter feature ideas

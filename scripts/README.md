@@ -729,7 +729,7 @@ bazel run //scripts/salary:check_sitemap_eligibility
 
 ## VQS (Virtual Queue Simulation)
 
-VQS predicts Visa Bulletin cutoffs and Green Card maturity dates using a deterministic queue simulation. See `docs/future_features/SMART_PREDICTIONS_VQS_PROPOSAL.md` and `lib/business/vqs/README.md`.
+VQS predicts Visa Bulletin cutoffs and Green Card maturity dates using a deterministic queue simulation. See `docs/PREDICTIONS_ASSESSMENT.md` for the research log and `lib/business/vqs/README.md` for code-level documentation.
 
 ### Ingest USCIS I-140
 
@@ -895,7 +895,7 @@ bazel run //scripts/cron:refresh_and_switch_py -- --resume              # Resume
 bazel run //scripts/cron:refresh_and_switch_py -- --from-step traffic_switch   # Skip pipeline; do switch, update new prod .env, safety, stop old
 ```
 
-After traffic switch the orchestrator sets up HTTPS on the new prod (certbot --nginx). To skip: set `REFRESH_SKIP_HTTPS_SETUP=1`. Domains: `REFRESH_HTTPS_DOMAINS` (default `visa-bulletin.us,www.visa-bulletin.us`). Then it re-assigns the staging static IP to the old prod (so old prod becomes inactive with a stable IP for the next cycle). Staging IP name: `REFRESH_STAGING_STATIC_IP_NAME` (default `VisaBulletinStaging-ip`). To skip: set `REFRESH_SKIP_STAGING_IP_REASSIGN=1`.
+After traffic switch the orchestrator sets up HTTPS on the new prod (certbot --nginx). To skip: set `REFRESH_SKIP_HTTPS_SETUP=1`. Domains: `REFRESH_HTTPS_DOMAINS` (default `visa-bulletin.us,www.visa-bulletin.us`). Then it re-assigns the staging static IP to the old prod (so old prod becomes inactive with a stable IP for the next cycle). **Required:** `REFRESH_STAGING_STATIC_IP_NAME` in `.env` on the orchestrator host (get from `aws lightsail get-static-ips --region us-east-1`). If unset, the step is skipped and an error is logged. To skip intentionally: set `REFRESH_SKIP_STAGING_IP_REASSIGN=1`.
 
 **Ingest timeout:** The ingest step uses a 12h SSH timeout (`INGEST_SSH_TIMEOUT_SEC` in `steps.py`) so full LCA/PERM ingest can complete. Other steps use `REFRESH_SSH_TIMEOUT` (default 4h).
 
@@ -1191,6 +1191,8 @@ tail -f /tmp/clustering.log
 ## Temporary/One-Off Scripts
 
 Temporary debugging scripts should be placed in `scripts/oneoff/` and logged to `logs/throwaway_calls.log` using `log_context()`.
+
+**Recovery one-off:** `attach_staging_ip_to_old_prod` — if graduation did not re-attach the staging static IP to the old prod (staging unreachable), run: `bazel run //scripts/oneoff:attach_staging_ip_to_old_prod -- VisaBulletin2GB`. See `.cursor/rules/deployment.mdc` (staging unreachable).
 
 See `.cursor/rules/general_logging.mdc` for details on script usage logging.
 

@@ -84,12 +84,15 @@ py_binary(
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:salary",
-        "//models/ingest:ingest",  # Include ingest models (IngestVersion, etc.)
+        "//models/ingest:ingest",
         "//models/enums:visa_program",
+        "//models:vqs",
+        "//models:raw_facts",
+        "//models:blog",
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
-        requirement("psycopg2_binary"),  # PostgreSQL adapter (Bazel uses underscores)
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     env = {

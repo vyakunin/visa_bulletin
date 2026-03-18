@@ -268,7 +268,7 @@ def add_candidates_to_golden_set(
                     reviewed_by = "needs-review"
 
                 # Create review
-                review = EmployerClusteringReview.objects.create(
+                _review = EmployerClusteringReview.objects.create(
                     employer1=emp1,
                     employer2=emp2,
                     similarity_score=candidate["similarity"],

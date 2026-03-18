@@ -177,13 +177,13 @@ def main():
 Examples:
   Inspect PERM file:
     bazel run //scripts/salary:inspect_perm_columns -- --file PERM_FY2019.xlsx
-  
+
   Inspect LCA file:
     bazel run //scripts/salary:inspect_perm_columns -- --file lca_368.xlsx
-  
+
   List all PERM files:
     bazel run //scripts/salary:inspect_perm_columns -- --list-files --type perm
-  
+
   List all LCA files:
     bazel run //scripts/salary:inspect_perm_columns -- --list-files --type lca
         """,

@@ -51,6 +51,7 @@ for app_config in apps.get_app_configs():
 # Check if models are loaded
 # IMPORTANT: Import ALL models so makemigrations can detect them
 # makemigrations runs BEFORE AppConfig.ready(), so models must be imported here
+from models.blog import BlogPost
 from models.bulletin import Bulletin
 from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
@@ -59,18 +60,22 @@ from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 from models.raw_facts import RawFactsLedger
 from models.salary import Employer, SalaryRecord
 from models.visa_cutoff_date import VisaCutoffDate
+from models.vqs import PredictedBulletin, PredictedCutoff
 
+logger.debug(f"BlogPost model: {BlogPost}")
+logger.debug(f"Bulletin model: {Bulletin}")
+logger.debug(f"DataSource model: {DataSource}")
 logger.debug(f"Employer model: {Employer}")
-logger.debug(f"SalaryRecord model: {SalaryRecord}")
+logger.debug(f"IngestRun model: {IngestRun}")
+logger.debug(f"IngestVersion model: {IngestVersion}")
 logger.debug(f"JobTitle model: {JobTitle}")
 logger.debug(f"JobTitleCluster model: {JobTitleCluster}")
 logger.debug(f"JobTitleClusteringReview model: {JobTitleClusteringReview}")
-logger.debug(f"DataSource model: {DataSource}")
-logger.debug(f"IngestRun model: {IngestRun}")
-logger.debug(f"IngestVersion model: {IngestVersion}")
-logger.debug(f"Bulletin model: {Bulletin}")
-logger.debug(f"VisaCutoffDate model: {VisaCutoffDate}")
+logger.debug(f"PredictedBulletin model: {PredictedBulletin}")
+logger.debug(f"PredictedCutoff model: {PredictedCutoff}")
 logger.debug(f"RawFactsLedger model: {RawFactsLedger}")
+logger.debug(f"SalaryRecord model: {SalaryRecord}")
+logger.debug(f"VisaCutoffDate model: {VisaCutoffDate}")
 
 # Log script execution
 script_logger.log_call(args={}, context="Creating Django migrations for models app")

@@ -72,7 +72,7 @@ class DolPermSupplyPlugin(DataSourcePlugin):
         agg = {}
 
         # Local mappings setup
-        EXTRA_MAPPINGS = {
+        EXTRA_MAPPINGS = {  # noqa: N806
             "country": [
                 "COUNTRY_OF_CITIZENSHIP",
                 "Country_of_Citizenship",

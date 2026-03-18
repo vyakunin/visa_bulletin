@@ -33,7 +33,7 @@ def normalize_month(m_str: str) -> int:
         m_map_abbr = {name: i for i, name in enumerate(calendar.month_abbr) if name}
         if m_str in m_map_abbr:
             return m_map_abbr[m_str]
-    except:
+    except (ValueError, TypeError):
         pass
     return 0
 
@@ -72,7 +72,7 @@ def normalize_visa_class_perm(row: dict, extra_mappings: dict) -> str:
             )
             if exp_months >= 60:
                 return "2nd"
-        except:
+        except (ValueError, TypeError):
             pass
         return "3rd"
 

@@ -52,7 +52,7 @@ def run_command(cmd: list[str], description: str) -> bool:
     logger.info(f"{'=' * 80}\n")
 
     try:
-        result = subprocess.run(
+        _result = subprocess.run(
             cmd,
             check=True,
             capture_output=False,  # Show output in real-time
@@ -169,10 +169,10 @@ This script runs all fix scripts in optimal order:
 Examples:
   Dry-run (analyze only):
     bazel run //scripts/salary:fix_all_data_quality_issues
-  
+
   Actually fix all issues:
     bazel run //scripts/salary:fix_all_data_quality_issues -- --fix
-  
+
   Skip specific fixes:
     bazel run //scripts/salary:fix_all_data_quality_issues -- --fix --skip-wages --skip-state-codes
         """,

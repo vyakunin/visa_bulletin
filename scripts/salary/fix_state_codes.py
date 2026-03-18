@@ -70,7 +70,6 @@ STATE_FIXES = {
     "Ore": "OR",
     "Wash": "WA",
     "Conn": "CT",
-    "Mass": "MA",
     "Vt": "VT",
     "N.H.": "NH",
     "N.J.": "NJ",
@@ -284,10 +283,10 @@ def main():
 Examples:
   Dry-run to see what would be fixed:
     bazel run //scripts/salary:fix_state_codes -- --dry-run
-  
+
   Fix all fixable state codes:
     bazel run //scripts/salary:fix_state_codes
-  
+
   Limit to first 1000 records:
     bazel run //scripts/salary:fix_state_codes -- --limit 1000
         """,

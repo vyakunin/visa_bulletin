@@ -293,13 +293,13 @@ ssh staging_2Gb_vm "docker exec -u root visa_bulletin_web pip install psycopg2-b
 
 **Root cause**: The project deleted `__init__.py` files from `webapp/`, `webapp/views/`, etc. since Bazel handles imports via runfiles. However, the Docker container uses standard Python (gunicorn), which requires `__init__.py` for package imports. The volume mount (`../:/app`) overrides the image code, exposing the missing files.
 
-**Fix**: `step_sync_code` now creates `__init__.py` files in the necessary directories after rsync. These are created on the remote host only, not in the source tree.
+**Fix**: `step_sync_code` now creates `__init__.py` files in the necessary directories after code sync. These are created on the remote host only, not in the source tree.
 
 ### Missing DB table after migration conflict (`models_blogpost`)
 
 **Discovered**: Feb 19, 2026. Web container crashes with `ProgrammingError: relation "models_blogpost" does not exist`.
 
-**Root cause**: Migration 0035 creates `BlogPost`, and 0036 deletes it. Both are marked as applied in `django_migrations`. But the code still references the model (blog views). After rsync, the code expects the table to exist.
+**Root cause**: Migration 0035 creates `BlogPost`, and 0036 deletes it. Both are marked as applied in `django_migrations`. But the code still references the model (blog views). After code sync, the code expects the table to exist.
 
 **Fix**: Manually create the table and add migration records. Long-term: ensure migration consistency before traffic switch (smoke tests catch missing tables via HTTP checks).
 
@@ -311,9 +311,9 @@ After a traffic switch, the previous production host becomes the new inactive/st
 
 | Concern | Handled by |
 |---|---|
-| Stale code | `step_sync_code` (rsync --delete) |
+| Stale code | `step_sync_code` (git pull: git fetch + git reset --hard) |
 | Stale Docker image | `docker-compose.override.yml` volume-mounts host code |
-| Missing `__init__.py` | `step_sync_code` creates them after rsync |
+| Missing `__init__.py` | `step_sync_code` creates them after code sync |
 | Stale DB schema | `step_ensure_db` runs migrations |
 | DB ownership issues | `_fix_db_ownership` in `step_ensure_db` |
 | Old/orphan containers | `start_remote_services` runs `down --remove-orphans` first |

@@ -85,8 +85,7 @@ class DosIssuancePlugin(DataSourcePlugin):
             # Fallback for old CSVs if any
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
-                    yield row
+                yield from reader
 
     def _extract_pdf_data(self, filepath: Path) -> Iterator[dict]:
         """Extract table data from PDF using pdfplumber."""

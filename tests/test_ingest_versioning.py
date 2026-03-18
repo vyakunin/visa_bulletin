@@ -103,7 +103,7 @@ class TestVersioning:
             state="CA",
         )
 
-        record1 = SalaryRecord.objects.create(
+        _record1 = SalaryRecord.objects.create(
             case_number="CASE1",
             visa_program=VisaProgram.H1B,
             employer=employer,
@@ -114,7 +114,7 @@ class TestVersioning:
             ingest_version=version1,
         )
 
-        record2 = SalaryRecord.objects.create(
+        _record2 = SalaryRecord.objects.create(
             case_number="CASE2",
             visa_program=VisaProgram.H1B,
             employer=employer,

@@ -121,7 +121,7 @@ class TestClusteringPrecision(unittest.TestCase):
         """Test that similarity thresholds are strict enough."""
         # Test that 0.90 similarity is not enough for auto-cluster
         # (should require higher threshold)
-        borderline_cases = [
+        _borderline_cases = [
             {
                 "emp1": Employer(name="ABC Corp", city="NY", state="NY"),
                 "emp2": Employer(name="XYZ Corp", city="NY", state="NY"),

@@ -196,7 +196,7 @@ async def test_prompt(prompt_template: str, test_cases: list, prompt_name: str) 
     }
 
     for name1, name2, city1, state1, city2, state2, expected, reason in test_cases:
-        pair = EmployerPair(
+        _pair = EmployerPair(
             emp1_name=name1,
             emp1_city=city1,
             emp1_state=state1,

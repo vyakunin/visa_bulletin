@@ -32,7 +32,7 @@ def test_dampening():
     # But let's see if we can run it.
 
     try:
-        res = predict_next_bulletin_and_maturity(
+        predict_next_bulletin_and_maturity(
             knowledge_date=knowledge_date,
             visa_class=visa_class,
             country=country,

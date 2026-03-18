@@ -64,7 +64,7 @@ class SupplyAllocator:
 
         # 4. Cap
         raw_total = base + cascade + fb_bonus
-        final_total = self.country_cap.apply_cap(country, raw_total, month)
+        final_total = self.country_cap.apply_cap(country, raw_total, month, visa_class)
 
         return MonthlySupplyAllocation(
             visa_class=visa_class,

@@ -19,7 +19,7 @@ alwaysApply: true
 
 **✅ Local:** `bazel run //:run_sql -- --query "SELECT COUNT(*) FROM salary_job_title"`
 **✅ Remote:** `ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //:run_sql -- --query 'SELECT COUNT(*)...'"`
-**❌ BAD:** `ssh prod_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin_blue -c '...'"`
+**❌ BAD:** `ssh prod_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin -c '...'"`
 
 **Debugging run_sql failures:**
 1. Check env vars: `ssh ubuntu@44.209.204.255 "cat /opt/visa_bulletin/.env | grep DB_"`

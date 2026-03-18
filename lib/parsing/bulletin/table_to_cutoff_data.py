@@ -26,7 +26,7 @@ class TableToCutoffData:
 
     def __init__(
         self,
-        publication_date_or_data: Union[date, datetime, "PublicationData"],
+        publication_date_or_data: Union[date, datetime, "PublicationData"],  # noqa: F821
         publication_url: str | None = None,
     ):
         """

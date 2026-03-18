@@ -63,6 +63,29 @@ Skip for: single-file modules, test directories, config directories, generated c
 
 See `.cursor/rules/scripts.mdc` for detailed requirements.
 
+## Rule: Update Rules When a Scripted Flow Required Troubleshooting
+
+**After troubleshooting a flow that is described (or should be described) in a rule, ALWAYS suggest updating that rule** so the fix is captured and future runs skip the troubleshooting.
+
+**When this applies:** any time you follow a documented workflow (deployment, migration, ingest, graduation, bazel, etc.), hit a problem not covered by the rules, and find a fix — that fix belongs in the relevant rule.
+
+**Process:**
+1. Identify which rule file governs the flow that failed (e.g. `deployment.mdc`, `bazel.mdc`, `scripts.mdc`).
+2. After the fix works, immediately propose the rule update: exact wording, placement, and the `✅ GOOD` / `❌ BAD` example if applicable.
+3. Add a **Known issues** entry or update an existing one in the relevant rule section.
+4. If the flow has no rule yet, propose creating one.
+
+**✅ GOOD:**
+```
+The graduation IP-attach step timed out at 30s but succeeded server-side.
+→ Proposed update: increase AWS CLI timeout to 120s in deployment.mdc §Graduation,
+  and add "Known issues from 2026-02-21 graduation" entry.
+```
+
+**❌ BAD:** Fix the immediate problem, close the conversation, leave the rule unchanged — next time the same troubleshooting repeats from scratch.
+
+**Rationale:** Rules are the long-term memory. A fix that isn't in a rule is forgotten the next session.
+
 ## Dependencies
 
 - Add to requirements.txt with pinned versions

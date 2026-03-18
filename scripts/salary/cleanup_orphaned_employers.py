@@ -188,10 +188,10 @@ def main():
 Examples:
   Analyze orphaned employers:
     bazel run //scripts/salary:cleanup_orphaned_employers -- --dry-run
-  
+
   Delete orphaned employers:
     bazel run //scripts/salary:cleanup_orphaned_employers -- --delete
-  
+
   Mark orphaned employers as inactive (if model supports it):
     bazel run //scripts/salary:cleanup_orphaned_employers -- --mark-inactive
         """,

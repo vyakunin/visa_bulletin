@@ -13,6 +13,7 @@ setup_django_for_tests()
 from datetime import date, datetime
 
 from lib.parsing.bulletin.bulletin_table import BulletinTable
+from lib.parsing.bulletin.parser import extract_tables_legacy
 from lib.parsing.bulletin.publication_data import PublicationData
 from lib.parsing.bulletin.table_to_cutoff_data import TableToCutoffData
 from models.enums.action_type import ActionType
@@ -245,3 +246,45 @@ def test_idempotent_save(sample_bulletin):
 
     # Should not duplicate
     assert count_first == count_second
+
+
+def test_legacy_parser_2001_2003_format():
+    """Regression: 2001-2003 bulletins have table type in row 1, not row 0."""
+    from pathlib import Path
+
+    path = Path("data/bulletin/saved_pages/visa-bulletin-for-january-2002.html")
+    if not path.exists():
+        return  # skip if file not in runfiles
+    html = path.read_text(encoding="utf-8", errors="ignore")
+    tables = extract_tables_legacy(html)
+    assert len(tables) == 2, f"Expected 2 tables (family + employment), got {len(tables)}"
+    titles = {t.title for t in tables}
+    assert titles == {"family_sponsored_final_actions", "employment_based_final_action"}
+    for t in tables:
+        assert len(t.rows) >= 1, f"Table {t.title} should have at least 1 data row"
+        assert len(t.headers) >= 1, f"Table {t.title} should have headers"
+
+
+def test_legacy_parser_family_preference_dependency():
+    """
+    Regression: extract_table_legacy() uses FamilyPreference.normalize_legacy_name()
+    for family-sponsored tables. Ensures parser BUILD declares models/enums:family_preference
+    so refresh_bulletin runfiles include it (ModuleNotFoundError on prod otherwise).
+    Uses inline HTML so this test never skips and would fail if the dep is removed.
+    """
+    html = """
+    <table>
+    <tr><td>Family-Sponsored</td><td>All Chargeability Areas</td></tr>
+    <tr><td>1st</td><td>01JAN00</td></tr>
+    </table>
+    """
+    tables = extract_tables_legacy(html)
+    assert len(tables) == 1, "Should extract one legacy table"
+    table = tables[0]
+    assert table.title == "family_sponsored_final_actions"
+    assert len(table.rows) >= 1, "Should have at least one data row"
+    # Legacy "1st" must be normalized to "F1" via FamilyPreference.normalize_legacy_name
+    assert table.rows[0][0] == "F1", (
+        "Legacy visa class '1st' should be normalized to 'F1' "
+        "(parser must depend on models/enums:family_preference)"
+    )

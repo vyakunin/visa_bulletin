@@ -440,6 +440,9 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/n
 # REFRESH_SSH_KEY_PATH=/home/ubuntu/.ssh/lightsail_visa_bulletin
 # REFRESH_REMOTE_PROJECT_ROOT=/opt/visa_bulletin
 # REFRESH_REMOTE_DB_NAME=visa_bulletin
+# Lightsail static IP names (required for graduation). Get from: aws lightsail get-static-ips --region us-east-1
+# REFRESH_STATIC_IP_NAME=    # Prod static IP name (traffic switch attaches this to new prod)
+# REFRESH_STAGING_STATIC_IP_NAME=    # Staging static IP name (reattached to old prod after graduation so staging is reachable)
 # AWS: for Lightsail start/stop (if staging is stopped). Put credentials on this instance:
 #   - Copy from your machine: scp ~/.aws/credentials this-host:~/.aws/ (then set AWS_PROFILE below), or
 #   - On this instance: aws configure (or create IAM key and set AWS_ACCESS_KEY_ID/SECRET in .env).

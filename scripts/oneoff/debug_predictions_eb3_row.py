@@ -52,9 +52,6 @@ def debug_eb3_row():
     ).order_by("-bulletin__publication_date")[:24]
 
     print("\n--- Historical Data (Last 5) ---")
-    points = []
-    dates = []
-
     base_date = datetime.date(2000, 1, 1)
 
     for h in history[:5]:  # diverse order
@@ -64,7 +61,7 @@ def debug_eb3_row():
     # X = months since start
     # Y = days since base_date
 
-    X = []
+    X = []  # noqa: N806
     y = []
 
     # Iterate reversed (oldest first)

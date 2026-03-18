@@ -288,7 +288,7 @@ class DataSourcePlugin(ABC):
         ...
 
     @abstractmethod
-    def get_format_version(self, filepath: Path) -> "FormatVersion":
+    def get_format_version(self, filepath: Path) -> "FormatVersion":  # noqa: F821
         """
         Detect format version for schema changes.
 

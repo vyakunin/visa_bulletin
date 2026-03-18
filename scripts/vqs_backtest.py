@@ -35,6 +35,7 @@ if not settings.configured:
 from lib.business.vqs.accuracy_metrics import (
     BulletinAccuracyRow,
     compute_bulletin_accuracy,
+    compute_ci_coverage,
     compute_longterm_accuracy,
 )
 from lib.business.vqs.aggregator import ExpertAggregator
@@ -1086,39 +1087,21 @@ def main():
             horizon=horizon,
         )
 
-        # Filter rows where we have both a prediction and confidence intervals
-        eligible_rows = [
-            r
-            for r in rows
-            if r.predicted_cutoff and r.confidence_low and r.confidence_high
-        ]
-
-        covered_count = 0
-        total_eligible = len(eligible_rows)
-
-        for r in eligible_rows:
-            if r.confidence_low <= r.actual_cutoff <= r.confidence_high:
-                covered_count += 1
-
-        coverage_rate = (
-            (covered_count / total_eligible * 100) if total_eligible > 0 else 0
-        )
+        ci_result = compute_ci_coverage(rows)
 
         logger.info("\nCoverage Results:")
-        logger.info(f"  Total Eligible: {total_eligible}")
-        logger.info(f"  Covered:        {covered_count}")
-        logger.info(f"  Coverage Rate:  {coverage_rate:.1f}%")
+        logger.info(f"  Total Eligible: {ci_result.total_with_ci}")
+        logger.info(f"  Covered:        {ci_result.hits}")
+        logger.info(f"  Coverage Rate:  {ci_result.coverage_rate * 100:.1f}%")
+        logger.info(f"  Mean CI Width:  {ci_result.mean_ci_width_days:.1f} days")
 
-        if total_eligible > 10:
-            logger.info("\nSample Intervals:")
-            for r in eligible_rows[:10]:
-                status = (
-                    "✅"
-                    if r.confidence_low <= r.actual_cutoff <= r.confidence_high
-                    else "❌"
-                )
+        if ci_result.by_series:
+            logger.info("\nPer-Series Coverage:")
+            for series_key, data in ci_result.by_series.items():
                 logger.info(
-                    f"  {r.visa_class}/{r.country} {r.bulletin_date}: Actual={r.actual_cutoff} CI=[{r.confidence_low}, {r.confidence_high}] {status}"
+                    f"  {series_key}: {data['coverage_rate'] * 100:.1f}% "
+                    f"({data['hits']}/{data['total']}) "
+                    f"avg width={data['mean_ci_width_days']}d"
                 )
 
     elif args.stage == "1":
@@ -1201,7 +1184,7 @@ def main():
         run_find_best_control(base_params, horizon=horizon)
 
     elif args.stage == "persistence":
-        run_persistence_baseline(base_params)
+        raise NotImplementedError("persistence baseline stage not yet implemented")
 
     elif args.stage == "audit":
         run_comparative_audit(base_params, args.years, action_type=args.action_type)

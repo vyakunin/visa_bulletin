@@ -16,6 +16,17 @@ from lib.business.vqs.demand import build_virtual_queue_snapshot
 from lib.business.vqs.estimators import get_monthly_supply
 from lib.business.vqs.meta_params import VqsMetaParams
 from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
+from lib.business.vqs.regime import (
+    classify_regime,
+    classify_regime_fy_aware,
+    fy_aware_cap_back_days,
+    fy_aware_cap_forward_days,
+    fy_aware_persistence_weight,
+    fy_aware_stickiness_days,
+    regime_persistence_weight,
+    regime_stickiness_days,
+    shrink_prediction,
+)
 from lib.business.vqs.seasonal_predictor import get_last_N_moves
 from models.enums.country import Country
 
@@ -75,6 +86,17 @@ class SolverResult:
     confidence_high: date | None = None
 
 
+@dataclass
+class SolverOutcome:
+    """Complete result from predict_next_bulletin_and_maturity."""
+
+    predicted_cutoff: date | None
+    metadata: dict
+    maturity_month: date | None
+    results: list[SolverResult]
+    confidence: str
+
+
 def get_historical_advancement_rate(
     visa_class: str,
     country: int,
@@ -93,7 +115,7 @@ def get_historical_advancement_rate(
         final_rate = recency_weight * recent_rate + (1 - recency_weight) * historical_rate
     This allows the model to detect momentum/trend changes.
     """
-    from lib.business.vqs.data_cache import get_cutoffs_for_series
+    from lib.business.vqs.data_cache import get_cutoffs_up_to
 
     # EB1 India: longer lookback for smoother historical advancement rate.
     if lookback_months is None:
@@ -101,17 +123,8 @@ def get_historical_advancement_rate(
             36 if (visa_class == "1st" and country == Country.INDIA.value) else 24
         )  # pyright: ignore[reportAttributeAccessIssue]
 
-    # Use cache to avoid DB hit in tight loops
-    all_cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-
-    # Filter for dates <= as_of. Since array is sorted by date:
-    # (could use bisect, but linear scan is fine for N<500)
-    filtered = []
-    for c in all_cutoffs:
-        if c.bulletin.publication_date <= as_of and c.cutoff_date is not None:
-            filtered.append(c)
-        elif c.bulletin.publication_date > as_of:
-            break
+    # O(log n) via bisect — cache already excludes null cutoff_date
+    filtered = get_cutoffs_up_to(visa_class, country, action_type, as_of)
 
     recent = filtered[-lookback_months:]
     if len(recent) < 6:
@@ -361,6 +374,210 @@ def get_retrogression_months_from_history(
     return int(round(sum(retro_months_list) / len(retro_months_list)))
 
 
+def _select_expert_for_regime(
+    regime_state: "RegimeState",  # noqa: F821
+    visa_class: str,
+    country: int,
+    target_month: int,
+) -> str:
+    """Select the best expert based on regime, series, and target month.
+
+    Returns the expert name from expert_pool.ALL_EXPERTS.
+    Selection rules: use persistence except when regime clearly indicates
+    movement. demand_signal's seasonal filter is too permissive during
+    stalled periods (predicts +15d forward from historical median even
+    when the series is stalled, adding consistent small errors that
+    outweigh the large wins during actual advances).
+
+    Conservative approach: only use non-persistence experts when
+    regime shows actual movement. demand_signal is safer than momentum_3m
+    because it returns persistence when seasonal doesn't predict forward.
+    """
+    from lib.business.vqs.regime import Regime
+
+    regime = regime_state.regime
+
+    if regime in (Regime.STALLED, Regime.RETROGRESSING, Regime.VOLATILE):
+        return "persistence"
+
+    avg = regime_state.avg_move or 0
+    if regime == Regime.ADVANCING and avg >= 15:
+        return "demand_signal"
+
+    if regime == Regime.RECOVERING and avg >= 10:
+        return "demand_signal"
+
+    return "persistence"
+
+
+def predict_regime_switched(
+    knowledge_date: date,
+    visa_class: str,
+    country: int,
+    action_type: str,
+    priority_date: date | None = None,
+    facts: list | None = None,
+) -> SolverOutcome:
+    """Regime-switched expert selector — no dampening stack.
+
+    For each (series, regime), picks the best expert from expert_pool
+    and returns its prediction directly. No ensemble, no stickiness,
+    no caps, no persistence blending.
+
+    Selection rules from Phase 1 backtest (scripts/vqs/backtest_experts.py).
+    """
+    from lib.business.vqs.expert_pool import ALL_EXPERTS
+    from models.raw_facts import RawFactsLedger
+
+    target_month = (knowledge_date.month % 12) + 1
+    moves = get_last_N_moves(visa_class, country, action_type, knowledge_date, 6)
+    regime_state = classify_regime(moves)
+
+    if facts is None:
+        facts = list(
+            RawFactsLedger.objects.filter(publication_date__lte=knowledge_date)
+        )
+
+    # Non-eligible series (non-retrogressed ROW, Mexico, Philippines): persistence
+    PHYSICS_ELIGIBLE_SERIES = {  # noqa: N806
+        ("2nd", Country.INDIA.value),
+        ("3rd", Country.INDIA.value),
+        ("1st", Country.INDIA.value),
+        ("2nd", Country.CHINA.value),
+        ("3rd", Country.CHINA.value),
+        ("1st", Country.CHINA.value),
+    }
+
+    current_cutoff = get_cutoff_at_date(
+        visa_class, country, action_type, knowledge_date
+    )
+
+    if knowledge_date.month == 12:
+        first_future = date(knowledge_date.year + 1, 1, 1)
+    else:
+        first_future = date(knowledge_date.year, knowledge_date.month + 1, 1)
+
+    base_meta = {
+        "regime": regime_state.regime.value,
+        "regime_confidence": regime_state.confidence,
+        "regime_avg_move": regime_state.avg_move,
+        "regime_volatility": regime_state.volatility,
+        "moves": moves,
+        "persistence_weight": 0.0,
+        "fy_boundary": False,
+    }
+
+    if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES or visa_class == "4th":
+        result = SolverResult(month=first_future, cutoff_date=current_cutoff, consumed=0)
+        meta = {**base_meta, "selected_expert": "persistence", "expert_preds": {}}
+        return SolverOutcome(current_cutoff, meta, None, [result], "low")
+
+    expert_name = _select_expert_for_regime(
+        regime_state, visa_class, country, target_month
+    )
+    expert_fn = ALL_EXPERTS.get(expert_name)
+    if expert_fn is None:
+        expert_fn = ALL_EXPERTS["persistence"]
+        expert_name = "persistence"
+
+    predicted_cutoff = expert_fn(
+        visa_class, country, action_type, knowledge_date, facts=facts
+    )
+
+
+    if predicted_cutoff is None:
+        predicted_cutoff = current_cutoff
+
+    # Run all experts for metadata / explainability
+    expert_preds = {}
+    for name, fn in ALL_EXPERTS.items():
+        try:
+            p = fn(visa_class, country, action_type, knowledge_date, facts=facts)
+            expert_preds[name] = p
+        except Exception:
+            expert_preds[name] = None
+
+    # Confidence intervals from expert disagreement
+    valid_preds = [p for p in expert_preds.values() if p is not None]
+    confidence_low = None
+    confidence_high = None
+    spread_days = 0
+    if len(valid_preds) >= 2 and predicted_cutoff:
+        min_pred = min(valid_preds)
+        max_pred = max(valid_preds)
+        spread_days = (max_pred - min_pred).days
+        confidence_low = predicted_cutoff - timedelta(days=int(spread_days * 0.3))
+        confidence_high = predicted_cutoff + timedelta(days=int(spread_days * 0.7))
+
+    # Build multi-step results.
+    # Step 0: use the single-step expert prediction (correct by construction).
+    # Steps 1+: chain forward using the expert's trajectory function, but
+    # override step 0 with the single-step prediction to avoid mismatch
+    # (e.g. demand_signal uses trajectory_seasonal_median which lacks
+    # the demand-braking/persistence-fallback logic).
+    from lib.business.vqs.expert_pool import ALL_EXPERT_TRAJECTORIES
+
+    results = []
+    maturity_month = None
+    max_steps = 24
+    spread_days_val = spread_days
+
+    traj_fn = ALL_EXPERT_TRAJECTORIES.get(expert_name)
+    trajectory_rest: list[date | None] = []
+    if traj_fn:
+        full_traj = traj_fn(
+            visa_class, country, action_type, knowledge_date, max_steps, facts
+        )
+        trajectory_rest = full_traj[1:] if len(full_traj) > 1 else []
+
+    all_cutoffs = [predicted_cutoff] + list(trajectory_rest)
+    for i, cutoff in enumerate(all_cutoffs[:max_steps]):
+        if knowledge_date.month + i >= 12:
+            step_year = knowledge_date.year + (knowledge_date.month + i) // 12
+            step_month = (knowledge_date.month + i) % 12 + 1
+        else:
+            step_year = knowledge_date.year
+            step_month = knowledge_date.month + i + 1
+        step_date = date(step_year, step_month, 1)
+        ci_low = cutoff - timedelta(days=int(spread_days_val * 0.3)) if cutoff and spread_days_val > 0 else None
+        ci_high = cutoff + timedelta(days=int(spread_days_val * 0.7)) if cutoff and spread_days_val > 0 else None
+        results.append(SolverResult(
+            month=step_date,
+            cutoff_date=cutoff,
+            consumed=0,
+            confidence_low=ci_low,
+            confidence_high=ci_high,
+        ))
+        if (
+            priority_date is not None
+            and cutoff is not None
+            and cutoff >= priority_date
+            and maturity_month is None
+        ):
+            maturity_month = step_date
+            break
+
+    confidence = compute_confidence(facts, visa_class, country)
+
+    pace = get_historical_advancement_rate(
+        visa_class, country, action_type, knowledge_date
+    )
+
+    meta = {
+        **base_meta,
+        "selected_expert": expert_name,
+        "expert_preds": expert_preds,
+        "expert_weights": {expert_name: 1.0},
+        "pace_days_per_month": pace,
+        "confidence_low": confidence_low,
+        "confidence_high": confidence_high,
+        "fy_boundary_target_month": None,
+        "fy_phase": None,
+    }
+
+    return SolverOutcome(predicted_cutoff, meta, maturity_month, results, confidence)
+
+
 def predict_next_bulletin_and_maturity(
     knowledge_date: date,
     visa_class: str,
@@ -370,9 +587,11 @@ def predict_next_bulletin_and_maturity(
     monthly_supply: int | None = None,
     facts: list | None = None,
     meta: "VqsMetaParams | None" = None,
-    aggregator: "ExpertAggregator | None" = None,
+    aggregator: "ExpertAggregator | None" = None,  # noqa: F821
     force_physics: bool = False,
-) -> tuple[date | None, date | None, list[SolverResult], str]:
+    metric_config: "MetricConfig | None" = None,  # noqa: F821
+    fy_boundary_aware: bool = False,
+) -> SolverOutcome:
     """
     Run VQS solver and return next bulletin cutoff, maturity month, and all step results.
 
@@ -390,8 +609,9 @@ def predict_next_bulletin_and_maturity(
         force_physics: If True, bypasses the ExpertAggregator and forces the Physics Engine.
 
     Returns:
-        (next_cutoff_date, maturity_month, results, confidence).
-        next_cutoff_date: predicted cutoff for the first future month.
+        SolverOutcome with:
+        predicted_cutoff: predicted cutoff for the first future month.
+        metadata: dict with regime, expert weights, pace, persistence weight, CI.
         maturity_month: first month (first day) where cutoff >= priority_date, or None.
         results: list of SolverResult for each month (up to maturity or max).
         confidence: "high" | "medium" | "low" from I-140 data availability.
@@ -402,19 +622,29 @@ def predict_next_bulletin_and_maturity(
     if meta is None:
         meta = VqsMetaParams.defaults()
 
-    # ... (Regime Shock Override logic omitted for brevity in diff, but preserved in file via context) ...
+    # --- REGIME-AWARE PARAMETER ADAPTATION ---
+    target_month = (knowledge_date.month % 12) + 1
+    moves = get_last_N_moves(visa_class, country, action_type, knowledge_date, 6)
 
-    # --- REGIME SHOCK OVERRIDE (Phase 8A) ---
-    # If a significant retrogression (>30 days) occurred recently, we force the model
-    # into "lockdown" mode by maximizing persistence weight.
-    # Iteration 3: Removed Q4 exemption. A significant shock resets expectations regardless of season.
-    moves = get_last_N_moves(visa_class, country, action_type, knowledge_date, 3)
-    if moves:
-        min_move = min(moves)
-        if min_move <= -30:
-            # target_month = (knowledge_date.month % 12) + 1
-            # logger.info(f"Regime Shock ({min_move} days) in {visa_class}/{country} @ {knowledge_date}. Forcing Persistence.")
-            meta = replace(meta, ensemble_persistence_weight=0.98, stickiness_days=180)
+    if fy_boundary_aware:
+        regime_state = classify_regime_fy_aware(moves, target_month)
+        meta = replace(
+            meta,
+            ensemble_persistence_weight=fy_aware_persistence_weight(regime_state),
+            stickiness_days=fy_aware_stickiness_days(regime_state),
+            cap_forward_days=fy_aware_cap_forward_days(regime_state, meta.cap_forward_days),
+            cap_back_days=fy_aware_cap_back_days(regime_state, meta.cap_back_days),
+            ensemble_stickiness_days=0 if target_month in (8, 9, 10) else meta.ensemble_stickiness_days,
+        )
+    else:
+        regime_state = classify_regime(moves)
+        meta = replace(
+            meta,
+            ensemble_persistence_weight=regime_persistence_weight(regime_state),
+            stickiness_days=regime_stickiness_days(regime_state),
+        )
+
+    fy_boundary = fy_boundary_aware and target_month in (8, 9, 10)
     # ----------------------------------------
 
     if facts is None:
@@ -453,18 +683,29 @@ def predict_next_bulletin_and_maturity(
 
     # Fix 1: Exclude EB4 from solver (persistence is better)
     if visa_class == "4th":
-        # Return current setup with low confidence
         current_cutoff = get_cutoff_at_date(
             visa_class, country, action_type, knowledge_date
         )
-        # If current_cutoff is None, return None (no prediction) instead of fallback
-        return (current_cutoff, None, [], "low")
+        eb4_meta = {
+            "regime": regime_state.regime.value,
+            "regime_confidence": regime_state.confidence,
+            "regime_avg_move": regime_state.avg_move,
+            "regime_volatility": regime_state.volatility,
+            "pace_days_per_month": None,
+            "persistence_weight": 1.0,
+            "expert_weights": {"persistence": 1.0},
+            "expert_preds": {},
+            "confidence_low": None,
+            "confidence_high": None,
+            "moves": moves,
+        }
+        return SolverOutcome(current_cutoff, eb4_meta, None, [], "low")
 
     # PHASE 3 IMPROVEMENT: Confidence Gate
     # Only run physics for series where we have signal (Retrogressed).
     # Non-retrogressed series (ROW, Mexico, Philippines) have 0% beat rate with physics
     # and add massive noise. Default them to persistence.
-    PHYSICS_ELIGIBLE_SERIES = {
+    PHYSICS_ELIGIBLE_SERIES = {  # noqa: N806
         ("2nd", Country.INDIA.value),
         ("3rd", Country.INDIA.value),
         ("1st", Country.INDIA.value),
@@ -474,14 +715,10 @@ def predict_next_bulletin_and_maturity(
     }
 
     if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES:
-        # Use persistence-only prediction but still populate results
         current_cutoff = get_cutoff_at_date(
             visa_class, country, action_type, knowledge_date
         )
 
-        # Create a simple persistence-based result for maturity validation
-        # This ensures all series return at least one result, enabling longterm validation
-        # Calculate first day of month after knowledge_date
         if knowledge_date.month == 12:
             first_future = date(knowledge_date.year + 1, 1, 1)
         else:
@@ -493,8 +730,44 @@ def predict_next_bulletin_and_maturity(
             consumed=0,
         )
 
-        # Return persistence prediction with populated results
-        return (current_cutoff, None, [persistence_result], "low")
+        persist_meta = {
+            "regime": regime_state.regime.value,
+            "regime_confidence": regime_state.confidence,
+            "regime_avg_move": regime_state.avg_move,
+            "regime_volatility": regime_state.volatility,
+            "pace_days_per_month": None,
+            "persistence_weight": 1.0,
+            "expert_weights": {"persistence": 1.0},
+            "expert_preds": {},
+            "confidence_low": None,
+            "confidence_high": None,
+            "moves": moves,
+        }
+        return SolverOutcome(current_cutoff, persist_meta, None, [persistence_result], "low")
+
+    # --- TIER 2: FY TRANSITION MODEL ---
+    # At FY boundaries, the conditional transition model provides a prediction
+    # based on utilization rate, backlog depth, and cross-series signals.
+    # This prediction is blended with the standard ensemble at weight 0.6 (Tier 2)
+    # vs 0.4 (Tier 1 ensemble), giving the transition model dominant influence
+    # at the specific months where it has structural insight.
+    tier2_prediction = None
+    tier2_diagnostics = None
+    if fy_boundary:
+        from lib.business.vqs.fy_transition_model import predict_fy_transition
+
+        tier2_result = predict_fy_transition(
+            visa_class, country, action_type, knowledge_date,
+            target_month=target_month, facts=facts,
+        )
+        if tier2_result.predicted_cutoff is not None:
+            tier2_prediction = tier2_result.predicted_cutoff
+            tier2_diagnostics = tier2_result.diagnostics
+            logger.debug(
+                f"[Tier2] {visa_class}/{country} target_m={target_month}: "
+                f"pred={tier2_prediction} method={tier2_result.method} "
+                f"move={tier2_result.predicted_move_days}d"
+            )
 
     # PHASE 5: Online Expert Aggregation
     # Use the ensemble of experts (Persistence, Seasonal, Linear, Momentum, etc.)
@@ -502,7 +775,11 @@ def predict_next_bulletin_and_maturity(
     from lib.business.vqs.aggregator import ExpertAggregator
 
     if aggregator is None:
-        aggregator = ExpertAggregator()
+        from lib.business.vqs.metric_config import MetricConfig
+
+        aggregator = ExpertAggregator(
+            metric_config=metric_config or MetricConfig.defaults()
+        )
 
     # Warmup weights by replaying history for this series
     # (aggregator.warmup_history checks self.warmed_series internally)
@@ -513,6 +790,28 @@ def predict_next_bulletin_and_maturity(
     ensemble_cutoff, metadata = aggregator.predict(
         visa_class, country, action_type, knowledge_date, facts=facts
     )
+
+    # Blend Tier 2 prediction with ensemble when at FY boundary
+    if tier2_prediction is not None:
+        if metadata is None:
+            metadata = {}
+        metadata["tier2_prediction"] = tier2_prediction.isoformat()
+        metadata["tier2_diagnostics"] = tier2_diagnostics
+
+        if ensemble_cutoff is not None:
+            anchor = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
+            if anchor is not None:
+                tier2_weight = 0.6
+                t2_delta = (tier2_prediction - anchor).days
+                t1_delta = (ensemble_cutoff - anchor).days
+                blended_delta = int(t2_delta * tier2_weight + t1_delta * (1 - tier2_weight))
+                ensemble_cutoff = anchor + timedelta(days=blended_delta)
+                metadata["tier2_weight"] = tier2_weight
+            else:
+                metadata["tier2_weight"] = 0.5
+        else:
+            ensemble_cutoff = tier2_prediction
+            metadata["tier2_weight"] = 1.0
 
     # Compute confidence intervals from expert disagreement
     confidence_low = None
@@ -553,30 +852,11 @@ def predict_next_bulletin_and_maturity(
     final_ensemble_cutoff = None
     if ensemble_cutoff is not None and not force_physics:
         if current_cutoff is None:
-            # If no history, just return the prediction raw
-            return (ensemble_cutoff, None, [], confidence)
+            return SolverOutcome(ensemble_cutoff, metadata, None, [], confidence)
 
-        # Apply post-step logic (Stickiness, Caps, Blend) from Meta Params
-        # This allows Stage 2 (Control) tuning to effective on the ensemble output
-        if meta:
-            # Calculate advancement rate for regime-based stickiness
-            adv_rate = get_historical_advancement_rate(
-                visa_class,
-                country,
-                action_type,
-                knowledge_date,
-                lookback_months=meta.lookback_months_default,
-                recency_weight=meta.advancement_rate_recency_weight,
-            )
-
-            final_ensemble_cutoff = meta.apply_post_step(
-                current_cutoff=current_cutoff,
-                raw_next_cutoff=ensemble_cutoff,
-                confidence=confidence,
-                advancement_rate=adv_rate,
-            )
-        else:
-            final_ensemble_cutoff = ensemble_cutoff
+        # Pass raw ensemble prediction through to trajectory blending.
+        # Post-step shaping is applied once at the end to avoid double dampening.
+        final_ensemble_cutoff = ensemble_cutoff
 
     # Fallback to current_cutoff (Persistence) if ensemble fails completely
     if current_cutoff is None:
@@ -642,11 +922,21 @@ def predict_next_bulletin_and_maturity(
         meta,
     )
 
+    # Build ensemble trajectory for multi-step blending
+    ensemble_traj: list[date | None] | None = None
+    if final_ensemble_cutoff is not None and meta.ensemble_trajectory_blend > 0:
+        ensemble_traj = aggregator.predict_trajectory(
+            visa_class, country, action_type, knowledge_date,
+            steps=24, facts=facts,
+        )
+
     results: list[SolverResult] = []
     raw_next_cutoff: date | None = None
     maturity_month: date | None = None
 
-    # Run the monthly simulation loop
+    blend_alpha = meta.ensemble_trajectory_blend
+    decay = meta.ensemble_trajectory_decay
+
     for i, res in enumerate(
         run_monthly_loop(
             queue,
@@ -657,9 +947,18 @@ def predict_next_bulletin_and_maturity(
             retrogression_months=retro,
         )
     ):
-        # If we have a high-stability ensemble prediction for month 1, override the physics month 1
-        if i == 0 and final_ensemble_cutoff is not None:
-            res = replace(res, cutoff_date=final_ensemble_cutoff)
+        # Blend physics with ensemble trajectory at each step
+        if ensemble_traj is not None and i < len(ensemble_traj):
+            step_weight = blend_alpha * (decay ** i)
+            ens_pred = ensemble_traj[i]
+            phys_pred = res.cutoff_date
+
+            if ens_pred is not None and phys_pred is not None and step_weight > 0.01:
+                delta = (ens_pred - phys_pred).days
+                blended = phys_pred + timedelta(days=int(delta * step_weight))
+                res = replace(res, cutoff_date=blended)
+            elif i == 0 and final_ensemble_cutoff is not None:
+                res = replace(res, cutoff_date=final_ensemble_cutoff)
 
         results.append(res)
         if i == 0:
@@ -674,9 +973,38 @@ def predict_next_bulletin_and_maturity(
             maturity_month = res.month
             break
 
-    # Apply Post-Step Shaping to the immediate next bulletin prediction
-    final_next_cutoff = meta.apply_post_step(
-        current_cutoff, raw_next_cutoff, confidence, advancement_rate=avg_adv
-    )
+    # Regime-aware persistence blending for all predictions.
+    # FY-aware mode uses phase-specific weights; standard mode uses regime-based weights.
+    if fy_boundary_aware:
+        persistence_w = fy_aware_persistence_weight(regime_state)
+    else:
+        persistence_w = regime_persistence_weight(regime_state)
+    if persistence_w > 0.01 and current_cutoff is not None:
+        for i, res in enumerate(results):
+            if res.cutoff_date is not None:
+                delta = (res.cutoff_date - current_cutoff).days
+                blended_delta = int(delta * (1.0 - persistence_w))
+                results[i] = replace(res, cutoff_date=current_cutoff + timedelta(days=blended_delta))
 
-    return (final_next_cutoff, maturity_month, results, confidence)
+    if final_ensemble_cutoff is not None:
+        ensemble_delta = (final_ensemble_cutoff - current_cutoff).days
+        blended_delta = int(ensemble_delta * (1.0 - persistence_w))
+        final_next_cutoff = current_cutoff + timedelta(days=blended_delta)
+    else:
+        final_next_cutoff = meta.apply_post_step(
+            current_cutoff, raw_next_cutoff, confidence, advancement_rate=avg_adv
+        )
+
+    # Enrich metadata with regime and pace signals for explainability
+    metadata["regime"] = regime_state.regime.value
+    metadata["regime_confidence"] = regime_state.confidence
+    metadata["regime_avg_move"] = regime_state.avg_move
+    metadata["regime_volatility"] = regime_state.volatility
+    metadata["pace_days_per_month"] = avg_adv
+    metadata["persistence_weight"] = persistence_w
+    metadata["fy_boundary"] = fy_boundary
+    metadata["fy_boundary_target_month"] = target_month if fy_boundary else None
+    metadata["fy_phase"] = regime_state.fy_phase.value if hasattr(regime_state, 'fy_phase') else None
+    metadata["moves"] = moves
+
+    return SolverOutcome(final_next_cutoff, metadata, maturity_month, results, confidence)

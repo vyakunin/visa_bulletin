@@ -158,7 +158,6 @@ def _phase2_cluster(config: JobTitleClusteringConfig):
         if job_title.canonical_cluster:
             continue
 
-        old_cluster = job_title.canonical_cluster
         cluster = clustering_engine.assign_to_cluster(
             job_title,
             config,

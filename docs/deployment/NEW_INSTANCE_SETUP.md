@@ -368,7 +368,7 @@ ssh prod_2Gb_vm
    - **Profile:** Install AWS CLI and configure profile (e.g. `aws configure --profile visa-bulletin-deploy`). In `.env` set `AWS_PROFILE=visa-bulletin-deploy`.
    - **Env vars:** Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION=us-east-1` in `.env` or export before running the orchestrator.
 
-`setup_new_instance.sh` adds commented REFRESH_* and AWS placeholders to `.env`; uncomment and set values for the instance that will run the orchestrator (prod).
+`setup_new_instance.sh` adds commented REFRESH_* and AWS placeholders to `.env`; uncomment and set values for the instance that will run the orchestrator (prod). **Required for graduation:** Uncomment and set `REFRESH_STATIC_IP_NAME` (prod static IP name) and `REFRESH_STAGING_STATIC_IP_NAME` (staging static IP name). Get names from `aws lightsail get-static-ips --region us-east-1`.
 
 ## System Update
 

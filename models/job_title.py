@@ -307,10 +307,6 @@ class JobTitle(models.Model):
                 if pattern not in role_word_patterns
             ]
 
-        has_role_word = any(
-            re.search(pattern, normalized) for pattern in role_word_patterns
-        )
-
         for pattern in patterns_to_apply:
             normalized = re.sub(pattern, " ", normalized)
 

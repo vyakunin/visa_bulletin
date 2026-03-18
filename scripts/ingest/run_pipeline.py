@@ -483,7 +483,7 @@ def discover_and_ingest(
 ):
     """Discover new sources and ingest all pending (excludes sources with FAILED runs unless --include-failed)."""
     logger.info("Discovering new sources...")
-    discovered = discover_sources(domain if not all_domains else None)
+    _discovered = discover_sources(domain if not all_domains else None)
 
     if no_ingest_new:
         logger.info(

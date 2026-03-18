@@ -20,9 +20,9 @@ from django.db import connection
 
 cursor = connection.cursor()
 cursor.execute("""
-    SELECT app, name, applied 
-    FROM django_migrations 
-    WHERE app='models' 
+    SELECT app, name, applied
+    FROM django_migrations
+    WHERE app='models'
     ORDER BY id;
 """)
 

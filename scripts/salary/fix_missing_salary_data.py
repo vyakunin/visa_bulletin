@@ -227,10 +227,10 @@ def main():
 Examples:
   Analyze missing salary data:
     bazel run //scripts/salary:fix_missing_salary_data
-  
+
   Preview fixes (dry-run):
     bazel run //scripts/salary:fix_missing_salary_data -- --limit 1000
-  
+
   Actually fix records:
     bazel run //scripts/salary:fix_missing_salary_data -- --fix
         """,

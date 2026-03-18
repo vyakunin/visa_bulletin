@@ -4,7 +4,7 @@ Extension of the Virtual Queue Simulation (VQS) to Family-Sponsored preference c
 
 ## References
 
-- [VQS Proposal](SMART_PREDICTIONS_VQS_PROPOSAL.md)
+- [VQS Assessment](../PREDICTIONS_ASSESSMENT.md)
 - VQS implementation plan (Phase 3.5) – see project plan for Phases 1–3 and Family tasks.
 - Current EB implementation: `lib/business/vqs/`, `models/raw_facts.py`, `models/visa_cutoff_date.py`
 

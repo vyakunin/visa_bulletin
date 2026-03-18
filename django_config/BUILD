@@ -25,6 +25,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//webapp:urls",
+        "//webapp/views/seo:sitemaps",
         requirement("Django"),
     ],
 )

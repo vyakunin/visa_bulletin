@@ -286,7 +286,7 @@ class TestH1BSalaryDataSourcePlugin:
         )
 
         # Create alternative DataSource with same local_file_path but original filename in URL
-        alt_source = DataSource.objects.create(
+        _alt_source = DataSource.objects.create(
             url="file://H-1B_Disclosure_Data_FY15_Q4.xlsx",
             domain=DataDomain.DOL,
             source_type=SourceType.LCA,

@@ -26,7 +26,7 @@ except ImportError:
     TQDM_AVAILABLE = False
 
     # Create a dummy tqdm class if not available
-    class tqdm:
+    class tqdm:  # noqa: N801
         def __init__(self, *args, **kwargs):
             pass
 

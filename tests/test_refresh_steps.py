@@ -215,6 +215,18 @@ def test_step_start_services_docker_failure(tmp_path: Path) -> None:
         step_start_services(config, runner, ctx)
 
 
+def test_nginx_default_server_conf_uses_unescaped_variables() -> None:
+    """Nginx default-server.conf must use $http_host, $remote_addr (not \\$...) so Host header is correct."""
+    path = Path(__file__).resolve().parent.parent / "deployment" / "nginx" / "default-server.conf"
+    conf = path.read_text()
+    assert "$http_host" in conf, "Host header must use nginx variable $http_host"
+    assert "\\$host" not in conf and "\\$http_host" not in conf
+    assert "$remote_addr" in conf
+    assert "\\$remote_addr" not in conf
+    assert "$scheme" in conf
+    assert "\\$scheme" not in conf
+
+
 # ---------------------------------------------------------------------------
 # Heavy step wrappers: verify failure propagation
 # ---------------------------------------------------------------------------

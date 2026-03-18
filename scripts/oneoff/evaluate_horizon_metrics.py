@@ -49,8 +49,8 @@ def predict_linear(visa_class, country, action_type, knowledge_date, target_date
         # Fallback to naive if not enough history
         return valid_history[0].cutoff_date if valid_history else None
 
-    BASE_DATE = datetime.date(2000, 1, 1)
-    X = []
+    BASE_DATE = datetime.date(2000, 1, 1)  # noqa: N806
+    X = []  # noqa: N806
     y = []
 
     for h in reversed(valid_history):
@@ -65,13 +65,13 @@ def predict_linear(visa_class, country, action_type, knowledge_date, target_date
         return valid_history[0].cutoff_date
 
     try:
-        A = np.vstack([X, np.ones(len(X))]).T
+        A = np.vstack([X, np.ones(len(X))]).T  # noqa: N806
         m, c = np.linalg.lstsq(A, y, rcond=None)[0]
 
         target_idx = target_date.year * 12 + target_date.month
         pred_days = m * target_idx + c
         return BASE_DATE + datetime.timedelta(days=int(pred_days))
-    except:
+    except (ValueError, TypeError, np.linalg.LinAlgError):
         return valid_history[0].cutoff_date
 
 

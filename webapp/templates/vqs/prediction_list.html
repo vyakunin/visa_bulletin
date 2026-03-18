@@ -11,18 +11,14 @@
             Historical Archive
         </div>
         <ul class="list-group list-group-flush">
-            {% for bulletin in bulletins %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                <a
-                    href="{% url 'prediction_detail' year=bulletin.target_bulletin_month.year month=bulletin.target_bulletin_month.month %}">
-                    Predictions for {{ bulletin.target_bulletin_month|date:"F Y" }}
+            {% for month in months %}
+            <li class="list-group-item">
+                <a href="{% url 'prediction_detail' year=month.year month=month.month %}">
+                    Predictions for {{ month|date:"F Y" }}
                 </a>
-                <span class="badge bg-secondary rounded-pill">
-                    Knowledge Date: {{ bulletin.prediction_date|date:"M d, Y" }}
-                </span>
             </li>
             {% empty %}
-            <li class="list-group-item text-muted">No predictions found.</li>
+            <li class="list-group-item text-muted">No bulletins found.</li>
             {% endfor %}
         </ul>
     </div>

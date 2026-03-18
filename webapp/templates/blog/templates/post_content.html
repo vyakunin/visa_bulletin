@@ -7,26 +7,113 @@
 
     <hr>
 
-    <h3>1. The Big Surprises</h3>
-    <p><em>How did the actual bulletin differ from our AI model's predictions?</em></p>
+    <h3>1. Prediction vs Reality</h3>
+    <p><em>Where our model diverged from the actual bulletin (threshold: &gt;14 days).</em></p>
     {% if surprises %}
-    <ul class="list-group mb-4">
+
+    {% if ci_coverage %}
+    <div class="alert alert-light border mb-3 py-2">
+        <small>
+            <strong>Confidence interval coverage:</strong>
+            {{ ci_coverage.hits }} of {{ ci_coverage.total_with_ci }} predictions
+            ({{ ci_coverage.coverage_pct }}%) fell within our confidence intervals.
+            Average CI width: {{ ci_coverage.mean_ci_width_days }} days.
+        </small>
+    </div>
+    {% endif %}
+
+    <div class="row row-cols-1 g-3 mb-4">
         {% for item in surprises %}
-        <li class="list-group-item">
-            <strong>{{ item.category }} - {{ item.country }}</strong>:
-            Predicted <span class="text-muted">{{ item.predicted|date:"d M Y" }}</span>,
-            Actual <span class="fw-bold">{{ item.actual|date:"d M Y" }}</span>.
-            <br>
-            <span
-                class="badge {% if item.is_positive %}bg-success{% else %}bg-danger{% endif %} bg-opacity-10 text-dark">
-                {{ item.delta_text }}
-            </span>
-            <span class="small text-muted">{{ item.narrative }}</span>
-        </li>
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title d-flex align-items-center justify-content-between mb-3">
+                        <span>{{ item.label }} <small class="text-muted">({{ item.action_type }})</small></span>
+                        <span class="badge {% if item.is_positive %}bg-success{% else %}bg-danger{% endif %} bg-opacity-25 text-dark">
+                            {{ item.verdict }}
+                        </span>
+                    </h6>
+                    <div class="row row-cols-2 row-cols-md-4 g-2 text-center mb-2">
+                        {% if item.previous %}
+                        <div class="col">
+                            <small class="text-muted d-block">Previous Cutoff</small>
+                            <span>{{ item.previous|date:"d M Y" }}</span>
+                        </div>
+                        {% endif %}
+                        <div class="col">
+                            <small class="text-muted d-block">We Predicted</small>
+                            <span>{{ item.predicted|date:"d M Y" }}</span>
+                            {% if item.predicted_delta is not None %}
+                            <br><small class="text-muted">{% if item.predicted_delta >= 0 %}+{% endif %}{{ item.predicted_delta }}d</small>
+                            {% endif %}
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Actual Result</small>
+                            <strong>{{ item.actual|date:"d M Y" }}</strong>
+                            {% if item.actual_delta is not None %}
+                            <br><small class="text-muted">{% if item.actual_delta >= 0 %}+{% endif %}{{ item.actual_delta }}d</small>
+                            {% endif %}
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Miss</small>
+                            <strong class="{% if item.is_positive %}text-success{% else %}text-danger{% endif %}">
+                                {% if item.miss_days > 0 %}+{% endif %}{{ item.miss_days }}d
+                            </strong>
+                        </div>
+                    </div>
+
+                    {% if item.expert_breakdown %}
+                    <details class="mt-2">
+                        <summary class="small fw-bold">Model Breakdown</summary>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm table-bordered mb-0" style="font-size: 0.85rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Expert</th>
+                                        <th class="text-end">Weight</th>
+                                        <th class="text-center">Predicted</th>
+                                        <th class="text-end">vs Baseline</th>
+                                        <th class="text-end">vs Actual</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for e in item.expert_breakdown %}
+                                    <tr>
+                                        <td>{{ e.display_name }}</td>
+                                        <td class="text-end">{{ e.weight_pct }}%</td>
+                                        <td class="text-center">
+                                            {% if e.predicted %}{{ e.predicted|date:"d M Y" }}{% else %}<span class="text-muted">--</span>{% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            {% if e.delta_from_persistence is not None %}
+                                                {% if e.delta_from_persistence >= 0 %}+{% endif %}{{ e.delta_from_persistence }}d
+                                            {% else %}
+                                                <span class="text-muted">--</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            {% if e.delta_from_actual is not None %}
+                                                <span class="{% if e.delta_from_actual == 0 %}text-success{% elif e.delta_from_actual > -15 and e.delta_from_actual < 15 %}text-warning{% else %}text-danger{% endif %}">
+                                                    {% if e.delta_from_actual >= 0 %}+{% endif %}{{ e.delta_from_actual }}d
+                                                </span>
+                                            {% else %}
+                                                <span class="text-muted">--</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
         {% endfor %}
-    </ul>
+    </div>
     {% else %}
-    <p>Our model's predictions were largely in line with this month's bulletin, with no major statistical deviations.
+    <p>Our model's predictions were largely in line with this month's bulletin, with no major deviations (&gt;14 days).
     </p>
     {% endif %}
 
@@ -39,7 +126,7 @@
     {% if movements.family %}
     <ul>
         {% for m in movements.family %}
-        <li>{{ m }}</li>
+        <li>{{ m|safe }}</li>
         {% endfor %}
     </ul>
     {% else %}
@@ -50,21 +137,123 @@
     {% if movements.employment %}
     <ul>
         {% for m in movements.employment %}
-        <li>{{ m }}</li>
+        <li>{{ m|safe }}</li>
         {% endfor %}
     </ul>
     {% else %}
     <p>No significant movement observed in Employment-Based categories.</p>
     {% endif %}
 
+    {% if historical_pace %}
+    <h4 class="mt-3">Historical Pace (12-month average)</h4>
+    <div class="table-responsive">
+        <table class="table table-sm table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>Category</th>
+                    <th>12-mo avg (days/mo)</th>
+                    <th>vs Seasonal Avg</th>
+                    <th>Trend</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in historical_pace %}
+                <tr>
+                    <td>{{ p.label }}</td>
+                    <td>{{ p.avg_12m_pace }}</td>
+                    <td>{% if p.seasonal_deviation > 0 %}+{% endif %}{{ p.seasonal_deviation }}</td>
+                    <td style="white-space: nowrap">
+                        {% if p.seasonal_deviation > 20 %}
+                            <span class="text-success">Faster</span>
+                        {% elif p.seasonal_deviation < -20 %}
+                            <span class="text-danger">Slower</span>
+                        {% else %}
+                            <span class="text-muted">Typical</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <hr>
 
     <h3>3. Future Outlook</h3>
-    <div class="alert alert-light border">
-        {{ outlook|linebreaks }}
+
+    {% if outlook.summary %}
+    <div class="alert alert-light border mb-3">
+        <p class="mb-0">{{ outlook.summary }}</p>
     </div>
+    {% endif %}
+
+    {% if outlook.series_outlooks %}
+    <div class="row row-cols-1 row-cols-md-2 g-3 mb-3">
+        {% for s in outlook.series_outlooks %}
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title d-flex align-items-center justify-content-between">
+                        {{ s.label }}
+                        {% if s.regime_badge_class %}
+                        <span class="badge bg-{{ s.regime_badge_class }} bg-opacity-25 text-dark">
+                            {{ s.regime_label }}
+                        </span>
+                        {% endif %}
+                    </h6>
+                    {% if s.predicted_date %}
+                    <p class="card-text mb-1">
+                        <small class="text-muted">Next predicted cutoff:</small>
+                        <strong>{{ s.predicted_date|date:"d M Y" }}</strong>
+                    </p>
+                    {% endif %}
+                    {% if s.avg_pace is not None %}
+                    <p class="card-text mb-1">
+                        <small class="text-muted">Pace:</small>
+                        {{ s.avg_pace }} d/mo avg
+                        {% if s.pace_trend == "faster_than_usual" %}
+                            <span class="text-success">(faster than usual)</span>
+                        {% elif s.pace_trend == "slower_than_usual" %}
+                            <span class="text-danger">(slower than usual)</span>
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                    {% if s.confidence_note %}
+                    <p class="card-text mb-0">
+                        <small class="text-muted">Model confidence:</small>
+                        {% if s.confidence_note == "high" %}
+                            <span class="text-success">High</span>
+                        {% elif s.confidence_note == "moderate" %}
+                            <span class="text-warning">Moderate</span>
+                        {% else %}
+                            <span class="text-danger">Low</span>
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if outlook.regime_descriptions %}
+    <details class="mb-3">
+        <summary class="fw-bold">Expert Model Signals</summary>
+        <div class="mt-2">
+            <ul class="list-unstyled">
+                {% for rd in outlook.regime_descriptions %}
+                <li class="mb-1">{{ rd.description|safe }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </details>
+    {% endif %}
 
     <p class="small text-muted mt-3">
-        <em>Note: This analysis is generated automatically based on the latest data.</em>
+        <em>Analysis generated from our Virtual Queue Simulation (VQS) model using historical bulletin data,
+        I-140 demand signals, and expert ensemble predictions. Model confidence varies by series.
+        Expand "Model Breakdown" on any prediction to see individual expert signals.</em>
     </p>
 </div>

@@ -23,6 +23,7 @@ import django
 django.setup()
 
 from django_config.logging_config import setup_logging
+from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
 from lib.business.vqs.solver import (
     get_cutoff_at_date,
     predict_next_bulletin_and_maturity,
@@ -55,6 +56,7 @@ def run_backtest(
     country: int = 3,
     action_type: str = "final_action",
     monthly_supply: int | None = None,
+    use_contextual_ensemble: bool = False,
 ) -> list[dict]:
     """
     Run backtest and return list of metric dicts.
@@ -64,7 +66,52 @@ def run_backtest(
     out: list[dict] = []
     for t in reference_dates:
         facts = list(RawFactsLedger.objects.filter(publication_date__lte=t))
-        _, _, results, _ = predict_next_bulletin_and_maturity(
+        if use_contextual_ensemble:
+            aggregator = ContextualTrajectoryAggregator()
+            aggregator.warmup_history(visa_class, country, action_type, t, horizons)
+            
+            for h in horizons:
+                target_month = _add_months(
+                    date(t.year, t.month, 1) if t.day != 1 else t,
+                    h,
+                )
+                pred_cutoff, _ = aggregator.predict(
+                    visa_class=visa_class,
+                    country=country,
+                    action_type=action_type,
+                    target_date=target_month,
+                    horizon=h,
+                )
+                
+                actual_cutoff = get_cutoff_at_date(
+                    visa_class, country, action_type, target_month
+                )
+                mae_days: int | None = None
+                error_note: str | None = None
+                if pred_cutoff is not None and actual_cutoff is not None:
+                    mae_days = abs((pred_cutoff - actual_cutoff).days)
+                elif pred_cutoff is None:
+                    error_note = "no_prediction"
+                elif actual_cutoff is None:
+                    error_note = "no_actual"
+                out.append(
+                    {
+                        "reference_date": t.isoformat(),
+                        "horizon_months": h,
+                        "target_month": target_month.isoformat(),
+                        "predicted_cutoff": pred_cutoff.isoformat()
+                        if pred_cutoff
+                        else None,
+                        "actual_cutoff": actual_cutoff.isoformat()
+                        if actual_cutoff
+                        else None,
+                        "mae_days": mae_days,
+                        "error_note": error_note,
+                    }
+                )
+            continue
+            
+        outcome = predict_next_bulletin_and_maturity(
             knowledge_date=t,
             visa_class=visa_class,
             country=country,
@@ -72,6 +119,7 @@ def run_backtest(
             monthly_supply=monthly_supply,
             facts=facts,
         )
+        results = outcome.results
         for h in horizons:
             target_month = _add_months(
                 date(t.year, t.month, 1) if t.day != 1 else t,
@@ -144,6 +192,7 @@ def main() -> None:
         help="Override monthly supply (default: dynamic per-country calculation)",
     )
     parser.add_argument("--output", choices=["json", "text"], default="text")
+    parser.add_argument("--use-contextual-ensemble", action="store_true")
     args = parser.parse_args()
 
     script_logger.log_call(
@@ -164,6 +213,7 @@ def main() -> None:
         country=args.country,
         action_type=args.action_type,
         monthly_supply=args.monthly_supply,
+        use_contextual_ensemble=args.use_contextual_ensemble,
     )
 
     if args.output == "json":

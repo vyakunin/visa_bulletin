@@ -421,7 +421,7 @@ If `curl http://<instance-ip>/` returns **400** while `curl -H 'Host: localhost'
 
 **New setups:** `scripts/setup_new_instance.sh` now detects the instance public IP (AWS metadata or ifconfig.me) and adds it to `ALLOWED_HOSTS` when creating `.env`.
 
-**Blue-green rotation:** If `nginx -t` fails with "zero size shared memory zone gptbot", ensure the bot rate-limit config is present: `sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/` (setup_new_instance.sh does this; older instances may need it copied manually).
+**Blue-green rotation:** If `nginx -t` fails with "zero size shared memory zone gptbot", ensure the bot rate-limit config is present: `sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/` (setup_new_instance.sh does this; older instances may need it copied manually). For request-time logging in access.log, also copy the log format: `sudo cp /opt/visa_bulletin/deployment/nginx/visa-bulletin-log-format.conf /etc/nginx/conf.d/` then `sudo nginx -t && sudo systemctl reload nginx`.
 
 **Health check cron (existing instances):** If `/var/log/health_check.log` is stale, ensure the script exists and cron is installed: `HEALTH_SCRIPT=/opt/visa_bulletin/scripts/health_check.sh; test -f "$HEALTH_SCRIPT" && chmod +x "$HEALTH_SCRIPT" && (sudo crontab -l 2>/dev/null | grep -v health_check; echo "*/5 * * * * $HEALTH_SCRIPT") | sudo crontab -`
 

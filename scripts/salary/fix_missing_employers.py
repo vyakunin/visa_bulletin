@@ -157,10 +157,10 @@ def main():
 Examples:
   Dry-run (analyze only):
     bazel run //scripts/salary:fix_missing_employers
-  
+
   Actually fix records:
     bazel run //scripts/salary:fix_missing_employers -- --fix
-  
+
   Limit for testing:
     bazel run //scripts/salary:fix_missing_employers -- --limit 1000
         """,

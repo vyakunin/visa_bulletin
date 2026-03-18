@@ -42,15 +42,15 @@ class VqsMetaParams:
     # Optimized in Phase 7A Stage 1 (0.8 was robust across 2021-2025)
     supply_scale_multiplier: float = 0.8
     demand_lag_scale: float = 1.0  # Application to demand lag not yet implemented
-    spillover_bonus_rate: float = 0.15
+    # Mar 2026: increased from 0.15 to 0.20 to reduce early-FY under-prediction bias.
+    # Mirror of SPILLOVER_BONUS_RATE in estimators.py; used in Optuna tuning.
+    spillover_bonus_rate: float = 0.20
 
     # --- 2. Control Params (Post-step Shaping) ---
 
     # "Stickiness": If raw prediction moves <= this many days, force No Change.
     # Base stickiness (used when regime-based is disabled or rate unknown)
-    # Phase 3: Increased from 60->90 to suppress small-move noise
-    # stickiness_days: 60 (Tuned for 6-month horizon 2022-2024)
-    stickiness_days: int = 60
+    stickiness_days: int = 1
 
     # Regime-based stickiness: adapt based on advancement rate
     # If advancement_rate > stickiness_fast_threshold: use stickiness_fast_days
@@ -65,8 +65,7 @@ class VqsMetaParams:
     stickiness_stall_days: int = 90
 
     # "Caps": Maximum days the cutoff can move forward/back in one month.
-    # cap_forward_days: 45 (Tuned for 6-month horizon 2022-2024)
-    cap_forward_days: int = 45
+    cap_forward_days: int = 47
     cap_back_days: int = 60
 
     # Seasonal Adjustment: Map of {month: adjustment_days} to add to final prediction
@@ -75,18 +74,26 @@ class VqsMetaParams:
 
     # "Blend": Interpolate towards current cutoff. 1.0 = use raw. 0.0 = use current.
     # formula: final = current + lambda * (raw - current)
-    # Phase 4B: Set to 1.0 — no blending, full physics signal.
-    blend_lambda: float = 0.8
+    blend_lambda: float = 0.995
 
     # Ensemble Persistence Weight: Blend final prediction with pure persistence (current cutoff)
     # formula: ensemble = (1 - alpha) * vqs_prediction + alpha * current_cutoff
-    # Phase 7B: 0.8 offers best balance between stability and responsiveness (tuned on 11 experts)
-    # Phase 17: Reduced from 0.8 -> 0.7 for better differentiation and accuracy at long horizons
-    # Phase 18: Reduced 0.7 -> 0.4 to improve responsiveness and reduce naive-bias
-    ensemble_persistence_weight: float = 0.4
+    ensemble_persistence_weight: float = 0.797
 
     # If confidence is "low", ignore raw prediction and return current cutoff.
     use_no_change_when_low_confidence: bool = True
+
+    # Ensemble trajectory blending: weight of ensemble vs physics at each step.
+    # At step i: blended = physics + decay^i * (ensemble - physics)
+    # 1.0 = ensemble fully overrides physics at step 0, decays for later steps
+    # 0.0 = ensemble is ignored (pure physics)
+    ensemble_trajectory_blend: float = 0.789
+    ensemble_trajectory_decay: float = 0.821
+
+    # Relaxed post-step shaping for ensemble predictions.
+    # None = use the same values as physics (stickiness_days, cap_forward_days).
+    ensemble_stickiness_days: int | None = 45
+    ensemble_cap_forward_days: int | None = 115
 
     @classmethod
     def defaults(cls) -> "VqsMetaParams":
@@ -111,6 +118,7 @@ class VqsMetaParams:
         confidence: str,
         advancement_rate: float | None = None,
         prevent_stickiness: bool = False,
+        ensemble_mode: bool = False,
     ) -> date | None:
         """
         Apply post-step shaping logic: low-conf fallback, stickiness, caps, blend.
@@ -121,6 +129,7 @@ class VqsMetaParams:
             confidence: "high", "medium", or "low".
             advancement_rate: Optional advancement rate (days/month) for regime-based stickiness.
             prevent_stickiness: If True, bypass stickiness logic (useful for first prediction step).
+            ensemble_mode: If True, use relaxed ensemble-specific thresholds.
 
         Returns:
             The final predicted cutoff date.
@@ -129,33 +138,31 @@ class VqsMetaParams:
         if self.use_no_change_when_low_confidence and confidence == "low":
             return current_cutoff
 
-        # If raw prediction is None (e.g. queue empty behaviors), pass it through
-        # or handle? The solver usually returns a date if queue is finite.
-        # If solver says None (e.g. exhausted), we respect that.
         if raw_next_cutoff is None:
             return None
 
-        # Calculate raw movement in days
         raw_move_days = (raw_next_cutoff - current_cutoff).days
 
+        # Select thresholds: relaxed for ensemble, strict for physics
+        stick_days = (self.ensemble_stickiness_days if ensemble_mode and self.ensemble_stickiness_days is not None
+                      else self.stickiness_days)
+        cap_fwd = (self.ensemble_cap_forward_days if ensemble_mode and self.ensemble_cap_forward_days is not None
+                   else self.cap_forward_days)
+
         # 2. Regime-based Stickiness
-        # Adapt stickiness threshold based on advancement rate
-        effective_stickiness = self.stickiness_days
-        if self.use_regime_based_stickiness and advancement_rate is not None:
+        effective_stickiness = stick_days
+        if not ensemble_mode and self.use_regime_based_stickiness and advancement_rate is not None:
             if float(advancement_rate) > self.stickiness_fast_threshold:
                 effective_stickiness = self.stickiness_fast_days
             elif float(advancement_rate) < self.stickiness_stall_threshold:
                 effective_stickiness = self.stickiness_stall_days
 
-        # If movement is small (forward or backward) but non-zero, suppress it.
-        # Logic: abs(move) <= stickiness => no change.
         if not prevent_stickiness and 0 < abs(raw_move_days) <= effective_stickiness:
             return current_cutoff
 
         # 3. Caps (Clamping)
-        # Cap Forward
-        if raw_move_days > self.cap_forward_days:
-            raw_move_days = self.cap_forward_days
+        if raw_move_days > cap_fwd:
+            raw_move_days = cap_fwd
         # Cap Backward (Retrogression)
         # raw_move_days is negative. limit is say 60. so raw_move >= -60.
         elif raw_move_days < -self.cap_back_days:

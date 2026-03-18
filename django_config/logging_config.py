@@ -10,7 +10,7 @@ from datetime import datetime
 class LocalTimeFormatter(logging.Formatter):
     """Log timestamps in local time with timezone offset."""
 
-    def formatTime(self, record, datefmt=None):
+    def formatTime(self, record, datefmt=None):  # noqa: N802
         dt = datetime.fromtimestamp(record.created).astimezone()
         if datefmt:
             return dt.strftime(datefmt)

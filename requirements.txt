@@ -36,3 +36,6 @@ redis>=4.5.0  # Redis cache backend for Django (shared cache across gunicorn wor
 rapidfuzz>=3.0.0  # Fast string similarity (optional for employer clustering Phase 2)
 pdfplumber>=0.10.0  # Extract tables from DOS issuance PDFs
 matplotlib>=3.8.0  # Visualization for analysis scripts
+optuna>=3.5.0  # Bayesian hyperparameter optimization for VQS metric tuning
+lightgbm>=4.0.0  # Gradient boosted trees for GBM expert predictor
+scikit-learn>=1.3.0  # Feature scaling and cross-validation utilities for GBM expert

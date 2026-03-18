@@ -2,6 +2,13 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_binary(
+    name = "attach_staging_ip_to_old_prod",
+    srcs = ["attach_staging_ip_to_old_prod.py"],
+    main = "attach_staging_ip_to_old_prod.py",
+    deps = ["//scripts/cron/refresh:traffic_switch"],
+)
+
+py_binary(
     name = "generate_initial_blog_post",
     srcs = ["generate_initial_blog_post.py"],
     deps = [
@@ -118,6 +125,33 @@ py_binary(
         "//webapp:apps",
         requirement("Django"),
         requirement("python-dateutil"),
+    ],
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "analyze_october_predictions",
+    srcs = ["analyze_october_predictions.py"],
+    deps = [
+        "//django_config:settings",
+        "//models:visa_cutoff_date",
+        "//models:raw_facts",
+        "//models:bulletin",
+        "//models/enums:country",
+        "//models/enums:visa_category",
+        "//lib/business/vqs:solver",
+        "//lib/business/vqs:aggregator",
+        "//lib/business/vqs:expert_pool",
+        "//lib/business/vqs:seasonal_predictor",
+        "//lib/business/vqs:meta_params",
+        "//lib/business/vqs:metric_config",
+        "//lib/business/vqs:data_cache",
+        "//lib/utils:logging_utils",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
     ],
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",

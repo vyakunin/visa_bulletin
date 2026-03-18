@@ -21,13 +21,21 @@ if not settings.configured:
     django.setup()
 
 from lib.business.vqs.aggregator import ExpertAggregator
+from lib.business.vqs.calibration import compute_calibrated_interval
 from lib.business.vqs.meta_params import VqsMetaParams
-from lib.business.vqs.solver import predict_next_bulletin_and_maturity
+from lib.business.vqs.solver import predict_next_bulletin_and_maturity, predict_regime_switched
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.raw_facts import RawFactsLedger
 from models.visa_cutoff_date import VisaCutoffDate
 from models.vqs import PredictedBulletin, PredictedCutoff
+
+# EB-1 oversubscribed series: regime-switched beats VQS Ensemble at all horizons
+# (from spaghetti chart: RS 130d/62.8d MAE vs VQS 135.5d/62.4d on India/China EB-1)
+_HYBRID_EB1_SERIES = frozenset([
+    (Country.INDIA.value, "1st"),
+    (Country.CHINA.value, "1st"),
+])
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +82,73 @@ def get_knowledge_date_for_target(target_month: date) -> date:
     return date.today()
 
 
+REGIME_DESCRIPTIONS = {
+    "advancing": "Cutoff dates have been moving forward consistently",
+    "stalled": "Cutoff dates have shown minimal movement",
+    "retrogressing": "Cutoff dates have been moving backward",
+    "recovering": "Cutoff dates are recovering from a recent retrogression",
+    "volatile": "Cutoff dates have been fluctuating unpredictably",
+}
+
+
 def generate_explanation(metadata: dict | None, confidence: str) -> str:
-    """Generate a human-readable explanation from solver metadata."""
+    """Generate a human-readable explanation from solver metadata.
+
+    Uses regime, expert weights, pace, and confidence interval spread
+    to produce a rich explanation stored in PredictedCutoff.explanation_markdown.
+    """
     if not metadata or not isinstance(metadata, dict):
         return f"Physics-based prediction (Confidence: {confidence})"
 
     parts = []
-    if "weights" in metadata:
-        weights = metadata["weights"]
+
+    # Regime context
+    regime = metadata.get("regime")
+    if regime:
+        desc = REGIME_DESCRIPTIONS.get(regime, regime)
+        regime_conf = metadata.get("regime_confidence", 0)
+        strength = "strongly" if regime_conf > 0.7 else "moderately" if regime_conf > 0.3 else "weakly"
+        parts.append(f"**Regime: {regime.upper()}** — {desc} ({strength} classified).")
+
+    # Historical pace
+    pace = metadata.get("pace_days_per_month")
+    if pace is not None:
+        if pace > 0:
+            parts.append(f"Historical advancement pace: {pace:.1f} days/month.")
+        elif pace < 0:
+            parts.append(f"Historical retrogression pace: {abs(pace):.1f} days/month backward.")
+        else:
+            parts.append("Historical pace: near zero (stalled).")
+
+    # Expert consensus
+    weights = metadata.get("weights")
+    if weights:
         top_experts = sorted(weights.items(), key=lambda x: -x[1])[:3]
         expert_strs = [f"{k} ({v:.0%})" for k, v in top_experts if v > 0.05]
-        parts.append(f"Ensemble consensus: {', '.join(expert_strs)}.")
+        if expert_strs:
+            parts.append(f"Ensemble consensus: {', '.join(expert_strs)}.")
 
-    if "stickiness" in metadata:
-        parts.append("Note: Prediction held steady due to recent volatility.")
+    # Persistence weight (how conservative the prediction is)
+    pw = metadata.get("persistence_weight")
+    if pw is not None and pw > 0.5:
+        parts.append(
+            f"High conservation factor ({pw:.0%} persistence weight) — "
+            "prediction pulled toward no-change due to regime uncertainty."
+        )
 
-    return " ".join(parts)
+    # Confidence interval spread
+    ci_low = metadata.get("confidence_low")
+    ci_high = metadata.get("confidence_high")
+    if ci_low and ci_high:
+        spread = (ci_high - ci_low).days
+        if spread > 90:
+            parts.append(f"Wide confidence range ({spread} days) — experts disagree significantly.")
+        elif spread > 30:
+            parts.append(f"Moderate confidence range ({spread} days).")
+        else:
+            parts.append(f"Narrow confidence range ({spread} days) — high expert consensus.")
+
+    return " ".join(parts) if parts else f"Physics-based prediction (Confidence: {confidence})"
 
 
 def publish_predictions(target_months: list[date], action_types: list[str]):
@@ -127,9 +186,17 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
         for action in action_types:
             for country in countries:
                 for visa_class in visa_classes:
-                    # Run Solver
-                    cutoff, m_meta, res_list, confidence = (
-                        predict_next_bulletin_and_maturity(
+                    # Hybrid dispatch: regime-switched for EB-1 oversubscribed, VQS for EB-2/3
+                    if (country, visa_class) in _HYBRID_EB1_SERIES:
+                        outcome = predict_regime_switched(
+                            knowledge_date=knowledge_date,
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            facts=current_facts,
+                        )
+                    else:
+                        outcome = predict_next_bulletin_and_maturity(
                             knowledge_date=knowledge_date,
                             visa_class=visa_class,
                             country=country,
@@ -138,16 +205,42 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             meta=meta,
                             aggregator=aggregator,
                         )
-                    )
+                    cutoff = outcome.predicted_cutoff
+                    m_meta = outcome.metadata
+                    confidence = outcome.confidence
 
-                    # Extract CI
+                    # Extract CI and per-expert predictions
                     low = None
                     high = None
+                    expert_data = {}
                     explanation = generate_explanation(m_meta, confidence)
 
                     if isinstance(m_meta, dict):
                         low = m_meta.get("confidence_low")
                         high = m_meta.get("confidence_high")
+
+                    # Override with calibrated intervals when point prediction exists
+                    if cutoff is not None:
+                        try:
+                            low, high = compute_calibrated_interval(
+                                predicted_date=cutoff,
+                                visa_class=visa_class,
+                                country=country,
+                                action_type=action,
+                                knowledge_date=knowledge_date,
+                                horizon=1,
+                                coverage=0.80,
+                            )
+                        except Exception as _ci_err:
+                            logger.debug("Calibrated interval failed: %s", _ci_err)
+
+                        preds = m_meta.get("expert_preds", {})
+                        weights = m_meta.get("weights", {})
+                        for name, pred_date in preds.items():
+                            expert_data[name] = {
+                                "pred": pred_date.isoformat() if pred_date else None,
+                                "weight": round(weights.get(name, 0), 4),
+                            }
 
                     # Try to find actual if exists
                     actual_date = None
@@ -175,6 +268,7 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                         confidence_low=low,
                         confidence_high=high,
                         explanation_markdown=explanation,
+                        expert_predictions=expert_data,
                         actual_date=actual_date,
                         accuracy_score=accuracy_score,
                     )

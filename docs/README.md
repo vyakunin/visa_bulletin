@@ -13,7 +13,6 @@ This directory contains all project documentation organized by topic.
 **Development Setup:**
 - **DEV_SETUP.md** - Local development environment setup (macOS)
 - **POSTGRESQL_SETUP.md** - Local PostgreSQL setup for development
-- **ANALYTICS_QUICKSTART.md** - Analytics integration quickstart
 
 **Build System:**
 - **BAZEL.md** - Bazel build system guide (dependencies, targets, runfiles)
@@ -86,12 +85,17 @@ Documentation for SEO optimization and search engine visibility.
 ---
 
 #### [future_features/](future_features/)
-Design documents for features that are planned but not yet implemented.
+Design documents for features that are planned or partially implemented.
 
 **Key Files:**
 - COMPANY_REPORT_CARD_DESIGN.md - Company green card sponsorship grading system
+- VQS_RUNBOOK.md - Operational runbook for VQS predictions system (add I-140 data, re-run accuracy)
+- VQS_NEW_SUGGESTIONS.md - Active improvement ideas for the VQS prediction model
+- VQS_META_PARAMS_AND_TUNING.md - Meta-parameter design and Optuna tuning details
+- VQS_FAMILY_EXTENSION_DESIGN.md - Design for extending VQS to family-based categories
+- VQS_META_PARAMS_CRITIQUE.md - Critical analysis of current meta-param approach
 
-**Note:** These are design proposals, not current features.
+**Note:** These are design proposals and operational guides for planned or in-progress work.
 
 ---
 
@@ -127,7 +131,7 @@ Design documents for features that are planned but not yet implemented.
 - Rollout process: `deployment/ROLLOUT_FLOW.md`
 
 **Understanding production data refresh:**
-- Architecture: `DATA_REFRESH_STRATEGY.md` (blue-green DB swap)
+- Architecture: `DATA_REFRESH_STRATEGY.md` (instance rotation)
 - Manual ingestion: `INGESTION_PLAYBOOK.md` (for testing/dev only)
 
 ### By Component
@@ -137,6 +141,7 @@ Design documents for features that are planned but not yet implemented.
 - **Business Logic:** See component-specific directories (e.g., `employer_clustering/`)
 - **Web Application:** See `seo/SEO_OPTIMIZATION.md` and root README.md
 - **Build System:** See `BAZEL.md` and related files
+- **VQS Predictions:** See `PREDICTIONS_ASSESSMENT.md` (research log), `future_features/VQS_RUNBOOK.md` (operations), `lib/business/vqs/README.md` (code-level)
 
 ## Contributing to Documentation
 

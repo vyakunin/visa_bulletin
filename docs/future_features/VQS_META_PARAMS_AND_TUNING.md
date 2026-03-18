@@ -100,29 +100,36 @@ This reveals if "optimal" parameters are stable or if they thrash wildly from ye
 
 ---
 
-## 5. Implementation Plan (Detailed)
+## 5. Implementation Status
 
-### Phase 1: Infrastructure (Python)
-- [ ] **Create `VqsMetaParams`**:
-    - `lib/business/vqs/meta_params.py`: Dataclass with defaults and `from_dict`/`to_dict`.
-    - Implement `apply_post_step` logic (stickiness, caps, blend).
-- [ ] **Wire into `solver.py`**:
-    - Update `predict_next_bulletin_and_maturity` to accept optional `meta: VqsMetaParams`.
-    - Use `meta.confidence_high_i140_min` etc. in place of constants.
-    - Call `meta.apply_post_step()` at end of prediction loop.
-- [ ] **Wire into `accuracy_metrics.py`**:
-    - Update `compute_bulletin_accuracy` to propogate `meta` param.
+**All infrastructure is implemented:**
 
-### Phase 2: Backtesting Framework
-- [ ] **Create `scripts/vqs_backtest.py`**:
-    - **Walk-Forward Logic**: Function to split dataset by year (Train Y, Test Y+1).
-    - **Evaluator**: Function `evaluate_params(params: VqsMetaParams, bulletins: list[Date]) -> float (MAE)`.
-    - **Grid Searcher**: Simple loop over param combinations (Phase 1 options first, then Phase 2 options).
+- `VqsMetaParams` dataclass in `lib/business/vqs/meta_params.py` with `from_dict`/`to_dict` and `apply_post_step()`
+- `solver.py` accepts optional `meta: VqsMetaParams` and uses it for all tunable parameters
+- `accuracy_metrics.py` propagates `meta` param through `compute_bulletin_accuracy`
+- `scripts/vqs/tune_params.py` uses Optuna for hyperparameter optimization with walk-forward validation
+- `scripts/vqs/run_backtest.py` evaluates parameter sets against historical data
 
-### Phase 3: Execution & Tuning
-- [ ] **Run Baseline**: Compute MAE with current hardcoded defaults.
-- [ ] **Run Stage 1 (Physics)**: Grid search `lookback` and `confidence_min`.
-    - Fix best params.
-- [ ] **Run Stage 2 (Control)**: Grid search `stickiness` and `blend`.
-    - Fix best params.
-- [ ] **Commit**: Update `VqsMetaParams.defaults()` with the winning values.
+**Tuning search space** (as of March 2026) also includes `MetricConfig` parameters: `fy_boundary_weight`, `steady_state_weight`, `move_magnitude_weight` for composite multi-horizon loss.
+
+---
+
+## 6. Critique and Risks (Design Review)
+
+### A. Overfitting with "Shaping" Parameters
+
+The plan mixes **physical parameters** (representing reality) with **shaping parameters** (heuristics to force stability). Physical: `supply_scale_multiplier`, `demand_lag`, `lookback_months`. Shaping: `stickiness_days`, `cap_forward_days`, `blend_lambda`.
+
+**Risk:** Cranking up stickiness/caps minimizes MAE on historical data by forcing the model into "current + small epsilon" — a glorified persistence predictor. The PREDICTIONS_ASSESSMENT §8-9 confirmed this: the dampened ensemble is indistinguishable from persistence.
+
+### B. Static Parameters in a Dynamic System
+
+A single global parameter set is average-good but disastrously bad in specific regimes (e.g., failing to catch the onset of retrogression). The Regime-Switched model (PREDICTIONS_ASSESSMENT §9) partially addresses this by selecting experts per-regime, but the meta-params themselves are still static.
+
+**Mitigation:** Regime-based parameter overrides (e.g., `stickiness=0` in ADVANCING, `stickiness=60` in STALLED). Partially implemented via `regime_persistence_weight()` in `regime.py`.
+
+### C. Data Scarcity
+
+Only ~12 bulletins per year. A 3-year validation set = 36 data points per series. With ~10+ hyperparams, the search space is too large.
+
+**Mitigation:** Two-stage tuning (physics first, then control), walk-forward validation, and the new composite metric weighting (PREDICTIONS_ASSESSMENT §10) which focuses optimization on high-value strata rather than averaging across all data points.

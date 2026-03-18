@@ -18,21 +18,22 @@ select = [
     "UP",  # pyupgrade (modernizes Python syntax)
 ]
 
-# Ignore line length (handled by formatter)
-ignore = ["E501"]
+ignore = [
+    "E501", # Line length (handled by formatter)
+]
 
 [lint.per-file-ignores]
-# Ignore migrations (generated code)
-"**/migrations/**" = ["E501", "F401"]
+# Generated migration code
+"**/migrations/**" = ["E501", "F401", "N806"]
+# Django scripts require django.setup() before model imports (E402)
+"scripts/**" = ["E402"]
+"tests/**" = ["E402"]
+"check_migrations.py" = ["E402"]
+"refresh_data_incremental.py" = ["E402"]
+"django_config/settings.py" = ["E402"]
+"webapp/views/prediction_views.py" = ["E402"]
 
 [format]
 # Use double quotes (consistent with existing codebase)
 quote-style = "double"
 line-ending = "auto"
-
-
-
-
-
-
-

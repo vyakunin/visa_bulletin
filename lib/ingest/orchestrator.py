@@ -732,8 +732,6 @@ class PipelineOrchestrator:
         if not self.stage_timings:
             return
 
-        total_stage_time = sum(self.stage_timings.values())
-
         logger.info(f"[Run {run.id}] Performance Summary:")
         logger.info(
             f"[Run {run.id}]   Total duration: {total_duration:.2f}s ({total_duration / 60:.1f} min)"
@@ -855,6 +853,26 @@ class PipelineOrchestrator:
 
         return deduplicated
 
+    @staticmethod
+    def _prefilter_existing_cases(
+        records: list, source_file: str, batch_size: int = 10000
+    ) -> list:
+        """Filter out records whose case_number already exists for this source file."""
+        case_numbers = [r.case_number for r in records if hasattr(r, "case_number")]
+        if not case_numbers:
+            return records
+
+        model_class = type(records[0])
+        existing: set[str] = set()
+        for i in range(0, len(case_numbers), batch_size):
+            chunk = case_numbers[i : i + batch_size]
+            existing.update(
+                model_class.objects.filter(
+                    source_file=source_file, case_number__in=chunk
+                ).values_list("case_number", flat=True)
+            )
+        return [r for r in records if getattr(r, "case_number", None) not in existing]
+
     def _insert_batch_to_db(self, batch: list, run: IngestRun):
         """Insert or update batch to database with error handling and optimizations"""
         if not batch:
@@ -887,7 +905,7 @@ class PipelineOrchestrator:
                     type_stats = {}  # Track stats per model type
                     for model_class, type_batch in batches_by_type.items():
                         before_count = len(type_batch)
-                        filtered = _prefilter_existing_cases(type_batch, source_file)
+                        filtered = self._prefilter_existing_cases(type_batch, source_file)
                         after_count = len(filtered)
                         if filtered:  # Only add if there are records to insert
                             filtered_batches[model_class] = filtered

@@ -259,7 +259,7 @@ class TestClusteringIntegration(TestCase):
         assign_to_cluster(emp2, auto_approve_threshold=0.98)
 
         # Check if review was created
-        reviews = EmployerClusteringReview.objects.filter(
+        _reviews = EmployerClusteringReview.objects.filter(
             employer1__in=[emp1, emp2], employer2__in=[emp1, emp2]
         )
         # Review may or may not be created depending on similarity score

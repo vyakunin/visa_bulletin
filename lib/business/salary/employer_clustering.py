@@ -65,7 +65,7 @@ def _extract_structural_words(name: str) -> set[str]:
 
     # Words that distinguish company types/structures
     # Includes GENERIC_WORDS (which can distinguish when different) plus additional words
-    STRUCTURAL_WORDS = (
+    STRUCTURAL_WORDS = (  # noqa: N806
         GENERIC_WORDS
         | DISTINGUISHING_GENERIC_WORDS
         | {
@@ -515,7 +515,7 @@ def should_auto_cluster(
 
 def assign_to_cluster(
     employer: Employer, auto_approve_threshold: float = 0.95
-) -> Optional["EmployerCluster"]:
+) -> Optional["EmployerCluster"]:  # noqa: F821
     """
     Find existing cluster or create new one for an employer
 

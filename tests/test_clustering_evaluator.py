@@ -97,7 +97,7 @@ class TestClusteringEvaluator:
         results = evaluator.evaluate_samples(auto_sample, queue_sample)
         metrics = results.metrics
         false_positives = results.false_positives
-        false_negatives = results.false_negatives
+        _false_negatives = results.false_negatives
 
         assert metrics["auto_clustered"]["true_positives"] == 0
         assert metrics["auto_clustered"]["false_positives"] == 1
@@ -149,7 +149,7 @@ class TestClusteringEvaluator:
 
         results = evaluator.evaluate_samples(auto_sample, queue_sample)
         metrics = results.metrics
-        false_positives = results.false_positives
+        _false_positives = results.false_positives
         false_negatives = results.false_negatives
 
         assert metrics["auto_clustered"]["true_positives"] == 1
@@ -184,7 +184,7 @@ class TestClusteringEvaluator:
         results = evaluator.evaluate_samples(auto_sample, queue_sample)
         metrics = results.metrics
         false_positives = results.false_positives
-        false_negatives = results.false_negatives
+        _false_negatives = results.false_negatives
 
         assert metrics["auto_clustered"]["skipped"] == 1
         assert metrics["auto_clustered"]["true_positives"] == 0
@@ -240,8 +240,8 @@ class TestClusteringEvaluator:
 
         results = evaluator.evaluate_samples(auto_sample, queue_sample)
         metrics = results.metrics
-        false_positives = results.false_positives
-        false_negatives = results.false_negatives
+        _false_positives = results.false_positives
+        _false_negatives = results.false_negatives
 
         # Precision = TP / (TP + FP) = 2 / (2 + 1) = 0.667
         assert metrics["auto_clustered"]["true_positives"] == 2
@@ -291,8 +291,8 @@ class TestClusteringEvaluator:
 
         results = evaluator.evaluate_samples(auto_sample, queue_sample)
         metrics = results.metrics
-        false_positives = results.false_positives
-        false_negatives = results.false_negatives
+        _false_positives = results.false_positives
+        _false_negatives = results.false_negatives
 
         # Recall = TP / (TP + FN) = 1 / (1 + 1) = 0.5
         assert metrics["auto_clustered"]["true_positives"] == 1

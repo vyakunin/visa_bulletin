@@ -2272,28 +2272,28 @@ def main():
 Examples:
   Run all validations (default):
     bazel run //scripts/salary:validate_data
-  
+
   Generate JSON report:
     bazel run //scripts/salary:validate_data -- --json-report report.json
-  
+
   Skip spot checks (faster):
     bazel run //scripts/salary:validate_data -- --skip-spot-checks
-  
+
   Check import completeness only:
     bazel run //scripts/salary:validate_data -- --check-import-completeness
-  
+
   Check incomplete records only:
     bazel run //scripts/salary:validate_data -- --check-incomplete-records
-  
+
   Analyze ingestion logs:
     bazel run //scripts/salary:validate_data -- --analyze-ingestion
-  
+
   Compare input vs served stats:
     bazel run //scripts/salary:validate_data -- --compare-input-served
-  
+
   Test homepage queries only:
     bazel run //scripts/salary:validate_data -- --test-homepage-queries
-  
+
   Golden set operations:
     bazel run //scripts/salary:validate_data -- --golden-file data/validation/golden.json
     bazel run //scripts/salary:validate_data -- --update-golden

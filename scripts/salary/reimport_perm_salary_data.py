@@ -596,13 +596,13 @@ def main():
 Examples:
   Dry-run on specific file:
     bazel run //scripts/salary:reimport_perm_salary_data -- --file PERM_FY2019.xlsx
-  
+
   Actually update records:
     bazel run //scripts/salary:reimport_perm_salary_data -- --file PERM_FY2019.xlsx --fix
-  
+
   Process all PERM files with missing data:
     bazel run //scripts/salary:reimport_perm_salary_data -- --all-files --fix
-  
+
   Limit for testing:
     bazel run //scripts/salary:reimport_perm_salary_data -- --file PERM_FY2019.xlsx --limit 100
         """,

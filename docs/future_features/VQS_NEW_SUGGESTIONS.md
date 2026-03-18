@@ -8,6 +8,8 @@ This document proposes **new** improvements to address remaining gaps and edge c
 
 ## 1. EB4 Handling: Exclude or Flag Low-Confidence
 
+**Status: Partially implemented (Mar 2026).** Solver already returns persistence with `confidence="low"` for EB4 in `solver.py`. EB4 is excluded from accuracy metrics. Still published to DB and shown on predictions detail page — pending UI de-emphasis.
+
 **Problem:** EB4 (religious workers, special immigrants) has no I-140 data in the ledger. Predictions are driven only by queue calibration and supply; actual cutoffs are driven by different rules (e.g., special immigrant visa limits, per-country caps for EB4). V3 shows EB4 mean error ~228 days and outliers up to 1977 days (October retrogression).
 
 **Suggestions:**
@@ -36,6 +38,8 @@ This document proposes **new** improvements to address remaining gaps and edge c
 ---
 
 ## 3. Confidence or Uncertainty in API Response
+
+**Status: Partially implemented (Mar 2026).** Calibrated prediction intervals (80% CI) are computed by `calibration.py` using historical signed error distributions stratified by (series, regime, horizon). `confidence_low` and `confidence_high` fields are stored in `PredictedCutoff`. Still pending: display on prediction detail page (Track C1), and per-series confidence level badge (Track C3).
 
 **Problem:** Users and downstream systems don’t know whether a prediction is well-supported (e.g. EB2 India with I-140 data and calibration) or weak (e.g. EB4, or a series with very few I-140 rows).
 
@@ -107,27 +111,68 @@ This document proposes **new** improvements to address remaining gaps and edge c
 
 ## 8. Documentation and Runbook
 
-**Suggestions:**
+**Status: Mostly done.** `docs/PREDICTIONS_ASSESSMENT.md` serves as the research log (see `.cursor/rules/vqs_research_log.mdc`). `lib/business/vqs/README.md` has the "how to improve accuracy" section. `VQS_RUNBOOK.md` has operational commands.
 
-- **Update VQS_TEST_REPORT.md** (or add a “V3 results” section): Summarize V3 metrics (mean/median error, direction, accuracy buckets), and note that recommendations 1–6 from the previous report are implemented.
-- **README in lib/business/vqs:** Short “how to improve accuracy” subsection: add I-140 data, tune constants in `estimators.py`, run `compute_prediction_accuracy` and compare outputs.
-- **Runbook:** One-page “How to add a new I-140 file” and “How to re-run accuracy after a change” (paths, commands, checkpoint dir, output dir).
+**Remaining:**
+
+- Keep `PREDICTIONS_ASSESSMENT.md` updated with each experiment (numbered sections).
+- Keep `lib/business/vqs/README.md` current when adding components.
+
+---
+
+## 9. Tabular ML Model
+
+**Status: Implemented (Mar 2026).** `lib/business/vqs/gbm_expert.py` implements a LightGBM expert trained on pooled tabular features per (series, knowledge_date): recent movements, I-140 demand ratio, I-485 queue depth, cross-series EB-1 signal (1m/3m/regime), seasonal, and FY features. Walk-forward trained each month. Integrated into the expert pool as the `gbm` expert. Extracted from `SMART_PREDICTIONS_PROPOSALS.md` before deletion.**
+
+**Problem:** VQS is physics-based (queue simulation). An alternative is a direct tabular ML model that learns from features without a simulation engine. This was considered but not pursued — VQS was built instead.
+
+**Approach:**
+
+- **Model:** Gradient Boosting (XGBoost/LightGBM/CatBoost) on tabular features: autoregressive (last N cutoff movements, retrogression count, months since "Current"), calendar (FY month, fiscal year), supply (FY cap, DOS issuance), demand (I-140 receipts mapped via PERM lag), cross-series (ROW movement for India series).
+- **Target:** Movement in days (next bulletin cutoff - current cutoff). Or directly predict maturity date for a given priority date.
+- **Loss:** MAE or Huber on movement; optionally quantile loss (pinball at 0.1, 0.5, 0.9) for uncertainty ranges.
+- **Training:** Temporal split (train on years before T, test on T+1). Monthly retraining when new bulletin ingested.
+- **Data scale:** ~10K samples, 20-50 features — well-suited for tree-based models.
+- **Feature store:** One row per (visa_class, country, action_type, bulletin_month) with all features aligned.
+
+**Why not pursued:** VQS (physics-based simulation) was chosen for interpretability and because the queue metaphor directly models the visa system. The tabular approach could be a complementary "ensemble member" or a separate baseline to test whether learned features outperform hand-tuned simulation parameters.
+
+**When to revisit:** If VQS accuracy plateaus and more data sources are ingested (DOS issuance, pending I-485, USCIS processing times), a tabular model could use these as features directly without the simulation scaffolding.
+
+---
+
+## 10. Community Prediction Methodologies as Baselines
+
+**Status: Partially implemented (March 2026). Pace and Demand-Supply baselines added to `evaluate_model.py`.**
+
+**PhoenixCTB (demand-supply heuristic):** Balances I-140 demand against FY visa cap, using PERM lag to map receipt dates to priority dates. Currently implemented with hardcoded demand constants; needs real I-140 data for accuracy.
+
+**Charlie Oppenheim (constant-pace):** Extrapolates at recent 6-month advancement rate. Implemented as "Pace" baseline.
+
+**"My EB3 ROW" Reddit prediction:** Long-horizon directional prediction (May 2023 FAD by end FY2026). Roughly correct — reached June 2023 by March 2026. This type of long-horizon, directional prediction is not currently evaluated by our metrics (which focus on 1/3/6-month horizons).
+
+**References:**
+- PhoenixCTB: https://www.reddit.com/r/USCIS/comments/1o1tez6/comment/niiym7f/
+- "My EB3 ROW": https://www.reddit.com/r/USCIS/comments/1fztc54/my_eb3_row_visa_bulletin_prediction/
+- Charlie Oppenheim: https://youtu.be/mzcfk7RDq5M
 
 ---
 
 ## Priority Order (Suggested)
 
-| Priority | Suggestion | Effort | Impact |
-|----------|------------|--------|--------|
-| 1 | EB4 exclude/flag (1) | Low | Removes noise from metrics and API |
-| 2 | Confidence in API (3) | Low | Better UX and safer use of predictions |
-| 3 | Rebalance supply (2) | Low | Bring under-prediction rate toward 50% |
-| 4 | More I-140 data (4) | Medium | Better queue depth and historical accuracy |
-| 5 | Retrogression from history (6) | Medium | More accurate October behavior |
-| 6 | EB1 India tweaks (5) | Low–Medium | Reduces largest remaining EB1–EB3 error |
-| 7 | Long-term metric breakdown (7) | Low | Clearer view of long-horizon reliability |
-| 8 | Documentation (8) | Low | Easier maintenance and onboarding |
-
+| Priority | Suggestion | Status | Effort | Impact |
+|----------|------------|--------|--------|--------|
+| ✅ Done | GBM expert (9) | Implemented in gbm_expert.py | — | LightGBM as ensemble member |
+| ✅ Done | Calibrated intervals (3) | 80% CI in calibration.py, stored in DB | — | UI display pending |
+| ✅ Done | EB4 low-confidence flag (1) | Solver returns confidence=low | — | UI de-emphasis pending |
+| 1 | EB4 UI de-emphasis (1) | Pending | Low | Removes noise from predictions page |
+| 2 | Display confidence intervals (3) | Pending | Low | Better UX, show uncertainty to users |
+| 3 | Rebalance supply (2) | Pending | Low | Bring under-prediction rate toward 50% |
+| 4 | More I-140 data (4) | Pending | Medium | Better queue depth and historical accuracy |
+| 5 | Retrogression from history (6) | Pending | Medium | More accurate October behavior |
+| 6 | EB1 India tweaks (5) | Pending | Low–Medium | Reduces largest remaining EB1–EB3 error |
+| 7 | Long-term metric breakdown (7) | Pending | Low | Clearer view of long-horizon reliability |
+| 8 | Full I-140 ingestion for demand-supply baseline | Pending | Medium | Replaces hardcoded constants in evaluate_model.py |
 ---
 
 ## How to Re-Run Accuracy After Changes

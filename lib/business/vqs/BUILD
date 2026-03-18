@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
+load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_library(
     name = "queue_snapshot",
@@ -32,7 +33,9 @@ py_library(
     deps = [
         ":demand",
         ":estimators",
+        ":fy_transition_model",
         ":queue_snapshot",
+        ":regime",
         ":seasonal_predictor",
         "//models:bulletin",
         "//models:raw_facts",
@@ -41,6 +44,7 @@ py_library(
         "//models/enums:country",
         "//models/enums:visa_category",
         ":meta_params",
+        ":metric_config",
         ":aggregator",
         ":data_cache",
     ],
@@ -51,6 +55,9 @@ py_library(
     srcs = ["accuracy_metrics.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":data_cache",
+        ":metric_config",
+        ":seasonal_predictor",
         ":solver",
         "//models:bulletin",
         "//models:raw_facts",
@@ -62,6 +69,18 @@ py_library(
 py_library(
     name = "meta_params",
     srcs = ["meta_params.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "metric_config",
+    srcs = ["metric_config.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "regime",
+    srcs = ["regime.py"],
     visibility = ["//visibility:public"],
 )
 
@@ -80,9 +99,11 @@ py_library(
     srcs = ["expert_pool.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":estimators",
         ":seasonal_predictor",
         ":data_cache",
         "//models:bulletin",
+        "//models:raw_facts",
         "//models/enums:country",
         "//models:visa_cutoff_date",
         "//lib/business/vqs/supply:supply",
@@ -95,6 +116,10 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":expert_pool",
+        ":metric_config",
+        ":regime",
+        ":seasonal_predictor",
+        "//models:visa_cutoff_date",
     ],
 )
 
@@ -109,10 +134,99 @@ py_library(
 )
 
 py_library(
+    name = "prediction_loader",
+    srcs = ["prediction_loader.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":solver",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        requirement("python-dateutil"),
+    ],
+)
+
+py_library(
+    name = "fy_utilization",
+    srcs = ["fy_utilization.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":estimators",
+    ],
+)
+
+py_library(
+    name = "fy_transition_model",
+    srcs = ["fy_transition_model.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":fy_utilization",
+        ":seasonal_predictor",
+        "//models:raw_facts",
+    ],
+)
+
+py_library(
     name = "ingest_utils",
     srcs = ["ingest_utils.py"],
     visibility = ["//visibility:public"],
     deps = [
         "//models/enums:country",
+    ],
+)
+
+py_library(
+    name = "predictors",
+    srcs = ["predictors.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":solver",
+        ":expert_pool",
+        "//models/enums:country",
+        "//models:visa_cutoff_date",
+        requirement("python-dateutil"),
+    ],
+)
+
+py_library(
+    name = "contextual_aggregator",
+    srcs = ["contextual_aggregator.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":predictors",
+        ":regime",
+        ":seasonal_predictor",
+        "//models:visa_cutoff_date",
+        requirement("python-dateutil"),
+    ],
+)
+
+py_library(
+    name = "gbm_expert",
+    srcs = ["gbm_expert.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":seasonal_predictor",
+        "//models:raw_facts",
+        requirement("lightgbm"),
+        requirement("numpy"),
+    ],
+)
+
+py_library(
+    name = "calibration",
+    srcs = ["calibration.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":expert_pool",
+        ":regime",
+        ":seasonal_predictor",
+        "//models:vqs",
+        requirement("python-dateutil"),
     ],
 )

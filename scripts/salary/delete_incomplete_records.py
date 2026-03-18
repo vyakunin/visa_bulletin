@@ -97,7 +97,7 @@ def main():
 Examples:
   Dry-run (preview what would be deleted):
     bazel run //scripts/salary:delete_incomplete_records
-  
+
   Actually delete records:
     bazel run //scripts/salary:delete_incomplete_records -- --fix
         """,

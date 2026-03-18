@@ -130,6 +130,30 @@ py_test(
     srcs_version = "PY3",
 )
 
+# Same dep graph as refresh_bulletin (parser via visa_bulletin plugin). Parser must list
+# //models/enums:family_preference so runfiles include it (prod ModuleNotFoundError otherwise).
+py_test(
+    name = "test_bulletin_parser_deps",
+    size = "small",
+    srcs = ["test_bulletin_parser_deps.py"],
+    main = "test_bulletin_parser_deps.py",
+    deps = [
+        ":django_setup",
+        "//lib/ingest/plugins:visa_bulletin",
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models/ingest:ingest",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
 py_test(
     name = "test_extractor",
     size = "small",
@@ -1134,6 +1158,19 @@ py_test(
 )
 
 py_test(
+    name = "test_traffic_switch",
+    size = "small",
+    srcs = ["test_traffic_switch.py"],
+    main = "test_traffic_switch.py",
+    deps = [
+        "//scripts/cron/refresh:traffic_switch",
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)
+
+py_test(
     name = "test_refresh_orchestrate",
     size = "small",
     srcs = ["test_refresh_orchestrate.py"],
@@ -1142,6 +1179,7 @@ py_test(
         "//scripts/cron/refresh:config",
         "//scripts/cron/refresh:instance",
         "//scripts/cron/refresh:orchestrate",
+        "//scripts/cron/refresh:runner",
         requirement("pytest"),
     ],
     python_version = "PY3",

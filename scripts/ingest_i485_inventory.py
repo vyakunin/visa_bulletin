@@ -81,7 +81,6 @@ def normalize_visa_class(v_str: str) -> str:
 def process_file(filepath: Path, publication_date: date):
     logger.info(f"Processing {filepath} (Pub Date: {publication_date})")
 
-    facts_created = 0
     with open(filepath) as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -101,13 +100,6 @@ def process_file(filepath: Path, publication_date: date):
 
             if count <= 0:
                 continue
-
-            # Fact Dimensions
-            dimensions = {
-                "country": country,
-                "visa_class": visa_class,
-                "priority_date": pd.isoformat(),
-            }
 
             # Fact period: The inventory is a snapshot AT a specific time.
             # But specific row refers to people with PD = X.

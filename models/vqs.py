@@ -38,6 +38,11 @@ class PredictedCutoff(models.Model):
         help_text="Why this prediction?", blank=True
     )
 
+    expert_predictions = models.JSONField(
+        default=dict, blank=True,
+        help_text="Per-expert data: {name: {pred: 'YYYY-MM-DD', weight: 0.XX}}",
+    )
+
     # For historical comparison (populated later when actual is known)
     actual_date = models.DateField(null=True, blank=True)
     accuracy_score = models.FloatField(null=True, blank=True)  # e.g. abs error in days

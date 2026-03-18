@@ -28,7 +28,6 @@ try:
         find_orphaned_employers,
     )
     from scripts.salary.fix_state_codes import (
-        normalize_state_code,
         suggest_fix,
     )
 except ImportError:

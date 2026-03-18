@@ -62,7 +62,7 @@ py_library(
 py_library(
     name = "traffic_switch",
     srcs = ["traffic_switch.py"],
-    visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
+    visibility = ["//scripts/cron:__pkg__", "//scripts/oneoff:__pkg__", "//tests:__pkg__"],
 )
 
 py_library(

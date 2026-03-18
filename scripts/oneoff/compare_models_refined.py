@@ -35,7 +35,7 @@ def run_refined_comparison():
     system_errors = defaultdict(list)
     linear_errors = defaultdict(list)
 
-    BASE_DATE = datetime.date(2000, 1, 1)
+    BASE_DATE = datetime.date(2000, 1, 1)  # noqa: N806
 
     for pb in preds:
         target_month = pb.target_bulletin_month
@@ -99,7 +99,7 @@ def run_refined_comparison():
                 .order_by("-bulletin__publication_date")[:24]
             )
 
-            X = []
+            X = []  # noqa: N806
             y = []
             valid_history = [h for h in history if h.cutoff_date]
 
@@ -116,7 +116,7 @@ def run_refined_comparison():
                 y.append(d_val)
 
             if len(X) > 1:
-                A = np.vstack([X, np.ones(len(X))]).T
+                A = np.vstack([X, np.ones(len(X))]).T  # noqa: N806
                 m, c = np.linalg.lstsq(A, y, rcond=None)[0]
                 target_idx = target_month.year * 12 + target_month.month
                 pred_days = m * target_idx + c

@@ -343,16 +343,16 @@ def main():
 Examples:
   Fix all invalid wages (both high and low):
     bazel run //scripts/salary:fix_invalid_wages
-  
+
   Dry-run to see what would be fixed:
     bazel run //scripts/salary:fix_invalid_wages -- --dry-run
-  
+
   Fix only parsing errors (wrong units):
     bazel run //scripts/salary:fix_invalid_wages -- --category parsing
-  
+
   Fix only data errors (mark as invalid):
     bazel run //scripts/salary:fix_invalid_wages -- --category data
-  
+
   Limit to first 100 records (for testing):
     bazel run //scripts/salary:fix_invalid_wages -- --limit 100
         """,

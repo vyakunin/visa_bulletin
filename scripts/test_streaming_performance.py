@@ -86,7 +86,7 @@ def test_import(filepath: Path, visa_program: str, test_name: str):
 
     # Get final record count
     final_count = SalaryRecord.objects.count()
-    actual_imported = final_count - initial_count
+    _actual_imported = final_count - initial_count
 
     print()
     print("Results:")

@@ -363,7 +363,7 @@ def run_production_benchmark(
                 )
 
     # Phase 4: Calculate metrics (same as LLM benchmark)
-    metrics_start = time.perf_counter()
+    _metrics_start = time.perf_counter()
     execution_time = time.perf_counter() - convert_start
 
     # Calculate metrics
@@ -571,7 +571,7 @@ async def run_llm_benchmark(
     logger.info(f"  Phase 3 - LLM verification: {timing['verification']:.3f}s")
 
     # Phase 4: Calculate metrics
-    metrics_start = time.perf_counter()
+    _metrics_start = time.perf_counter()
     execution_time = time.perf_counter() - convert_start
 
     # Calculate metrics
@@ -851,7 +851,7 @@ async def start_ollama_server() -> subprocess.Popen | None:
                 # Continue to start our own server or use system one
     except Exception:
         pass  # Server not running, continue to start it
-    check_elapsed = time.perf_counter() - check_start
+    _check_elapsed = time.perf_counter() - check_start
 
     # Get stable models directory
     models_dir = get_stable_models_dir()

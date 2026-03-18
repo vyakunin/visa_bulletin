@@ -14,7 +14,6 @@ from models.enums.case_status import CaseStatus  # noqa: F401
 # Import other enums for backward compatibility
 from models.enums.wage_unit import WageUnit  # noqa: F401
 
-
 # Compact labels for UI (table headers, charts). Keyed by enum value.
 _VISA_PROGRAM_SHORT_LABELS = {
     1: "H-1B",

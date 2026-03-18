@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
+load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_library(
     name = "blog",
@@ -11,5 +12,6 @@ py_library(
         "//models:visa_cutoff_date",
         "//models/enums:visa_category",
         "//models/enums:country",
+        requirement("python-dateutil"),
     ],
 )

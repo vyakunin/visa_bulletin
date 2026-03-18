@@ -283,8 +283,7 @@ def _read_data_file(filepath: Path):
         def csv_row_generator():
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
-                    yield row
+                yield from reader
             read_time = time.time() - read_start
             logger.debug(f"File read timing - Total: {read_time:.2f}s (streaming)")
 

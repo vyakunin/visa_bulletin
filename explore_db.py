@@ -43,8 +43,8 @@ def show_summary():
 
     # By category
     cursor.execute("""
-        SELECT visa_category, COUNT(*) as count 
-        FROM visa_cutoff_date 
+        SELECT visa_category, COUNT(*) as count
+        FROM visa_cutoff_date
         GROUP BY visa_category
         ORDER BY count DESC
     """)
@@ -54,7 +54,7 @@ def show_summary():
 
     # Current status counts
     cursor.execute("""
-        SELECT 
+        SELECT
             SUM(CASE WHEN is_current = 1 THEN 1 ELSE 0 END) as current_count,
             SUM(CASE WHEN is_unavailable = 1 THEN 1 ELSE 0 END) as unavailable_count,
             SUM(CASE WHEN is_current = 0 AND is_unavailable = 0 THEN 1 ELSE 0 END) as dated_count
@@ -144,7 +144,7 @@ def query_data(search_term: str):
 
     cursor.execute(
         """
-        SELECT 
+        SELECT
             b.publication_date,
             v.visa_category,
             v.action_type,

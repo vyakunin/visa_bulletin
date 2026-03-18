@@ -24,7 +24,7 @@ Three independent operations — never conflate them:
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging instance → test → iterate. **Never to `prod`.**
 
-**Graduation:** tag `staging` → IP flip → verify prod → fast-forward `prod` to `staging` → bring new staging up to date
+**Graduation (automated):** run orchestrator on prod with `--from-step warm_cache` → warm cache → smoke → IP swap → HTTPS → public URL smoke → update envs (both) → prod-safe override → git branch update → stop old instance. See `deployment.mdc` for full flow.
 
 **Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod-serving instance → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
@@ -65,6 +65,7 @@ git push origin prod
 - **Tags mark releases.** `v1.X.Y` on `staging` before IP flip, then on `prod` after fast-forward.
 - **Code deploy ≠ data refresh.** Quick code fix = commit + push + git pull + restart. Data refresh = orchestrator pipeline (hours).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving.
+- **After graduation, roles swap but instance names are sticky.** `prod_2Gb_vm` points to the prod static IP (after rotation = old staging instance, e.g. VisaBulletinStaging). `staging_2Gb_vm` points to the staging static IP (after rotation = old prod instance, e.g. VisaBulletin2GB, which is typically **stopped** and unreachable until the next pipeline). See deployment.mdc "Production Instances" for verification.
 
 ## Code Deployment (Quick Reference)
 

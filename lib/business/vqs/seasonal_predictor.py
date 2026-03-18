@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import date
 from statistics import median
 
-from lib.business.vqs.data_cache import get_cutoffs_for_series
+from lib.business.vqs.data_cache import get_cutoffs_up_to
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +40,7 @@ def get_seasonal_prediction(
         Predicted movement in days (positive = forward, negative = retrogression).
         None if insufficient historical data.
     """
-    # Get all cutoff dates for this series from cache
-    all_cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-
-    # Filter by knowledge_date (binary search could be faster but linear scan is fine for N<200)
-    # Actually, we can just slice list since it is ordered
-    cutoffs = []
-    for c in all_cutoffs:
-        if c.bulletin.publication_date < knowledge_date:
-            cutoffs.append(c)
-        else:
-            break
+    cutoffs = get_cutoffs_up_to(visa_class, country, action_type, knowledge_date)
 
     if len(cutoffs) < 2:
         return None
@@ -82,15 +72,7 @@ def get_seasonal_prediction_filtered(
     min_samples: int = 3,
 ) -> int | None:
     """Predict cutoff movement filtering by regime (advancing/retrogressing)."""
-    all_cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-
-    # Filter by knowledge_date
-    cutoffs = []
-    for c in all_cutoffs:
-        if c.bulletin.publication_date < knowledge_date:
-            cutoffs.append(c)
-        else:
-            break
+    cutoffs = get_cutoffs_up_to(visa_class, country, action_type, knowledge_date)
 
     if len(cutoffs) < 3:
         return None
@@ -142,29 +124,59 @@ def get_median_post_retro_recovery(
     knowledge_date: date,
     target_month: int,
 ) -> int:
-    """Return median recovery days for Nov/Dec/Jan after an Oct retrogression."""
-    # Logic: Only count years where Oct retrogressed?
-    # For simplicity, just return seasonal median for target month, BUT
-    # we could filter for years with Oct retrogression.
-    # Let's use the generic seasonal median first.
-    move = get_seasonal_prediction(
-        visa_class, country, action_type, knowledge_date, target_month, min_samples=2
-    )
-    return move if move and move > 0 else 0
+    """Return median recovery days for Nov/Dec/Jan, filtered to years with Oct retrogression."""
+    cutoffs = get_cutoffs_up_to(visa_class, country, action_type, knowledge_date)
+    if len(cutoffs) < 3:
+        return 0
+
+    by_ym: dict[tuple[int, int], date] = {}
+    for c in cutoffs:
+        pub = c.bulletin.publication_date
+        by_ym[(pub.year, pub.month)] = c.cutoff_date
+
+    retro_years: set[int] = set()
+    for (y, m), cutoff in by_ym.items():
+        if m != 9:
+            continue
+        oct_cutoff = by_ym.get((y, 10))
+        if oct_cutoff is not None and oct_cutoff < cutoff:
+            retro_years.add(y)
+
+    recovery_moves: list[int] = []
+    for (y, m), cutoff in by_ym.items():
+        if m != target_month:
+            continue
+        prev_month = m - 1 if m > 1 else 12
+        prev_year = y if m > 1 else y - 1
+        prev_cutoff = by_ym.get((prev_year, prev_month))
+        if prev_cutoff is None:
+            continue
+        fy_year = y if m >= 10 else y - 1
+        if fy_year not in retro_years:
+            continue
+        move = (cutoff - prev_cutoff).days
+        if move > 0:
+            recovery_moves.append(move)
+
+    if len(recovery_moves) < 2:
+        move = get_seasonal_prediction(
+            visa_class, country, action_type, knowledge_date, target_month, min_samples=2
+        )
+        return move if move and move > 0 else 0
+
+    return int(median(recovery_moves))
 
 
-def get_last_N_moves(
+def get_last_N_moves(  # noqa: N802
     visa_class: str, country: int, action_type: str, knowledge_date: date, n: int
 ) -> list[int]:
     """Return list of last N monthly movements (days) before knowledge_date."""
-    all_cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-    cutoffs = [c for c in all_cutoffs if c.bulletin.publication_date < knowledge_date]
+    cutoffs = get_cutoffs_up_to(visa_class, country, action_type, knowledge_date)
 
     if len(cutoffs) < 2:
         return []
 
     moves = []
-    # Iterate backwards
     for i in range(len(cutoffs) - 1, 0, -1):
         if len(moves) >= n:
             break
