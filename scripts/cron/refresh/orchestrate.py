@@ -73,6 +73,20 @@ def _verify_post_graduation(
     if not _wait_app_healthy_via_ssh(remote, timeout_sec=30):
         issues.append("New prod HTTP health check failed (curl localhost:8000 not returning 200)")
 
+    # 4. Cron installed on new prod (bulletin refresh should run hourly)
+    try:
+        cron_result = remote.run_shell("crontab -l 2>/dev/null | grep -c refresh_bulletin || true", timeout_sec=10)
+        cron_count = int((cron_result.stdout or "").strip() or "0")
+        if cron_count == 0:
+            issues.append(
+                "Bulletin refresh cron not found on new prod. "
+                "Manual fix: ssh new_prod 'cd /opt/visa_bulletin && bash deployment/cron/setup-ingest-cron.sh'"
+            )
+        else:
+            logger.info("Bulletin refresh cron verified (%d entries)", cron_count)
+    except Exception as e:
+        issues.append(f"Could not check cron on new prod: {e}")
+
     if issues:
         logger.error(
             "POST-GRADUATION VERIFICATION: %d issue(s) found — manual intervention required:\n  - %s",
@@ -206,11 +220,22 @@ def _update_local_env_swap_roles(
     inactive_info: instance.InstanceInfo,
 ) -> None:
     """Update .env on the orchestrator machine (now staging after IP swap) to swap roles."""
+    # After the IP swap: inactive_info.name now holds the prod static IP (active_info.ip),
+    # and active_info.name will receive the staging static IP (inactive_info.ip).
     update_env_value(env_file, "REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
-    update_env_value(env_file, "REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
+    update_env_value(env_file, "REFRESH_ACTIVE_INSTANCE_IP", active_info.ip)
     update_env_value(env_file, "REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
-    update_env_value(env_file, "REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
+    update_env_value(env_file, "REFRESH_INACTIVE_INSTANCE_IP", inactive_info.ip)
     update_env_value(env_file, "REFRESH_MY_INSTANCE_NAME", active_info.name)
+    # Swap private IPs so next cycle SSHes to the right instance.
+    # active_info was the orchestrator (now staging) → its private IP becomes INACTIVE.
+    # inactive_info was the pipeline host (now prod) → its private IP becomes ACTIVE.
+    active_private = os.environ.get("REFRESH_ACTIVE_PRIVATE_IP", "").strip()
+    inactive_private = os.environ.get("REFRESH_INACTIVE_PRIVATE_IP", "").strip()
+    if active_private:
+        update_env_value(env_file, "REFRESH_INACTIVE_PRIVATE_IP", active_private)
+    if inactive_private:
+        update_env_value(env_file, "REFRESH_ACTIVE_PRIVATE_IP", inactive_private)
     logger.info(
         "Updated local .env (orchestrator/staging): active=%s, inactive=%s, my=%s",
         inactive_info.name,
@@ -369,6 +394,11 @@ def run_orchestrate(
         logger.info("This host is inactive; no-op (orchestrator should run on active)")
         return 0
 
+    # Validate .env against actual AWS state to catch corrupted .env from partial runs.
+    # Logs errors with recovery instructions on mismatch but does not abort (non-fatal)
+    # so a misconfigured AWS CLI doesn't block the orchestrator.
+    instance.validate_env_against_aws(active_info, inactive_info)
+
     logger.info(
         "Active: %s (%s), Inactive: %s (%s)",
         active_info.name,
@@ -382,8 +412,21 @@ def run_orchestrate(
     ssh_key = os.environ.get("REFRESH_SSH_KEY_PATH", "")
     ssh_timeout_raw = os.environ.get("REFRESH_SSH_TIMEOUT", "14400").strip()
     ssh_timeout_sec = int(ssh_timeout_raw) if ssh_timeout_raw.isdigit() else 14400
+    # Prefer private IP for inter-instance SSH: Lightsail instances cannot reach each
+    # other via public static IPs. Set REFRESH_INACTIVE_PRIVATE_IP in .env to the
+    # inactive instance's private IP (visible in Lightsail console → Networking → Private IP).
+    # Private IPs survive stop/start and rotate with the instance, not the static IP.
+    inactive_ssh_host = (
+        os.environ.get("REFRESH_INACTIVE_PRIVATE_IP", "").strip() or inactive_info.ip
+    )
+    if inactive_ssh_host != inactive_info.ip:
+        logger.info(
+            "Using private IP %s for SSH to inactive instance (public IP: %s)",
+            inactive_ssh_host,
+            inactive_info.ip,
+        )
     remote = RemoteRunner(
-        host=inactive_info.ip,
+        host=inactive_ssh_host,
         project_root=project_root,
         ssh_user=ssh_user,
         ssh_key_path=ssh_key if ssh_key else None,
@@ -517,11 +560,21 @@ def run_orchestrate(
     logger.info(
         "Updating new prod .env (swap REFRESH_ACTIVE_* / REFRESH_INACTIVE_* / REFRESH_MY_INSTANCE_NAME)"
     )
+    # After the IP swap: inactive_info.name now holds the prod static IP (active_info.ip),
+    # and active_info.name will receive the staging static IP (inactive_info.ip).
     remote.update_env("REFRESH_ACTIVE_INSTANCE_NAME", inactive_info.name)
-    remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", inactive_info.ip)
+    remote.update_env("REFRESH_ACTIVE_INSTANCE_IP", active_info.ip)
     remote.update_env("REFRESH_INACTIVE_INSTANCE_NAME", active_info.name)
-    remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", active_info.ip)
+    remote.update_env("REFRESH_INACTIVE_INSTANCE_IP", inactive_info.ip)
     remote.update_env("REFRESH_MY_INSTANCE_NAME", inactive_info.name)
+    # Swap private IPs on new prod: inactive (pipeline host, now prod) has ACTIVE private IP;
+    # active (orchestrator host, now staging) has INACTIVE private IP.
+    active_private = os.environ.get("REFRESH_ACTIVE_PRIVATE_IP", "").strip()
+    inactive_private = os.environ.get("REFRESH_INACTIVE_PRIVATE_IP", "").strip()
+    if inactive_private:
+        remote.update_env("REFRESH_ACTIVE_PRIVATE_IP", inactive_private)
+    if active_private:
+        remote.update_env("REFRESH_INACTIVE_PRIVATE_IP", active_private)
 
     # Update .env on orchestrator machine (old active, now staging after IP swap)
     logger.info("Updating local .env (orchestrator, now staging) to swap roles")

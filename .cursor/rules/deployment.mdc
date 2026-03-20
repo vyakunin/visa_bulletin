@@ -315,6 +315,18 @@ cd /opt/visa_bulletin && set -a && source .env && set +a
 - **Stale Docker `:latest` image:** The `:latest` image is from Dec 2025, before enum migrations. **DO NOT remove the `../:/app` volume mount from prod** until a fresh image is built and pushed (push to `prod` branch triggers GitHub Actions rebuild). Without the volume mount, the baked-in image code will crash with `DataError: invalid input syntax for type integer: "all"` on the Country enum.
 - **docker-compose 1.29.2 ContainerConfig bug:** `docker-compose up -d` can hit `KeyError: 'ContainerConfig'` killing the running container. Workaround: `docker rm -f <name>` then `docker-compose up -d`. The orchestrator's `prod-safe override` step must handle this.
 
+**Known issues from 2026-03-18 graduation:**
+- **Inter-instance SSH via public IP fails:** Lightsail instances cannot SSH to each other using public IPs. **FIXED in code:** set `REFRESH_INACTIVE_PRIVATE_IP` and `REFRESH_ACTIVE_PRIVATE_IP` in `.env` to the private IPs (Lightsail console → instance → Networking → Private IP). The orchestrator now uses these for SSH and automatically swaps them on graduation. Private IPs survive stop/start. `~/.ssh/config` remapping is no longer needed if these env vars are set. VisaBulletin2GB private IP: `172.26.13.90`. VisaBulletinStaging private IP: check console.
+- **Nginx default-server `\$host` escaping bug:** If `/etc/nginx/sites-enabled/default-server` was created manually via SSH (heredoc/echo), `$host` may have been written as `\$host`. nginx sends a literal backslash in the Host header, which Django rejects with `DisallowedHost`. Fix: `sudo cp deployment/nginx/default-server.conf /etc/nginx/sites-enabled/default-server && sudo nginx -s reload`. This file is now in the repo and installed by both `setup_new_instance.sh` and the orchestrator's `start_remote_services()`.
+- **Wrong git branch on inactive host → wrong Docker image tag:** The orchestrator derives the image tag as `<branch>-<sha>` from the current branch on the inactive host. If the inactive host is on `prod` (from a previous graduation cycle), it constructs `prod-<sha>`, but CI built `staging-<sha>`. Fix: `git checkout staging && git reset --hard origin/staging` on the inactive host before running the orchestrator.
+
+**Known issues from 2026-03-19 graduation fix session:**
+- **Post-swap `.env` writes wrong IPs (FIXED):** `orchestrate.py` was writing `REFRESH_ACTIVE_INSTANCE_IP` = staging static IP and `REFRESH_INACTIVE_INSTANCE_IP` = prod static IP after graduation — both backwards. This caused the next cycle to SSH to the wrong instance. Fixed: IPs are now correctly assigned (ACTIVE gets the prod static IP, INACTIVE gets the staging static IP).
+- **Corrupted `.env` from partial runs:** If the orchestrator crashes or is killed between `.env` update steps, `.env` can be left in a half-swapped state. The orchestrator now validates `.env` against actual AWS state at startup (queries `aws lightsail get-static-ips` and checks IP-to-instance attachment). If mismatch is found, it logs an error with recovery instructions. Recovery: correct `.env` REFRESH_ACTIVE/INACTIVE_* vars to match what `aws lightsail get-static-ips` reports.
+- **`case_submitted` NULL on new staging after graduation:** After graduation, the new staging (old prod) has salary records with NULL `case_submitted` because the old prod was running before `populate_case_submitted` was in the pipeline. A normal pipeline run on the new staging will fix this automatically — `populate_case_submitted` is NOT in the skip-when-zero-ingested set, runs in-place from DOL files on disk, and takes ~30 min. The smoke tests now enforce a 65% minimum coverage floor (`MIN_CASE_SUBMITTED_PERCENT`) to block graduation if this step fails. Current healthy prod baseline: ~74% overall (100% for FY2018-2024, ~26% for FY2025 partial files, 0% pre-2018).
+
+**Rule: Always persist critical graduation/pipeline findings in `deployment.mdc` or `PIPELINE_RUNBOOK.md`, not only in agent output.** Every time the orchestrator hits a new failure mode, add a "Known issues from YYYY-MM-DD graduation" bullet here with the fix or workaround. Agent outputs are not preserved across sessions.
+
 **Manual graduation** from local worktree (if orchestrator not available):
 ```bash
 cd ~/cursor_projects/visa_bulletin_prod
@@ -363,6 +375,35 @@ ssh prod_2Gb_vm "tail -5 /var/log/visa-bulletin/bulletin_refresh.log"
 curl -sI https://visa-bulletin.us/ | head -3
 # Expected: HTTP/2 200
 ```
+
+**6. `.env` private IPs on new prod (for next cycle)**
+```bash
+ssh prod_2Gb_vm "grep -E 'REFRESH_(ACTIVE|INACTIVE)_PRIVATE_IP' /opt/visa_bulletin/.env"
+# Expected: both set to the correct private IPs (swapped from pre-graduation)
+```
+- VisaBulletin2GB private IP: `172.26.13.90`; VisaBulletinStaging private IP: `172.26.7.74`
+- After graduation where VisaBulletin2GB becomes prod: `ACTIVE=172.26.13.90`, `INACTIVE=172.26.7.74`
+- The orchestrator swaps these automatically during graduation (if they were set before)
+- If missing: add them manually so the next graduation uses private-IP SSH
+
+## Pre-Graduation Requirements
+
+**Set these in prod's `.env` before running graduation.** Missing values cause failures or manual cleanup.
+
+| Variable | Required | Example | Purpose |
+|---|---|---|---|
+| `REFRESH_STATIC_IP_NAME` | YES | `VisaBulletin-StaticIP` | Prod static IP name (get from `aws lightsail get-static-ips`) |
+| `REFRESH_STAGING_STATIC_IP_NAME` | YES | `VisaBulletinStaging-ip` | Staging static IP name |
+| `REFRESH_ACTIVE_PRIVATE_IP` | YES | `172.26.7.74` | Private IP of current prod (survives stop/start) |
+| `REFRESH_INACTIVE_PRIVATE_IP` | YES | `172.26.13.90` | Private IP of inactive/staging host |
+| `REFRESH_MY_INSTANCE_NAME` | YES | `VisaBulletinStaging` | Name of instance running the orchestrator |
+| `REFRESH_ACTIVE_INSTANCE_NAME` | YES | `VisaBulletinStaging` | Current prod instance name |
+| `REFRESH_INACTIVE_INSTANCE_NAME` | YES | `VisaBulletin2GB` | Current staging instance name |
+
+**Also verify before graduation:**
+- Inactive host (staging) is on `staging` branch, NOT `prod` (check with `ssh staging_2Gb_vm "cd /opt/visa_bulletin && git rev-parse --abbrev-ref HEAD"`)
+- Inactive host Docker is healthy (`ssh staging_2Gb_vm "docker ps"`)
+- Smoke tests passed on inactive host during pipeline (check `/tmp/refresh_stage.log` on staging)
 
 ## Rule: Deploy Updated Binary and Run Yourself When Instructed
 

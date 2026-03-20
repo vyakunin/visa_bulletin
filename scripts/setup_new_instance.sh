@@ -440,6 +440,11 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q "REFRESH_SSH_KEY_PATH" "$ENV_FILE" 2>/dev/n
 # REFRESH_SSH_KEY_PATH=/home/ubuntu/.ssh/lightsail_visa_bulletin
 # REFRESH_REMOTE_PROJECT_ROOT=/opt/visa_bulletin
 # REFRESH_REMOTE_DB_NAME=visa_bulletin
+# Private IPs for inter-instance SSH (Lightsail instances cannot reach each other via public IPs).
+# Get from Lightsail console → instance → Networking → Private IP. These survive stop/start.
+# The orchestrator swaps these automatically on graduation so the next cycle has the right values.
+# REFRESH_ACTIVE_PRIVATE_IP=172.26.x.x    # Private IP of the active (prod) instance
+# REFRESH_INACTIVE_PRIVATE_IP=172.26.x.x  # Private IP of the inactive (staging) instance
 # Lightsail static IP names (required for graduation). Get from: aws lightsail get-static-ips --region us-east-1
 # REFRESH_STATIC_IP_NAME=    # Prod static IP name (traffic switch attaches this to new prod)
 # REFRESH_STAGING_STATIC_IP_NAME=    # Staging static IP name (reattached to old prod after graduation so staging is reachable)
@@ -468,6 +473,10 @@ sudo cp deployment/nginx/rate-limiting.conf /opt/visa_bulletin/deployment/nginx/
 # Log format (response time) and GPTBot rate limit (http context)
 sudo cp deployment/nginx/visa-bulletin-log-format.conf /etc/nginx/conf.d/
 sudo cp deployment/nginx/gptbot-rate-limit.conf /etc/nginx/conf.d/
+# Default server block so app is reachable by IP (staging health checks, orchestrator smoke test).
+# IMPORTANT: copy from repo, never create manually — nginx does not use shell escaping,
+# so \$host in a heredoc/echo becomes a literal backslash in the header (Django rejects it).
+sudo cp deployment/nginx/default-server.conf /etc/nginx/sites-enabled/default-server
 
 # Enable site
 sudo ln -sf /etc/nginx/sites-available/visa-bulletin /etc/nginx/sites-enabled/

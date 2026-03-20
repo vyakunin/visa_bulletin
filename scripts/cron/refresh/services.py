@@ -101,6 +101,13 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     )
     override_file = str(root / "deployment" / "docker-compose.override.yml")
     compose_args = f"-f {shlex.quote(compose_file)}"
+    # Kill any gunicorn that may have been started manually (e.g. during debugging)
+    # after stop_remote_services() was called. This prevents port 8000 conflicts when
+    # Docker tries to bind. Use pgrep+kill (not pkill -f) to avoid killing the SSH shell.
+    runner.run_shell(
+        "(pgrep -f 'gunicorn.*django_config' | grep -v ^$$ | xargs -r kill 2>/dev/null) || true",
+        timeout_sec=10,
+    )
     cleanup_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
         f"docker rm -f visa_bulletin_web visa_bulletin_redis 2>/dev/null; "
@@ -116,6 +123,16 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
     )
     tag_result = runner.run_shell(image_tag_cmd, timeout_sec=5)
     image_tag = (tag_result.stdout or "").strip() or "latest"
+    # Guard: if the inactive host is on 'prod' branch, the image tag will be prod-<sha>
+    # which doesn't exist in CI (CI builds staging-<sha> for staging deployments).
+    # This happens when the host was last used as prod and wasn't switched to staging
+    # before the orchestrator ran. Fail early with a clear message.
+    if image_tag.startswith("prod-"):
+        raise RuntimeError(
+            f"Inactive host is on 'prod' branch (image tag would be {image_tag!r}). "
+            "Switch it to 'staging' first: "
+            "git fetch origin staging && git reset --hard origin/staging"
+        )
     pull_and_up_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && "
         f"cd {shlex.quote(str(root))} && "

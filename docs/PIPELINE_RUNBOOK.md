@@ -323,8 +323,41 @@ After a traffic switch, the previous production host becomes the new inactive/st
 | ALLOWED_HOSTS missing IP | `docker-compose.override.yml` adds target host IP |
 | Missing stats/counts | Smoke tests verify `total_filings > 0` and autocomplete results |
 | Volume mount on new prod | `_write_prod_safe_override` replaces `../:/app` with prod-safe override (no volume mount) after traffic switch |
+| NULL `case_submitted` on old prod data | `step_populate_case_submitted` backfills in-place from DOL files on disk (see below) |
 
 **No manual intervention needed** — the pipeline is designed to work on either host regardless of its previous role.
+
+### NULL case_submitted After Graduation (Automated)
+
+After graduation, the new staging (old prod) may have salary records with NULL `case_submitted` if the old prod was running before `populate_case_submitted` was added to the pipeline.
+
+**No full re-ingest needed.** The `populate_case_submitted` step reads DOL source files from `data/salary/dol_data/` (already on disk), finds records where `case_submitted IS NULL`, and updates them in-place. It is NOT in `STEPS_SKIP_WHEN_ZERO_INGESTED`, so it always runs — even when 0 new sources are ingested. Takes ~30 min for ~1.5M records.
+
+**Smoke test gate:** The smoke tests require `case_submitted` coverage ≥ 65% (`MIN_CASE_SUBMITTED_PERCENT`). Healthy prod baseline: ~74% overall (100% for FY2018-2024, ~26% for FY2025 partial files, 0% pre-2018). If coverage is below 65%, graduation is blocked.
+
+**Pre-pipeline check:**
+
+```bash
+ssh staging_2Gb_vm "ls /opt/visa_bulletin/data/salary/dol_data/ | wc -l"  # should be 20+
+ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && \
+  DB_HOST=localhost bazel run //:run_sql -- --query \
+  'SELECT COUNT(*) as total, COUNT(case_submitted) as with_cs FROM salary_record'"
+```
+
+**Monitoring during pipeline:**
+
+```bash
+ssh staging_2Gb_vm "grep -E 'populate_case_submitted|Found.*without case_submitted|Updated.*records|No records need updating' /tmp/refresh_stage.log | tail -20"
+```
+
+- `Found N without case_submitted` + `Updated N records` = GOOD
+- `No records need updating for X` for every file = BAD — likely `source_file` column mismatch
+
+**Troubleshooting — "No records need updating" for every file:**
+
+1. **`source_file` mismatch:** Script matches by `salary_record.source_file`. If values differ from filenames on disk, no records match. Compare: `SELECT DISTINCT source_file FROM salary_record ORDER BY source_file LIMIT 20` vs `ls data/salary/dol_data/`.
+2. **DOL files purged:** If `ls data/salary/dol_data/ | wc -l` = 0, reset checkpoint to before `ingest_complete` so next pipeline re-downloads them.
+3. **Column mapping change:** New DOL file format doesn't match `LCA_COLUMN_MAPPINGS`/`PERM_COLUMN_MAPPINGS`. Look for "Found 0 records to update from N rows" in stage log.
 
 ### New Prod: Override Cleanup (Automated)
 

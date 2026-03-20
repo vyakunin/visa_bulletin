@@ -377,7 +377,11 @@ class RemoteRunner:
         bin_path = f"{root}/bazel-bin/{rel_path}"
         args_s = " ".join(shlex.quote(a) for a in args)
         stage_log = os.environ.get("REFRESH_STAGE_LOG_PATH", "/tmp/refresh_stage.log")
-        inner = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && "
+        # BUILD_WORKSPACE_DIRECTORY is set by `bazel run` but NOT when running pre-built
+        # binaries directly. Scripts that use get_workspace_dir() (e.g. populate_case_submitted)
+        # fall back to os.getcwd(), but Bazel binaries change cwd to their runfiles directory.
+        # Explicitly exporting it ensures the binary finds data files in the project root.
+        inner = f"cd {root} && set -a && [ -f .env ] && source .env && set +a && export BUILD_WORKSPACE_DIRECTORY={root} && "
         # Optional env overrides (e.g. REDIS_URL= so warm_cache uses LocMem on host)
         if env_override:
             for k, v in env_override.items():

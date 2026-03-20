@@ -21,6 +21,11 @@ MIN_SLUG_PERCENT = 99
 MIN_CLUSTERED_EMPLOYERS = 100_000
 MIN_JT_CLUSTERS_WITH_STATS = 1_000
 MIN_EMPLOYER_CLUSTERS_WITH_STATS = 1_000
+# case_submitted coverage: LCA records from FY2018+ are ~100%; pre-2018 and
+# some PERM records lack the column, bringing the healthy baseline to ~70-75%.
+# 65% catches catastrophic failures (near-0% after a fresh staging import or
+# if populate_case_submitted completely fails) while passing healthy prod data.
+MIN_CASE_SUBMITTED_PERCENT = 65
 
 MIN_AUTOCOMPLETE_RESULTS = 1
 MIN_DIRECTORY_ENTRIES = 10
@@ -69,6 +74,22 @@ def _run_db_smoke_tests(runner: Runner, db_name: str) -> None:
     if record_count < MIN_RECORDS:
         raise RuntimeError(
             f"Record count too low: {record_count} (expected >{MIN_RECORDS})"
+        )
+
+    case_submitted_s = runner.run_psql(
+        db_name,
+        "SELECT COUNT(*) FROM salary_record WHERE case_submitted IS NOT NULL;",
+    )
+    case_submitted_count = int(case_submitted_s.strip()) if case_submitted_s.strip() else 0
+    cs_pct = (case_submitted_count * 100 // record_count) if record_count else 0
+    logger.info("Records with case_submitted: %s (%s%%)", case_submitted_count, cs_pct)
+    if cs_pct < MIN_CASE_SUBMITTED_PERCENT:
+        raise RuntimeError(
+            f"case_submitted coverage too low: {cs_pct}% ({case_submitted_count:,}/{record_count:,} records). "
+            f"Expected >{MIN_CASE_SUBMITTED_PERCENT}% (healthy prod baseline is ~70-75%). "
+            "populate_case_submitted may have failed or DOL files are missing from data/salary/dol_data/. "
+            "Check stage log for 'No records need updating' (source_file mismatch) or 'File not found'. "
+            "Do not graduate until this is resolved — filing year dropdown will be broken on prod."
         )
 
     max_fy_s = runner.run_psql(db_name, "SELECT MAX(fiscal_year) FROM salary_record;")
