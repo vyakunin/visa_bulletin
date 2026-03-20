@@ -242,9 +242,11 @@ def setup_https_on_remote(
     if not domains:
         logger.warning("No HTTPS domains configured; skipping certbot")
         return True
-    domain_args = " ".join(shlex.quote(d) for d in domains)
+    # certbot requires a separate -d flag for each domain; a single -d with multiple
+    # values is rejected ("unrecognized arguments: www.visa-bulletin.us").
+    domain_args = " ".join(f"-d {shlex.quote(d)}" for d in domains)
     cmd = (
-        f"sudo certbot --nginx -d {domain_args} "
+        f"sudo certbot --nginx {domain_args} "
         "--non-interactive --agree-tos --register-unsafely-without-email"
     )
     result = runner.run_shell(cmd, timeout_sec=timeout_sec)
