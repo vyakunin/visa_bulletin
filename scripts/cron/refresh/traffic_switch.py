@@ -18,50 +18,75 @@ def _aws_region() -> str:
     )
 
 
+def _get_static_ip_attached_to(static_ip_name: str, region: str) -> str | None:
+    """Return the instance name the static IP is currently attached to, or None if detached."""
+    import json
+    import subprocess
+
+    result = subprocess.run(
+        ["aws", "lightsail", "get-static-ip", "--static-ip-name", static_ip_name, "--region", region],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout)
+        return data.get("staticIp", {}).get("attachedTo") or None
+    except Exception:
+        return None
+
+
 def switch_traffic_static_ip(
     static_ip_name: str,
     instance_name_to_attach: str,
     region: str | None = None,
 ) -> bool:
-    """Detach static IP from current instance, attach to instance_name_to_attach. Returns True on success."""
+    """Detach static IP from current instance, attach to instance_name_to_attach.
+
+    Idempotent: if the IP is already on instance_name_to_attach, returns True.
+    Returns True on success, False on failure.
+    """
     import subprocess
 
     reg = region or _aws_region()
+
+    # Idempotency check: if already on target, nothing to do.
+    current = _get_static_ip_attached_to(static_ip_name, reg)
+    if current == instance_name_to_attach:
+        logger.info(
+            "Static IP %s already attached to %s (idempotent — skip)", static_ip_name, instance_name_to_attach
+        )
+        return True
+
     result = subprocess.run(
-        [
-            "aws",
-            "lightsail",
-            "detach-static-ip",
-            "--static-ip-name",
-            static_ip_name,
-            "--region",
-            reg,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
+        ["aws", "lightsail", "detach-static-ip", "--static-ip-name", static_ip_name, "--region", reg],
+        capture_output=True, text=True, timeout=120,
     )
     if result.returncode != 0:
-        logger.error("detach-static-ip failed: %s", result.stderr)
-        return False
+        # Tolerate "not attached" errors — IP may already be detached if a previous run
+        # timed out after detach but before attach.
+        if "not attached" in (result.stderr or "").lower() or "IsNotAttached" in (result.stderr or ""):
+            logger.warning("detach-static-ip: IP was already detached (continuing): %s", result.stderr)
+        else:
+            logger.error("detach-static-ip failed: %s", result.stderr)
+            return False
+
     result = subprocess.run(
         [
-            "aws",
-            "lightsail",
-            "attach-static-ip",
-            "--static-ip-name",
-            static_ip_name,
-            "--instance-name",
-            instance_name_to_attach,
-            "--region",
-            reg,
+            "aws", "lightsail", "attach-static-ip",
+            "--static-ip-name", static_ip_name,
+            "--instance-name", instance_name_to_attach,
+            "--region", reg,
         ],
-        capture_output=True,
-        text=True,
-        timeout=120,
+        capture_output=True, text=True, timeout=120,
     )
     if result.returncode != 0:
-        logger.error("attach-static-ip failed: %s", result.stderr)
+        # Idempotency: if already attached to the target, treat as success.
+        err = result.stderr or ""
+        if "already attached" in err.lower() and instance_name_to_attach in err:
+            logger.info("Static IP %s already attached to %s (idempotent)", static_ip_name, instance_name_to_attach)
+            return True
+        logger.error("attach-static-ip failed: %s", err)
         return False
     logger.info("Static IP %s attached to %s", static_ip_name, instance_name_to_attach)
     return True
