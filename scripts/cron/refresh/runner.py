@@ -452,7 +452,13 @@ class RemoteRunner:
         env_path = self.project_root / ".env"
         val_esc = value.replace("'", "'\"'\"'")
         key_esc = key.replace("'", "'\"'\"'")
-        cmd = f"sed -i.bak 's/^{key_esc}=.*/{key_esc}={val_esc}/' {env_path} 2>/dev/null || echo '{key_esc}={val_esc}' >> {env_path}"
+        # sed returns 0 even when no substitution happens, so || never triggers.
+        # Use grep -q to check existence first; replace if found, append if not.
+        cmd = (
+            f"grep -q '^{key_esc}=' {env_path} 2>/dev/null "
+            f"&& sed -i.bak 's/^{key_esc}=.*/{key_esc}={val_esc}/' {env_path} "
+            f"|| echo '{key_esc}={val_esc}' >> {env_path}"
+        )
         self._ssh(cmd)
 
     def run_shell(
