@@ -236,8 +236,10 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     - Salaries page renders without errors
     - Dashboard page renders without errors
     """
-    host_header = getattr(runner, "host", None)
-    status, _ = _curl_localhost(runner, "/", host_header=host_header)
+    # Use "localhost" as the Host header (not runner.host, which may be a private IP not in
+    # ALLOWED_HOSTS). Since curl runs ON the remote machine via SSH, "localhost" is always
+    # valid and is always included in the staging/prod override's ALLOWED_HOSTS.
+    status, _ = _curl_localhost(runner, "/", host_header="localhost")
     if status != 200:
         raise RuntimeError(
             f"Homepage returned HTTP {status} (expected 200). "
@@ -246,7 +248,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Homepage: OK (200)")
 
     status, body = _curl_localhost(
-        runner, "/api/job-title-autocomplete/?q=software&limit=5", host_header=host_header
+        runner, "/api/job-title-autocomplete/?q=software&limit=5", host_header="localhost"
     )
     if status != 200:
         raise RuntimeError(
@@ -273,7 +275,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     )
 
     status, body = _curl_localhost(
-        runner, "/api/company-autocomplete/?q=google&limit=5", host_header=host_header
+        runner, "/api/company-autocomplete/?q=google&limit=5", host_header="localhost"
     )
     if status != 200:
         raise RuntimeError(
@@ -299,7 +301,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         "[HTTP] Employer autocomplete: OK (%d results, fields validated)", len(results)
     )
 
-    status, body = _curl_localhost(runner, "/job-titles/", host_header=host_header)
+    status, body = _curl_localhost(runner, "/job-titles/", host_header="localhost")
     if status != 200:
         raise RuntimeError(f"Job title directory returned HTTP {status}.")
     if body.count("/job-title/") < MIN_DIRECTORY_ENTRIES:
@@ -309,7 +311,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Job title directory: OK (has entries)")
 
-    status, body = _curl_localhost(runner, "/employers/", host_header=host_header)
+    status, body = _curl_localhost(runner, "/employers/", host_header="localhost")
     if status != 200:
         raise RuntimeError(f"Employer directory returned HTTP {status}.")
     if body.count("/employer/") < MIN_DIRECTORY_ENTRIES:
@@ -320,7 +322,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Employer directory: OK (has entries)")
 
     status, _ = _curl_localhost(
-        runner, "/salaries/", timeout_sec=30, host_header=host_header
+        runner, "/salaries/", timeout_sec=30, host_header="localhost"
     )
     if status != 200:
         raise RuntimeError(
@@ -330,7 +332,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Salaries page: OK (200)")
 
     status, _ = _curl_localhost(
-        runner, "/", timeout_sec=30, host_header=host_header
+        runner, "/", timeout_sec=30, host_header="localhost"
     )
     if status != 200:
         raise RuntimeError(
