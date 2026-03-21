@@ -557,6 +557,30 @@
                 font-size: 1rem;
             }
         }
+
+        /* Sticky donation bar */
+        .sticky-donation-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1050;
+            background: linear-gradient(90deg, #fdf2f7 0%, #fef8fb 50%, #f7f0ff 100%);
+            border-top: 1px solid #f0d6e3;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+        }
+        body.has-donation-bar {
+            padding-bottom: 62px;
+        }
+        @media (max-width: 576px) {
+            .sticky-donation-bar .container {
+                flex-direction: column;
+                align-items: flex-start !important;
+            }
+            .sticky-donation-bar .bar-text {
+                font-size: 0.85rem;
+            }
+        }
     </style>
     
     {% block extra_head %}{% endblock %}
@@ -848,6 +872,46 @@
     <script src="{% static 'js/sortable_tables.js' %}" defer></script>
     
     {% block extra_scripts %}{% endblock %}
+
+    {% if request.path == '/' or request.path|slice:":18" == '/employment-based/' or request.path|slice:":18" == '/family-sponsored/' %}
+    <div id="sticky-donation-bar" class="sticky-donation-bar" role="complementary" aria-label="Support the project">
+        <div class="container d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
+            <span class="bar-text" style="color: #444;">
+                <i class="bi bi-heart-fill" style="color: #db61a2;"></i>
+                If this helped you track your visa dates, consider supporting the project
+            </span>
+            <div class="d-flex gap-2 align-items-center">
+                <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-sticky" target="_blank" rel="noopener"
+                   class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
+                    <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
+                </a>
+                <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-sticky" target="_blank" rel="noopener"
+                   class="btn btn-sm btn-outline-secondary" style="font-weight: 600;">
+                    <i class="bi bi-github"></i> GitHub Sponsors
+                </a>
+                <button onclick="dismissDonationBar()" class="btn btn-sm btn-link p-1" aria-label="Dismiss donation bar" style="color: #999; text-decoration: none;">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function() {
+            if (sessionStorage.getItem('donation-bar-dismissed')) {
+                var bar = document.getElementById('sticky-donation-bar');
+                if (bar) bar.style.display = 'none';
+            } else {
+                document.body.classList.add('has-donation-bar');
+            }
+        })();
+        function dismissDonationBar() {
+            var bar = document.getElementById('sticky-donation-bar');
+            if (bar) bar.style.display = 'none';
+            document.body.classList.remove('has-donation-bar');
+            sessionStorage.setItem('donation-bar-dismissed', '1');
+        }
+    </script>
+    {% endif %}
 </body>
 </html>
 
