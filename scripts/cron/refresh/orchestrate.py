@@ -305,26 +305,31 @@ def _update_git_branch_on_new_prod(
 ) -> bool:
     """Push prod=staging to origin and switch new prod's checkout to prod branch.
 
-    The push requires git credentials on the instance (deploy key or token).
-    If push fails, logs a warning — the user can push manually from their worktree.
-    The checkout switch is local-only and always safe (same code, no reload).
+    Requires a deploy key at ~/.ssh/github_deploy_key on the instance.
+    If push fails, logs an error and keeps the instance on source_branch
+    (which has the correct code) rather than checking out stale origin/prod.
     """
     push_result = runner.run_shell(
         f"cd {project_root} && "
         f"git push origin {shlex.quote(source_branch)}:{shlex.quote(target_branch)} --force",
         timeout_sec=60,
     )
-    if push_result.returncode != 0:
-        logger.warning(
-            "git push %s:%s failed (may lack credentials): %s. Push manually from worktree.",
+    push_ok = push_result.returncode == 0
+    if not push_ok:
+        logger.error(
+            "git push %s:%s failed — deploy key may not be configured. "
+            "Keeping instance on %s branch (correct code). "
+            "Manual fix: cd /opt/visa_bulletin && git push origin %s:%s --force",
             source_branch,
             target_branch,
-            ((push_result.stderr or "") + (push_result.stdout or ""))[:500],
+            source_branch,
+            source_branch,
+            target_branch,
         )
-    else:
-        logger.info(
-            "Pushed %s branch to match %s on origin", target_branch, source_branch
-        )
+        # Stay on source_branch — it has the right code and avoids fetching stale origin/prod.
+        return False
+
+    logger.info("Pushed %s branch to match %s on origin", target_branch, source_branch)
 
     checkout_result = runner.run_shell(
         f"cd {project_root} && "

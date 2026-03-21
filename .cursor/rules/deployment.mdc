@@ -321,6 +321,9 @@ cd /opt/visa_bulletin && set -a && source .env && set +a
 - **Nginx default-server `\$host` escaping bug:** If `/etc/nginx/sites-enabled/default-server` was created manually via SSH (heredoc/echo), `$host` may have been written as `\$host`. nginx sends a literal backslash in the Host header, which Django rejects with `DisallowedHost`. Fix: `sudo cp deployment/nginx/default-server.conf /etc/nginx/sites-enabled/default-server && sudo nginx -s reload`. This file is now in the repo and installed by both `setup_new_instance.sh` and the orchestrator's `start_remote_services()`.
 - **Wrong git branch on inactive host → wrong Docker image tag:** The orchestrator derives the image tag as `<branch>-<sha>` from the current branch on the inactive host. If the inactive host is on `prod` (from a previous graduation cycle), it constructs `prod-<sha>`, but CI built `staging-<sha>`. Fix: `git checkout staging && git reset --hard origin/staging` on the inactive host before running the orchestrator.
 
+**Known issues from 2026-03-21:**
+- **`git push staging:prod` silently failed — instances on stale code (FIXED):** No GitHub credentials on instances meant `_update_git_branch_on_new_prod()` logged a warning and then fetched stale `origin/prod`, leaving both instances on old code after graduation. Fixed: (1) deploy key added to both instances (`/home/ubuntu/.ssh/github_deploy_key`), git remote switched to SSH; (2) orchestrate.py now logs an error and keeps instance on `staging` branch (correct code) rather than checking out stale `origin/prod` when push fails.
+
 **Known issues from 2026-03-20 graduation:**
 - **Smoke test HTTP 400 (FIXED):** `_run_http_smoke_tests` used `runner.host` as the `Host:` header. When the orchestrator uses private IP SSH, `runner.host = 172.26.x.x` (private IP) which is NOT in `ALLOWED_HOSTS`. Fixed: always use `localhost` as the host header (curl runs on the remote machine, so `localhost` is always valid).
 - **`switch_traffic_static_ip` not idempotent (FIXED):** If the graduation fails AFTER the IP swap (e.g. due to smoke test failure on a re-run), re-running graduation fails with "VisaBulletin-StaticIP is already attached to VisaBulletin2GB". Fixed: `traffic_switch.py` now does an idempotency pre-check (`get-static-ip` to verify current attachment) and treats "already attached to target" as success.
@@ -414,6 +417,47 @@ ssh prod_2Gb_vm "grep -E 'REFRESH_(ACTIVE|INACTIVE)_PRIVATE_IP' /opt/visa_bullet
 - Inactive host (staging) is on `staging` branch, NOT `prod` (check with `ssh staging_2Gb_vm "cd /opt/visa_bulletin && git rev-parse --abbrev-ref HEAD"`)
 - Inactive host Docker is healthy (`ssh staging_2Gb_vm "docker ps"`)
 - Smoke tests passed on inactive host during pipeline (check `/tmp/refresh_stage.log` on staging)
+- Deploy key present on both instances: `ssh prod_2Gb_vm "test -f /home/ubuntu/.ssh/github_deploy_key && echo ok"` (if missing, see deploy key setup below)
+
+## Deploy Key Setup (one-time per instance)
+
+Required for `git push origin staging:prod` during graduation (step 10). Both instances need the same key since they swap roles.
+
+**Setup (run once per instance):**
+```bash
+# 1. Generate key on prod (one-time)
+ssh prod_2Gb_vm "ssh-keygen -t ed25519 -f /home/ubuntu/.ssh/github_deploy_key -N '' -C 'visa-bulletin-deploy-key'"
+ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key.pub"
+# 2. Add public key to GitHub: https://github.com/vyakunin/visa_bulletin/settings/keys/new
+#    Title: "Lightsail instance deploy key", check "Allow write access"
+# 3. Configure SSH on prod
+ssh prod_2Gb_vm "cat >> /home/ubuntu/.ssh/config << 'EOF'
+
+Host github.com
+  IdentityFile /home/ubuntu/.ssh/github_deploy_key
+  IdentitiesOnly yes
+EOF
+cd /opt/visa_bulletin && git remote set-url origin git@github.com:vyakunin/visa_bulletin.git"
+# 4. Copy key to staging and configure (start it first if stopped)
+ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key" | ssh staging_2Gb_vm "cat > /home/ubuntu/.ssh/github_deploy_key && chmod 600 /home/ubuntu/.ssh/github_deploy_key"
+ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key.pub" | ssh staging_2Gb_vm "cat > /home/ubuntu/.ssh/github_deploy_key.pub"
+ssh staging_2Gb_vm "cat >> /home/ubuntu/.ssh/config << 'EOF'
+
+Host github.com
+  IdentityFile /home/ubuntu/.ssh/github_deploy_key
+  IdentitiesOnly yes
+EOF
+cd /opt/visa_bulletin && git remote set-url origin git@github.com:vyakunin/visa_bulletin.git"
+# 5. Verify auth on both
+ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1"
+ssh staging_2Gb_vm "ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1"
+```
+
+**Key details:**
+- Path: `/home/ubuntu/.ssh/github_deploy_key` (same on both instances)
+- Both instances use the **same key** — copy from prod to staging, don't generate separately
+- Survives graduation rotation (key is on the instance, not the IP)
+- If graduation fails with "git push staging:prod failed": check key exists, remote is SSH (`git remote -v`), GitHub auth works (`ssh -T git@github.com`)
 
 ## Rule: Deploy Updated Binary and Run Yourself When Instructed
 
