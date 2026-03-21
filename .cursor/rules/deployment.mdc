@@ -294,10 +294,11 @@ cd /opt/visa_bulletin && set -a && source .env && set +a
 8. **Staging IP reassign** → old prod gets staging IP
 9. **Prod-safe override** → drops volume mount, restarts container (Docker image code)
 10. **Git branch update** → push `prod=staging` to origin; new prod checks out `prod` branch; **then** staging instance (this host) fetches and checks out `prod` branch — so prod branch = what prod runs, and staging is on prod before stop
-11. **Safety interval** → waits before shutting down
-12. **Stop old instance** (orchestrator's machine, now staging)
+11. **Rebuild orchestrator binary** on new prod → `bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown` so next cycle runs current code
+12. **Safety interval** → waits before shutting down
+13. **Stop old instance** (orchestrator's machine, now staging)
 
-**All steps after IP swap (5-12) are non-fatal** — warnings only, since the swap already happened.
+**All steps after IP swap (5-13) are non-fatal** — warnings only, since the swap already happened.
 
 **`--from-step` options:** `warm_cache` (recommended), `smoke_tests`, `traffic_switch`
 
@@ -306,7 +307,7 @@ cd /opt/visa_bulletin && set -a && source .env && set +a
 - **Staging** (instance with staging static IP, e.g. VisaBulletin2GB): `.env` should have `REFRESH_MY_INSTANCE_NAME` = that instance, `REFRESH_ACTIVE_*` = prod instance, `REFRESH_INACTIVE_*` = itself. The orchestrator updates this host’s `.env` via SSH after the swap; if staging was unreachable (IP not attached), SSH didn’t run—attach the staging IP (see recovery below), then SSH in and set REFRESH_* to match, or run the next full pipeline so the orchestrator can update it.
 
 **Post-rotation checks (verify after graduation):**
-- **Prod** (ssh prod_2Gb_vm): (1) `.env`: `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletinStaging), `REFRESH_ACTIVE_*` = this instance and its IP, `REFRESH_INACTIVE_*` = the other; `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` set. (2) **Git**: `origin/prod` = what the prod container runs (orchestrator pushes staging→prod; new prod checks out prod). (3) Static IP: prod instance has prod static IP attached.
+- **Prod** (ssh prod_2Gb_vm): (1) `.env`: `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletinStaging), `REFRESH_ACTIVE_*` = this instance and its IP, `REFRESH_INACTIVE_*` = the other; `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` set. (2) **Git**: `origin/prod` = what the prod container runs (orchestrator pushes staging→prod; new prod checks out prod). (3) Static IP: prod instance has prod static IP attached. (4) **Orchestrator binary**: `ls -la bazel-bin/scripts/cron/refresh_and_switch_py` — should exist (rebuilt during graduation step 11).
 - **Staging** (ssh staging_2Gb_vm): (1) `.env`: `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletin2GB), `REFRESH_ACTIVE_*` = prod instance, `REFRESH_INACTIVE_*` = this instance. (2) **Git**: staging instance checkout = `prod` branch (orchestrator switches it after health checks, before stop). So both hosts have `prod` checked out; `origin/prod` = what prod runs.
 - **Git branch consistency**: `prod` branch on origin = code running on prod. New prod host has `prod` checked out. Staging instance (old prod) is updated to `prod` branch **after** health checks pass, **before** the orchestrator stops it.
 

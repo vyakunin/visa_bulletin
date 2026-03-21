@@ -87,6 +87,23 @@ def _verify_post_graduation(
     except Exception as e:
         issues.append(f"Could not check cron on new prod: {e}")
 
+    # 5. Orchestrator binary exists on new prod
+    try:
+        bin_result = remote.run_shell(
+            f"test -x {remote_root}/bazel-bin/scripts/cron/refresh_and_switch_py && echo ok || echo missing",
+            timeout_sec=10,
+        )
+        if (bin_result.stdout or "").strip() != "ok":
+            issues.append(
+                f"Orchestrator binary missing on new prod at {remote_root}/bazel-bin/scripts/cron/refresh_and_switch_py. "
+                f"Manual fix: ssh new_prod 'cd {remote_root} && "
+                "bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown'"
+            )
+        else:
+            logger.info("Orchestrator binary present on new prod")
+    except Exception as e:
+        issues.append(f"Could not check orchestrator binary on new prod: {e}")
+
     if issues:
         logger.error(
             "POST-GRADUATION VERIFICATION: %d issue(s) found — manual intervention required:\n  - %s",
@@ -122,6 +139,31 @@ def _wait_app_healthy_via_ssh(
         logger.debug("Health check: HTTP %s", code or "(no response)")
         time.sleep(poll_interval_sec)
     return False
+
+
+def _rebuild_orchestrator_binary(runner: Runner, project_root: Path) -> None:
+    """Rebuild the orchestrator binary on the new prod and shut down Bazel immediately.
+
+    Called after the git branch switches to prod so the binary is built from current
+    prod code.  On 2GB Lightsail instances, Bazel holds ~400-500 MB while running;
+    the immediate shutdown releases that memory before the safety interval.
+    Non-fatal: logs a warning with the manual fix command on failure.
+    """
+    build_cmd = (
+        f"cd {shlex.quote(str(project_root))} && "
+        "bazel build //scripts/cron:refresh_and_switch_py && "
+        "bazel shutdown"
+    )
+    result = runner.run_shell(build_cmd, timeout_sec=300)
+    if result.returncode != 0:
+        logger.warning(
+            "Orchestrator binary rebuild failed (non-fatal): %s. "
+            "Run manually: cd /opt/visa_bulletin && "
+            "bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown",
+            ((result.stderr or "") + (result.stdout or ""))[:300],
+        )
+    else:
+        logger.info("Orchestrator binary rebuilt on new prod (ready for next cycle)")
 
 
 def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) -> None:
@@ -160,8 +202,8 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
     # Workaround: force-remove exited/zombie containers before `up -d` so docker-compose
     # creates fresh containers rather than trying to recreate from old metadata.
     cleanup_cmd = (
-        f"export DOCKER_HOST=unix:///var/run/docker.sock && "
-        f"docker ps -a --filter status=exited --format '{{{{.Names}}}}' | "
+        "export DOCKER_HOST=unix:///var/run/docker.sock && "
+        "docker ps -a --filter status=exited --format '{{.Names}}' | "
         "grep visa_bulletin_web | xargs -r docker rm -f"
     )
     runner.run_shell(cleanup_cmd, timeout_sec=15)
@@ -649,6 +691,11 @@ def run_orchestrate(
         _update_local_git_to_prod_branch(config.project_root)
     else:
         logger.info("REFRESH_SKIP_GIT_UPDATE: skipping git branch update")
+
+    # Rebuild orchestrator binary on new prod so next cycle uses current prod code.
+    # Done after git branch update so the binary is built from the prod branch.
+    logger.info("Rebuilding orchestrator binary on new prod")
+    _rebuild_orchestrator_binary(remote, remote_root)
 
     # Post-graduation verification: check all housekeeping steps landed correctly
     _verify_post_graduation(
