@@ -142,11 +142,12 @@ def _wait_app_healthy_via_ssh(
 
 
 def _rebuild_orchestrator_binary(runner: Runner, project_root: Path) -> None:
-    """Rebuild the orchestrator binary on the new prod and shut down Bazel immediately.
+    """Rebuild the orchestrator binary (launcher + runfiles tree) on new prod.
 
-    Called after the git branch switches to prod so the binary is built from current
-    prod code.  On 2GB Lightsail instances, Bazel holds ~400-500 MB while running;
-    the immediate shutdown releases that memory before the safety interval.
+    Bazel py_binary uses runfiles symlinks to workspace sources, so the executed
+    code depends on the git checkout at runtime — this just ensures the launcher
+    exists for the next cycle.  On 2GB Lightsail instances Bazel holds ~400-500 MB;
+    the immediate shutdown frees that before the safety interval.
     Non-fatal: logs a warning with the manual fix command on failure.
     """
     build_cmd = (
@@ -692,8 +693,9 @@ def run_orchestrate(
     else:
         logger.info("REFRESH_SKIP_GIT_UPDATE: skipping git branch update")
 
-    # Rebuild orchestrator binary on new prod so next cycle uses current prod code.
-    # Done after git branch update so the binary is built from the prod branch.
+    # Rebuild orchestrator binary on new prod so next cycle has a working launcher.
+    # Bazel py_binary uses runfiles symlinks, so the actual executed code depends on
+    # the git checkout at runtime — the rebuild just ensures the launcher/tree exist.
     logger.info("Rebuilding orchestrator binary on new prod")
     _rebuild_orchestrator_binary(remote, remote_root)
 
