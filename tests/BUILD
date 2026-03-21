@@ -1014,6 +1014,32 @@ py_test(
 )
 
 py_test(
+    name = "test_employer_rankings_view",
+    size = "small",
+    srcs = ["test_employer_rankings_view.py"],
+    deps = [
+        ":django_setup",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//django_config:settings",
+        "//webapp:apps",
+        "//webapp:urls",
+        "//webapp/views/employers:rankings",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("pytest"),
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+        "RUNNING_TESTS": "1",
+    },
+)
+
+py_test(
     name = "test_visa_program",
     size = "small",
     srcs = ["test_visa_program.py"],

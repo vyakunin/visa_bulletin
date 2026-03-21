@@ -11,10 +11,12 @@
 
     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
         <div>
-            <h1 class="h3 mb-1">Top H-1B &amp; PERM Sponsors</h1>
+            <h1 class="h3 mb-1">Top {{ program_label }} Sponsors</h1>
             <p class="text-muted mb-0 small">
                 Ranked by filing volume &mdash; {{ period_label }}.
-                Data from official DOL LCA and PERM disclosure files.
+                Data from official DOL
+                {% if program == 'perm' %}PERM{% elif program == 'h1b' %}LCA{% else %}LCA and PERM{% endif %}
+                disclosure files.
             </p>
         </div>
         <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary btn-sm">
@@ -26,12 +28,27 @@
     <form method="get" class="card mb-4">
         <div class="card-body py-3">
             <div class="row g-3 align-items-end">
-                <div class="col-12 col-md-5">
+                <div class="col-12 col-md-6">
                     <label class="form-label fw-semibold mb-1">Time Period</label>
+                    {% if use_fy_selector %}
+                    <div class="btn-group w-100 flex-wrap" role="group">
+                        {% for fy in fy_options %}
+                        <a href="?period=fy_{{ fy.year }}&program={{ program }}"
+                           class="btn btn-sm {% if fy.is_selected %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            FY {{ fy.year }} <small class="opacity-75">({{ fy.label }})</small>
+                        </a>
+                        {% endfor %}
+                        <a href="?period=all_time&program={{ program }}"
+                           class="btn btn-sm {% if period == 'all_time' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            All Time
+                        </a>
+                    </div>
+                    <small class="text-muted d-block mt-1">By DOL disclosure year (year decisions were published)</small>
+                    {% else %}
                     <div class="btn-group w-100" role="group">
                         <a href="?period=latest_fy&program={{ program }}"
                            class="btn btn-sm {% if period == 'latest_fy' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            Latest FY
+                            {{ latest_fy_label }}
                         </a>
                         <a href="?period=last_12m&program={{ program }}"
                            class="btn btn-sm {% if period == 'last_12m' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
@@ -42,8 +59,10 @@
                             All Time
                         </a>
                     </div>
+                    <small class="text-muted d-block mt-1">By LCA filing date</small>
+                    {% endif %}
                 </div>
-                <div class="col-12 col-md-5">
+                <div class="col-12 col-md-4">
                     <label class="form-label fw-semibold mb-1">Program</label>
                     <div class="btn-group w-100" role="group">
                         <a href="?period={{ period }}&program=all"
@@ -72,9 +91,9 @@
                     <tr>
                         <th class="text-center" style="width: 3em;">#</th>
                         <th>Employer</th>
-                        <th class="text-end">Total Filings</th>
-                        <th class="text-end d-none d-md-table-cell">H-1B</th>
-                        <th class="text-end d-none d-md-table-cell">PERM</th>
+                        <th class="text-end {% if program == 'all' %}fw-bold{% endif %}">Total Filings</th>
+                        <th class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-bold{% endif %}">H-1B</th>
+                        <th class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-bold{% endif %}">PERM</th>
                         <th class="text-end d-none d-sm-table-cell">PERM %</th>
                         <th class="text-end d-none d-lg-table-cell">Avg Salary</th>
                     </tr>
@@ -92,9 +111,9 @@
                             <span class="fw-semibold">{{ row.cluster_name }}</span>
                             {% endif %}
                         </td>
-                        <td class="text-end">{{ row.total_filings|floatformat:"0g" }}</td>
-                        <td class="text-end d-none d-md-table-cell text-muted">{{ row.h1b_count|floatformat:"0g" }}</td>
-                        <td class="text-end d-none d-md-table-cell text-muted">{{ row.perm_count|floatformat:"0g" }}</td>
+                        <td class="text-end {% if program == 'all' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.total_filings|floatformat:"0g" }}</td>
+                        <td class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.h1b_count|floatformat:"0g" }}</td>
+                        <td class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.perm_count|floatformat:"0g" }}</td>
                         <td class="text-end d-none d-sm-table-cell">
                             {% if row.perm_ratio >= 20 %}
                             <span class="badge bg-success">{{ row.perm_ratio }}%</span>
@@ -120,13 +139,18 @@
 
     <p class="text-muted small mt-3">
         <i class="bi bi-info-circle"></i>
-        PERM % = share of filings that are PERM (permanent labor certification / green card).
-        Higher PERM % indicates stronger long-term immigration support.
-        Avg salary is base wage only (no bonus/equity).
+        PERM % = share of all filings that are PERM (green card sponsorship) within the selected period.
+        Avg salary is base wage for the selected program only.
         Source: DOL LCA and PERM disclosure files.
     </p>
     {% else %}
-    <div class="alert alert-warning">No data available for the selected period and program.</div>
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        No data available for the selected filters.
+        {% if use_fy_selector and fy_options %}
+        Try selecting a different fiscal year above.
+        {% endif %}
+    </div>
     {% endif %}
 </div>
 {% endblock %}
