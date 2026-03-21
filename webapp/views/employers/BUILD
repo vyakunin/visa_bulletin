@@ -35,3 +35,15 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "rankings",
+    srcs = ["rankings.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//models/enums:visa_program",
+        "//models:salary",
+        requirement("Django"),
+    ],
+)

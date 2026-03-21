@@ -1,0 +1,132 @@
+{% extends "webapp/base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'employer_directory' %}">Employers</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Top Sponsors</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1">Top H-1B &amp; PERM Sponsors</h1>
+            <p class="text-muted mb-0 small">
+                Ranked by filing volume &mdash; {{ period_label }}.
+                Data from official DOL LCA and PERM disclosure files.
+            </p>
+        </div>
+        <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-search"></i> Search All Employers
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="card mb-4">
+        <div class="card-body py-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-5">
+                    <label class="form-label fw-semibold mb-1">Time Period</label>
+                    <div class="btn-group w-100" role="group">
+                        <a href="?period=latest_fy&program={{ program }}"
+                           class="btn btn-sm {% if period == 'latest_fy' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            Latest FY
+                        </a>
+                        <a href="?period=last_12m&program={{ program }}"
+                           class="btn btn-sm {% if period == 'last_12m' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            Last 12 Months
+                        </a>
+                        <a href="?period=all_time&program={{ program }}"
+                           class="btn btn-sm {% if period == 'all_time' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            All Time
+                        </a>
+                    </div>
+                </div>
+                <div class="col-12 col-md-5">
+                    <label class="form-label fw-semibold mb-1">Program</label>
+                    <div class="btn-group w-100" role="group">
+                        <a href="?period={{ period }}&program=all"
+                           class="btn btn-sm {% if program == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            All
+                        </a>
+                        <a href="?period={{ period }}&program=h1b"
+                           class="btn btn-sm {% if program == 'h1b' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            H-1B
+                        </a>
+                        <a href="?period={{ period }}&program=perm"
+                           class="btn btn-sm {% if program == 'perm' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                            PERM
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    {% if rankings %}
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="text-center" style="width: 3em;">#</th>
+                        <th>Employer</th>
+                        <th class="text-end">Total Filings</th>
+                        <th class="text-end d-none d-md-table-cell">H-1B</th>
+                        <th class="text-end d-none d-md-table-cell">PERM</th>
+                        <th class="text-end d-none d-sm-table-cell">PERM %</th>
+                        <th class="text-end d-none d-lg-table-cell">Avg Salary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rankings %}
+                    <tr>
+                        <td class="text-center text-muted">{{ row.rank }}</td>
+                        <td>
+                            {% if row.cluster_slug %}
+                            <a href="{% url 'employer_profile' row.cluster_slug %}" class="text-decoration-none fw-semibold">
+                                {{ row.cluster_name }}
+                            </a>
+                            {% else %}
+                            <span class="fw-semibold">{{ row.cluster_name }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ row.total_filings|floatformat:"0g" }}</td>
+                        <td class="text-end d-none d-md-table-cell text-muted">{{ row.h1b_count|floatformat:"0g" }}</td>
+                        <td class="text-end d-none d-md-table-cell text-muted">{{ row.perm_count|floatformat:"0g" }}</td>
+                        <td class="text-end d-none d-sm-table-cell">
+                            {% if row.perm_ratio >= 20 %}
+                            <span class="badge bg-success">{{ row.perm_ratio }}%</span>
+                            {% elif row.perm_ratio >= 5 %}
+                            <span class="badge bg-warning text-dark">{{ row.perm_ratio }}%</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ row.perm_ratio }}%</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end d-none d-lg-table-cell text-muted">
+                            {% if row.avg_salary_k %}
+                            ${{ row.avg_salary_k|floatformat:"0" }}K
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-muted small mt-3">
+        <i class="bi bi-info-circle"></i>
+        PERM % = share of filings that are PERM (permanent labor certification / green card).
+        Higher PERM % indicates stronger long-term immigration support.
+        Avg salary is base wage only (no bonus/equity).
+        Source: DOL LCA and PERM disclosure files.
+    </p>
+    {% else %}
+    <div class="alert alert-warning">No data available for the selected period and program.</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -8,6 +8,7 @@ py_library(
         "//webapp/views/bulletin:dashboard",
         "//webapp/views/employers:directory",
         "//webapp/views/employers:profile",
+        "//webapp/views/employers:rankings",
         "//webapp/views/job_titles:directory",
         "//webapp/views/job_titles:profile",
         "//webapp/views/salary:search",

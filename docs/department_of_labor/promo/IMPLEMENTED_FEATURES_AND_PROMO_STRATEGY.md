@@ -496,4 +496,212 @@ The **eventual unique use case** for worksite data is **location-first analytics
 
 ---
 
-*Last updated: February 2026. Align promo with current site and data; refresh record counts and example links before each campaign.*
+---
+
+## Part 5: Pre-Launch Assessment (March 2026)
+
+### Traffic & Usage Analysis
+
+#### Overall Site Traffic (GoatCounter, Dec 2025 – Mar 21 2026)
+
+| Month | Page Views | Notes |
+|-------|-----------|-------|
+| Dec 2025 | 23,177 | Baseline (visa bulletin core product only) |
+| Jan 2026 | 15,452 | Low month |
+| Feb 2026 | 91,170 | 6× spike — Feb visa bulletin release + predictions launch |
+| Mar 2026 (partial, 21 days) | 34,430 | On track for ~50k full month |
+| **Total** | **164,229** | |
+
+Peak day: Feb 19, 2026 — **2,729 Google clicks** (GSC) coinciding with visa bulletin release.
+
+#### Salary/Employer Product Traffic (GoatCounter, top pages)
+
+| Page | Views | Notes |
+|------|-------|-------|
+| `/salaries/` | 1,142 | Salary search |
+| `/employers/` | 918 | Employer directory |
+| `/job-titles/` | 616 | Job title directory |
+| `/about/` | 1,294 | High — users checking credibility |
+| `/faq/` | 1,090 | High — users trying to understand data |
+| `/contact/` | 246 | |
+
+**Key insight:** Salary/employer pages account for ~2,700 views (1.6% of total). The site's traffic is overwhelmingly driven by visa bulletin predictions (85%+). The salary product is essentially undiscovered — no promotion has happened yet, traffic is purely from organic Google discovery and site navigation.
+
+#### Google Search Console (Dec 20, 2025 – Mar 19, 2026)
+
+**Total:** 25,128 clicks / 1,476,714 impressions / 1.7% CTR / avg position 8.1
+
+**Traffic by content type:**
+
+| Content | Clicks | Impressions | CTR | Notes |
+|---------|--------|-------------|-----|-------|
+| Homepage (visa bulletin) | 22,290 | 1,184,783 | 1.88% | 89% of all clicks |
+| `/employment-based/india/` | 1,026 | 48,022 | 2.14% | India EB predictions |
+| **`/salaries/`** | **29** | **4,515** | **0.64%** | Almost no search clicks yet |
+| **`/employers/`** | **11** | **29,925** | **0.04%** | 30K impressions, almost zero clicks |
+| Employer profiles (`/employer/*`) | ~100 | ~5,000 | ~2% | Long-tail: specific company searches |
+| Job title profiles (`/job-title/*`) | ~50 | ~5,000 | ~1% | Long-tail: specific role searches |
+
+**Top search queries driving salary/employer clicks:**
+
+| Query | Clicks | Impressions | CTR | Position |
+|-------|--------|-------------|-----|----------|
+| perm database | 12 | 186 | 6.45% | 7.28 |
+| perm salary database | 6 | 51 | 11.76% | 3.73 |
+| green card salary database | 8 | 40 | 20% | 3.48 |
+| visa salary database | 1 | 15 | 6.67% | 7 |
+| perm database search | 1 | 19 | 5.26% | 7.79 |
+| perm search by employer | 1 | 6 | 16.67% | 8 |
+| [specific employer names] | ~50 | ~2,000 | ~2.5% | varied |
+| [specific job title salaries] | ~30 | ~3,000 | ~1% | varied |
+
+**Interpretation:** The salary/employer product has almost zero organic search traffic because:
+1. No backlinks or social signals yet (no promotion done)
+2. Pages are new to Google (indexed Dec 2025 – Jan 2026)
+3. Domain authority built entirely on visa bulletin content
+4. `/employers/` gets 30K impressions but 0.04% CTR — the title/description may not match user intent well
+
+**Positive signals:**
+- "perm database" and "perm salary database" queries rank well (position 3-7) with good CTR — validates the PERM data angle
+- Employer-specific queries (company name + "h1b" or "perm") are starting to appear
+- The long tail of employer and job title profiles is growing
+
+#### Geographic Breakdown (GSC)
+
+| Country | Clicks | % of Total | Notes |
+|---------|--------|------------|-------|
+| United States | 20,016 | 80% | Core audience |
+| India | 1,209 | 4.8% | Key EB-2/EB-3 audience |
+| Philippines | 715 | 2.8% | Family-sponsored heavy |
+| Canada | 274 | 1.1% | |
+| Kenya | 193 | 0.8% | |
+| UK | 172 | 0.7% | |
+| Pakistan | 167 | 0.7% | |
+| UAE | 145 | 0.6% | |
+
+80% US-based — perfect for salary/employer data promotion (H-1B holders and job seekers are primarily US-based).
+
+#### Device Split (GSC)
+
+| Device | Clicks | Impressions | CTR |
+|--------|--------|-------------|-----|
+| Mobile | 15,428 | 819,941 | 1.88% |
+| Desktop | 9,498 | 638,883 | 1.49% |
+| Tablet | 202 | 17,890 | 1.13% |
+
+61% mobile — salary search and employer profiles must work well on mobile.
+
+---
+
+### Production Feature Verification (March 21, 2026)
+
+**All core salary/employer features are live and working:**
+
+| Feature | Status | URL |
+|---------|--------|-----|
+| Salary search | ✅ 200 | `/salaries/` |
+| Employer directory | ✅ 200 | `/employers/` |
+| Job title directory | ✅ 200 | `/job-titles/` |
+| Employer profiles | ✅ 200 | `/employer/<slug>/` |
+| Job title profiles | ✅ 200 | `/job-title/<slug>/` |
+| Company autocomplete | ✅ Working | `/api/company-autocomplete/` |
+| Job title autocomplete | ✅ Working | `/api/job-title-autocomplete/` |
+| Worksites (hidden) | ✅ 200 | `/worksites/` (not linked) |
+| Sitemap | ✅ Present | `/sitemap.xml` |
+| Predictions page | ❌ 404 | `/predictions/employment_based/` |
+
+**Employer profile enhanced features (all verified on Microsoft):**
+
+| Feature | Status |
+|---------|--------|
+| Base Salary Only disclaimer | ✅ Present |
+| Sponsorship Breakdown (H-1B vs PERM) | ✅ Present |
+| Filing Pace by Program | ✅ Present |
+| Processing Time stats/trend | ✅ Present |
+| Recent Filing Activity | ✅ Present |
+| Salary Distribution chart | ✅ Present |
+| Top Job Titles | ✅ Present |
+| Geography (filings by state) | ✅ Present |
+
+**The product is feature-complete for launch.** All items marked as "DONE" in the revised launch strategy are confirmed live.
+
+---
+
+### Pre-Promo Recommendations
+
+#### Critical: Do Before Launch
+
+1. **Verify `case_submitted` / `decision_date` backfill status on prod.** The revised strategy lists this as unchecked. Processing time and filing pace sections show on the Microsoft page, so this may already be partially done. Verify coverage: if <50% populated, the sections may show incomplete data for smaller employers.
+
+2. **Refresh data counts in promo materials.** The existing drafts use "1.5M records, 220K employers, 114K job titles" from Feb 2026. Before posting, re-query prod for current counts.
+
+3. **Fix `/employers/` GSC CTR problem.** 30K impressions but 0.04% CTR suggests the meta title/description doesn't match what users searching for employer sponsorship info expect. Consider A/B testing the meta description to emphasize "H-1B & PERM sponsorship history" rather than just "employer directory."
+
+#### High-Impact Easy Wins (implement before promo)
+
+1. **Employer rankings/leaderboard page** (`/employers/rankings/` or `/employers/top/`)
+   - A "Top H-1B Sponsors" and "Top PERM Filers" page would generate strong social sharing
+   - Uses existing data (sort `EmployerCluster` by filing count)
+   - Promo angle: "The Top 100 H-1B sponsors — and which ones actually file Green Cards"
+   - Estimate: 1–2 days
+
+2. **Employer comparison** (even a basic side-by-side)
+   - `/compare/?employers=google-inc,cognizant-technology-solutions-corporation`
+   - The Google ($127K) vs Cognizant ($77K) comparison is mentioned in promo drafts — make it a shareable link
+   - Estimate: 2–3 days
+
+3. **Link worksites from nav** (trivial)
+   - `/worksites/` works but is hidden. Add a nav link or at minimum a sitemap entry.
+   - Gives location-first angle for promo: "Where are H-1B jobs? Search by city and state."
+
+4. **Internal cross-linking from visa bulletin pages to salary pages**
+   - 85% of traffic lands on visa bulletin pages. Add contextual links like "Research employer sponsorship data →" on prediction pages. This is the single highest-leverage change for discovery.
+
+#### Nice-to-Have (after initial launch)
+
+- Cost-of-living adjusted salary views
+- Country-of-origin data on PERM profiles
+- User alerts for new filing activity at watched employers
+- Export/API for researchers
+- Employer "report card" grading system (full design exists in `docs/future_features/COMPANY_REPORT_CARD_DESIGN.md`)
+
+#### Launch Timing Recommendation
+
+The product is stable and ready. Key considerations:
+
+- **Best day to launch:** Tuesday or Wednesday (higher engagement on Reddit, HN)
+- **Best time:** 15:00 CET / 9:00 AM EST (per revised strategy)
+- **February spike context:** The Feb 2026 traffic spike (91K views) was driven by the visa bulletin release cycle. Promoting salary data during a bulletin release week (when traffic is 3-5× normal) would maximize cross-pollination. The next bulletin releases are typically around the 8th-12th of each month.
+- **Reddit karma:** Ensure the posting account has some history in r/h1b or r/immigration before the launch post.
+
+#### Updated Promo Data Block (refresh before launch)
+
+```
+Production data (as of March 21, 2026):
+- Salary records (searchable): 1,543,924
+- Employer clusters (profiles): 221,032
+- Job title clusters (profiles): 99,859
+- Site traffic: 164K+ page views since Dec 2025
+- Google indexed: 30K+ employer impressions, growing
+- Example: Microsoft – 36,665 filings, median $119K
+```
+
+---
+
+### Summary Assessment
+
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| Feature completeness | **9/10** | All core features live, enhanced employer profiles with sponsorship breakdown |
+| Data quality | **8/10** | 1.54M records, good clustering. `case_submitted` 73.8% populated; `decision_date` 99.2% — processing time and filing pace sections are live |
+| SEO readiness | **7/10** | Sitemap and meta tags present. `/employers/` CTR needs work. New pages still building authority |
+| Mobile readiness | **7/10** | 61% of traffic is mobile. Verify salary search UX on mobile before launch |
+| Promo materials | **9/10** | Two complete strategy docs with ready-to-post drafts for Reddit, Twitter, LinkedIn, HN, journalists |
+| Missing critical features | **None** | No blockers. Rankings and comparison are nice-to-have, not required |
+| Traffic baseline | **Low** | 2,700 salary/employer views total — essentially zero organic discovery. All upside from promo |
+
+**Verdict: Ready to launch.** The product is stable, feature-complete, and the promo materials are thorough. The biggest opportunity is internal cross-linking from the high-traffic visa bulletin pages to drive discovery before (and alongside) external promotion.
+
+---
+
+*Last updated: March 21, 2026. Align promo with current site and data; refresh record counts and example links before each campaign.*

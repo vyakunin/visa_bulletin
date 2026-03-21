@@ -246,8 +246,8 @@ def employer_directory_view(request):
         "prev_cursor": prev_cursor,
         "has_next": has_next,
         "has_prev": has_prev,
-        "page_title": "Employer Directory - H-1B & PERM Sponsors | U.S. Immigration Data",
-        "page_description": "Browse top employers sponsoring H-1B and PERM visas. Search by company name, filter by state and visa program.",
+        "page_title": "H-1B & PERM Sponsor Database: Search 221K+ Employers | U.S. Immigration Data",
+        "page_description": "Which companies sponsor H-1B visas and file PERM green cards? Search 221K+ employers with salary data, filing history, and sponsorship breakdown.",
         "canonical_url": request.build_absolute_uri(),
     }
 

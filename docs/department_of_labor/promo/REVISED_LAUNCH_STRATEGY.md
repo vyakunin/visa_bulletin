@@ -29,7 +29,7 @@ New sections on every employer profile page (`/employer/<slug>/`):
 - **Processing Time stats** — Filing-to-decision latency: median, average, P25-P75 range, with per-program breakdown. Answers "how long does this company's processing take?"
 - **Processing Time Trend chart** — Quarterly median processing days over time. Shows if processing is getting faster or slower.
 
-**Note:** Processing time and quarterly filing pace require `case_submitted` and `decision_date` backfill (currently 0% populated on prod). These sections gracefully hide when data is unavailable and will appear automatically after running `populate_case_submitted.py`.
+**Note:** Processing time and quarterly filing pace require `case_submitted` and `decision_date` backfill. As of March 2026, prod has 73.8% `case_submitted` coverage (1.14M / 1.54M records) and 99.2% `decision_date` coverage — both well above the pipeline smoke-test floor of 65%. These sections are live and showing data. No manual backfill needed; `populate_case_submitted.py` runs automatically in the refresh pipeline.
 
 ### Asset Generation
 

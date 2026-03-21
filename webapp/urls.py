@@ -10,6 +10,7 @@ from webapp.views.employers.directory import (
     employer_directory_view,
 )
 from webapp.views.employers.profile import employer_profile_view
+from webapp.views.employers.rankings import employer_rankings_view
 from webapp.views.job_titles.directory import (
     job_title_autocomplete_view,
     job_title_directory_view,
@@ -63,6 +64,7 @@ urlpatterns = [
     ),
     path("api/vqs/predict/", VQSPredictView.as_view(), name="vqs_predict"),
     # Employer Pages
+    path("employers/rankings/", employer_rankings_view, name="employer_rankings"),
     path("employers/", employer_directory_view, name="employer_directory"),
     path("employer/<slug:slug>/", employer_profile_view, name="employer_profile"),
     # Job Title Pages (using cluster slug)

@@ -39,7 +39,7 @@
         <i class="bi bi-info-circle-fill me-2 mt-1"></i>
         <div class="small">
             <p class="mb-1">Predictions relative to last month's actual bulletin. Movement (e.g. <span
-                    class="badge bg-success text-white">↑ 1m</span>), regime (e.g. <span class="badge bg-success bg-opacity-75 text-white">Advancing</span>), and confidence range (e.g. <span class="text-muted">Jan–Mar 2026</span>) shown when available.</p>
+                    class="badge bg-success text-white">↑ 1m</span>), movement probability (e.g. <span class="badge bg-warning bg-opacity-75">Watch</span>), regime (e.g. <span class="badge bg-success bg-opacity-75 text-white">Advancing</span>), and confidence range (e.g. <span class="text-muted">Jan–Mar 2026</span>) shown when available.</p>
             <p class="mb-0 text-muted">The model is tuned to be conservative (bias toward little or no change) to reduce false moves; large actual movements (e.g. October fiscal-year resets) may be under-predicted. <span class="badge bg-warning text-dark">Experimental</span> rows (EB-4) have limited data and lower accuracy.</p>
         </div>
     </div>
@@ -78,6 +78,12 @@
                             {% if p.movement_delta %}
                             <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
                             {% endif %}
+                            {% if p.movement_prob_label %}
+                            <span class="badge bg-{{ p.movement_prob_color }} bg-opacity-75"
+                                  style="font-size:0.55rem;"
+                                  title="Model estimates {{ p.movement_probability }}% chance of >50-day cutoff change"
+                                  data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>
+                            {% endif %}
                             {% if p.regime_label %}
                             <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
                             {% endif %}
@@ -107,6 +113,12 @@
                                 data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span>
                             {% if p.movement_delta %}
                             <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
+                            {% endif %}
+                            {% if p.movement_prob_label %}
+                            <span class="badge bg-{{ p.movement_prob_color }} bg-opacity-75"
+                                  style="font-size:0.55rem;"
+                                  title="Model estimates {{ p.movement_probability }}% chance of >50-day cutoff change"
+                                  data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>
                             {% endif %}
                             {% if p.regime_label %}
                             <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
@@ -148,6 +160,25 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+
+    <div class="alert alert-light border mt-4 d-flex align-items-start gap-2">
+        <i class="bi bi-briefcase flex-shrink-0 mt-1"></i>
+        <div>
+            <strong>Researching employers?</strong>
+            See which companies sponsor H-1B and PERM visas, their salary ranges, and filing trends.
+            <div class="mt-2 d-flex flex-wrap gap-2">
+                <a href="{% url 'employer_rankings' %}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-trophy"></i> Top Sponsors
+                </a>
+                <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-building"></i> Search Employers
+                </a>
+                <a href="{% url 'salary_search' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-currency-dollar"></i> Salary Database
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
