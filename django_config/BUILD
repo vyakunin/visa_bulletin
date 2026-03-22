@@ -15,6 +15,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":logging_config",
+        ":middleware",
         requirement("Django"),
     ],
 )
@@ -43,6 +44,15 @@ py_library(
 py_library(
     name = "cache_utils",
     srcs = ["cache_utils.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+    ],
+)
+
+py_library(
+    name = "middleware",
+    srcs = ["middleware.py"],
     visibility = ["//visibility:public"],
     deps = [
         requirement("Django"),

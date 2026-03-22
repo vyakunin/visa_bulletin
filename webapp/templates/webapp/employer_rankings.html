@@ -75,7 +75,7 @@
                         </a>
                         <a href="?period={{ period }}&program=perm"
                            class="btn btn-sm {% if program == 'perm' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            PERM
+                            Green Card (PERM)
                         </a>
                     </div>
                 </div>
@@ -93,8 +93,8 @@
                         <th>Employer</th>
                         <th class="text-end {% if program == 'all' %}fw-bold{% endif %}">Total Filings</th>
                         <th class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-bold{% endif %}">H-1B</th>
-                        <th class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-bold{% endif %}">PERM</th>
-                        <th class="text-end d-none d-sm-table-cell">PERM %</th>
+                        <th class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-bold{% endif %}">Green Card</th>
+                        <th class="text-end d-none d-sm-table-cell">Green Card %</th>
                         <th class="text-end d-none d-lg-table-cell">Avg Salary</th>
                     </tr>
                 </thead>
@@ -139,7 +139,7 @@
 
     <p class="text-muted small mt-3">
         <i class="bi bi-info-circle"></i>
-        PERM % = share of all filings that are PERM (green card sponsorship) within the selected period.
+        Green Card % = share of all filings that are green card (PERM) sponsorship within the selected period.
         Avg salary is base wage for the selected program only.
         Source: DOL LCA and PERM disclosure files.
     </p>

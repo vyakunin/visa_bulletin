@@ -13,7 +13,11 @@ from datetime import date
 from statistics import median
 
 from lib.business.vqs.data_cache import get_cutoff_at_date, get_cutoffs_for_series
-from lib.business.vqs.estimators import DEFAULT_ANNUAL_EB_LIMIT, PER_CLASS_SHARE, PER_COUNTRY_SHARE
+from lib.business.vqs.estimators import (
+    DEFAULT_ANNUAL_EB_LIMIT,
+    PER_CLASS_SHARE,
+    PER_COUNTRY_SHARE,
+)
 
 logger = logging.getLogger(__name__)
 

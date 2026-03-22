@@ -141,6 +141,7 @@ py_binary(
         "//django_config:settings",
         "//lib/business/vqs:data_cache",
         "//lib/business/vqs:estimators",
+        "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:prediction_loader",
         "//lib/business/vqs:contextual_aggregator",
         "//lib/business/vqs:regime",
@@ -247,6 +248,51 @@ py_binary(
 )
 
 py_binary(
+    name = "download_uscis_i485",
+    srcs = ["download_uscis_i485.py"],
+    main = "download_uscis_i485.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/utils:logging_utils",
+        "//models:raw_facts",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("openpyxl"),
+        requirement("requests"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
+    name = "ingest_perm_supply",
+    srcs = ["ingest_perm_supply.py"],
+    main = "ingest_perm_supply.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/business/vqs:ingest_utils",
+        "//lib/parsing/salary:db_importer",
+        "//lib/utils:logging_utils",
+        "//models:raw_facts",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("openpyxl"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "tune_params",
     srcs = ["tune_params.py"],
     main = "tune_params.py",
@@ -257,12 +303,15 @@ py_binary(
         "//lib/business/vqs:accuracy_metrics",
         "//lib/business/vqs:contextual_aggregator",
         "//lib/business/vqs:aggregator",
+        "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:meta_params",
         "//lib/business/vqs:metric_config",
         "//lib/business/vqs:data_cache",
         "//webapp:apps",
         requirement("Django"),
+        requirement("lightgbm"),
         requirement("optuna"),
+        requirement("scikit_learn"),
     ],
     python_version = "PY3",
     env = {

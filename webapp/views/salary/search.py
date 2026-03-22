@@ -95,7 +95,7 @@ def salary_search_view(request):
     # Initialize form with dynamic fiscal year choices
     form = SalarySearchForm(request.GET)
     form.fields["year"].choices = [("", "All Years")] + [
-        (str(y), f"FY {y}") for y in fiscal_years
+        (str(y), str(y)) for y in fiscal_years
     ]
     form.fields["filing_year"].choices = [("", "All Years")] + [
         (str(y), str(y)) for y in filing_years
@@ -384,7 +384,7 @@ def worksite_search_view(request):
     # Initialize form with dynamic fiscal year choices
     form = WorksiteSearchForm(request.GET)
     form.fields["year"].choices = [("", "All Years")] + [
-        (str(y), f"FY {y}") for y in fiscal_years
+        (str(y), str(y)) for y in fiscal_years
     ]
 
     per_page = 50

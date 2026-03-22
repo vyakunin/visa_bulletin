@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from statistics import stdev
 
-
 FY_BOUNDARY_MONTHS = {8, 9, 10}
 
 DEFAULT_SERIES_WEIGHTS: dict[tuple[str, int], float] = {

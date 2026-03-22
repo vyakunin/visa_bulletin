@@ -12,7 +12,6 @@ import pytest
 
 from lib.business.vqs import data_cache
 
-
 # ---------------------------------------------------------------------------
 # Helpers: lightweight stand-ins for Bulletin / VisaCutoffDate
 # ---------------------------------------------------------------------------

@@ -43,6 +43,16 @@ class PredictedCutoff(models.Model):
         help_text="Per-expert data: {name: {pred: 'YYYY-MM-DD', weight: 0.XX}}",
     )
 
+    model_name = models.CharField(
+        max_length=50, blank=True, default="",
+        help_text="Which model produced this prediction (e.g. 'vqs_ensemble', 'regime_switched', 'gbm_gated')",
+    )
+
+    movement_probability = models.FloatField(
+        null=True, blank=True,
+        help_text="P(|cutoff_move| > 50 days) from GBM classifier, at 1m horizon for oversubscribed series",
+    )
+
     # For historical comparison (populated later when actual is known)
     actual_date = models.DateField(null=True, blank=True)
     accuracy_score = models.FloatField(null=True, blank=True)  # e.g. abs error in days

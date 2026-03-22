@@ -155,7 +155,7 @@
                                 <select class="form-select" id="program" name="program">
                                     <option value="">All Programs</option>
                                     <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
-                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>Green Card (PERM)</option>
                                 </select>
                             </div>
                             
@@ -166,7 +166,7 @@
                                     <option value="">All Years</option>
                                     {% for year in fiscal_years %}
                                     <option value="{{ year }}" {% if year == year_filter %}selected{% endif %}>
-                                        FY {{ year }}
+                                        {{ year }}
                                     </option>
                                     {% endfor %}
                                 </select>
@@ -255,7 +255,7 @@
                 {% endif %}
                 {% if year_filter %}
                 <span class="filter-tag">
-                    Year: FY {{ year_filter }}
+                    Year: {{ year_filter }}
                     <a href="?{% if query %}q={{ query }}&{% endif %}{% if city_filter %}city={{ city_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
@@ -297,12 +297,12 @@
                                         {% if record.visa_program == 1 %}
                                         <span class="badge badge-h1b">H-1B</span>
                                         {% elif record.visa_program == 4 %}
-                                        <span class="badge badge-perm">PERM</span>
+                                        <span class="badge badge-perm" title="Green card labor certification">Green Card</span>
                                         {% else %}
                                         <span class="badge badge-secondary">{{ record.get_visa_program_display }}</span>
                                         {% endif %}
                                     </td>
-                                    <td>FY {{ record.fiscal_year }}</td>
+                                    <td>{{ record.fiscal_year }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

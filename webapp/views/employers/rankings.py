@@ -10,7 +10,10 @@ from django_config.cache_utils import cache_page_skip_bots
 from models.enums.visa_program import VisaProgram
 from models.salary import SalaryRecord
 
-_MIN_FY_RECORDS = 10000
+# LCA (H-1B) volumes are much larger than PERM; use a lower threshold for PERM
+# so that fiscal years with valid but smaller PERM data still appear in the selector.
+_MIN_FY_RECORDS_DEFAULT = 10000
+_MIN_FY_RECORDS_PERM = 500
 
 
 def _format_count(cnt: int) -> str:
@@ -33,11 +36,12 @@ def _program_q(program: str) -> Q:
 
 def _available_fiscal_years(program: str, limit: int = 5) -> list[dict]:
     """Return recent fiscal years with substantial data (>= threshold) for the program."""
+    threshold = _MIN_FY_RECORDS_PERM if program == "perm" else _MIN_FY_RECORDS_DEFAULT
     fys = list(
         SalaryRecord.objects.filter(Q(is_worksite=False) & _program_q(program))
         .values("fiscal_year")
         .annotate(cnt=Count("id"))
-        .filter(cnt__gte=_MIN_FY_RECORDS)
+        .filter(cnt__gte=threshold)
         .order_by("-fiscal_year")[:limit]
     )
     return [
@@ -55,6 +59,8 @@ def _resolve_period(period: str, program: str, fy_options: list[dict]) -> tuple[
     """Resolve period + program into (Q filter, human label).
 
     Returns the time-range Q filter (does NOT include program or is_worksite).
+    When no fiscal years have enough data (fy_options is empty), fall back to
+    all_time so the page is never blank by default.
     """
     if period == "all_time":
         return Q(), "All Time"
@@ -71,7 +77,10 @@ def _resolve_period(period: str, program: str, fy_options: list[dict]) -> tuple[
             pass
 
     # Default / latest_fy / fallback for PERM+last_12m
-    latest_fy = fy_options[0]["year"] if fy_options else date.today().year - 1
+    # If no fiscal years qualified (fy_options empty), use all_time to avoid blank page.
+    if not fy_options:
+        return Q(), "All Time"
+    latest_fy = fy_options[0]["year"]
     return Q(fiscal_year=latest_fy), f"FY {latest_fy}"
 
 
@@ -168,8 +177,12 @@ def employer_rankings_view(request):
 
     rankings = _build_rankings(period_q, program)
 
-    program_labels = {"all": "H-1B & PERM", "h1b": "H-1B", "perm": "PERM"}
-    program_label = program_labels.get(program, "H-1B & PERM")
+    program_labels = {
+        "all": "H-1B & Green Card",
+        "h1b": "H-1B",
+        "perm": "Green Card (PERM)",
+    }
+    program_label = program_labels.get(program, "H-1B & Green Card")
     latest_fy_label = f"FY {fy_options[0]['year']}" if fy_options else "Latest FY"
 
     context = {
@@ -184,7 +197,8 @@ def employer_rankings_view(request):
         "page_title": f"Top {program_label} Sponsors ({period_label}) | U.S. Immigration Data",
         "page_description": (
             f"The top 100 {program_label} sponsors ranked by recent filing volume. "
-            f"Data from official DOL {'LCA and PERM' if program == 'all' else 'PERM' if program == 'perm' else 'LCA'} "
+            f"Data from official DOL "
+            f"{'LCA and PERM' if program == 'all' else 'PERM' if program == 'perm' else 'LCA'} "
             "disclosure files."
         ),
         "canonical_url": request.build_absolute_uri(),

@@ -16,7 +16,7 @@ Deterministic queue-based simulation for predicting Visa Bulletin movements and 
 - **metric_config.py** – Configuration for composite accuracy metrics: per-series weights, regime-conditioned loss, FY-boundary vs steady-state weighting, movement-magnitude weighting. Used by `accuracy_metrics.py` and `tune_params.py`.
 - **regime.py** also provides `FYPhase` classification (`FY_RESET`, `END_OF_FY`, `STEADY`) for stratified evaluation.
 - **calibration.py** – Calibrated prediction intervals. Builds signed error distributions from stored predictions and historical backtest by (series, regime, horizon). `compute_calibrated_interval()` returns (lower, upper) dates for ~80% coverage. Used by `publish_predictions.py` to replace ad-hoc expert-disagreement CI with data-driven intervals.
-- **gbm_expert.py** – LightGBM gradient-boosted tree expert. Trained on pooled (series, month) feature vectors combining: recent movements, I-140 demand ratio, I-485 queue depth, cross-series EB-1 signal (1m move, 3m avg, regime state), seasonal, and FY features. Walk-forward training: model retrained each month using all history to that point. Falls back to seasonal_median if lightgbm unavailable or insufficient data (<36 samples).
+- **gbm_expert.py** – LightGBM gradient-boosted tree expert. Trained on pooled (series, month) feature vectors: 27 features (indices 0-26) including recent movements, I-140 demand ratio, I-485 queue depth, demand-drop signals (ROW velocity + issuance drop), queue density near cutoff, cross-series EB-1 signal, seasonal, and FY features. Walk-forward training: model retrained each month using all history to that point. Falls back to seasonal_median if lightgbm unavailable or insufficient data (<36 samples). PERM filing ratio feature was removed (March 2026) — zero contribution confirmed by §20 ablation. PERM data still used in `demand.py` virtual queue model.
 - **predictors.py** – Typed predictor protocol and implementations: `PersistencePredictor`, `PacePredictor`, `DemandSupplyPredictor`, `RegimeSwitchedPredictor`, `HybridPredictor`. Used by `evaluate_model.py` and `ContextualTrajectoryAggregator`. `HybridPredictor` dispatches by series and horizon: EB-1 → RS, EB-2/3 at 6m+ → Pace, else → VQS.
 - **meta_params.py** – `VqsMetaParams` dataclass with all solver tuning parameters. `VqsMetaParams.defaults()` returns Optuna trial #13 tuned values. Parameters: stickiness, caps, blend_lambda, ensemble_persistence_weight, trajectory_blend/decay, fy_boundary_aware flag.
 - **reporting.py** – Report generation utilities used by scripts. Formats accuracy results, per-series breakdowns, and comparison tables.
@@ -30,7 +30,7 @@ Deterministic queue-based simulation for predicting Visa Bulletin movements and 
 
 ## Data
 
-- **raw_facts_ledger** (models/raw_facts.py): append-only bi-temporal store. `publication_date` = knowledge time; `reference_period_*` = event time. Used for backtesting. Metrics: `i140_receipts`, `perm_lag_distribution`, `i485_pending_inventory`.
+- **raw_facts_ledger** (models/raw_facts.py): append-only bi-temporal store. `publication_date` = knowledge time; `reference_period_*` = event time. Used for backtesting. Metrics: `i140_receipts`, `perm_lag_distribution`, `i485_pending_inventory_monthly`.
 
 ## Scripts
 

@@ -368,6 +368,8 @@ py_binary(
         "//lib/business/vqs:solver",
         "//lib/business/vqs:aggregator",
         "//lib/business/vqs:calibration",
+        "//lib/business/vqs:expert_pool",
+        "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:meta_params",
         "//lib/business/vqs:data_cache",
         "//models:vqs",

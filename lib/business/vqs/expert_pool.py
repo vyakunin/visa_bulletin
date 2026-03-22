@@ -284,14 +284,14 @@ def expert_i485_queue_depth(
     if facts is None:
         i485_facts = list(
             RawFactsLedger.objects.filter(
-                metric="i485_pending_inventory",
+                metric="i485_pending_inventory_monthly",
                 publication_date__lte=knowledge_date,
             ).order_by("-publication_date")
         )
     else:
         i485_facts = [
             f for f in facts
-            if f.metric == "i485_pending_inventory"
+            if f.metric == "i485_pending_inventory_monthly"
             and f.publication_date <= knowledge_date
         ]
         i485_facts.sort(key=lambda x: x.publication_date, reverse=True)
@@ -659,6 +659,58 @@ def trajectory_physics(
     return results
 
 
+_OPPENHEIM_PACE_DAYS_PER_MONTH: dict[tuple[int, str], int] = {
+    # (country, visa_class) -> days of cutoff advance per month
+    # Calibrated from Charlie Oppenheim's public guidance and historical averages.
+    # Used as a stable 6m+ baseline: simple, publicly defensible, beats persistence at 6m.
+    (2, "2nd"): 14,   # China EB-2
+    (2, "3rd"): 21,   # China EB-3
+    (2, "1st"): 21,   # China EB-1
+    (3, "2nd"): 7,    # India EB-2
+    (3, "3rd"): 7,    # India EB-3
+    (3, "1st"): 14,   # India EB-1
+}
+_OPPENHEIM_DEFAULT_PACE = 7  # days/month for unlisted series
+
+
+def expert_oppenheim_pace(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    knowledge_date: date,
+    horizon: int = 1,
+) -> date | None:
+    """Constant-pace baseline using Charlie Oppenheim's rule-of-thumb monthly advance.
+
+    Category-specific pace values are calibrated from historical averages and
+    Oppenheim's public guidance at DOS informational sessions. This is the
+    'domain expert benchmark' — simple, publicly defensible, and proven to beat
+    persistence at 6m+ for EB-2/3 India/China (Section 11 of PREDICTIONS_ASSESSMENT.md).
+
+    Args:
+        horizon: Prediction horizon in months (default 1). Advance = pace * horizon.
+
+    Returns:
+        Predicted cutoff date or None if current cutoff is unknown.
+    """
+    current = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
+    if current is None:
+        return None
+    pace = _OPPENHEIM_PACE_DAYS_PER_MONTH.get((country, visa_class), _OPPENHEIM_DEFAULT_PACE)
+    return current + timedelta(days=pace * horizon)
+
+
+def trajectory_oppenheim_pace(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    knowledge_date: date,
+    steps: int = 12,
+) -> list[date | None]:
+    """Multi-step trajectory using Oppenheim constant pace."""
+    return [expert_oppenheim_pace(visa_class, country, action_type, knowledge_date, i + 1) for i in range(steps)]
+
+
 ALL_EXPERT_TRAJECTORIES = {
     "persistence": trajectory_persistence,
     "seasonal_median": trajectory_seasonal_median,
@@ -672,4 +724,5 @@ ALL_EXPERT_TRAJECTORIES = {
     "i485_queue_depth": trajectory_seasonal_median,
     "cross_series": trajectory_cross_series,
     "gbm": trajectory_seasonal_median,
+    "oppenheim_pace": trajectory_oppenheim_pace,
 }

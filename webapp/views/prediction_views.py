@@ -218,6 +218,9 @@ class _PredDisplay:
         "is_experimental",
         "explanation_text",
         "top_experts",
+        "movement_probability",
+        "movement_prob_label",
+        "movement_prob_color",
     )
 
     def __init__(self):
@@ -235,6 +238,9 @@ class _PredDisplay:
         self.is_experimental = False
         self.explanation_text = None
         self.top_experts = None
+        self.movement_probability = None
+        self.movement_prob_label = None
+        self.movement_prob_color = None
 
 
 def _parse_regime_from_explanation(explanation: str | None) -> str | None:
@@ -288,6 +294,20 @@ def _make_prediction_display(
     # Explanation text (strip markdown bold for cleaner display)
     if pred.explanation_markdown:
         obj.explanation_text = re.sub(r"\*\*([^*]+)\*\*", r"\1", pred.explanation_markdown)
+
+    # Movement probability badge (from stored 1m predictions for oversubscribed series)
+    if pred.movement_probability is not None:
+        p = pred.movement_probability
+        obj.movement_probability = round(p * 100)
+        if p < 0.40:
+            obj.movement_prob_label = "Stable"
+            obj.movement_prob_color = "success"
+        elif p < 0.68:
+            obj.movement_prob_label = "Watch"
+            obj.movement_prob_color = "warning"
+        else:
+            obj.movement_prob_label = "Movement Likely"
+            obj.movement_prob_color = "danger"
 
     # Top experts from expert_predictions dict
     if pred.expert_predictions and isinstance(pred.expert_predictions, dict):

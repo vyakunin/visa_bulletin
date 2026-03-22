@@ -25,7 +25,6 @@ from lib.business.vqs.regime import (
     fy_aware_stickiness_days,
     regime_persistence_weight,
     regime_stickiness_days,
-    shrink_prediction,
 )
 from lib.business.vqs.seasonal_predictor import get_last_N_moves
 from models.enums.country import Country

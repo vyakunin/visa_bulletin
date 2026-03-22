@@ -40,6 +40,8 @@ class Country(models.IntegerChoices):
         # Pattern-based matching (order matters - most specific first)
         patterns = [
             (r"CHINA.*MAINLAND", cls.CHINA),
+            # DOL PERM files use plain "CHINA" (not "China-mainland born")
+            (r"^CHINA$", cls.CHINA),
             (r"^INDIA$", cls.INDIA),
             (r"^MEXICO$", cls.MEXICO),
             (r"^PHILIPPINES$", cls.PHILIPPINES),

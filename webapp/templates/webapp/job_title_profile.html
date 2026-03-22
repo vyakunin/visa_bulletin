@@ -55,7 +55,7 @@
             <!-- Header -->
             <div class="mb-4">
                 <h1>{{ cluster.canonical_title }}</h1>
-                <p class="text-muted">H-1B & PERM Salary Data and Market Analysis</p>
+                <p class="text-muted">H-1B &amp; Green Card Salary Data and Market Analysis</p>
             </div>
 
             <!-- Profession Search (shared autocomplete) -->
@@ -69,7 +69,7 @@
             {% if stats.auto_expanded %}
             <div class="alert alert-info mb-4">
                 <i class="fas fa-info-circle"></i>
-                <strong>Note:</strong> No data found for the last {{ stats.original_years }} years. Automatically expanded to show all available years ({{ stats.actual_years }} years total, starting from FY{{ stats.start_year }}).
+                <strong>Note:</strong> No data found for the last {{ stats.original_years }} years. Automatically expanded to show all available years ({{ stats.actual_years }} years total, starting from {{ stats.start_year }}).
             </div>
             {% endif %}
             
@@ -91,7 +91,7 @@
                             <select name="program" id="program" class="form-select" onchange="this.form.submit()">
                                 <option value="all" {% if program_filter == 'all' %}selected{% endif %}>All Programs</option>
                                 <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B Only</option>
-                                <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM Only</option>
+                                <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>Green Card Only</option>
                             </select>
                         </div>
                         <div class="col-md-4">
@@ -118,9 +118,9 @@
                 {% if stats.growth_period.start_year and stats.growth_period.end_year %}
                     {% with growth_start_str=stats.growth_period.start_year|stringformat:"s" %}
                     {% with growth_end_str=stats.growth_period.end_year|stringformat:"s" %}
-                    {% with growth_subtext="Growth FY"|add:growth_start_str|add:"-FY"|add:growth_end_str|add:" (Filing Volume)" %}
+                    {% with growth_subtext="Growth "|add:growth_start_str|add:"-"|add:growth_end_str|add:" (Filing Volume)" %}
                     {% if stats.growth_period.used_partial_year %}
-                        {% with growth_subtext=growth_subtext|add:" (latest FY appears partial)" %}
+                        {% with growth_subtext=growth_subtext|add:" (latest year appears partial)" %}
                         {% if stats.yoy_growth >= 10 %}
                             {% with growth_class="text-success" %}
                                 {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" prefix="+" %}
@@ -527,7 +527,7 @@
             
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
-                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 
+                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and green card (PERM) disclosure data. 
                 Data shown for fiscal years {{ start_year }} to present. 
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
                 <br><br>

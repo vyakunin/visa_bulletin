@@ -71,7 +71,7 @@
             <!-- Page Header -->
             <div class="mb-4">
                 <h1><i class="bi bi-building"></i> Employer Directory</h1>
-                <p class="text-muted">Browse top employers sponsoring H-1B and PERM visas</p>
+                <p class="text-muted">Browse top employers sponsoring H-1B and green card visas</p>
             </div>
             
             <!-- Search & Filter Card -->
@@ -93,7 +93,7 @@
                                 <select class="form-select" id="program" name="program">
                                     <option value="all" {% if program_filter == 'all' %}selected{% endif %}>All Programs</option>
                                     <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
-                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>Green Card (PERM)</option>
                                 </select>
                             </div>
                             
@@ -176,7 +176,7 @@
                             <tr>
                                 <th scope="col">Employer Name</th>
                                 <th scope="col" class="text-end">H-1B</th>
-                                <th scope="col" class="text-end">PERM</th>
+                                <th scope="col" class="text-end">Green Card</th>
                                 <th scope="col" class="text-end" style="width: 10rem;">Action</th>
                             </tr>
                         </thead>
@@ -263,13 +263,13 @@
                 </div>
                 <div class="card-body">
                     <p>
-                        This directory lists employers who have filed <strong>H-1B Labor Condition Applications (LCA)</strong> 
-                        and <strong>PERM (Permanent Employment Certification)</strong> applications with the U.S. Department of Labor.
+                        This directory lists employers who have filed <strong>H-1B (temporary work visa)</strong> 
+                        and <strong>green card (PERM labor certification)</strong> applications with the U.S. Department of Labor.
                     </p>
                     
                     <h6>What You Can Find</h6>
                     <ul>
-                        <li><strong>Sponsorship Activity:</strong> See how many H-1B and PERM applications each employer has filed</li>
+                        <li><strong>Sponsorship Activity:</strong> See how many H-1B and green card applications each employer has filed</li>
                         <li><strong>Employer Profiles:</strong> View detailed statistics, salary data, and trends for each employer</li>
                         <li><strong>Compare Employers:</strong> Filter by state and visa program to find relevant sponsors</li>
                     </ul>

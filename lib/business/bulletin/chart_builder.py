@@ -28,6 +28,7 @@ def build_multi_class_chart_with_projections(
     submission_date: date,
     country: str,
     category_label: str,
+    vqs_predictions: dict | None = None,
 ) -> dict:
     """
     Build Plotly chart data with multiple visa classes, each with projection
@@ -37,6 +38,7 @@ def build_multi_class_chart_with_projections(
         submission_date: User's application submission date
         country: Country code (e.g., 'china', 'all')
         category_label: Category display name (e.g., 'Family-Sponsored')
+        vqs_predictions: Optional dict of {visa_class_label: {trajectory: [...], maturity_month: ...}}
 
     Returns:
         Dict with 'chart_json' and 'trace_info' for checkbox controls
@@ -49,9 +51,10 @@ def build_multi_class_chart_with_projections(
     # Add traces for each visa class
     for idx, data in enumerate(visa_class_data):
         color = VISA_CLASS_COLORS[idx % len(VISA_CLASS_COLORS)]
+        vqs_pred = (vqs_predictions or {}).get(data.get("visa_class_label", ""))
 
         trace_indices, proj_date, current_trace_idx = _add_visa_class_traces(
-            fig, data, color, submission_date, current_trace_idx
+            fig, data, color, submission_date, current_trace_idx, vqs_pred=vqs_pred
         )
 
         if proj_date and (
@@ -87,7 +90,12 @@ def build_multi_class_chart_with_projections(
 
 
 def _add_visa_class_traces(
-    fig: go.Figure, data: dict, color: str, submission_date: date, current_idx: int
+    fig: go.Figure,
+    data: dict,
+    color: str,
+    submission_date: date,
+    current_idx: int,
+    vqs_pred: dict | None = None,
 ) -> tuple[list[int], date | None, int]:
     """
     Add historical and projection traces for a single visa class
@@ -228,6 +236,76 @@ def _add_visa_class_traces(
             if intersection_x:
                 trace_indices.append(current_idx)
                 current_idx += 1
+
+    # VQS model projection trace (dotted line + diamond marker at maturity)
+    if vqs_pred and vqs_pred.get("trajectory") and dates:
+        trajectory = vqs_pred["trajectory"]  # list of (month_date, cutoff_date)
+        maturity_month = vqs_pred.get("maturity_month")
+
+        # Start from last historical point; filter trajectory to future months only
+        last_hist_date = dates[-1]
+        last_valid_cutoff = next((c for c in reversed(cutoff_dates) if c is not None), None)
+
+        future_steps = [
+            (m, c) for m, c in trajectory if m > last_hist_date and c is not None
+        ]
+
+        if future_steps and last_valid_cutoff:
+            vqs_x = [last_hist_date] + [m for m, _ in future_steps]
+            vqs_y = [last_valid_cutoff] + [c for _, c in future_steps]
+
+            # Cap final y at submission_date so the line reaches but doesn't overshoot
+            if vqs_y[-1] > submission_date:
+                vqs_y[-1] = submission_date
+
+            fig.add_trace(
+                go.Scatter(
+                    x=vqs_x,
+                    y=vqs_y,
+                    mode="lines",
+                    name=f"{visa_class_label} (Queue Model)",
+                    line=dict(color=color, width=2, dash="dot"),
+                    hovertemplate=(
+                        f"<b>{visa_class_label} — Queue Model</b><br>"
+                        f"<b>Month:</b> %{{x|%B %Y}}<br>"
+                        f"<b>Projected Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>"
+                    ),
+                )
+            )
+            trace_indices.append(current_idx)
+            current_idx += 1
+
+            # Diamond marker at VQS maturity point
+            if maturity_month:
+                maturity_cutoff = next(
+                    (c for m, c in future_steps if m == maturity_month), None
+                ) or submission_date
+                fig.add_trace(
+                    go.Scatter(
+                        x=[maturity_month],
+                        y=[maturity_cutoff],
+                        mode="markers",
+                        name=f"{visa_class_label} (Queue Model Ready)",
+                        marker=dict(
+                            size=12,
+                            symbol="diamond",
+                            color=color,
+                            line=dict(width=1, color="white"),
+                        ),
+                        showlegend=False,
+                        hovertemplate=(
+                            f"<b>{visa_class_label} — Queue Model Ready Date</b><br>"
+                            f"<b>Est. Current:</b> %{{x|%B %Y}}<br>"
+                            f"<b>Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>"
+                        ),
+                    )
+                )
+                trace_indices.append(current_idx)
+                current_idx += 1
+
+            # Update max_projection_date tracking (caller updates this from return value)
+            if maturity_month and (projection_date is None or maturity_month > projection_date):
+                projection_date = maturity_month
 
     return trace_indices, projection_date, current_idx
 

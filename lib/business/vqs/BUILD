@@ -214,6 +214,7 @@ py_library(
         "//models:raw_facts",
         requirement("lightgbm"),
         requirement("numpy"),
+        requirement("scikit_learn"),
     ],
 )
 

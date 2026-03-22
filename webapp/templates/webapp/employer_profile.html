@@ -10,7 +10,7 @@
 
 <!-- Open Graph -->
 <meta property="og:title" content="{{ cluster.canonical_name }} Visa Sponsorship Data">
-<meta property="og:description" content="{{ stats.basic.total_filings }} H-1B/PERM filings, {{ stats.approval_rate|floatformat:1 }}% approval rate, ${{ stats.basic.median_salary|floatformat:0 }} median salary">
+<meta property="og:description" content="{{ stats.basic.total_filings }} H-1B &amp; green card filings, {{ stats.approval_rate|floatformat:1 }}% approval rate, ${{ stats.basic.median_salary|floatformat:0 }} median salary">
 <meta property="og:url" content="{{ request.build_absolute_uri }}">
 <meta property="og:type" content="website">
 
@@ -48,7 +48,7 @@
             <!-- Header -->
             <div class="mb-4">
                 <h1>{{ cluster.canonical_name }}</h1>
-                <p class="text-muted">H-1B & PERM Sponsorship Data</p>
+                <p class="text-muted">H-1B &amp; Green Card Sponsorship Data</p>
                 <small class="text-muted d-block mb-2">Source: US Dept of Labor. Represents Base Salary only. Excludes RSUs, signing bonuses, and variable compensation.</small>
                 <a href="{% url 'salary_search' %}?employer={{ cluster.canonical_name|urlencode }}" 
                    class="btn btn-outline-primary">
@@ -81,7 +81,7 @@
                             <select name="program" id="program" class="form-select" onchange="this.form.submit()">
                                 <option value="all" {% if program_filter == 'all' %}selected{% endif %}>All Programs</option>
                                 <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B Only</option>
-                                <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM Only</option>
+                                <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>Green Card Only</option>
                             </select>
                         </div>
                     </form>
@@ -91,7 +91,7 @@
             <!-- Overview Stats Cards -->
             <div class="row mb-4">
                 {% with start_year_str=start_year|stringformat:"s" %}
-                    {% with filings_subtext="FY"|add:start_year_str|add:"-Present" %}
+                    {% with filings_subtext=start_year_str|add:"-Present" %}
                         {% include "webapp/includes/stat_card.html" with value=stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
                     {% endwith %}
                 {% endwith %}
@@ -124,7 +124,7 @@
                 {% endif %}
             </div>
             
-            <!-- H-1B vs PERM Breakdown -->
+            <!-- H-1B vs Green Card Breakdown -->
             {% if stats.program_breakdown %}
             <div class="card mb-4">
                 <div class="card-header">
@@ -138,7 +138,7 @@
                         </div>
                         <div class="col-md-4">
                             <div class="fs-3 fw-bold" style="color: rgb(26, 118, 255)">{{ stats.program_breakdown.perm_count|intcomma }}</div>
-                            <div class="text-muted">PERM (Green Card) Filings</div>
+                            <div class="text-muted">Green Card Filings</div>
                         </div>
                         <div class="col-md-4">
                             {% if stats.program_breakdown.perm_ratio >= 20 %}
@@ -148,8 +148,8 @@
                             {% else %}
                             <div class="fs-3 fw-bold text-danger">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
                             {% endif %}
-                            <div class="text-muted">PERM Ratio</div>
-                            <small class="text-muted">Higher = stronger Green Card commitment</small>
+                            <div class="text-muted">Green Card Ratio</div>
+                            <small class="text-muted">Higher = stronger green card commitment</small>
                         </div>
                     </div>
                 </div>
@@ -170,8 +170,8 @@
                             <thead>
                                 <tr>
                                     <th>Program</th>
-                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last FY{% endif %}</th>
-                                    <th class="text-end">Total (FY{{ start_year }}–Present)</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last Year{% endif %}</th>
+                                    <th class="text-end">Total ({{ start_year }}–Present)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -182,7 +182,7 @@
                                         {% if stats.recent_activity.has_exact_dates %}
                                             {{ row.last_filing|date:"M j, Y" }}
                                         {% else %}
-                                            FY {{ row.last_year }}
+                                            {{ row.last_year }}
                                         {% endif %}
                                     </td>
                                     <td class="text-end">{{ row.count|intcomma }}</td>
@@ -199,8 +199,8 @@
                             <thead>
                                 <tr>
                                     <th>Role</th>
-                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last FY{% endif %}</th>
-                                    <th class="text-end">Total (FY{{ start_year }}–Present)</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last Year{% endif %}</th>
+                                    <th class="text-end">Total ({{ start_year }}–Present)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -219,7 +219,7 @@
                                         {% if stats.recent_activity.has_exact_dates %}
                                             {{ row.last_filing|date:"M j, Y" }}
                                         {% else %}
-                                            FY {{ row.last_year }}
+                                            {{ row.last_year }}
                                         {% endif %}
                                     </td>
                                     <td class="text-end">{{ row.count|intcomma }}</td>
@@ -444,7 +444,7 @@
 
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
-                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and PERM disclosure data. 
+                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and green card (PERM) disclosure data. 
                 Represents Base Salary only (excludes RSUs, signing bonuses, and variable compensation).
                 Data shown for fiscal years {{ start_year }} to present. 
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}

@@ -31,6 +31,13 @@ from dateutil.relativedelta import relativedelta
 from django.conf import settings
 
 from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
+from lib.business.vqs.gbm_expert import (
+    _GBM_DEFAULT_GATE_THRESHOLD,
+    _GBM_DEFAULT_MOVEMENT_THRESHOLD,
+    expert_gbm,
+    expert_gbm_direct,
+    expert_gbm_gated,
+)
 from lib.business.vqs.prediction_loader import (
     build_regime_switched_cache,
     build_solver_cache,
@@ -180,6 +187,102 @@ def build_contextual_cache(
 
     return cache
 
+
+def build_gbm_caches(
+    visa_class: str,
+    country: int,
+    knowledge_dates: list[datetime.date],
+    horizons: list[int],
+    action_type: str = "filing",
+    movement_threshold: int = _GBM_DEFAULT_MOVEMENT_THRESHOLD,
+    gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD,
+    ablate_demand_drop: bool = False,
+    ablate_perm: bool = False,
+) -> tuple[
+    dict[tuple[datetime.date, int], datetime.date],
+    dict[tuple[datetime.date, int], datetime.date],
+    dict[tuple[datetime.date, int], datetime.date],
+]:
+    """Build GBM standalone, GBM Direct, and GBM Gated prediction caches.
+
+    Returns (gbm_cache, gbm_direct_cache, gbm_gated_cache) where each maps
+    (knowledge_date, horizon) -> predicted_cutoff_date.
+
+    GBM standalone: 1-step model, applied h times (iterated linear).
+    GBM Direct: separate model per horizon, no error compounding.
+    GBM Gated: classifier decides whether to predict or defer to persistence.
+
+    ablate_demand_drop: if True, zeroes out features 22-25 (ROW velocity +
+        issuance drop) at inference time to measure their contribution.
+    ablate_perm: if True, zeroes out feature 27 (perm_filing_ratio) at
+        inference time to isolate the PERM feature's contribution (Hypothesis #7).
+    """
+    import lib.business.vqs.gbm_expert as _gbm_mod
+    from lib.business.vqs.data_cache import get_cutoff_at_date
+
+    # When ablating demand-drop features (indices 22-25), wrap the private feature
+    # builder so those slots are zeroed out at inference time. Training is unaffected
+    # (models are cached from prior calls), which lets us isolate the inference-time
+    # contribution of ROW velocity and issuance drop.
+    _orig_build = _gbm_mod._build_features_for_series
+    if ablate_demand_drop:
+        def _ablated_build(*args, **kwargs):
+            feats = _orig_build(*args, **kwargs)
+            if feats is not None and len(feats) > 25:
+                feats = list(feats)
+                feats[22] = 0.0  # row_move_1m
+                feats[23] = 0.0  # row_move_3m_avg
+                feats[24] = 0.0  # row_is_current
+                feats[25] = 0.0  # issuance_drop_ratio
+            return feats
+        _gbm_mod._build_features_for_series = _ablated_build
+
+    if ablate_perm:
+        _build_before_perm = _gbm_mod._build_features_for_series
+        def _ablated_perm_build(*args, **kwargs):
+            feats = _build_before_perm(*args, **kwargs)
+            if feats is not None and len(feats) > 27:
+                feats = list(feats)
+                feats[27] = 0.0  # perm_filing_ratio
+            return feats
+        _gbm_mod._build_features_for_series = _ablated_perm_build
+
+    try:
+        gbm_cache: dict[tuple, datetime.date] = {}
+        gbm_direct_cache: dict[tuple, datetime.date] = {}
+        gbm_gated_cache: dict[tuple, datetime.date] = {}
+
+        for kd in sorted(knowledge_dates):
+            current_cutoff = get_cutoff_at_date(visa_class, country, action_type, kd)
+            pred_1m = expert_gbm(visa_class, country, action_type, kd)
+            move_1m = (pred_1m - current_cutoff).days if (pred_1m and current_cutoff) else None
+
+            for h in horizons:
+                # GBM standalone: apply 1m move h times (iterated linear extrapolation)
+                if current_cutoff and move_1m is not None:
+                    total_move = max(-90 * h, min(365 * h, move_1m * h))
+                    gbm_cache[(kd, h)] = current_cutoff + datetime.timedelta(days=total_move)
+
+                # GBM Direct: per-horizon trained model
+                pred_direct = expert_gbm_direct(visa_class, country, action_type, kd, h)
+                if pred_direct:
+                    gbm_direct_cache[(kd, h)] = pred_direct
+
+                # GBM Gated: classifier + regression
+                pred_gated = expert_gbm_gated(
+                    visa_class, country, action_type, kd, h,
+                    movement_threshold=movement_threshold,
+                    gate_threshold=gate_threshold,
+                )
+                if pred_gated:
+                    gbm_gated_cache[(kd, h)] = pred_gated
+    finally:
+        if ablate_demand_drop or ablate_perm:
+            _gbm_mod._build_features_for_series = _orig_build
+
+    return gbm_cache, gbm_direct_cache, gbm_gated_cache
+
+
 def compute_metrics(dates, actuals, predictions, label, error_start):
     """Compute metrics for a model's predictions.
 
@@ -189,6 +292,9 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
     - big_move_capture_rate: % of actual big moves (>90d) where model predicted a big move (>90d)
     - regime_change_detection_acc: When actual regime changed vs prior, did model predict
       movement in the correct direction?
+    - cond_direction_acc: direction accuracy only when |actual_move| > 30d (Section 0 metric)
+    - movement_precision: of times model predicted |move| > 30d, how often |actual| > 30d?
+    - movement_recall: of times |actual| > 30d, how often did model predict |move| > 30d?
     """
     errors = []
     direction_correct = 0
@@ -197,6 +303,13 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
     big_move_actual = 0
     regime_change_correct = 0
     regime_change_total = 0
+
+    # Section 0 conditional metrics
+    cond_dir_correct = 0
+    cond_dir_total = 0       # times |actual_move| > 30d
+    move_tp = 0              # predicted > 30d AND actual > 30d (correct direction)
+    move_fp = 0              # predicted > 30d but actual <= 30d (or wrong direction)
+    move_fn = 0              # actual > 30d but model predicted <= 30d
 
     for i, d in enumerate(dates):
         if d < error_start or actuals[i] is None or predictions[i] is None:
@@ -230,12 +343,34 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
                     if (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0):
                         regime_change_correct += 1
 
+            # Section 0: conditional direction accuracy on significant actual moves
+            actual_significant = abs(actual_move) > 30
+            pred_significant = abs(pred_move) > 30
+            correct_dir = (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
+
+            if actual_significant:
+                cond_dir_total += 1
+                if correct_dir:
+                    cond_dir_correct += 1
+
+            # Movement detection precision/recall (|move| > 30d as "positive" class)
+            if actual_significant and pred_significant and correct_dir:
+                move_tp += 1
+            elif pred_significant and not (actual_significant and correct_dir):
+                move_fp += 1
+            elif actual_significant and not (pred_significant and correct_dir):
+                move_fn += 1
+
     if not errors:
         return {
             "label": label, "mae": None, "cumulative": 0,
             "direction_acc": None, "count": 0,
             "big_move_capture_rate": None, "regime_change_detection_acc": None,
+            "cond_direction_acc": None, "movement_precision": None, "movement_recall": None,
         }
+
+    precision = move_tp / (move_tp + move_fp) if (move_tp + move_fp) > 0 else None
+    recall = move_tp / (move_tp + move_fn) if (move_tp + move_fn) > 0 else None
 
     return {
         "label": label,
@@ -246,6 +381,9 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
         "big_move_capture_rate": round(big_move_predicted / big_move_actual * 100, 1) if big_move_actual > 0 else None,
         "big_move_actual_count": big_move_actual,
         "regime_change_detection_acc": round(regime_change_correct / regime_change_total * 100, 1) if regime_change_total > 0 else None,
+        "cond_direction_acc": round(cond_dir_correct / cond_dir_total * 100, 1) if cond_dir_total > 0 else None,
+        "movement_precision": round(precision * 100, 1) if precision is not None else None,
+        "movement_recall": round(recall * 100, 1) if recall is not None else None,
     }
 
 
@@ -522,7 +660,19 @@ def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int])
         for dim_data in strat.values()
         for bucket_models in dim_data.values()
     )
-    models = MODELS_ABLATE if has_ablation else MODELS
+    has_gbm = any(
+        "GBM" in bucket_models
+        for horizon_data in all_stratified.values()
+        for strat in horizon_data.values()
+        for dim_data in strat.values()
+        for bucket_models in dim_data.values()
+    )
+    if has_gbm:
+        models = MODELS_GBM
+    elif has_ablation:
+        models = MODELS_ABLATE
+    else:
+        models = MODELS
 
     for series_label, horizon_data in sorted(all_stratified.items()):
         for h, strat in sorted(horizon_data.items(), key=lambda x: int(x[0])):
@@ -554,7 +704,7 @@ def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int])
 _CROSS_SERIES_EXPERTS = frozenset({"cross_series", "gbm"})
 
 
-def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False):
+def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_demand_drop: bool = False, ablate_perm: bool = False):
     """Run evaluation across all series and horizons, return chart data and metrics."""
     chart_data = {}
     all_metrics = []
@@ -608,6 +758,21 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             )
             logger.info(f"  Ablation cache built: {len(ablation_cache)} entries (no cross-series/GBM)")
 
+        gbm_cache: dict = {}
+        gbm_direct_cache: dict = {}
+        gbm_gated_cache: dict = {}
+        if gbm:
+            gbm_cache, gbm_direct_cache, gbm_gated_cache = build_gbm_caches(
+                visa_class, country, sorted(all_kd_for_rs), horizons, ACTION_TYPE,
+                gate_threshold=gate_threshold,
+                ablate_demand_drop=ablate_demand_drop,
+                ablate_perm=ablate_perm,
+            )
+            logger.info(
+                f"  GBM caches built: standalone={len(gbm_cache)} direct={len(gbm_direct_cache)}"
+                f" gated={len(gbm_gated_cache)}"
+            )
+
         dates_str = [d.strftime("%Y-%m-%d") for d in plot_dates]
         actual_vals = [
             true_data.get(d).strftime("%Y-%m-%d") if true_data.get(d) else None
@@ -627,6 +792,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             ctx_vals = []
             hybrid_vals = []
             ablation_vals = []
+            gbm_vals = []
+            gbm_direct_vals = []
+            gbm_gated_vals = []
             persist_list = []
             dash_list = []
             vqs_list = []
@@ -636,6 +804,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             ctx_list = []
             hybrid_list = []
             ablation_list = []
+            gbm_list = []
+            gbm_direct_list = []
+            gbm_gated_list = []
 
             for d in plot_dates:
                 persist = forecast_persistence(visa_class, country, d, h)
@@ -662,6 +833,10 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
 
                 abl = ablation_cache.get((kd, d.year, d.month)) if ablate else None
 
+                gbm_pred = gbm_cache.get((kd, h)) if gbm else None
+                gbm_direct_pred = gbm_direct_cache.get((kd, h)) if gbm else None
+                gbm_gated_pred = gbm_gated_cache.get((kd, h)) if gbm else None
+
                 persist_vals.append(persist.strftime("%Y-%m-%d") if persist else None)
                 dash_vals.append(dash.strftime("%Y-%m-%d") if dash else None)
                 vqs_vals.append(vqs.strftime("%Y-%m-%d") if vqs else None)
@@ -671,6 +846,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 ctx_vals.append(ctx.strftime("%Y-%m-%d") if ctx else None)
                 hybrid_vals.append(hybrid.strftime("%Y-%m-%d") if hybrid else None)
                 ablation_vals.append(abl.strftime("%Y-%m-%d") if abl else None)
+                gbm_vals.append(gbm_pred.strftime("%Y-%m-%d") if gbm_pred else None)
+                gbm_direct_vals.append(gbm_direct_pred.strftime("%Y-%m-%d") if gbm_direct_pred else None)
+                gbm_gated_vals.append(gbm_gated_pred.strftime("%Y-%m-%d") if gbm_gated_pred else None)
 
                 persist_list.append(persist)
                 dash_list.append(dash)
@@ -681,6 +859,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 ctx_list.append(ctx)
                 hybrid_list.append(hybrid)
                 ablation_list.append(abl)
+                gbm_list.append(gbm_pred)
+                gbm_direct_list.append(gbm_direct_pred)
+                gbm_gated_list.append(gbm_gated_pred)
 
             # Classify each data point by regime, FY phase, movement magnitude
             point_meta = []
@@ -709,6 +890,10 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             }
             if ablate:
                 h_data["ablation"] = ablation_vals
+            if gbm:
+                h_data["gbm"] = gbm_vals
+                h_data["gbm_direct"] = gbm_direct_vals
+                h_data["gbm_gated"] = gbm_gated_vals
             per_horizon[str(h)] = h_data
 
             # Compute stratified metrics for this horizon
@@ -724,6 +909,10 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             }
             if ablate:
                 model_lists["VQS No Cross-Series"] = ablation_list
+            if gbm:
+                model_lists["GBM"] = gbm_list
+                model_lists["GBM Direct"] = gbm_direct_list
+                model_lists["GBM Gated"] = gbm_gated_list
             stratified_by_horizon[str(h)] = compute_stratified_metrics(
                 plot_dates, actual_list, model_lists, point_meta, error_start,
             )
@@ -772,6 +961,10 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             ]
             if ablate:
                 model_eval_pairs.append((ablation_list, "VQS No Cross-Series"))
+            if gbm:
+                model_eval_pairs.append((gbm_list, "GBM"))
+                model_eval_pairs.append((gbm_direct_list, "GBM Direct"))
+                model_eval_pairs.append((gbm_gated_list, "GBM Gated"))
             for model_list, model_label in model_eval_pairs:
                 m = compute_metrics(plot_dates, actual_list, model_list, model_label, error_start)
                 m["series"] = label
@@ -795,6 +988,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
 
 MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid"]
 MODELS_ABLATE = MODELS + ["VQS No Cross-Series"]
+MODELS_GBM = MODELS + ["GBM", "GBM Direct", "GBM Gated"]
 
 # EB-1 series where Regime-Switched beats VQS Ensemble
 _EB1_LABELS = {"India EB-1", "China EB-1"}
@@ -804,14 +998,19 @@ def print_metrics_table(metrics, horizons):
     """Print a comparison table of model metrics per horizon."""
     series_set = sorted(set(m["series"] for m in metrics))
     # Include ablation model if present in metrics
-    models = MODELS_ABLATE if any(m["label"] == "VQS No Cross-Series" for m in metrics) else MODELS
+    if any(m["label"] == "GBM" for m in metrics):
+        models = MODELS_GBM
+    elif any(m["label"] == "VQS No Cross-Series" for m in metrics):
+        models = MODELS_ABLATE
+    else:
+        models = MODELS
 
     for h in horizons:
-        print("\n" + "=" * 100)
+        print("\n" + "=" * 110)
         print(f"Model Comparison ({h}-month horizon, {ACTION_TYPE})")
-        print("=" * 100)
-        print(f"\n{'Series':<20} {'Model':<22} {'MAE (days)':<12} {'Dir Acc %':<12} {'BigMove%':<10} {'RegiChg%':<10} {'Cumul Error':<12}")
-        print("-" * 98)
+        print("=" * 110)
+        print(f"\n{'Series':<20} {'Model':<22} {'MAE (days)':<12} {'Dir Acc %':<12} {'CondDir%':<10} {'MovPrec%':<10} {'MovRec%':<9} {'BigMove%':<10} {'RegiChg%':<10}")
+        print("-" * 115)
 
         for series in series_set:
             for model in models:
@@ -819,10 +1018,12 @@ def print_metrics_table(metrics, horizons):
                 if m:
                     mae = f"{m['mae']}" if m["mae"] is not None else "N/A"
                     da = f"{m['direction_acc']}" if m["direction_acc"] is not None else "N/A"
+                    cda = f"{m.get('cond_direction_acc', 'N/A')}" if m.get("cond_direction_acc") is not None else "N/A"
+                    mp = f"{m.get('movement_precision', 'N/A')}" if m.get("movement_precision") is not None else "N/A"
+                    mr = f"{m.get('movement_recall', 'N/A')}" if m.get("movement_recall") is not None else "N/A"
                     bm = f"{m.get('big_move_capture_rate', 'N/A')}" if m.get("big_move_capture_rate") is not None else "N/A"
                     rc = f"{m.get('regime_change_detection_acc', 'N/A')}" if m.get("regime_change_detection_acc") is not None else "N/A"
-                    ce = f"{m['cumulative']:,}" if m["cumulative"] else "N/A"
-                    print(f"{series:<20} {model:<22} {mae:<12} {da:<12} {bm:<10} {rc:<10} {ce:<12}")
+                    print(f"{series:<20} {model:<22} {mae:<12} {da:<12} {cda:<10} {mp:<10} {mr:<9} {bm:<10} {rc:<10}")
             print()
 
         print("--- AGGREGATE ---")
@@ -856,6 +1057,67 @@ def print_metrics_table(metrics, horizons):
             total = m_wins + p_wins
             if total > 0:
                 print(f"{model_name} beats persistence: {m_wins}/{total} series ({100*m_wins/total:.0f}%)")
+
+
+# Key series for Section 0 success criteria
+_KEY_SERIES = {"India EB-2", "India EB-3", "China EB-2", "China EB-3"}
+
+
+def print_per_series_summary(metrics, horizons):
+    """Print Section 0 conditional metrics per key series (EB-2/3 India/China).
+
+    Shows the metrics that matter for beating persistence: conditional direction
+    accuracy (when actual moves > 30d), movement detection precision/recall.
+    """
+    print("\n" + "=" * 110)
+    print("SECTION 0 SUMMARY: Conditional Metrics (EB-2/3 India/China focus)")
+    print("Targets: CondDir >= 65%, MovPrec >= 50%, MovRec >= 40%, 6m MAE <= 190d")
+    print("=" * 110)
+
+    all_series = sorted(set(m["series"] for m in metrics))
+
+    all_models = MODELS_GBM if any(m["label"] == "GBM" for m in metrics) else MODELS
+
+    for h in horizons:
+        print(f"\n--- {h}-month horizon ---")
+        print(f"{'Series':<20} {'Model':<22} {'MAE':<8} {'CondDir%':<10} {'MovPrec%':<10} {'MovRec%':<9} {'MovF1%':<8} {'Beat Persist?'}")
+        print("-" * 105)
+
+        for series in all_series:
+            is_key = series in _KEY_SERIES
+            persistence_m = next((x for x in metrics if x["series"] == series and x["label"] == "Persistence" and x["horizon"] == h), None)
+            persist_mae = persistence_m["mae"] if persistence_m else None
+
+            for model in all_models:
+                m = next((x for x in metrics if x["series"] == series and x["label"] == model and x["horizon"] == h), None)
+                if not m or m["mae"] is None:
+                    continue
+
+                mae_s = f"{m['mae']:.1f}"
+                cda = m.get("cond_direction_acc")
+                mp = m.get("movement_precision")
+                mr = m.get("movement_recall")
+                cda_s = f"{cda:.1f}%" if cda is not None else "N/A"
+                mp_s = f"{mp:.1f}%" if mp is not None else "N/A"
+                mr_s = f"{mr:.1f}%" if mr is not None else "N/A"
+
+                f1 = None
+                if mp is not None and mr is not None and (mp + mr) > 0:
+                    f1 = 2 * mp * mr / (mp + mr)
+                f1_s = f"{f1:.1f}%" if f1 is not None else "N/A"
+
+                beats = ""
+                if persist_mae is not None and m["mae"] is not None:
+                    if m["mae"] < persist_mae:
+                        beats = f"YES ({persist_mae - m['mae']:.1f}d)"
+                    elif model == "Persistence":
+                        beats = "(baseline)"
+                    else:
+                        beats = f"no ({m['mae'] - persist_mae:.1f}d worse)"
+
+                prefix = "* " if is_key and model != "Persistence" else "  "
+                print(f"{prefix}{series:<18} {model:<22} {mae_s:<8} {cda_s:<10} {mp_s:<10} {mr_s:<9} {f1_s:<8} {beats}")
+            print()
 
 
 def generate_html(chart_data, horizons, output_path):
@@ -966,7 +1228,10 @@ def generate_html(chart_data, horizons, output_path):
             }}
 
             const dimData = d.stratified[h][currentDim];
-            const models = ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid'];
+            const hasGbm = Object.values(dimData).some(bm => 'GBM' in bm);
+            const models = hasGbm
+                ? ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid', 'GBM', 'GBM Direct', 'GBM Gated']
+                : ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid'];
             const dimLabels = {{
                 'regime': {{'advancing':'Advancing','stalled':'Stalled','retrogressing':'Retrogressing','recovering':'Recovering','volatile':'Volatile'}},
                 'fy_phase': {{'fy_reset':'FY Reset (Oct)','conservative':'Conservative (Nov-Mar)','acceleration':'Acceleration (Apr-Jun)','end_of_fy':'End of FY (Jul-Sep)','normal':'Normal'}},
@@ -1082,6 +1347,17 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="HTML output path")
     parser.add_argument("--diagnostic", action="store_true", help="Print per-month RS vs persistence divergences")
     parser.add_argument("--ablate", action="store_true", help="Compare VQS with vs without cross-series/GBM experts")
+    parser.add_argument("--per-series-summary", action="store_true", help="Print Section 0 conditional metrics per key series")
+    parser.add_argument("--gbm", action="store_true", help="Include GBM standalone, GBM Direct, and GBM Gated models (slower)")
+    parser.add_argument("--gate-threshold", type=float, default=_GBM_DEFAULT_GATE_THRESHOLD,
+                        help=f"GBM Gated gate threshold (default: {_GBM_DEFAULT_GATE_THRESHOLD}). "
+                             "Used for gate sweep experiments.")
+    parser.add_argument("--ablate-demand-drop", action="store_true",
+                        help="Zero out demand-drop features (22-25: ROW velocity + issuance drop) "
+                             "at GBM inference time to measure their contribution.")
+    parser.add_argument("--ablate-perm", action="store_true",
+                        help="Zero out perm_filing_ratio (feature 27) at GBM inference time "
+                             "to isolate its contribution (Hypothesis #7 ablation).")
     args = parser.parse_args()
 
     start = datetime.date.fromisoformat(args.start)
@@ -1093,9 +1369,19 @@ def main():
         settings.BASE_DIR, "webapp", "templates", "spaghetti.html"
     )
 
-    chart_data, metrics, stratified = run_evaluation(start, end, horizons, series_filter=args.series, step=step, diagnostic=args.diagnostic, ablate=args.ablate)
+    chart_data, metrics, stratified = run_evaluation(
+        start, end, horizons,
+        series_filter=args.series, step=step,
+        diagnostic=args.diagnostic, ablate=args.ablate,
+        gbm=args.gbm,
+        gate_threshold=args.gate_threshold,
+        ablate_demand_drop=args.ablate_demand_drop,
+        ablate_perm=args.ablate_perm,
+    )
     print_metrics_table(metrics, horizons)
     print_stratified_table(stratified, horizons)
+    if args.per_series_summary:
+        print_per_series_summary(metrics, horizons)
     generate_html(chart_data, horizons, output_path)
     logger.info("View at http://localhost:8000/spaghetti/")
 

@@ -119,7 +119,7 @@
                                     <th scope="col">Last Update</th>
                                     <th scope="col">Linear Projection</th>
                                     {% if vqs_predictions %}
-                                    <th scope="col">Queue Model <span class="badge bg-info text-dark" style="font-size:0.65em; vertical-align:middle;" title="Virtual Queue Simulation — predicts cutoff movement using I-140 demand data and supply modeling">Beta</span></th>
+                                    <th scope="col">Queue Model <span class="badge bg-info text-dark" style="font-size:0.65em; vertical-align:middle;" title="Virtual Queue Simulation — predicts cutoff movement using I-140 demand data and supply modeling. Dotted line on chart.">Beta</span></th>
                                     {% endif %}
                                 </tr>
                             </thead>
@@ -167,6 +167,11 @@
                                         </span>
                                         {% if vqs_data.confidence_low and vqs_data.confidence_high %}
                                         <br><span class="text-muted small">Range: {{ vqs_data.confidence_low|date:"M d" }} – {{ vqs_data.confidence_high|date:"M d, Y" }}</span>
+                                        {% endif %}
+                                        {% if vqs_data.maturity_month %}
+                                        <br><span class="text-info small" title="Queue Model: estimated month your priority date becomes current">
+                                            <i class="bi bi-diamond-fill" style="font-size:0.6em;"></i> Est. current: {{ vqs_data.maturity_month|date:"M Y" }}
+                                        </span>
                                         {% endif %}
                                         {% else %}
                                         <span class="text-muted">—</span>
@@ -287,19 +292,19 @@
                     </ol>
 
                     <h6>Understanding the Chart</h6>
-                    <ul>
-                        <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
-                        <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                        <li><strong>Dashed projection lines</strong>: Projected timelines for each visa class based on
-                            recent trends</li>
-                        <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
-                        </li>
-                    </ul>
+                        <ul>
+                            <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
+                            <li><strong>Red dashed line</strong>: Your application's priority date</li>
+                            <li><strong>Dashed projection lines</strong>: Linear projections based on recent trends (star = estimated ready date)</li>
+                            <li><strong>Dotted lines</strong>: Queue Model (VQS) projections using I-140 demand data (diamond = Queue Model estimated ready date)</li>
+                            <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
+                            </li>
+                        </ul>
 
                     <div class="alert alert-info mt-3">
                         <i class="bi bi-question-circle"></i> <strong>Have questions?</strong>
                         Check out our <a href="{% url 'faq' %}" class="alert-link">Frequently Asked Questions</a> page
-                        for answers about PERM processing, priority dates, retrogressions, and more.
+                        for answers about green card processing, priority dates, retrogressions, and more.
                     </div>
                 </div>
             </div>
@@ -309,7 +314,7 @@
                 <div class="card-body">
                     <h6 class="mb-2"><i class="bi bi-briefcase"></i> Research Employers &amp; Salaries</h6>
                     <p class="small text-muted mb-3">
-                        Explore H-1B and PERM sponsorship data from official DOL filings — salaries, filing history, and green card rates for 221K+ employers.
+                        Explore H-1B and green card sponsorship data from official DOL filings — salaries, filing history, and sponsorship rates for 221K+ employers.
                     </p>
                     <div class="d-flex flex-wrap gap-2">
                         <a href="{% url 'employer_rankings' %}" class="btn btn-outline-primary btn-sm">

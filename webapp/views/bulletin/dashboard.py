@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 VQS_VISA_CLASS_MAP = {
     "EB-1: Priority Workers": "1st",
-    "EB-2: Advanced Degree / Exceptional Ability": "2nd",
-    "EB-3: Skilled Workers / Professionals": "3rd",
+    "EB-2: Professionals with Advanced Degrees": "2nd",
+    "EB-3: Skilled Workers, Professionals": "3rd",
     "EB-4: Special Immigrants": "4th",
     "EB-5: Immigrant Investors": "5th",
 }
@@ -34,8 +34,12 @@ DEFAULT_VISIBLE_VISA_CLASSES = frozenset({
 })
 
 
-def _get_vqs_predictions(category: str, country: int, action_type: str) -> dict:
-    """Fetch VQS predictions for employment-based visa classes. Returns {visa_class_label: prediction_dict}."""
+def _get_vqs_predictions(category: str, country: int, action_type: str, submission_date: date | None = None) -> dict:
+    """Fetch VQS predictions for employment-based visa classes. Returns {visa_class_label: prediction_dict}.
+
+    When submission_date is provided, also computes maturity_month (first month the cutoff
+    is projected to reach the priority date) and trajectory (step-by-step cutoff path).
+    """
     if category != VisaCategory.EMPLOYMENT_BASED.value:
         return {}
 
@@ -51,12 +55,19 @@ def _get_vqs_predictions(category: str, country: int, action_type: str) -> dict:
                 visa_class=vqs_class,
                 country=country,
                 action_type=action_type,
+                priority_date=submission_date,
             )
             next_cutoff = outcome.predicted_cutoff
             results = outcome.results
             confidence = outcome.confidence
             pred = {
                 "next_cutoff": next_cutoff,
+                "maturity_month": outcome.maturity_month,
+                "trajectory": [
+                    (r.month, r.cutoff_date)
+                    for r in results
+                    if r.cutoff_date is not None
+                ],
                 "confidence": confidence,
                 "confidence_low": None,
                 "confidence_high": None,
@@ -127,17 +138,8 @@ def dashboard_view(request, category=None, country=None):
         category, country, action_type, submission_date
     )
 
-    # Build chart
+    # Build chart (VQS predictions computed below — two-pass: fetch VQS first, then chart)
     chart_data = None
-    if has_data:
-        cat_label = (
-            VisaCategory(category).label
-            if category in [c.value for c in VisaCategory]
-            else category
-        )
-        chart_data = build_multi_class_chart_with_projections(
-            visa_class_data, submission_date, country, cat_label
-        )
 
     # Build SEO metadata
     seo = build_seo_metadata(category, country, request.build_absolute_uri())
@@ -162,9 +164,20 @@ def dashboard_view(request, category=None, country=None):
     vqs_predictions = {}
     if category == VisaCategory.EMPLOYMENT_BASED.value and has_data:
         try:
-            vqs_predictions = _get_vqs_predictions(category, country, action_type)
+            vqs_predictions = _get_vqs_predictions(category, country, action_type, submission_date)
         except Exception:
             logger.exception("Failed to load VQS predictions")
+
+    # Build chart after VQS predictions so trajectory data can be included
+    if has_data:
+        cat_label = (
+            VisaCategory(category).label
+            if category in [c.value for c in VisaCategory]
+            else category
+        )
+        chart_data = build_multi_class_chart_with_projections(
+            visa_class_data, submission_date, country, cat_label, vqs_predictions=vqs_predictions
+        )
 
     context = {
         # Filter state

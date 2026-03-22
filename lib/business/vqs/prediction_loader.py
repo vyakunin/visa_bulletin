@@ -36,6 +36,7 @@ class PredictionResult:
     confidence_high: date | None = None
     explanation_markdown: str | None = None
     expert_predictions: dict | None = None
+    movement_probability: float | None = None
 
 
 def compute_knowledge_date(target_month: date, horizon: int = 1) -> date:
@@ -270,6 +271,7 @@ def get_all_predictions_for_month(
                         confidence_high=stored.confidence_high,
                         explanation_markdown=stored.explanation_markdown or None,
                         expert_predictions=stored.expert_predictions or None,
+                        movement_probability=stored.movement_probability,
                     )
                     continue
 

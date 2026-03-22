@@ -69,7 +69,7 @@ def run_backtest(
         if use_contextual_ensemble:
             aggregator = ContextualTrajectoryAggregator()
             aggregator.warmup_history(visa_class, country, action_type, t, horizons)
-            
+
             for h in horizons:
                 target_month = _add_months(
                     date(t.year, t.month, 1) if t.day != 1 else t,
@@ -82,7 +82,7 @@ def run_backtest(
                     target_date=target_month,
                     horizon=h,
                 )
-                
+
                 actual_cutoff = get_cutoff_at_date(
                     visa_class, country, action_type, target_month
                 )
@@ -110,7 +110,7 @@ def run_backtest(
                     }
                 )
             continue
-            
+
         outcome = predict_next_bulletin_and_maturity(
             knowledge_date=t,
             visa_class=visa_class,

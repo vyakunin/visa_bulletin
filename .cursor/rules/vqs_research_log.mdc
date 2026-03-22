@@ -3,43 +3,124 @@ alwaysApply: true
 ---
 # VQS Research Log Rule
 
+## Rule: Executor vs Planner Separation
+
+**VQS research uses two modes: Opus for planning/strategy, Sonnet for implementation/execution.** The rules below reflect what each mode must do.
+
+### Executor (Sonnet) — Record Facts, Defer Interpretation
+
+After running an experiment, backtest, tuning run, or data ingestion:
+
+1. **Record only hard facts** in the experiment section: measured numbers, script invocation, parameters, data counts, before/after tables. Label clearly as `### Results (Facts)`.
+2. **Update Section 0 "Last Assessment"** — but ONLY the **"Facts (measured)"** bullet list and the **Success metrics "Current" column**. Do not modify hypotheses, next steps, or the "tried and didn't work" table.
+3. **Flag for planning review** — end the experiment section with: `### Pending Planning Review\n[Awaiting Opus session to interpret results, update hypotheses, and re-prioritize next steps.]`
+4. **Do NOT** write "Why It Worked/Failed" analysis, form new hypotheses, re-prioritize next steps, or update the strategy. Those are planner tasks.
+
+### Planner (Opus) — Interpret, Strategize, Update Goal
+
+During a planning session (typically after executor has recorded new facts):
+
+1. **Interpret results** — write the `### Analysis` subsection: separate facts (what numbers show) from hypotheses (inferred explanations with falsification criteria and competing hypotheses).
+2. **Update Section 0** fully — "What Has Been Tried" table, hypotheses list (remove tested, add new with falsification/competing/prior-confidence), recommended next steps (re-prioritize by information gain), success metrics current column.
+3. **Remove** the `### Pending Planning Review` marker from sections that have been reviewed.
+4. **Design next experiments** — specify what to build, what to measure, what constitutes success/failure, and write it as an actionable plan the executor can follow without strategic judgment.
+
+## Rule: Epistemic Hygiene in All Research Sections
+
+**Every experiment section and assessment MUST clearly separate three categories of claims:**
+
+### Facts (label: `**Fact:**` or in a `Facts` subsection)
+- Measured numbers from backtest, evaluation, or production (cite the script and parameters that produced them)
+- Official data sources (USCIS publications, DOS statistics, INA statute references)
+- Observable system behavior (e.g., "persistence predicts no change 100% of the time")
+- **Executor writes these.** No interpretation required.
+
+### Hypotheses (label: `**Hypothesis:**` or in a `Hypotheses` subsection)
+For each hypothesis, state:
+- The claim itself
+- **How to falsify:** what measurement or experiment would disprove it
+- **Competing hypotheses:** alternative explanations for the same observation
+- **Prior confidence:** rough estimate (low/medium/high) of how likely this is to work, based on available evidence
+- **Planner writes these.** Executor must not invent hypotheses or present inferences as facts.
+
+### Recommended next steps (label: `**Next steps:**`)
+- Ordered by expected information gain (what would we learn?) not just expected improvement
+- Each step should reference which hypothesis it tests or which metric it targets from Section 0
+- **Planner writes and prioritizes these.** Executor follows the plan as given.
+
+**Example (planner output):**
+
+```markdown
+**Hypothesis:** I-485 pending inventory is a leading indicator of cutoff advancement.
+- **Falsify:** Correlate monthly queue density change with next-month cutoff delta for EB-2/3 India. If R² < 0.05, reject.
+- **Competing:** I-485 data is too lagged (published quarterly, ~90d delay) to predict monthly movement.
+- **Prior confidence:** Medium — the mechanism is sound (fewer pending = faster processing) but data granularity may kill it.
+```
+
+## Rule: Keep Section 0 (Long-Term Goal) Up to Date
+
+**`docs/PREDICTIONS_ASSESSMENT.md` Section 0 is the north star.**
+
+**After every experiment (executor responsibility):** Update "Facts (measured)" and "Success metrics Current column" only.
+
+**During planning sessions (planner responsibility):** Update all of Section 0:
+1. **"Last Assessment" block** — Date, measured numbers, which metrics moved and which didn't.
+2. **"What Has Been Tried and Didn't Work" table** — Add the experiment row with section reference and one-line failure reason.
+3. **"Hypotheses" list** — Remove any that were tested (move conclusion to the experiment section); add new hypotheses that emerged.
+4. **"Recommended next steps"** — Re-prioritize based on latest results.
+5. **Success metrics "Current" column** — Verify executor's updates are correct.
+
 ## Rule: Maintain a Research Log for Prediction Experiments
 
 **Every prediction/VQS experiment MUST be logged in `docs/PREDICTIONS_ASSESSMENT.md` as a numbered section.** This is the single source of truth for what was tried, what worked, what didn't, and why.
 
-**Each experiment section MUST include:**
+**Each experiment section has two phases:**
 
-1. **Motivation** — Why this was tried (hypothesis, gap addressed)
+### Phase 1: Executor records (Sonnet writes immediately after running experiment)
+
+1. **Motivation** — Which hypothesis from Section 0 this tests, or which metric it targets (copy from plan)
 2. **What Was Implemented** — Specific files changed, approach taken (table format)
-3. **Results** — Quantitative metrics (MAE, win rate, per-series breakdown) in tables
-4. **Why It Worked/Failed** — Root cause analysis with specific numbers
-5. **Lessons and Next Steps** — What to try next based on findings
-6. **Current Status** — Is it enabled? Flags? Production impact?
+3. **Results (Facts)** — Quantitative metrics in tables. Script invocation and parameters. All numbers measured, nothing inferred.
+4. **Current Status** — Is it enabled? Flags? Production impact?
+5. **Pending Planning Review** — Marker for planner to interpret
 
-**Format:**
+### Phase 2: Planner adds (Opus writes during next planning session)
+
+6. **Analysis** — Facts vs hypotheses (with falsification, competing explanations)
+7. **Next Steps** — Ordered by information gain, referencing Section 0
+
+**Executor template:**
 
 ```markdown
 ## N. Experiment Name (Month Year)
 
 ### Motivation
-[1-2 paragraphs]
+[Which Section 0 hypothesis or metric this targets. Copy from plan.]
 
 ### What Was Implemented
 | Change | Files | Description |
 |--------|-------|-------------|
 | ... | ... | ... |
 
-### Results
-[Tables with before/after metrics]
-
-### Why It Worked/Failed
-[Numbered list of causes]
-
-### Lessons and Next Steps
-[Numbered list]
+### Results (Facts)
+[Tables with before/after metrics. Script: `command used`. All numbers measured.]
 
 ### Current Status
 [Is it enabled? What flags control it?]
+
+### Pending Planning Review
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+```
+
+**Planner adds after review:**
+
+```markdown
+### Analysis
+**Facts:** [What the numbers show — restate key findings]
+**Hypotheses:** [Why it worked/failed — inferred, with competing explanations and falsification criteria]
+
+### Next Steps
+[Ordered by information gain. Reference Section 0 metrics/hypotheses.]
 ```
 
 **When to log:**
@@ -49,21 +130,18 @@ alwaysApply: true
 - Any new data source ingested that affects predictions
 - Any metric/evaluation methodology change
 
-**Do NOT:**
+**Do NOT (executor):**
 - Create separate `*_EXPERIMENT.md` or `*_RESULTS.md` files — consolidate into PREDICTIONS_ASSESSMENT.md
 - Delete old experiment sections — they are the research log (git history is harder to search)
 - Log trivial changes (typos, formatting) — only substantive model/eval changes
+- Present inferred explanations as measured facts
+- Write "Why It Worked/Failed" analysis or form new hypotheses — defer to planning session
+- Re-prioritize next steps or update strategy — that is planner work
+- Modify Section 0 hypotheses, next steps, or "tried and didn't work" table
 
-**Existing sections (as of March 2026):**
-- Section 8: FY Boundary Experiment (Feb 2026) — Failed
-- Section 9: Regime-Switched Model (Mar 2026) — Small improvement
-- Section 10: Granular Multi-Dimensional Metrics (Mar 2026) — Stratified evaluation
-- Section 11: Post-Tune Analysis (March 2026) — Optuna trial #13 results; honest assessment that VQS ≈ persistence at 1m for EB-2/3; demand_signal beats persistence in advancing/volatile regimes; hybrid selector and regime-based selector recommendations
-- Section 12: Appendix — File inventory (active production files, VQS system files, documentation)
-- Section 13: Cross-Series Spillover and UI Enhancements (Mar 2026) — Cross-series GBM features, CI display, regime badges, supply rebalancing; Phase 3 follow-up confirms 2025+ under-prediction 42%; Optuna 8 trials updated ContextualAggregator defaults
-- Section 14: Phase 4 Deferred Tasks (Mar 2026) — I-140 expansion already done; historical retrogression already done; EB-1 India lookback 24→36m
+**Section inventory:** See numbered section headers in `docs/PREDICTIONS_ASSESSMENT.md`. Do not duplicate the index here — it changes with every experiment and belongs in the research log, not in rules.
 
 **Related files:**
-- `docs/PREDICTIONS_ASSESSMENT.md` — The research log
+- `docs/PREDICTIONS_ASSESSMENT.md` — The research log (Section 0 = north star)
 - `lib/business/vqs/README.md` — Code-level docs (update when adding components)
 - `docs/future_features/VQS_NEW_SUGGESTIONS.md` — Active improvement ideas (not experiments)

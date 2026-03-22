@@ -286,7 +286,7 @@ def print_regime_results(label: str, rows: list[PredictionRow]):
             improvement = (persist_mae - best_mae) / persist_mae * 100
             logger.info(f"    >> BEST: {best_expert} ({improvement:.1f}% better than persistence)")
         else:
-            logger.info(f"    >> persistence wins")
+            logger.info("    >> persistence wins")
 
 
 def print_selection_map(all_rows: dict[str, list[PredictionRow]]):

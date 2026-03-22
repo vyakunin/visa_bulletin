@@ -126,7 +126,7 @@
             <!-- Search Card -->
             <div class="card search-card mb-4">
                 <div class="card-header">
-                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search H-1B & PERM Salary Data</h2>
+                    <h2 class="h5 mb-0"><i class="bi bi-search"></i> Search H-1B &amp; Green Card Salary Data</h2>
                     <small class="text-white-50">Source: US Dept of Labor. Represents Base Salary only. Excludes RSUs, signing bonuses, and variable compensation.</small>
                 </div>
                 <div class="card-body">
@@ -161,7 +161,7 @@
                                 <select class="form-select" id="program" name="program">
                                     <option value="">All Programs</option>
                                     <option value="h1b" {% if program_filter == 'h1b' %}selected{% endif %}>H-1B</option>
-                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>PERM</option>
+                                    <option value="perm" {% if program_filter == 'perm' %}selected{% endif %}>Green Card (PERM)</option>
                                 </select>
                             </div>
                             
@@ -172,7 +172,7 @@
                                     <option value="">All Years</option>
                                     {% for year in fiscal_years %}
                                     <option value="{{ year }}" {% if year == year_filter %}selected{% endif %}>
-                                        FY {{ year }}
+                                        {{ year }}
                                     </option>
                                     {% endfor %}
                                 </select>
@@ -211,12 +211,12 @@
             {% if not has_filters and market_stats %}
             <div class="mb-4">
                 <h2 class="h4">Salary Market Overview</h2>
-                <p class="text-muted">Top-level trends across H-1B and PERM filings.</p>
+                <p class="text-muted">Top-level trends across H-1B and green card filings.</p>
             </div>
             
             <div class="row mb-4">
                 {% with start_year_str=market_stats.start_year|stringformat:"s" %}
-                    {% with filings_subtext="FY"|add:start_year_str|add:"-Present" %}
+                    {% with filings_subtext=start_year_str|add:"-Present" %}
                         {% include "webapp/includes/stat_card.html" with value=market_stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
                     {% endwith %}
                 {% endwith %}
@@ -453,7 +453,7 @@
                 {% endif %}
                 {% if year_filter %}
                 <span class="filter-tag">
-                    Year: FY{{ year_filter }}
+                    Year: {{ year_filter }}
                     <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
@@ -522,7 +522,7 @@
                                         {% if record.visa_program == 1 %}
                                         <span class="badge badge-h1b">H-1B</span>
                                         {% elif record.visa_program == 4 %}
-                                        <span class="badge badge-perm">PERM</span>
+                                        <span class="badge badge-perm" title="Green card labor certification">Green Card</span>
                                         {% elif record.visa_program == 2 %}
                                         <span class="badge bg-secondary">H-1B1</span>
                                         {% elif record.visa_program == 3 %}
@@ -535,7 +535,7 @@
                                         {% if record.case_submitted %}
                                             {{ record.case_submitted|date:"M j, Y" }}
                                         {% else %}
-                                            <span class="text-muted" title="Filing date unavailable, showing fiscal year">FY {{ record.fiscal_year }}</span>
+                                            <span class="text-muted" title="Filing date unavailable, showing fiscal year">{{ record.fiscal_year }}</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -590,7 +590,7 @@
             <div class="card">
                 <div class="card-body text-center py-5">
                     <i class="bi bi-database" style="font-size: 4rem; color: var(--gov-navy);"></i>
-                    <h3 class="mt-3">Search H-1B & PERM Salary Data</h3>
+                    <h3 class="mt-3">Search H-1B &amp; Green Card Salary Data</h3>
                     <p class="text-muted mb-4">
                         Search through thousands of salary records from official DOL disclosure data.
                         <br>Find out what companies pay for specific roles and locations.
@@ -621,14 +621,14 @@
                     <h6>Data Source</h6>
                     <p>
                         This data comes from the U.S. Department of Labor's public disclosure files for 
-                        <strong>Labor Condition Applications (LCA)</strong> and 
-                        <strong>Permanent Employment Certification (PERM)</strong> applications.
+                        <strong>H-1B (temporary work visa)</strong> and 
+                        <strong>green card (PERM labor certification)</strong> applications.
                     </p>
                     
                     <h6>What You Can Find</h6>
                     <ul>
                         <li><strong>H-1B Salaries:</strong> Wages offered to H-1B specialty occupation workers</li>
-                        <li><strong>PERM Salaries:</strong> Wages offered for green card sponsorship positions</li>
+                        <li><strong>Green Card Salaries:</strong> Wages offered for green card sponsorship (PERM) positions</li>
                         <li><strong>Employer Information:</strong> Which companies sponsor most workers</li>
                         <li><strong>Location Data:</strong> Salary differences by state and city</li>
                     </ul>

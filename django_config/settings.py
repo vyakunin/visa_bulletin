@@ -57,6 +57,10 @@ INSTALLED_APPS = [
     "webapp",  # Web dashboard
 ]
 
+MIDDLEWARE = [
+    "django_config.middleware.RequestTimingMiddleware",
+]
+
 # Templates configuration
 TEMPLATES = [
     {

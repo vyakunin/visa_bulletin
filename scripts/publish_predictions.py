@@ -22,19 +22,67 @@ if not settings.configured:
 
 from lib.business.vqs.aggregator import ExpertAggregator
 from lib.business.vqs.calibration import compute_calibrated_interval
+from lib.business.vqs.expert_pool import expert_oppenheim_pace
+from lib.business.vqs.gbm_expert import expert_gbm_gated, expert_gbm_movement_prob
 from lib.business.vqs.meta_params import VqsMetaParams
-from lib.business.vqs.solver import predict_next_bulletin_and_maturity, predict_regime_switched
+from lib.business.vqs.solver import (
+    predict_next_bulletin_and_maturity,
+    predict_regime_switched,
+)
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.raw_facts import RawFactsLedger
 from models.visa_cutoff_date import VisaCutoffDate
 from models.vqs import PredictedBulletin, PredictedCutoff
 
-# EB-1 oversubscribed series: regime-switched beats VQS Ensemble at all horizons
-# (from spaghetti chart: RS 130d/62.8d MAE vs VQS 135.5d/62.4d on India/China EB-1)
-_HYBRID_EB1_SERIES = frozenset([
+# China EB-1: regime-switched best at 6m (155.7d); GBM Gated best at 12m (256.9d vs Pace 289.6d).
+# Section 20: 6m RS=155.7d < Pace=167.1d < GBM Gated=169.0d; 12m GBM Gated=256.9d < Pace=289.6d.
+_CHINA_EB1 = (Country.CHINA.value, "1st")
+
+# India EB-1: regime-switched best at 1m/3m; GBM Gated best at 6m+ (beats RS by 35d).
+# Section 20: 6m India EB-1 GBM Gated=233.3d, RS=268.5d, Persistence=289.2d.
+_INDIA_EB1 = (Country.INDIA.value, "1st")
+
+# At 6m (but < 12m), per-series dispatch based on Section 20 same-window eval.
+# GBM Gated series: beat nearest competitor by ≥10d at 6m in same-window eval.
+_GBM_GATED_6M_SERIES = frozenset([
+    (Country.INDIA.value, "1st"),   # GBM Gated 233.3d vs RS 268.5d (−35.2d)
+    (Country.CHINA.value, "3rd"),   # GBM Gated 158.5d vs Pace 193.0d (−34.5d)
+])
+
+# Pace series at 6m (but < 12m): Pace beats GBM Gated within ≥10d margin.
+# India EB-2: GBM Gated 203.8d vs Pace 211.3d (−7.5d) — below 10d threshold, keep Pace.
+# India EB-3: GBM Gated 261.1d vs Pace 264.3d (−3.2d) — below 10d threshold, keep Pace.
+_PACE_6M_SERIES = frozenset([
+    (Country.INDIA.value, "2nd"),   # Pace 211.3d vs GBM Gated 203.8d (7.5d gap, <10d threshold)
+    (Country.INDIA.value, "3rd"),   # Pace 264.3d vs GBM Gated 261.1d (3.2d gap, <10d threshold)
+    (Country.CHINA.value, "2nd"),   # Pace 155.4d vs GBM Gated 176.1d (−20.7d, Pace wins)
+])
+
+# At 12m+, different winners due to longer structural patterns.
+# Section 20 same-window eval: GBM Gated wins 5/6, Pace wins 1/6.
+_GBM_GATED_12M_SERIES = frozenset([
+    (Country.CHINA.value, "1st"),   # GBM Gated 256.9d vs Pace 289.6d (−32.7d)
+    (Country.CHINA.value, "2nd"),   # GBM Gated 230.7d vs Pace 246.4d (−15.7d) — switched from Pace §20
+    (Country.CHINA.value, "3rd"),   # GBM Gated 224.3d vs Pace 302.0d (−77.7d)
+    (Country.INDIA.value, "1st"),   # GBM Gated 369.6d vs Pace 435.0d (−65.4d)
+    (Country.INDIA.value, "2nd"),   # GBM Gated 303.2d vs Pace 329.0d (−25.8d)
+])
+
+# Pace series at 12m: beats GBM Gated.
+_PACE_12M_SERIES = frozenset([
+    (Country.INDIA.value, "3rd"),   # Pace 491.4d vs GBM Gated 499.2d (−7.8d)
+])
+
+# Series for which a 1m movement probability badge is computed.
+# These are the oversubscribed EB-1/2/3 series where GBM CondDir signal is meaningful.
+_MOVEMENT_PROB_SERIES = frozenset([
     (Country.INDIA.value, "1st"),
+    (Country.INDIA.value, "2nd"),
+    (Country.INDIA.value, "3rd"),
     (Country.CHINA.value, "1st"),
+    (Country.CHINA.value, "2nd"),
+    (Country.CHINA.value, "3rd"),
 ])
 
 logger = logging.getLogger(__name__)
@@ -182,12 +230,30 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
         # Filter facts manually
         current_facts = [f for f in FACTS if f.publication_date <= knowledge_date]
 
+        # Compute prediction horizon in months (how far ahead is target_month from knowledge_date)
+        horizon_months = (
+            (target_month.year - knowledge_date.year) * 12
+            + (target_month.month - knowledge_date.month)
+        )
+
         count = 0
         for action in action_types:
             for country in countries:
                 for visa_class in visa_classes:
-                    # Hybrid dispatch: regime-switched for EB-1 oversubscribed, VQS for EB-2/3
-                    if (country, visa_class) in _HYBRID_EB1_SERIES:
+                    # Horizon-aware hybrid dispatch (Sections 17–18 results):
+                    # 1m/3m:  China EB-1 → RS; India EB-1 → RS; all others → VQS ensemble
+                    # 6m:     China EB-1 → RS (149.8d); India EB-1, China EB-3 → GBM Gated;
+                    #         India EB-2/3, China EB-2 → Pace
+                    # 12m+:   China EB-1, China EB-3, India EB-1/2 → GBM Gated;
+                    #         China EB-2, India EB-3 → Pace
+                    model_name = "vqs_ensemble"
+                    dispatch_key = (country, visa_class)
+
+                    if (dispatch_key == _CHINA_EB1 and horizon_months < 12) or (
+                        dispatch_key == _INDIA_EB1 and horizon_months < 6
+                    ):
+                        # RS: China EB-1 at 1m/3m/6m; India EB-1 at 1m/3m
+                        model_name = "regime_switched"
                         outcome = predict_regime_switched(
                             knowledge_date=knowledge_date,
                             visa_class=visa_class,
@@ -195,6 +261,57 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             action_type=action,
                             facts=current_facts,
                         )
+                        cutoff = outcome.predicted_cutoff
+                        m_meta = outcome.metadata
+                        confidence = outcome.confidence
+                    elif horizon_months >= 12 and dispatch_key in _GBM_GATED_12M_SERIES:
+                        # GBM Gated at 12m+: China EB-1/3, India EB-1/2
+                        model_name = "gbm_gated"
+                        cutoff = expert_gbm_gated(
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            knowledge_date=knowledge_date,
+                            horizon=horizon_months,
+                        )
+                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_months}
+                        confidence = "medium"
+                    elif horizon_months >= 12 and dispatch_key in _PACE_12M_SERIES:
+                        # Pace at 12m+: China EB-2, India EB-3
+                        model_name = "oppenheim_pace"
+                        cutoff = expert_oppenheim_pace(
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            knowledge_date=knowledge_date,
+                            horizon=horizon_months,
+                        )
+                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_months}
+                        confidence = "medium"
+                    elif dispatch_key in _GBM_GATED_6M_SERIES and horizon_months >= 6:
+                        # GBM Gated at 6m (but < 12m): India EB-1, China EB-3
+                        model_name = "gbm_gated"
+                        cutoff = expert_gbm_gated(
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            knowledge_date=knowledge_date,
+                            horizon=horizon_months,
+                        )
+                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_months}
+                        confidence = "medium"
+                    elif dispatch_key in _PACE_6M_SERIES and horizon_months >= 6:
+                        # Pace at 6m (but < 12m): India EB-2/3, China EB-2
+                        model_name = "oppenheim_pace"
+                        cutoff = expert_oppenheim_pace(
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            knowledge_date=knowledge_date,
+                            horizon=horizon_months,
+                        )
+                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_months}
+                        confidence = "medium"
                     else:
                         outcome = predict_next_bulletin_and_maturity(
                             knowledge_date=knowledge_date,
@@ -205,9 +322,9 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             meta=meta,
                             aggregator=aggregator,
                         )
-                    cutoff = outcome.predicted_cutoff
-                    m_meta = outcome.metadata
-                    confidence = outcome.confidence
+                        cutoff = outcome.predicted_cutoff
+                        m_meta = outcome.metadata
+                        confidence = outcome.confidence
 
                     # Extract CI and per-expert predictions
                     low = None
@@ -228,19 +345,20 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                                 country=country,
                                 action_type=action,
                                 knowledge_date=knowledge_date,
-                                horizon=1,
+                                horizon=max(1, horizon_months),
                                 coverage=0.80,
                             )
                         except Exception as _ci_err:
                             logger.debug("Calibrated interval failed: %s", _ci_err)
 
-                        preds = m_meta.get("expert_preds", {})
-                        weights = m_meta.get("weights", {})
-                        for name, pred_date in preds.items():
-                            expert_data[name] = {
-                                "pred": pred_date.isoformat() if pred_date else None,
-                                "weight": round(weights.get(name, 0), 4),
-                            }
+                        if isinstance(m_meta, dict):
+                            preds = m_meta.get("expert_preds", {})
+                            weights = m_meta.get("weights", {})
+                            for name, pred_date in preds.items():
+                                expert_data[name] = {
+                                    "pred": pred_date.isoformat() if pred_date else None,
+                                    "weight": round(weights.get(name, 0), 4),
+                                }
 
                     # Try to find actual if exists
                     actual_date = None
@@ -259,6 +377,20 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                         if cutoff and actual_date:
                             accuracy_score = abs((cutoff - actual_date).days)
 
+                    # Compute movement probability badge for 1m oversubscribed series.
+                    movement_prob = None
+                    if horizon_months == 1 and dispatch_key in _MOVEMENT_PROB_SERIES:
+                        try:
+                            movement_prob = expert_gbm_movement_prob(
+                                visa_class=visa_class,
+                                country=country,
+                                action_type=action,
+                                knowledge_date=knowledge_date,
+                                horizon=1,
+                            )
+                        except Exception as _mp_err:
+                            logger.debug("Movement prob failed: %s", _mp_err)
+
                     PredictedCutoff.objects.create(
                         bulletin=pred_bulletin,
                         visa_class=visa_class,
@@ -268,9 +400,11 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                         confidence_low=low,
                         confidence_high=high,
                         explanation_markdown=explanation,
+                        model_name=model_name,
                         expert_predictions=expert_data,
                         actual_date=actual_date,
                         accuracy_score=accuracy_score,
+                        movement_probability=movement_prob,
                     )
                     count += 1
 

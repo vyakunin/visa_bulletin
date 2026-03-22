@@ -24,7 +24,6 @@ from pathlib import Path
 
 from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.solver import (
-    SolverOutcome,
     predict_next_bulletin_and_maturity,
 )
 
@@ -206,7 +205,6 @@ def compute_bulletin_accuracy(
         get_cutoff_at_date,
     )
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
-    from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
     from models.raw_facts import RawFactsLedger
     from models.visa_cutoff_date import VisaCutoffDate
 
@@ -763,7 +761,6 @@ def compute_multi_horizon_accuracy(
     """
     from lib.business.vqs.data_cache import get_all_bulletins, get_cutoff_at_date
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
-    from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
     from models.raw_facts import RawFactsLedger
     from models.visa_cutoff_date import VisaCutoffDate
 
@@ -821,7 +818,7 @@ def compute_multi_horizon_accuracy(
 
         for row in cutoffs:
             current_cutoff = row.cutoff_date
-            
+
             if use_contextual_ensemble:
                 # Update weights up to knowledge_date
                 # We can just call warmup_history which is idempotent and fast if we optimize it,
@@ -834,7 +831,7 @@ def compute_multi_horizon_accuracy(
                     knowledge_date=knowledge_date,
                     horizons=horizons,
                 )
-                
+
                 for h in horizons:
                     target_month = _add_months(pub_date, h - 1)
                     pred, _ = aggregator.predict(
@@ -844,14 +841,14 @@ def compute_multi_horizon_accuracy(
                         target_date=target_month,
                         horizon=h,
                     )
-                    
+
                     actual = get_cutoff_at_date(
                         visa_class=row.visa_class,
                         country=row.country,
                         action_type=row.action_type,
                         as_of=target_month,
                     )
-                    
+
                     error = None
                     direction_correct = None
                     if pred is not None and actual is not None:
@@ -866,7 +863,7 @@ def compute_multi_horizon_accuracy(
                                     (pred_move > 0 and actual_move > 0)
                                     or (pred_move < 0 and actual_move < 0)
                                 )
-                                
+
                     rows.append(
                         MultiHorizonRow(
                             knowledge_date=knowledge_date,
@@ -883,7 +880,7 @@ def compute_multi_horizon_accuracy(
                         )
                     )
                 continue
-                
+
             outcome = predict_next_bulletin_and_maturity(
                 knowledge_date=knowledge_date,
                 visa_class=row.visa_class,

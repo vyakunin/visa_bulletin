@@ -20,7 +20,7 @@
                 <tbody>
                     {% for trend in yoy_trends %}
                     <tr>
-                        <td><strong>FY {{ trend.fiscal_year }}</strong></td>
+                        <td><strong>{{ trend.fiscal_year }}</strong></td>
                         <td class="text-end">{{ trend.count|intcomma }}</td>
                         <td class="text-end">${{ trend.median_salary|floatformat:0|intcomma }}</td>
                         {% if show_approval_rate|default:True %}

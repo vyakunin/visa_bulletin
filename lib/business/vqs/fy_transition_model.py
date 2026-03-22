@@ -22,7 +22,10 @@ from lib.business.vqs.fy_utilization import (
     compute_utilization_rate,
     get_fiscal_year,
 )
-from lib.business.vqs.seasonal_predictor import get_last_N_moves, get_seasonal_prediction
+from lib.business.vqs.seasonal_predictor import (
+    get_last_N_moves,
+    get_seasonal_prediction,
+)
 
 logger = logging.getLogger(__name__)
 

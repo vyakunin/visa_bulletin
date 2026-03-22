@@ -12,7 +12,6 @@ Usage:
 import argparse
 import logging
 import os
-from datetime import date
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 import django
@@ -21,8 +20,6 @@ django.setup()
 
 from lib.business.vqs.fy_utilization import (
     collect_fy_transitions,
-    compute_backlog_depth,
-    compute_utilization_rate,
     predict_october_jump_conditional,
     predict_september_retrogression_conditional,
 )

@@ -58,7 +58,7 @@ class EmployerProfileViewTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Test Company LLC")
-        self.assertContains(response, "H-1B & PERM Sponsorship Data")
+        self.assertContains(response, "Green Card Sponsorship Data")
 
     def test_redirect_handling(self):
         """Test that invalid slug redirects to canonical URL"""
