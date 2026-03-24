@@ -14,9 +14,13 @@
             <h1 class="h3 mb-1">Top {{ program_label }} Sponsors</h1>
             <p class="text-muted mb-0 small">
                 Ranked by filing volume &mdash; {{ period_label }}.
-                Data from official DOL
-                {% if program == 'perm' %}PERM{% elif program == 'h1b' %}LCA{% else %}LCA and PERM{% endif %}
-                disclosure files.
+                {% if program == 'perm' %}
+                Source: U.S. Department of Labor green card (PERM) labor certification records.
+                {% elif program == 'h1b' %}
+                Source: U.S. Department of Labor H-1B Labor Condition Application records.
+                {% else %}
+                Source: U.S. Department of Labor H-1B and green card (PERM) disclosure records.
+                {% endif %}
             </p>
         </div>
         <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary btn-sm">
@@ -29,37 +33,56 @@
         <div class="card-body py-3">
             <div class="row g-3 align-items-start">
                 <div class="col-12 col-md-6">
-                    <label class="form-label fw-semibold mb-1">Time Period</label>
+                    <label class="form-label fw-semibold mb-1">
+                        {% if use_fy_selector %}Data Year{% else %}Time Period{% endif %}
+                    </label>
                     {% if use_fy_selector %}
-                    <div class="btn-group w-100 flex-wrap" role="group">
+                    <select class="form-select form-select-sm"
+                            onchange="window.location.href='?period='+this.value+'&program={{ program }}'">
                         {% for fy in fy_options %}
-                        <a href="?period=fy_{{ fy.year }}&program={{ program }}"
-                           class="btn btn-sm {% if fy.is_selected %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            FY {{ fy.year }} <small class="opacity-75">({{ fy.label }})</small>
-                        </a>
+                        <option value="fy_{{ fy.year }}" {% if fy.is_selected %}selected{% endif %}>
+                            {{ fy.year }} ({{ fy.label }} decisions)
+                        </option>
                         {% endfor %}
-                        <a href="?period=all_time&program={{ program }}"
-                           class="btn btn-sm {% if period == 'all_time' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            All Time
-                        </a>
-                    </div>
-                    <small class="text-muted d-block mt-1">By DOL disclosure year (year decisions were published)</small>
+                        <option value="all_time" {% if period == 'all_time' %}selected{% endif %}>
+                            All Years
+                        </option>
+                    </select>
+                    <small class="text-muted d-block mt-1">
+                        Year when the Department of Labor published its green card approval/denial decisions
+                    </small>
+                    {% if show_recency_note %}
+                    <small class="text-muted d-block mt-1">
+                        <i class="bi bi-info-circle"></i>
+                        Showing data through {{ latest_available_year }}. The DOL has not yet released
+                        complete {{ current_year }} green card data.
+                    </small>
+                    {% endif %}
                     {% else %}
-                    <div class="btn-group w-100" role="group">
-                        <a href="?period=latest_fy&program={{ program }}"
-                           class="btn btn-sm {% if period == 'latest_fy' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            {{ latest_fy_label }}
-                        </a>
-                        <a href="?period=last_12m&program={{ program }}"
-                           class="btn btn-sm {% if period == 'last_12m' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    <select class="form-select form-select-sm"
+                            onchange="window.location.href='?period='+this.value+'&program={{ program }}'">
+                        {% for fy in fy_options %}
+                        <option value="fy_{{ fy.year }}" {% if fy.is_selected %}selected{% endif %}>
+                            {{ fy.year }} ({{ fy.label }} filings)
+                        </option>
+                        {% endfor %}
+                        <option value="last_12m" {% if period == 'last_12m' %}selected{% endif %}>
                             Last 12 Months
-                        </a>
-                        <a href="?period=all_time&program={{ program }}"
-                           class="btn btn-sm {% if period == 'all_time' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                            All Time
-                        </a>
-                    </div>
-                    <small class="text-muted d-block mt-1">By LCA filing date</small>
+                        </option>
+                        <option value="all_time" {% if period == 'all_time' %}selected{% endif %}>
+                            All Years
+                        </option>
+                    </select>
+                    <small class="text-muted d-block mt-1">
+                        Year when the employer submitted the H-1B Labor Condition Application to the DOL
+                    </small>
+                    {% if show_recency_note %}
+                    <small class="text-muted d-block mt-1">
+                        <i class="bi bi-info-circle"></i>
+                        Showing data through {{ latest_available_year }}. The DOL has not yet released
+                        complete {{ current_year }} H-1B filing data.
+                    </small>
+                    {% endif %}
                     {% endif %}
                 </div>
                 <div class="col-12 col-md-4">
@@ -94,7 +117,6 @@
                         <th class="text-end {% if program == 'all' %}fw-bold{% endif %}">Total Filings</th>
                         <th class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-bold{% endif %}">H-1B</th>
                         <th class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-bold{% endif %}">Green Card</th>
-                        <th class="text-end d-none d-sm-table-cell">Green Card %</th>
                         <th class="text-end d-none d-lg-table-cell">Avg Salary</th>
                     </tr>
                 </thead>
@@ -114,15 +136,6 @@
                         <td class="text-end {% if program == 'all' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.total_filings|floatformat:"0g" }}</td>
                         <td class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.h1b_count|floatformat:"0g" }}</td>
                         <td class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.perm_count|floatformat:"0g" }}</td>
-                        <td class="text-end d-none d-sm-table-cell">
-                            {% if row.perm_ratio >= 20 %}
-                            <span class="badge bg-success">{{ row.perm_ratio }}%</span>
-                            {% elif row.perm_ratio >= 5 %}
-                            <span class="badge bg-warning text-dark">{{ row.perm_ratio }}%</span>
-                            {% else %}
-                            <span class="badge bg-secondary">{{ row.perm_ratio }}%</span>
-                            {% endif %}
-                        </td>
                         <td class="text-end d-none d-lg-table-cell text-muted">
                             {% if row.avg_salary_k %}
                             ${{ row.avg_salary_k|floatformat:"0" }}K
@@ -139,16 +152,15 @@
 
     <p class="text-muted small mt-3">
         <i class="bi bi-info-circle"></i>
-        Green Card % = share of all filings that are green card (PERM) sponsorship within the selected period.
-        Avg salary is base wage for the selected program only.
-        Source: DOL LCA and PERM disclosure files.
+        Avg Salary is the base annual wage for the selected program only.
+        Source: U.S. Department of Labor LCA and PERM disclosure files.
     </p>
     {% else %}
     <div class="alert alert-info">
         <i class="bi bi-info-circle"></i>
         No data available for the selected filters.
         {% if use_fy_selector and fy_options %}
-        Try selecting a different fiscal year above.
+        Try selecting a different year above.
         {% endif %}
     </div>
     {% endif %}

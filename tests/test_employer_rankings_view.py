@@ -263,16 +263,8 @@ class EmployerRankingsViewTest(TestCase):
         self.assertIsNotNone(alpha_h1b["avg_salary_k"])
         self.assertAlmostEqual(alpha_h1b["avg_salary_k"], 120, delta=5)
 
-    # --- PERM % ---
-
-    def test_perm_ratio_correct(self):
-        """perm_ratio must equal perm_count / total_filings * 100."""
-        response = self.client.get(_url(program="all", period="fy_2024"))
-        for row in response.context["rankings"]:
-            total = row["total_filings"]
-            perm = row["perm_count"]
-            expected = round(100.0 * perm / total, 1) if total > 0 else 0
-            self.assertAlmostEqual(row["perm_ratio"], expected, places=1)
+    # perm_ratio column was removed; perm_count and total_filings columns
+    # remain so users can compare them directly.
 
 
 class FormatCountTest(TestCase):

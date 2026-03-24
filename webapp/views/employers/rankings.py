@@ -63,7 +63,7 @@ def _resolve_period(period: str, program: str, fy_options: list[dict]) -> tuple[
     all_time so the page is never blank by default.
     """
     if period == "all_time":
-        return Q(), "All Time"
+        return Q(), "All Years"
 
     if period == "last_12m" and program != "perm":
         cutoff = date(date.today().year - 1, date.today().month, 1)
@@ -72,16 +72,16 @@ def _resolve_period(period: str, program: str, fy_options: list[dict]) -> tuple[
     if period.startswith("fy_"):
         try:
             year = int(period[3:])
-            return Q(fiscal_year=year), f"FY {year}"
+            return Q(fiscal_year=year), str(year)
         except ValueError:
             pass
 
     # Default / latest_fy / fallback for PERM+last_12m
     # If no fiscal years qualified (fy_options empty), use all_time to avoid blank page.
     if not fy_options:
-        return Q(), "All Time"
+        return Q(), "All Years"
     latest_fy = fy_options[0]["year"]
-    return Q(fiscal_year=latest_fy), f"FY {latest_fy}"
+    return Q(fiscal_year=latest_fy), str(latest_fy)
 
 
 def _build_rankings(period_filter: Q, program: str) -> list[dict]:
@@ -133,9 +133,6 @@ def _build_rankings(period_filter: Q, program: str) -> list[dict]:
 
     for i, row in enumerate(rankings, start=1):
         row["rank"] = i
-        total = row["total_filings"] or 0
-        perm = row["perm_count"] or 0
-        row["perm_ratio"] = round(100.0 * perm / total, 1) if total > 0 else 0
         row["avg_salary_k"] = (
             round(row["avg_salary"] / 1000, 0) if row["avg_salary"] else None
         )
@@ -183,7 +180,11 @@ def employer_rankings_view(request):
         "perm": "Green Card (PERM)",
     }
     program_label = program_labels.get(program, "H-1B & Green Card")
-    latest_fy_label = f"FY {fy_options[0]['year']}" if fy_options else "Latest FY"
+    latest_fy_label = str(fy_options[0]["year"]) if fy_options else "Latest"
+
+    current_year = date.today().year
+    latest_available_year = fy_options[0]["year"] if fy_options else None
+    show_recency_note = bool(latest_available_year and latest_available_year < current_year)
 
     context = {
         "rankings": rankings,
@@ -194,6 +195,9 @@ def employer_rankings_view(request):
         "fy_options": fy_options,
         "latest_fy_label": latest_fy_label,
         "program_label": program_label,
+        "latest_available_year": latest_available_year,
+        "current_year": current_year,
+        "show_recency_note": show_recency_note,
         "page_title": f"Top {program_label} Sponsors ({period_label}) | U.S. Immigration Data",
         "page_description": (
             f"The top 100 {program_label} sponsors ranked by recent filing volume. "
