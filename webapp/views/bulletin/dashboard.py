@@ -8,6 +8,7 @@ from django.conf import settings
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
+from models.blog import BlogPost
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
@@ -179,6 +180,8 @@ def dashboard_view(request, category=None, country=None):
             visa_class_data, submission_date, country, cat_label, vqs_predictions=vqs_predictions
         )
 
+    latest_post = BlogPost.objects.filter(is_published=True).order_by("-published_date").first()
+
     context = {
         # Filter state
         "category": category,
@@ -190,6 +193,7 @@ def dashboard_view(request, category=None, country=None):
         "visa_class_data": visa_class_data,
         "has_data": has_data,
         "vqs_predictions": vqs_predictions,
+        "latest_post": latest_post,
         # Filter options
         "visa_categories": VisaCategory.choices,
         "countries": Country.choices,

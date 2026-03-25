@@ -34,28 +34,31 @@
             <div class="row g-3 align-items-start">
                 <div class="col-12 col-md-6">
                     <label class="form-label fw-semibold mb-1">
-                        {% if use_fy_selector %}Data Year{% else %}Time Period{% endif %}
+                        {% if use_fy_selector %}Year of Decision{% else %}Year of Filing / Period{% endif %}
                     </label>
                     {% if use_fy_selector %}
                     <select class="form-select form-select-sm"
                             onchange="window.location.href='?period='+this.value+'&program={{ program }}'">
                         {% for fy in fy_options %}
                         <option value="fy_{{ fy.year }}" {% if fy.is_selected %}selected{% endif %}>
-                            {{ fy.year }} ({{ fy.label }} decisions)
+                            Oct {{ fy.year|add:"-1" }}–Sep {{ fy.year }} &middot; {{ fy.label }} decisions
                         </option>
                         {% endfor %}
                         <option value="all_time" {% if period == 'all_time' %}selected{% endif %}>
-                            All Years
+                            All Years (combined)
                         </option>
                     </select>
                     <small class="text-muted d-block mt-1">
-                        Year when the Department of Labor published its green card approval/denial decisions
+                        Each option covers one U.S. government fiscal year (Oct 1–Sep 30).
+                        Counts are green card (PERM) labor certification cases <strong>decided</strong> by the
+                        U.S. Department of Labor during that period &mdash; certified, denied, or withdrawn.
+                        This is when DOL adjudicated the case, not when the employer applied.
                     </small>
                     {% if show_recency_note %}
                     <small class="text-muted d-block mt-1">
                         <i class="bi bi-info-circle"></i>
-                        Showing data through {{ latest_available_year }}. The DOL has not yet released
-                        complete {{ current_year }} green card data.
+                        Showing data through Oct {{ latest_available_year|add:"-1" }}–Sep {{ latest_available_year }}.
+                        The Department of Labor has not yet released complete data for the current period.
                     </small>
                     {% endif %}
                     {% else %}
@@ -63,24 +66,26 @@
                             onchange="window.location.href='?period='+this.value+'&program={{ program }}'">
                         {% for fy in fy_options %}
                         <option value="fy_{{ fy.year }}" {% if fy.is_selected %}selected{% endif %}>
-                            {{ fy.year }} ({{ fy.label }} filings)
+                            Oct {{ fy.year|add:"-1" }}–Sep {{ fy.year }} &middot; {{ fy.label }} filings
                         </option>
                         {% endfor %}
                         <option value="last_12m" {% if period == 'last_12m' %}selected{% endif %}>
                             Last 12 Months
                         </option>
                         <option value="all_time" {% if period == 'all_time' %}selected{% endif %}>
-                            All Years
+                            All Years (combined)
                         </option>
                     </select>
                     <small class="text-muted d-block mt-1">
-                        Year when the employer submitted the H-1B Labor Condition Application to the DOL
+                        Each option covers one U.S. government fiscal year (Oct 1–Sep 30).
+                        Counts are H-1B Labor Condition Applications (LCAs) <strong>filed</strong> by
+                        employers with the U.S. Department of Labor during that period.
                     </small>
                     {% if show_recency_note %}
                     <small class="text-muted d-block mt-1">
                         <i class="bi bi-info-circle"></i>
-                        Showing data through {{ latest_available_year }}. The DOL has not yet released
-                        complete {{ current_year }} H-1B filing data.
+                        Showing data through Oct {{ latest_available_year|add:"-1" }}–Sep {{ latest_available_year }}.
+                        The Department of Labor has not yet released complete data for the current period.
                     </small>
                     {% endif %}
                     {% endif %}

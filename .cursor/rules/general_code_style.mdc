@@ -209,3 +209,33 @@ outcome.predicted_date  # unambiguous
 ```
 
 **Tuples are OK for:** simple coordinate pairs `(x, y)`, key-value pairs, standard Python patterns (`divmod()`), exactly 2 values with obvious meaning from context.
+
+## Rule: Never Assume User Context in UI-Visible Strings
+
+**Write every UI string (labels, helper text, tooltips, empty states, error messages, column headers) as if the user has zero prior knowledge of your domain, data sources, or internal terminology.**
+
+**Assume users don't know:**
+- Government agency abbreviations (DOL, USCIS, BLS) — spell out on first use in context
+- What a "fiscal year" is or when it runs — state the date range explicitly
+- Program-specific terms (PERM, LCA, I-485) without a plain-English gloss
+- The difference between "filings", "decisions", "approvals", "certifications"
+- That "published" and "decided" are different concepts
+
+**Test:** Can a non-specialist (e.g. someone new to immigration) read this string and know exactly what it means without Googling anything?
+
+**✅ GOOD:**
+```html
+<label>Year of DOL Decision</label>
+<small>
+  The U.S. Department of Labor (DOL) fiscal year runs Oct 1–Sep 30.
+  Counts cases decided by DOL during that period — not when employers applied.
+</small>
+```
+
+**❌ BAD:**
+```html
+<label>DOL Fiscal Year</label>          <!-- assumes user knows "DOL" and "fiscal year" -->
+<small>Year when decisions were published.</small>  <!-- "published" vs "decided" is ambiguous -->
+```
+
+**Applies to:** form labels, dropdown option text, helper text, empty states, error messages, page subtitles, table column headers, tooltip text, placeholder text.

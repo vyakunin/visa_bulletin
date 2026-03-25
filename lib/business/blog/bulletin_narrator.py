@@ -364,6 +364,30 @@ class BulletinNarrator:
                 entry["confidence_high"] = cutoff.confidence_high
                 entry["ci_spread_days"] = (cutoff.confidence_high - cutoff.confidence_low).days
 
+            # Top-3 contributing experts by weight
+            raw = cutoff.expert_predictions
+            if raw and isinstance(raw, dict):
+                expert_rows = []
+                for exp_name, exp_data in raw.items():
+                    if not isinstance(exp_data, dict):
+                        continue
+                    pred_str = exp_data.get("pred")
+                    weight = exp_data.get("weight", 0.0)
+                    pred_date = None
+                    if pred_str:
+                        try:
+                            pred_date = date.fromisoformat(pred_str)
+                        except ValueError:
+                            pass
+                    expert_rows.append({
+                        "name": exp_name,
+                        "display_name": EXPERT_DISPLAY_NAMES.get(exp_name, exp_name.replace("_", " ").title()),
+                        "predicted": pred_date,
+                        "weight_pct": round(weight * 100, 1),
+                    })
+                expert_rows.sort(key=lambda r: r["weight_pct"], reverse=True)
+                entry["top_experts"] = expert_rows[:3]
+
             series_data.append(entry)
 
         return series_data
@@ -517,6 +541,9 @@ class BulletinNarrator:
                     else "moderate" if entry["ci_spread_days"] < 90
                     else "low"
                 )
+
+            if entry.get("top_experts"):
+                outlook_item["top_experts"] = entry["top_experts"]
 
             series_outlooks.append(outlook_item)
 

@@ -27,8 +27,12 @@
                         </a>
                     </h2>
                     <p class="card-text text-muted">
-                        Analysis of the {{ post.related_bulletin.publication_date|date:"F Y" }} Visa Bulletin,
-                        highlighting key movements and deviations from our AI predictions.
+                        {% if post.related_bulletin %}
+                            Analysis of the {{ post.related_bulletin.publication_date|date:"F Y" }} Visa Bulletin,
+                            highlighting key movements and deviations from our AI predictions.
+                        {% else %}
+                            {{ post.excerpt|default:"" }}
+                        {% endif %}
                     </p>
                 </div>
             </div>

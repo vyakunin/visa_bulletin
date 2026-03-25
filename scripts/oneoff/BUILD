@@ -26,6 +26,29 @@ py_binary(
 )
 
 py_binary(
+    name = "generate_initial_blog_posts",
+    srcs = ["generate_initial_blog_posts.py"],
+    deps = [
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//models:bulletin",
+        "//models:blog",
+        "//models:vqs",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        "//lib/business/blog:blog",
+        "//lib/utils:logging_utils",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("python-dateutil"),
+        requirement("psycopg2_binary"),
+    ],
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "debug_predictions_eb3_row",
     srcs = ["debug_predictions_eb3_row.py"],
     deps = [

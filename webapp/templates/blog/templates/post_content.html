@@ -231,6 +231,20 @@
                         {% endif %}
                     </p>
                     {% endif %}
+                    {% if s.top_experts %}
+                    <details class="mt-2">
+                        <summary class="small fw-bold text-muted">Top Factors</summary>
+                        <ul class="list-unstyled mt-1 mb-0" style="font-size: 0.82rem;">
+                            {% for e in s.top_experts %}
+                            <li>
+                                <span class="text-muted">{{ e.weight_pct }}%</span>
+                                {{ e.display_name }}
+                                {% if e.predicted %}<span class="text-muted">→ {{ e.predicted|date:"d M Y" }}</span>{% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% endif %}
                 </div>
             </div>
         </div>

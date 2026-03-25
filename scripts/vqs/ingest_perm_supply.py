@@ -45,7 +45,7 @@ from lib.business.vqs.ingest_utils import normalize_country, normalize_visa_clas
 from lib.parsing.salary.db_importer import PERM_COLUMN_MAPPINGS, get_column_value
 from lib.utils.logging_utils import ScriptLogger
 from models.enums.country import Country
-from models.raw_facts import RawFactSource, RawFactsLedger
+from models.raw_facts import RawFactsLedger, RawFactSource
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)

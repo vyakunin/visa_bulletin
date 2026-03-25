@@ -53,14 +53,16 @@ The Docker image contains: Python runtime, system deps (libpq5), pip packages (r
 **Prod (image-based):**
 1. Cherry-pick to `prod` branch via worktree → push
 2. Wait for GitHub Actions to build and push new `:latest`
-3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:latest && docker restart visa_bulletin_web`
+3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:latest && IMAGE_TAG=latest docker-compose -f deployment/docker-compose.yml up -d web`
 4. `git fetch && git reset --hard origin/prod` (keeps host checkout in sync for settings.py mount)
 
 **Staging (image-based, same as prod):**
 1. Cherry-pick to `staging` branch via worktree → push
-2. Wait for GitHub Actions to build and push image (e.g. `staging-<sha>` or tag)
-3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:<tag> && docker restart visa_bulletin_web`
+2. Wait for GitHub Actions to build and push image (e.g. `staging-<sha>` from GitHub Actions output)
+3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:<tag> && IMAGE_TAG=<tag> docker-compose -f deployment/docker-compose.yml up -d web`
 4. `git fetch && git reset --hard origin/staging` (keeps host checkout in sync)
+
+**⚠️ CRITICAL — `docker restart` does NOT update the image.** It only cycles the existing container. The container keeps running whichever image it was originally created with. To actually deploy a new image you MUST recreate the container via `docker-compose up -d` with the correct `IMAGE_TAG`. Verify with `docker inspect <name> --format '{{.Config.Image}}'` after deploying.
 
 ### When Image Rebuild Is Required (Both Instances)
 
@@ -229,11 +231,13 @@ ssh prod_2Gb_vm "docker network ls && docker network inspect deployment_default 
 
 **If you need to update the Docker image on prod:**
 ```bash
-# Safe pattern: pull image, then restart ONLY the serving container
+# Safe pattern: pull image, then RECREATE the serving container with the new image.
+# docker restart does NOT update the image — it just cycles the existing container.
 docker pull ghcr.io/vyakunin/visa_bulletin:latest
-# Identify the actual serving container first (step 1-2 above)
-# Then restart ONLY that container
-docker restart <serving-container-name>
+# Identify the actual serving container first (step 1-2 above), then:
+IMAGE_TAG=latest docker-compose -f deployment/docker-compose.yml up -d web
+# Verify the container is running the new image:
+docker inspect visa_bulletin_web --format '{{.Config.Image}}'
 ```
 
 **Incident reference (2026-02-19):** Running `docker-compose up -d` on prod stopped the `visa_bulletin_redis` container. The actual serving container (`visa_bulletin_web_blue`, a legacy container) depended on the `redis` Docker network alias for DNS. Stopping redis broke DNS resolution → 500 errors for ~3 minutes.
@@ -262,7 +266,7 @@ docker restart <serving-container-name>
 2. Run relevant tests (`bazel test //tests:...`).
 3. Verify locally.
 4. Cherry-pick to `staging` via worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
-5. Deploy to staging: after CI builds the image from `staging`, on the instance run `docker pull` for that image tag (e.g. `staging-<sha>` from GitHub Actions) and `docker restart visa_bulletin_web`. Keep host checkout in sync: `git fetch origin staging && git reset --hard origin/staging`. If the staging instance is stopped, start it first (see § Staging unreachable).
+5. Deploy to staging: after CI builds the image from `staging`, on the instance run `docker pull ghcr.io/vyakunin/visa_bulletin:<tag>` (e.g. `staging-<sha>` from GitHub Actions output), then `IMAGE_TAG=<tag> docker-compose -f deployment/docker-compose.yml up -d web` to recreate the container. Verify with `docker inspect visa_bulletin_web --format '{{.Config.Image}}'`. Keep host checkout in sync: `git fetch origin staging && git reset --hard origin/staging`. If the staging instance is stopped, start it first (see § Staging unreachable).
 6. Verify on staging.
 
 **Critical hotfix (prod-down only):** Cherry-pick to `prod` via worktree → push → deploy to prod-serving instance → cherry-pick to staging. Only for crashes/5xx.

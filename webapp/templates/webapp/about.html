@@ -71,15 +71,15 @@
             <div class="card-body">
                 <h4 class="card-title">How do the projections work?</h4>
                 <p class="card-text">
-                    Projections for priority dates are calculated using a rolling average of the last 12 months of movements.
+                    Priority date estimates are powered by a Virtual Queue Simulation (VQS) model — a month-by-month
+                    simulation of the visa queue that combines multiple signals: historical bulletin movement patterns,
+                    fiscal year cycles (October resets), I-140 demand data, and queue physics. For 6–12 month horizons,
+                    a gradient-boosted machine learning model trained on over a decade of bulletin history identifies
+                    patterns that simple trend extrapolation misses.
                 </p>
-                <ul>
-                    <li>We calculate the average number of days the cutoff moves forward per month.</li>
-                    <li>We project forward to estimate when your specific date might become current.</li>
-                </ul>
                 <p class="card-text"><strong>Important Caveats:</strong></p>
                 <ul>
-                    <li><strong>Dates:</strong> These are rough estimates based on past math, not insider knowledge. Policy changes or USCIS processing shifts can invalidate these projections instantly.</li>
+                    <li><strong>Dates:</strong> These are model estimates, not guarantees. Policy changes, retrogressions, or sudden demand surges can invalidate projections instantly. <a href="{% url 'faq' %}#headingFour">See accuracy details →</a></li>
                     <li><strong>Salaries:</strong> Salary data represents "offered wages" listed on visa applications, not necessarily the final W-2 income or total compensation (RSUs/Bonuses).</li>
                 </ul>
             </div>

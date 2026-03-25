@@ -4,7 +4,7 @@ Chart building logic for visa bulletin dashboard
 Creates Plotly charts with historical data and projections.
 """
 
-from datetime import date, timedelta
+from datetime import date
 
 import plotly.graph_objects as go
 
@@ -106,7 +106,6 @@ def _add_visa_class_traces(
     visa_class_label = data.get("visa_class_label", data["visa_class"])
     dates = data["dates"]
     cutoff_dates = data["cutoff_dates"]
-    projection = data.get("projection")
     bulletin_urls = data.get("bulletin_urls", [])
 
     trace_indices = []
@@ -133,109 +132,6 @@ def _add_visa_class_traces(
     )
     trace_indices.append(current_idx)
     current_idx += 1
-
-    # Projection trace (if available)
-    if projection and projection.get("estimated_date"):
-        last_valid_cutoff = next(
-            (c for c in reversed(cutoff_dates) if c is not None), None
-        )
-        if last_valid_cutoff:
-            projection_date = projection["estimated_date"]
-            avg_rate = projection.get("avg_progress_days_per_month", 0)
-
-            # Generate monthly intermediate points for "modelled movement"
-            import calendar
-
-            proj_x = [dates[-1]]
-            proj_y = [last_valid_cutoff]
-
-            curr_x = dates[-1]
-            curr_y = last_valid_cutoff
-
-            # Add monthly steps until we reach or exceed the target
-            max_steps = 120  # 10 years
-            step = 0
-            while (
-                curr_y < submission_date
-                and curr_x < projection_date
-                and step < max_steps
-            ):
-                # Increment month manually
-                m = curr_x.month - 1 + 1
-                new_year = curr_x.year + m // 12
-                new_month = m % 12 + 1
-                new_day = min(curr_x.day, calendar.monthrange(new_year, new_month)[1])
-                curr_x = date(new_year, new_month, new_day)
-
-                curr_y += timedelta(days=avg_rate)
-
-                # Cap at submission_date for the final point
-                if curr_y > submission_date:
-                    curr_y = submission_date
-
-                proj_x.append(curr_x)
-                proj_y.append(curr_y)
-                step += 1
-
-            # Ensure the final projection point is included
-            if proj_x[-1] != projection_date:
-                proj_x.append(projection_date)
-                proj_y.append(submission_date)
-
-            # Map internal URLs for projection points (null for now as they are future)
-            proj_customdata = [None] * len(proj_x)
-
-            # Separate intersection point for the single star
-            intersection_x = []
-            intersection_y = []
-            if proj_y[-1] == submission_date:
-                intersection_x = [proj_x[-1]]
-                intersection_y = [proj_y[-1]]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=proj_x,
-                    y=proj_y,
-                    mode="lines",
-                    name=f"{visa_class_label} (Projection)",
-                    line=dict(color=color, width=2, dash="dash", shape="hv"),
-                    customdata=proj_customdata,
-                    hovertemplate=(
-                        f"<b>{visa_class_label}</b><br>"
-                        f"<b>Estimated:</b> %{{x|%B %Y}}<br>"
-                        f"<b>Projected Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>"
-                    ),
-                )
-            )
-
-            # Add single star marker at intersection
-            if intersection_x:
-                fig.add_trace(
-                    go.Scatter(
-                        x=intersection_x,
-                        y=intersection_y,
-                        mode="markers",
-                        name=f"{visa_class_label} (Intersection)",
-                        marker=dict(
-                            size=12,
-                            symbol="star",
-                            color=color,
-                            line=dict(width=1, color="white"),
-                        ),
-                        showlegend=False,
-                        hovertemplate=(
-                            f"<b>{visa_class_label} - Ready Date</b><br>"
-                            f"<b>Estimated:</b> %{{x|%B %Y}}<br>"
-                            f"<b>Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>"
-                        ),
-                    )
-                )
-
-            trace_indices.append(current_idx)
-            current_idx += 1
-            if intersection_x:
-                trace_indices.append(current_idx)
-                current_idx += 1
 
     # VQS model projection trace (dotted line + diamond marker at maturity)
     if vqs_pred and vqs_pred.get("trajectory") and dates:

@@ -12,4 +12,9 @@ def blog_list(request):
 def blog_detail(request, slug):
     """View a single blog post."""
     post = get_object_or_404(BlogPost, slug=slug, is_published=True)
-    return render(request, "blog/post_detail.html", {"post": post})
+    related_posts = (
+        BlogPost.objects.filter(is_published=True)
+        .exclude(slug=slug)
+        .order_by("-published_date")[:3]
+    )
+    return render(request, "blog/post_detail.html", {"post": post, "related_posts": related_posts})

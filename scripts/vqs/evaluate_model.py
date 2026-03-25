@@ -22,6 +22,8 @@ import os
 import time
 from collections import defaultdict
 
+import numpy as np
+
 import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
@@ -188,6 +190,20 @@ def build_contextual_cache(
     return cache
 
 
+_GBM_FEATURE_GROUPS: dict[str, list[int]] = {
+    # Recent velocity / momentum (move_1m … move_12m_avg)
+    "velocity": [2, 3, 4, 5, 6],
+    # Calendar / FY seasonality (month_of_year, FY flags, months_into_fy, retro_distance)
+    "seasonality": [7, 8, 9, 17, 20],
+    # Macro supply/demand signals (cutoff_age, I-140 ratio, I-485 queue, utilization, demand_ratio_class, velocity_6m)
+    "macro": [10, 11, 12, 16, 18, 19],
+    # Demand-drop signals – ROW velocity + issuance drop (indices 22-25)
+    "demand_drop": [22, 23, 24, 25],
+    # Cross-series EB-1 signals + near-cutoff I-485 density
+    "cross_series": [13, 14, 15, 21, 26],
+}
+
+
 def build_gbm_caches(
     visa_class: str,
     country: int,
@@ -196,8 +212,7 @@ def build_gbm_caches(
     action_type: str = "filing",
     movement_threshold: int = _GBM_DEFAULT_MOVEMENT_THRESHOLD,
     gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD,
-    ablate_demand_drop: bool = False,
-    ablate_perm: bool = False,
+    ablate_group: str | None = None,
 ) -> tuple[
     dict[tuple[datetime.date, int], datetime.date],
     dict[tuple[datetime.date, int], datetime.date],
@@ -212,40 +227,32 @@ def build_gbm_caches(
     GBM Direct: separate model per horizon, no error compounding.
     GBM Gated: classifier decides whether to predict or defer to persistence.
 
-    ablate_demand_drop: if True, zeroes out features 22-25 (ROW velocity +
-        issuance drop) at inference time to measure their contribution.
-    ablate_perm: if True, zeroes out feature 27 (perm_filing_ratio) at
-        inference time to isolate the PERM feature's contribution (Hypothesis #7).
+    ablate_group: if set, zero out the corresponding feature indices (from
+        _GBM_FEATURE_GROUPS) at inference time to measure group contribution.
+        Valid values: "velocity", "seasonality", "macro", "demand_drop", "cross_series".
     """
     import lib.business.vqs.gbm_expert as _gbm_mod
     from lib.business.vqs.data_cache import get_cutoff_at_date
 
-    # When ablating demand-drop features (indices 22-25), wrap the private feature
-    # builder so those slots are zeroed out at inference time. Training is unaffected
-    # (models are cached from prior calls), which lets us isolate the inference-time
-    # contribution of ROW velocity and issuance drop.
     _orig_build = _gbm_mod._build_features_for_series
-    if ablate_demand_drop:
+    if ablate_group is not None:
+        zero_indices = _GBM_FEATURE_GROUPS.get(ablate_group)
+        if zero_indices is None:
+            raise ValueError(f"Unknown ablate_group '{ablate_group}'. Valid: {list(_GBM_FEATURE_GROUPS)}")
+        # Clear model caches so this run trains fresh on ablated features, ensuring
+        # inference and training are consistent for the ablation study.
+        _gbm_mod._model_cache.clear()
+        _gbm_mod._classifier_cache.clear()
+        _gbm_mod._quantile_cache.clear()
         def _ablated_build(*args, **kwargs):
             feats = _orig_build(*args, **kwargs)
-            if feats is not None and len(feats) > 25:
+            if feats is not None:
                 feats = list(feats)
-                feats[22] = 0.0  # row_move_1m
-                feats[23] = 0.0  # row_move_3m_avg
-                feats[24] = 0.0  # row_is_current
-                feats[25] = 0.0  # issuance_drop_ratio
+                for idx in zero_indices:
+                    if idx < len(feats):
+                        feats[idx] = 0.0
             return feats
         _gbm_mod._build_features_for_series = _ablated_build
-
-    if ablate_perm:
-        _build_before_perm = _gbm_mod._build_features_for_series
-        def _ablated_perm_build(*args, **kwargs):
-            feats = _build_before_perm(*args, **kwargs)
-            if feats is not None and len(feats) > 27:
-                feats = list(feats)
-                feats[27] = 0.0  # perm_filing_ratio
-            return feats
-        _gbm_mod._build_features_for_series = _ablated_perm_build
 
     try:
         gbm_cache: dict[tuple, datetime.date] = {}
@@ -277,7 +284,7 @@ def build_gbm_caches(
                 if pred_gated:
                     gbm_gated_cache[(kd, h)] = pred_gated
     finally:
-        if ablate_demand_drop or ablate_perm:
+        if ablate_group is not None:
             _gbm_mod._build_features_for_series = _orig_build
 
     return gbm_cache, gbm_direct_cache, gbm_gated_cache
@@ -542,6 +549,86 @@ def forecast_demand_supply(visa_class, country, target_date, horizon):
     return current_fad + datetime.timedelta(days=total_advance)
 
 
+def forecast_momentum_3m(visa_class, country, target_date, horizon):
+    """3-month momentum: extrapolate the average of the last 3 monthly moves forward.
+
+    Popular community approach (Reddit, Trackitt): assumes the recent pace continues.
+    Walk-forward safe.
+    """
+    from lib.business.vqs.data_cache import get_cutoffs_up_to
+    knowledge_date = target_date - relativedelta(months=horizon)
+    cutoffs = get_cutoffs_up_to(visa_class, country, ACTION_TYPE, knowledge_date)
+    if len(cutoffs) < 4:
+        return forecast_persistence(visa_class, country, target_date, horizon)
+    recent = cutoffs[-4:]
+    moves = [(recent[i].cutoff_date - recent[i - 1].cutoff_date).days for i in range(1, 4) if recent[i].cutoff_date and recent[i - 1].cutoff_date]
+    if not moves:
+        return forecast_persistence(visa_class, country, target_date, horizon)
+    avg_move = sum(moves) / len(moves)
+    last_cutoff = recent[-1].cutoff_date
+    if not last_cutoff:
+        return None
+    return last_cutoff + datetime.timedelta(days=int(avg_move * horizon))
+
+
+def forecast_seasonal_median(visa_class, country, target_date, horizon):
+    """Seasonal median: predict each future month's movement using its historical median.
+
+    Captures the strong FY seasonal pattern (October retrogression, September
+    acceleration) without any trained model. Walk-forward safe.
+    """
+    from lib.business.vqs.seasonal_predictor import get_seasonal_prediction
+    knowledge_date = target_date - relativedelta(months=horizon)
+    latest = (
+        VisaCutoffDate.objects.filter(
+            visa_class=visa_class, country=country, action_type=ACTION_TYPE,
+            bulletin__publication_date__lte=knowledge_date,
+        )
+        .order_by("-bulletin__publication_date")
+        .first()
+    )
+    if not latest or not latest.cutoff_date:
+        return None
+    current = latest.cutoff_date
+    current_kd = knowledge_date
+    for _ in range(horizon):
+        next_kd = current_kd + relativedelta(months=1)
+        move = get_seasonal_prediction(
+            visa_class, country, ACTION_TYPE, current_kd, next_kd.month
+        )
+        current = current + datetime.timedelta(days=move if move is not None else 0)
+        current_kd = next_kd
+    return current
+
+
+def forecast_polynomial_trend(visa_class, country, target_date, horizon):
+    """Polynomial trend (degree 2): fit a quadratic to last 12 months, extrapolate.
+
+    Captures acceleration/deceleration that linear trend misses. Walk-forward safe.
+    Falls back to persistence when fewer than 4 data points are available.
+    """
+    from lib.business.vqs.data_cache import get_cutoffs_up_to
+    knowledge_date = target_date - relativedelta(months=horizon)
+    cutoffs = get_cutoffs_up_to(visa_class, country, ACTION_TYPE, knowledge_date)
+    cutoff_12m_ago = knowledge_date - datetime.timedelta(days=366)
+    recent = [c for c in cutoffs if c.bulletin.publication_date > cutoff_12m_ago and c.cutoff_date]
+    if len(recent) < 4:
+        return forecast_persistence(visa_class, country, target_date, horizon)
+    t0 = recent[0].bulletin.publication_date
+    x = np.array([(c.bulletin.publication_date - t0).days for c in recent], dtype=float)
+    y = np.array([(c.cutoff_date - recent[0].cutoff_date).days for c in recent], dtype=float)
+    try:
+        coeffs = np.polyfit(x, y, 2)
+    except (np.linalg.LinAlgError, ValueError):
+        return forecast_persistence(visa_class, country, target_date, horizon)
+    last_cutoff = recent[-1].cutoff_date
+    last_x = (recent[-1].bulletin.publication_date - t0).days
+    predict_x = (target_date - t0).days
+    delta = float(np.polyval(coeffs, predict_x) - np.polyval(coeffs, last_x))
+    delta = max(-180.0 * horizon, min(365.0 * horizon, delta))
+    return last_cutoff + datetime.timedelta(days=int(delta))
+
+
 def classify_move_magnitude(move_days: int) -> str:
     """Classify movement magnitude into buckets."""
     abs_move = abs(move_days)
@@ -704,7 +791,7 @@ def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int])
 _CROSS_SERIES_EXPERTS = frozenset({"cross_series", "gbm"})
 
 
-def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_demand_drop: bool = False, ablate_perm: bool = False):
+def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_group: str | None = None):
     """Run evaluation across all series and horizons, return chart data and metrics."""
     chart_data = {}
     all_metrics = []
@@ -765,8 +852,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             gbm_cache, gbm_direct_cache, gbm_gated_cache = build_gbm_caches(
                 visa_class, country, sorted(all_kd_for_rs), horizons, ACTION_TYPE,
                 gate_threshold=gate_threshold,
-                ablate_demand_drop=ablate_demand_drop,
-                ablate_perm=ablate_perm,
+                ablate_group=ablate_group,
             )
             logger.info(
                 f"  GBM caches built: standalone={len(gbm_cache)} direct={len(gbm_direct_cache)}"
@@ -807,6 +893,12 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             gbm_list = []
             gbm_direct_list = []
             gbm_gated_list = []
+            momentum3m_vals = []
+            seasonal_med_vals = []
+            poly_trend_vals = []
+            momentum3m_list = []
+            seasonal_med_list = []
+            poly_trend_list = []
 
             for d in plot_dates:
                 persist = forecast_persistence(visa_class, country, d, h)
@@ -836,6 +928,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 gbm_pred = gbm_cache.get((kd, h)) if gbm else None
                 gbm_direct_pred = gbm_direct_cache.get((kd, h)) if gbm else None
                 gbm_gated_pred = gbm_gated_cache.get((kd, h)) if gbm else None
+                mom3m = forecast_momentum_3m(visa_class, country, d, h)
+                seas_med = forecast_seasonal_median(visa_class, country, d, h)
+                poly_trend = forecast_polynomial_trend(visa_class, country, d, h)
 
                 persist_vals.append(persist.strftime("%Y-%m-%d") if persist else None)
                 dash_vals.append(dash.strftime("%Y-%m-%d") if dash else None)
@@ -849,6 +944,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 gbm_vals.append(gbm_pred.strftime("%Y-%m-%d") if gbm_pred else None)
                 gbm_direct_vals.append(gbm_direct_pred.strftime("%Y-%m-%d") if gbm_direct_pred else None)
                 gbm_gated_vals.append(gbm_gated_pred.strftime("%Y-%m-%d") if gbm_gated_pred else None)
+                momentum3m_vals.append(mom3m.strftime("%Y-%m-%d") if mom3m else None)
+                seasonal_med_vals.append(seas_med.strftime("%Y-%m-%d") if seas_med else None)
+                poly_trend_vals.append(poly_trend.strftime("%Y-%m-%d") if poly_trend else None)
 
                 persist_list.append(persist)
                 dash_list.append(dash)
@@ -862,6 +960,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 gbm_list.append(gbm_pred)
                 gbm_direct_list.append(gbm_direct_pred)
                 gbm_gated_list.append(gbm_gated_pred)
+                momentum3m_list.append(mom3m)
+                seasonal_med_list.append(seas_med)
+                poly_trend_list.append(poly_trend)
 
             # Classify each data point by regime, FY phase, movement magnitude
             point_meta = []
@@ -885,6 +986,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 "dsupply": dsupply_vals,
                 "ctx": ctx_vals,
                 "hybrid": hybrid_vals,
+                "momentum3m": momentum3m_vals,
+                "seasonal_med": seasonal_med_vals,
+                "poly_trend": poly_trend_vals,
                 "regime": regime_labels,
                 "fy_phase": fy_phase_labels,
             }
@@ -906,6 +1010,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 "Demand-Supply": dsupply_list,
                 "Contextual Ensemble": ctx_list,
                 "Hybrid": hybrid_list,
+                "3m Momentum": momentum3m_list,
+                "Seasonal Median": seasonal_med_list,
+                "Poly Trend": poly_trend_list,
             }
             if ablate:
                 model_lists["VQS No Cross-Series"] = ablation_list
@@ -958,6 +1065,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 (dsupply_list, "Demand-Supply"),
                 (ctx_list, "Contextual Ensemble"),
                 (hybrid_list, "Hybrid"),
+                (momentum3m_list, "3m Momentum"),
+                (seasonal_med_list, "Seasonal Median"),
+                (poly_trend_list, "Poly Trend"),
             ]
             if ablate:
                 model_eval_pairs.append((ablation_list, "VQS No Cross-Series"))
@@ -986,7 +1096,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
     return chart_data, all_metrics, all_stratified
 
 
-MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid"]
+MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid", "3m Momentum", "Seasonal Median", "Poly Trend"]
 MODELS_ABLATE = MODELS + ["VQS No Cross-Series"]
 MODELS_GBM = MODELS + ["GBM", "GBM Direct", "GBM Gated"]
 
@@ -1230,8 +1340,8 @@ def generate_html(chart_data, horizons, output_path):
             const dimData = d.stratified[h][currentDim];
             const hasGbm = Object.values(dimData).some(bm => 'GBM' in bm);
             const models = hasGbm
-                ? ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid', 'GBM', 'GBM Direct', 'GBM Gated']
-                : ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid'];
+                ? ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid', '3m Momentum', 'Seasonal Median', 'Poly Trend', 'GBM', 'GBM Direct', 'GBM Gated']
+                : ['Persistence', 'VQS Ensemble', 'Regime-Switched', 'Pace', 'Demand-Supply', 'Contextual Ensemble', 'Hybrid', '3m Momentum', 'Seasonal Median', 'Poly Trend'];
             const dimLabels = {{
                 'regime': {{'advancing':'Advancing','stalled':'Stalled','retrogressing':'Retrogressing','recovering':'Recovering','volatile':'Volatile'}},
                 'fy_phase': {{'fy_reset':'FY Reset (Oct)','conservative':'Conservative (Nov-Mar)','acceleration':'Acceleration (Apr-Jun)','end_of_fy':'End of FY (Jul-Sep)','normal':'Normal'}},
@@ -1279,6 +1389,9 @@ def generate_html(chart_data, horizons, output_path):
             const ePace = cumErr(d.dates, d.actual, hd.pace);
             const eDS = cumErr(d.dates, d.actual, hd.dsupply);
             const eH = hd.hybrid ? cumErr(d.dates, d.actual, hd.hybrid) : [];
+            const eMom = hd.momentum3m ? cumErr(d.dates, d.actual, hd.momentum3m) : [];
+            const eSeas = hd.seasonal_med ? cumErr(d.dates, d.actual, hd.seasonal_med) : [];
+            const ePoly = hd.poly_trend ? cumErr(d.dates, d.actual, hd.poly_trend) : [];
 
             document.getElementById('stats').innerHTML = [
                 '<span style="color:green">Persistence: ' + (eP[eP.length-1]||0).toLocaleString() + 'd</span>',
@@ -1288,6 +1401,9 @@ def generate_html(chart_data, horizons, output_path):
                 '<span style="color:orange">Pace: ' + (ePace[ePace.length-1]||0).toLocaleString() + 'd</span>',
                 '<span style="color:teal">D-S: ' + (eDS[eDS.length-1]||0).toLocaleString() + 'd</span>',
                 eH.length ? '<span style="color:#c0392b;font-weight:bold">Hybrid: ' + (eH[eH.length-1]||0).toLocaleString() + 'd</span>' : '',
+                eMom.length ? '<span style="color:#8b5cf6">3m Mom: ' + (eMom[eMom.length-1]||0).toLocaleString() + 'd</span>' : '',
+                eSeas.length ? '<span style="color:#0ea5e9">SeasonalMed: ' + (eSeas[eSeas.length-1]||0).toLocaleString() + 'd</span>' : '',
+                ePoly.length ? '<span style="color:#f59e0b">PolyTrend: ' + (ePoly[ePoly.length-1]||0).toLocaleString() + 'd</span>' : '',
             ].filter(Boolean).join('');
 
             const traces = [
@@ -1299,6 +1415,9 @@ def generate_html(chart_data, horizons, output_path):
                 {{x:d.dates, y:hd.pace, mode:'lines', name:'Pace ('+h+'m)', line:{{color:'orange',width:2,dash:'dashdot'}}, legendgroup:'pc'}},
                 {{x:d.dates, y:hd.dsupply, mode:'lines', name:'Demand-Supply ('+h+'m)', line:{{color:'teal',width:2,dash:'longdash'}}, legendgroup:'ds'}},
                 ...(hd.hybrid ? [{{x:d.dates, y:hd.hybrid, mode:'lines', name:'Hybrid ('+h+'m)', line:{{color:'#c0392b',width:3,dash:'solid'}}, legendgroup:'hy'}}] : []),
+                ...(hd.momentum3m ? [{{x:d.dates, y:hd.momentum3m, mode:'lines', name:'3m Momentum ('+h+'m)', line:{{color:'#8b5cf6',width:1.5,dash:'dash'}}, legendgroup:'mom', visible:'legendonly'}}] : []),
+                ...(hd.seasonal_med ? [{{x:d.dates, y:hd.seasonal_med, mode:'lines', name:'Seasonal Med ('+h+'m)', line:{{color:'#0ea5e9',width:1.5,dash:'dot'}}, legendgroup:'seas', visible:'legendonly'}}] : []),
+                ...(hd.poly_trend ? [{{x:d.dates, y:hd.poly_trend, mode:'lines', name:'Poly Trend ('+h+'m)', line:{{color:'#f59e0b',width:1.5,dash:'dashdot'}}, legendgroup:'poly', visible:'legendonly'}}] : []),
                 {{x:d.dates, y:eP, mode:'lines', name:'Err: Persist', line:{{color:'green',width:1,dash:'dot'}}, xaxis:'x', yaxis:'y2', legendgroup:'p', showlegend:false}},
                 {{x:d.dates, y:eD, mode:'lines', name:'Err: Dashboard', line:{{color:'blue',width:2,dash:'dash'}}, xaxis:'x', yaxis:'y2', legendgroup:'d', showlegend:false}},
                 {{x:d.dates, y:eV, mode:'lines', name:'Err: VQS', line:{{color:'purple',width:2}}, xaxis:'x', yaxis:'y2', legendgroup:'v', showlegend:false}},
@@ -1306,6 +1425,9 @@ def generate_html(chart_data, horizons, output_path):
                 {{x:d.dates, y:ePace, mode:'lines', name:'Err: Pace', line:{{color:'orange',width:1,dash:'dashdot'}}, xaxis:'x', yaxis:'y2', legendgroup:'pc', showlegend:false}},
                 {{x:d.dates, y:eDS, mode:'lines', name:'Err: D-S', line:{{color:'teal',width:1,dash:'longdash'}}, xaxis:'x', yaxis:'y2', legendgroup:'ds', showlegend:false}},
                 ...(eH.length ? [{{x:d.dates, y:eH, mode:'lines', name:'Err: Hybrid', line:{{color:'#c0392b',width:2}}, xaxis:'x', yaxis:'y2', legendgroup:'hy', showlegend:false}}] : []),
+                ...(eMom.length ? [{{x:d.dates, y:eMom, mode:'lines', name:'Err: 3m Mom', line:{{color:'#8b5cf6',width:1}}, xaxis:'x', yaxis:'y2', legendgroup:'mom', showlegend:false}}] : []),
+                ...(eSeas.length ? [{{x:d.dates, y:eSeas, mode:'lines', name:'Err: SeasonalMed', line:{{color:'#0ea5e9',width:1}}, xaxis:'x', yaxis:'y2', legendgroup:'seas', showlegend:false}}] : []),
+                ...(ePoly.length ? [{{x:d.dates, y:ePoly, mode:'lines', name:'Err: PolyTrend', line:{{color:'#f59e0b',width:1}}, xaxis:'x', yaxis:'y2', legendgroup:'poly', showlegend:false}}] : []),
             ];
 
             Plotly.newPlot('chart', traces, {{
@@ -1352,12 +1474,13 @@ def main():
     parser.add_argument("--gate-threshold", type=float, default=_GBM_DEFAULT_GATE_THRESHOLD,
                         help=f"GBM Gated gate threshold (default: {_GBM_DEFAULT_GATE_THRESHOLD}). "
                              "Used for gate sweep experiments.")
-    parser.add_argument("--ablate-demand-drop", action="store_true",
-                        help="Zero out demand-drop features (22-25: ROW velocity + issuance drop) "
-                             "at GBM inference time to measure their contribution.")
-    parser.add_argument("--ablate-perm", action="store_true",
-                        help="Zero out perm_filing_ratio (feature 27) at GBM inference time "
-                             "to isolate its contribution (Hypothesis #7 ablation).")
+    parser.add_argument(
+        "--ablate-group", type=str, default=None,
+        choices=list(_GBM_FEATURE_GROUPS),
+        help="Zero out a named feature group at GBM inference (and retrain) to measure "
+             "its contribution. Valid groups: velocity, seasonality, macro, demand_drop, cross_series. "
+             "Requires --gbm.",
+    )
     args = parser.parse_args()
 
     start = datetime.date.fromisoformat(args.start)
@@ -1375,8 +1498,7 @@ def main():
         diagnostic=args.diagnostic, ablate=args.ablate,
         gbm=args.gbm,
         gate_threshold=args.gate_threshold,
-        ablate_demand_drop=args.ablate_demand_drop,
-        ablate_perm=args.ablate_perm,
+        ablate_group=args.ablate_group,
     )
     print_metrics_table(metrics, horizons)
     print_stratified_table(stratified, horizons)

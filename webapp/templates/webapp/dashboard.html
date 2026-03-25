@@ -106,85 +106,43 @@
             {% endif %}
 
             {% if has_data %}
-            <!-- Summary table: last update and current projection per visa type -->
-            {% if visa_class_data %}
+            <!-- Table 1: When will my priority date become current? -->
+            {% if visa_class_data and vqs_predictions %}
             <div class="card mb-3">
                 <div class="card-body py-3">
-                    <h3 class="h6 mb-2"><i class="bi bi-calendar-check"></i> Processing Estimates by Visa Class</h3>
+                    <h3 class="h6 mb-2">
+                        <i class="bi bi-calendar-check"></i> When Will My Priority Date Become Current?
+                    </h3>
                     <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0 sortable-table">
+                        <table class="table table-sm table-hover mb-0">
                             <thead>
                                 <tr>
                                     <th scope="col">Visa Type</th>
                                     <th scope="col">Last Update</th>
-                                    <th scope="col">Linear Projection</th>
-                                    {% if vqs_predictions %}
-                                    <th scope="col">Queue Model <span class="badge bg-info text-dark" style="font-size:0.65em; vertical-align:middle;" title="Virtual Queue Simulation — predicts cutoff movement using I-140 demand data and supply modeling. Dotted line on chart.">Beta</span></th>
-                                    {% endif %}
+                                    <th scope="col">
+                                        Estimated Current Date
+                                        <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top"
+                                            data-bs-html="true"
+                                            title="The model simulates the visa queue month-by-month using I-140 demand data, historical processing patterns, and fiscal year cycles to estimate when your priority date will become current. <a href='{% url 'faq' %}#headingFour' class='text-white'>Learn more →</a>"
+                                            style="cursor:help;">
+                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
+                                        </span>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for data in visa_class_data %}
-                                {% with projection=data.projection label=data.visa_class_label|default:data.visa_class %}
+                                {% with label=data.visa_class_label|default:data.visa_class %}
                                 <tr>
                                     <td>{{ label }}</td>
                                     <td>{% if data.last_bulletin_date %}{{ data.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
                                     <td>
-                                        {% if projection %}
-                                        {% if projection.status == 'projected' or projection.status == 'projected_historical' %}
-                                        Est. {{ projection.estimated_date|date:"F Y" }}
-                                        <span class="text-muted small">({{ projection.avg_progress_days_per_month|floatformat:1 }} days/mo)</span>
-                                        {% elif projection.status == 'current' %}
-                                        <span class="text-success"><i class="bi bi-check-circle-fill"></i>
-                                            Current</span>
-                                        {% elif projection.status == 'no_movement' %}
-                                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> No
-                                            movement</span>
-                                        {% else %}
-                                        —
-                                        {% endif %}
-                                        {% else %}
-                                        —
-                                        {% endif %}
+                                        {% for vqs_label, vqs_data in vqs_predictions.items %}{% if vqs_label == label %}{% if vqs_data.maturity_month %}{{ vqs_data.maturity_month|date:"F Y" }}
+                                        {% if vqs_data.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                        {% elif vqs_data.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                        {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
+                                        {% else %}<span class="text-muted small">Beyond 10 years</span>{% endif %}{% endif %}{% endfor %}
                                     </td>
-                                    {% if vqs_predictions %}
-                                    <td>
-                                        {% with vqs=vqs_predictions|dictsort:label %}
-                                        {% if label in vqs_predictions %}
-                                        {% with vpred=vqs_predictions %}
-                                        {% for vqs_label, vqs_data in vpred.items %}
-                                        {% if vqs_label == label %}
-                                        {% if vqs_data.next_cutoff %}
-                                        <span title="Next predicted cutoff: {{ vqs_data.next_cutoff|date:'M d, Y' }}{% if vqs_data.confidence_low and vqs_data.confidence_high %} (range: {{ vqs_data.confidence_low|date:'M d, Y' }} – {{ vqs_data.confidence_high|date:'M d, Y' }}){% endif %}">
-                                            {{ vqs_data.next_cutoff|date:"M d, Y" }}
-                                            {% if vqs_data.confidence == "high" %}
-                                            <i class="bi bi-circle-fill text-success" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
-                                            {% elif vqs_data.confidence == "medium" %}
-                                            <i class="bi bi-circle-fill text-warning" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
-                                            {% else %}
-                                            <i class="bi bi-circle-fill text-secondary" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>
-                                            {% endif %}
-                                        </span>
-                                        {% if vqs_data.confidence_low and vqs_data.confidence_high %}
-                                        <br><span class="text-muted small">Range: {{ vqs_data.confidence_low|date:"M d" }} – {{ vqs_data.confidence_high|date:"M d, Y" }}</span>
-                                        {% endif %}
-                                        {% if vqs_data.maturity_month %}
-                                        <br><span class="text-info small" title="Queue Model: estimated month your priority date becomes current">
-                                            <i class="bi bi-diamond-fill" style="font-size:0.6em;"></i> Est. current: {{ vqs_data.maturity_month|date:"M Y" }}
-                                        </span>
-                                        {% endif %}
-                                        {% else %}
-                                        <span class="text-muted">—</span>
-                                        {% endif %}
-                                        {% endif %}
-                                        {% endfor %}
-                                        {% endwith %}
-                                        {% else %}
-                                        <span class="text-muted">—</span>
-                                        {% endif %}
-                                        {% endwith %}
-                                    </td>
-                                    {% endif %}
                                 </tr>
                                 {% endwith %}
                                 {% endfor %}
@@ -195,14 +153,82 @@
             </div>
             {% endif %}
 
+            <!-- Table 2: Next Bulletin Forecast (collapsible) -->
+            {% if vqs_predictions %}
+            <div class="accordion mb-3" id="nextBulletinAccordion">
+                <div class="accordion-item border">
+                    <h2 class="accordion-header" id="nextBulletinHeading">
+                        <button class="accordion-button collapsed py-2" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#nextBulletinCollapse"
+                            aria-expanded="false" aria-controls="nextBulletinCollapse"
+                            style="font-size:0.875rem; font-weight:600;">
+                            <i class="bi bi-newspaper me-2"></i> Next Bulletin Forecast
+                            <span class="badge bg-info text-dark ms-2" style="font-size:0.65em;">Beta</span>
+                        </button>
+                    </h2>
+                    <div id="nextBulletinCollapse" class="accordion-collapse collapse"
+                        aria-labelledby="nextBulletinHeading" data-bs-parent="#nextBulletinAccordion">
+                        <div class="accordion-body py-2">
+                            <p class="small text-muted mb-2">Predicted cutoff dates for the upcoming visa bulletin, based on the Virtual Queue Simulation model.</p>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-2">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Visa Type</th>
+                                            <th scope="col">Predicted Cutoff</th>
+                                            <th scope="col">Confidence Range</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for vqs_label, vqs_data in vqs_predictions.items %}
+                                        <tr>
+                                            <td>{{ vqs_label }}</td>
+                                            <td>
+                                                {% if vqs_data.next_cutoff %}
+                                                {{ vqs_data.next_cutoff|date:"M d, Y" }}
+                                                {% if vqs_data.confidence == "high" %}
+                                                <i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                                {% elif vqs_data.confidence == "medium" %}
+                                                <i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                                {% else %}
+                                                <i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>
+                                                {% endif %}
+                                                {% else %}
+                                                <span class="text-muted">—</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if vqs_data.confidence_low and vqs_data.confidence_high %}
+                                                <span class="text-muted small">{{ vqs_data.confidence_low|date:"M d" }} – {{ vqs_data.confidence_high|date:"M d, Y" }}</span>
+                                                {% else %}
+                                                <span class="text-muted">—</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% if latest_post %}
+                            <p class="small mb-0">
+                                <i class="bi bi-file-text me-1"></i>
+                                Read the latest analysis: <a href="{% url 'blog_detail' latest_post.slug %}">{{ latest_post.title }}</a>
+                            </p>
+                            {% else %}
+                            <p class="small mb-0 text-muted">
+                                <i class="bi bi-file-text me-1"></i>
+                                <a href="{% url 'blog_list' %}">View all analyses →</a>
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <p class="small text-muted mb-3">
-                <i class="bi bi-exclamation-triangle"></i> <em>Projections are estimates based on historical trends
-                    and public data. Actual processing times may vary due to policy changes.</em>
-                {% if vqs_predictions %}
-                <em>Queue Model uses I-140 demand data and visa supply modeling.</em>
-                {% endif %}
-                <a href="{% url 'about' %}" style="color: #0066CC; text-decoration: underline;">How are projections
-                    calculated? →</a>
+                <i class="bi bi-exclamation-triangle"></i> <em>Estimates are based on a queue simulation model using I-140 demand data, historical bulletin patterns, and fiscal year cycles. Actual processing times may vary due to policy changes, retrogressions, or demand surges.</em>
+                <a href="{% url 'faq' %}#headingFour" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
             </p>
 
             <!-- Chart -->
@@ -295,8 +321,7 @@
                         <ul>
                             <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
                             <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                            <li><strong>Dashed projection lines</strong>: Linear projections based on recent trends (star = estimated ready date)</li>
-                            <li><strong>Dotted lines</strong>: Queue Model (VQS) projections using I-140 demand data (diamond = Queue Model estimated ready date)</li>
+                            <li><strong>Dotted lines</strong>: Queue Model (VQS) projections using I-140 demand data and queue physics (diamond = estimated date your priority date becomes current)</li>
                             <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
                             </li>
                         </ul>
@@ -388,6 +413,11 @@
 
     // Date input handling
     document.addEventListener('DOMContentLoaded', function () {
+        // Initialize Bootstrap tooltips
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+            new bootstrap.Tooltip(el, { html: true });
+        });
+
         const dateInput = document.getElementById('submission_date');
         const datePickerBtn = document.getElementById('datePickerBtn');
         const datePickerHidden = document.getElementById('datePickerHidden');

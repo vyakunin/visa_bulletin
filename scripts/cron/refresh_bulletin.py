@@ -21,6 +21,7 @@ Cron (hourly, uses `. .env` not `source` for /bin/sh compatibility):
 
 import logging
 import os
+import subprocess
 import sys
 
 if os.environ.get("DB_HOST") == "host.docker.internal":
@@ -36,6 +37,7 @@ django.setup()
 from django.core.cache import cache  # noqa: E402
 
 from django_config.logging_config import setup_logging  # noqa: E402
+from lib.business.blog.bulletin_narrator import BulletinNarrator  # noqa: E402
 from lib.ingest.orchestrator import PipelineOrchestrator  # noqa: E402
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin  # noqa: E402
 from lib.ingest.registry import PluginRegistry  # noqa: E402
@@ -44,6 +46,7 @@ from lib.utils.url_utils import (  # noqa: E402
     normalize_source_url,
     path_basename_from_url,
 )
+from models.bulletin import Bulletin  # noqa: E402
 from models.ingest.data_source import DataSource  # noqa: E402
 from models.ingest.enums import DataDomain, IngestStatus  # noqa: E402
 from models.ingest.ingest_run import IngestRun  # noqa: E402
@@ -130,6 +133,47 @@ def ingest_sources(source_ids: list[int]) -> int:
     return succeeded
 
 
+def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
+    """Publish VQS predictions for the N most recently ingested bulletins."""
+    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY", os.getcwd())
+    binary = os.path.join(workspace, "bazel-bin", "scripts", "publish_predictions")
+    if not os.path.exists(binary):
+        logger.warning("publish_predictions binary not found at %s — skipping prediction publish", binary)
+        return
+
+    bulletins = list(
+        Bulletin.objects.order_by("-publication_date").values_list("publication_date", flat=True)[:n_bulletins]
+    )
+    for pub_date in bulletins:
+        month_str = pub_date.strftime("%Y-%m")
+        logger.info("Publishing predictions for bulletin month %s", month_str)
+        try:
+            result = subprocess.run(
+                [binary, "--month", month_str],
+                timeout=120,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                logger.warning("publish_predictions returned %d for %s: %s", result.returncode, month_str, result.stderr[:500])
+            else:
+                logger.info("Predictions published for %s", month_str)
+        except Exception:
+            logger.exception("Failed to publish predictions for %s", month_str)
+
+
+def _generate_blog_posts_for_latest_bulletins(n_bulletins: int) -> None:
+    """Generate analysis blog posts for the N most recently ingested bulletins."""
+    narrator = BulletinNarrator()
+    bulletins = list(Bulletin.objects.order_by("-publication_date")[:n_bulletins])
+    for bulletin in bulletins:
+        try:
+            post = narrator.generate_post_for_bulletin(bulletin)
+            logger.info("Generated blog post '%s' for bulletin %s", post.title, bulletin.publication_date)
+        except Exception:
+            logger.exception("Blog generation failed for bulletin %s", bulletin.publication_date)
+
+
 def main() -> None:
     script_logger.log_call(args={}, context="Hourly visa bulletin refresh")
     logger.info("=== Visa Bulletin Refresh ===")
@@ -152,6 +196,9 @@ def main() -> None:
             logger.info("Django cache cleared. New bulletin data is live.")
         except Exception:
             logger.warning("Cache clear failed (non-fatal, Redis may be unavailable)", exc_info=True)
+
+        _publish_predictions_for_latest_bulletin(ingested)
+        _generate_blog_posts_for_latest_bulletins(ingested)
     else:
         logger.warning("No bulletins were successfully ingested.")
         sys.exit(1)

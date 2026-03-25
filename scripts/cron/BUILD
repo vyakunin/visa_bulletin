@@ -29,11 +29,13 @@ py_binary(
     main = "refresh_bulletin.py",
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/blog:blog",
         "//lib/ingest:orchestrator",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:visa_bulletin",
         "//lib/utils:logging_utils",
         "//lib/utils:url_utils",
+        "//models:bulletin",
         "//models/ingest:ingest",
         "//django_config:settings",
         "//django_config:logging_config",
@@ -43,6 +45,7 @@ py_binary(
         requirement("sqlparse"),
         requirement("psycopg2_binary"),
         requirement("redis"),
+        requirement("python-dateutil"),
     ],
     python_version = "PY3",
     env = {

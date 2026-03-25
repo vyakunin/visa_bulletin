@@ -306,7 +306,11 @@ def _get_utilization_rate(
     Returns a value in [0, 1+]; >1 means oversubscription (can happen due to
     spillover). Returns 0.0 if no issuance data is available.
     """
-    from lib.business.vqs.estimators import DEFAULT_ANNUAL_EB_LIMIT, PER_CLASS_SHARE, PER_COUNTRY_SHARE
+    from lib.business.vqs.estimators import (
+        DEFAULT_ANNUAL_EB_LIMIT,
+        PER_CLASS_SHARE,
+        PER_COUNTRY_SHARE,
+    )
     from models.raw_facts import RawFactsLedger
 
     if facts is None:
@@ -403,10 +407,9 @@ def _get_row_velocity(
     This is the strongest community-used leading indicator for India/China: when
     ROW advances rapidly or goes Current, oversubscribed countries follow.
     """
-    from models.enums.country import Country
-
     from lib.business.vqs.data_cache import get_cutoff_at_date
     from lib.business.vqs.seasonal_predictor import get_last_N_moves
+    from models.enums.country import Country
 
     row_country = Country.ALL.value
     moves = get_last_N_moves(visa_class, row_country, action_type, knowledge_date, n)
