@@ -15,6 +15,15 @@ py_binary(
     visibility = ["//visibility:public"],
 )
 
+py_binary(
+    name = "run_claude",
+    srcs = ["run_claude.py"],
+    main = "run_claude.py",
+    python_version = "PY3",
+    deps = [],
+    visibility = ["//visibility:public"],
+)
+
 # Ruff is now provided by http_archive (@ruff//:ruff_binary)
 # Generate wrapper script with dynamic binary resolution
 genrule(

@@ -183,3 +183,23 @@ The refresh pipeline runs `cluster_existing_employers` on staging; the step can 
 - `scripts/salary/collect_clustering_examples.py` - Example collection script
 - `data/clustering_examples.jsonl` - Benchmark dataset
 
+---
+
+## Trace: Total Filings, Top Employers, and Representative Name
+
+### Total Filings (e.g. 192k)
+
+Set by `update_job_title_cluster_stats` in `_stats_by_cluster()`: one query that counts `SalaryRecord` rows where `job_title_entity.canonical_cluster_id = cluster` and wage in bounds (`scripts/salary/update_job_title_cluster_stats.py`). The profile page uses `cluster.total_filings` from that (and `get_job_title_statistics(..., normalized_title=None)` uses `base_filters['job_title_entity__canonical_cluster'] = cluster` — same set of records).
+
+### Top Employers (e.g. 107 for #1)
+
+In `lib/business/salary/job_title_stats.py`, `get_job_title_statistics` builds `records = SalaryRecord.objects.filter(job_title_entity__canonical_cluster=cluster, ...)`. Top employers are `records.values('employer__canonical_cluster__canonical_name', ...).annotate(count=Count('id')).order_by('-count')`. So each employer cluster's `count` is its number of filings in that same job-title cluster. So 107 is that employer cluster's share of the 192k; total = sum of all employers' counts in the cluster. Verifiable: same `records` queryset is used for total (via `cluster.total_filings`, which was computed from the same logical set) and for top-employers aggregation.
+
+### "Do 'software developers applications' and 'software engineer' end up in the same cluster?"
+
+No. Clustering uses `cluster_job_titles` → `clustering_engine.build_bucket_index` and `assign_to_cluster`. For each `JobTitle` entity, `entity.name` is `JobTitle.title` (the raw title); we call `config.normalize_name(entity.name)` to get the normalized string used for buckets (`lib/business/clustering_engine.py`). Buckets come from `get_fuzzy_bucket_candidates(normalized)`: exact normalized string, word initials (first letter of first 5 words), and prefix 3 + suffix 3 chars. For "software developers applications" that yields e.g. `{"software developers applications", "sda", "sof...ons"}`; for "software engineer" yields `{"software engineer", "se", "sof...eer"}`. There is no bucket overlap, so those two normalized forms are never compared and end up in different clusters.
+
+### Representative Name (canonical_title)
+
+Set by `update_job_title_cluster_stats` in `_most_frequent_raw_title_per_cluster()`: (1) `cluster_top_normalized` / `cluster_mode_normalized` pick the cluster's most frequent `JobTitle.title_normalized` by count of SalaryRecords; (2) `ranked_raw` ranks raw `SalaryRecord.job_title` by count DESC, then shorter length; (3) we take the top raw per cluster. So the representative is the most frequent normalized form's best raw title, not a random Job Title.
+

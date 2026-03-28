@@ -393,3 +393,88 @@ During a babysit session, check these at each interval:
 - [ ] Memory OK? (`free -h` — should have >200MB free)
 - [ ] Disk OK? (`df -h /` — should have >2GB free)
 - [ ] Checkpoint advancing? (`cat backups/refresh_checkpoint.json`)
+
+---
+
+## Verify and Update Pipeline Scripts When Fixing Bugs
+
+After fixing ANY bug in data processing, check if pipeline/refresh/setup scripts need to be updated.
+
+**Decision tree:**
+- Bug fixed in a script → Check if `refresh_data.sh` calls it → If not, add it
+- Bug fixed in a library → Check callers are in pipeline → Verify integration
+- Bug requires data fix → Run fix script on production → Schedule in pipeline
+
+**Scripts to check:**
+1. `scripts/cron/refresh_data.sh` — Does it run the fixed code?
+2. `scripts/cron/build_all.sh` — Does it build the fixed binary? Add to `REQUIRED_BINARIES` if needed.
+3. `scripts/setup_new_instance.sh` — Does it initialize correctly?
+
+**Complete fix workflow:**
+1. Fix the bug in source code
+2. Test fix locally
+3. Check: Is fixed code/script called in `refresh_data.sh`? If NO: add it.
+4. Run fix on production to correct existing data
+5. Commit all changes together
+
+---
+
+## Sync Setup Scripts When Fixing Data Ingestion Issues
+
+When fixing data ingestion, processing, or database issues, update the corresponding setup scripts immediately.
+
+**Scripts to update:**
+1. `scripts/setup_new_instance.sh` — initial instance setup
+2. `scripts/cron/refresh_data.sh` — initial data load + weekly refresh
+3. `deployment/cron/setup-ingest-cron.sh` — cron schedule
+
+**What to check/update in each:**
+- Environment variables needed for fix
+- Database initialization steps / migration requirements
+- Data loading commands and flags
+- Error handling and retry logic
+
+**Verification checklist before committing ingestion fixes:**
+- [ ] Setup scripts include all new environment variables
+- [ ] `refresh_data.sh` includes all new initialization steps
+- [ ] Cron scripts include all new flags/options
+- [ ] Documentation reflects new behavior
+
+---
+
+## Job Title Coherence Smoke Test
+
+After deploying or running `refresh_data` (including `update_job_title_cluster_stats` + `populate_job_title_slugs`), verify coherence on the deployment.
+
+### A. Autocomplete – fields and order
+
+```bash
+GET /api/job-title-autocomplete/?q=software&limit=5
+```
+Response must be JSON array with **title** (= `canonical_title`), **slug**, **total_filings**, ordered by `total_filings` DESC then `canonical_title`.
+
+### B. Profile count matches autocomplete
+
+Pick a slug from autocomplete and note its `total_filings`. Visit `/job-title/<slug>/` — page must show the same Total Filings.
+
+### C. Generated URLs resolve
+
+URLs must be `/job-title/<slug>/` with slug from `canonical_title` (lowercase, hyphenated). Must return 200.
+
+### D. Similar Job Titles section
+
+On a job title profile, "Similar Job Titles" block must list `canonical_title` for other clusters (not raw SOC-style variants).
+
+### E. Integration test
+
+```bash
+bazel test //tests:test_job_title_profile_view
+```
+
+### F. Clear cache after updates
+
+```bash
+ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
+# If using LocMem (no Redis), reload gunicorn:
+ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
+```

@@ -384,6 +384,8 @@ def employer_profile_view(request, slug):
         "stats": stats,
         "chart_data": chart_data,
         "seo": seo,
+        "page_title": seo["title"],
+        "page_description": seo["description"],
         "years": params["years"],
         "program_filter": params["program_filter"],
         "level_filter": params["level_filter"],

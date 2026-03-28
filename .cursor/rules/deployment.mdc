@@ -6,386 +6,154 @@ alwaysApply: true
 
 ## Production Instances
 
-**SSH aliases are keyed by static IP (role). AWS instance names are sticky and do not change.**
+| Alias | Static IP | RAM | Role | Notes |
+|-------|-----------|-----|------|-------|
+| `prod_2Gb_vm` | 44.209.204.255 | 2GB | Production | After rotation: VisaBulletinStaging (old staging) has prod IP |
+| `staging_2Gb_vm` | 54.196.241.197 | 2GB | Staging | After rotation: VisaBulletin2GB (old prod); **often stopped** |
+| `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup | — |
 
-| Alias | Static IP | Role | AWS instance name (sticky) | Notes |
-|-------|------------|------|----------------------------|-------|
-| `prod_2Gb_vm` | 44.209.204.255 | Production | Attached to instance with prod IP | After rotation: **VisaBulletinStaging** (old staging) has prod IP, serves traffic |
-| `staging_2Gb_vm` | 54.196.241.197 | Staging | Attached to instance with staging IP | After rotation: **VisaBulletin2GB** (old prod) has staging IP; **typically stopped** after graduation |
-| `backup_0_5Gb_vm` | 3.227.71.176 | Backup | — | 0.5GB |
+**After a successful graduation (rotation):** IPs are swapped. Instance names do not change. `prod_2Gb_vm` connects to whichever instance currently has the prod static IP. Staging is often unreachable (SSH timeout) after graduation — the staging instance is stopped post-rotation; start it when needed.
 
-**After a successful graduation (rotation):**
-- **IPs are swapped**: the instance that had the staging IP gets the prod IP (and becomes prod); the instance that had the prod IP gets the staging IP (and becomes staging).
-- **Instance names do not change**: VisaBulletin2GB and VisaBulletinStaging are fixed in Lightsail.
-- **prod_2Gb_vm** connects to whichever instance currently has the prod static IP → after rotation, that is **VisaBulletinStaging** (the old staging).
-- **staging_2Gb_vm** connects to whichever instance has the staging static IP → after rotation, that is **VisaBulletin2GB** (the old prod). The orchestrator **stops** that instance after graduation, so **staging is often unreachable (SSH timeout) until the next cycle** when it is started for the pipeline.
-
-**When managing rotation:** Run the orchestrator on the **active** host (the one with the prod IP; `.env` must have `REFRESH_MY_INSTANCE_NAME` / `REFRESH_MY_INSTANCE_IP` matching that instance). After a rotation, the active host is the former staging (VisaBulletinStaging). If SSH to "staging" times out, that is expected when the staging instance is stopped; start it when needed for the next pipeline (orchestrator starts it automatically when running the full pipeline).
-
-**Verify current mapping:** `aws lightsail get-static-ips --region us-east-1` and `aws lightsail get-instance --instance-name VisaBulletin2GB` / `VisaBulletinStaging` to see which instance has which IP and state.
-
-**When deploying, always verify:**
-- Which instance is the target (by role: prod vs staging)
-- What's running there (Docker vs direct gunicorn)
-- Database being used (blue vs green)
+**Verify current mapping:** `aws lightsail get-static-ips --region us-east-1` and check `aws lightsail get-instance --instance-name VisaBulletin2GB` / `VisaBulletinStaging`.
 
 ## Docker Image Strategy
 
-### How Images Are Built and Tagged
+Images built by GitHub Actions on pushes to `staging`/`prod` branches or version tags.
 
-Docker images are built by GitHub Actions (`.github/workflows/docker-build-push.yml`) on pushes to `staging` and `prod` branches or version tags (`v*.*.*`).
+- `:latest` — prod branch builds only. Used by `docker-compose.yml` default.
+- `staging-<sha>` / `prod-<sha>` — branch-specific SHA tags.
 
-**Tag assignment:**
-- `:latest` — Only assigned to **`prod` branch** builds. This is what `docker-compose.yml` uses by default (`${IMAGE_TAG:-latest}`).
-- `staging-<sha>` / `prod-<sha>` — Branch-specific SHA tags for every build.
-- `v1.2.3`, `v1.2`, `v1` — Semantic version tags from `v*.*.*` git tags.
+**Image contains:** Python runtime, system deps (libpq5), pip packages, gunicorn, baked-in app code.
 
-### What the Image Provides vs What the Host Provides
+**Prod and staging both run baked-in image code** (no `../:/app` volume mount). To deploy code changes: push to branch → wait for CI → `docker pull` + `docker-compose up -d web` on instance.
 
-The Docker image contains: Python runtime, system deps (libpq5), pip packages (requirements.txt), gunicorn, and **baked-in app code** from the Bazel build.
+**⚠️ CRITICAL:** `docker restart` does NOT update the image. To deploy a new image you MUST recreate the container via `docker-compose up -d` with the correct `IMAGE_TAG`. Verify: `docker inspect <name> --format '{{.Config.Image}}'`.
 
-**Production** — runs baked-in image code. Only `settings.py` is mounted from host (for `ALLOWED_HOSTS` tweaks). To deploy code changes, you must rebuild the image (push to `prod` branch → wait for CI → `docker pull` + restart on instance).
-
-**Staging** — same as prod: runs baked-in image code (no `../:/app` volume mount). To deploy code changes, push to `staging` branch → wait for CI to build image → `docker pull` + restart on staging instance. Staging graduates to prod, so it must run the same way.
-
-### Deployment Workflow by Instance Type
-
-**Prod (image-based):**
-1. Cherry-pick to `prod` branch via worktree → push
-2. Wait for GitHub Actions to build and push new `:latest`
-3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:latest && IMAGE_TAG=latest docker-compose -f deployment/docker-compose.yml up -d web`
-4. `git fetch && git reset --hard origin/prod` (keeps host checkout in sync for settings.py mount)
-
-**Staging (image-based, same as prod):**
-1. Cherry-pick to `staging` branch via worktree → push
-2. Wait for GitHub Actions to build and push image (e.g. `staging-<sha>` from GitHub Actions output)
-3. On instance: `docker pull ghcr.io/vyakunin/visa_bulletin:<tag> && IMAGE_TAG=<tag> docker-compose -f deployment/docker-compose.yml up -d web`
-4. `git fetch && git reset --hard origin/staging` (keeps host checkout in sync)
-
-**⚠️ CRITICAL — `docker restart` does NOT update the image.** It only cycles the existing container. The container keeps running whichever image it was originally created with. To actually deploy a new image you MUST recreate the container via `docker-compose up -d` with the correct `IMAGE_TAG`. Verify with `docker inspect <name> --format '{{.Config.Image}}'` after deploying.
-
-### When Image Rebuild Is Required (Both Instances)
-
-- `requirements.txt` changes (new/updated Python packages)
-- `Dockerfile` changes (system deps, build process)
-- IS needed for app code changes on both staging and prod (code is baked into image)
-
-### Transient CI Failures
-
-Bazel builds inside Docker can fail due to transient network errors (e.g., 502 from GitHub when downloading `rules_python`). These are not code bugs — retry the workflow via GitHub Actions UI or re-push the branch.
-
-## Rule: Always Verify Target Instance Before SSH Commands
-
-**CRITICAL: Always use the correct SSH alias based on the target instance.**
-
-**SSH aliases in `~/.ssh/config` (by static IP; instance that has that IP may change after rotation):**
-
-| Alias | IP | RAM | Purpose |
-|-------|----|-----|---------|
-| `prod_2Gb_vm` | 44.209.204.255 (prod static IP) | 2GB | Production — instance with this IP serves traffic; after rotation = VisaBulletinStaging |
-| `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup |
-| `staging_2Gb_vm` | 54.196.241.197 (staging static IP) | 2GB | Staging — after rotation = VisaBulletin2GB; **often stopped** (unreachable) until next pipeline |
-
-**Staging unreachable (SSH timeout) after a recent graduation is expected** — the staging instance is stopped after rotation. Start it when needed for the next refresh, or let the orchestrator start it when running the full pipeline.
-
-**If staging is unreachable because the staging static IP was never re-attached** (e.g. `REFRESH_STAGING_STATIC_IP_NAME` was unset during rotation, or the attach step failed), attach it manually so `staging_2Gb_vm` (54.196.241.197) reaches the old prod instance. Set `REFRESH_STAGING_STATIC_IP_NAME` in `.env` on the machine running the one-off (or pass `--static-ip-name`); get the name from `aws lightsail get-static-ips --region us-east-1`:
-
-```bash
-# 1. Re-auth AWS if needed (e.g. SSO): aws sso login --profile visa-bulletin-deploy; export AWS_PROFILE=visa-bulletin-deploy
-# 2. Attach staging IP to old prod (use your staging static IP name from aws lightsail get-static-ips):
-REFRESH_STAGING_STATIC_IP_NAME=VisaBulletinStaging-ip bazel run //scripts/oneoff:attach_staging_ip_to_old_prod -- VisaBulletin2GB
-# Or: bazel run //scripts/oneoff:attach_staging_ip_to_old_prod -- --static-ip-name VisaBulletinStaging-ip VisaBulletin2GB
-# 3. Start staging if stopped: aws lightsail start-instance --instance-name VisaBulletin2GB --region us-east-1
-```
-
-**Fix current state (staging + prod .env consistent):** On **prod** (ssh prod_2Gb_vm): set `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` in `/opt/visa_bulletin/.env` (get names from `aws lightsail get-static-ips --region us-east-1`). After attaching staging IP, if staging’s `.env` wasn’t updated by the orchestrator, SSH to staging and set REFRESH_MY_INSTANCE_NAME=VisaBulletin2GB, REFRESH_ACTIVE_*=VisaBulletinStaging / 44.209.204.255, REFRESH_INACTIVE_*=VisaBulletin2GB / 54.196.241.197.
-
-**When user mentions a specific instance:**
-- ✅ Use the matching alias: `ssh prod_2Gb_vm`, `ssh backup_0_5Gb_vm`, or `ssh staging_2Gb_vm` (staging)
-- ✅ Verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?"
-- ❌ Don't use raw IPs or the old `lightsail` aliases
-
-**When debugging production issues:**
-- Ask user: "Which instance should I work with?"
-- Use the correct alias in commands
-- Verify instance in first command before making changes
-
-**Rationale:**
-- Multiple instances exist (prod, backup)
-- Wrong alias = wrong instance
-- Wrong instance = data corruption or service disruption
-- Always be explicit when making changes
-
-## AWS IAM and Lightsail CLI
-
-### IAM user for local/CI (visa-bulletin-deploy)
-
-**IAM user:** `visa-bulletin-deploy` with Lightsail full access (`lightsail:*`). Use the named profile so you don't rely on SSO login.
-
-**Profile:** `visa-bulletin-deploy` in `~/.aws/credentials`. Policy source: `deployment/iam-lightsail-policy.json`.
-
-**Usage (local or CI):**
-```bash
-export AWS_PROFILE=visa-bulletin-deploy
-aws lightsail get-instances --region us-east-1
-aws lightsail get-static-ips --region us-east-1
-aws lightsail get-instance-metric-data --instance-name VisaBulletin2GB --metric-name CPUUtilization ...
-# Or per command:
-aws lightsail ... --profile visa-bulletin-deploy --region us-east-1
-```
-
-**Covers:** Instances (get, start, stop, state, metrics), static IPs (get, attach, detach), snapshots, and other Lightsail resources. See `deployment/README.md` for details.
-
-### Giving instances (or cron runner) AWS privileges
-
-**Lightsail instances do not support IAM instance roles** (unlike EC2). To let a script on an instance (or a cron runner) call Lightsail API—e.g. re-attach static IPs, start/stop instances for blue-green—you must provide IAM credentials to that environment.
-
-**Option A – Credentials on the instance (cron runs on instance):**
-
-1. **Create or reuse an IAM user** with Lightsail permissions (e.g. reuse `visa-bulletin-deploy` or create a dedicated user like `visa-bulletin-instance` with the same policy).
-2. **Create an access key** for that user: `aws iam create-access-key --user-name visa-bulletin-deploy` (or the dedicated user).
-3. **On the instance:** Install AWS CLI if needed (`apt install awscli` or use existing). Configure a profile or default credentials **outside the repo** (e.g. in a file not in git, or in env vars from a secret store):
-   ```bash
-   # Example: on instance, one-time setup (store in env or secret, not in repo)
-   aws configure set aws_access_key_id "AKIA..." --profile lightsail-cron
-   aws configure set aws_secret_access_key "..." --profile lightsail-cron
-   aws configure set region us-east-1 --profile lightsail-cron
-   ```
-4. **In cron script:** Use `AWS_PROFILE=lightsail-cron` (or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) when calling `aws lightsail attach-static-ip`, `detach-static-ip`, `start-instance`, `stop-instance`, etc.
-
-**Option B – Credentials on a separate runner (cron runs off-instance):**
-
-- Run the end-to-end script (refresh + traffic switch) on a machine that has the profile or env vars set (e.g. your laptop, or a CI runner with `visa-bulletin-deploy` secrets). The script SSHs to instances for refresh and uses AWS CLI locally for Lightsail API calls. No credentials on instances.
-
-**Instance rename:** Lightsail does not support renaming instances after creation. For blue-green, use **static IP reassignment** (detach static IP from one instance, attach to the other) or **DNS switch** (point domain to the other instance’s IP); see `BLUE_GREEN_INSTANCE_ROLLOUT.md`.
-
-**Rationale:** Documenting IAM and instance credentials avoids ad-hoc key creation and keeps Lightsail API access consistent for deployment and blue-green automation.
+**Transient CI failures:** Bazel builds inside Docker can fail due to transient network errors (502 from GitHub). These are not code bugs — retry via GitHub Actions UI or re-push.
 
 ## Rule: Never Edit Files Directly on Instances
 
 **🚨 CRITICAL: NEVER SSH into an instance and edit files (sed, vi, echo >>, etc.) as a fix. ALL changes go through git branches.**
 
-**When fixing an instance issue (e.g. OOM, bad config, missing feature):**
-1. Make the fix on `main` (Cursor workspace)
-2. Commit on `main`
-3. Cherry-pick to the target branch via worktree (`visa_bulletin_staging/` or `visa_bulletin_prod/`)
-4. Push the branch
-5. `git fetch && git reset --hard origin/<branch>` on the instance
-6. Restart the container
-
-**One-time instance-specific config** (ALLOWED_HOSTS with instance IP, WEB_CONCURRENCY tuning) belongs in `deployment/docker-compose.override.yml` on the instance (not tracked in git). But **base config in `docker-compose.yml` must be sane enough to work without overrides** — e.g. memory limits that don't OOM-kill workers.
-
-**Note:** `docker-compose -f deployment/docker-compose.yml up` does NOT auto-load `docker-compose.override.yml`. Overrides only auto-load when running `docker-compose up` from inside `deployment/`. Since we invoke with `-f`, the base file is what determines runtime behavior. Keep it correct.
+Workflow: fix on `main` → commit → cherry-pick to target branch via worktree → push → `git fetch && git reset --hard origin/<branch>` on instance → restart container.
 
 **❌ BAD:** `ssh staging_2Gb_vm "sed -i 's/200m/512m/' deployment/docker-compose.yml"` (lost on next `git reset --hard`)
 **✅ GOOD:** Fix in main → commit → cherry-pick to staging → push → pull on instance
-
-**Incident reference (2026-02-21):** Staging had `mem_limit: 200m` in base docker-compose.yml. Workers OOM-killed on every request. Fix was applied directly via `sed` on the instance, but would have been lost on next deploy. Proper fix: update base file on `main`, cherry-pick through branches.
 
 ## Rule: Never Restart or Recreate Prod Containers Without Explicit User Instruction
 
 **🚨 CRITICAL: NEVER run `docker-compose up/restart`, `docker restart`, or any container lifecycle command on the production-serving instance unless the user explicitly asks you to.**
 
-**"Graduate staging to prod"** means updating the **git branch** (merge/fast-forward), NOT restarting containers.
-**"Deploy to prod"** means the user wants code live — ask for confirmation before touching containers.
+- "Graduate staging to prod" means updating the git branch (merge/fast-forward), NOT restarting containers.
+- `docker-compose up -d` on docker-compose 1.29.2 triggers the `ContainerConfig` KeyError bug, killing the running container.
 
-**Why:**
-- Recreating containers may pull a different `:latest` image with different (possibly broken) code
-- `docker-compose up` on docker-compose 1.29.2 triggers the `ContainerConfig` KeyError bug, killing the running container
-- Even a "safe" restart causes brief downtime
-
-**What to do instead:**
-1. Update the git branch (merge/cherry-pick + push)
-2. `git fetch && git reset --hard` on the instance
-3. **Stop and ask the user** before touching any containers
-4. If the user confirms, prefer `docker restart <name>` over `docker-compose up -d` to avoid the ContainerConfig bug
-
-**Incident reference (2026-02-21):** Agent ran `docker-compose up -d web` on prod unprompted after graduating staging to prod. This (a) recreated the container (potentially pulling a different image layer), (b) hit ContainerConfig KeyError (docker-compose 1.29.2 bug) killing the running container, causing ~15 min of 500 errors. Required emergency IP swap to restore service. The `country="all"` bug mentioned in earlier notes was investigated and **not found** in the current `:latest` image or any branch — the code correctly uses `Country.from_string()` and integer enum values.
+**What to do instead:** Update git branch (merge/cherry-pick + push) → `git fetch && git reset --hard` on instance → **stop and ask the user** before touching any containers.
 
 ## Rule: Audit Container Topology Before ANY Docker Operation on Prod
 
-**🚨 CRITICAL: Never run `docker-compose up/down/stop/rm`, `docker stop`, or `docker rm` on prod without first understanding what is actually serving traffic.**
+**🚨 CRITICAL: Never run `docker-compose up/down/stop/rm`, `docker stop`, or `docker rm` on prod without first running:**
 
-**Mandatory pre-flight check before touching Docker on prod:**
 ```bash
-# 1. What containers exist and their status?
 ssh prod_2Gb_vm "docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'"
-
-# 2. What is ACTUALLY bound to port 8000 (serving traffic)?
 ssh prod_2Gb_vm "ss -tlnp | grep 8000"
-
-# 3. What Docker networks exist, and which containers share them?
-ssh prod_2Gb_vm "docker network ls && docker network inspect deployment_default --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null"
 ```
 
-**Why:** Production may have legacy containers (e.g. `visa_bulletin_web_blue` from old blue-green setup) that are the actual serving containers but are NOT managed by the current `docker-compose.yml`. These containers depend on Docker DNS (e.g. `redis` hostname resolves to a redis container on the same network). Stopping or removing ANY container on the shared Docker network can break DNS resolution for the serving container.
+Understand which container is *actually serving traffic* before touching anything. Legacy containers may depend on Docker DNS (`redis` hostname). Stopping ANY container on the shared network can break DNS for the serving container.
 
-**Safe vs dangerous operations:**
-- ✅ `docker pull` — safe, only downloads image
-- ✅ `docker logs` — safe, read-only
-- ✅ `docker inspect` — safe, read-only
-- ⚠️ `docker-compose restart web` — restarts only named service, usually safe
-- ❌ `docker-compose up -d` — may recreate/stop containers, breaks dependencies
-- ❌ `docker-compose down` — stops ALL containers in the compose project
-- ❌ `docker stop/rm` on ANY container — may break DNS for other containers on same network
-
-**If you need to update the Docker image on prod:**
-```bash
-# Safe pattern: pull image, then RECREATE the serving container with the new image.
-# docker restart does NOT update the image — it just cycles the existing container.
-docker pull ghcr.io/vyakunin/visa_bulletin:latest
-# Identify the actual serving container first (step 1-2 above), then:
-IMAGE_TAG=latest docker-compose -f deployment/docker-compose.yml up -d web
-# Verify the container is running the new image:
-docker inspect visa_bulletin_web --format '{{.Config.Image}}'
-```
-
-**Incident reference (2026-02-19):** Running `docker-compose up -d` on prod stopped the `visa_bulletin_redis` container. The actual serving container (`visa_bulletin_web_blue`, a legacy container) depended on the `redis` Docker network alias for DNS. Stopping redis broke DNS resolution → 500 errors for ~3 minutes.
-
-## Rule: Verify Locally Before Deploying to Production
-
-**CRITICAL: When working with production, first verify changes locally, only then deploy to prod.**
-
-**Workflow:**
-1. Implement the change locally.
-2. Run relevant tests (e.g. `bazel test //tests:...`).
-3. **Verify locally** (run dev server, open the affected URL, confirm behavior).
-4. Only then deploy to production (scp, reload, or zero-downtime script).
-
-**Rationale:**
-- Prevents broken or untested code from reaching production (e.g. IntegerChoices crash from class-level dict).
-- Catches bugs before users see them.
-- Reduces rollbacks and hotfixes.
+**Safe:** `docker pull`, `docker logs`, `docker inspect`
+**Dangerous:** `docker-compose up -d`, `docker-compose down`, `docker stop/rm` on any container
 
 ## Rule: Deploy to Staging After Implementing User-Requested Changes
 
-**Deploy to staging by default** after implementing code changes. **Never deploy to prod directly** — all changes go through staging first, then graduate via IP flip. The `prod` branch is a mirror of production and must only be updated when code is actually deployed to the prod-serving instance (graduation or critical hotfix).
+**Never deploy to prod directly.** All changes go through staging first, then graduate via IP flip. The `prod` branch must only be updated when code is actually deployed to the prod-serving instance.
 
 **Workflow:**
-1. Implement the change locally on `main` (Cursor workspace — rules stay available).
-2. Run relevant tests (`bazel test //tests:...`).
-3. Verify locally.
-4. Cherry-pick to `staging` via worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
-5. Deploy to staging: after CI builds the image from `staging`, on the instance run `docker pull ghcr.io/vyakunin/visa_bulletin:<tag>` (e.g. `staging-<sha>` from GitHub Actions output), then `IMAGE_TAG=<tag> docker-compose -f deployment/docker-compose.yml up -d web` to recreate the container. Verify with `docker inspect visa_bulletin_web --format '{{.Config.Image}}'`. Keep host checkout in sync: `git fetch origin staging && git reset --hard origin/staging`. If the staging instance is stopped, start it first (see § Staging unreachable).
-6. Verify on staging.
+1. Implement change on `main`, run tests, verify locally
+2. Cherry-pick to `staging` via worktree: `cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging`
+3. After CI builds: `docker pull ghcr.io/vyakunin/visa_bulletin:<tag>` then `IMAGE_TAG=<tag> docker-compose -f deployment/docker-compose.yml up -d web` on staging instance
+4. Verify on staging
 
-**Critical hotfix (prod-down only):** Cherry-pick to `prod` via worktree → push → deploy to prod-serving instance → cherry-pick to staging. Only for crashes/5xx.
+**Critical hotfix (prod-down only):** Cherry-pick to `prod` via worktree → push → deploy to prod-serving instance. Only for crashes/5xx.
 
-**Never scp files to servers.** All code changes go through git branches.
-**Never check out staging/prod in the main workspace.** Use worktrees to preserve AI rules.
-**Never update `prod` branch for features or non-critical fixes.** It must mirror production.
-
-**Do NOT deploy when:** user says "local only", change is docs-only, or user only asked to plan/document.
+**Do NOT deploy when:** user says "local only", change is docs-only, user only asked to plan/document.
 
 ## Rule: Graduation (Staging to Prod) via Orchestrator
 
-**Graduation is automated.** Run the orchestrator on the **current prod** instance (the host that has the prod static IP; after a rotation that host is the old staging — VisaBulletinStaging). Ensure `.env` on that host has `REFRESH_MY_INSTANCE_NAME` (or `REFRESH_MY_INSTANCE_IP`) matching **that** instance so the script treats it as active; `REFRESH_ACTIVE_*` = that instance, `REFRESH_INACTIVE_*` = the other. **Also required:** `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` (Lightsail static IP names; get from `aws lightsail get-static-ips --region us-east-1`). Without them, traffic switch and staging IP reassign will fail or be skipped. Use `--from-step warm_cache` to skip the data pipeline and jump straight to graduation.
+**Graduation is automated.** Run on the **current prod** instance (the one with prod static IP).
+
+**Required `.env` vars before graduation:**
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `REFRESH_STATIC_IP_NAME` | `VisaBulletin-StaticIP` | Prod static IP name |
+| `REFRESH_STAGING_STATIC_IP_NAME` | `VisaBulletinStaging-ip` | Staging static IP name |
+| `REFRESH_ACTIVE_PRIVATE_IP` | `172.26.7.74` | Private IP of current prod |
+| `REFRESH_INACTIVE_PRIVATE_IP` | `172.26.13.90` | Private IP of inactive/staging host |
+| `REFRESH_MY_INSTANCE_NAME` | `VisaBulletinStaging` | Name of instance running orchestrator |
+| `REFRESH_ACTIVE_INSTANCE_NAME` | `VisaBulletinStaging` | Current prod instance name |
+| `REFRESH_INACTIVE_INSTANCE_NAME` | `VisaBulletin2GB` | Current staging instance name |
+
+**Also verify before graduation:**
+- Inactive host is on `staging` branch (not `prod`): `ssh staging_2Gb_vm "cd /opt/visa_bulletin && git rev-parse --abbrev-ref HEAD"`
+- Inactive host Docker is healthy: `ssh staging_2Gb_vm "docker ps"`
+- Deploy key present: `ssh prod_2Gb_vm "test -f /home/ubuntu/.ssh/github_deploy_key && echo ok"` (if missing, see `docs/DEPLOY_KEY_SETUP.md`)
 
 ```bash
-# On current prod instance (the one with prod IP; after rotation = VisaBulletinStaging):
+# On current prod instance:
 cd /opt/visa_bulletin && set -a && source .env && set +a
 ./bazel-bin/scripts/cron/refresh_and_switch_py --from-step warm_cache --safety-interval 600
 ```
 
-**Graduation flow (all automated after `--from-step warm_cache`):**
-1. **Warm cache** on inactive → pre-populates Redis (market overview, directories, pages)
-2. **Smoke test** on inactive → DB health + HTTP endpoints via localhost
+**Graduation flow (automated):**
+1. Warm cache on inactive → pre-populates Redis
+2. Smoke test on inactive → DB health + HTTP endpoints via localhost
 3. **GATE: if smoke fails, STOP** (nothing irreversible happened)
 4. **Swap static IPs** → inactive becomes new prod (irreversible)
-5. **HTTPS setup** on new prod (certbot)
-6. **Public URL smoke** → curls `https://visa-bulletin.us/`
-7. **Update .env** on BOTH instances (swap active/inactive roles)
-8. **Staging IP reassign** → old prod gets staging IP
-9. **Prod-safe override** → drops volume mount, restarts container (Docker image code)
-10. **Git branch update** → push `prod=staging` to origin; new prod checks out `prod` branch; **then** staging instance (this host) fetches and checks out `prod` branch — so prod branch = what prod runs, and staging is on prod before stop
-11. **Rebuild orchestrator binary** on new prod → `bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown` so next cycle runs current code
-12. **Safety interval** → waits before shutting down
-13. **Stop old instance** (orchestrator's machine, now staging)
+5. HTTPS setup on new prod (certbot)
+6. Public URL smoke → curls `https://visa-bulletin.us/`
+7. Update `.env` on BOTH instances (swap active/inactive roles)
+8. Staging IP reassign → old prod gets staging IP
+9. Prod-safe override → drops volume mount, restarts container
+10. Git branch update → push `prod=staging` to origin; new prod checks out `prod` branch
+11. Rebuild orchestrator binary on new prod
+12. Safety interval → waits before shutting down
+13. Stop old instance (orchestrator's machine, now staging)
 
-**All steps after IP swap (5-13) are non-fatal** — warnings only, since the swap already happened.
+All steps after IP swap (5-13) are non-fatal — warnings only, since the swap already happened.
 
 **`--from-step` options:** `warm_cache` (recommended), `smoke_tests`, `traffic_switch`
 
-**Staging and prod .env consistency (after rotation):**
-- **Prod** (instance with prod static IP, e.g. VisaBulletinStaging): `.env` must have `REFRESH_MY_INSTANCE_NAME` = that instance, `REFRESH_ACTIVE_*` = that instance, `REFRESH_INACTIVE_*` = the other, and **`REFRESH_STATIC_IP_NAME`** + **`REFRESH_STAGING_STATIC_IP_NAME`** (Lightsail names from `aws lightsail get-static-ips --region us-east-1`). The orchestrator sets ACTIVE/INACTIVE/MY when it runs; add the two static IP vars if missing.
-- **Staging** (instance with staging static IP, e.g. VisaBulletin2GB): `.env` should have `REFRESH_MY_INSTANCE_NAME` = that instance, `REFRESH_ACTIVE_*` = prod instance, `REFRESH_INACTIVE_*` = itself. The orchestrator updates this host’s `.env` via SSH after the swap; if staging was unreachable (IP not attached), SSH didn’t run—attach the staging IP (see recovery below), then SSH in and set REFRESH_* to match, or run the next full pipeline so the orchestrator can update it.
-
-**Post-rotation checks (verify after graduation):**
-- **Prod** (ssh prod_2Gb_vm): (1) `.env`: `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletinStaging), `REFRESH_ACTIVE_*` = this instance and its IP, `REFRESH_INACTIVE_*` = the other; `REFRESH_STATIC_IP_NAME` and `REFRESH_STAGING_STATIC_IP_NAME` set. (2) **Git**: `origin/prod` = what the prod container runs (orchestrator pushes staging→prod; new prod checks out prod). (3) Static IP: prod instance has prod static IP attached. (4) **Orchestrator binary**: `ls -la bazel-bin/scripts/cron/refresh_and_switch_py` — should exist (rebuilt during graduation step 11).
-- **Staging** (ssh staging_2Gb_vm): (1) `.env`: `REFRESH_MY_INSTANCE_NAME` = this instance (e.g. VisaBulletin2GB), `REFRESH_ACTIVE_*` = prod instance, `REFRESH_INACTIVE_*` = this instance. (2) **Git**: staging instance checkout = `prod` branch (orchestrator switches it after health checks, before stop). So both hosts have `prod` checked out; `origin/prod` = what prod runs.
-- **Git branch consistency**: `prod` branch on origin = code running on prod. New prod host has `prod` checked out. Staging instance (old prod) is updated to `prod` branch **after** health checks pass, **before** the orchestrator stops it.
-
-**Known issues from 2026-02-21 graduation:**
-- **AWS CLI timeout:** `attach-static-ip` can take >30s. Fixed: timeout increased to 120s in `traffic_switch.py`. The operation succeeds server-side even if CLI times out, leaving the orchestrator in an inconsistent state (IP swapped but post-switch steps skipped).
-- **Stale Docker `:latest` image:** The `:latest` image is from Dec 2025, before enum migrations. **DO NOT remove the `../:/app` volume mount from prod** until a fresh image is built and pushed (push to `prod` branch triggers GitHub Actions rebuild). Without the volume mount, the baked-in image code will crash with `DataError: invalid input syntax for type integer: "all"` on the Country enum.
-- **docker-compose 1.29.2 ContainerConfig bug:** `docker-compose up -d` can hit `KeyError: 'ContainerConfig'` killing the running container. Workaround: `docker rm -f <name>` then `docker-compose up -d`. The orchestrator's `prod-safe override` step must handle this.
-
-**Known issues from 2026-03-18 graduation:**
-- **Inter-instance SSH via public IP fails:** Lightsail instances cannot SSH to each other using public IPs. **FIXED in code:** set `REFRESH_INACTIVE_PRIVATE_IP` and `REFRESH_ACTIVE_PRIVATE_IP` in `.env` to the private IPs (Lightsail console → instance → Networking → Private IP). The orchestrator now uses these for SSH and automatically swaps them on graduation. Private IPs survive stop/start. `~/.ssh/config` remapping is no longer needed if these env vars are set. VisaBulletin2GB private IP: `172.26.13.90`. VisaBulletinStaging private IP: check console.
-- **Nginx default-server `\$host` escaping bug:** If `/etc/nginx/sites-enabled/default-server` was created manually via SSH (heredoc/echo), `$host` may have been written as `\$host`. nginx sends a literal backslash in the Host header, which Django rejects with `DisallowedHost`. Fix: `sudo cp deployment/nginx/default-server.conf /etc/nginx/sites-enabled/default-server && sudo nginx -s reload`. This file is now in the repo and installed by both `setup_new_instance.sh` and the orchestrator's `start_remote_services()`.
-- **Wrong git branch on inactive host → wrong Docker image tag:** The orchestrator derives the image tag as `<branch>-<sha>` from the current branch on the inactive host. If the inactive host is on `prod` (from a previous graduation cycle), it constructs `prod-<sha>`, but CI built `staging-<sha>`. Fix: `git checkout staging && git reset --hard origin/staging` on the inactive host before running the orchestrator.
-
-**Known issues from 2026-03-21:**
-- **`git push staging:prod` silently failed — instances on stale code (FIXED):** No GitHub credentials on instances meant `_update_git_branch_on_new_prod()` logged a warning and then fetched stale `origin/prod`, leaving both instances on old code after graduation. Fixed: (1) deploy key added to both instances (`/home/ubuntu/.ssh/github_deploy_key`), git remote switched to SSH; (2) orchestrate.py now logs an error and keeps instance on `staging` branch (correct code) rather than checking out stale `origin/prod` when push fails.
-
-**Known issues from 2026-03-20 graduation:**
-- **Smoke test HTTP 400 (FIXED):** `_run_http_smoke_tests` used `runner.host` as the `Host:` header. When the orchestrator uses private IP SSH, `runner.host = 172.26.x.x` (private IP) which is NOT in `ALLOWED_HOSTS`. Fixed: always use `localhost` as the host header (curl runs on the remote machine, so `localhost` is always valid).
-- **`switch_traffic_static_ip` not idempotent (FIXED):** If the graduation fails AFTER the IP swap (e.g. due to smoke test failure on a re-run), re-running graduation fails with "VisaBulletin-StaticIP is already attached to VisaBulletin2GB". Fixed: `traffic_switch.py` now does an idempotency pre-check (`get-static-ip` to verify current attachment) and treats "already attached to target" as success.
-- **`update_env` doesn't add new keys (FIXED):** `RemoteRunner.update_env` used `sed` which returns 0 even when no substitution happens, so the `||` fallback never triggered. New keys like `REFRESH_ACTIVE_PRIVATE_IP` were never appended. Fixed: use `grep -q` to check existence first.
-- **ContainerConfig bug in prod-safe override (FIXED in code):** `_write_prod_safe_override` runs `docker-compose up -d` after writing the override. docker-compose 1.29.2 hits `KeyError: 'ContainerConfig'` on containers that have exited and have stale metadata. Fixed: force-remove exited web containers before `up -d`.
-- **Stale Docker image → 500 after prod-safe override:** The prod-safe override removes the `../:/app` volume mount, causing the container to use the baked-in Docker image. If the image is old (pre-enum migration), it crashes with `DataError: invalid input syntax for type integer: "all"`. **Workaround until fresh image is built:** restore volume mount in `docker-compose.override.yml` and restart. A fresh image will be built when CI processes the `staging` branch push.
-- **certbot `-d` flag syntax (FIXED):** certbot rejects multiple domains passed to a single `-d` flag. Fixed: `setup_https_on_remote` now uses separate `-d domain` for each domain.
-- **`REFRESH_STAGING_STATIC_IP_NAME` not set in orchestrator env → staging IP not reassigned after graduation:** Ensure this env var is in `.env` on the orchestrator host before graduation.
-
-**Known issues from 2026-03-19 graduation fix session:**
-- **Post-swap `.env` writes wrong IPs (FIXED):** `orchestrate.py` was writing `REFRESH_ACTIVE_INSTANCE_IP` = staging static IP and `REFRESH_INACTIVE_INSTANCE_IP` = prod static IP after graduation — both backwards. This caused the next cycle to SSH to the wrong instance. Fixed: IPs are now correctly assigned (ACTIVE gets the prod static IP, INACTIVE gets the staging static IP).
-- **Corrupted `.env` from partial runs:** If the orchestrator crashes or is killed between `.env` update steps, `.env` can be left in a half-swapped state. The orchestrator now validates `.env` against actual AWS state at startup (queries `aws lightsail get-static-ips` and checks IP-to-instance attachment). If mismatch is found, it logs an error with recovery instructions. Recovery: correct `.env` REFRESH_ACTIVE/INACTIVE_* vars to match what `aws lightsail get-static-ips` reports.
-- **`case_submitted` NULL on new staging after graduation:** After graduation, the new staging (old prod) has salary records with NULL `case_submitted` because the old prod was running before `populate_case_submitted` was in the pipeline. A normal pipeline run on the new staging will fix this automatically — `populate_case_submitted` is NOT in the skip-when-zero-ingested set, runs in-place from DOL files on disk, and takes ~30 min. The smoke tests now enforce a 65% minimum coverage floor (`MIN_CASE_SUBMITTED_PERCENT`) to block graduation if this step fails. Current healthy prod baseline: ~74% overall (100% for FY2018-2024, ~26% for FY2025 partial files, 0% pre-2018).
-
-**Rule: Always persist critical graduation/pipeline findings in `deployment.mdc` or `PIPELINE_RUNBOOK.md`, not only in agent output.** Every time the orchestrator hits a new failure mode, add a "Known issues from YYYY-MM-DD graduation" bullet here with the fix or workaround. Agent outputs are not preserved across sessions.
-
-**Manual graduation** from local worktree (if orchestrator not available):
-```bash
-cd ~/cursor_projects/visa_bulletin_prod
-git fetch origin && git reset --hard origin/staging && git push origin prod --force-with-lease
-```
-
-**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md` (Graduation section)
+**See `docs/GRADUATION_KNOWN_ISSUES.md` for known graduation failure modes and their fixes.**
+**See `docs/DEPLOY_KEY_SETUP.md` for deploy key setup (one-time per instance).**
 
 ## Post-Graduation Babysitting Checklist
 
-After every graduation (automated or manual), verify these 5 things — the orchestrator now logs errors for failures, but always confirm manually:
+After every graduation, verify these 6 things:
 
-**1. Static IPs (most critical)**
+**1. Static IPs**
 ```bash
 export AWS_PROFILE=visa-bulletin-deploy
 aws lightsail get-static-ips --region us-east-1 --query 'staticIps[*].{name:name,ip:ipAddress,attached:isAttached,to:attachedTo}' --output table
 ```
-- Prod IP (`VisaBulletin-StaticIP`, 44.209.204.255) → must be attached to new prod instance
-- Staging IP (`VisaBulletinStaging-ip`, 54.196.241.197) → must be attached to old prod (now staging)
-- If staging IP orphaned: `aws lightsail attach-static-ip --static-ip-name VisaBulletinStaging-ip --instance-name <old-prod-name> --region us-east-1`
+- Prod IP (44.209.204.255) → must be attached to new prod instance
+- Staging IP (54.196.241.197) → must be attached to old prod (now staging)
 
 **2. Git branch on new prod**
 ```bash
 ssh prod_2Gb_vm "cd /opt/visa_bulletin && git rev-parse --abbrev-ref HEAD"
 # Expected: prod
 ```
-- If wrong: `ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git checkout prod && git reset --hard origin/prod"`
-- Also sync local worktree: `cd ~/cursor_projects/visa_bulletin_prod && git reset --hard origin/staging && git push origin prod --force-with-lease`
 
 **3. Docker health**
 ```bash
 ssh prod_2Gb_vm "docker ps --format '{{.Names}} {{.Status}}'"
 # Expected: visa_bulletin_web Up ... (healthy)
 ```
-- If "unhealthy": `docker logs visa_bulletin_web --tail 20` — look for `DisallowedHost` (fix: `localhost`/`127.0.0.1` must be in `ALLOWED_HOSTS`) or missing module errors (fix: rebuild binary)
 
 **4. Bulletin refresh cron**
 ```bash
 ssh prod_2Gb_vm "tail -5 /var/log/visa-bulletin/bulletin_refresh.log"
-# Expected: no errors, or "no new bulletins" (already up-to-date)
 ```
-- If `ModuleNotFoundError`: rebuild binary: `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_bulletin && bazel shutdown"`
 
 **5. Site smoke**
 ```bash
@@ -396,651 +164,62 @@ curl -sI https://visa-bulletin.us/ | head -3
 **6. `.env` private IPs on new prod (for next cycle)**
 ```bash
 ssh prod_2Gb_vm "grep -E 'REFRESH_(ACTIVE|INACTIVE)_PRIVATE_IP' /opt/visa_bulletin/.env"
-# Expected: both set to the correct private IPs (swapped from pre-graduation)
+# VisaBulletin2GB private IP: 172.26.13.90; VisaBulletinStaging: 172.26.7.74
 ```
-- VisaBulletin2GB private IP: `172.26.13.90`; VisaBulletinStaging private IP: `172.26.7.74`
-- After graduation where VisaBulletin2GB becomes prod: `ACTIVE=172.26.13.90`, `INACTIVE=172.26.7.74`
-- The orchestrator swaps these automatically during graduation (if they were set before)
-- If missing: add them manually so the next graduation uses private-IP SSH
-
-## Pre-Graduation Requirements
-
-**Set these in prod's `.env` before running graduation.** Missing values cause failures or manual cleanup.
-
-| Variable | Required | Example | Purpose |
-|---|---|---|---|
-| `REFRESH_STATIC_IP_NAME` | YES | `VisaBulletin-StaticIP` | Prod static IP name (get from `aws lightsail get-static-ips`) |
-| `REFRESH_STAGING_STATIC_IP_NAME` | YES | `VisaBulletinStaging-ip` | Staging static IP name |
-| `REFRESH_ACTIVE_PRIVATE_IP` | YES | `172.26.7.74` | Private IP of current prod (survives stop/start) |
-| `REFRESH_INACTIVE_PRIVATE_IP` | YES | `172.26.13.90` | Private IP of inactive/staging host |
-| `REFRESH_MY_INSTANCE_NAME` | YES | `VisaBulletinStaging` | Name of instance running the orchestrator |
-| `REFRESH_ACTIVE_INSTANCE_NAME` | YES | `VisaBulletinStaging` | Current prod instance name |
-| `REFRESH_INACTIVE_INSTANCE_NAME` | YES | `VisaBulletin2GB` | Current staging instance name |
-
-**Also verify before graduation:**
-- Inactive host (staging) is on `staging` branch, NOT `prod` (check with `ssh staging_2Gb_vm "cd /opt/visa_bulletin && git rev-parse --abbrev-ref HEAD"`)
-- Inactive host Docker is healthy (`ssh staging_2Gb_vm "docker ps"`)
-- Smoke tests passed on inactive host during pipeline (check `/tmp/refresh_stage.log` on staging)
-- Deploy key present on both instances: `ssh prod_2Gb_vm "test -f /home/ubuntu/.ssh/github_deploy_key && echo ok"` (if missing, see deploy key setup below)
-
-## Deploy Key Setup (one-time per instance)
-
-Required for `git push origin staging:prod` during graduation (step 10). Both instances need the same key since they swap roles.
-
-**Setup (run once per instance):**
-```bash
-# 1. Generate key on prod (one-time)
-ssh prod_2Gb_vm "ssh-keygen -t ed25519 -f /home/ubuntu/.ssh/github_deploy_key -N '' -C 'visa-bulletin-deploy-key'"
-ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key.pub"
-# 2. Add public key to GitHub: https://github.com/vyakunin/visa_bulletin/settings/keys/new
-#    Title: "Lightsail instance deploy key", check "Allow write access"
-# 3. Configure SSH on prod
-ssh prod_2Gb_vm "cat >> /home/ubuntu/.ssh/config << 'EOF'
-
-Host github.com
-  IdentityFile /home/ubuntu/.ssh/github_deploy_key
-  IdentitiesOnly yes
-EOF
-cd /opt/visa_bulletin && git remote set-url origin git@github.com:vyakunin/visa_bulletin.git"
-# 4. Copy key to staging and configure (start it first if stopped)
-ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key" | ssh staging_2Gb_vm "cat > /home/ubuntu/.ssh/github_deploy_key && chmod 600 /home/ubuntu/.ssh/github_deploy_key"
-ssh prod_2Gb_vm "cat /home/ubuntu/.ssh/github_deploy_key.pub" | ssh staging_2Gb_vm "cat > /home/ubuntu/.ssh/github_deploy_key.pub"
-ssh staging_2Gb_vm "cat >> /home/ubuntu/.ssh/config << 'EOF'
-
-Host github.com
-  IdentityFile /home/ubuntu/.ssh/github_deploy_key
-  IdentitiesOnly yes
-EOF
-cd /opt/visa_bulletin && git remote set-url origin git@github.com:vyakunin/visa_bulletin.git"
-# 5. Verify auth on both
-ssh prod_2Gb_vm "ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1"
-ssh staging_2Gb_vm "ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1"
-```
-
-**Key details:**
-- Path: `/home/ubuntu/.ssh/github_deploy_key` (same on both instances)
-- Both instances use the **same key** — copy from prod to staging, don't generate separately
-- Survives graduation rotation (key is on the instance, not the IP)
-- If graduation fails with "git push staging:prod failed": check key exists, remote is SSH (`git remote -v`), GitHub auth works (`ssh -T git@github.com`)
-
-## Rule: Deploy Updated Binary and Run Yourself When Instructed
-
-**When instructions say things like "after you deploy the updated binary and run again," "deploy and run," or "rebuild and re-run," do it yourself. Do not only tell the user to do it.**
-
-**Workflow:**
-1. **Check current status first** (time may have passed):
-   - Prod: tail orchestrator log (e.g. `/tmp/orchestrate.log`), check if a run is in progress or already finished/failed.
-   - Inactive/staging host: any long-running processes (e.g. `run_pipeline`), any stage log (e.g. `/tmp/refresh_stage.log`).
-   - If a run is still in progress, decide whether to wait, monitor, or (if safe) stop and then deploy + re-run.
-2. **Deploy the updated code** (cherry-pick to target branch via worktree, push, then git pull on the instance).
-3. **Rebuild the binary on prod** so the next run uses the new code (e.g. `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown"`).
-4. **Run again** as appropriate (e.g. orchestrator with `--no-traffic-switch`, optionally `--resume` if checkpoint supports it), and monitor (orchestrator log, stage log on inactive host).
-
-**When this applies:**
-- User or prior message said "deploy the updated binary and run again," "then run again," "rebuild and re-run," or similar.
-- We just fixed orchestrator/runner/steps (or any binary used by the refresh pipeline) and the last run used an old binary.
-
-**Rationale:**
-- The agent should complete the loop (deploy → rebuild → run), not hand off to the user.
-- Checking status first avoids conflicting with an in-flight run or acting on stale assumptions.
-
-## Rule: Check Running Processes on Inactive Host Before Starting Pipeline
-
-**Before starting the orchestrator (or before the pipeline runs on the inactive/staging host), check for existing `run_pipeline discover-and-ingest` processes on that host.** The inactive host may be **stopped** after a recent graduation (staging instance is stopped post-rotation); start it first if needed (orchestrator starts it automatically when running the full pipeline).
-
-**Why (when inactive host is reachable):**
-- Multiple ingest processes on staging overload the box (high CPU/memory) and cause SSH lag or timeouts.
-- Old runs from previous orchestrator attempts or manual runs should not still be running when a new pipeline starts.
-
-**Workflow:**
-1. **Before starting the orchestrator:** SSH to the inactive host and run `ps aux | grep run_pipeline | grep -v grep`. If any `discover-and-ingest` processes exist (other than one you are about to start), kill the old PIDs first: `kill <PID>` for each old Python ingest process (and its parent bash if present). Leave `check-completeness` or other short commands if they are quick.
-2. **When fixing a stuck or overloaded staging:** Same check; kill old ingest PIDs so the current run (or the next run) has resources. Identify the current run by start time or by the process that has `tee /tmp/refresh_stage.log` in its parent chain (that is the one started by the orchestrator).
-3. **After killing old processes:** Re-check with `ps aux | grep run_pipeline` so only the intended run remains (or none, if you are about to start fresh).
-
-**Rationale:**
-- Prevents staging from running 4–5 ingest processes at once and avoids SSH lag and timeouts.
-- Ensures each pipeline run has a clean slate or at least no competing long-running ingests.
-
-**When you notice `relation "ingest_rejection_stats" does not exist` in the stage log:** The inactive host’s DB is missing that table (migration 0024 may be recorded but the table was never created or was dropped). Fix it by creating the table on the inactive host: SSH to the inactive host, then run `bazel run //:run_sql` (or raw SQL) to create `ingest_rejection_stats` with FK to the ingest run table (on staging the run table is `ingest_run`). See migration `models/migrations/0024_ingestrejectionstats.py` for the schema. After creating the table, the pipeline will continue; future sources will no longer fail at rejection-stats write.
-
-## Rule: Refresh Orchestrator – Preliminary Steps and Postgres
-
-**The refresh orchestrator (run on active, pipeline on inactive/staging) now:**
-
-1. **Gate:** Waits for **SSH + DB reachable** (no port-80 health check before pipeline). Uses `run_psql(db_name, "SELECT 1")` with retries.
-2. **Before pipeline:** **Stops Redis, Gunicorn, Bazel** on the inactive host to free memory (Docker stop, pkill gunicorn, bazel shutdown). Then **terminates idle Postgres connections** to the target DB so the pipeline uses a clean connection set (no stale connections from old runs).
-3. **Pipeline:** Runs the full pipeline (ingest, post-processing, smoke). Smoke is DB-only; Gunicorn/Redis are not needed during pipeline.
-4. **After pipeline:** **Starts Redis and Gunicorn** (Docker compose up -d) so the instance is healthy for traffic switch. Optionally waits for HTTP 200 on port 80 before switching.
-
-**Why:** Frees ~400–500MB (Bazel) + Docker memory during ingest; ensures Postgres connections are the ones used by the orchestrator, not remains of older runs.
-
-**Manual stop (e.g. on staging):**
-```bash
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker compose -f deployment/docker-compose.blue.yml stop; docker stop visa_bulletin_web_blue visa_bulletin_redis 2>/dev/null; pkill -f 'gunicorn.*django_config' || true; bazel shutdown 2>/dev/null; echo Done"
-```
-
-**One-off checks on remote (<4GB):** Prefer the **pre-built binary** so Bazel is never started (e.g. `./bazel-bin/scripts/salary/manage_salary_indexes --list` after build). If you use `bazel run` on remote (e.g. index list), run **`bazel shutdown`** in the same or next SSH session to free memory. See `.cursor/rules/bazel.mdc`.
 
 ## Rule: Never Use Development Scripts on Production
 
-**🚨 CRITICAL: NEVER use development scripts like `restart_server.sh` on production instances.**
+**NEVER use `restart_server.sh` on production instances.** Production uses Gunicorn in Docker containers — manage via `docker-compose restart`.
 
-**Development vs Production:**
+**Development (local):** `./scripts/restart_server.sh`, `bazel run //:runserver`
+**Production:** `docker-compose -f deployment/docker-compose.yml restart web`, `docker-compose up -d`
 
-**Development (local machine):**
-- ✅ Use `./scripts/restart_server.sh` (manages Django runserver)
-- ✅ Run `bazel run //:runserver` directly
-- ✅ Kill processes with `pkill -f runserver`
-- ✅ Uses Django development server (runserver)
+## Rule: Check Running Processes on Inactive Host Before Starting Pipeline
 
-**Production (deployed instances):**
-- ✅ Use Docker Compose to manage services
-- ✅ Use `docker-compose restart` for specific environment
-- ❌ **NEVER** use `restart_server.sh` (breaks production)
-- ❌ **NEVER** kill gunicorn processes manually
-- ❌ **NEVER** run `bazel run //:runserver` on production
-- Uses Gunicorn in Docker containers
-
-**How to properly restart/clear cache on production:**
-
-### 1. Check which environment is active (blue or green)
-```bash
-# Check nginx config to see which port is active
-ssh prod_2Gb_vm "grep proxy_pass /opt/visa_bulletin/deployment/nginx/visa-bulletin-locations.conf"
-# Port 8000 = blue, Port 8001 = green
-
-# Or check running containers
-ssh prod_2Gb_vm "docker ps --format '{{.Names}}'"
-```
-
-### 2. Restart the active environment
-```bash
-# If blue is active (port 8000):
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml restart web-blue"
-
-# If green is active (port 8001):
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.green.yml restart web-green"
-```
-
-### 3. Verify service is healthy
-```bash
-# Check container status
-ssh prod_2Gb_vm "docker ps | grep visa_bulletin"
-
-# Check health
-ssh prod_2Gb_vm "docker inspect visa_bulletin_web_blue --format='{{.State.Health.Status}}'"
-
-# Test the endpoint
-curl -I http://production-ip/
-
-# Check logs if issues
-ssh prod_2Gb_vm "docker logs visa_bulletin_web_blue --tail 50"
-```
-
-### If containers aren't running (like I just broke):
-```bash
-# Start the blue environment
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml up -d"
-
-# Monitor startup
-ssh prod_2Gb_vm "docker logs -f visa_bulletin_web_blue"
-```
-
-### Cache clearing:
-- **Django cache:** Automatically cleared on container restart
-- **Browser cache:** Users may need hard refresh (Ctrl+Shift+R)
-- **Nginx cache:** Not used in current setup, but if configured: `nginx -s reload`
-
-**Why this matters:**
-- Development server (runserver) is single-threaded, not production-ready
-- Gunicorn in Docker provides proper process management, logging, and resource limits
-- Docker restart is graceful and maintains service availability
-- restart_server.sh assumes bazel/runserver environment, not Docker
-
-**Common mistakes:**
-- ❌ Using `restart_server.sh` on production → Breaks service
-- ❌ Running `bazel run //:runserver` on production → Wrong server type
-- ❌ Killing gunicorn manually → Docker restart policy will fight you
-- ❌ Not checking which environment is active → Restart wrong container
-
-**Rationale:**
-- Clear separation between dev and production workflows
-- Prevents production outages from using dev tools
-- Docker provides proper service management (health checks, restart policies, resource limits)
-
-## Pre-Deployment Checklist (MANDATORY)
-
-**Before ANY version tag or deployment, verify:**
-
-- [ ] All tests passing (`bazel test //tests:all` - pre-commit hook handles this)
-- [ ] Changes committed and pushed to main
-- [ ] **IF workflow changed:** Test with `act --dryrun` ⚠️ 
-- [ ] Version number decided (ask user)
-- [ ] Release notes written for tag message
-- [ ] **IF enum migrations:** Database will be swapped atomically during rollout (no complex migrations needed)
-- [ ] **Cron jobs updated:** Verify `deployment/cron/setup-ingest-cron.sh` is configured on production
-
-**Critical:** If `.github/workflows/*.yml` modified, **MUST** run `act` before tagging!
-
-## Rule: Always Ask About Version Before Rollout
-
-**ALWAYS ask the user if they want to update the version before deploying/rolling out.**
-
-**Before any deployment or rollout, ask:**
-```
-Do you want to tag this as a new version before deploying?
- 1. Yes, create new version tag (e.g., v1.2.3)
- 2. No, deploy current latest
- 3. Deploy specific existing version (specify which)
-```
-
-**Rationale:**
-- Versions provide clear deployment history
-- Enable easy rollbacks to known good versions
-- Track what was deployed when
-- Follow semantic versioning best practices
-
-## Deployment Methods
-
-### ⭐ Method 1: Zero-Downtime Blue-Green Deployment (RECOMMENDED)
-
-**Use this for all deployments.**
+Before starting the orchestrator, check for existing `run_pipeline` processes on the inactive host:
 
 ```bash
-# 1. Commit changes
-git commit -m "Add feature X"
-
-# 2. TEST WORKFLOW WITH ACT (if workflow changed)
-cd /path/to/project
-source ~/.shrc
-act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
-
-# 3. Tag release
-git tag -a v1.2.3 -m "Release 1.2.3: Feature X"
-git push origin v1.2.3
-
-# 4. Wait for GitHub Actions to build image
-
-# 5. Deploy with zero downtime
-./scripts/deploy-zero-downtime.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+ssh staging_2Gb_vm "ps aux | grep run_pipeline | grep -v grep"
 ```
 
-**How it works:**
-1. Detects active environment (blue on :8000 or green on :8001)
-2. Deploys new version to inactive environment
-3. Waits for health checks to pass (60s timeout)
-4. Switches Nginx proxy atomically (no dropped connections)
-5. Stops old environment
+If any `discover-and-ingest` processes exist from previous runs, kill the old PIDs first: `kill <PID>`. Multiple ingest processes overload the 2GB box and cause SSH lag or timeouts.
 
-**Benefits:**
-- ✅ Zero downtime
-- ✅ Automatic rollback if health checks fail
-- ✅ Old version keeps running until new version is healthy
-- ✅ Safe for production traffic
-- ✅ Prevents ContainerConfig errors (separate container names)
+## Rule: Deploy Updated Binary and Run Yourself When Instructed
 
-### Method 2: GitHub Actions Deployment
+When instructions say "deploy the updated binary and run again" or "rebuild and re-run":
+1. Check current status first (tail orchestrator log, check if a run is in progress)
+2. Deploy updated code (cherry-pick to branch via worktree, push, then `git pull` on instance)
+3. Rebuild binary on prod: `ssh prod_2Gb_vm "cd /opt/visa_bulletin && bazel build //scripts/cron:refresh_and_switch_py && bazel shutdown"`
+4. Run again as appropriate and monitor
+
+## Rule: Always Verify Target Instance Before SSH Commands
+
+Always use the correct SSH alias based on the target instance. When in doubt, verify with user: "Working with prod_2Gb_vm (44.209.204.255), correct?"
+
+**❌ Don't use raw IPs or old `lightsail` aliases.**
+
+## AWS IAM (visa-bulletin-deploy profile)
+
+IAM user `visa-bulletin-deploy` with `lightsail:*`. Profile: `visa-bulletin-deploy` in `~/.aws/credentials`.
 
 ```bash
-# Trigger via CLI
-source ~/.shrc && gh workflow run deploy-production.yml -f version=v1.2.3
-
-# Or via GitHub web UI
+export AWS_PROFILE=visa-bulletin-deploy
+aws lightsail get-instances --region us-east-1
+aws lightsail get-static-ips --region us-east-1
 ```
 
-## Blue-Green Deployment Architecture
+**Giving instances AWS privileges:** Lightsail instances do not support IAM instance roles. To let a script call Lightsail API, provide IAM credentials via `aws configure` with a dedicated profile on the instance (stored outside the repo), or run the orchestrator from a machine that already has credentials.
 
-**Files:**
-- `deployment/docker-compose.blue.yml` - Blue environment (port 8000)
-- `deployment/docker-compose.green.yml` - Green environment (port 8001)
-- `scripts/deploy-zero-downtime.sh` - Blue-green deployment orchestrator
+## Rule: Refresh Orchestrator Preliminary Steps
 
-**How It Works:**
+The refresh orchestrator (run on active, pipeline on inactive/staging) before the pipeline:
+1. Waits for SSH + DB reachable (`run_psql(db_name, "SELECT 1")` with retries)
+2. Stops Redis, Gunicorn, Bazel on inactive to free memory
+3. Terminates idle Postgres connections on inactive
+4. After pipeline: starts Redis and Gunicorn (Docker compose up -d) before traffic switch
 
-1. **Active Detection:**
- - Script checks Nginx config to see which port is active
- - Blue (8000) or Green (8001)
+## GitHub Actions and Testing
 
-2. **Deploy to Inactive:**
- - Pulls new image
- - Starts containers in inactive environment
- - Uses separate container names (no conflicts)
+**ALWAYS** test workflow changes with `act --dryrun` before pushing tags. Transient Bazel network failures (502 from GitHub) are not code bugs — retry the workflow.
 
-3. **Health Checks:**
- - Waits up to 60 seconds for healthy status
- - Rolls back if health checks fail
-
-4. **Atomic Switch:**
- - Updates Nginx proxy configuration
- - Reloads Nginx (zero dropped connections)
- - Traffic now flows to new version
-
-5. **Cleanup:**
- - Stops old environment
- - Frees resources
-
-**Resource Usage:**
-- During deployment: 2x web containers (both running briefly)
-- Normal operation: 1x web container
-- Database shared between environments (no duplication)
-
-## Rollout Flow
-
-See `ROLLOUT_FLOW.md` for the complete step-by-step process.
-
-## Pre-Deployment Checks
-
-**ALWAYS run pre-deployment checks before deploying to catch configuration issues:**
-
-```bash
-# Run health checks on production environment
-./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
-```
-
-**The script validates:**
-- Port 8000 availability (detects old systemd services)
-- Docker and docker-compose installation
-- Nginx proxy configuration (should point to port 8000)
-- SSL certificate status
-- Disk space availability
-- Docker service running
-- Stale containers
-
-**If checks fail:** Follow the suggested fixes before proceeding with deployment.
-
-## Cache reset (clear_cache script)
-
-**When to run:** After data refresh or deploy that changes cached payloads (e.g. job title canonical_title, employer/salary stats). Ensures autocomplete, directory, and profile pages show fresh data.
-
-**What it resets:** All Django default cache keys, including:
-- Job title autocomplete (`/api/job-title-autocomplete/`) and directory (`/job-titles/`)
-- Employer directory and profile pages
-- Salary search results
-- Market overview, fiscal years, count caches
-- Sitemaps, dashboard, other `@cache_page` views
-
-**How to run:**
-```bash
-# On production
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
-# If using LocMem (no Redis), reload gunicorn so workers see cleared cache
-ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
-# Optional: reload nginx if it caches responses
-ssh prod_2Gb_vm "sudo nginx -s reload"
-```
-
-**With Redis:** Cache is shared; `clear_cache` is enough; no app restart needed.  
-**With LocMem:** Reload gunicorn after `clear_cache` so workers pick up empty cache.
-
-**Script:** `scripts/clear_cache.py` — docstring lists all affected caches. See also job title coherence rule (clear cache after update_job_title_cluster_stats).
-
-## Rollback Procedure
-
-If deployment fails or issues arise:
-
-### Quick Rollback
-```bash
-# Deploy previous version
-./scripts/deploy.sh ~/ssh-key.pem v1.2.2
-```
-
-### Emergency Rollback (Docker → Systemd)
-```bash
-ssh backup_0_5Gb_vm 'cd /opt/visa_bulletin && \
- sudo sed -i "s/127\.0\.0\.1:8001/127.0.0.1:8000/g" deployment/nginx/visa-bulletin-locations.conf && \
- sudo nginx -t && sudo systemctl reload nginx'
-```
-
-## Common Deployment Issues
-
-### Issue: ContainerConfig KeyError
-
-**Symptoms:**
-```
-ERROR: for web 'ContainerConfig'
-KeyError: 'ContainerConfig'
-```
-
-**Root Cause:**
-- docker-compose 1.29.2 bug when recreating containers
-- Old container metadata missing `ContainerConfig` key
-- Occurs when `docker-compose up` tries to inspect existing containers
-
-**Solution:**
-
-Use `./scripts/deploy-zero-downtime.sh` which:
-- ✅ Starts new containers before stopping old ones
-- ✅ No downtime
-- ✅ Avoids ContainerConfig issue (separate container names)
-- ✅ Automatic rollback if deployment fails
-
-**Manual Fix (if error occurs outside deployment script):**
-```bash
-ssh backup_0_5Gb_vm
-cd /opt/visa_bulletin
-sudo docker-compose down
-sudo docker-compose up -d
-```
-
-**Why Blue-Green Prevents This:**
-- Separate container names (`web-blue`, `web-green`)
-- No recreation - always creates fresh containers
-- Old containers removed only after new ones are healthy
-
-## Testing GitHub Actions Workflows
-
-**🚨 MANDATORY: Test workflow changes with `act` before pushing tags 🚨**
-
-**When to run `act`:**
-- ✅ **ALWAYS** when `.github/workflows/*.yml` files are modified
-- ✅ **ALWAYS** before creating a new version tag if workflow changed
-- ✅ When Dockerfile or docker-compose.yml changes affect build
-
-**How to test:**
-```bash
-cd /path/to/project
-source ~/.shrc
-
-# Dry run (fast, checks syntax and steps)
-act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun
-
-# Full run (slower, actually builds - use for major changes)
-act -W .github/workflows/docker-build-push.yml -j build-and-push
-```
-
-**Why this matters:**
-- Failed workflows waste GitHub Actions minutes
-- Broken tags require deletion and recreation
-- Prevents deployment blockers
-- Catches configuration errors before production
-
-**If you skip this step:**
-- Risk: Broken builds discovered only after pushing tag
-- Impact: Deployment delays, tag management overhead
-- Cost: Wasted CI/CD time and manual fixes
-
-## Monitoring After Deployment
-
-After any deployment, run a **thorough smoke check** (status + content, not just return codes):
-```bash
-# Smoke check: key pages return 200 and expected content (titles, key strings)
-bazel run //scripts:smoke_check_production -- --base https://visa-bulletin.us --timeout 60
-
-# Check site is up (quick)
-curl -I https://visa-bulletin.us
-
-# Check Docker logs (if using Docker)
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.blue.yml logs --tail=50"
-
-# Monitor for 10-15 minutes for errors
-```
-
-## Rule: Always Verify and Update Pipeline Scripts When Fixing Bugs
-
-**🚨 CRITICAL: When fixing ANY bug in data processing, ALWAYS check if pipeline/refresh/setup scripts need to be updated.**
-
-**Why:**
-- Bug fixes must not only fix current data but also prevent future occurrences
-- Automated pipelines must include the fix to prevent regression
-- New deployments must work correctly from the start
-- Reduces operational burden (don't manually fix same issue repeatedly)
-
-**After fixing a bug, ALWAYS check these scripts:**
-
-1. **`scripts/cron/refresh_data.sh`** - Does it run the fixed code?
-   - If bug was in a script, does refresh_data.sh call it?
-   - If bug was in function logic, is it called during refresh?
-   - Check lines 315-328 for post-processing steps
-
-2. **`scripts/cron/build_all.sh`** - Does it build the fixed binary?
-   - Add new scripts to REQUIRED_BINARIES if needed
-
-3. **Setup scripts** - Do they initialize correctly?
-   - `scripts/setup_new_instance.sh`
-   - `scripts/cron/refresh_data.sh` (initial data load + weekly refresh)
-
-**Decision tree:**
-```
-Bug fixed in a script → Check if refresh_data.sh runs it → If not, add it
-Bug fixed in a library → Check callers are in pipeline → Verify integration
-Bug requires data fix → Run fix script on production → Schedule in pipeline
-```
-
-**✅ GOOD - Complete fix workflow:**
-```
-1. Fix the bug in source code
-2. Test fix locally
-3. Check: Is fixed code/script called in refresh_data.sh?
-4. If NO: Add it to the pipeline
-5. If YES: Verify the fix will apply to future runs
-6. Run fix on production to correct existing data
-7. Verify fix prevents future occurrences
-8. Commit all changes together
-```
-
-**❌ BAD - Incomplete fix:**
-```
-1. Fix the bug in source code
-2. Manually run fix on production
-3. Commit and celebrate
-[Bug returns on next refresh because pipeline wasn't updated]
-```
-
-**Example: Job Title Clustering Bug Fix**
-- Bug: cluster_job_titles.py only matched exact strings, missing 86% of records
-- Fix: Updated script to use normalized matching
-- Pipeline check: ✅ refresh_data.sh already calls cluster_job_titles (line 322)
-- Action needed: Run script once to fix existing data, future runs will work
-- Result: Both current data and future data are correct
-
-**Rationale:**
-- Prevents bug from reoccurring in future pipeline runs
-- Reduces operational burden (no manual fixes after each refresh)
-- Ensures new deployments work correctly
-- Makes fixes persistent and maintainable
-
-## Rule: Sync Setup Scripts When Fixing Data Ingestion Issues
-
-**CRITICAL: When you fix data ingestion, processing, or database issues, you MUST update the corresponding setup scripts immediately.**
-
-**Why:**
-- New instances deployed from setup scripts must work correctly
-- Cron jobs must reflect latest ingestion logic
-- refresh_data.sh must load data properly (initial + weekly)
-- Prevents regression when setting up new servers
-
-**When you fix ingestion/processing, update these files:**
-
-### 1. Setup Scripts
-- `scripts/setup_new_instance.sh` - Initial instance setup
-- `scripts/cron/refresh_data.sh` - Initial data load + weekly refresh
-
-**What to check/update:**
-- Environment variables needed for fix
-- Database initialization steps
-- Data loading commands
-- Migration requirements
-- Dependencies or packages needed
-
-### 2. Cron Job Scripts
-- `scripts/cron/refresh_data.sh` - Periodic data refresh
-- `deployment/cron/setup-ingest-cron.sh` - Cron schedule configuration
-
-**What to check/update:**
-- Ingestion command flags
-- Data source paths
-- Environment variables
-- Error handling
-- Retry logic
-
-### 3. Documentation
-- `docs/deployment/NEW_INSTANCE_SETUP.md` - Setup instructions
-- `docs/INGESTION_PLAYBOOK.md` - Data ingestion guide
-- `docs/DEPLOYMENT_COMPLETE.md` - Deployment checklist
-
-**What to check/update:**
-- Setup steps
-- Troubleshooting sections
-- Known issues
-- Configuration examples
-
-### Workflow When Fixing Ingestion Issues
-
-**✅ GOOD - Complete fix workflow:**
-```
-1. Identify and fix the ingestion issue in source code
-2. Test fix locally
-3. Update setup_new_instance.sh with any new requirements
-4. Update refresh_data.sh if data loading changed
-5. Update refresh_data.sh if periodic refresh changed
-6. Update documentation with new steps/gotchas
-7. Test setup script changes (if possible)
-8. Commit all changes together
-```
-
-**❌ BAD - Incomplete fix:**
-```
-1. Fix ingestion issue in source code
-2. Commit and deploy
-[Setup scripts now outdated, new instances will fail]
-```
-
-### Common Scenarios and Required Updates
-
-**Scenario 1: Add new ingestion flag**
-- Update: `refresh_data.sh` (add flag to cron command)
-- Update: `refresh_data.sh` (add flag to pipeline)
-- Update: `INGESTION_PLAYBOOK.md` (document new flag)
-
-**Scenario 2: Add environment variable**
-- Update: `setup_new_instance.sh` (add to .env creation)
-- Update: `NEW_INSTANCE_SETUP.md` (document variable)
-
-**Scenario 3: Change data source paths**
-- Update: `refresh_data.sh` (update paths)
-- Update: `refresh_data.sh` (update paths)
-
-**Scenario 4: Add database migration**
-- Update: `setup_new_instance.sh` (run migration)
-- Update: `NEW_INSTANCE_SETUP.md` (document migration)
-
-**Scenario 5: Fix salary data processing**
-- Update: `refresh_data.sh` (if processing logic changed)
-- Update: `INGESTION_PLAYBOOK.md` (document new behavior)
-
-### Verification Checklist
-
-**Before committing ingestion fixes, verify:**
-- [ ] Setup scripts include all new environment variables
-- [ ] refresh_data.sh includes all new initialization steps
-- [ ] Cron scripts include all new flags/options
-- [ ] Documentation reflects new behavior
-- [ ] Error messages mention new requirements
-- [ ] Known issues section updated if applicable
-
-**Rationale:**
-- Setup scripts are the source of truth for deployment
-- Out-of-sync scripts cause hard-to-debug production issues
-- New instances must work correctly on first try
-- Cron jobs must reflect latest ingestion logic
-- Documentation prevents setup confusion
+**Rule:** Test workflow changes → `act -W .github/workflows/docker-build-push.yml -j build-and-push --dryrun` before tagging.

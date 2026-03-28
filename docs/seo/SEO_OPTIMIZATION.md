@@ -118,6 +118,10 @@ Handled by nginx, not Django. Django HTTPS settings are commented out in `settin
 | PageSpeed Insights | https://pagespeed.web.dev/ | Core Web Vitals, image sizes |
 | Google Search Console | https://search.google.com/search-console | Index coverage, sitemap status, 404s |
 
+## Design Decisions
+
+**Homepage title is intentionally narrow (country/category-specific).** The dashboard view builds a title like "India Employment-Based Visa Bulletin Predictions & Tracker - March 2026" based on the active filter. This is deliberate — the vast majority of real visitors are Indian EB-2/EB-3 applicants, so the default title matches their intent and reduces friction. A broad generic title would serve SEO auditors but not actual users.
+
 ## Key Files
 
 | File | Purpose |

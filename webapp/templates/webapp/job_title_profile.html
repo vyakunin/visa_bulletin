@@ -3,21 +3,10 @@
 
 {% block title %}{{ seo.title }}{% endblock %}
 
+{% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
+
 {% block extra_head %}
-<!-- SEO Meta Tags -->
-<meta name="description" content="{{ seo.description }}">
 <link rel="canonical" href="{{ seo.canonical_url }}">
-
-<!-- Open Graph -->
-<meta property="og:title" content="{{ cluster.canonical_title }} Salary Data">
-<meta property="og:description" content="{{ cluster.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median salary">
-<meta property="og:url" content="{{ request.build_absolute_uri }}">
-<meta property="og:type" content="website">
-
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{{ cluster.canonical_title }} Salary Data">
-<meta name="twitter:description" content="{{ cluster.total_filings|intcomma }} filings, ${{ stats.basic.median_salary|floatformat:0|intcomma }} median">
 
 <!-- Structured Data (Schema.org) -->
 <script type="application/ld+json">

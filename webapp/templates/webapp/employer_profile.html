@@ -3,21 +3,10 @@
 
 {% block title %}{{ seo.title }}{% endblock %}
 
+{% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
+
 {% block extra_head %}
-<!-- SEO Meta Tags -->
-<meta name="description" content="{{ seo.description }}">
 <link rel="canonical" href="{{ seo.canonical_url }}">
-
-<!-- Open Graph -->
-<meta property="og:title" content="{{ cluster.canonical_name }} Visa Sponsorship Data">
-<meta property="og:description" content="{{ stats.basic.total_filings }} H-1B &amp; green card filings, {{ stats.approval_rate|floatformat:1 }}% approval rate, ${{ stats.basic.median_salary|floatformat:0 }} median salary">
-<meta property="og:url" content="{{ request.build_absolute_uri }}">
-<meta property="og:type" content="website">
-
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{{ cluster.canonical_name }} Visa Sponsorship Data">
-<meta name="twitter:description" content="{{ stats.basic.total_filings }} filings, {{ stats.approval_rate|floatformat:1 }}% approval, ${{ stats.basic.median_salary|floatformat:0 }} median">
 
 <!-- Structured Data (Schema.org) -->
 <script type="application/ld+json">

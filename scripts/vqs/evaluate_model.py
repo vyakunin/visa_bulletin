@@ -22,9 +22,8 @@ import os
 import time
 from collections import defaultdict
 
-import numpy as np
-
 import django
+import numpy as np
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()

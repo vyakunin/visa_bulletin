@@ -8,12 +8,12 @@ from django.conf import settings
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
-from models.blog import BlogPost
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
     get_aggregated_visa_class_data,
 )
+from models.blog import BlogPost
 from models.enums.action_type import ActionType
 from models.enums.country import Country
 from models.enums.visa_category import VisaCategory

@@ -10,101 +10,26 @@ Rules for job title clustering, representative titles, and end-to-end coherence 
 **Job title stats and slugs must be updated in this order:**
 
 1. **cluster_job_titles** – clusters raw job titles into `JobTitle` / `JobTitleCluster`
-2. **update_job_title_cluster_stats** – sets `total_filings`, `avg_salary`, and **canonical_title** per cluster; sets **title** per `JobTitle` to the most frequent raw title (cluster: count first, then shorter length)
-3. **populate_job_title_slugs** – backfills `slug` for clusters that have none (slug is derived from `canonical_title`)
+2. **update_job_title_cluster_stats** – sets `total_filings`, `avg_salary`, and **canonical_title** per cluster
+3. **populate_job_title_slugs** – backfills `slug` for clusters that have none (slug derived from `canonical_title`)
 
 **Scripts:** `scripts/cron/refresh_data.sh` runs them in this order. Do not reorder or skip.
-
-**Rationale:** Autocomplete and directory use `JobTitleCluster` with `canonical_title`, `total_filings`, and `slug`. Profile page uses `cluster.total_filings` and `cluster.canonical_title`. Similar Job Titles uses other clusters’ `canonical_title`. All must come from the same pipeline run.
 
 ## Rule: Representative Title Selection
 
 **update_job_title_cluster_stats** chooses the representative title:
 
-- **JobTitleCluster.canonical_title:** Most frequent raw `SalaryRecord.job_title` among records whose **normalized** title equals the cluster's **most frequent normalized form**. Order: (1) count DESC (dominant raw title wins), (2) shorter length as tiebreaker.
+- **JobTitleCluster.canonical_title:** Most frequent raw `SalaryRecord.job_title` among records whose normalized title equals the cluster's most frequent normalized form. Order: (1) count DESC, (2) shorter length as tiebreaker.
 - **JobTitle.title:** Most frequent raw `job_title` among records for that entity.
 
-**Rationale:** The cluster groups by normalized title; the displayed title should match the most frequent salary entry's raw title for that normalized form (count first, then shorter for ties).
-
-## Trace: Total Filings, Top Employers, and Representative Name
-
-**Total Filings (e.g. 192k)**  
-Set by `update_job_title_cluster_stats` in `_stats_by_cluster()`: one query that counts `SalaryRecord` rows where `job_title_entity.canonical_cluster_id = cluster` and wage in bounds (`scripts/salary/update_job_title_cluster_stats.py`). The profile page uses `cluster.total_filings` from that (and `get_job_title_statistics(..., normalized_title=None)` uses `base_filters['job_title_entity__canonical_cluster'] = cluster` — same set of records).
-
-**Top employers (e.g. 107 for #1)**  
-In `lib/business/salary/job_title_stats.py`, `get_job_title_statistics` builds `records = SalaryRecord.objects.filter(job_title_entity__canonical_cluster=cluster, ...)`. Top employers are `records.values('employer__canonical_cluster__canonical_name', ...).annotate(count=Count('id')).order_by('-count')`. So each employer cluster’s `count` is its number of filings in that same job-title cluster. So 107 is that employer cluster’s share of the 192k; total = sum of all employers’ counts in the cluster. Verifiable: same `records` queryset is used for total (via cluster.total_filings, which was computed from the same logical set) and for top-employers aggregation.
-
-**Do "software developers applications" and "software engineer" end up in the same cluster?**  
-No. Clustering uses `cluster_job_titles` → `clustering_engine.build_bucket_index` and `assign_to_cluster`. For each `JobTitle` entity, `entity.name` is `JobTitle.title` (the raw title, e.g. "Software Developers, Applications"); we call `config.normalize_name(entity.name)` to get the normalized string used for buckets (`lib/business/clustering_engine.py`). Buckets come from `get_fuzzy_bucket_candidates(normalized)`: exact normalized string, word initials (first letter of first 5 words), and prefix 3 + suffix 3 chars. For "software developers applications" that yields e.g. `{"software developers applications", "sda", "sof...ons"}`; for "software engineer" yields `{"software engineer", "se", "sof...eer"}`. There is no bucket overlap, so those two normalized forms are never compared and end up in different clusters. So the 192k cluster for slug `software-developers-applications` contains only JobTitles whose raw title normalizes to something that shares a bucket with "software developers applications" (and passes similarity if compared), not "software engineer".
-
-**Representative name (canonical_title)**  
-Set by `update_job_title_cluster_stats` in `_most_frequent_raw_title_per_cluster()`: (1) `cluster_top_normalized` / `cluster_mode_normalized` pick the cluster’s most frequent `JobTitle.title_normalized` by count of SalaryRecords; (2) `ranked_raw` ranks raw `SalaryRecord.job_title` by count DESC, then shorter length; (3) we take the top raw per cluster. So the representative is the most frequent normalized form’s best raw title, not a random Job Title.
+See `lib/business/salary/README.md` for the full query trace (Total Filings, Top Employers, Representative Name).
 
 ## Rule: Check Job Title Coherence on Deployment
 
-**After deploying or after running refresh_data (including update_job_title_cluster_stats + populate_job_title_slugs), verify job title coherence on the deployment.**
+After deploying or running `refresh_data`, verify job title coherence. See `docs/PIPELINE_RUNBOOK.md` for the full smoke test commands (autocomplete API, profile count match, URL resolution, Similar Job Titles check).
 
-### 1. Run the pipeline on the deployment (if you changed data or code)
-
+**Quick check:**
 ```bash
-# On production (use correct SSH alias and DB_HOST)
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && [ \"\$DB_HOST\" = 'host.docker.internal' ] && export DB_HOST=localhost; bazel build //scripts/salary:update_job_title_cluster_stats && bazel shutdown"
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/update_job_title_cluster_stats"
-# If any clusters had no slug, run populate_job_title_slugs
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && export DB_HOST=localhost && ./bazel-bin/scripts/salary/populate_job_title_slugs"
-```
-
-### 2. Clear cache and reload app (so autocomplete and directory show new canonical_title)
-
-```bash
-# Clear Django cache (job title autocomplete, directory, employer/salary caches)
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && bazel run //scripts:clear_cache"
-# If using LocMem (no Redis), reload gunicorn so workers see cleared cache; with Redis, optional
-ssh prod_2Gb_vm "kill -HUP \$(pgrep -f 'gunicorn.*django_config' | head -1)"
-# Reload nginx if it caches responses (optional, depends on config)
-ssh prod_2Gb_vm "sudo nginx -s reload"
-```
-
-### 3. Smoke test on the live site
-
-Use the deployment base URL (e.g. `http://44.209.204.255` or `https://visa-bulletin.us`).
-
-**A. Autocomplete – fields and order**
-
-- `GET /api/job-title-autocomplete/?q=software&limit=5`
-- Response must be JSON array of objects with **title** (= `canonical_title`), **slug**, **total_filings**
-- Results must be ordered by **total_filings descending**, then **canonical_title**
-
-**B. Profile count matches autocomplete**
-
-- Pick a slug from autocomplete (e.g. `software-development-engineer-ii`) and note its **total_filings**
-- `GET /job-title/<slug>/`
-- Page must show the same **Total Filings** number (e.g. in the overview card and in meta description)
-
-**C. Generated URLs resolve**
-
-- URLs must be `/job-title/<slug>/` with slug derived from `canonical_title` (lowercase, hyphenated)
-- Visiting the URL must return 200 and show the cluster’s canonical_title and total_filings
-
-**D. Similar Job Titles section**
-
-- On a job title profile (e.g. `/job-title/software-development-engineer-ii/`), open the **Similar Job Titles** block
-- Listed titles must be **canonical_title** (representative) for other clusters, not raw SOC-style variants (e.g. "Software Engineer", "Software Developer", not "Software Developers, Applications" unless that is the cluster’s canonical_title)
-
-### 4. Run the integration test (local or CI)
-
-```bash
+# Run the integration test
 bazel test //tests:test_job_title_profile_view
 ```
-
-This test suite covers:
-
-- Most frequent representative saved for cluster (count first, then shorter length)
-- Autocomplete uses **title** (= canonical_title), **total_filings**, **slug** in correct order
-- Profile page Total Filings matches cluster.total_filings (and thus autocomplete total_filings for that slug)
-- Generated URLs resolve and show the same count
-- Similar Job Titles section shows canonical_title for similar clusters
-
-Tests use the default test DB (SQLite in-memory). The script uses portable SQL (`CAST(... AS INTEGER)`), so the full-script integration test runs without PostgreSQL.
-
-**Rationale:** Catching mismatches (e.g. profile count ≠ autocomplete, or Similar showing raw titles) early prevents user-facing inconsistencies and SEO issues.

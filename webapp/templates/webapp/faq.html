@@ -2,10 +2,87 @@
 
 {% block title %}Frequently Asked Questions - U.S. Immigration Data{% endblock %}
 
+{% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
+
+{% block extra_head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does this dashboard track PERM processing times?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No, this dashboard tracks Visa Bulletin cutoff date movements only, not PERM processing times. PERM Processing Time is how long it takes the Department of Labor (DOL) to approve your labor certification. Visa Bulletin Wait (what this dashboard tracks) is once your PERM is approved, your PERM filing date becomes your priority date, and the Visa Bulletin publishes monthly cutoff dates showing how those dates have moved historically and projects when your priority date might become current."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What's the difference between \"Final Action\" and \"Dates for Filing\"?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Final Action Dates: When your priority date reaches this cutoff, USCIS can approve your green card (I-485). Dates for Filing: When your priority date reaches this cutoff, you can submit your I-485 application (Adjustment of Status), but it won't be approved until the Final Action date is also current. In most cases, people watch Final Action Dates as they determine when you actually get the green card."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is a priority date?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Your priority date is the date when your immigration petition was filed. For Family-Sponsored cases it is the date your sponsor filed the I-130 petition. For Employment-Based cases it is the date your PERM labor certification was filed (or I-140 if PERM-exempt). The Visa Bulletin publishes monthly cutoff dates. If your priority date is earlier than the cutoff, your case can move forward."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the prediction model work, and how accurate is it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The prediction model (Virtual Queue Simulation) works by simulating the visa queue month by month. It combines multiple expert signals — historical movement patterns, fiscal year cycles, I-140 demand data, and queue physics — into an ensemble prediction. For longer horizons (6–12 months), a gradient-boosted machine learning model trained on over a decade of bulletin history identifies patterns that simple trend extrapolation misses. For the key India/China EB-2 and EB-3 series at 6-month horizons, it achieves mean absolute errors of 155–264 days."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why do priority dates sometimes move backward (retrogression)?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Retrogression happens when demand for visas exceeds the annual quota. The State Department moves cutoff dates backward to slow down visa issuance. Common causes include a surge in new applications, USCIS policy changes accelerating approvals, and end of fiscal year adjustments."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where are parents/spouses of U.S. citizens (Immediate Relatives)?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Parents, spouses, and unmarried children under 21 of U.S. citizens are Immediate Relatives (IR) and are not subject to Visa Bulletin quotas. They don't appear in this dashboard because there are no monthly cutoff dates to track — visas are immediately available once USCIS approves the petition. This dashboard only tracks Family Preference categories (F1, F2A, F2B, F3, F4) and Employment-Based categories (EB1-EB5), which have annual quotas."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How often is the data updated?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The dashboard automatically refreshes daily at 9 AM UTC to check for new Visa Bulletins from the State Department. The official Visa Bulletin is typically published around the 9th-15th of each month for the following month. All data comes directly from travel.state.gov."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is this tool open source?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes! The entire codebase is available on GitHub at https://github.com/vyakunin/visa_bulletin. You can view the source code, report bugs or request features, contribute improvements, and run your own instance locally."
+      }
+    }
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-lg-10 offset-lg-1">
-        <h2 class="mb-4"><i class="bi bi-question-circle"></i> Frequently Asked Questions</h2>
+        <h1 class="mb-4"><i class="bi bi-question-circle"></i> Frequently Asked Questions</h1>
         
         <div class="accordion" id="faqAccordion">
             <!-- Question 1: PERM vs Visa Bulletin -->
