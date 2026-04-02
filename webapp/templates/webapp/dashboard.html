@@ -127,7 +127,7 @@
                                         Next Bulletin
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="Predicted cutoff date for the next visa bulletin, based on the Bulletin Forecast Model."
+                                            data-bs-content="Predicted cutoff date for the next visa bulletin, based on the Bulletin Forecast Model. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
@@ -137,7 +137,7 @@
                                         Est. Current Date
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="{% if show_vqs_column %}Estimated month your priority date becomes current. Based on the Bulletin Forecast Model; beyond the 2-year forecast horizon, uses linear extrapolation from the historical advancement rate. <a href='{% url 'faq' %}#headingFour'>Learn more →</a>{% else %}Estimated month your priority date becomes current, based on linear extrapolation of the historical advancement rate.{% endif %}"
+                                            data-bs-content="{% if show_vqs_column %}Estimated month your priority date becomes current. Based on the Bulletin Forecast Model; beyond the 2-year forecast horizon, uses linear extrapolation from the historical advancement rate. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>{% else %}Estimated month your priority date becomes current, based on linear extrapolation of the historical advancement rate.{% endif %}"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
@@ -246,7 +246,7 @@
 
             <p class="small text-muted mb-3">
                 <i class="bi bi-exclamation-triangle"></i> <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
-                <a href="{% url 'faq' %}#headingFour" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
+                <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
             </p>
 
             <!-- Chart -->
@@ -338,7 +338,7 @@
                         <ul>
                             <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
                             <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                            <li><strong>Dotted lines</strong>: Bulletin Forecast Model projections using historical patterns, I-140 demand data, and fiscal year cycles (diamond = estimated date your priority date becomes current)</li>
+                            <li><strong>Dotted lines</strong>: Bulletin Forecast Model projections using historical patterns, I-140 demand data, and fiscal year cycles (diamond = estimated date your priority date becomes current). <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}">How it works →</a></li>
                             <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
                             </li>
                         </ul>
