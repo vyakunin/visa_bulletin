@@ -32,6 +32,7 @@ from dateutil.relativedelta import relativedelta
 from django.conf import settings
 
 from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
+from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.gbm_expert import (
     _GBM_DEFAULT_GATE_THRESHOLD,
     _GBM_DEFAULT_MOVEMENT_THRESHOLD,
@@ -943,6 +944,8 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                     dispatch = gbm_gated_pred
                 elif h >= 12 and _dispatch_key in _DISP_PACE_12M:
                     dispatch = pace
+                elif h >= 12 and _dispatch_key in _DISP_PERSISTENCE_12M:
+                    dispatch = persist
                 elif _dispatch_key in _DISP_GBM_GATED_6M and h >= 6:
                     dispatch = gbm_gated_pred
                 elif _dispatch_key in _DISP_PACE_6M and h >= 6:
@@ -1149,6 +1152,10 @@ _DISP_GBM_GATED_12M = frozenset([
     (Country.INDIA.value, "2nd"),
 ])
 _DISP_PACE_12M = frozenset([(Country.INDIA.value, "3rd")])
+# Persistence at 12m: reserved for structurally stalled series where Pace
+# and GBM both lose to no-change. Currently empty — India EB-3 Pace (490d)
+# beats Persistence (524d) per §21 same-window eval.
+_DISP_PERSISTENCE_12M: frozenset = frozenset()
 
 
 def print_metrics_table(metrics, horizons):
@@ -1275,6 +1282,84 @@ def print_per_series_summary(metrics, horizons):
                 prefix = "* " if is_key and model != "Persistence" else "  "
                 print(f"{prefix}{series:<18} {model:<22} {mae_s:<8} {cda_s:<10} {mp_s:<10} {mr_s:<9} {f1_s:<8} {beats}")
             print()
+
+
+def print_composite_table(metrics: list[dict], horizons: list[int]) -> None:
+    """Print a composite score table across all models.
+
+    Computes composite = (sum_h hw_h * avg_MAE_h) / (sum_h hw_h) using
+    MetricConfig default horizon weights. This is the same formula shown in
+    the blog comparison table, making the numbers reproducible and not
+    reliant on hand-transcription.
+
+    Only horizons present in MetricConfig.horizon_weights are included; if
+    a model has no predictions for a given horizon (all None), that horizon
+    is excluded from its composite (with a note).
+    """
+    cfg = MetricConfig.defaults()
+    hw = cfg.horizon_weights
+
+    # Collect aggregate (cross-series average) MAE per model per horizon
+    # using the same arithmetic average as print_metrics_table AGGREGATE rows.
+    model_set: list[str]
+    if any(m["label"] == "GBM" for m in metrics):
+        model_set = MODELS_GBM
+    elif any(m["label"] == "VQS No Cross-Series" for m in metrics):
+        model_set = MODELS_ABLATE
+    else:
+        model_set = MODELS
+
+    # horizon_mae[model][h] = average MAE across series for that horizon
+    horizon_mae: dict[str, dict[int, float]] = {}
+    for model in model_set:
+        horizon_mae[model] = {}
+        for h in horizons:
+            h_rows = [m for m in metrics if m["label"] == model and m["horizon"] == h and m["mae"] is not None]
+            if h_rows:
+                horizon_mae[model][h] = sum(m["mae"] for m in h_rows) / len(h_rows)
+
+    print("\n" + "=" * 100)
+    print(f"COMPOSITE SCORE TABLE  (weights: {', '.join(f'{h}m×{hw.get(h, 0):.3f}' for h in sorted(hw))})")
+    print(f"Composite = weighted avg of per-horizon MAE  |  lower is better  |  horizons evaluated: {horizons}")
+    print("=" * 100)
+    print(f"{'Model':<24} {'Composite':>10}  {'vs Persist':>10}  " + "  ".join(f"{'MAE '+str(h)+'m':>8}" for h in horizons))
+    print("-" * 100)
+
+    # Compute persistence composite first for delta column
+    persist_composite: float | None = None
+    if "Persistence" in horizon_mae:
+        p_maes = horizon_mae["Persistence"]
+        numerator = sum(hw.get(h, 0) * p_maes[h] for h in p_maes if hw.get(h, 0) > 0)
+        denominator = sum(hw.get(h, 0) for h in p_maes if hw.get(h, 0) > 0)
+        if denominator > 0:
+            persist_composite = numerator / denominator
+
+    for model in model_set:
+        maes = horizon_mae[model]
+        weighted_horizons = [h for h in maes if hw.get(h, 0) > 0]
+        if not weighted_horizons:
+            continue
+        numerator = sum(hw[h] * maes[h] for h in weighted_horizons)
+        denominator = sum(hw[h] for h in weighted_horizons)
+        composite = numerator / denominator if denominator > 0 else None
+
+        missing = [h for h in horizons if h in hw and h not in maes]
+        note = f" (missing: {missing})" if missing else ""
+
+        vs_str = ""
+        if composite is not None and persist_composite is not None and model != "Persistence":
+            diff = composite - persist_composite
+            vs_str = f"{diff:+.1f}d"
+
+        per_h = "  ".join(
+            f"{maes[h]:>8.1f}" if h in maes else f"{'N/A':>8}"
+            for h in horizons
+        )
+
+        composite_str = f"{composite:.1f}d" if composite is not None else "N/A"
+        print(f"{model + note:<24} {composite_str:>10}  {vs_str:>10}  {per_h}")
+
+    print()
 
 
 def generate_html(chart_data, horizons, output_path):
@@ -1548,6 +1633,7 @@ def main():
         ablate_group=args.ablate_group,
     )
     print_metrics_table(metrics, horizons)
+    print_composite_table(metrics, horizons)
     print_stratified_table(stratified, horizons)
     if args.per_series_summary:
         print_per_series_summary(metrics, horizons)

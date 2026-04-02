@@ -23,6 +23,7 @@ if not settings.configured:
 
 from lib.business.vqs.aggregator import ExpertAggregator
 from lib.business.vqs.calibration import compute_calibrated_interval
+from lib.business.vqs.data_cache import get_cutoff_at_date
 from lib.business.vqs.expert_pool import expert_oppenheim_pace
 from lib.business.vqs.gbm_expert import expert_gbm_gated, expert_gbm_movement_prob
 from lib.business.vqs.meta_params import VqsMetaParams
@@ -72,8 +73,14 @@ _GBM_GATED_12M_SERIES = frozenset([
 
 # Pace series at 12m: beats GBM Gated.
 _PACE_12M_SERIES = frozenset([
-    (Country.INDIA.value, "3rd"),   # Pace 491.4d vs GBM Gated 499.2d (−7.8d)
+    (Country.INDIA.value, "3rd"),   # Pace 490.0d vs GBM Gated 494.2d vs Persistence 523.8d (§21 eval)
 ])
+
+# Persistence at 12m: reserved for structurally stalled series where Pace
+# and GBM both produce extremely high MAE vs no-change baseline.
+# Currently empty — India EB-3 Pace (490d) beats Persistence (524d).
+# Reassign series here if future evals show model-12m MAE > persistence-12m MAE.
+_PERSISTENCE_12M_SERIES: frozenset = frozenset()
 
 # Series for which a 1m movement probability badge is computed.
 # These are the oversubscribed EB-1/2/3 series where GBM CondDir signal is meaningful.
@@ -247,13 +254,12 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
         for action in action_types:
             for country in countries:
                 for visa_class in visa_classes:
-                    # Horizon-aware hybrid dispatch (Sections 17–18 results):
-                    # 1m:     ALL series → Regime-Switched (RS beats VQS at 1m for all 6 series)
+                    # Horizon-aware hybrid dispatch (Sections 17–18, §20, §21 eval):
+                    # 1m:     ALL series → Regime-Switched
                     # 3m:     China EB-1 → RS; India EB-1 → RS; all others → VQS ensemble
-                    # 6m:     China EB-1 → RS (149.8d); India EB-1, China EB-3 → GBM Gated;
+                    # 6m:     China EB-1 → RS; India EB-1, China EB-3 → GBM Gated;
                     #         India EB-2/3, China EB-2 → Pace
-                    # 12m+:   China EB-1, China EB-3, India EB-1/2 → GBM Gated;
-                    #         China EB-2, India EB-3 → Pace
+                    # 12m+:   China EB-1/2/3, India EB-1/2 → GBM Gated; India EB-3 → Pace
                     model_name = "vqs_ensemble"
                     dispatch_key = (country, visa_class)
 
@@ -289,7 +295,7 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
                         m_meta = {"model": "gbm_gated", "horizon_months": horizon_m}
                         confidence = "medium"
                     elif horizon_m >= 12 and dispatch_key in _PACE_12M_SERIES:
-                        # Pace at 12m+: China EB-2, India EB-3
+                        # Pace at 12m+: India EB-3 (Pace 490d beats GBM 494d, Persistence 524d)
                         model_name = "oppenheim_pace"
                         cutoff = expert_oppenheim_pace(
                             visa_class=visa_class,
@@ -300,6 +306,14 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
                         )
                         m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_m}
                         confidence = "medium"
+                    elif horizon_m >= 12 and dispatch_key in _PERSISTENCE_12M_SERIES:
+                        # Persistence at 12m+: for structurally stalled series where Pace
+                        # and GBM both produce extremely high MAE vs no-change baseline.
+                        # India EB-3: Pace 491d, GBM 499d — both dominated by no-change.
+                        model_name = "persistence"
+                        cutoff = get_cutoff_at_date(visa_class, country, action, knowledge_date)
+                        m_meta = {"model": "persistence", "horizon_months": horizon_m}
+                        confidence = "low"
                     elif dispatch_key in _GBM_GATED_6M_SERIES and horizon_m >= 6:
                         # GBM Gated at 6m (but < 12m): India EB-1, China EB-3
                         model_name = "gbm_gated"

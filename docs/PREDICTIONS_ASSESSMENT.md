@@ -57,9 +57,25 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 | Per-series demand-drop masking (India EB-3) | §18 | Full-data India EB-3 GBM Gated: 290.1d (masking) vs 282.3d (Pace) | Quick-mode 60d estimate was overestimate. Full-data improvement ~2.6d. Masking kept (harmless) but India EB-3 dispatches to Pace not GBM. |
 | PERM filing volume feature (perm_filing_ratio) | §19-20 | Ablation shows zero contribution at inference. §19 improvements were evaluation window shift. | GBM tree does not use feature 27 in any decision path. Effective feature landscape unchanged. |
 
-### Last Assessment (March 2026, planning review post-Section 20)
+### Last Assessment (April 2026, §21 evaluation + metric reconciliation)
 
-**Facts (measured):**
+**Facts (measured, §21 same-window eval `--horizons 1,3,6,12 --gbm`):**
+- Dispatch composite (new formula, blog-comparable): **164d** vs Persistence 195d, Pace 180d — Dispatch now wins on composite.
+- Discovery: old blog composite (205d) was stale data predating §20 China EB-2→GBM Gated 12m switch; current dispatch was already better than reported.
+- Dispatch per-horizon MAE: 1m 42.1d, 3m 118.3d, 6m 197.7d, 12m 311.3d.
+- Persistence per-horizon: 1m 42.8d, 3m 123.0d, 6m 229.0d, 12m 396.5d.
+- India EB-3 at 12m: Pace 490d, GBM Gated 494d, Persistence 524d — Pace is best; no change to dispatch.
+- `evaluate_model --per-series-summary` now auto-prints composite table via `print_composite_table()` using MetricConfig default weights.
+- `compute_prediction_accuracy.py` now uses MetricConfig canonical weights (not proportional h/sum(h)) when horizons=[1,3,6,12].
+
+**Fixes applied:**
+- Blog text: removed false claim "uses the same weighted objective this model optimizes"; replaced with accurate description.
+- Blog number: THIS_MODEL composite_days updated 205.0 → 164.0 (§21 evaluation).
+- Added `print_composite_table()` to `evaluate_model.py` — reproducible composite for all methods.
+- Added `_PERSISTENCE_12M_SERIES` frozenset to both dispatch files (currently empty, reserved for future use if a series is confirmed Persistence-dominated at 12m).
+- `tune_params.py` `objective()` docstring clarifies that the optimization objective ≠ reporting composite.
+
+**Facts (preserved from March 2026):**
 - VQS Ensemble 1m MAE = 41.4d vs persistence 41.5d on 6 oversubscribed series (Section 11)
 - Pace 6m MAE = 211d vs persistence 228d, beats persistence on all 6 series (Section 11)
 - Supply rebalancing reduced 2025+ under-prediction rate from ~72% to 42% (Section 13)
@@ -77,7 +93,7 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 - **Dispatch update (Section 20)**: China EB-2 at 12m moved from Pace to GBM Gated (margin 15.7d). GBM Gated now wins 5/6 at 12m. All 6m dispatch series unchanged.
 - **CondDir ≥65% met**: China EB-3 at 6m (65.4%) and 12m (65.4%). All other series below 65%.
 
-**Success metrics (current, Section 20):**
+**Success metrics (current, §21 evaluation):**
 
 | Metric | Original Target | Revised Target | Current Best | Status |
 |--------|----------------|---------------|--------------|--------|

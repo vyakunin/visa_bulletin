@@ -617,7 +617,21 @@ def main() -> None:
 
 
 def _default_horizon_weights(horizons: list[int]) -> list[float]:
-    """Generate horizon weights proportional to horizon value (longer = higher weight)."""
+    """Horizon weights for composite evaluation.
+
+    Uses MetricConfig canonical weights (1m→0.38, 3m→0.104, 6m→0.40, 12m→0.255)
+    when the requested horizons match the defaults. Falls back to proportional
+    weights (h/sum(h)) for custom horizon sets so the function always returns
+    something sensible.
+
+    Using MetricConfig defaults ensures that composite scores from this script
+    are directly comparable to the evaluate_model.py print_composite_table output
+    and the blog comparison table.
+    """
+    canonical = MetricConfig.defaults().horizon_weights
+    if set(horizons) == set(canonical.keys()):
+        return [canonical[h] for h in horizons]
+    # Proportional fallback for non-standard horizon sets
     total = sum(horizons)
     return [h / total for h in horizons]
 

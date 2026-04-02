@@ -460,7 +460,25 @@ def objective(
     gbm_params: bool = False,
     per_series_weights: bool = False,
 ) -> float:
-    """Evaluate one parameter configuration, returning objective value to minimize."""
+    """Evaluate one parameter configuration, returning objective value to minimize.
+
+    Two objective types are supported:
+    - "mae": minimize compute_composite_metric(rows)["composite_mae"] — a
+      per-sample weighted horizon-blended MAE with series/regime/magnitude
+      weights and Optuna-searched horizon weights. This is NOT the same as the
+      reporting composite in evaluate_model.py print_composite_table or the blog
+      comparison table (those use a simple per-horizon average with fixed
+      MetricConfig default weights).
+    - "conditional": minimize compute_conditional_objective — a user-centric mix
+      of conditional MAE, movement-detection F1, 6m key-series MAE, and overall
+      1m MAE. Preferred for most tuning runs.
+
+    The reporting composite (evaluate_model.py) and the optimization objective
+    (this function) are intentionally different: the reporting composite is
+    transparent and directly comparable across methods; the optimization objective
+    is tuned for user-centric quality (movement detection, long-horizon accuracy
+    on key series).
+    """
     agg_params, eval_cfg, extra = build_trial_params(trial, gbm_params, per_series_weights)
 
     # Apply GBM params if requested

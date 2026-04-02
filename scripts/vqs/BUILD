@@ -142,6 +142,7 @@ py_binary(
         "//lib/business/vqs:data_cache",
         "//lib/business/vqs:estimators",
         "//lib/business/vqs:gbm_expert",
+        "//lib/business/vqs:metric_config",
         "//lib/business/vqs:prediction_loader",
         "//lib/business/vqs:contextual_aggregator",
         "//lib/business/vqs:regime",
