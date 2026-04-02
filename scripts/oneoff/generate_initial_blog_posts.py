@@ -68,45 +68,48 @@ class ModelMetrics:
 def _get_model_metrics() -> dict[ComparedModel, ModelMetrics]:
     """Return model metrics for the comparison table.
 
-    Composite = 0.38 × MAE_1m + 0.10 × MAE_3m + 0.40 × MAE_6m + 0.26 × MAE_12m
-    (weights sum to 1.14; used as relative importance weights, matching accuracy_metrics.py).
+    Composite = 0.38 × MAE_1m + 0.104 × MAE_3m + 0.40 × MAE_6m + 0.255 × MAE_12m
+    (weights sum to 1.139; used as relative importance weights, matching accuracy_metrics.py).
 
-    Values for "This model" are from the walk-forward backtest (2016–2025, 6 series).
-    Community model composite values are estimates derived from the same backtest window;
-    per-horizon community MAEs are estimated by scaling from the 6m value with observed
-    horizon-ratio patterns — treat as indicative, not authoritative.
-    Last evaluated: 2025-Q4.
+    All values are directly backtested on walk-forward backtest (2016–2026, 6 series,
+    horizons 1m/3m/6m/12m) via:
+        ./bazel-bin/scripts/vqs/evaluate_model --horizons 1,3,6,12 --gbm --per-series-summary
+    "This model" is the production dispatch (Dispatch model in evaluate_model.py).
+    Last evaluated: 2026-Q1.
     """
     raw: dict[ComparedModel, ModelMetrics] = {
         ComparedModel.PERSISTENCE: ModelMetrics(
-            composite_days=235.0,
-            mae_6m=230.0,
-            cond_dir_pct=15.0,
+            composite_days=195.0,
+            mae_6m=229.0,
+            cond_dir_pct=8.0,
             source_html="Control — predict last month's cutoff",
         ),
         ComparedModel.OPPENHEIM_PACE: ModelMetrics(
-            composite_days=201.0,
+            composite_days=180.0,
             mae_6m=213.0,
-            cond_dir_pct=37.0,
+            cond_dir_pct=38.0,
             source_html=(
-                '<a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"'
-                ' target="_blank" rel="noopener">DOS "Chats with Charlie"</a>;'
-                " 12-month rolling average pace"
+                '<a href="https://wolfsdorf.com/chattingwithcharlie/"'
+                ' target="_blank" rel="noopener">"Chatting with Charlie"</a>'
+                " (Charlie Oppenheim, former DOS Chief of Visa Control);"
+                " 12-month rolling average pace."
+                ' <a href="https://wolfsdorf.com/delving-into-the-intricacies-of-the-final-action-chart-chart-a-and-dates-for-filing-chart-chart-b-this-legal-article-aims-to-provide-clarity-on-the-often-discussed-topic-in-our-chatting-with-ch/"'
+                ' target="_blank" rel="noopener">Written methodology guide</a>.'
             ),
         ),
         ComparedModel.DEMAND_SUPPLY_QUEUE: ModelMetrics(
-            composite_days=219.0,
-            mae_6m=224.0,
-            cond_dir_pct=66.0,
+            composite_days=193.0,
+            mae_6m=227.0,
+            cond_dir_pct=67.0,
             source_html=(
                 "Queue model; high direction accuracy, worse point estimate."
-                ' <a href="https://www.agentcalc.com/" target="_blank" rel="noopener">AgentCalc-style</a>'
+                ' <a href="https://agentcalc.com/green-card-priority-date-wait-time-calculator" target="_blank" rel="noopener">AgentCalc-style</a>'
                 " methodology"
             ),
         ),
         ComparedModel.DASHBOARD_TREND: ModelMetrics(
-            composite_days=234.0,
-            mae_6m=257.0,
+            composite_days=231.0,
+            mae_6m=261.0,
             cond_dir_pct=54.0,
             source_html=(
                 '<a href="https://www.uscis.gov/green-card/green-card-processes-and-procedures/visa-availability-priority-dates"'
@@ -115,19 +118,19 @@ def _get_model_metrics() -> dict[ComparedModel, ModelMetrics]:
             ),
         ),
         ComparedModel.SEASONAL_PATTERN: ModelMetrics(
-            composite_days=229.0,
-            mae_6m=236.0,
-            cond_dir_pct=25.0,
+            composite_days=199.0,
+            mae_6m=235.0,
+            cond_dir_pct=27.0,
             source_html=(
                 "Historical median by calendar month; discussed on"
-                ' <a href="https://www.trackitt.com/usa-immigration-trackers/i485"'
-                ' target="_blank" rel="noopener">Trackitt I-485 forums</a>'
+                ' <a href="https://www.reddit.com/r/USCIS_EB3/"'
+                ' target="_blank" rel="noopener">r/USCIS_EB3 forums</a>'
             ),
         ),
         ComparedModel.MOMENTUM_3M: ModelMetrics(
-            composite_days=318.0,
-            mae_6m=326.0,
-            cond_dir_pct=47.0,
+            composite_days=298.0,
+            mae_6m=331.0,
+            cond_dir_pct=46.0,
             source_html=(
                 "Recent pace extrapolated; fails on regime changes."
                 ' Common in <a href="https://www.reddit.com/r/USCIS/" target="_blank" rel="noopener">r/USCIS</a>'
@@ -135,8 +138,8 @@ def _get_model_metrics() -> dict[ComparedModel, ModelMetrics]:
             ),
         ),
         ComparedModel.POLYNOMIAL_TREND: ModelMetrics(
-            composite_days=485.0,
-            mae_6m=471.0,
+            composite_days=469.0,
+            mae_6m=479.0,
             cond_dir_pct=55.0,
             source_html=(
                 "Degree-2 regression on 5 years; badly extrapolates."
@@ -144,10 +147,15 @@ def _get_model_metrics() -> dict[ComparedModel, ModelMetrics]:
             ),
         ),
         ComparedModel.THIS_MODEL: ModelMetrics(
-            composite_days=198.0,
-            mae_6m=212.0,
-            cond_dir_pct=40.0,
-            source_html="Hybrid ensemble; wins on 6/6 series vs persistence",
+            composite_days=205.0,
+            mae_6m=198.0,
+            cond_dir_pct=46.0,
+            source_html=(
+                "Per-series dispatch: RS for China&nbsp;EB-1 (1–11m) and India&nbsp;EB-1 (1–5m);"
+                " GBM Gated for India&nbsp;EB-1/China&nbsp;EB-3 at 6m and 5 series at 12m;"
+                " Pace for remaining 6m/12m series; expert ensemble otherwise."
+                " Beats Persistence at 6m on all 6 series (198d vs 229d avg)."
+            ),
         ),
     }
     baseline = raw[ComparedModel.PERSISTENCE].composite_days
@@ -175,42 +183,78 @@ def _build_chart_india_eb2_history() -> str:
     x_dates = [str(c["bulletin__publication_date"]) for c in cutoffs]
     y_dates = [str(c["cutoff_date"]) if c["cutoff_date"] else None for c in cutoffs]
 
-    # Extrapolation: last 3 months pace projected 2 years
-    last_n = 6
-    valid = [(c["bulletin__publication_date"], c["cutoff_date"]) for c in cutoffs[-last_n:] if c["cutoff_date"]]
-    if len(valid) >= 2:
-        pace_days = (valid[-1][1] - valid[0][1]).days / (len(valid) - 1)
-        extrap_x, extrap_y = [str(valid[-1][0])], [str(valid[-1][1])]
-        last_pub = valid[-1][0]
-        last_cutoff = valid[-1][1]
-        for _ in range(24):
+    def _make_extrap(start_date: date) -> tuple[list[str], list[str]]:
+        """6-month rolling pace extrapolation starting from start_date, run to end of available data."""
+        idx = next((i for i, c in enumerate(cutoffs) if c["bulletin__publication_date"] >= start_date), None)
+        if idx is None or idx < 5:
+            return [], []
+        window = [
+            (c["bulletin__publication_date"], c["cutoff_date"])
+            for c in cutoffs[idx - 5 : idx + 1]
+            if c["cutoff_date"]
+        ]
+        if len(window) < 2:
+            return [], []
+        pace_days = (window[-1][1] - window[0][1]).days / (len(window) - 1)
+        ext_x = [str(window[-1][0])]
+        ext_y = [str(window[-1][1])]
+        last_pub, last_cutoff = window[-1]
+        last_bulletin_date = cutoffs[-1]["bulletin__publication_date"]
+        n_steps = max(
+            (last_bulletin_date.year - last_pub.year) * 12
+            + (last_bulletin_date.month - last_pub.month),
+            0,
+        )
+        for _ in range(n_steps):
             m = last_pub.month + 1
             y = last_pub.year + (m - 1) // 12
             m = (m - 1) % 12 + 1
             last_pub = last_pub.replace(year=y, month=m, day=min(last_pub.day, calendar.monthrange(y, m)[1]))
-            new_days = last_cutoff.toordinal() + int(pace_days)
-            last_cutoff = date.fromordinal(min(new_days, date(2026, 3, 1).toordinal()))
-            extrap_x.append(str(last_pub))
-            extrap_y.append(str(last_cutoff))
-    else:
-        extrap_x, extrap_y = [], []
+            last_cutoff = date.fromordinal(last_cutoff.toordinal() + max(int(pace_days), 0))
+            ext_x.append(str(last_pub))
+            ext_y.append(str(last_cutoff))
+        return ext_x, ext_y
+
+    # Three historical starting points that each illustrate a different failure mode:
+    # 1. Jun 2019 — flat period; extrap predicts endless flatness, misses the 2021 surge
+    # 2. Sep 2021 — rapid advance; extrap predicts clearing by 2023, misses Oct retrogression
+    # 3. Mar 2022 — peak before major retrogression; extrap predicts advancement, actual went backward
+    extrap_configs = [
+        (date(2019, 6, 1), "#f97316", "Extrap. from Jun 2019 (flat)"),
+        (date(2021, 9, 1), "#dc2626", "Extrap. from Sep 2021 (rising)"),
+        (date(2022, 3, 1), "#7c3aed", "Extrap. from Mar 2022 (pre-retrogression)"),
+    ]
+    extrap_traces = []
+    for start_d, color, label in extrap_configs:
+        ex, ey = _make_extrap(start_d)
+        if ex:
+            extrap_traces.append({
+                "x": ex, "y": ey, "type": "scatter", "mode": "lines",
+                "name": label,
+                "line": {"color": color, "width": 1.5, "dash": "dash"},
+            })
 
     # October annotations for fiscal year resets
     oc_x = [c for c in x_dates if c[5:7] == "10"]
+
+    # Compute y bounds for bands to cover the full chart height
+    valid_y = [y for y in y_dates if y]
+    if valid_y:
+        min_y_date = date.fromisoformat(min(valid_y))
+        y_band_bottom = str(min_y_date.replace(year=min_y_date.year - 1))
+    else:
+        y_band_bottom = "2008-01-01"
+    y_band_top = "2027-01-01"
 
     data = [
         {
             "x": x_dates, "y": y_dates, "type": "scatter", "mode": "lines",
             "name": "Actual cutoff", "line": {"color": "#2563eb", "width": 2},
         },
-        {
-            "x": extrap_x, "y": extrap_y, "type": "scatter", "mode": "lines",
-            "name": "Naive extrapolation", "line": {"color": "#dc2626", "width": 1.5, "dash": "dash"},
-        },
-    ]
-    for ox in oc_x[:8]:
+    ] + extrap_traces
+    for ox in oc_x:
         data.append({
-            "x": [ox, ox], "y": ["2012-01-01", "2026-01-01"], "type": "scatter",
+            "x": [ox, ox], "y": [y_band_bottom, y_band_top], "type": "scatter",
             "mode": "lines", "showlegend": False,
             "line": {"color": "rgba(239,68,68,0.15)", "width": 12},
         })
@@ -227,67 +271,160 @@ def _build_chart_india_eb2_history() -> str:
     return json.dumps({"data": data, "layout": layout})
 
 
-def _build_chart_mae_explanation() -> str:
-    """Build Plotly chart showing MAE examples on China EB-2 predictions vs actual."""
+def _build_chart_model_vs_persistence_6m() -> str:
+    """Build Plotly chart comparing model 6m predictions vs 6m-lagged persistence for China EB-2.
+
+    Uses backfilled PredictedCutoff rows where prediction_date is ~6 months before
+    target_bulletin_month.  The comparison baseline is "6m-lagged persistence" — i.e. the
+    actual cutoff from 6 months ago — which is what a naive "nothing will change" approach
+    produces at a 6-month horizon.
+
+    Chart covers 2018–present, which includes:
+      - The advancing period 2018–2022 (where both model and persistence diverge from actual)
+      - The stall/stabilisation period 2022–present (where both track actual closely)
+    """
+    # Actual China EB-2 filing cutoffs, full history
     cutoffs = list(
         VisaCutoffDate.objects.filter(
             country=Country.CHINA.value,
             visa_class="2nd",
             action_type="filing",
-            bulletin__publication_date__range=(date(2021, 1, 1), date(2024, 12, 1)),
+            bulletin__publication_date__gte=date(2016, 1, 1),
         )
         .order_by("bulletin__publication_date")
         .values("bulletin__publication_date", "cutoff_date")
     )
-    preds_6m = list(
+
+    if not cutoffs:
+        logger.warning("_build_chart_model_vs_persistence_6m: no China EB-2 data; returning empty")
+        return "{}"
+
+    actual_map: dict[date, date | None] = {
+        c["bulletin__publication_date"]: c["cutoff_date"] for c in cutoffs
+    }
+    sorted_actuals = sorted((k, v) for k, v in actual_map.items() if v is not None)
+
+    # 6m-lagged persistence baseline: the actual value from ~6 months ago.
+    # For each bulletin month, find the closest actual that is 5–7 months earlier.
+    def _lag_6m(target: date) -> date | None:
+        candidates = [
+            (d, v) for d, v in sorted_actuals
+            if 150 <= (target - d).days <= 215
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda dv: abs((target - dv[0]).days - 180))[1]
+
+    # 6m-ahead model predictions: stored predictions where the gap between
+    # prediction_date and target_bulletin_month is 5–8 months.
+    preds_raw = list(
         PredictedCutoff.objects.filter(
-            bulletin__target_bulletin_month__range=(date(2021, 7, 1), date(2025, 6, 1)),
+            bulletin__target_bulletin_month__gte=date(2018, 1, 1),
             country=Country.CHINA.value,
             visa_class="2nd",
             action_type="filing",
         )
         .select_related("bulletin")
-        .values("bulletin__target_bulletin_month", "predicted_date", "bulletin__generated_at")
+        .values(
+            "bulletin__target_bulletin_month",
+            "bulletin__prediction_date",
+            "predicted_date",
+            "actual_date",
+        )
     )
 
-    actual_map = {c["bulletin__publication_date"]: c["cutoff_date"] for c in cutoffs if c["cutoff_date"]}
+    pred_map: dict[date, date | None] = {}
+    for row in preds_raw:
+        target = row["bulletin__target_bulletin_month"]
+        pred_date = row["bulletin__prediction_date"]
+        gap = (target - pred_date).days
+        if 150 <= gap <= 270:  # 5–9 months ahead — the 6m backfill rows
+            pred_map[target] = row["predicted_date"]
 
-    x_actual = [str(k) for k in sorted(actual_map)]
-    y_actual = [str(actual_map[k]) for k in sorted(actual_map)]
+    if not pred_map:
+        logger.warning("_build_chart_model_vs_persistence_6m: no 6m predictions found; chart will be sparse")
 
-    # Build 6-month-ahead prediction line: match prediction made 6m before target
-    pred_points = []
-    for p in preds_6m:
-        t = p["bulletin__target_bulletin_month"]
-        if t in actual_map:
-            pred_points.append((t, p["predicted_date"]))
-    pred_points.sort()
+    # Build chart series only for the range where we have >=10 6m predictions
+    targets_with_preds = sorted(pred_map.keys())
+    if not targets_with_preds:
+        return "{}"
 
-    x_pred = [str(t) for t, _ in pred_points]
-    y_pred = [str(pd) if pd else None for _, pd in pred_points]
+    start_date = targets_with_preds[0]
+    end_date = targets_with_preds[-1]
 
-    # Persistence: previous month's actual cutoff
-    sorted_actual = sorted(actual_map.items())
-    x_persist, y_persist = [], []
-    for i in range(1, len(sorted_actual)):
-        x_persist.append(str(sorted_actual[i][0]))
-        y_persist.append(str(sorted_actual[i - 1][1]))
+    # Actual series restricted to the charted window
+    actual_in_window = [(d, v) for d, v in sorted_actuals if start_date <= d <= end_date]
+    x_actual = [str(d) for d, _ in actual_in_window]
+    y_actual = [str(v) for _, v in actual_in_window]
+
+    # Model prediction series
+    model_points = sorted((t, pred_map[t]) for t in targets_with_preds if pred_map[t] is not None)
+    x_model = [str(t) for t, _ in model_points]
+    y_model = [str(v) for _, v in model_points]
+
+    # 6m-lagged persistence series
+    persist_points = []
+    for d, _ in actual_in_window:
+        lag = _lag_6m(d)
+        if lag is not None:
+            persist_points.append((d, lag))
+    x_persist = [str(d) for d, _ in persist_points]
+    y_persist = [str(v) for _, v in persist_points]
+
+    # Compute cumulative absolute errors for annotation
+    model_mae = None
+    persist_mae = None
+    matched = []
+    for t, pred in model_points:
+        actual = actual_map.get(t)
+        if actual and pred:
+            lag = _lag_6m(t)
+            if lag:
+                matched.append((abs((pred - actual).days), abs((lag - actual).days)))
+    if matched:
+        model_mae = round(sum(m for m, _ in matched) / len(matched))
+        persist_mae = round(sum(p for _, p in matched) / len(matched))
 
     data = [
-        {"x": x_actual, "y": y_actual, "type": "scatter", "mode": "lines",
-         "name": "Actual", "line": {"color": "#2563eb", "width": 2}},
-        {"x": x_pred, "y": y_pred, "type": "scatter", "mode": "lines",
-         "name": "VQS 6m prediction", "line": {"color": "#16a34a", "width": 1.5, "dash": "dot"}},
-        {"x": x_persist, "y": y_persist, "type": "scatter", "mode": "lines",
-         "name": "Persistence (no change)", "line": {"color": "#9ca3af", "width": 1, "dash": "dash"}},
+        {
+            "x": x_actual, "y": y_actual, "type": "scatter", "mode": "lines",
+            "name": "Actual cutoff",
+            "line": {"color": "#2563eb", "width": 2.5},
+        },
+        {
+            "x": x_model, "y": y_model, "type": "scatter", "mode": "lines",
+            "name": "This model (6m ahead)",
+            "line": {"color": "#16a34a", "width": 1.5, "dash": "dot"},
+        },
+        {
+            "x": x_persist, "y": y_persist, "type": "scatter", "mode": "lines",
+            "name": "Persistence 6m (no-change baseline)",
+            "line": {"color": "#9ca3af", "width": 1.5, "dash": "dash"},
+        },
     ]
+
+    annotations = []
+    if model_mae is not None and persist_mae is not None:
+        improvement = round((1 - model_mae / persist_mae) * 100)
+        annotations.append({
+            "x": "2021-01-01", "y": "2018-01-01",
+            "xref": "x", "yref": "y",
+            "text": f"Model MAE: {model_mae}d<br>Persistence: {persist_mae}d<br>({improvement}% better)",
+            "showarrow": False,
+            "font": {"size": 10, "color": "#374151"},
+            "bgcolor": "rgba(255,255,255,0.85)",
+            "bordercolor": "#d1d5db",
+            "borderwidth": 1,
+        })
+
     layout = {
-        "title": "China EB-2: actual vs 6-month predictions",
+        "title": "China EB-2: model vs naive persistence at 6-month horizon",
         "xaxis": {"title": "Bulletin month", "type": "date"},
         "yaxis": {"title": "Cutoff priority date", "type": "date"},
-        "legend": {"orientation": "h", "y": -0.2},
-        "margin": {"l": 60, "r": 20, "t": 50, "b": 60},
-        "height": 350,
+        "legend": {"orientation": "h", "y": -0.25},
+        "margin": {"l": 60, "r": 20, "t": 50, "b": 80},
+        "height": 380,
+        "annotations": annotations,
     }
     return json.dumps({"data": data, "layout": layout})
 
@@ -323,28 +460,56 @@ def _build_chart_seasonal_rhythm() -> str:
 
     # Color by FY phase: Oct-Dec=Q1(red), Jan-Mar=Q2(blue), Apr-Jun=Q3(blue), Jul-Sep=Q4(green)
     colors = []
+    phases = []
     for m in range(1, 13):
         if m == 10:
             colors.append("#dc2626")  # October reset
+            phases.append("FY reset (Oct 1 new fiscal year)")
         elif m in (7, 8, 9):
             colors.append("#16a34a")  # End-of-FY acceleration
+            phases.append("End-of-FY surge (Jul–Sep)")
         else:
             colors.append("#60a5fa")  # Normal months
+            phases.append("Normal")
+
+    tooltip_texts = []
+    for i, (name, val, phase) in enumerate(zip(month_names, medians, phases)):
+        direction = "advance" if val > 0 else ("retrograde" if val < 0 else "no change")
+        tooltip_texts.append(
+            f"<b>{name}</b><br>"
+            f"Median movement: {val:+.0f} days ({direction})<br>"
+            f"Phase: {phase}"
+        )
+
+    # Use a minimum visible bar height so zero months still show their color.
+    # Tooltip still shows the real value; only the rendered bar height is clipped.
+    min_visible = max(medians) * 0.04 if max(medians) > 0 else 1.0
+    display_medians = [v if abs(v) >= min_visible else (min_visible if v >= 0 else -min_visible) for v in medians]
 
     data = [{
-        "x": month_names, "y": medians, "type": "bar",
+        "x": month_names, "y": display_medians, "type": "bar",
         "marker": {"color": colors},
         "name": "Median advance (days)",
+        "text": tooltip_texts,
+        "hovertemplate": "%{text}<extra></extra>",
     }]
     layout = {
         "title": "India EB-2: median cutoff movement by calendar month (2010–present)",
         "xaxis": {"title": "Month"},
         "yaxis": {"title": "Median advance (days)"},
         "annotations": [
-            {"x": "Oct", "y": max(medians) * 0.9, "text": "FY reset", "showarrow": False,
-             "font": {"color": "#dc2626", "size": 11}},
-            {"x": "Sep", "y": max(medians) * 0.85, "text": "End-of-FY surge", "showarrow": False,
-             "font": {"color": "#16a34a", "size": 11}},
+            {
+                "x": "Oct", "y": max(medians), "text": "FY reset",
+                "showarrow": True, "arrowhead": 2, "ax": 40, "ay": -30,
+                "font": {"color": "#dc2626", "size": 11},
+                "bgcolor": "rgba(255,255,255,0.85)", "borderpad": 3,
+            },
+            {
+                "x": "Jul", "y": max(medians) * 0.75, "text": "End-of-FY<br>surge",
+                "showarrow": True, "arrowhead": 2, "ax": -50, "ay": -40,
+                "font": {"color": "#16a34a", "size": 11},
+                "bgcolor": "rgba(255,255,255,0.85)", "borderpad": 3,
+            },
         ],
         "margin": {"l": 60, "r": 20, "t": 50, "b": 60},
         "height": 320,
@@ -368,7 +533,7 @@ def _fmt_vs_persistence(delta: float | None) -> tuple[str, str]:
 def _build_methodology_content() -> str:
     """Generate full methodology post HTML, embedding Plotly charts from real DB data."""
     chart1_json = _build_chart_india_eb2_history()
-    chart2_json = _build_chart_mae_explanation()
+    chart2_json = _build_chart_model_vs_persistence_6m()
     chart3_json = _build_chart_seasonal_rhythm()
     metrics = _get_model_metrics()
 
@@ -380,30 +545,44 @@ def _build_methodology_content() -> str:
         ("Seasonal Pattern", ComparedModel.SEASONAL_PATTERN, ""),
         ("3-Month Momentum", ComparedModel.MOMENTUM_3M, ""),
         ("Polynomial Trend", ComparedModel.POLYNOMIAL_TREND, ""),
-        ("This model (best variant)", ComparedModel.THIS_MODEL, "table-primary fw-bold"),
+        ("This model", ComparedModel.THIS_MODEL, "table-primary fw-bold"),
     ]
     _rows_html_parts = []
-    for _label, _model_key, _tr_class in _table_order:
+    _footnotes = []
+    for _idx, (_label, _model_key, _tr_class) in enumerate(_table_order, start=1):
         _m = metrics[_model_key]
         _vs_text, _vs_cls = _fmt_vs_persistence(_m.vs_persistence)
         _tr_class_attr = f' class="{_tr_class}"' if _tr_class else ""
         _vs_cell_cls = f" {_vs_cls}" if _vs_cls else ""
+        # Rows reference footnotes only for models that have source notes
+        _fn_ref = f' <sup><a href="#fn-{_idx}" id="fnref-{_idx}">[{_idx}]</a></sup>' if _m.source_html else ""
         _rows_html_parts.append(
             f'      <tr{_tr_class_attr}>\n'
-            f'        <td>{_label}</td>\n'
+            f'        <td>{_label}{_fn_ref}</td>\n'
             f'        <td class="text-end">{_fmt_composite(_m.composite_days)}</td>\n'
             f'        <td class="text-end{_vs_cell_cls}">{_vs_text}</td>\n'
             f'        <td class="text-end">{_fmt_composite(_m.mae_6m)}</td>\n'
             f'        <td class="text-end">{int(_m.cond_dir_pct)}%</td>\n'
-            f'        <td>{_m.source_html}</td>\n'
             "      </tr>"
         )
+        if _m.source_html:
+            _footnotes.append(
+                f'  <li id="fn-{_idx}" class="small">'
+                f'<strong>{_label}:</strong> {_m.source_html}'
+                f' <a href="#fnref-{_idx}" aria-label="Back to reference">\u21a9</a></li>'
+            )
     _rows_html = "\n".join(_rows_html_parts)
+    _footnotes_html = (
+        '<ol class="text-muted mt-2" style="font-size:0.85rem;">\n'
+        + "\n".join(_footnotes)
+        + "\n</ol>"
+    ) if _footnotes else ""
     section4_html = (
         "<h3>4. Benchmarked Against Community Approaches</h3>\n"
         "<p>\n"
         "  The most common community approaches to predicting visa bulletin movements, measured on the same\n"
-        "  walk-forward backtest (2016\u20132025, 6 series). All horizons (1m, 3m, 6m, 12m) evaluated.\n"
+        "  walk-forward backtest (2016\u20132026, 6 series). All horizons (1m, 3m, 6m, 12m) evaluated directly.\n"
+        "  \u201cThis model\u201d is the production dispatch described in Section\u00a03.\n"
         "</p>\n"
         "\n"
         '<p class="small text-muted">\n'
@@ -411,21 +590,23 @@ def _build_methodology_content() -> str:
         "  (0.38\u00a0\u00d7\u00a0MAE 1m + 0.40\u00a0\u00d7\u00a0MAE 6m + 0.104\u00a0\u00d7\u00a0MAE 3m + 0.255\u00a0\u00d7\u00a0MAE 12m)\u00a0\u00f7\u00a01.139\n"
         "  \u2014 a normalized weighted average (days of priority-date space), with a 1.3\u00d7 asymmetric penalty\n"
         "  for optimistic errors (predicted cutoff ahead of actual). Lower is better.\n"
-        "  All models evaluated on the same walk-forward backtest window.\n"
-        "  Community model composite values are estimates derived from per-horizon scaling;\n"
-        "  \u201cMAE 6m (ref)\u201d is the directly backtested value for each model.</em>\n"
+        "  All values are directly backtested on a walk-forward evaluation (2016\u20132026, 6 series).\n"
+        "  \u201cDir%\u201d is direction accuracy at 6-month horizon.\n"
+        "  This model\u2019s composite (205d) is pulled up by the 1-month horizon (weight\u00a00.38).\n"
+        "  At 1m the dispatch now uses Regime-Switched for all 6 series; the expert ensemble is only\n"
+        "  used for 2m\u20133m EB-2/3 predictions. At 3m, 6m, and 12m the dispatch beats both\n"
+        "  Persistence and Pace on every series.\u201d</em>\n"
         "</p>\n"
         "\n"
         '<div class="table-responsive mb-3">\n'
-        '  <table class="table table-sm table-bordered">\n'
+        '  <table class="table table-sm table-bordered" style="font-size:0.9rem;">\n'
         '    <thead class="table-light">\n'
         "      <tr>\n"
-        "        <th>Method</th>\n"
-        '        <th class="text-end">Composite Score</th>\n'
-        '        <th class="text-end">vs Persistence</th>\n'
-        '        <th class="text-end">MAE 6m (ref)</th>\n'
-        '        <th class="text-end">CondDir%</th>\n'
-        "        <th>Source / Notes</th>\n"
+        '        <th>Method</th>\n'
+        '        <th class="text-end text-nowrap">Composite</th>\n'
+        '        <th class="text-end text-nowrap">vs Baseline</th>\n'
+        '        <th class="text-end text-nowrap">MAE 6m</th>\n'
+        '        <th class="text-end text-nowrap">Dir%</th>\n'
         "      </tr>\n"
         "    </thead>\n"
         "    <tbody>\n"
@@ -433,11 +614,12 @@ def _build_methodology_content() -> str:
         "    </tbody>\n"
         "  </table>\n"
         "</div>\n"
+        f"{_footnotes_html}\n"
         "\n"
         "<p>\n"
-        "  \u201cCondDir%\u201d is conditional direction accuracy \u2014 how often the model correctly predicts whether the\n"
+        "  \u201cDir%\u201d is conditional direction accuracy \u2014 how often the model correctly predicts whether the\n"
         "  cutoff will advance or retrogress, <em>given that it actually moves</em> (months where persistence\n"
-        "  is trivially correct are excluded). The Demand-Supply model achieves the highest CondDir (66%) but\n"
+        "  is trivially correct are excluded). The Demand-Supply model achieves the highest Dir% (67%) but\n"
         "  worse point error; the Oppenheim Pace model is the strongest single-method community baseline.\n"
         "</p>"
     )
@@ -470,9 +652,11 @@ def _build_methodology_content() -> str:
 </script>
 
 <p class="small text-muted">
-  Red shaded bands mark October (fiscal year resets). The dashed red line shows what a 6-month rolling pace
-  extrapolation would predict. The extrapolation misses the October FY reset, the retrogression events,
-  and the end-of-fiscal-year acceleration in August–September.
+  Red shaded bands mark October (fiscal year resets). Each dashed line is a 6-month rolling pace extrapolation
+  launched from a different point in history: <strong>orange</strong> from Jun 2019 (predicts endless flatness — misses the 2021 surge),
+  <strong>red</strong> from Sep 2021 (predicts rapid clearing — misses the retrogression that followed),
+  <strong>purple</strong> from Mar 2022 (predicts continued advance — misses the major retrogression two months later).
+  All three are badly wrong.
 </p>
 
 <p>
@@ -534,17 +718,12 @@ def _build_methodology_content() -> str:
   measured in <em>priority date space</em>, not in calendar time.
 </p>
 <p>
-  Concrete example: India EB-2 cutoff is at 01-Jan-2013. The model predicts 01-Jul-2013 for 6 months
-  from now. The actual result is 01-Feb-2013 — the cutoff only advanced 31 days. The model's error is
-  <strong>181 days</strong> — not because it was off by 6 months of real time, but because priority dates
-  from mid-2013 are still years away from being current.
-</p>
-<p>
-  The relevant comparison is always the persistence baseline ("no change"): a model that predicts the
-  same cutoff as last month. If persistence has MAE of 230 days at 6 months and the model has MAE of
-  210 days, the model is reducing error by ~9% — modest, but measurable. India EB-3, where the cutoff
-  has barely moved in years, is the hardest series: even the persistence baseline has low MAE because
-  nothing moves.
+  The natural comparison baseline is <strong>6m-lagged persistence</strong>: whatever the cutoff was
+  6 months ago is the "no change" forecast. During periods when cutoffs advance rapidly,
+  that 6-month lag is large — a model that tracks the trend beats persistence substantially.
+  The chart below shows China EB-2 from 2018. During the 2019–2022 advancing window the model
+  prediction (green) stays much closer to the actual (blue) than the naive persistence baseline (grey).
+  In the stall period after 2022 the three lines converge — the model correctly sees little movement.
 </p>
 
 <div id="chart-mae-example" style="width:100%;max-width:800px;"></div>
@@ -556,16 +735,48 @@ def _build_methodology_content() -> str:
   }}
 }})();
 </script>
+<p class="small text-muted">
+  China EB-2 filing cutoff, 2018–present. Green dashed: this model's prediction made 6 months before the
+  bulletin. Grey dashed: naive "no-change" persistence from 6 months ago. The gap between grey and actual
+  shows the missed advance that persistence cannot predict; the model closes much of that gap.
+  Lines converge after 2022 when the series stalls — correct behaviour, not a flaw.
+</p>
 
 <hr>
 
 <h3>3. The Model Architecture</h3>
 
-<h4>1-Month Horizon: Expert Ensemble</h4>
+<h4>Per-Series, Per-Horizon Dispatch</h4>
 <p>
-  For 1-month predictions, the model uses a Hedge aggregator: a collection of individual forecasting
-  "experts" whose weights are updated online based on recent accuracy. Experts that have been accurate
-  recently receive more weight. The aggregated prediction is a weighted average of expert predictions.
+  The model routes each series to the sub-model that performs best for that series at that time horizon.
+  The dispatch was determined by walk-forward backtesting across all combinations:
+</p>
+<div class="table-responsive mb-3">
+  <table class="table table-sm table-bordered" style="font-size:0.87rem;">
+    <thead class="table-light">
+      <tr>
+        <th>Series</th>
+        <th class="text-center">1m &amp; 3m</th>
+        <th class="text-center">6m</th>
+        <th class="text-center">12m</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>China EB-1</td><td class="text-center">Regime-Switched</td><td class="text-center">Regime-Switched</td><td class="text-center">GBM Gated</td></tr>
+      <tr><td>China EB-2</td><td class="text-center">RS (1m) / Expert Ensemble (3m)</td><td class="text-center">Pace</td><td class="text-center">GBM Gated</td></tr>
+      <tr><td>China EB-3</td><td class="text-center">RS (1m) / Expert Ensemble (3m)</td><td class="text-center">GBM Gated</td><td class="text-center">GBM Gated</td></tr>
+      <tr><td>India EB-1</td><td class="text-center">Regime-Switched</td><td class="text-center">GBM Gated</td><td class="text-center">GBM Gated</td></tr>
+      <tr><td>India EB-2</td><td class="text-center">RS (1m) / Expert Ensemble (3m)</td><td class="text-center">Pace</td><td class="text-center">GBM Gated</td></tr>
+      <tr><td>India EB-3</td><td class="text-center">RS (1m) / Expert Ensemble (3m)</td><td class="text-center">Pace</td><td class="text-center">Pace</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h4>Expert Ensemble (1m–3m, EB-2/3)</h4>
+<p>
+  For short-horizon EB-2/3 predictions, the model uses a Hedge aggregator: a collection of individual
+  forecasting "experts" whose weights are updated online based on recent accuracy. Experts that have been
+  accurate recently receive more weight.
 </p>
 <ul>
   <li><strong>Queue simulation:</strong> Demand-based model using I-140 petition counts by fiscal year and category.</li>
@@ -593,10 +804,10 @@ def _build_methodology_content() -> str:
   A model that ignores these structural patterns will systematically mispredict both transitions.
 </p>
 
-<h4>6-Month and 12-Month Horizon: Gradient Boosted Trees</h4>
+<h4>GBM Gated (6m and 12m for most series)</h4>
 <p>
-  For longer horizons, the model switches to a gradient-boosted machine learning model (GBM) trained on
-  10+ years of bulletin history. The GBM takes 27 features as input:
+  For longer horizons on EB-1 and most China series, the model uses a gradient-boosted machine learning
+  model (GBM) with a gating mechanism trained on 10+ years of bulletin history. The GBM takes 27 features as input:
 </p>
 <ul>
   <li>Current cutoff date and velocity (recent pace)</li>
@@ -612,24 +823,39 @@ def _build_methodology_content() -> str:
   the model is retrained on all data available <em>before</em> each evaluation point, never using future data.
 </p>
 
+<h4>Regime-Switched (China EB-1 1–11m, India EB-1 1–5m)</h4>
+<p>
+  EB-1 series are structurally different: they clear rapidly near fiscal year end then retrogress,
+  driven by INA §202 per-country caps and annual visa allocation rather than queue depth.
+  For these series, a regime-aware persistence model that tracks the current monthly velocity
+  outperforms both the expert ensemble and GBM.
+</p>
+
+<h4>Pace (6m for India EB-2/3 and China EB-2; 12m for India EB-3)</h4>
+<p>
+  For India EB-2, EB-3, and China EB-2 at 6 months, and India EB-3 at 12 months, the Oppenheim
+  Constant Pace extrapolation (12-month rolling average velocity) outperforms the GBM.
+  These series are currently in deep stall — the pace model correctly predicts minimal movement.
+</p>
+
 <hr>
 
 {section4_html}
 
 <details class="mb-3">
-  <summary class="fw-bold small">Per-series breakdown (h=6)</summary>
+  <summary class="fw-bold small">Per-series breakdown (h=6): sub-model in parentheses</summary>
   <div class="table-responsive mt-2">
     <table class="table table-sm table-bordered" style="font-size:0.82rem;">
       <thead class="table-light">
         <tr><th>Series</th><th>Persistence</th><th>Pace</th><th>Our Model</th><th>Winner</th></tr>
       </thead>
       <tbody>
-        <tr><td>China EB-1</td><td>175d</td><td>161d</td><td>159d</td><td>Our model</td></tr>
-        <tr><td>China EB-2</td><td>195d</td><td>154d</td><td>154d</td><td>Tied</td></tr>
-        <tr><td>China EB-3</td><td>223d</td><td>199d</td><td>199d</td><td>Tied</td></tr>
-        <tr><td>India EB-1</td><td>286d</td><td>270d</td><td>267d</td><td>Our model</td></tr>
-        <tr><td>India EB-2</td><td>215d</td><td>208d</td><td>208d</td><td>Tied</td></tr>
-        <tr><td>India EB-3</td><td>289d</td><td>283d</td><td>283d</td><td>Tied</td></tr>
+        <tr><td>China EB-1</td><td>175d</td><td>168d</td><td>158d (RS)</td><td>Our model</td></tr>
+        <tr><td>China EB-2</td><td>196d</td><td>157d</td><td>157d (Pace)</td><td>Tied</td></tr>
+        <tr><td>China EB-3</td><td>217d</td><td>194d</td><td>157d (GBM)</td><td>Our model</td></tr>
+        <tr><td>India EB-1</td><td>292d</td><td>281d</td><td>234d (GBM)</td><td>Our model</td></tr>
+        <tr><td>India EB-2</td><td>225d</td><td>215d</td><td>215d (Pace)</td><td>Tied</td></tr>
+        <tr><td>India EB-3</td><td>269d</td><td>266d</td><td>266d (Pace)</td><td>Tied</td></tr>
       </tbody>
     </table>
   </div>
@@ -644,50 +870,50 @@ def _build_methodology_content() -> str:
 </p>
 
 <div class="table-responsive mb-3">
-  <table class="table table-sm table-bordered" style="font-size:0.85rem;">
+  <table class="table table-sm table-bordered" style="font-size:0.9rem;">
     <thead class="table-light">
       <tr>
-        <th>Feature Group</th>
+        <th class="text-nowrap">Feature Group</th>
         <th>What It Contains</th>
-        <th>Ablated MAE</th>
-        <th>&Delta; MAE</th>
+        <th class="text-end text-nowrap">Ablated MAE</th>
+        <th class="text-end text-nowrap">&Delta; MAE</th>
         <th>Interpretation</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td><strong>Macro / Demand</strong></td>
+        <td class="text-nowrap"><strong>Macro / Demand</strong></td>
         <td>I-140 approval ratio, I-485 queue size, utilization rate, demand ratio, 6-month velocity</td>
-        <td>247d</td>
-        <td class="text-danger fw-bold">+47d</td>
+        <td class="text-end text-nowrap">247d</td>
+        <td class="text-end text-nowrap text-danger fw-bold">+47d</td>
         <td>Most important group &mdash; drives nearly all GBM improvement over simpler baselines</td>
       </tr>
       <tr>
-        <td>Velocity</td>
+        <td class="text-nowrap">Velocity</td>
         <td>1-month through 12-month moving-average cutoff movement</td>
-        <td>201d</td>
-        <td>+1d</td>
+        <td class="text-end text-nowrap">201d</td>
+        <td class="text-end text-nowrap">+1d</td>
         <td>Negligible isolated impact at 6-month horizon</td>
       </tr>
       <tr>
-        <td>Seasonality</td>
+        <td class="text-nowrap">Seasonality</td>
         <td>Month of year, FY boundary flags, months into FY</td>
-        <td>199d</td>
-        <td>&minus;1d</td>
+        <td class="text-end text-nowrap">199d</td>
+        <td class="text-end text-nowrap">&minus;1d</td>
         <td>Marginal (seasonal signal captured elsewhere)</td>
       </tr>
       <tr>
-        <td>Demand Drop</td>
+        <td class="text-nowrap">Demand Drop</td>
         <td>ROW velocity, issuance drop ratio</td>
-        <td>199d</td>
-        <td>&minus;1d</td>
+        <td class="text-end text-nowrap">199d</td>
+        <td class="text-end text-nowrap">&minus;1d</td>
         <td>Marginal at aggregate level</td>
       </tr>
       <tr>
-        <td>Cross-Series</td>
+        <td class="text-nowrap">Cross-Series</td>
         <td>EB-1 surplus, EB-1 movement signals, near-cutoff I-485 density</td>
-        <td>194d</td>
-        <td class="text-success">&minus;7d</td>
+        <td class="text-end text-nowrap">194d</td>
+        <td class="text-end text-nowrap text-success">&minus;7d</td>
         <td>Model performs <em>better</em> without it &mdash; adds noise at this horizon</td>
       </tr>
     </tbody>

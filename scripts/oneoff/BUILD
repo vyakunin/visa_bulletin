@@ -9,8 +9,26 @@ py_binary(
 )
 
 py_binary(
+    name = "purge_bad_6m_predictions",
+    srcs = ["purge_bad_6m_predictions.py"],
+    main = "purge_bad_6m_predictions.py",
+    deps = [
+        "//django_config:settings",
+        "//models:vqs",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)
+
+py_binary(
     name = "generate_initial_blog_post",
     srcs = ["generate_initial_blog_post.py"],
+    main = "generate_initial_blog_post.py",
     deps = [
         "//django_config:settings",
         "//models:bulletin",

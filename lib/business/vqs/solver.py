@@ -698,7 +698,10 @@ def predict_next_bulletin_and_maturity(
             "confidence_high": None,
             "moves": moves,
         }
-        return SolverOutcome(current_cutoff, eb4_meta, None, [], "low")
+        eb4_maturity = None
+        if priority_date is not None and current_cutoff is not None and current_cutoff >= priority_date:
+            eb4_maturity = date(knowledge_date.year, knowledge_date.month, 1)
+        return SolverOutcome(current_cutoff, eb4_meta, eb4_maturity, [], "low")
 
     # PHASE 3 IMPROVEMENT: Confidence Gate
     # Only run physics for series where we have signal (Retrogressed).
@@ -742,7 +745,10 @@ def predict_next_bulletin_and_maturity(
             "confidence_high": None,
             "moves": moves,
         }
-        return SolverOutcome(current_cutoff, persist_meta, None, [persistence_result], "low")
+        persist_maturity = None
+        if priority_date is not None and current_cutoff is not None and current_cutoff >= priority_date:
+            persist_maturity = first_future
+        return SolverOutcome(current_cutoff, persist_meta, persist_maturity, [persistence_result], "low")
 
     # --- TIER 2: FY TRANSITION MODEL ---
     # At FY boundaries, the conditional transition model provides a prediction

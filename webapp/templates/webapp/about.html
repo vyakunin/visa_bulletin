@@ -71,11 +71,8 @@
             <div class="card-body">
                 <h4 class="card-title">How do the projections work?</h4>
                 <p class="card-text">
-                    Priority date estimates are powered by a Virtual Queue Simulation (VQS) model — a month-by-month
-                    simulation of the visa queue that combines multiple signals: historical bulletin movement patterns,
-                    fiscal year cycles (October resets), I-140 demand data, and queue physics. For 6–12 month horizons,
-                    a gradient-boosted machine learning model trained on over a decade of bulletin history identifies
-                    patterns that simple trend extrapolation misses.
+                    Priority date estimates are powered by the <strong>Bulletin Forecast Model</strong> — a machine learning system trained on over a decade of bulletin history. For next-month predictions, it classifies the current regime of each visa series (advancing, stalled, or retrogressing) and applies the most accurate strategy for that state. For 6–12 month forecasts,
+                    a gradient-boosted ML model uses I-140 demand data, historical bulletin patterns, and fiscal year cycles to identify structural trends that simple extrapolation misses.
                 </p>
                 <p class="card-text"><strong>Important Caveats:</strong></p>
                 <ul>

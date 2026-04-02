@@ -14,22 +14,34 @@ Disallow: /api/
 Sitemap: https://visa-bulletin.us/sitemap.xml
 ```
 
-**Sitemap** (`/sitemap.xml`) — single `<urlset>`, ~9,200 URLs:
+**Sitemap** (`/sitemap.xml`) — single `<urlset>`, ~9,500+ URLs:
 
-| Section | Count | Filter criteria |
-|---------|-------|----------------|
-| Static pages | 7 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/about/`, `/contact/` |
-| Category/country landing | ~12 | `/employment-based/`, `/family-sponsored/` × countries |
-| Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k |
-| Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k |
+| Section | Count | Filter criteria | `lastmod` |
+|---------|-------|----------------|-----------|
+| Static pages | 7 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/about/`, `/contact/` | Latest bulletin date |
+| Category/country landings | ~12 | `/employment-based/`, `/family-sponsored/` × countries | Latest bulletin date |
+| Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
+| Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
+| Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
+| Prediction archive | all bulletin months | One URL per `Bulletin` month | Per-bulletin `publication_date` |
 
-All URLs include `<lastmod>` set to the latest bulletin publication date (best proxy for "data last refreshed"). `changefreq: monthly`, `priority: 0.8`.
+All static/profile URLs use `changefreq: monthly`, `priority: 0.8`. Blog posts use `changefreq: yearly`, `priority: 0.6`. Prediction pages use `changefreq: yearly`, `priority: 0.5`.
 
 **Search engine ping**: The refresh pipeline pings Google and Bing after clearing the sitemap cache (`step_ping_search_engines` in `scripts/cron/refresh/steps.py`). Non-fatal on failure.
 
+## AI Crawler Support (`/llms.txt`)
+
+`/llms.txt` is served by `llms_txt_view` in `webapp/views/seo/sitemaps.py`. It follows the [llmstxt.org](https://llmstxt.org) convention for telling AI crawlers (ChatGPT, Perplexity, Claude, etc.) what data this site contains and how to cite it.
+
+Content includes:
+- Section-by-section description of the site (dashboard, salary DB, employer profiles, job title profiles, analysis)
+- Canonical URLs for each section
+- Data source descriptions (State Dept, DOL) and update frequency
+- Citation guidance
+
 ## Caching Strategy
 
-`@cache_page_skip_bots(settings.CACHE_TIMEOUT)` (24 hours) applied to: sitemap, robots.txt, profile pages, directory pages, autocomplete, dashboard, salary search.
+`@cache_page_skip_bots(settings.CACHE_TIMEOUT)` (24 hours) applied to: sitemap, robots.txt, llms.txt, profile pages, directory pages, autocomplete, dashboard, salary search.
 
 **Bot bypass**: `cache_page_skip_bots` (in `django_config/cache_utils.py`) skips the cache entirely for known bot User-Agents (Googlebot, Bingbot, GPTBot, DuckDuckBot, Baiduspider, YandexBot, facebookexternalhit, Slurp). Bots always hit the live view and get fresh data.
 
@@ -48,6 +60,20 @@ All URLs include `<lastmod>` set to the latest bulletin publication date (best p
 | `<meta theme-color>` | `#003366` |
 | `<link rel="canonical">` | `canonical_url` context var (rendered only if set) |
 
+## Canonical URLs
+
+All dynamic pages that can receive query parameters set `canonical_url` to the clean path (no query params):
+
+| Page | Canonical set by |
+|------|-----------------|
+| Employer profile | `profile.py` → `request.build_absolute_uri(request.path)` → context `canonical_url` |
+| Job title profile | `profile.py` → `request.build_absolute_uri(request.path)` → context `canonical_url` |
+| Salary search | `search.py` → `request.build_absolute_uri(reverse("salary_search"))` |
+| Worksite search | `search.py` → `request.build_absolute_uri(reverse("worksite_search"))` |
+| Dashboard | Set in `dashboard.py` |
+
+Profile templates do **not** emit a second `<link rel="canonical">` in `extra_head` — they rely entirely on `base.html` rendering it from the `canonical_url` context var.
+
 ## Open Graph & Twitter Cards
 
 Set in `base.html`, overridable via context:
@@ -61,14 +87,23 @@ Profile templates (`job_title_profile.html`) override with page-specific title, 
 
 ## Structured Data (JSON-LD)
 
-Embedded in `base.html`:
+### Global (every page via `base.html`)
 
 1. **Organization** — name, url, logo, contactPoint, sameAs
 2. **WebSite** with **SearchAction** — `urlTemplate` for category/country search
 
-Profile pages add page-specific schemas:
-- **Job title profile**: `Occupation` schema with salary stats, employer count
-- **Employer profile**: intended to have `Organization` schema (see known issues)
+### Per-page schemas
+
+| Page | Schemas |
+|------|---------|
+| Dashboard | `Dataset` (built in Python by `_build_structured_data()` in `lib/business/bulletin/cutoff_data_aggregator.py`) |
+| Job title profile | `Occupation` + `MonetaryAmountDistribution` (salary percentiles) + `BreadcrumbList` |
+| Employer profile | `Organization` + optional `AggregateRating` (only when `total_filings > 0`) + `BreadcrumbList` |
+| FAQ | `FAQPage` |
+
+**`AggregateRating` on employer profiles**: uses visa approval rate (0–100) as `ratingValue` on a 0–100 scale. `ratingCount` is always `total_filings > 0` (guard added after Google Search Console warning). Worth monitoring in Search Console Rich Results report to confirm Google renders it.
+
+**`BreadcrumbList`**: emitted as a separate JSON-LD block in the profile `extra_head`. Uses `request.scheme`/`request.get_host` for portability across environments.
 
 ## Favicon System
 
@@ -89,10 +124,12 @@ Source SVG: `webapp/static/favicon.svg`. Regenerate PNGs: `./scripts/generate_fa
 **Job title profiles** (`/job-title/{slug}/`):
 - Custom `<title>`, `<meta description>`, `<link rel="canonical">` via `seo` context dict
 - Page-specific OG/Twitter tags in `{% block extra_head %}`
-- `Occupation` JSON-LD schema
+- `Occupation` + `BreadcrumbList` JSON-LD schemas
 
 **Employer profiles** (`/employer/{slug}/`):
 - Custom `seo` dict with title, description, canonical_url
+- `canonical_url` set in context (path-only, no query params)
+- `Organization` + optional `AggregateRating` + `BreadcrumbList` JSON-LD schemas
 - Fuzzy slug redirect: old/mismatched slugs → 301 to canonical cluster slug
 
 **Directories** (`/job-titles/`, `/employers/`):
@@ -108,28 +145,34 @@ Handled by nginx, not Django. Django HTTPS settings are commented out in `settin
 ## Known Issues
 
 1. **Stale Google index entries**: ~74 old job-title/employer slugs that no longer exist still return 404. These are not in the current sitemap and will self-resolve. Use Search Console "Validate Fix" to speed up.
+2. **`AggregateRating` eligibility**: approval-rate-as-rating may not qualify for Google rich snippets (it's not a user-review rating). Monitor in Search Console → Rich Results.
+3. **Blog and prediction pages**: no per-page `page_description` or OG image — sharing falls back to site defaults. Consider adding per-post description to `BlogPost` model and per-month description to prediction detail view.
+4. **`WebSite` `SearchAction`**: uses `category`/`country` URL template — validate at https://search.google.com/test/rich-results that it qualifies for sitelinks search box.
 
 ## Testing & Verification
 
 | Tool | URL | What to check |
 |------|-----|---------------|
-| Google Rich Results Test | https://search.google.com/test/rich-results | Organization, WebSite, Occupation schemas |
+| Google Rich Results Test | https://search.google.com/test/rich-results | Organization, WebSite, Occupation, BreadcrumbList schemas |
 | Facebook Sharing Debugger | https://developers.facebook.com/tools/debug/ | OG image, title, description |
 | PageSpeed Insights | https://pagespeed.web.dev/ | Core Web Vitals, image sizes |
-| Google Search Console | https://search.google.com/search-console | Index coverage, sitemap status, 404s |
+| Google Search Console | https://search.google.com/search-console | Index coverage, sitemap status, 404s, rich results |
 
 ## Design Decisions
 
 **Homepage title is intentionally narrow (country/category-specific).** The dashboard view builds a title like "India Employment-Based Visa Bulletin Predictions & Tracker - March 2026" based on the active filter. This is deliberate — the vast majority of real visitors are Indian EB-2/EB-3 applicants, so the default title matches their intent and reduces friction. A broad generic title would serve SEO auditors but not actual users.
 
+**`/llms.txt` over robots meta tags for AI.** AI crawlers (GPTBot, Claude-Web, PerplexityBot) are already in the `cache_page_skip_bots` bypass list and allowed by robots.txt. The `llms.txt` file adds structured guidance on what content is available and citable, without restricting access.
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `webapp/views/seo/sitemaps.py` | Sitemap + robots.txt views |
+| `webapp/views/seo/sitemaps.py` | Sitemap, robots.txt, and llms.txt views |
 | `webapp/templates/webapp/base.html` | Site-wide meta tags, structured data, favicon refs |
 | `webapp/views/job_titles/profile.py` | Job title profile SEO context |
 | `webapp/views/employers/profile.py` | Employer profile SEO context |
+| `webapp/views/salary/search.py` | Salary/worksite search canonical URLs |
 | `django_config/cache_utils.py` | `cache_page_skip_bots` implementation |
 | `scripts/cron/refresh/steps.py` | `step_ping_search_engines` and `step_clear_sitemap_cache` |
 | `scripts/clear_cache.py` | Manual cache clearing (`--sitemap-only` flag) |

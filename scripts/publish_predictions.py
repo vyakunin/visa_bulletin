@@ -4,6 +4,7 @@ Publish VQS Predictions to Database.
 Usage:
     bazel run //scripts:publish_predictions -- --month 2026-03
     bazel run //scripts:publish_predictions -- --backfill-start-year 2024
+    bazel run //scripts:publish_predictions -- --backfill-start-year 2018 --horizon 6
 """
 
 import argparse
@@ -99,35 +100,43 @@ def load_facts():
         logger.info(f"Loaded {len(FACTS)} facts.")
 
 
-def get_knowledge_date_for_target(target_month: date) -> date:
+def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -> date:
     """
     Determine the knowledge date (simulation date) for a target bulletin.
 
-    Rules:
-    1. If target is in the past, use the day BEFORE the actual publication date.
-    2. If target is future (or unknown publication), use TODAY (or last day of previous month?).
-       - If strict backtesting: use last day of previous month to simulate "start of month" prediction.
-       - If "live": use today.
+    For horizon_months=1: use the day before the actual publication date (1m-ahead prediction).
+    For horizon_months>1: use the publication date of the bulletin that appeared
+      approximately (horizon_months) before target_month.  This gives a proper
+      retrospective backtest — only data available at that earlier date is used.
     """
-    # Check if bulletin exists
+    if horizon_months <= 1:
+        # Standard: 1-month-ahead prediction made the day before publication.
+        try:
+            b = Bulletin.objects.filter(
+                publication_date__year=target_month.year,
+                publication_date__month=target_month.month,
+            ).first()
+            if b:
+                return b.publication_date - timedelta(days=1)
+        except Exception:
+            pass
+        return date.today()
+
+    # Multi-horizon: find the bulletin that was published ~horizon_months before target.
+    earlier = target_month - relativedelta(months=horizon_months)
     try:
         b = Bulletin.objects.filter(
-            publication_date__year=target_month.year,
-            publication_date__month=target_month.month,
+            publication_date__year=earlier.year,
+            publication_date__month=earlier.month,
         ).first()
         if b:
-            # If bulletin exists, we are simulating a past prediction "just in time"
+            # Use the day before that bulletin so we only have data from before it.
             return b.publication_date - timedelta(days=1)
     except Exception:
         pass
-
-    # If no bulletin, default to 'today' if target is next month,
-    # or last day of previous month if target is far future?
-    # Better heuristic:
-    # For "March 2026", usually published mid-Feb.
-    # If today is Feb 15, we use today.
-    # If today is Jan 1, we use Jan 1.
-    return date.today()
+    # Fallback: last day of the month that is horizon_months before target.
+    last_day = (earlier.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+    return last_day
 
 
 REGIME_DESCRIPTIONS = {
@@ -199,7 +208,7 @@ def generate_explanation(metadata: dict | None, confidence: str) -> str:
     return " ".join(parts) if parts else f"Physics-based prediction (Confidence: {confidence})"
 
 
-def publish_predictions(target_months: list[date], action_types: list[str]):
+def publish_predictions(target_months: list[date], action_types: list[str], horizon_months: int = 1):
     load_facts()
     aggregator = ExpertAggregator()  # Loads weights from history
     meta = VqsMetaParams.defaults()
@@ -209,29 +218,27 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
 
     for target_month in target_months:
         target_month = target_month.replace(day=1)
-        knowledge_date = get_knowledge_date_for_target(target_month)
+        knowledge_date = get_knowledge_date_for_target(target_month, horizon_months)
 
         logger.info(
-            f"Generating predictions for {target_month.strftime('%B %Y')} (Knowledge Date: {knowledge_date})"
+            f"Generating {horizon_months}m predictions for {target_month.strftime('%B %Y')} (Knowledge Date: {knowledge_date})"
         )
 
-        # Create or Update PredictedBulletin container
+        # One PredictedBulletin per (target_month, prediction_date) pair —
+        # different horizon_months produce different prediction_dates.
         pred_bulletin, created = PredictedBulletin.objects.get_or_create(
             target_bulletin_month=target_month,
-            defaults={"prediction_date": knowledge_date},
+            prediction_date=knowledge_date,
         )
         if not created:
-            # Update prediction date if re-running?
-            pred_bulletin.prediction_date = knowledge_date
-            pred_bulletin.save()
-            # Clear old cutoffs
+            # Re-running for the same (target, knowledge_date): clear and recompute.
             pred_bulletin.cutoffs.all().delete()
 
         # Filter facts manually
         current_facts = [f for f in FACTS if f.publication_date <= knowledge_date]
 
         # Compute prediction horizon in months (how far ahead is target_month from knowledge_date)
-        horizon_months = (
+        horizon_m = (
             (target_month.year - knowledge_date.year) * 12
             + (target_month.month - knowledge_date.month)
         )
@@ -241,7 +248,8 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
             for country in countries:
                 for visa_class in visa_classes:
                     # Horizon-aware hybrid dispatch (Sections 17–18 results):
-                    # 1m/3m:  China EB-1 → RS; India EB-1 → RS; all others → VQS ensemble
+                    # 1m:     ALL series → Regime-Switched (RS beats VQS at 1m for all 6 series)
+                    # 3m:     China EB-1 → RS; India EB-1 → RS; all others → VQS ensemble
                     # 6m:     China EB-1 → RS (149.8d); India EB-1, China EB-3 → GBM Gated;
                     #         India EB-2/3, China EB-2 → Pace
                     # 12m+:   China EB-1, China EB-3, India EB-1/2 → GBM Gated;
@@ -249,10 +257,14 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                     model_name = "vqs_ensemble"
                     dispatch_key = (country, visa_class)
 
-                    if (dispatch_key == _CHINA_EB1 and horizon_months < 12) or (
-                        dispatch_key == _INDIA_EB1 and horizon_months < 6
-                    ):
-                        # RS: China EB-1 at 1m/3m/6m; India EB-1 at 1m/3m
+                    if (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
+                        dispatch_key == _INDIA_EB1 and horizon_m < 6
+                    ) or horizon_m == 1:
+                        # RS: China EB-1 at 1m/3m/6m; India EB-1 at 1m/3m; ALL series at 1m.
+                        # At 1m, RS matches or beats persistence for all 6 series and is
+                        # vastly better than VQS ensemble (166d avg vs 43d for RS/Persistence).
+                        # VQS at 1m was predicting movement during the 2022-2026 stall that
+                        # didn't materialise; RS correctly applies regime-based damping.
                         model_name = "regime_switched"
                         outcome = predict_regime_switched(
                             knowledge_date=knowledge_date,
@@ -264,7 +276,7 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                         cutoff = outcome.predicted_cutoff
                         m_meta = outcome.metadata
                         confidence = outcome.confidence
-                    elif horizon_months >= 12 and dispatch_key in _GBM_GATED_12M_SERIES:
+                    elif horizon_m >= 12 and dispatch_key in _GBM_GATED_12M_SERIES:
                         # GBM Gated at 12m+: China EB-1/3, India EB-1/2
                         model_name = "gbm_gated"
                         cutoff = expert_gbm_gated(
@@ -272,11 +284,11 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             country=country,
                             action_type=action,
                             knowledge_date=knowledge_date,
-                            horizon=horizon_months,
+                            horizon=horizon_m,
                         )
-                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_months}
+                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_m}
                         confidence = "medium"
-                    elif horizon_months >= 12 and dispatch_key in _PACE_12M_SERIES:
+                    elif horizon_m >= 12 and dispatch_key in _PACE_12M_SERIES:
                         # Pace at 12m+: China EB-2, India EB-3
                         model_name = "oppenheim_pace"
                         cutoff = expert_oppenheim_pace(
@@ -284,11 +296,11 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             country=country,
                             action_type=action,
                             knowledge_date=knowledge_date,
-                            horizon=horizon_months,
+                            horizon=horizon_m,
                         )
-                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_months}
+                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_m}
                         confidence = "medium"
-                    elif dispatch_key in _GBM_GATED_6M_SERIES and horizon_months >= 6:
+                    elif dispatch_key in _GBM_GATED_6M_SERIES and horizon_m >= 6:
                         # GBM Gated at 6m (but < 12m): India EB-1, China EB-3
                         model_name = "gbm_gated"
                         cutoff = expert_gbm_gated(
@@ -296,11 +308,11 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             country=country,
                             action_type=action,
                             knowledge_date=knowledge_date,
-                            horizon=horizon_months,
+                            horizon=horizon_m,
                         )
-                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_months}
+                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_m}
                         confidence = "medium"
-                    elif dispatch_key in _PACE_6M_SERIES and horizon_months >= 6:
+                    elif dispatch_key in _PACE_6M_SERIES and horizon_m >= 6:
                         # Pace at 6m (but < 12m): India EB-2/3, China EB-2
                         model_name = "oppenheim_pace"
                         cutoff = expert_oppenheim_pace(
@@ -308,9 +320,9 @@ def publish_predictions(target_months: list[date], action_types: list[str]):
                             country=country,
                             action_type=action,
                             knowledge_date=knowledge_date,
-                            horizon=horizon_months,
+                            horizon=horizon_m,
                         )
-                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_months}
+                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_m}
                         confidence = "medium"
                     else:
                         outcome = predict_next_bulletin_and_maturity(
@@ -415,6 +427,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--month", type=str, help="Target month YYYY-MM")
     parser.add_argument("--backfill-start-year", type=int, help="Backfill from year")
+    parser.add_argument(
+        "--horizon",
+        type=int,
+        default=1,
+        help="Prediction horizon in months (1 = day-before-publication, 6 = made 6 months earlier). "
+             "Use --horizon 6 to backfill 6m-ahead predictions. Default: 1.",
+    )
     args = parser.parse_args()
 
     targets = []
@@ -424,11 +443,8 @@ def main():
         targets.append(date.fromisoformat(f"{args.month}-01"))
     elif args.backfill_start_year:
         start = date(args.backfill_start_year, 1, 1)
-        # End is usually next month from today
         today = date.today()
-        end = date(today.year, today.month, 1) + relativedelta(
-            months=2
-        )  # Go slightly into future
+        end = date(today.year, today.month, 1) + relativedelta(months=2)
 
         curr = start
         while curr <= end:
@@ -438,12 +454,10 @@ def main():
     if not targets:
         # Default: Next month
         today = date.today()
-        # If today is before 15th, maybe predict current month?
-        # Usually we predict the *upcoming* bulletin.
         next_month = today + relativedelta(months=1)
         targets.append(date(next_month.year, next_month.month, 1))
 
-    publish_predictions(targets, actions)
+    publish_predictions(targets, actions, horizon_months=args.horizon)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""VQS (Virtual Queue Simulation) API for cutoff and maturity predictions."""
+"""Bulletin Forecast Model API for cutoff and maturity predictions."""
 
 import logging
 from datetime import date, datetime
@@ -9,7 +9,7 @@ from django.views import View
 from django.views.decorators.cache import cache_page
 from django.views.decorators.http import require_GET
 
-from lib.business.vqs.solver import predict_next_bulletin_and_maturity
+from lib.business.vqs.solver import predict_regime_switched
 from models.enums.country import Country
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class VQSPredictView(View):
                 )
 
         try:
-            outcome = predict_next_bulletin_and_maturity(
+            outcome = predict_regime_switched(
                 knowledge_date=knowledge_date,
                 visa_class=visa_class,
                 country=country,
@@ -84,7 +84,7 @@ class VQSPredictView(View):
             results = outcome.results
             confidence = outcome.confidence
         except Exception as e:
-            logger.exception("VQS predict failed")
+            logger.exception("Bulletin Forecast Model predict failed")
             return JsonResponse(
                 {"error": "Prediction failed", "detail": str(e)},
                 status=500,

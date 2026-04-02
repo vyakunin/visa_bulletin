@@ -135,7 +135,7 @@ def job_title_profile_view(request, slug: str):
     seo = {
         "title": f"{cluster.canonical_title} Salary Data & Market Analysis | Visa Bulletin",
         "description": f"{cluster.canonical_title} visa sponsorship statistics: {total_filings:,} filings, ${median_salary:,.0f} median salary. Top employers, salary trends, and geographic data.",
-        "canonical_url": request.build_absolute_uri(),
+        "canonical_url": request.build_absolute_uri(request.path),
     }
 
     context = {

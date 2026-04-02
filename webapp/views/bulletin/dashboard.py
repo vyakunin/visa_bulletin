@@ -4,10 +4,9 @@ import json
 import logging
 from datetime import date, datetime
 
-from django.conf import settings
+from dateutil.relativedelta import relativedelta
 from django.shortcuts import render
 
-from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
@@ -44,14 +43,20 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
     if category != VisaCategory.EMPLOYMENT_BASED.value:
         return {}
 
-    from lib.business.vqs.solver import predict_next_bulletin_and_maturity
+    from lib.business.vqs.solver import predict_regime_switched
+    from models.bulletin import Bulletin
 
     predictions = {}
-    knowledge_date = date.today()
+    # Use the latest bulletin's publication date as knowledge_date so the solver
+    # sees the same data as the "Current Cutoff" column. date.today() can miss
+    # a bulletin whose publication_date is tomorrow (common when the State Dept
+    # publishes the April bulletin on April 1 while today is still March 31).
+    latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
+    knowledge_date = latest_bulletin.publication_date if latest_bulletin else date.today()
 
     for label, vqs_class in VQS_VISA_CLASS_MAP.items():
         try:
-            outcome = predict_next_bulletin_and_maturity(
+            outcome = predict_regime_switched(
                 knowledge_date=knowledge_date,
                 visa_class=vqs_class,
                 country=country,
@@ -102,7 +107,164 @@ def _parse_submission_date(date_str: str) -> date:
         return date.today()
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+def _linear_maturity_fallback(
+    submission_date: date,
+    trajectory: list[tuple[date, date]],
+) -> date | None:
+    """
+    Linearly extrapolate beyond the VQS trajectory horizon to estimate maturity.
+
+    Uses the average advancement rate across the full trajectory to project how
+    many additional months are needed after the last trajectory point.
+    Returns None when the rate is zero (permanently stalled) or data is insufficient.
+    """
+    if not trajectory or not submission_date:
+        return None
+
+    valid = [(m, c) for m, c in trajectory if c is not None]
+    if len(valid) < 2:
+        return None
+
+    first_month, first_cutoff = valid[0]
+    last_month, last_cutoff = valid[-1]
+
+    if last_cutoff >= submission_date:
+        return None  # Already reached within trajectory
+
+    total_months = max(1, (last_month.year - first_month.year) * 12 + (last_month.month - first_month.month))
+    total_days_advanced = (last_cutoff - first_cutoff).days
+    if total_days_advanced <= 0:
+        return None  # Stalled — no meaningful estimate
+
+    days_per_month = total_days_advanced / total_months
+    remaining_days = (submission_date - last_cutoff).days
+    months_remaining = remaining_days / days_per_month
+
+    estimated = last_month + relativedelta(months=round(months_remaining))
+
+    # Cap at 75 years — beyond that the estimate has no planning value
+    if (estimated - date.today()).days > 75 * 365:
+        return None
+
+    return estimated
+
+
+def _historical_linear_maturity(
+    submission_date: date,
+    dates: list[date],
+    cutoff_dates: list[date | None],
+    lookback_months: int = 36,
+) -> date | None:
+    """
+    Estimate maturity from the actual historical advancement rate.
+
+    Uses the most recent `lookback_months` of real bulletin cutoff data.
+    This is more reliable than the VQS trajectory for series where
+    regime-persistence blending has flattened the model trajectory.
+    Returns None when the series is stalled or data is insufficient.
+    """
+    if not submission_date or not dates or not cutoff_dates:
+        return None
+
+    cutoff_limit = date.today() - relativedelta(months=lookback_months)
+    valid = [
+        (d, c)
+        for d, c in zip(dates, cutoff_dates)
+        if c is not None and d >= cutoff_limit
+    ]
+
+    if len(valid) < 2:
+        return None
+
+    first_d, first_c = valid[0]
+    last_d, last_c = valid[-1]
+
+    if last_c >= submission_date:
+        return None  # Already current
+
+    total_months = max(1, (last_d.year - first_d.year) * 12 + (last_d.month - first_d.month))
+    total_days_advanced = (last_c - first_c).days
+    if total_days_advanced <= 0:
+        return None  # Not advancing in recent history
+
+    days_per_month = total_days_advanced / total_months
+    remaining_days = (submission_date - last_c).days
+    months_remaining = remaining_days / days_per_month
+
+    estimated = last_d + relativedelta(months=round(months_remaining))
+
+    if (estimated - date.today()).days > 75 * 365:
+        return None
+
+    return estimated
+
+
+def _build_unified_prediction_rows(
+    visa_class_data: list[dict],
+    vqs_predictions: dict,
+    submission_date: date | None,
+) -> list[dict]:
+    """
+    Merge visa_class_data and vqs_predictions into unified rows for the combined table.
+
+    Each row contains:
+      - label: display label
+      - last_bulletin_date: date of the most recent bulletin
+      - current_cutoff: most recent cutoff date (None = current / no backlog)
+      - next_cutoff, confidence, confidence_low, confidence_high: 1m-ahead prediction
+      - maturity_month: first month cutoff ≥ submission_date (None = beyond VQS horizon)
+      - linear_maturity: linear-extrapolation fallback (None = stalled / no estimate)
+    """
+    # Build lookup: label → current cutoff (last non-None cutoff date)
+    current_cutoffs: dict[str, date | None] = {}
+    for vcd in visa_class_data:
+        lbl = vcd.get("visa_class_label") or vcd.get("visa_class") or ""
+        cutoffs = vcd.get("cutoff_dates") or []
+        valid = [c for c in cutoffs if c is not None]
+        current_cutoffs[lbl] = valid[-1] if valid else None
+
+    rows = []
+    for vcd in visa_class_data:
+        lbl = vcd.get("visa_class_label") or vcd.get("visa_class") or ""
+        pred = vqs_predictions.get(lbl) or {}
+        maturity = pred.get("maturity_month")
+        linear = None
+        already_current = False
+
+        if submission_date and current_cutoffs.get(lbl) is not None:
+            already_current = current_cutoffs[lbl] >= submission_date
+
+        if not already_current and maturity is None and submission_date:
+            # Primary: use actual historical bulletin data (more reliable than the
+            # VQS trajectory, which gets squashed by regime-persistence blending).
+            linear = _historical_linear_maturity(
+                submission_date,
+                vcd.get("dates") or [],
+                vcd.get("cutoff_dates") or [],
+            )
+            # Fallback: VQS trajectory (for series with no recent actual data)
+            if linear is None and pred.get("trajectory"):
+                linear = _linear_maturity_fallback(submission_date, pred["trajectory"])
+
+        has_vqs = bool(pred)
+
+        rows.append({
+            "label": lbl,
+            "last_bulletin_date": vcd.get("last_bulletin_date"),
+            "current_cutoff": current_cutoffs.get(lbl),
+            "next_cutoff": pred.get("next_cutoff"),
+            "confidence": pred.get("confidence"),
+            "confidence_low": pred.get("confidence_low"),
+            "confidence_high": pred.get("confidence_high"),
+            "maturity_month": maturity,
+            "linear_maturity": linear,
+            "already_current": already_current,
+            "has_vqs": has_vqs,
+        })
+    return rows
+
+
+
 def dashboard_view(request, category=None, country=None):
     """
     Main dashboard view with filters and time-series chart.
@@ -132,11 +294,14 @@ def dashboard_view(request, category=None, country=None):
     if country not in valid_country_values:
         country = Country.ALL.value
     action_type = request.GET.get("action_type", ActionType.FILING.value)
-    submission_date = _parse_submission_date(request.GET.get("submission_date", ""))
+    submission_date_raw = request.GET.get("submission_date", "").strip()
+    submission_date = _parse_submission_date(submission_date_raw) if submission_date_raw else None
+    # Use today as fallback only for chart/non-maturity purposes
+    submission_date_for_chart = submission_date or date.today()
 
     # Get aggregated visa class data
     visa_class_data, has_data = get_aggregated_visa_class_data(
-        category, country, action_type, submission_date
+        category, country, action_type, submission_date_for_chart
     )
 
     # Build chart (VQS predictions computed below — two-pass: fetch VQS first, then chart)
@@ -177,10 +342,25 @@ def dashboard_view(request, category=None, country=None):
             else category
         )
         chart_data = build_multi_class_chart_with_projections(
-            visa_class_data, submission_date, country, cat_label, vqs_predictions=vqs_predictions
+            visa_class_data, submission_date_for_chart, country, cat_label, vqs_predictions=vqs_predictions
+        )
+
+    # Build unified prediction rows for the combined table (all categories)
+    unified_rows = []
+    if has_data:
+        unified_rows = _build_unified_prediction_rows(
+            visa_class_data,
+            vqs_predictions,
+            submission_date,
         )
 
     latest_post = BlogPost.objects.filter(is_published=True).order_by("-published_date").first()
+
+    # For family-sponsored, pre-select all series; for employment-based, use the default subset.
+    if category == VisaCategory.FAMILY_SPONSORED.value and chart_data:
+        visible_classes = frozenset(t["label"] for t in chart_data["trace_info"])
+    else:
+        visible_classes = DEFAULT_VISIBLE_VISA_CLASSES
 
     context = {
         # Filter state
@@ -188,11 +368,12 @@ def dashboard_view(request, category=None, country=None):
         "country": country,
         "action_type": action_type,
         "submission_date": submission_date,
-        # Data
         "chart_data": chart_data,
         "visa_class_data": visa_class_data,
         "has_data": has_data,
         "vqs_predictions": vqs_predictions,
+        "unified_rows": unified_rows,
+        "show_vqs_column": category == VisaCategory.EMPLOYMENT_BASED.value,
         "latest_post": latest_post,
         # Filter options
         "visa_categories": VisaCategory.choices,
@@ -211,7 +392,7 @@ def dashboard_view(request, category=None, country=None):
         "og_type": "website",
         "category_slugs_json": json.dumps(category_slugs),
         "country_slugs_json": json.dumps(country_slugs),
-        "default_visible_classes": DEFAULT_VISIBLE_VISA_CLASSES,
+        "default_visible_classes": visible_classes,
     }
 
     return render(request, "webapp/dashboard.html", context)

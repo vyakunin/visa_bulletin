@@ -7,13 +7,16 @@ class PredictedBulletin(models.Model):
     This allows us to take a 'snapshot' of what the system predicted at a given time.
     """
 
-    target_bulletin_month = models.DateField(unique=True)  # e.g., 2026-03-01
-    prediction_date = models.DateField()  # When this calculation was made
+    target_bulletin_month = models.DateField()  # e.g., 2026-03-01
+    prediction_date = models.DateField()  # When this calculation was made (≈ knowledge date)
     generated_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         app_label = "models"
         ordering = ["-target_bulletin_month"]
+        # Multiple rows per target month are allowed (one per prediction horizon).
+        # The combination of target + prediction_date is unique.
+        unique_together = [["target_bulletin_month", "prediction_date"]]
 
     def __str__(self):
         return f"Prediction for {self.target_bulletin_month} (v{self.prediction_date})"

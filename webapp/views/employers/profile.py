@@ -376,7 +376,7 @@ def employer_profile_view(request, slug):
             f"{stats['approval_rate']:.1f}% approval rate, "
             f"{median_salary_label} median salary."
         ),
-        "canonical_url": request.build_absolute_uri(),
+        "canonical_url": request.build_absolute_uri(request.path),
     }
 
     context = {
@@ -386,6 +386,7 @@ def employer_profile_view(request, slug):
         "seo": seo,
         "page_title": seo["title"],
         "page_description": seo["description"],
+        "canonical_url": seo["canonical_url"],
         "years": params["years"],
         "program_filter": params["program_filter"],
         "level_filter": params["level_filter"],

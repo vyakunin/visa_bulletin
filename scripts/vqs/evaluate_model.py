@@ -876,6 +876,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             dsupply_vals = []
             ctx_vals = []
             hybrid_vals = []
+            dispatch_vals = []
             ablation_vals = []
             gbm_vals = []
             gbm_direct_vals = []
@@ -888,6 +889,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
             dsupply_list = []
             ctx_list = []
             hybrid_list = []
+            dispatch_list = []
             ablation_list = []
             gbm_list = []
             gbm_direct_list = []
@@ -927,6 +929,26 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 gbm_pred = gbm_cache.get((kd, h)) if gbm else None
                 gbm_direct_pred = gbm_direct_cache.get((kd, h)) if gbm else None
                 gbm_gated_pred = gbm_gated_cache.get((kd, h)) if gbm else None
+
+                # Dispatch: mirrors publish_predictions.py production logic exactly.
+                # NOTE: Dispatch is only fully accurate when --gbm is used (GBM Gated
+                # is required for India EB-1/China EB-3 at 6m+ and 5 series at 12m).
+                # Without --gbm, gbm_gated_pred is None and those series fall through to pace.
+                _dispatch_key = (country, visa_class)
+                if (_dispatch_key == _DISP_CHINA_EB1 and h < 12) or (
+                    _dispatch_key == _DISP_INDIA_EB1 and h < 6
+                ) or h == 1:
+                    dispatch = rs
+                elif h >= 12 and _dispatch_key in _DISP_GBM_GATED_12M:
+                    dispatch = gbm_gated_pred
+                elif h >= 12 and _dispatch_key in _DISP_PACE_12M:
+                    dispatch = pace
+                elif _dispatch_key in _DISP_GBM_GATED_6M and h >= 6:
+                    dispatch = gbm_gated_pred
+                elif _dispatch_key in _DISP_PACE_6M and h >= 6:
+                    dispatch = pace
+                else:
+                    dispatch = vqs
                 mom3m = forecast_momentum_3m(visa_class, country, d, h)
                 seas_med = forecast_seasonal_median(visa_class, country, d, h)
                 poly_trend = forecast_polynomial_trend(visa_class, country, d, h)
@@ -939,6 +961,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 dsupply_vals.append(dsupply.strftime("%Y-%m-%d") if dsupply else None)
                 ctx_vals.append(ctx.strftime("%Y-%m-%d") if ctx else None)
                 hybrid_vals.append(hybrid.strftime("%Y-%m-%d") if hybrid else None)
+                dispatch_vals.append(dispatch.strftime("%Y-%m-%d") if dispatch else None)
                 ablation_vals.append(abl.strftime("%Y-%m-%d") if abl else None)
                 gbm_vals.append(gbm_pred.strftime("%Y-%m-%d") if gbm_pred else None)
                 gbm_direct_vals.append(gbm_direct_pred.strftime("%Y-%m-%d") if gbm_direct_pred else None)
@@ -955,6 +978,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 dsupply_list.append(dsupply)
                 ctx_list.append(ctx)
                 hybrid_list.append(hybrid)
+                dispatch_list.append(dispatch)
                 ablation_list.append(abl)
                 gbm_list.append(gbm_pred)
                 gbm_direct_list.append(gbm_direct_pred)
@@ -985,6 +1009,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 "dsupply": dsupply_vals,
                 "ctx": ctx_vals,
                 "hybrid": hybrid_vals,
+                "dispatch": dispatch_vals,
                 "momentum3m": momentum3m_vals,
                 "seasonal_med": seasonal_med_vals,
                 "poly_trend": poly_trend_vals,
@@ -1009,6 +1034,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 "Demand-Supply": dsupply_list,
                 "Contextual Ensemble": ctx_list,
                 "Hybrid": hybrid_list,
+                "Dispatch": dispatch_list,
                 "3m Momentum": momentum3m_list,
                 "Seasonal Median": seasonal_med_list,
                 "Poly Trend": poly_trend_list,
@@ -1064,6 +1090,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 (dsupply_list, "Demand-Supply"),
                 (ctx_list, "Contextual Ensemble"),
                 (hybrid_list, "Hybrid"),
+                (dispatch_list, "Dispatch"),
                 (momentum3m_list, "3m Momentum"),
                 (seasonal_med_list, "Seasonal Median"),
                 (poly_trend_list, "Poly Trend"),
@@ -1097,10 +1124,31 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
 
 MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid", "3m Momentum", "Seasonal Median", "Poly Trend"]
 MODELS_ABLATE = MODELS + ["VQS No Cross-Series"]
-MODELS_GBM = MODELS + ["GBM", "GBM Direct", "GBM Gated"]
+MODELS_GBM = MODELS + ["GBM", "GBM Direct", "GBM Gated", "Dispatch"]
 
 # EB-1 series where Regime-Switched beats VQS Ensemble
 _EB1_LABELS = {"India EB-1", "China EB-1"}
+
+# Dispatch constants — mirror publish_predictions.py exactly.
+_DISP_CHINA_EB1 = (Country.CHINA.value, "1st")
+_DISP_INDIA_EB1 = (Country.INDIA.value, "1st")
+_DISP_GBM_GATED_6M = frozenset([
+    (Country.INDIA.value, "1st"),
+    (Country.CHINA.value, "3rd"),
+])
+_DISP_PACE_6M = frozenset([
+    (Country.INDIA.value, "2nd"),
+    (Country.INDIA.value, "3rd"),
+    (Country.CHINA.value, "2nd"),
+])
+_DISP_GBM_GATED_12M = frozenset([
+    (Country.CHINA.value, "1st"),
+    (Country.CHINA.value, "2nd"),
+    (Country.CHINA.value, "3rd"),
+    (Country.INDIA.value, "1st"),
+    (Country.INDIA.value, "2nd"),
+])
+_DISP_PACE_12M = frozenset([(Country.INDIA.value, "3rd")])
 
 
 def print_metrics_table(metrics, horizons):
@@ -1152,7 +1200,7 @@ def print_metrics_table(metrics, horizons):
                     f"{total_cumul:,}"
                 )
 
-        for model_name in ["VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid"]:
+        for model_name in ["VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid", "Dispatch"]:
             m_wins = 0
             p_wins = 0
             for series in series_set:

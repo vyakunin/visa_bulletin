@@ -336,6 +336,7 @@ def salary_search_view(request):
         # SEO
         "page_title": "H-1B & PERM Salary Database | U.S. Immigration Data",
         "page_description": "Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by role, employer, and location.",
+        "canonical_url": request.build_absolute_uri(reverse("salary_search")),
         # Autocomplete URLs (shared component used for both Job Title and Employer)
         "company_autocomplete_url": request.build_absolute_uri(
             reverse("company_autocomplete")
@@ -491,6 +492,7 @@ def worksite_search_view(request):
         # SEO
         "page_title": "Worksite Location Data | U.S. Immigration Data",
         "page_description": "Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and role.",
+        "canonical_url": request.build_absolute_uri(reverse("worksite_search")),
     }
 
     return render(request, "webapp/worksite_search.html", context)

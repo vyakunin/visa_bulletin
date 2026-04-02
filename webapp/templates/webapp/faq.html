@@ -36,10 +36,10 @@
     },
     {
       "@type": "Question",
-      "name": "How does the prediction model work, and how accurate is it?",
+      "name": "How does the Bulletin Forecast Model work, and how accurate is it?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The prediction model (Virtual Queue Simulation) works by simulating the visa queue month by month. It combines multiple expert signals — historical movement patterns, fiscal year cycles, I-140 demand data, and queue physics — into an ensemble prediction. For longer horizons (6–12 months), a gradient-boosted machine learning model trained on over a decade of bulletin history identifies patterns that simple trend extrapolation misses. For the key India/China EB-2 and EB-3 series at 6-month horizons, it achieves mean absolute errors of 155–264 days."
+        "text": "The Bulletin Forecast Model works in two stages. For next-month predictions, it classifies the current regime of each visa series (advancing, stalled, or retrogressing) and applies the most accurate strategy for that state — defaulting to no change when stalled, and applying historical seasonal patterns when actively advancing. For 6–12 month horizons, a gradient-boosted ML model trained on over a decade of bulletin history, I-140 demand data, and fiscal year cycles takes over. At 6-month horizons for key India/China EB-2/EB-3 series, it achieves mean absolute errors of 155–264 days, meaningfully better than simply assuming no change (~280 days)."
       }
     },
     {
@@ -146,26 +146,20 @@
             <div class="accordion-item">
                 <h2 class="accordion-header" id="headingFour">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
-                        How does the prediction model work, and how accurate is it?
+                        How does the Bulletin Forecast Model work, and how accurate is it?
                     </button>
                 </h2>
                 <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="headingFour" data-bs-parent="#faqAccordion">
                     <div class="accordion-body">
                         <p>
-                            The prediction model (Virtual Queue Simulation) works by simulating the visa queue month by month.
-                            It combines multiple expert signals — historical movement patterns, fiscal year cycles, I-140 demand data,
-                            and queue physics — into an ensemble prediction. For longer horizons (6–12 months), a gradient-boosted
-                            machine learning model trained on over a decade of bulletin history identifies patterns that simple trend
-                            extrapolation misses. The model produces both a point estimate and a confidence interval, and was designed
-                            specifically for the oversubscribed India and China EB-2/EB-3 categories where most users are waiting.
+                            The <strong>Bulletin Forecast Model</strong> works in two stages. For the <em>next month's</em> bulletin, it classifies the current state of each visa series — whether dates have been advancing, stalled, or retrogressing — and picks the most accurate strategy for that state. When a series is stalled or retrogressing, the model predicts no change (the historically safest guess). When a series is actively advancing, it applies historical seasonal patterns for that specific calendar month.
                         </p>
                         <p>
-                            The model is backtested against historical bulletins. For the key India/China EB-2 and EB-3 series at
-                            6-month horizons, it achieves mean absolute errors of 155–264 days — significantly better than simply
-                            assuming no change. However, immigration processing is affected by unpredictable policy decisions,
-                            congressional actions, and demand surges that no model can foresee.
-                            I am going to publish monthly analysis posts comparing predictions to actual bulletins for transparency.
-                            <a href="{% url 'blog_list' %}">Read the analyses →</a>
+                            For <em>6–12 month horizon</em> estimates, a gradient-boosted machine learning model trained on over a decade of bulletin history, I-140 demand data, and fiscal year cycles takes over. This catches structural patterns — like typical October fiscal-year resets and cross-series spillover — that simple trend extrapolation misses.
+                        </p>
+                        <p>
+                            The model is backtested against historical bulletins. For the key India/China EB-2 and EB-3 series at 6-month horizons, it achieves mean absolute errors of 155–264 days — meaningfully better than simply assuming no change (~280 days). The model is deliberately conservative: it under-predicts large jumps to reduce false alarms, which means unexpected surges or October resets may be under-predicted. Immigration processing is also affected by unpredictable policy decisions and demand surges that no model can foresee.
+                            <a href="{% url 'blog_list' %}">Read our monthly accuracy analyses →</a>
                         </p>
                     </div>
                 </div>

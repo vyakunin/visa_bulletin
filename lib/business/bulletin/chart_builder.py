@@ -134,21 +134,28 @@ def _add_visa_class_traces(
     current_idx += 1
 
     # VQS model projection trace (dotted line + diamond marker at maturity)
-    if vqs_pred and vqs_pred.get("trajectory") and dates:
+    valid_cutoffs = [c for c in cutoff_dates if c is not None]
+    current_cutoff = valid_cutoffs[-1] if valid_cutoffs else None
+    already_current = current_cutoff is not None and current_cutoff >= submission_date
+
+    if vqs_pred and vqs_pred.get("trajectory") and dates and not already_current:
         trajectory = vqs_pred["trajectory"]  # list of (month_date, cutoff_date)
         maturity_month = vqs_pred.get("maturity_month")
 
-        # Start from last historical point; filter trajectory to future months only
+        # Anchor projection from the last valid historical point only — using
+        # multiple past points made the dotted line appear before the latest
+        # bulletin, misleadingly suggesting we're "predicting" historical data.
         last_hist_date = dates[-1]
-        last_valid_cutoff = next((c for c in reversed(cutoff_dates) if c is not None), None)
+        valid_hist = [(d, c) for d, c in zip(dates, cutoff_dates) if c is not None]
+        anchor_points = valid_hist[-1:] if valid_hist else []
 
         future_steps = [
             (m, c) for m, c in trajectory if m > last_hist_date and c is not None
         ]
 
-        if future_steps and last_valid_cutoff:
-            vqs_x = [last_hist_date] + [m for m, _ in future_steps]
-            vqs_y = [last_valid_cutoff] + [c for _, c in future_steps]
+        if future_steps and anchor_points:
+            vqs_x = [d for d, _ in anchor_points] + [m for m, _ in future_steps]
+            vqs_y = [c for _, c in anchor_points] + [c for _, c in future_steps]
 
             # Cap final y at submission_date so the line reaches but doesn't overshoot
             if vqs_y[-1] > submission_date:

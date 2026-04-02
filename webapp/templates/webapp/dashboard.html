@@ -105,9 +105,107 @@
             </div>
             {% endif %}
 
-            {% if has_data %}
-            <!-- Table 1: When will my priority date become current? -->
-            {% if visa_class_data and vqs_predictions %}
+            {% if unified_rows %}
+            <!-- Combined prediction table -->
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <h3 class="h6 mb-2">
+                        <i class="bi bi-calendar-check"></i>
+                        {% if show_vqs_column %}Visa Bulletin Predictions
+                        <span class="badge bg-info text-dark ms-2" style="font-size:0.65em;">Beta</span>
+                        {% else %}Visa Bulletin Status{% endif %}
+                    </h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Visa Type</th>
+                                    <th scope="col">Bulletin</th>
+                                    <th scope="col">Current Cutoff</th>
+                                    {% if show_vqs_column %}
+                                    <th scope="col">
+                                        Next Bulletin
+                                        <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
+                                            data-bs-html="true" data-bs-trigger="focus"
+                                            data-bs-content="Predicted cutoff date for the next visa bulletin, based on the Bulletin Forecast Model."
+                                            style="cursor:help;">
+                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
+                                        </span>
+                                    </th>
+                                    {% endif %}
+                                    <th scope="col">
+                                        Est. Current Date
+                                        <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
+                                            data-bs-html="true" data-bs-trigger="focus"
+                                            data-bs-content="{% if show_vqs_column %}Estimated month your priority date becomes current. Based on the Bulletin Forecast Model; beyond the 2-year forecast horizon, uses linear extrapolation from the historical advancement rate. <a href='{% url 'faq' %}#headingFour'>Learn more →</a>{% else %}Estimated month your priority date becomes current, based on linear extrapolation of the historical advancement rate.{% endif %}"
+                                            style="cursor:help;">
+                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
+                                        </span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in unified_rows %}
+                                <tr>
+                                    <td>{{ row.label }}</td>
+                                    <td class="text-nowrap">{% if row.last_bulletin_date %}{{ row.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
+                                    <td class="text-nowrap">
+                                        {% if row.current_cutoff %}
+                                            {{ row.current_cutoff|date:"M d, Y" }}
+                                        {% else %}
+                                            <span class="text-muted small">Current</span>
+                                        {% endif %}
+                                    </td>
+                                    {% if show_vqs_column %}
+                                    <td class="text-nowrap">
+                                        {% if row.next_cutoff %}
+                                            {{ row.next_cutoff|date:"M d, Y" }}
+                                            {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                            {% elif row.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                            {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
+                                            {% if row.confidence_low and row.confidence_high %}
+                                            <br><span class="text-muted" style="font-size:0.75em;">{{ row.confidence_low|date:"M d" }}–{{ row.confidence_high|date:"M d, Y" }}</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    {% endif %}
+                                    <td class="text-nowrap">
+                                        {% if row.already_current %}
+                                            <span class="text-success small"><i class="bi bi-check-circle me-1"></i>Already current</span>
+                                        {% elif row.maturity_month %}
+                                            {{ row.maturity_month|date:"F Y" }}
+                                            {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                            {% elif row.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                            {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
+                                        {% elif row.linear_maturity %}
+                                            <span class="text-muted">~{{ row.linear_maturity|date:"Y" }}</span>
+                                            <span class="text-muted" style="font-size:0.75em;" title="Linear extrapolation beyond model horizon">(est.)</span>
+                                        {% elif not submission_date %}
+                                            <span class="text-muted small">Enter priority date</span>
+                                        {% elif row.has_vqs %}
+                                            <span class="text-muted small">Beyond estimate</span>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if latest_post %}
+                    <p class="small mb-0 mt-2">
+                        <i class="bi bi-file-text me-1"></i>
+                        Latest analysis: <a href="{% url 'blog_detail' latest_post.slug %}">{{ latest_post.title }}</a>
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+            {% elif has_data and visa_class_data and vqs_predictions %}
+            <!-- Fallback: old two-table layout for non-EB categories -->
+            {% if visa_class_data %}
             <div class="card mb-3">
                 <div class="card-body py-3">
                     <h3 class="h6 mb-2">
@@ -119,15 +217,7 @@
                                 <tr>
                                     <th scope="col">Visa Type</th>
                                     <th scope="col">Last Update</th>
-                                    <th scope="col">
-                                        Estimated Current Date
-                                        <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top"
-                                            data-bs-html="true"
-                                            title="The model simulates the visa queue month-by-month using I-140 demand data, historical processing patterns, and fiscal year cycles to estimate when your priority date will become current. <a href='{% url 'faq' %}#headingFour' class='text-white'>Learn more →</a>"
-                                            style="cursor:help;">
-                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
-                                        </span>
-                                    </th>
+                                    <th scope="col">Estimated Current Date</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -141,7 +231,7 @@
                                         {% if vqs_data.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
                                         {% elif vqs_data.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
                                         {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
-                                        {% else %}<span class="text-muted small">Beyond 10 years</span>{% endif %}{% endif %}{% endfor %}
+                                        {% else %}<span class="text-muted small">Beyond forecast horizon</span>{% endif %}{% endif %}{% endfor %}
                                     </td>
                                 </tr>
                                 {% endwith %}
@@ -152,82 +242,10 @@
                 </div>
             </div>
             {% endif %}
-
-            <!-- Table 2: Next Bulletin Forecast (collapsible) -->
-            {% if vqs_predictions %}
-            <div class="accordion mb-3" id="nextBulletinAccordion">
-                <div class="accordion-item border">
-                    <h2 class="accordion-header" id="nextBulletinHeading">
-                        <button class="accordion-button collapsed py-2" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#nextBulletinCollapse"
-                            aria-expanded="false" aria-controls="nextBulletinCollapse"
-                            style="font-size:0.875rem; font-weight:600;">
-                            <i class="bi bi-newspaper me-2"></i> Next Bulletin Forecast
-                            <span class="badge bg-info text-dark ms-2" style="font-size:0.65em;">Beta</span>
-                        </button>
-                    </h2>
-                    <div id="nextBulletinCollapse" class="accordion-collapse collapse"
-                        aria-labelledby="nextBulletinHeading" data-bs-parent="#nextBulletinAccordion">
-                        <div class="accordion-body py-2">
-                            <p class="small text-muted mb-2">Predicted cutoff dates for the upcoming visa bulletin, based on the Virtual Queue Simulation model.</p>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover mb-2">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">Visa Type</th>
-                                            <th scope="col">Predicted Cutoff</th>
-                                            <th scope="col">Confidence Range</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for vqs_label, vqs_data in vqs_predictions.items %}
-                                        <tr>
-                                            <td>{{ vqs_label }}</td>
-                                            <td>
-                                                {% if vqs_data.next_cutoff %}
-                                                {{ vqs_data.next_cutoff|date:"M d, Y" }}
-                                                {% if vqs_data.confidence == "high" %}
-                                                <i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
-                                                {% elif vqs_data.confidence == "medium" %}
-                                                <i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
-                                                {% else %}
-                                                <i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>
-                                                {% endif %}
-                                                {% else %}
-                                                <span class="text-muted">—</span>
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                {% if vqs_data.confidence_low and vqs_data.confidence_high %}
-                                                <span class="text-muted small">{{ vqs_data.confidence_low|date:"M d" }} – {{ vqs_data.confidence_high|date:"M d, Y" }}</span>
-                                                {% else %}
-                                                <span class="text-muted">—</span>
-                                                {% endif %}
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                            {% if latest_post %}
-                            <p class="small mb-0">
-                                <i class="bi bi-file-text me-1"></i>
-                                Read the latest analysis: <a href="{% url 'blog_detail' latest_post.slug %}">{{ latest_post.title }}</a>
-                            </p>
-                            {% else %}
-                            <p class="small mb-0 text-muted">
-                                <i class="bi bi-file-text me-1"></i>
-                                <a href="{% url 'blog_list' %}">View all analyses →</a>
-                            </p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
             {% endif %}
 
             <p class="small text-muted mb-3">
-                <i class="bi bi-exclamation-triangle"></i> <em>Estimates are based on a queue simulation model using I-140 demand data, historical bulletin patterns, and fiscal year cycles. Actual processing times may vary due to policy changes, retrogressions, or demand surges.</em>
+                <i class="bi bi-exclamation-triangle"></i> <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'faq' %}#headingFour" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
             </p>
 
@@ -288,7 +306,6 @@
                     </div>
                 </div>
             </div>
-            {% endif %}
 
             <!-- Info Section -->
             <div class="card mt-4">
@@ -321,7 +338,7 @@
                         <ul>
                             <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
                             <li><strong>Red dashed line</strong>: Your application's priority date</li>
-                            <li><strong>Dotted lines</strong>: Queue Model (VQS) projections using I-140 demand data and queue physics (diamond = estimated date your priority date becomes current)</li>
+                            <li><strong>Dotted lines</strong>: Bulletin Forecast Model projections using historical patterns, I-140 demand data, and fiscal year cycles (diamond = estimated date your priority date becomes current)</li>
                             <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
                             </li>
                         </ul>
@@ -416,6 +433,10 @@
         // Initialize Bootstrap tooltips
         document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             new bootstrap.Tooltip(el, { html: true });
+        });
+        // Initialize Bootstrap popovers
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+            new bootstrap.Popover(el, { html: true });
         });
 
         const dateInput = document.getElementById('submission_date');

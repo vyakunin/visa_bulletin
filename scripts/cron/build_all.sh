@@ -36,6 +36,7 @@ bazel build \
     //scripts/salary:populate_job_title_slugs \
     //scripts/cache:warm_cache \
     //scripts/cron:refresh_bulletin \
+    //scripts:publish_predictions \
     2>&1
 
 log "Build complete"
@@ -73,6 +74,7 @@ BINARIES=(
     "bazel-bin/scripts/salary/populate_job_title_slugs"
     "bazel-bin/scripts/cache/warm_cache"
     "bazel-bin/scripts/cron/refresh_bulletin"
+    "bazel-bin/scripts/publish_predictions"
 )
 
 ALL_OK=true
