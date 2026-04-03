@@ -55,9 +55,13 @@ def expert_seasonal_median(
         return None
 
     target_month = (knowledge_date.month % 12) + 1
+    # Restrict to 4 years to exclude pre-retrogression "Current" era data, which would
+    # inflate seasonal medians for currently-oversubscribed series (e.g. EB-1 China/India
+    # filing showing +30/month from 2016-2018 even though they've been stalled since 2023).
     move_days = get_seasonal_prediction(
         visa_class, country, action_type,
         knowledge_date=knowledge_date, target_month=target_month, min_samples=3,
+        lookback_years=4,
     )
 
 
@@ -110,6 +114,7 @@ def expert_fy_reset(
         move_days = get_seasonal_prediction(
             visa_class, country, action_type,
             knowledge_date=knowledge_date, target_month=target_month, min_samples=3,
+            lookback_years=4,
         )
         if move_days is not None:
             return current_cutoff + timedelta(days=move_days)

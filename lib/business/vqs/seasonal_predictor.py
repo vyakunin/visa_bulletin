@@ -24,6 +24,7 @@ def get_seasonal_prediction(
     knowledge_date: date,
     target_month: int,
     min_samples: int = 3,
+    lookback_years: int | None = None,
 ) -> int | None:
     """
     Predict cutoff movement (days) for a given month-of-year using historical median.
@@ -35,12 +36,21 @@ def get_seasonal_prediction(
         knowledge_date: Only use bulletins published before this date (walk-forward safe).
         target_month: Month of year (1-12) of the bulletin we're predicting.
         min_samples: Minimum historical samples required. Returns None if insufficient.
+        lookback_years: If set, only use bulletins within this many years of knowledge_date.
+            Use to exclude outdated regime data (e.g. pre-retrogression "Current" era).
 
     Returns:
         Predicted movement in days (positive = forward, negative = retrogression).
         None if insufficient historical data.
     """
     cutoffs = get_cutoffs_up_to(visa_class, country, action_type, knowledge_date)
+
+    if len(cutoffs) < 2:
+        return None
+
+    if lookback_years is not None:
+        min_date = date(knowledge_date.year - lookback_years, knowledge_date.month, knowledge_date.day)
+        cutoffs = [c for c in cutoffs if c.bulletin.publication_date >= min_date]
 
     if len(cutoffs) < 2:
         return None

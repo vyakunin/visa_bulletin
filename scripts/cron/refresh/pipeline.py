@@ -55,6 +55,7 @@ STEP_FUNCS = {
     "cluster_employers": steps.step_cluster_employers,
     "update_job_title_cluster_stats": steps.step_update_job_title_cluster_stats,
     "populate_job_title_slugs": steps.step_populate_job_title_slugs,
+    "vqs_raw_facts": steps.step_vqs_raw_facts,
     "vacuum_analyze": steps.step_vacuum_analyze,
     "start_services": steps.step_start_services,
     "warm_cache": steps.step_warm_cache,

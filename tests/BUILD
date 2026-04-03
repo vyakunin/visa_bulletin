@@ -275,9 +275,11 @@ py_test(
     name = "test_webapp_ui",
     size = "small",
     srcs = ["test_webapp_ui.py"],
+    data = ["//models:migrations"],
     deps = [
         ":django_setup",
         "//webapp/views:views",
+        "//models:blog",
         "//models:visa_cutoff_date",
         "//django_config:settings",
         "//webapp:apps",

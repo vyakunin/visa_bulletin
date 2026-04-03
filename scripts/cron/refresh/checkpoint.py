@@ -38,6 +38,7 @@ STEPS_ORDER: tuple[str, ...] = (
     "cluster_employers",
     "update_job_title_cluster_stats",
     "populate_job_title_slugs",
+    "vqs_raw_facts",
     "vacuum_analyze",
     "start_services",
     "warm_cache",

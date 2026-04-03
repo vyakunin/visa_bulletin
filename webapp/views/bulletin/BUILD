@@ -21,6 +21,7 @@ py_library(
         "//models/enums:country",
         "//models/enums:visa_category",
         requirement("Django"),
+        requirement("python-dateutil"),
     ],
 )
 

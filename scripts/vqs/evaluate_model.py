@@ -32,7 +32,6 @@ from dateutil.relativedelta import relativedelta
 from django.conf import settings
 
 from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
-from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.gbm_expert import (
     _GBM_DEFAULT_GATE_THRESHOLD,
     _GBM_DEFAULT_MOVEMENT_THRESHOLD,
@@ -40,6 +39,7 @@ from lib.business.vqs.gbm_expert import (
     expert_gbm_direct,
     expert_gbm_gated,
 )
+from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.prediction_loader import (
     build_regime_switched_cache,
     build_solver_cache,

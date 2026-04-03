@@ -1,6 +1,7 @@
 """One-off: delete PredictedBulletin rows with gap > 200 days (wrong knowledge date from buggy backfill)."""
-import django
 import os
+
+import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()

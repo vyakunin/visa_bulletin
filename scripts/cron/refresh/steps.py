@@ -471,6 +471,35 @@ def step_populate_job_title_slugs(
         )
 
 
+def step_vqs_raw_facts(
+    config: RefreshConfig, runner: Runner, context: PipelineContext
+) -> None:
+    """Update RawFactsLedger with latest USCIS I-485 and I-140 data.
+
+    Runs download_uscis_i485 and download_uscis_i140, which fetch the latest
+    monthly/quarterly snapshots from USCIS and upsert into raw_facts_ledger.
+    Failures are logged as warnings (data is supplementary — pipeline continues).
+    """
+    for script, label in [
+        ("scripts/vqs/download_uscis_i485", "USCIS I-485 inventory"),
+        ("scripts/vqs/download_uscis_i140", "USCIS I-140 receipts"),
+    ]:
+        result = runner.run_bin(
+            script,
+            "--output-dir", "/tmp/vqs_raw_facts",
+            cwd=config.project_root,
+            timeout_sec=HEAVY_STEP_SSH_TIMEOUT_SEC,
+        )
+        tail = _get_stage_tail(runner, result)
+        _log_stage_tail_text(tail, label, last_n=40)
+        if result.returncode != 0:
+            logger.warning(
+                "VQS raw facts step: %s failed (non-fatal): %s",
+                label,
+                tail[-500:] if tail else result.stderr,
+            )
+
+
 def step_vacuum_analyze(
     config: RefreshConfig, runner: Runner, context: PipelineContext
 ) -> None:
