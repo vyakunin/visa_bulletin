@@ -132,6 +132,24 @@
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
                                     </th>
+                                    <th scope="col">
+                                        6-Month
+                                        <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
+                                            data-bs-html="true" data-bs-trigger="focus"
+                                            data-bs-content="Predicted cutoff date 6 months from now, based on the Bulletin Forecast Model. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            style="cursor:help;">
+                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
+                                        </span>
+                                    </th>
+                                    <th scope="col">
+                                        12-Month
+                                        <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
+                                            data-bs-html="true" data-bs-trigger="focus"
+                                            data-bs-content="Predicted cutoff date 12 months from now, based on the Bulletin Forecast Model. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            style="cursor:help;">
+                                            <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
+                                        </span>
+                                    </th>
                                     {% endif %}
                                     <th scope="col">
                                         Est. Current Date
@@ -166,6 +184,26 @@
                                             {% if row.confidence_low and row.confidence_high %}
                                             <br><span class="text-muted" style="font-size:0.75em;">{{ row.confidence_low|date:"M d" }}–{{ row.confidence_high|date:"M d, Y" }}</span>
                                             {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap">
+                                        {% if row.cutoff_6m %}
+                                            {{ row.cutoff_6m|date:"M d, Y" }}
+                                            {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                            {% elif row.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                            {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap">
+                                        {% if row.cutoff_12m %}
+                                            {{ row.cutoff_12m|date:"M d, Y" }}
+                                            {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
+                                            {% elif row.confidence == "medium" %}<i class="bi bi-circle-fill text-warning ms-1" style="font-size:0.5em; vertical-align:middle;" title="Medium confidence"></i>
+                                            {% else %}<i class="bi bi-circle-fill text-secondary ms-1" style="font-size:0.5em; vertical-align:middle;" title="Low confidence"></i>{% endif %}
                                         {% else %}
                                             <span class="text-muted">—</span>
                                         {% endif %}

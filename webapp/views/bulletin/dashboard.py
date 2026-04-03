@@ -66,8 +66,12 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
             next_cutoff = outcome.predicted_cutoff
             results = outcome.results
             confidence = outcome.confidence
+            cutoff_6m = results[5].cutoff_date if len(results) > 5 else None
+            cutoff_12m = results[11].cutoff_date if len(results) > 11 else None
             pred = {
                 "next_cutoff": next_cutoff,
+                "cutoff_6m": cutoff_6m,
+                "cutoff_12m": cutoff_12m,
                 "maturity_month": outcome.maturity_month,
                 "trajectory": [
                     (r.month, r.cutoff_date)
@@ -253,6 +257,8 @@ def _build_unified_prediction_rows(
             "last_bulletin_date": vcd.get("last_bulletin_date"),
             "current_cutoff": current_cutoffs.get(lbl),
             "next_cutoff": pred.get("next_cutoff"),
+            "cutoff_6m": pred.get("cutoff_6m"),
+            "cutoff_12m": pred.get("cutoff_12m"),
             "confidence": pred.get("confidence"),
             "confidence_low": pred.get("confidence_low"),
             "confidence_high": pred.get("confidence_high"),
