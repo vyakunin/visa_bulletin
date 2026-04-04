@@ -24,7 +24,10 @@ import os
 import runpy
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
+
+from dateutil.relativedelta import relativedelta
 
 if os.environ.get("DB_HOST") == "host.docker.internal":
     os.environ["DB_HOST"] = "localhost"
@@ -48,10 +51,10 @@ from lib.utils.url_utils import (  # noqa: E402
     normalize_source_url,
     path_basename_from_url,
 )
+from models.blog import BlogPost  # noqa: E402
 from models.bulletin import Bulletin  # noqa: E402
 from models.ingest.data_source import DataSource  # noqa: E402
 from models.ingest.enums import DataDomain, IngestStatus  # noqa: E402
-from models.blog import BlogPost  # noqa: E402
 from models.ingest.ingest_run import IngestRun  # noqa: E402
 
 setup_logging(debug=False)
@@ -160,7 +163,13 @@ def ingest_sources(source_ids: list[int]) -> int:
 
 
 def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
-    """Publish VQS predictions for the N most recently ingested bulletins."""
+    """Publish VQS predictions for the N most recently ingested bulletins.
+
+    Publishes two target months per bulletin:
+    - The bulletin's month (for surprise / accuracy vs actual in the blog).
+    - The following calendar month (``BulletinNarrator`` Future Outlook reads
+      ``PredictedBulletin`` for ``bulletin_date + 1 month``).
+    """
     workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY", os.getcwd())
     binary = os.path.join(workspace, "bazel-bin", "scripts", "publish_predictions")
     if not os.path.exists(binary):
@@ -170,13 +179,24 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
     bulletins = list(
         Bulletin.objects.order_by("-publication_date").values_list("publication_date", flat=True)[:n_bulletins]
     )
+    target_months: list[date] = []
+    seen: set[tuple[int, int]] = set()
     for pub_date in bulletins:
-        month_str = pub_date.strftime("%Y-%m")
-        logger.info("Publishing predictions for bulletin month %s", month_str)
+        first_of = pub_date.replace(day=1)
+        following = first_of + relativedelta(months=1)
+        for m in (first_of, following):
+            key = (m.year, m.month)
+            if key not in seen:
+                seen.add(key)
+                target_months.append(m)
+
+    for target in target_months:
+        month_str = target.strftime("%Y-%m")
+        logger.info("Publishing predictions for target month %s", month_str)
         try:
             result = subprocess.run(
                 [binary, "--month", month_str],
-                timeout=120,
+                timeout=180,
                 capture_output=True,
                 text=True,
             )

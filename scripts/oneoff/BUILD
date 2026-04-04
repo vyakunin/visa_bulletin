@@ -9,6 +9,24 @@ py_binary(
 )
 
 py_binary(
+    name = "export_import_vqs_predictions",
+    srcs = ["export_import_vqs_predictions.py"],
+    main = "export_import_vqs_predictions.py",
+    deps = [
+        "//django_config:settings",
+        "//lib/utils:logging_utils",
+        "//models:vqs",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)
+
+py_binary(
     name = "purge_bad_6m_predictions",
     srcs = ["purge_bad_6m_predictions.py"],
     main = "purge_bad_6m_predictions.py",
