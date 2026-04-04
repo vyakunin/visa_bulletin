@@ -452,6 +452,53 @@ def run_orchestrate(
         logger.info("This host is inactive; no-op (orchestrator should run on active)")
         return 0
 
+    # Lock file guard: prevent concurrent orchestrator runs on the same host.
+    # A double-triggered graduation can swap IPs twice and stop both instances.
+    lock_path = Path(config.project_root) / ".orchestrator.lock"
+    if lock_path.exists():
+        try:
+            lock_pid = int(lock_path.read_text().strip())
+            # Check if the process is still running
+            os.kill(lock_pid, 0)
+            logger.error(
+                "Another orchestrator is running (PID %d, lock file %s). "
+                "Aborting to prevent double-graduation. "
+                "If the other process is dead, delete %s manually.",
+                lock_pid,
+                lock_path,
+                lock_path,
+            )
+            return 1
+        except (ValueError, ProcessLookupError, OSError):
+            logger.warning("Stale lock file %s (PID gone); removing", lock_path)
+            lock_path.unlink(missing_ok=True)
+
+    lock_path.write_text(str(os.getpid()))
+    try:
+        return _run_orchestrate_locked(
+            config, active_info, inactive_info,
+            safety_interval_sec=safety_interval_sec,
+            no_traffic_switch=no_traffic_switch,
+            resume=resume,
+            from_step=from_step,
+            domain=domain,
+        )
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _run_orchestrate_locked(
+    config: RefreshConfig,
+    active_info: instance.InstanceInfo,
+    inactive_info: instance.InstanceInfo,
+    safety_interval_sec: int = 1800,
+    no_traffic_switch: bool = False,
+    resume: bool = False,
+    from_step: str | None = None,
+    domain: str | None = None,
+) -> int:
+    """Core orchestration logic, called while holding the lock file."""
+
     # Validate .env against actual AWS state to catch corrupted .env from partial runs.
     # Logs errors with recovery instructions on mismatch but does not abort (non-fatal)
     # so a misconfigured AWS CLI doesn't block the orchestrator.

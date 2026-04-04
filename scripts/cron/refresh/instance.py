@@ -93,8 +93,66 @@ def start_instance(instance_name: str) -> bool:
     return True
 
 
+def _instance_has_prod_static_ip(instance_name: str, prod_static_ip_name: str) -> bool:
+    """Check if *instance_name* currently has the prod static IP attached.
+
+    Returns True if the prod static IP is attached to this instance — meaning
+    stopping it would take down production.
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "aws", "lightsail", "get-static-ips",
+                "--region", AWS_REGION,
+                "--output", "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as e:
+        logger.warning("Pre-stop IP check skipped (AWS CLI error): %s", e)
+        return False  # Can't verify — allow stop (non-fatal fallback)
+
+    if result.returncode != 0:
+        logger.warning("Pre-stop IP check skipped (get-static-ips failed): %s", result.stderr[:300])
+        return False
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+
+    for ip_info in data.get("staticIps", []):
+        if ip_info.get("name") == prod_static_ip_name:
+            attached_to = ip_info.get("attachedTo", "")
+            if attached_to == instance_name:
+                return True
+            break
+    return False
+
+
 def stop_instance(instance_name: str) -> bool:
-    """Stop Lightsail instance. Returns True on success."""
+    """Stop Lightsail instance. Returns True on success.
+
+    Safety: refuses to stop an instance that currently holds the prod static IP
+    (REFRESH_STATIC_IP_NAME). This guards against double-triggered graduations
+    where a stale orchestrator process tries to stop what is now production.
+    """
+    prod_static_ip_name = os.environ.get("REFRESH_STATIC_IP_NAME", "").strip()
+    if prod_static_ip_name and _instance_has_prod_static_ip(instance_name, prod_static_ip_name):
+        logger.error(
+            "REFUSING to stop %s: it currently holds the prod static IP (%s). "
+            "This likely means another graduation swapped IPs while this orchestrator "
+            "was in its safety interval. Manual intervention required.",
+            instance_name,
+            prod_static_ip_name,
+        )
+        return False
+
     import subprocess
 
     result = subprocess.run(

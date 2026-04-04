@@ -21,8 +21,10 @@ Cron (hourly, uses `. .env` not `source` for /bin/sh compatibility):
 
 import logging
 import os
+import runpy
 import subprocess
 import sys
+from pathlib import Path
 
 if os.environ.get("DB_HOST") == "host.docker.internal":
     os.environ["DB_HOST"] = "localhost"
@@ -49,11 +51,35 @@ from lib.utils.url_utils import (  # noqa: E402
 from models.bulletin import Bulletin  # noqa: E402
 from models.ingest.data_source import DataSource  # noqa: E402
 from models.ingest.enums import DataDomain, IngestStatus  # noqa: E402
+from models.blog import BlogPost  # noqa: E402
 from models.ingest.ingest_run import IngestRun  # noqa: E402
 
 setup_logging(debug=False)
 logger = logging.getLogger(__name__)
 script_logger = ScriptLogger(__file__)
+
+_METHODOLOGY_POST_TITLE = "How My Prediction Model Works"
+
+
+def _ensure_methodology_blog_post() -> None:
+    """Recreate the methodology explainer if it is missing (links assume this slug exists)."""
+    from django.utils.text import slugify
+
+    slug = slugify(_METHODOLOGY_POST_TITLE)
+    if BlogPost.objects.filter(slug=slug, is_published=True).exists():
+        return
+
+    script = Path(__file__).resolve().parent.parent / "oneoff" / "generate_initial_blog_posts.py"
+    if not script.is_file():
+        logger.error("Cannot seed methodology post: script not found at %s", script)
+        return
+
+    logger.warning(
+        "Published methodology blog post missing (slug=%s); running create_methodology_post",
+        slug,
+    )
+    mod = runpy.run_path(str(script))
+    mod["create_methodology_post"]()
 
 
 def discover_bulletin_sources() -> list:
@@ -177,6 +203,8 @@ def _generate_blog_posts_for_latest_bulletins(n_bulletins: int) -> None:
 def main() -> None:
     script_logger.log_call(args={}, context="Hourly visa bulletin refresh")
     logger.info("=== Visa Bulletin Refresh ===")
+
+    _ensure_methodology_blog_post()
 
     new_sources = discover_bulletin_sources()
     logger.info("Discovered %d new bulletin source(s)", len(new_sources))

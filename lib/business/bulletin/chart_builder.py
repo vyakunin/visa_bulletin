@@ -51,7 +51,7 @@ def build_multi_class_chart_with_projections(
     # Add traces for each visa class
     for idx, data in enumerate(visa_class_data):
         color = VISA_CLASS_COLORS[idx % len(VISA_CLASS_COLORS)]
-        vqs_pred = (vqs_predictions or {}).get(data.get("visa_class_label", ""))
+        vqs_pred = (vqs_predictions or {}).get(data.get("visa_class_label", data["visa_class"]))
 
         trace_indices, proj_date, current_trace_idx = _add_visa_class_traces(
             fig, data, color, submission_date, current_trace_idx, vqs_pred=vqs_pred

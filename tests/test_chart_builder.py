@@ -27,6 +27,9 @@ class TestChartBuilder(unittest.TestCase):
         self.assertIn("priority-date-chart", html)
 
     def test_includes_projection_when_available(self):
+        # The legacy build_chart_with_projection accepts projection for backward
+        # compatibility but VQS lines are only added via vqs_predictions in the
+        # multi-class builder. Chart should still render without crashing.
         dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)]
         cutoffs = [date(2020, 1, 1), date(2020, 2, 1), date(2020, 3, 1)]
         submission = date(2021, 1, 1)
@@ -40,7 +43,8 @@ class TestChartBuilder(unittest.TestCase):
             dates, cutoffs, submission, projection, "F1", "china"
         )
 
-        self.assertIn("Projection", html)
+        self.assertIsInstance(html, str)
+        self.assertIn("plotly", html.lower())
         self.assertIn("F1", html)
 
     def test_handles_none_cutoff_dates(self):
@@ -151,62 +155,74 @@ class TestMultiClassChartBuilder(unittest.TestCase):
         self.assertEqual(result["trace_info"], [])
 
     def test_includes_projections_when_available(self):
-        """Chart should show projection lines for each visa class"""
+        """Chart should show projection lines for each visa class via vqs_predictions"""
         visa_class_data = [
             {
                 "visa_class": "EB2",
                 "visa_class_label": "EB-2: Advanced Degree",
                 "dates": [date(2024, 1, 1), date(2024, 2, 1)],
                 "cutoff_dates": [date(2018, 1, 1), date(2018, 2, 1)],
-                "projection": {
-                    "status": "projected",
-                    "estimated_date": date(2026, 1, 1),
-                    "months_to_wait": 24,
-                },
                 "bulletin_urls": [],
             }
         ]
+        vqs_predictions = {
+            "EB-2: Advanced Degree": {
+                "trajectory": [
+                    (date(2024, 3, 1), date(2018, 4, 1)),
+                    (date(2024, 6, 1), date(2019, 1, 1)),
+                    (date(2026, 1, 1), date(2020, 1, 1)),
+                ],
+                "maturity_month": date(2026, 1, 1),
+            }
+        }
 
         result = build_multi_class_chart_with_projections(
-            visa_class_data, date(2020, 1, 1), "india", "Employment-Based"
+            visa_class_data, date(2020, 1, 1), "india", "Employment-Based",
+            vqs_predictions=vqs_predictions,
         )
 
         # Check label appears in chart (not visa_class code)
         self.assertIn("EB-2: Advanced Degree", result["chart_json"])
-        # Should include projection data
+        # Should include projection data (2026 from trajectory/maturity)
         self.assertIn("2026", result["chart_json"])
-        # Should have 2 trace indices (historical + projection)
-        self.assertEqual(len(result["trace_info"][0]["trace_indices"]), 2)
+        # Should have 2+ trace indices (historical + VQS line)
+        self.assertGreaterEqual(len(result["trace_info"][0]["trace_indices"]), 2)
 
     def test_handles_mixed_projections(self):
-        """Some visa classes have projections, others don't"""
+        """Some visa classes have projections via vqs_predictions, others don't"""
         visa_class_data = [
             {
                 "visa_class": "EB2",
                 "dates": [date(2024, 1, 1)],
                 "cutoff_dates": [date(2018, 1, 1)],
-                "projection": {
-                    "status": "projected",
-                    "estimated_date": date(2025, 1, 1),
-                },
             },
             {
                 "visa_class": "EB3",
                 "dates": [date(2024, 1, 1)],
                 "cutoff_dates": [date(2019, 1, 1)],
-                "projection": None,  # No projection
             },
         ]
+        # Only EB2 has a VQS prediction; EB3 does not
+        vqs_predictions = {
+            "EB2": {
+                "trajectory": [
+                    (date(2024, 2, 1), date(2018, 6, 1)),
+                    (date(2025, 1, 1), date(2020, 1, 1)),
+                ],
+                "maturity_month": date(2025, 1, 1),
+            }
+        }
 
         result = build_multi_class_chart_with_projections(
-            visa_class_data, date(2020, 1, 1), "china", "Employment-Based"
+            visa_class_data, date(2020, 1, 1), "china", "Employment-Based",
+            vqs_predictions=vqs_predictions,
         )
 
         self.assertIsInstance(result, dict)
         self.assertIn("EB2", result["chart_json"])
         self.assertIn("EB3", result["chart_json"])
-        # EB2 has projection (2 traces), EB3 doesn't (1 trace)
-        self.assertEqual(len(result["trace_info"][0]["trace_indices"]), 2)
+        # EB2 has VQS prediction (historical + projection + maturity marker), EB3 doesn't (1 trace)
+        self.assertGreaterEqual(len(result["trace_info"][0]["trace_indices"]), 2)
         self.assertEqual(len(result["trace_info"][1]["trace_indices"]), 1)
 
     def test_handles_none_cutoff_dates_in_multi_class(self):
@@ -228,25 +244,31 @@ class TestMultiClassChartBuilder(unittest.TestCase):
         self.assertIn("chart_json", result)
 
     def test_submission_date_line_extends_to_projections(self):
-        """Submission date line should extend to furthest projection"""
+        """Submission date line should extend to furthest VQS projection"""
         visa_class_data = [
             {
                 "visa_class": "EB2",
                 "dates": [date(2024, 1, 1)],
                 "cutoff_dates": [date(2018, 1, 1)],
-                "projection": {
-                    "status": "projected",
-                    "estimated_date": date(2030, 1, 1),  # Far future
-                },
             }
         ]
+        vqs_predictions = {
+            "EB2": {
+                "trajectory": [
+                    (date(2024, 2, 1), date(2018, 4, 1)),
+                    (date(2030, 1, 1), date(2020, 1, 1)),  # Far future maturity
+                ],
+                "maturity_month": date(2030, 1, 1),
+            }
+        }
 
         result = build_multi_class_chart_with_projections(
-            visa_class_data, date(2020, 1, 1), "india", "Employment-Based"
+            visa_class_data, date(2020, 1, 1), "india", "Employment-Based",
+            vqs_predictions=vqs_predictions,
         )
 
         self.assertIn("Your Priority Date", result["chart_json"])
-        # Should reference 2030 in chart data
+        # Should reference 2030 in chart data (maturity month extends priority line)
         self.assertIn("2030", result["chart_json"])
 
     def test_trace_info_includes_colors(self):
