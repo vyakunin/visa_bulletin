@@ -29,6 +29,10 @@ MIN_CASE_SUBMITTED_PERCENT = 65
 
 MIN_AUTOCOMPLETE_RESULTS = 1
 MIN_DIRECTORY_ENTRIES = 10
+MIN_PUBLISHED_BLOG_POSTS = 1
+# Slug hardcoded in dashboard, about, faq, and prediction-detail templates — must exist.
+REQUIRED_BLOG_SLUG = "how-my-prediction-model-works"
+MIN_PREDICTED_BULLETINS = 1
 
 
 def _curl_localhost(
@@ -209,6 +213,44 @@ def _run_db_smoke_tests(runner: Runner, db_name: str) -> None:
             f"(expected >{MIN_EMPLOYER_CLUSTERS_WITH_STATS}). Did update_employer_stats run?"
         )
 
+    # Blog posts — templates hardcode certain slugs; missing posts → 404 on dashboard popovers
+    blog_count_s = runner.run_psql(
+        db_name,
+        "SELECT COUNT(*) FROM models_blogpost WHERE is_published = true;",
+    )
+    blog_count = int(blog_count_s.strip()) if blog_count_s.strip() else 0
+    logger.info("Published blog posts: %s", blog_count)
+    if blog_count < MIN_PUBLISHED_BLOG_POSTS:
+        raise RuntimeError(
+            f"No published blog posts found (expected >= {MIN_PUBLISHED_BLOG_POSTS}). "
+            "Blog listing page will be empty and dashboard 'Latest Analysis' card will not render."
+        )
+    required_slug_s = runner.run_psql(
+        db_name,
+        f"SELECT COUNT(*) FROM models_blogpost WHERE slug = '{REQUIRED_BLOG_SLUG}' AND is_published = true;",
+    )
+    required_slug_count = int(required_slug_s.strip()) if required_slug_s.strip() else 0
+    if required_slug_count == 0:
+        raise RuntimeError(
+            f"Required blog post '{REQUIRED_BLOG_SLUG}' is missing or not published. "
+            "This slug is hardcoded in dashboard, about, faq, and prediction-detail templates. "
+            "All /analysis/how-my-prediction-model-works/ links will 404 after graduation."
+        )
+    logger.info("[DB] Blog post '%s': OK (published)", REQUIRED_BLOG_SLUG)
+
+    # VQS predictions — dashboard 6m/12m columns and spaghetti chart depend on this data
+    pb_count_s = runner.run_psql(
+        db_name,
+        "SELECT COUNT(*) FROM models_predictedbulletin;",
+    )
+    pb_count = int(pb_count_s.strip()) if pb_count_s.strip() else 0
+    logger.info("PredictedBulletin rows: %s", pb_count)
+    if pb_count < MIN_PREDICTED_BULLETINS:
+        raise RuntimeError(
+            f"No VQS prediction data found ({pb_count} PredictedBulletin rows). "
+            "Dashboard 6m/12m prediction columns and prediction detail pages will be empty."
+        )
+
 
 def _validate_autocomplete_fields(
     results: list[dict],
@@ -225,7 +267,7 @@ def _validate_autocomplete_fields(
 
 
 def _run_http_smoke_tests(runner: Runner) -> None:
-    """HTTP-level smoke tests: homepage, autocomplete APIs, directory and data pages.
+    """HTTP-level smoke tests: homepage, autocomplete APIs, directory, data, and blog pages.
 
     Run after start_services to verify the full stack (nginx -> gunicorn -> Django -> DB).
     Tests the exact issues discovered during manual staging validation:
@@ -235,6 +277,10 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     - Job title and employer directory have entries (not empty)
     - Salaries page renders without errors
     - Dashboard page renders without errors
+    - Blog listing (/analysis/) has post links
+    - Required blog post slug loads (hardcoded in dashboard/about/faq/prediction-detail)
+    - Prediction category landing returns 200 (not 404)
+    - Prediction detail chart renders with Plotly data
     """
     # Use "localhost" as the Host header (not runner.host, which may be a private IP not in
     # ALLOWED_HOSTS). Since curl runs ON the remote machine via SSH, "localhost" is always
@@ -340,3 +386,59 @@ def _run_http_smoke_tests(runner: Runner) -> None:
             "Check dashboard_view and template for errors."
         )
     logger.info("[HTTP] Dashboard: OK (200)")
+
+    # Blog / analysis pages — templates hardcode /analysis/<slug>/ links; a 404 here means
+    # every 'How it works →' popover on the dashboard would be broken after graduation.
+    status, body = _curl_localhost(runner, "/analysis/", host_header="localhost")
+    if status != 200:
+        raise RuntimeError(
+            f"Blog listing (/analysis/) returned HTTP {status} (expected 200). "
+            "Check blog_list view and models_blogpost table."
+        )
+    if "/analysis/" not in body:
+        raise RuntimeError(
+            "Blog listing (/analysis/) rendered but contains no post links. "
+            "Is models_blogpost empty or is_published=False for all rows?"
+        )
+    logger.info("[HTTP] Blog listing (/analysis/): OK (200, has links)")
+
+    status, _ = _curl_localhost(
+        runner, f"/analysis/{REQUIRED_BLOG_SLUG}/", host_header="localhost"
+    )
+    if status != 200:
+        raise RuntimeError(
+            f"Required blog post /analysis/{REQUIRED_BLOG_SLUG}/ returned HTTP {status}. "
+            "This URL is linked from dashboard, about, faq, and prediction-detail pages. "
+            "Graduating with a 404 here breaks all 'How it works →' popovers."
+        )
+    logger.info("[HTTP] Required blog post (%s): OK (200)", REQUIRED_BLOG_SLUG)
+
+    # Prediction category landing — fixed by 'Fix 404 on /predictions/employment_based/'
+    status, _ = _curl_localhost(
+        runner, "/predictions/employment_based/", host_header="localhost"
+    )
+    if status != 200:
+        raise RuntimeError(
+            f"/predictions/employment_based/ returned HTTP {status} (expected 200). "
+            "prediction_category_landing view or URL pattern may be missing."
+        )
+    logger.info("[HTTP] Prediction category landing (/predictions/employment_based/): OK (200)")
+
+    # VQS prediction detail chart — verifies chart_builder produces data and view loads
+    status, body = _curl_localhost(
+        runner,
+        "/predictions/employment_based/china/eb1/",
+        timeout_sec=30,
+        host_header="localhost",
+    )
+    if status != 200:
+        raise RuntimeError(
+            f"Prediction detail /predictions/employment_based/china/eb1/ returned HTTP {status}. "
+            "Check prediction_detail view and chart_builder for errors."
+        )
+    if "plotly" not in body.lower():
+        raise RuntimeError(
+            "Prediction detail /predictions/employment_based/china/eb1/ rendered (200) "
+            "but Plotly chart data is absent. chart_builder may have raised silently."
+        )
+    logger.info("[HTTP] Prediction detail (EB-1 China) with Plotly chart: OK (200)")
