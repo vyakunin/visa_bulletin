@@ -424,21 +424,26 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Prediction category landing (/predictions/employment_based/): OK (200)")
 
-    # VQS prediction detail chart — verifies chart_builder produces data and view loads
-    status, body = _curl_localhost(
-        runner,
-        "/predictions/employment_based/china/eb1/",
-        timeout_sec=30,
-        host_header="localhost",
+    # VQS prediction detail chart — follow the category landing redirect (302 → YYYY-M page)
+    # to verify chart_builder produces Plotly data. Uses curl -L to follow the redirect.
+    result = runner.run_shell(
+        "curl -s -L -w '\\n%{http_code}' --max-time 30 -H 'Host: localhost' "
+        "'http://localhost:8000/predictions/employment_based/'",
+        timeout_sec=35,
     )
-    if status != 200:
+    output = (result.stdout or "").strip()
+    lines = output.rsplit("\n", 1)
+    pred_status = int(lines[1]) if len(lines) == 2 and lines[1].isdigit() else 0
+    pred_body = lines[0] if len(lines) == 2 else output
+
+    if pred_status != 200:
         raise RuntimeError(
-            f"Prediction detail /predictions/employment_based/china/eb1/ returned HTTP {status}. "
-            "Check prediction_detail view and chart_builder for errors."
+            f"Prediction detail (employment_based, following redirect) returned HTTP {pred_status}. "
+            "Check prediction_category_landing → prediction_detail view chain."
         )
-    if "plotly" not in body.lower():
+    if "plotly" not in pred_body.lower():
         raise RuntimeError(
-            "Prediction detail /predictions/employment_based/china/eb1/ rendered (200) "
-            "but Plotly chart data is absent. chart_builder may have raised silently."
+            "Prediction detail page rendered (200) but Plotly chart data is absent. "
+            "chart_builder may have raised silently or vqs_predictions dict is empty."
         )
-    logger.info("[HTTP] Prediction detail (EB-1 China) with Plotly chart: OK (200)")
+    logger.info("[HTTP] Prediction detail (employment_based, following redirect) with Plotly chart: OK (200)")
