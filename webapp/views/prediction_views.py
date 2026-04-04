@@ -4,7 +4,7 @@ import re
 from datetime import date
 
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from lib.business.vqs.prediction_loader import (
     PredictionResult,
@@ -38,6 +38,32 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
     )
     context = {"months": list(months)}
     return render(request, "vqs/prediction_list.html", context)
+
+
+def prediction_category_landing(request: HttpRequest, category: str) -> HttpResponse:
+    """Redirect /predictions/<category>/ to the latest bulletin month (detail page)."""
+    valid = {c.value for c in VisaCategory}
+    if category not in valid:
+        from django.http import Http404
+
+        raise Http404("Unknown prediction category")
+
+    latest = (
+        Bulletin.objects.order_by("-publication_date")
+        .values_list("publication_date", flat=True)
+        .first()
+    )
+    if not latest:
+        from django.http import Http404
+
+        raise Http404("No bulletins available")
+
+    return redirect(
+        "prediction_detail_category",
+        category=category,
+        year=latest.year,
+        month=latest.month,
+    )
 
 
 def _add_months(sourcedate: date, months: int) -> date:

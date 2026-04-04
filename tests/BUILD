@@ -279,6 +279,15 @@ django_py_test(
     ],
 )
 
+django_py_test(
+    name = "test_prediction_category_landing",
+    srcs = ["test_prediction_category_landing.py"],
+    deps = [
+        "//models:bulletin",
+        "//webapp:urls",
+    ],
+)
+
 py_test(
     name = "test_webapp_ui",
     size = "small",

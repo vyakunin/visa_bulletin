@@ -18,6 +18,7 @@ from webapp.views.job_titles.directory import (
 from webapp.views.job_titles.profile import job_title_profile_view
 from webapp.views.prediction_views import (
     metric_report_view,
+    prediction_category_landing,
     prediction_detail,
     prediction_list,
     spaghetti_view,
@@ -43,6 +44,12 @@ urlpatterns = [
         prediction_detail,
         {"category": "employment_based"},
         name="prediction_detail",
+    ),
+    # After legacy YYYY-M so /predictions/2024-3/ is not captured as a category
+    path(
+        "predictions/<str:category>/",
+        prediction_category_landing,
+        name="prediction_category_landing",
     ),
     path("health/", health_view, name="health"),
     # Static pages
