@@ -35,6 +35,7 @@ py_binary(
         "//lib/ingest/plugins:visa_bulletin",
         "//lib/utils:logging_utils",
         "//lib/utils:url_utils",
+        "//models:blog",
         "//models:bulletin",
         "//models/ingest:ingest",
         "//django_config:settings",
