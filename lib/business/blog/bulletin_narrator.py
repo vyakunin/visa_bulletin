@@ -66,6 +66,25 @@ PRIORITY_SERIES = [
 ]
 
 
+def horizon_months_from_knowledge(target_month_first: date, knowledge_date: date) -> int:
+    """Calendar months from knowledge date to target bulletin month (same as publish_predictions)."""
+    return (
+        (target_month_first.year - knowledge_date.year) * 12
+        + (target_month_first.month - knowledge_date.month)
+    )
+
+
+def predicted_bulletin_for_blog_next_month(next_month_first: date) -> PredictedBulletin | None:
+    """Pick stored predictions for the blog: prefer 1-month-ahead horizon, else newest knowledge."""
+    rows = list(PredictedBulletin.objects.filter(target_bulletin_month=next_month_first))
+    if not rows:
+        return None
+    for pb in rows:
+        if horizon_months_from_knowledge(pb.target_bulletin_month, pb.prediction_date) == 1:
+            return pb
+    return max(rows, key=lambda r: r.prediction_date)
+
+
 class BulletinNarrator:
     """Generates human-readable narratives for Visa Bulletin updates.
 
@@ -325,9 +344,7 @@ class BulletinNarrator:
         next_month = bulletin_date + relativedelta(months=1)
         next_month = next_month.replace(day=1)
 
-        pred_bulletin = PredictedBulletin.objects.filter(
-            target_bulletin_month=next_month
-        ).first()
+        pred_bulletin = predicted_bulletin_for_blog_next_month(next_month)
         if not pred_bulletin:
             return []
 
@@ -520,9 +537,14 @@ class BulletinNarrator:
                 "label": entry["label"],
                 "predicted_date": entry.get("predicted_date"),
                 "regime": entry.get("regime"),
-                "regime_label": entry.get("regime_label", "Unknown"),
-                "regime_badge_class": entry.get("regime_badge_class", "secondary"),
             }
+            rl = entry.get("regime_label")
+            if rl and str(rl).lower() != "unknown":
+                outlook_item["regime_label"] = rl
+                outlook_item["regime_badge_class"] = entry.get("regime_badge_class") or "secondary"
+            else:
+                outlook_item["regime_label"] = ""
+                outlook_item["regime_badge_class"] = None
 
             if pace:
                 outlook_item["avg_pace"] = pace["avg_12m_pace"]

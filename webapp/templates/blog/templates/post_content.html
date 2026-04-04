@@ -196,7 +196,7 @@
                 <div class="card-body">
                     <h6 class="card-title d-flex align-items-center justify-content-between">
                         {{ s.label }}
-                        {% if s.regime_badge_class %}
+                        {% if s.regime_badge_class and s.regime_label %}
                         <span class="badge bg-{{ s.regime_badge_class }} bg-opacity-25 text-dark">
                             {{ s.regime_label }}
                         </span>

@@ -271,6 +271,14 @@ py_test(
     srcs_version = "PY3",
 )
 
+django_py_test(
+    name = "test_bulletin_narrator",
+    srcs = ["test_bulletin_narrator.py"],
+    deps = [
+        "//lib/business/blog:blog",
+    ],
+)
+
 py_test(
     name = "test_webapp_ui",
     size = "small",
