@@ -37,6 +37,7 @@ class PredictionResult:
     explanation_markdown: str | None = None
     expert_predictions: dict | None = None
     movement_probability: float | None = None
+    model_name: str = "unknown"
 
 
 def compute_knowledge_date(target_month: date, horizon: int = 1) -> date:
@@ -211,6 +212,7 @@ def get_prediction_for_series(
             confidence_high=stored.confidence_high,
             explanation_markdown=stored.explanation_markdown or None,
             expert_predictions=stored.expert_predictions or None,
+            model_name=stored.model_name or "unknown",
         )
 
     kd = compute_knowledge_date(target_month)
@@ -249,10 +251,14 @@ def get_all_predictions_for_month(
     results: dict[tuple[str, int, str], PredictionResult] = {}
 
     stored_by_key: dict[tuple[str, int, str], PredictedCutoff] = {}
-    stored_qs = PredictedCutoff.objects.filter(
-        bulletin__target_bulletin_month=target_month,
-        predicted_date__isnull=False,
-    ).select_related("bulletin")
+    stored_qs = (
+        PredictedCutoff.objects.filter(
+            bulletin__target_bulletin_month=target_month,
+            predicted_date__isnull=False,
+        )
+        .select_related("bulletin")
+        .order_by("bulletin__prediction_date")  # ascending: latest overwrites earlier
+    )
     for sc in stored_qs:
         stored_by_key[(sc.visa_class, sc.country, sc.action_type)] = sc
 
@@ -272,6 +278,7 @@ def get_all_predictions_for_month(
                         explanation_markdown=stored.explanation_markdown or None,
                         expert_predictions=stored.expert_predictions or None,
                         movement_probability=stored.movement_probability,
+                        model_name=stored.model_name or "unknown",
                     )
                     continue
 

@@ -52,6 +52,17 @@ Use `--series "China EB-1" --horizons 1` for a quick single-series check (~15s).
 
 The `cumErr` JS function uses `Math.abs()` — cumulative error only goes up. This is intentional MAE aggregation. **Do not remove `Math.abs()`**; add a separate signed-delta trace if needed.
 
+## Rule: Run Mechanical Follow-Up Steps Automatically
+
+**After any solver, prediction, or display-layer code change, run all deterministic follow-up commands automatically. Do NOT list them as "next steps" for the user.**
+
+Follow-up checklist (run automatically):
+1. **Republish predictions** for affected months: `bazel run //scripts:publish_predictions -- --month YYYY-MM`
+2. **Run backtests** if thresholds or expert selection changed: `bazel run //scripts/vqs:evaluate_model -- --series "China EB-1" --horizons 1` (quick check)
+3. **Regenerate spaghetti** if solver logic changed (per existing rule)
+
+Only surface results that require human judgement (e.g., "MAE regressed from X to Y — should I revert?").
+
 ## Predictions Table Delta Convention
 
 Delta = `predicted_date - previous_month_actual_date`. Positive = prediction is later (optimistic/advance); negative = prediction is earlier (retrogression predicted). Delta is relative to the **previous actual bulletin**, not the current actual.

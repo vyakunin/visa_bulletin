@@ -171,17 +171,52 @@ def prediction_detail(
             pred_obj = _make_prediction_display(pred_result, last_actual_date, visa_class=vc, country=cval)
             cell["predicted"] = pred_obj
 
-    # Populate actuals
+    # Populate actuals + compute prediction error
     for vc in classes:
         for c in countries:
             for atype in action_types:
                 key = f"{vc}_{c.value}_{atype}"
                 if key in current_actual_cutoffs:
                     d = current_actual_cutoffs[key]
-                    matrix[vc][c.value][atype]["actual_date"] = d
-                    matrix[vc][c.value][atype]["formatted_actual"] = (
+                    cell = matrix[vc][c.value][atype]
+                    cell["actual_date"] = d
+                    cell["formatted_actual"] = (
                         d.strftime("%d %b %Y") if d else None
                     )
+                    # Compute error vs prediction and actual movement vs previous
+                    last_d = last_actual_cutoffs.get(key)
+                    pred_obj = cell.get("predicted")
+                    if d and pred_obj and pred_obj.predicted_date:
+                        err = (pred_obj.predicted_date - d).days
+                        if err == 0:
+                            cell["error_text"] = "exact"
+                            cell["error_type"] = "success"
+                        elif abs(err) <= 15:
+                            cell["error_text"] = f"{'+'if err>0 else ''}{err}d"
+                            cell["error_type"] = "success"
+                        elif abs(err) <= 60:
+                            cell["error_text"] = f"{'+'if err>0 else ''}{err}d"
+                            cell["error_type"] = "warning"
+                        else:
+                            cell["error_text"] = f"{'+'if err>0 else ''}{err}d"
+                            cell["error_type"] = "danger"
+                    if d and last_d:
+                        actual_delta = (d - last_d).days
+                        if actual_delta == 0:
+                            cell["actual_move"] = "0"
+                            cell["actual_move_type"] = "neutral"
+                        elif actual_delta >= 30:
+                            cell["actual_move"] = f"↑ {actual_delta // 30}m"
+                            cell["actual_move_type"] = "positive"
+                        elif actual_delta > 0:
+                            cell["actual_move"] = f"↑ {actual_delta}d"
+                            cell["actual_move_type"] = "positive"
+                        elif actual_delta <= -30:
+                            cell["actual_move"] = f"↓ {abs(actual_delta) // 30}m"
+                            cell["actual_move_type"] = "negative"
+                        else:
+                            cell["actual_move"] = f"↓ {abs(actual_delta)}d"
+                            cell["actual_move_type"] = "negative"
 
     # Convert to template rows
     table_rows = []
@@ -247,6 +282,8 @@ class _PredDisplay:
         "movement_probability",
         "movement_prob_label",
         "movement_prob_color",
+        "model_name",
+        "prev_actual_fmt",
     )
 
     def __init__(self):
@@ -267,6 +304,8 @@ class _PredDisplay:
         self.movement_probability = None
         self.movement_prob_label = None
         self.movement_prob_color = None
+        self.model_name = "unknown"
+        self.prev_actual_fmt = None
 
 
 def _parse_regime_from_explanation(explanation: str | None) -> str | None:
@@ -287,6 +326,9 @@ def _make_prediction_display(
     obj.formatted_date = (
         pred.predicted_date.strftime("%d %b %Y") if pred.predicted_date else None
     )
+    obj.model_name = pred.model_name
+    if last_actual_date:
+        obj.prev_actual_fmt = last_actual_date.strftime("%d %b %Y")
 
     if last_actual_date and pred.predicted_date:
         delta = (pred.predicted_date - last_actual_date).days

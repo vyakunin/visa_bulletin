@@ -1289,3 +1289,16 @@ py_test(
     python_version = "PY3",
     srcs_version = "PY3",
 )
+
+py_test(
+    name = "test_solver_regime_display",
+    size = "small",
+    srcs = ["test_solver_regime_display.py"],
+    deps = [
+        "//lib/business/vqs:solver",
+        "//lib/business/vqs:regime",
+        "//lib/business/vqs:expert_pool",
+    ],
+    python_version = "PY3",
+    srcs_version = "PY3",
+)

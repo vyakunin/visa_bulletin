@@ -2,7 +2,29 @@
 {% block title %}{{ formatted_title }}{% endblock %}
 {% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
 {% block content %}
-<div class="container py-4">
+<style>
+.pred-cell { font-size: 0.8rem; line-height: 1.5; white-space: nowrap; }
+.pred-cell .prev { color: #999; font-size: 0.7rem; }
+.pred-cell .arrow { color: #bbb; font-size: 0.65rem; }
+.pred-cell .pred-date { font-weight: 600; }
+.pred-cell .delta { font-size: 0.68rem; font-weight: 600; }
+.pred-cell .delta.pos { color: #198754; }
+.pred-cell .delta.neg { color: #dc3545; }
+.pred-cell .delta.neu { color: #6c757d; }
+.pred-cell .badge-row { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.actual-cell { font-size: 0.8rem; line-height: 1.5; white-space: nowrap; }
+.actual-cell .actual-date { font-weight: 600; }
+.actual-cell .move { font-size: 0.68rem; font-weight: 600; }
+.actual-cell .move.pos { color: #198754; }
+.actual-cell .move.neg { color: #dc3545; }
+.actual-cell .move.neu { color: #6c757d; }
+.err-badge { font-size: 0.62rem; padding: 2px 5px; border-radius: 3px; font-weight: 600; }
+.err-badge.success { background: #d1e7dd; color: #0f5132; }
+.err-badge.warning { background: #fff3cd; color: #664d03; }
+.err-badge.danger { background: #f8d7da; color: #842029; }
+.info-badge { font-size: 0.62rem; padding: 2px 5px; border-radius: 3px; cursor: default; }
+</style>
+<div class="container-fluid py-4 px-3">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="{% url 'prediction_list' %}">Predictions</a></li>
@@ -10,16 +32,16 @@
             </li>
         </ol>
     </nav>
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1>{{ formatted_title }}</h1>
-        <div class="btn-group shadow-sm">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1 class="h4 mb-0">{{ formatted_title }}</h1>
+        <div class="btn-group btn-group-sm shadow-sm">
             <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="btn btn-outline-secondary"
                 title="View Trends">
-                <i class="bi bi-graph-up"></i> Trends
+                <i class="bi bi-graph-up"></i>
             </a>
             {% if nav_prev %}
             <a href="{% url 'prediction_detail_category' category nav_prev.year nav_prev.month %}"
-                class="btn btn-outline-primary" title="PrevMonth">
+                class="btn btn-outline-primary">
                 <i class="bi bi-chevron-left"></i> {{ formatted_nav_prev }}
             </a>
             {% else %}
@@ -27,7 +49,7 @@
             {% endif %}
             {% if nav_next %}
             <a href="{% url 'prediction_detail_category' category nav_next.year nav_next.month %}"
-                class="btn btn-outline-primary" title="NextMonth">
+                class="btn btn-outline-primary">
                 {{ formatted_nav_next }} <i class="bi bi-chevron-right"></i>
             </a>
             {% else %}
@@ -35,150 +57,78 @@
             {% endif %}
         </div>
     </div>
-    <p class="text-muted">Knowledge Date: {{ knowledge_date|date:"F d, Y" }}</p>
-    <div class="alert alert-info py-2 d-flex align-items-start">
-        <i class="bi bi-info-circle-fill me-2 mt-1"></i>
-        <div class="small">
-            <p class="mb-1">Predictions relative to last month's actual bulletin. Movement (e.g. <span
-                    class="badge bg-success text-white">↑ 1m</span>), movement probability (e.g. <span class="badge bg-warning bg-opacity-75">Watch</span>), regime (e.g. <span class="badge bg-success bg-opacity-75 text-white">Advancing</span>), and confidence range (e.g. <span class="text-muted">Jan–Mar 2026</span>) shown when available.</p>
-            <p class="mb-0 text-muted">The Bulletin Forecast Model is deliberately conservative (bias toward no change) to reduce false alarms; large actual movements (e.g. October fiscal-year resets) may be under-predicted. <span class="badge bg-warning text-dark">Experimental</span> rows (EB-4) have limited data and lower accuracy. <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}">Full methodology →</a></p>
-        </div>
-    </div>
+    <p class="text-muted small mb-2">Knowledge Date: {{ knowledge_date|date:"F d, Y" }} &middot; <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" class="text-muted">Methodology</a></p>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover shadow-sm">
+        <table class="table table-bordered table-sm shadow-sm mb-2">
             <thead class="table-dark">
                 <tr>
-                    <th rowspan="2" class="align-middle text-center">Preference</th>
-                    <th rowspan="2" class="align-middle text-center" style="width:1%;">Type</th>
-                    {% for c in countries %}<th colspan="2" class="text-center">{{ c.label }}</th>{% endfor %}
+                    <th rowspan="2" class="align-middle text-center" style="width:60px;">Pref</th>
+                    <th rowspan="2" class="align-middle text-center" style="width:1%;">Row</th>
+                    {% for c in countries %}<th colspan="2" class="text-center small">{{ c.label }}</th>{% endfor %}
                 </tr>
                 <tr>
                     {% for c in countries %}
-                    <th class="small text-center bg-secondary text-white-50">Final Action</th>
-                    <th class="small text-center bg-secondary text-white-50">Filing</th>
+                    <th class="small text-center bg-secondary text-white-50 py-1" style="font-size:0.7rem;">FA</th>
+                    <th class="small text-center bg-secondary text-white-50 py-1" style="font-size:0.7rem;">Filing</th>
                     {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% for row in table_rows %}
                 <tr {% if row.class_full == '4th' %}class="table-secondary opacity-75"{% endif %}>
-                    <th scope="row" rowspan="2" class="align-middle text-center table-light">
-                        {{ row.class }}
-                        {% if row.class_full == '4th' %}<div><span class="badge bg-warning text-dark" style="font-size:0.65rem;">Experimental</span></div>{% endif %}
+                    <th scope="row" rowspan="2" class="align-middle text-center table-light small">
+                        {{ row.class }}{% if row.class_full == '4th' %} <span class="info-badge bg-warning text-dark" title="Limited data, lower accuracy" data-bs-toggle="tooltip">exp</span>{% endif %}
                     </th>
-                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3">projected</td>
+                    <td class="align-middle small text-muted bg-light text-center py-1" style="font-size:0.65rem;">pred</td>
                     {% for cell in row.countries %}
-                    <td class="align-middle text-center">
-                        {% with p=cell.final_action.predicted %}
-                        {% if p and p.formatted_date %}
-                        <div class="d-flex flex-column align-items-center gap-1">
-                            <span class="fw-bold {% if row.class_full == '4th' %}text-muted{% else %}text-dark{% endif %}"
-                                {% if p.confidence_low_fmt and p.confidence_high_fmt %}
-                                title="Range: {{ p.confidence_low_fmt }} – {{ p.confidence_high_fmt }}"
-                                data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span>
-                            {% if p.movement_delta %}
-                            <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
-                            {% endif %}
-                            {% if p.movement_prob_label %}
-                            <span class="badge bg-{{ p.movement_prob_color }} bg-opacity-75"
-                                  style="font-size:0.55rem;"
-                                  title="Model estimates {{ p.movement_probability }}% chance of >50-day cutoff change"
-                                  data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>
-                            {% endif %}
-                            {% if p.regime_label %}
-                            <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
-                            {% endif %}
-                            {% if p.confidence_low_fmt %}
-                            <span class="text-muted" style="font-size:0.6rem;">{{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}</span>
-                            {% endif %}
-                            {% if p.explanation_text %}
-                            <details class="text-start" style="font-size:0.6rem;max-width:140px;">
-                                <summary class="text-muted" style="cursor:pointer;">why?</summary>
-                                <div class="text-muted mt-1">{{ p.explanation_text }}</div>
-                                {% if p.top_experts %}
-                                <div class="mt-1">{% for name, wt in p.top_experts %}<span class="badge bg-light text-dark border me-1">{{ name }} {{ wt }}</span>{% endfor %}</div>
-                                {% endif %}
-                            </details>
-                            {% endif %}
-                        </div>
-                        {% else %}-{% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="align-middle text-center bg-light bg-opacity-10">
-                        {% with p=cell.filing.predicted %}
-                        {% if p and p.formatted_date %}
-                        <div class="d-flex flex-column align-items-center gap-1">
-                            <span class="fw-bold {% if row.class_full == '4th' %}text-muted{% else %}text-dark{% endif %}"
-                                {% if p.confidence_low_fmt and p.confidence_high_fmt %}
-                                title="Range: {{ p.confidence_low_fmt }} – {{ p.confidence_high_fmt }}"
-                                data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span>
-                            {% if p.movement_delta %}
-                            <span class="badge {% if p.movement_type == 'positive' %}bg-success{% elif p.movement_type == 'negative' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.65rem;">{{ p.movement_delta }}</span>
-                            {% endif %}
-                            {% if p.movement_prob_label %}
-                            <span class="badge bg-{{ p.movement_prob_color }} bg-opacity-75"
-                                  style="font-size:0.55rem;"
-                                  title="Model estimates {{ p.movement_probability }}% chance of >50-day cutoff change"
-                                  data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>
-                            {% endif %}
-                            {% if p.regime_label %}
-                            <span class="badge bg-{{ p.regime_color }} bg-opacity-75 text-white" style="font-size:0.6rem;">{{ p.regime_label }}</span>
-                            {% endif %}
-                            {% if p.confidence_low_fmt %}
-                            <span class="text-muted" style="font-size:0.6rem;">{{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}</span>
-                            {% endif %}
-                            {% if p.explanation_text %}
-                            <details class="text-start" style="font-size:0.6rem;max-width:140px;">
-                                <summary class="text-muted" style="cursor:pointer;">why?</summary>
-                                <div class="text-muted mt-1">{{ p.explanation_text }}</div>
-                                {% if p.top_experts %}
-                                <div class="mt-1">{% for name, wt in p.top_experts %}<span class="badge bg-light text-dark border me-1">{{ name }} {{ wt }}</span>{% endfor %}</div>
-                                {% endif %}
-                            </details>
-                            {% endif %}
-                        </div>
-                        {% else %}-{% endif %}
-                        {% endwith %}
-                    </td>
+                    {% with p=cell.final_action.predicted %}
+                    <td class="align-middle text-center py-2">{% if p and p.formatted_date %}<div class="pred-cell">
+                        <div><span class="prev" title="Previous month actual" data-bs-toggle="tooltip">{{ p.prev_actual_fmt|default:"?" }}</span> <span class="arrow">&rarr;</span> <span class="pred-date"{% if p.confidence_low_fmt %} title="CI: {{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}" data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span> {% if p.movement_delta %}<span class="delta {% if p.movement_type == 'positive' %}pos{% elif p.movement_type == 'negative' %}neg{% else %}neu{% endif %}">{{ p.movement_delta }}</span>{% endif %}</div>
+                        <div class="badge-row">{% if p.model_name == "persistence" %}<span class="info-badge bg-secondary text-white" title="No-change baseline — model not applicable" data-bs-toggle="tooltip">No-change</span>{% elif p.regime_label and p.movement_delta != "0" %}<span class="info-badge bg-{{ p.regime_color }} bg-opacity-75 text-white" title="Regime: {{ p.regime_label }}{% if p.explanation_text %} — {{ p.explanation_text }}{% endif %}" data-bs-toggle="tooltip">{{ p.regime_label }}</span>{% endif %}{% if p.movement_prob_label %}<span class="info-badge bg-{{ p.movement_prob_color }} bg-opacity-75" title="{{ p.movement_probability }}% chance of >50d move" data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>{% endif %}</div>
+                    </div>{% else %}-{% endif %}</td>
+                    {% endwith %}
+                    {% with p=cell.filing.predicted %}
+                    <td class="align-middle text-center bg-light bg-opacity-10 py-2">{% if p and p.formatted_date %}<div class="pred-cell">
+                        <div><span class="prev" title="Previous month actual" data-bs-toggle="tooltip">{{ p.prev_actual_fmt|default:"?" }}</span> <span class="arrow">&rarr;</span> <span class="pred-date"{% if p.confidence_low_fmt %} title="CI: {{ p.confidence_low_fmt }}–{{ p.confidence_high_fmt }}" data-bs-toggle="tooltip"{% endif %}>{{ p.formatted_date }}</span> {% if p.movement_delta %}<span class="delta {% if p.movement_type == 'positive' %}pos{% elif p.movement_type == 'negative' %}neg{% else %}neu{% endif %}">{{ p.movement_delta }}</span>{% endif %}</div>
+                        <div class="badge-row">{% if p.model_name == "persistence" %}<span class="info-badge bg-secondary text-white" title="No-change baseline — model not applicable" data-bs-toggle="tooltip">No-change</span>{% elif p.regime_label and p.movement_delta != "0" %}<span class="info-badge bg-{{ p.regime_color }} bg-opacity-75 text-white" title="Regime: {{ p.regime_label }}{% if p.explanation_text %} — {{ p.explanation_text }}{% endif %}" data-bs-toggle="tooltip">{{ p.regime_label }}</span>{% endif %}{% if p.movement_prob_label %}<span class="info-badge bg-{{ p.movement_prob_color }} bg-opacity-75" title="{{ p.movement_probability }}% chance of >50d move" data-bs-toggle="tooltip">{{ p.movement_prob_label }}</span>{% endif %}</div>
+                    </div>{% else %}-{% endif %}</td>
+                    {% endwith %}
                     {% endfor %}
                 </tr>
                 <tr>
-                    <td class="align-middle fw-bold small text-muted bg-light text-end pe-3 border-bottom-thick">real
-                    </td>
+                    <td class="align-middle small text-muted bg-light text-center py-1 border-bottom-thick" style="font-size:0.65rem;">real</td>
                     {% for cell in row.countries %}
-                    <td class="align-middle text-center border-bottom-thick">
-                        {% with f=cell.final_action.formatted_actual %}
-                        {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="align-middle text-center bg-light bg-opacity-10 border-bottom-thick">
-                        {% with f=cell.filing.formatted_actual %}
-                        {% if f %}<span class="text-muted small">{{ f }}</span>{% else %}-{% endif %}
-                        {% endwith %}
-                    </td>
+                    <td class="align-middle text-center py-1 border-bottom-thick">{% with c=cell.final_action %}{% if c.formatted_actual %}<div class="actual-cell">
+                        <span class="actual-date">{{ c.formatted_actual }}</span>
+                        {% if c.actual_move %}<span class="move {% if c.actual_move_type == 'positive' %}pos{% elif c.actual_move_type == 'negative' %}neg{% else %}neu{% endif %}">{{ c.actual_move }}</span>{% endif %}
+                        {% if c.error_text %}<span class="err-badge {{ c.error_type }}" title="Prediction error (pred − actual)" data-bs-toggle="tooltip">{{ c.error_text }}</span>{% endif %}
+                    </div>{% else %}-{% endif %}{% endwith %}</td>
+                    <td class="align-middle text-center bg-light bg-opacity-10 py-1 border-bottom-thick">{% with c=cell.filing %}{% if c.formatted_actual %}<div class="actual-cell">
+                        <span class="actual-date">{{ c.formatted_actual }}</span>
+                        {% if c.actual_move %}<span class="move {% if c.actual_move_type == 'positive' %}pos{% elif c.actual_move_type == 'negative' %}neg{% else %}neu{% endif %}">{{ c.actual_move }}</span>{% endif %}
+                        {% if c.error_text %}<span class="err-badge {{ c.error_type }}" title="Prediction error (pred − actual)" data-bs-toggle="tooltip">{{ c.error_text }}</span>{% endif %}
+                    </div>{% else %}-{% endif %}{% endwith %}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    <div class="small text-muted mb-3">
+        <strong>Legend:</strong>
+        <span class="delta pos">↑</span> advance
+        <span class="delta neg">↓</span> retrogression
+        &middot; Error badges: <span class="err-badge success">exact/&le;15d</span> <span class="err-badge warning">16–60d</span> <span class="err-badge danger">&gt;60d</span>
+        &middot; Hover any badge/date for details
+    </div>
 
-    <div class="alert alert-light border mt-4 d-flex align-items-start gap-2">
+    <div class="alert alert-light border d-flex align-items-start gap-2 py-2">
         <i class="bi bi-briefcase flex-shrink-0 mt-1"></i>
-        <div>
+        <div class="small">
             <strong>Researching employers?</strong>
-            See which companies sponsor H-1B and green card visas, their salary ranges, and filing trends.
-            <div class="mt-2 d-flex flex-wrap gap-2">
-                <a href="{% url 'employer_rankings' %}" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-trophy"></i> Top Sponsors
-                </a>
-                <a href="{% url 'employer_directory' %}" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-building"></i> Search Employers
-                </a>
-                <a href="{% url 'salary_search' %}" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-currency-dollar"></i> Salary Database
-                </a>
-            </div>
+            <a href="{% url 'employer_rankings' %}">Top Sponsors</a> &middot;
+            <a href="{% url 'employer_directory' %}">Search Employers</a> &middot;
+            <a href="{% url 'salary_search' %}">Salary Database</a>
         </div>
     </div>
 </div>
@@ -187,7 +137,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     var tooltipEls = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    tooltipEls.forEach(function (el) { new bootstrap.Tooltip(el); });
+    tooltipEls.forEach(function (el) { new bootstrap.Tooltip(el, {html: true}); });
   });
 </script>
 {% endblock %}

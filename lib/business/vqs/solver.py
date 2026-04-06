@@ -399,10 +399,10 @@ def _select_expert_for_regime(
     if regime in (Regime.STALLED, Regime.RETROGRESSING, Regime.VOLATILE):
         return "persistence"
 
-    avg = regime_state.avg_move or 0
-    if regime == Regime.ADVANCING and avg >= 15:
+    if regime == Regime.ADVANCING:
         return "demand_signal"
 
+    avg = regime_state.avg_move or 0
     if regime == Regime.RECOVERING and avg >= 10:
         return "demand_signal"
 
@@ -468,7 +468,13 @@ def predict_regime_switched(
 
     if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES or visa_class == "4th":
         result = SolverResult(month=first_future, cutoff_date=current_cutoff, consumed=0)
-        meta = {**base_meta, "selected_expert": "persistence", "expert_preds": {}}
+        # Drop regime from meta: prediction is forced persistence regardless of regime.
+        # Showing "ADVANCING" + 0 movement is actively misleading.
+        meta = {
+            **{k: v for k, v in base_meta.items() if k != "regime"},
+            "selected_expert": "persistence",
+            "expert_preds": {},
+        }
         return SolverOutcome(current_cutoff, meta, None, [result], "low")
 
     expert_name = _select_expert_for_regime(
