@@ -413,16 +413,16 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Required blog post (%s): OK (200)", REQUIRED_BLOG_SLUG)
 
-    # Prediction category landing — fixed by 'Fix 404 on /predictions/employment_based/'
+    # Prediction category landing — redirects (302) to latest bulletin month detail page
     status, _ = _curl_localhost(
         runner, "/predictions/employment_based/", host_header="localhost"
     )
-    if status != 200:
+    if status not in (200, 302):
         raise RuntimeError(
-            f"/predictions/employment_based/ returned HTTP {status} (expected 200). "
+            f"/predictions/employment_based/ returned HTTP {status} (expected 200 or 302). "
             "prediction_category_landing view or URL pattern may be missing."
         )
-    logger.info("[HTTP] Prediction category landing (/predictions/employment_based/): OK (200)")
+    logger.info("[HTTP] Prediction category landing (/predictions/employment_based/): OK (%d)", status)
 
     # VQS prediction detail chart — follow the category landing redirect (302 → YYYY-M page)
     # to verify chart_builder produces Plotly data. Uses curl -L to follow the redirect.
