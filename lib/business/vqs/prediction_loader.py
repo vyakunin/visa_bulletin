@@ -192,15 +192,17 @@ def get_prediction_for_series(
     action_type: str,
 ) -> PredictionResult:
     """Get prediction for one series/month. Prefers stored; falls back to solver."""
+    # Order by prediction_date descending to get the most recent prediction
+    # (including null ones — a newer null "Current" prediction should win).
     stored = (
         PredictedCutoff.objects.filter(
             bulletin__target_bulletin_month=target_month,
             visa_class=visa_class,
             country=country,
             action_type=action_type,
-            predicted_date__isnull=False,
         )
         .select_related("bulletin")
+        .order_by("-bulletin__prediction_date")
         .first()
     )
     if stored:
@@ -256,16 +258,17 @@ def get_all_predictions_for_month(
     kd = compute_knowledge_date(target_month)
     results: dict[tuple[str, int, str], PredictionResult] = {}
 
-    stored_by_key: dict[tuple[str, int, str], PredictedCutoff] = {}
+    stored_by_key: dict[tuple[str, int, str], PredictedCutoff | None] = {}
     stored_qs = (
         PredictedCutoff.objects.filter(
             bulletin__target_bulletin_month=target_month,
-            predicted_date__isnull=False,
         )
         .select_related("bulletin")
         .order_by("bulletin__prediction_date")  # ascending: latest overwrites earlier
     )
     for sc in stored_qs:
+        # Include null predictions so a newer "Current" (null) prediction
+        # overwrites an older stale non-null one from a longer horizon.
         stored_by_key[(sc.visa_class, sc.country, sc.action_type)] = sc
 
     for action_type in action_types:
@@ -274,7 +277,7 @@ def get_all_predictions_for_month(
                 key = (visa_class, country, action_type)
 
                 stored = stored_by_key.get(key)
-                if stored:
+                if stored is not None:
                     results[key] = PredictionResult(
                         predicted_date=stored.predicted_date,
                         knowledge_date=stored.bulletin.prediction_date,
