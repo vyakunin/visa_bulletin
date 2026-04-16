@@ -31,6 +31,8 @@ jobs:
       DB_PASSWORD: postgres
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
+      TEST_DB_USER: postgres
+      TEST_DB_PASSWORD: postgres
 
     steps:
       - name: Checkout code
@@ -48,4 +50,5 @@ jobs:
           # BUILD_WORKSPACE_DIRECTORY so test_no_init_in_code_dirs can check the source tree.
           bazel test //tests/... --test_output=errors \
             --test_env=DB_NAME --test_env=DB_USER --test_env=DB_PASSWORD --test_env=DB_HOST --test_env=DB_PORT \
+            --test_env=TEST_DB_USER --test_env=TEST_DB_PASSWORD \
             --test_env=BUILD_WORKSPACE_DIRECTORY=${{ github.workspace }}
