@@ -555,6 +555,15 @@ def _run_orchestrate_locked(
             )
             return 1
 
+        # Sync git before starting services: start_remote_services derives the
+        # Docker IMAGE_TAG from git HEAD.  Without this, the host may be on a
+        # stale commit and pull the wrong Docker image.  The normal pipeline
+        # flow runs step_sync_code for this, but --from-step skips the pipeline.
+        from .steps import step_sync_code
+
+        remote_config_early = _make_remote_config(remote_root, db_name)
+        step_sync_code(remote_config_early, remote, PipelineContext(db_name=db_name))
+
         logger.info("Starting services on inactive host for graduation")
         services.start_remote_services(remote, remote_root)
         if not _wait_app_healthy_via_ssh(remote, timeout_sec=300):
