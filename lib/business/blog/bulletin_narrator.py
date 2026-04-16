@@ -138,9 +138,11 @@ class BulletinNarrator:
         )
 
     def _get_prediction(self, target_date: date) -> PredictedBulletin | None:
+        # Use the most recent prediction (latest prediction_date) so we get
+        # 1m-ahead predictions, not stale long-horizon ones.
         return PredictedBulletin.objects.filter(
             target_bulletin_month=target_date
-        ).first()
+        ).order_by("-prediction_date").first()
 
     def _compute_ci_coverage(
         self, prediction: PredictedBulletin | None, bulletin: Bulletin
