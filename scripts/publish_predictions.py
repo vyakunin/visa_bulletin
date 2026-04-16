@@ -23,7 +23,7 @@ if not settings.configured:
 
 from lib.business.vqs.aggregator import ExpertAggregator
 from lib.business.vqs.calibration import compute_calibrated_interval
-from lib.business.vqs.data_cache import get_cutoff_at_date
+from lib.business.vqs.data_cache import get_cutoff_at_date, is_current_at_date
 from lib.business.vqs.expert_pool import expert_oppenheim_pace
 from lib.business.vqs.gbm_expert import expert_gbm_gated, expert_gbm_movement_prob
 from lib.business.vqs.meta_params import VqsMetaParams
@@ -254,6 +254,21 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
         for action in action_types:
             for country in countries:
                 for visa_class in visa_classes:
+                    # Skip "Current" series: no meaningful cutoff to predict.
+                    # Without this check, persistence returns a stale date from
+                    # years ago (the last month that had a real cutoff).
+                    if is_current_at_date(visa_class, country, action, knowledge_date):
+                        PredictedCutoff.objects.create(
+                            bulletin=pred_bulletin,
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            predicted_date=None,
+                            model_name="persistence",
+                        )
+                        count += 1
+                        continue
+
                     # Horizon-aware hybrid dispatch (Sections 17–18, §20, §21 eval):
                     # 1m:     ALL series → Regime-Switched
                     # 3m:     China EB-1 → RS; India EB-1 → RS; all others → VQS ensemble

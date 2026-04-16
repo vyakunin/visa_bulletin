@@ -21,6 +21,10 @@ _CUTOFF_CACHE: dict[tuple[str, int, str], list] = {}
 # Parallel cache: same key -> sorted list of publication_date values for O(log n) bisect
 _PUB_DATE_CACHE: dict[tuple[str, int, str], list[date]] = {}
 
+# Cache for is_current checks: includes ALL entries (even null cutoff_date)
+_CURRENT_CACHE: dict[tuple[str, int, str], list] = {}
+_CURRENT_PUB_DATES: dict[tuple[str, int, str], list[date]] = {}
+
 
 def _find_index_up_to(pub_dates: list[date], as_of: date) -> int:
     """Return index of the last entry with publication_date <= as_of, or -1 if none.
@@ -94,6 +98,47 @@ def get_cutoff_at_date(
     if idx < 0:
         return None
     return cutoffs[idx].cutoff_date
+
+
+def is_current_at_date(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    as_of: date,
+) -> bool:
+    """Return True if the series was 'Current' (no meaningful cutoff) at as_of.
+
+    Checks the latest VisaCutoffDate row (including null cutoff_date entries)
+    with publication_date <= as_of. If that row has is_current=True, the series
+    had no backlog and predictions are meaningless.
+
+    Uses a separate cache (_CURRENT_CACHE) to avoid modifying the non-null
+    cutoff cache used by the rest of the solver.
+    """
+    from models.visa_cutoff_date import VisaCutoffDate
+
+    key = (visa_class, country, action_type)
+    if key not in _CURRENT_CACHE:
+        # Load ALL entries (including null cutoff_date) for this series
+        qs = (
+            VisaCutoffDate.objects.filter(
+                visa_class=visa_class,
+                country=country,
+                action_type=action_type,
+            )
+            .select_related("bulletin")
+            .order_by("bulletin__publication_date")
+        )
+        entries = list(qs)
+        _CURRENT_CACHE[key] = entries
+        _CURRENT_PUB_DATES[key] = [e.bulletin.publication_date for e in entries]
+
+    pub_dates = _CURRENT_PUB_DATES.get(key, [])
+    entries = _CURRENT_CACHE.get(key, [])
+    idx = _find_index_up_to(pub_dates, as_of)
+    if idx < 0:
+        return False
+    return entries[idx].is_current
 
 
 def get_cutoffs_up_to(

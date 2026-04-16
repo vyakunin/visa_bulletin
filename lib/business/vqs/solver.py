@@ -467,6 +467,14 @@ def predict_regime_switched(
     }
 
     if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES or visa_class == "4th":
+        # If the series is "Current" (no backlog), persistence returns a stale
+        # cutoff from potentially years ago.  Return None so the prediction is
+        # not displayed rather than showing a wildly wrong date.
+        from lib.business.vqs.data_cache import is_current_at_date
+
+        if is_current_at_date(visa_class, country, action_type, knowledge_date):
+            current_cutoff = None
+
         result = SolverResult(month=first_future, cutoff_date=current_cutoff, consumed=0)
         # Drop regime from meta: prediction is forced persistence regardless of regime.
         # Showing "ADVANCING" + 0 movement is actively misleading.

@@ -216,6 +216,12 @@ def get_prediction_for_series(
         )
 
     kd = compute_knowledge_date(target_month)
+
+    from lib.business.vqs.data_cache import is_current_at_date
+
+    if is_current_at_date(visa_class, country, action_type, kd):
+        return PredictionResult(predicted_date=None, knowledge_date=kd, source="backtest")
+
     try:
         outcome = predict_next_bulletin_and_maturity(
             knowledge_date=kd,
@@ -279,6 +285,16 @@ def get_all_predictions_for_month(
                         expert_predictions=stored.expert_predictions or None,
                         movement_probability=stored.movement_probability,
                         model_name=stored.model_name or "unknown",
+                    )
+                    continue
+
+                # Skip "Current" series — solver would return a stale
+                # cutoff from potentially years ago.
+                from lib.business.vqs.data_cache import is_current_at_date
+
+                if is_current_at_date(visa_class, country, action_type, kd):
+                    results[key] = PredictionResult(
+                        predicted_date=None, knowledge_date=kd, source="backtest"
                     )
                     continue
 
