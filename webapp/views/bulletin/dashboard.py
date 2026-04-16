@@ -5,8 +5,10 @@ import logging
 from datetime import date, datetime
 
 from dateutil.relativedelta import relativedelta
+from django.conf import settings
 from django.shortcuts import render
 
+from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.chart_builder import build_multi_class_chart_with_projections
 from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
@@ -271,6 +273,7 @@ def _build_unified_prediction_rows(
 
 
 
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def dashboard_view(request, category=None, country=None):
     """
     Main dashboard view with filters and time-series chart.
