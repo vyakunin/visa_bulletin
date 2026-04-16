@@ -185,7 +185,7 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
         "    mem_limit: 512m\n"
         "    memswap_limit: 768m\n"
         "    environment:\n"
-        "      - WEB_CONCURRENCY=1\n"
+        "      - WEB_CONCURRENCY=3\n"
         f"      - ALLOWED_HOSTS={allowed_hosts}\n"
     )
     runner.run_shell(

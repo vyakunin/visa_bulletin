@@ -22,6 +22,13 @@ This file is maintained alongside `deployment.mdc`. Each time the orchestrator h
 
 ---
 
+## Known issues from 2026-04-16 graduation
+
+- **Lightsail burst capacity: freshly-started instances have 0 CPU credits.** 2GB Lightsail instances are t-class (burstable). Baseline is ~20% of 1 vCPU. After stop/start, burst credits are 0 — the instance is CPU-throttled to baseline. A single uncached employer-profile page with Plotly chart generation saturates baseline CPU, causing every subsequent request to queue and timeout. **Mitigation:** (1) Start the staging instance at least 2-3 hours before graduation so it accumulates burst credits. (2) Run `warm_cache` to populate Redis BEFORE the instance takes production traffic. (3) Do NOT stop the staging instance immediately after graduation — leave it running to accumulate credits for the next cycle, or at minimum keep it running for 2+ hours after any start.
+- **Cache-cold instance + bot traffic = immediate overload.** After graduation, all Django/Redis caches are cold. Bots (GPTBot, Amazonbot, Applebot, Googlebot) immediately hit expensive employer/salary pages (5-12s each uncached). With WEB_CONCURRENCY=1 on a throttled instance, every request blocks. **Fix:** Always run `warm_cache` on the staging instance before graduation. Consider increasing `WEB_CONCURRENCY` to 2 if memory allows (monitor via `docker stats`).
+
+---
+
 ## Known issues from 2026-03-21
 
 - **`git push staging:prod` silently failed — instances on stale code (FIXED):** No GitHub credentials on instances meant `_update_git_branch_on_new_prod()` logged a warning and then fetched stale `origin/prod`, leaving both instances on old code after graduation. Fixed: (1) deploy key added to both instances (`/home/ubuntu/.ssh/github_deploy_key`), git remote switched to SSH; (2) orchestrate.py now logs an error and keeps instance on `staging` branch (correct code) rather than checking out stale `origin/prod` when push fails.
