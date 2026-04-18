@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
     "django.contrib.humanize",  # For intcomma and other human-readable filters
+    "django.contrib.postgres",  # Provides TrigramExtension + trigram lookups
     "models",  # Our models app
     "webapp",  # Web dashboard
 ]

@@ -1,5 +1,7 @@
 """Salary and worksite search views."""
 
+import hashlib
+
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Avg, Max, Min
@@ -27,6 +29,31 @@ from lib.utils.pagination import (
 )
 from models.salary import SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
+
+
+_NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
+
+
+def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
+    """Cache (count, stats) for a filtered queryset.
+
+    count() + Avg/Min/Max are the two most expensive queries in this view
+    (6s–100s on common employer filters). They depend only on the filter
+    combination, so we cache them together under a filter fingerprint.
+    """
+    fingerprint = hashlib.md5("|".join(filter_parts).encode()).hexdigest()
+    key = f"{cache_scope}.{fingerprint}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached["count"], cached["stats"]
+    stats = records.aggregate(
+        avg_salary=Avg("wage_annual"),
+        min_salary=Min("wage_annual"),
+        max_salary=Max("wage_annual"),
+    )
+    count = records.count()
+    cache.set(key, {"count": count, "stats": stats})
+    return count, stats
 
 
 def _get_cached_fiscal_years() -> list[int]:
@@ -180,21 +207,6 @@ def salary_search_view(request):
     # Exclude records without a usable annual salary to avoid null/zero bands in the UI
     records = records.filter(wage_annual__isnull=False, wage_annual__gt=0)
 
-    # Only calculate statistics when filters are applied (expensive query)
-    if has_filters:
-        stats = records.filter(wage_annual__isnull=False, wage_annual__gt=0).aggregate(
-            avg_salary=Avg("wage_annual"),
-            min_salary=Min("wage_annual"),
-            max_salary=Max("wage_annual"),
-        )
-    else:
-        # No filters - don't calculate expensive stats
-        stats = {
-            "avg_salary": None,
-            "min_salary": None,
-            "max_salary": None,
-        }
-
     market_stats = None
     market_chart_data = {}
     if not has_filters and not no_data_yet:
@@ -228,43 +240,25 @@ def salary_search_view(request):
             if salary_trend_chart:
                 market_chart_data["salary_trend"] = salary_trend_chart
 
-    # Get total results - needed for pagination
-    # Cache counts for common filter combinations to avoid expensive count operations
-    # The exclude() on source_file causes full table scans, so caching is critical
-    cache_key_count = None
-    if not has_filters:
-        cache_key_count = "salary_non_worksite_count"
-    elif params["program_filter"] == "h1b" and not any(
-        [
-            params["query"],
-            params["employer_filter"],
-            params["state_filter"],
-            params["year_filter"],
-            params["filing_year_filter"],
-        ]
-    ):
-        # Common case: just program=h1b filter (no other filters)
-        cache_key_count = "salary_h1b_non_worksite_count"
-    elif params["program_filter"] == "perm" and not any(
-        [
-            params["query"],
-            params["employer_filter"],
-            params["state_filter"],
-            params["year_filter"],
-            params["filing_year_filter"],
-        ]
-    ):
-        # Common case: just program=perm filter (no other filters)
-        cache_key_count = "salary_perm_non_worksite_count"
-
-    if cache_key_count:
-        total_results = cache.get(cache_key_count)
+    if has_filters:
+        total_results, stats = _cached_count_and_stats(
+            records,
+            "salary_search",
+            [
+                query,
+                employer_filter,
+                state_filter,
+                program_filter,
+                str(fiscal_year_filter or ""),
+                str(filing_year_filter or ""),
+            ],
+        )
+    else:
+        stats = _NO_STATS
+        total_results = cache.get("salary_non_worksite_count")
         if total_results is None:
             total_results = records.count()
-            cache.set(cache_key_count, total_results)
-    else:
-        # For complex filters, calculate count (but this will be slow)
-        total_results = records.count()
+            cache.set("salary_non_worksite_count", total_results)
 
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
@@ -431,23 +425,31 @@ def worksite_search_view(request):
     records = apply_visa_program_filter(records, program_filter)
     records = apply_fiscal_year_filter(records, year_filter)
 
-    # Only calculate statistics when filters are applied (expensive query)
     if has_filters:
-        stats = records.filter(wage_annual__isnull=False, wage_annual__gt=0).aggregate(
-            avg_salary=Avg("wage_annual"),
-            min_salary=Min("wage_annual"),
-            max_salary=Max("wage_annual"),
+        filter_parts = [
+            query,
+            state_filter,
+            city_filter,
+            program_filter,
+            str(year_filter or ""),
+        ]
+        _, stats = _cached_count_and_stats(
+            records.filter(wage_annual__isnull=False, wage_annual__gt=0),
+            "worksite_search_stats",
+            filter_parts,
         )
+        count_fingerprint = hashlib.md5("|".join(filter_parts).encode()).hexdigest()
+        count_key = f"worksite_search_count.{count_fingerprint}"
+        total_results = cache.get(count_key)
+        if total_results is None:
+            total_results = records.count()
+            cache.set(count_key, total_results)
     else:
-        # No filters - don't calculate expensive stats
-        stats = {
-            "avg_salary": None,
-            "min_salary": None,
-            "max_salary": None,
-        }
-
-    # Get total results - needed for pagination
-    total_results = records.count()
+        stats = _NO_STATS
+        total_results = cache.get("worksite_total_count")
+        if total_results is None:
+            total_results = records.count()
+            cache.set("worksite_total_count", total_results)
 
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
