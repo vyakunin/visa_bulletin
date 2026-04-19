@@ -1,6 +1,10 @@
 # Adaptive nginx bot rate-limiter — oneshot service.
 # Paired with nginx-bot-adaptive.timer which invokes it every 60s.
 #
+# Decides mode from Lightsail BurstCapacityPercentage (AWS API). The script
+# also has defaults for all these, so Environment= here is explicit override /
+# documentation, not strictly required for operation.
+#
 # Installation:
 #   sudo cp nginx-bot-adaptive.service /etc/systemd/system/
 #   sudo cp nginx-bot-adaptive.timer   /etc/systemd/system/
@@ -16,12 +20,18 @@
 #   tail -f /var/log/nginx_bot_adaptive.log
 
 [Unit]
-Description=Adaptive nginx bot rate-limiter (swaps conf based on CPU steal)
+Description=Adaptive nginx bot rate-limiter (swaps conf based on Lightsail burst %)
 After=nginx.service
 Requires=nginx.service
 
 [Service]
 Type=oneshot
+Environment=AWS_REGION=us-east-1
+Environment=AWS_PROFILE=visa-bulletin-deploy
+Environment=AWS_SHARED_CREDENTIALS_FILE=/home/ubuntu/.aws/credentials
+Environment=LIGHTSAIL_INSTANCE=VisaBulletin2GB
+Environment=STRICT_BELOW=50
+Environment=NORMAL_ABOVE=75
 ExecStart=/usr/local/bin/nginx_bot_adaptive.sh
 # Needs root to edit /etc/nginx/conf.d and reload nginx.
 User=root
