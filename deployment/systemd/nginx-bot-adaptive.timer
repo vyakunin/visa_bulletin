@@ -1,0 +1,16 @@
+# Fires nginx-bot-adaptive.service every 60s.
+# AccuracySec=30s allows systemd to coalesce with nearby timers — we don't need
+# sub-minute precision since the underlying signal (CPU steal) changes over minutes.
+
+[Unit]
+Description=Run nginx-bot-adaptive every minute
+Requires=nginx-bot-adaptive.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=30s
+Unit=nginx-bot-adaptive.service
+
+[Install]
+WantedBy=timers.target
