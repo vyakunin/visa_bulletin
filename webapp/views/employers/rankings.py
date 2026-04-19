@@ -3,12 +3,20 @@
 from datetime import date
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Avg, Count, F, Q
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
 from models.enums.visa_program import VisaProgram
 from models.salary import SalaryRecord
+
+# Aggregation results cached for 24h independently of the page cache.
+# The @cache_page_skip_bots decorator bypasses the page cache for bots, which
+# means every bot request used to re-run a 5–15s aggregation. Caching at the
+# function level means bots get the same pre-computed rankings; only the
+# template render (fast) runs per bot hit.
+_RANKINGS_CACHE_TTL = 60 * 60 * 24
 
 # LCA (H-1B) volumes are much larger than PERM; use a lower threshold for PERM
 # so that fiscal years with valid but smaller PERM data still appear in the selector.
@@ -158,7 +166,13 @@ def employer_rankings_view(request):
     if program not in ("h1b", "perm", "all"):
         program = "all"
 
-    fy_options = _available_fiscal_years(program)
+    fy_cache_key = f"rankings.fy_options.{program}"
+    fy_options = cache.get(fy_cache_key)
+    if fy_options is None:
+        fy_options = _available_fiscal_years(program)
+        cache.set(fy_cache_key, fy_options, _RANKINGS_CACHE_TTL)
+    else:
+        fy_options = [dict(fy) for fy in fy_options]
     use_fy_selector = program == "perm"
 
     period_q, period_label = _resolve_period(period, program, fy_options)
@@ -172,7 +186,11 @@ def employer_rankings_view(request):
             or (period == "last_12m" and program == "perm" and fy == fy_options[0])
         )
 
-    rankings = _build_rankings(period_q, program)
+    rankings_cache_key = f"rankings.result.{program}.{period}"
+    rankings = cache.get(rankings_cache_key)
+    if rankings is None:
+        rankings = _build_rankings(period_q, program)
+        cache.set(rankings_cache_key, rankings, _RANKINGS_CACHE_TTL)
 
     program_labels = {
         "all": "H-1B & Green Card",
