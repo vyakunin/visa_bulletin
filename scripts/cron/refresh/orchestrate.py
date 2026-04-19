@@ -200,11 +200,12 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
     )
     # docker-compose 1.29.2 bug: recreate hits KeyError 'ContainerConfig' if the existing
     # container's image lacks that field (e.g. multi-stage builds or some base images).
-    # Workaround: force-remove exited/zombie containers before `up -d` so docker-compose
-    # creates fresh containers rather than trying to recreate from old metadata.
+    # Workaround: force-remove any visa_bulletin_web container (running, exited, or
+    # hashed-prefix orphan like fff6adbd114c_visa_bulletin_web) before `up -d` so
+    # docker-compose creates fresh containers rather than trying to recreate from old metadata.
     cleanup_cmd = (
         "export DOCKER_HOST=unix:///var/run/docker.sock && "
-        "docker ps -a --filter status=exited --format '{{.Names}}' | "
+        "docker ps -a --format '{{.Names}}' | "
         "grep visa_bulletin_web | xargs -r docker rm -f"
     )
     runner.run_shell(cleanup_cmd, timeout_sec=15)

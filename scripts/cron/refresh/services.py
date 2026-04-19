@@ -108,9 +108,12 @@ def start_remote_services(runner: Runner, project_root: Path) -> None:
         "(pgrep -f 'gunicorn.*django_config' | grep -v ^$$ | xargs -r kill 2>/dev/null) || true",
         timeout_sec=10,
     )
+    # Match by substring so we also catch hashed-prefix orphans like
+    # fff6adbd114c_visa_bulletin_web (left behind by docker-compose when rename fails).
     cleanup_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && cd {shlex.quote(str(root))} && "
-        f"docker rm -f visa_bulletin_web visa_bulletin_redis 2>/dev/null; "
+        "docker ps -a --format '{{.Names}}' | "
+        "grep -E 'visa_bulletin_(web|redis)' | xargs -r docker rm -f 2>/dev/null; "
         f"docker-compose {compose_args} down --remove-orphans 2>/dev/null || true"
     )
     runner.run_shell(cleanup_cmd, timeout_sec=60)
