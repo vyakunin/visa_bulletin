@@ -89,11 +89,13 @@ STATIC_ROOT = WORKSPACE_DIR / "staticfiles"
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Debug mode: Enable for local development, ALWAYS False in production
-# Production check: if SECRET_KEY is NOT the default, we're in production
+# Debug mode: off by default; must be explicitly enabled via `DEBUG=True` env var.
+# Never auto-derive DEBUG from other signals (e.g. SECRET_KEY presence) — a missing
+# env var must NEVER silently flip DEBUG on in production. Leaked DEBUG exposes URL
+# conf, settings, and tracebacks on every 404/500.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-for-development-only")
 IS_PRODUCTION = SECRET_KEY != "django-insecure-for-development-only"
-DEBUG = not IS_PRODUCTION  # True locally, False in production (safe by default)
+DEBUG = os.environ.get("DEBUG", "False").strip().lower() == "true"
 
 _default_allowed_hosts = [
     "localhost",
@@ -124,6 +126,12 @@ if os.environ.get("ALLOWED_HOSTS"):
     ALLOWED_HOSTS = _allowed
 else:
     ALLOWED_HOSTS = _default_allowed_hosts + _refresh_ips
+
+# Defensive: refuse to boot if DEBUG is on with a production hostname in ALLOWED_HOSTS.
+# Must run AFTER ALLOWED_HOSTS is finalized above.
+from django_config.debug_safety import assert_debug_is_safe  # noqa: E402
+
+assert_debug_is_safe(DEBUG, ALLOWED_HOSTS)
 
 # WSGI application
 ROOT_URLCONF = "django_config.urls"

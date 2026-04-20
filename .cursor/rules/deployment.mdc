@@ -77,6 +77,26 @@ Understand which container is *actually serving traffic* before touching anythin
 
 **Do NOT deploy when:** user says "local only", change is docs-only, user only asked to plan/document.
 
+## Rule: DEBUG Must Be False in Production — Never Derive DEBUG From Other Signals
+
+**🚨 CRITICAL: `settings.DEBUG` must be an explicit env var (`DEBUG=True/False`), defaulting to False. Never derive it from SECRET_KEY, hostname, or any other signal.**
+
+**Why:** If DEBUG silently flips on when an unrelated env var (e.g. `DJANGO_SECRET_KEY`) is missing, a minor config drift will leak URL conf, settings, env vars, and tracebacks to every public 404/500 visitor. This happened on 2026-04-19 — prod served the Django debug 404 page with the full URLconf exposed.
+
+**Required invariants (enforced in `django_config/settings.py` + `debug_safety.py`):**
+- `DEBUG` defaults to **False**; only set to True via explicit `DEBUG=True` env var.
+- `django_config.debug_safety.assert_debug_is_safe(DEBUG, ALLOWED_HOSTS)` runs at import time and raises `ImproperlyConfigured` if `DEBUG=True` and any production hostname (`visa-bulletin.us`, `www.visa-bulletin.us`) is in `ALLOWED_HOSTS`. Container will refuse to boot.
+- Prod `.env` must set `DEBUG=False` explicitly. Local dev `.env` sets `DEBUG=True`.
+- Only one docker-compose file is canonical: `deployment/docker-compose.yml` (wires `env_file: ../.env`). Do not add a root-level `docker-compose.yml` without `env_file` — it launches containers with defaults and no secrets.
+
+**Verifying in prod:**
+```bash
+ssh prod_2Gb_vm "docker exec visa_bulletin_web python -c 'from django.conf import settings; print(\"DEBUG=\", settings.DEBUG)'"
+# Expect: DEBUG= False
+```
+
+**Regression test:** `tests/test_debug_safety.py` — asserts `assert_debug_is_safe` raises on DEBUG+prod-hostname and is a no-op otherwise. Must stay green.
+
 ## Rule: Graduation (Staging to Prod) via Orchestrator
 
 **Graduation is automated.** Run on the **current prod** instance (the one with prod static IP).

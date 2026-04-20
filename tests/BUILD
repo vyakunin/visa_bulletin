@@ -1112,6 +1112,18 @@ py_test(
     srcs_version = "PY3",
 )
 
+py_test(
+    name = "test_debug_safety",
+    size = "small",
+    srcs = ["test_debug_safety.py"],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    deps = [
+        "//django_config:debug_safety",
+        requirement("Django"),
+    ],
+)
+
 django_py_test(
     name = "test_job_title_profile_view",
     size = "small",

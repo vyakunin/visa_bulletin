@@ -10,10 +10,18 @@ py_library(
 )
 
 py_library(
+    name = "debug_safety",
+    srcs = ["debug_safety.py"],
+    visibility = ["//visibility:public"],
+    deps = [requirement("Django")],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":debug_safety",
         ":logging_config",
         ":middleware",
         requirement("Django"),
