@@ -103,6 +103,7 @@ def build_pagination_query_string(
         param_mapping = {
             "query": "q",
             "employer_filter": "employer",
+            "employer_slug_filter": "employer_slug",
             "city_filter": "city",
             "state_filter": "state",
             "program_filter": "program",

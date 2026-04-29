@@ -17,6 +17,10 @@
  * - slugField: Field name for navigation slug (optional)
  * - navigateUrlPattern: URL pattern with __slug__ placeholder (optional)
  * - submitOnSelect: Whether to submit parent form on selection (default: false)
+ * - slugInputId: ID of a hidden companion <input> that receives the picked
+ *                suggestion's slug. Cleared whenever the user types in the
+ *                visible input (so the backend doesn't see a stale slug
+ *                attached to a hand-edited name).
  */
 
 (function() {
@@ -44,20 +48,28 @@
             this.config = JSON.parse(wrapper.dataset.autocompleteConfig || '{}');
             this.input = document.getElementById(this.config.inputId);
             this.dropdown = document.getElementById(this.config.inputId + '-autocomplete');
+            this.slugInput = this.config.slugInputId
+                ? document.getElementById(this.config.slugInputId)
+                : null;
             this.currentSuggestions = [];
             this.selectedIndex = -1;
-            
+
             if (!this.input || !this.dropdown) {
                 console.warn('Autocomplete: Missing input or dropdown for', this.config.inputId);
                 return;
             }
-            
+
             this.init();
         }
-        
+
         init() {
-            // Input event for typing
+            // Input event for typing. Any keystroke after a selection means the
+            // user is editing the picked name, so the captured slug is no
+            // longer authoritative — clear it.
             this.input.addEventListener('input', debounce((e) => {
+                if (this.slugInput) {
+                    this.slugInput.value = '';
+                }
                 this.fetchSuggestions(e.target.value);
             }, 200));
             
@@ -169,7 +181,17 @@
             const displayText = suggestion[this.config.displayField] || '';
             this.input.value = displayText;
             this.hide();
-            
+
+            // Capture the suggestion slug into the hidden companion input so
+            // the form submission tells the backend the exact cluster (no
+            // server-side icontains needed).
+            if (this.slugInput) {
+                const slug = this.config.slugField
+                    ? (suggestion[this.config.slugField] || '')
+                    : '';
+                this.slugInput.value = slug;
+            }
+
             // Navigate if URL pattern is provided
             if (this.config.navigateUrlPattern && this.config.slugField) {
                 const slug = suggestion[this.config.slugField];
@@ -179,7 +201,7 @@
                     return;
                 }
             }
-            
+
             // Submit form if configured
             if (this.config.submitOnSelect) {
                 const form = this.input.closest('form');

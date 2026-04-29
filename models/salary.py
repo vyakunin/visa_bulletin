@@ -53,6 +53,38 @@ class EmployerCluster(models.Model):
         help_text="Average salary across all employers in cluster",
     )
 
+    # Pre-computed aggregates over the rows the /salaries/ search page would
+    # show for this cluster: salary_record rows that are non-worksite, not the
+    # placeholder 'Unknown' employer, and have a positive wage_annual. Avoids
+    # a fan-out join + AVG/MIN/MAX on every employer-filter request. Refreshed
+    # nightly by scripts/salary/cluster_existing_employers.py
+    # _update_cluster_statistics. See docs/PERFORMANCE_IMPROVEMENTS.md §3.
+    search_record_count = models.IntegerField(
+        default=0,
+        help_text="Records that pass the salary-search filters for this cluster",
+    )
+    search_avg_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Record-weighted mean wage_annual over searchable records",
+    )
+    search_min_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Min wage_annual over searchable records",
+    )
+    search_max_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Max wage_annual over searchable records",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

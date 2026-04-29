@@ -12,32 +12,47 @@ Parameters:
   - slug_field: Field name for navigation slug (optional, e.g., "slug")
   - navigate_url_pattern: URL pattern for navigation on select (optional, e.g., "/job-title/__slug__/")
   - submit_on_select: Whether to submit form on selection (default: false)
+  - slug_input_name: Form field name for the hidden slug companion (optional).
+                     When set, a hidden <input> is rendered and autocomplete.js
+                     writes the picked suggestion's slug into it on selection
+                     (and clears it whenever the user edits the visible field).
+                     The view can then fast-path on the slug.
+  - slug_input_value: Initial value for the hidden slug input (optional)
   - form_text: Help text below input (optional)
   - label: Label text (optional)
 
 Usage:
-  {% include "webapp/includes/autocomplete_input.html" with 
-     input_id="employer" 
-     input_name="employer" 
+  {% include "webapp/includes/autocomplete_input.html" with
+     input_id="employer"
+     input_name="employer"
      input_value=employer_filter
      placeholder="e.g., Mayo Clinic, The Nature Conservancy"
      endpoint_url=company_autocomplete_url
      display_field="name"
      count_field="count"
+     slug_field="slug"
+     slug_input_name="employer_slug"
+     slug_input_value=employer_slug_filter
   %}
 {% endcomment %}
 
 {% if label %}
 <label for="{{ input_id }}" class="form-label">{{ label }}</label>
 {% endif %}
-<div class="autocomplete-wrapper" data-autocomplete-config='{"inputId": "{{ input_id }}", "endpointUrl": "{{ endpoint_url }}", "displayField": "{{ display_field }}", "countField": "{{ count_field|default:"" }}", "slugField": "{{ slug_field|default:"" }}", "navigateUrlPattern": "{{ navigate_url_pattern|default:"" }}", "submitOnSelect": {{ submit_on_select|default:"false"|lower }}}'>
-    <input type="text" 
-           class="form-control autocomplete-input" 
-           id="{{ input_id }}" 
-           name="{{ input_name }}" 
-           value="{{ input_value|default:"" }}" 
+<div class="autocomplete-wrapper" data-autocomplete-config='{"inputId": "{{ input_id }}", "endpointUrl": "{{ endpoint_url }}", "displayField": "{{ display_field }}", "countField": "{{ count_field|default:"" }}", "slugField": "{{ slug_field|default:"" }}", "navigateUrlPattern": "{{ navigate_url_pattern|default:"" }}", "submitOnSelect": {{ submit_on_select|default:"false"|lower }}, "slugInputId": "{% if slug_input_name %}{{ input_id }}_slug{% endif %}"}'>
+    <input type="text"
+           class="form-control autocomplete-input"
+           id="{{ input_id }}"
+           name="{{ input_name }}"
+           value="{{ input_value|default:"" }}"
            placeholder="{{ placeholder|default:"" }}"
            autocomplete="off">
+    {% if slug_input_name %}
+    <input type="hidden"
+           id="{{ input_id }}_slug"
+           name="{{ slug_input_name }}"
+           value="{{ slug_input_value|default:"" }}">
+    {% endif %}
     <div id="{{ input_id }}-autocomplete" class="autocomplete-dropdown" style="display: none;"></div>
 </div>
 {% if form_text %}

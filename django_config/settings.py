@@ -4,6 +4,7 @@ Minimal configuration for using Django ORM standalone.
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths
@@ -40,6 +41,19 @@ DATABASES = {
         "PORT": os.environ.get("DB_PORT", "5432"),
         "OPTIONS": {
             "connect_timeout": 120,
+            # Kill runaway queries before gunicorn's 60s worker timeout. Without this,
+            # a client disconnect (Cloudflare/gunicorn 504) leaves the query running
+            # in Postgres for hours and starves all DB capacity.
+            # Disabled (0) for migrations and long-running management scripts; the
+            # role-level default also gets overridden so DDL like CREATE INDEX is safe.
+            "options": (
+                "-c statement_timeout=0"
+                if any(
+                    cmd in sys.argv
+                    for cmd in ("migrate", "makemigrations", "sqlmigrate", "dbshell")
+                )
+                else "-c statement_timeout=45000"
+            ),
         },
     }
 }

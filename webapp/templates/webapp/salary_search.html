@@ -139,7 +139,7 @@
                             
                             <!-- Employer Name (shared autocomplete - submits form on select) -->
                             <div class="col-md-6">
-                                {% include "webapp/includes/autocomplete_input.html" with input_id="employer" input_name="employer" input_value=employer_filter placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" label="Employer Name" submit_on_select=True %}
+                                {% include "webapp/includes/autocomplete_input.html" with input_id="employer" input_name="employer" input_value=employer_filter placeholder="e.g., Mayo Clinic, The Nature Conservancy" endpoint_url=company_autocomplete_url display_field="name" count_field="count" slug_field="slug" slug_input_name="employer_slug" slug_input_value=employer_slug_filter label="Employer Name" submit_on_select=True %}
                             </div>
                             
                             <!-- State -->
@@ -422,7 +422,7 @@
                 {% if query %}
                 <span class="filter-tag">
                     Job: {{ query }}
-                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
+                    <a href="?{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if employer_slug_filter %}employer_slug={{ employer_slug_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -438,7 +438,7 @@
                 {% if state_filter %}
                 <span class="filter-tag">
                     State: {{ state_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if employer_slug_filter %}employer_slug={{ employer_slug_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -446,7 +446,7 @@
                 {% if program_filter %}
                 <span class="filter-tag">
                     Program: {{ program_filter|upper }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if employer_slug_filter %}employer_slug={{ employer_slug_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -454,7 +454,7 @@
                 {% if year_filter %}
                 <span class="filter-tag">
                     Year: {{ year_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if employer_slug_filter %}employer_slug={{ employer_slug_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if filing_year_filter %}filing_year={{ filing_year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>
@@ -462,7 +462,7 @@
                 {% if filing_year_filter %}
                 <span class="filter-tag">
                     Filing Year: {{ filing_year_filter }}
-                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
+                    <a href="?{% if query %}q={{ query }}&{% endif %}{% if employer_filter %}employer={{ employer_filter }}&{% endif %}{% if employer_slug_filter %}employer_slug={{ employer_slug_filter }}&{% endif %}{% if state_filter %}state={{ state_filter }}&{% endif %}{% if program_filter %}program={{ program_filter }}&{% endif %}{% if year_filter %}year={{ year_filter }}{% endif %}">
                         <i class="bi bi-x"></i>
                     </a>
                 </span>

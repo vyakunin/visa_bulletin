@@ -4,7 +4,7 @@ import hashlib
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, Max, Min
+from django.db.models import Avg, Count, Max, Min
 from django.shortcuts import render
 from django.urls import reverse
 
@@ -27,9 +27,8 @@ from lib.utils.pagination import (
     build_pagination_query_string,
     calculate_pagination_info,
 )
-from models.salary import SalaryRecord, WorksiteRecord
+from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
-
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
 
@@ -37,21 +36,27 @@ _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
 def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
     """Cache (count, stats) for a filtered queryset.
 
-    count() + Avg/Min/Max are the two most expensive queries in this view
-    (6s–100s on common employer filters). They depend only on the filter
-    combination, so we cache them together under a filter fingerprint.
+    Combined into a single .aggregate() so it's one DB roundtrip instead of
+    two (count + avg/min/max with the same WHERE clause). Cached under a
+    fingerprint of the filter parts so identical searches don't re-aggregate.
     """
     fingerprint = hashlib.md5("|".join(filter_parts).encode()).hexdigest()
     key = f"{cache_scope}.{fingerprint}"
     cached = cache.get(key)
     if cached is not None:
         return cached["count"], cached["stats"]
-    stats = records.aggregate(
+    agg = records.aggregate(
+        count=Count("id"),
         avg_salary=Avg("wage_annual"),
         min_salary=Min("wage_annual"),
         max_salary=Max("wage_annual"),
     )
-    count = records.count()
+    count = agg["count"] or 0
+    stats = {
+        "avg_salary": agg["avg_salary"],
+        "min_salary": agg["min_salary"],
+        "max_salary": agg["max_salary"],
+    }
     cache.set(key, {"count": count, "stats": stats})
     return count, stats
 
@@ -137,6 +142,11 @@ def salary_search_view(request):
     employer_filter = (
         cleaned_data.get("employer") or request.GET.get("employer", "") or ""
     )
+    employer_slug_filter = (
+        cleaned_data.get("employer_slug")
+        or request.GET.get("employer_slug", "")
+        or ""
+    ).strip()
     state_filter = cleaned_data.get("state") or request.GET.get("state", "") or ""
     program_filter = cleaned_data.get("program") or request.GET.get("program", "") or ""
     # 'year' parameter now refers to fiscal year (unchanged)
@@ -149,10 +159,32 @@ def salary_search_view(request):
     except (ValueError, TypeError):
         page = 1
 
+    # Resolve the employer slug to a real cluster up front. If the slug doesn't
+    # match anything (stale link, edited URL), drop it and fall back to the
+    # text path so the user still gets results.
+    matched_cluster = None
+    if employer_slug_filter:
+        matched_cluster = (
+            EmployerCluster.objects.filter(slug=employer_slug_filter)
+            .only(
+                "id",
+                "slug",
+                "canonical_name",
+                "search_record_count",
+                "search_avg_salary",
+                "search_min_salary",
+                "search_max_salary",
+            )
+            .first()
+        )
+        if matched_cluster is None:
+            employer_slug_filter = ""
+
     # Build params dict for compatibility with existing code
     params = {
         "query": query,
         "employer_filter": employer_filter,
+        "employer_slug_filter": employer_slug_filter,
         "state_filter": state_filter,
         "program_filter": program_filter,
         "year_filter": str(fiscal_year_filter) if fiscal_year_filter else "",
@@ -173,6 +205,7 @@ def salary_search_view(request):
         [
             query,
             employer_filter,
+            employer_slug_filter,
             state_filter,
             program_filter,
             fiscal_year_filter,
@@ -183,10 +216,18 @@ def salary_search_view(request):
 
     # Apply filters using generic utilities
     records = apply_text_search_filter(records, query, ["job_title", "soc_title"])
-    if employer_filter:
-        # Filter by cluster canonical name ONLY (matches cluster head)
-        # This ensures that searching for a company matches all records in that company's cluster
-        # PERFORMANCE: Composite index on (employer, is_worksite) makes this JOIN efficient
+    if matched_cluster is not None:
+        # Fast path: user picked a company from autocomplete, so we know the
+        # exact cluster id. Filter on the indexed FK + slug (B-tree, ms) rather
+        # than dragging every record through the trigram heap-scan that
+        # __icontains on canonical_name compiles to.
+        records = records.filter(
+            employer__canonical_cluster_id=matched_cluster.id
+        )
+    elif employer_filter:
+        # Free-text path: user typed a name and submitted without selecting.
+        # Hits the trigram GIN index (sr_ec_canonical_name_trgm) but still
+        # has to recheck against the heap; keep it as the fallback.
         records = records.filter(
             employer__canonical_cluster__canonical_name__icontains=employer_filter
         )
@@ -240,13 +281,35 @@ def salary_search_view(request):
             if salary_trend_chart:
                 market_chart_data["salary_trend"] = salary_trend_chart
 
-    if has_filters:
+    # Fast path: when the only filter is a resolved cluster slug, the count and
+    # avg/min/max are exactly the precomputed aggregates on the cluster row
+    # (refreshed nightly by cluster_existing_employers --stats-only). Skip the
+    # 24s aggregate query entirely.
+    only_slug_filter = (
+        matched_cluster is not None
+        and not query
+        and not state_filter
+        and not program_filter
+        and not fiscal_year_filter
+        and not filing_year_filter
+    )
+    if only_slug_filter:
+        total_results = matched_cluster.search_record_count
+        stats = {
+            "avg_salary": matched_cluster.search_avg_salary,
+            "min_salary": matched_cluster.search_min_salary,
+            "max_salary": matched_cluster.search_max_salary,
+        }
+    elif has_filters:
         total_results, stats = _cached_count_and_stats(
             records,
             "salary_search",
             [
                 query,
-                employer_filter,
+                # Use slug when present so a slug-based search and a free-text
+                # search that resolves to the same name don't share a cache
+                # entry (different SQL paths, different perf profile).
+                f"slug:{employer_slug_filter}" if employer_slug_filter else employer_filter,
                 state_filter,
                 program_filter,
                 str(fiscal_year_filter or ""),
@@ -294,6 +357,7 @@ def salary_search_view(request):
         # Search parameters (for backward compatibility with templates)
         "query": query,
         "employer_filter": employer_filter,
+        "employer_slug_filter": employer_slug_filter,
         "state_filter": state_filter,
         "program_filter": program_filter,
         "year_filter": str(fiscal_year_filter) if fiscal_year_filter else "",

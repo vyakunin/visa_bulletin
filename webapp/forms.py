@@ -29,6 +29,14 @@ class SalarySearchForm(forms.Form):
             }
         ),
     )
+    # Set by autocomplete.js when the user picks a suggestion. Lets the view
+    # filter by indexed cluster slug instead of the slow trigram icontains
+    # path. Empty when the user types and submits manually.
+    employer_slug = forms.SlugField(
+        required=False,
+        max_length=255,
+        widget=forms.HiddenInput(),
+    )
     state = forms.ChoiceField(
         required=False,
         label="State",

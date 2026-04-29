@@ -1024,10 +1024,72 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
         """)
         updated_zero_employers = cursor.rowcount
 
+        # 3. Pre-compute the search-page aggregates: count / avg / min / max
+        # over the rows that the /salaries/ page would actually show for this
+        # cluster. These are read directly when an employer slug is selected,
+        # so we don't have to fan out from cluster -> employers -> records on
+        # every request. See docs/PERFORMANCE_IMPROVEMENTS.md §3.
+        # `avg` is record-weighted (computed over salary_record), not the
+        # mean-of-means stored in `avg_salary`.
+        search_start = time.time()
+        cursor.execute("""
+            WITH agg AS (
+                SELECT
+                    e.canonical_cluster_id AS cluster_id,
+                    COUNT(*)::int AS rec_count,
+                    AVG(r.wage_annual) AS avg_sal,
+                    MIN(r.wage_annual) AS min_sal,
+                    MAX(r.wage_annual) AS max_sal
+                FROM salary_record r
+                JOIN salary_employer e ON e.id = r.employer_id
+                WHERE e.canonical_cluster_id IS NOT NULL
+                  AND r.is_worksite = false
+                  AND r.employer_name <> 'Unknown'
+                  AND r.wage_annual IS NOT NULL
+                  AND r.wage_annual > 0
+                GROUP BY e.canonical_cluster_id
+            )
+            UPDATE salary_employer_cluster c
+            SET
+                search_record_count = agg.rec_count,
+                search_avg_salary = agg.avg_sal,
+                search_min_salary = agg.min_sal,
+                search_max_salary = agg.max_sal
+            FROM agg
+            WHERE c.id = agg.cluster_id
+        """)
+        updated_search_stats = cursor.rowcount
+
+        # Zero out clusters that have no searchable records.
+        cursor.execute("""
+            UPDATE salary_employer_cluster c
+            SET search_record_count = 0,
+                search_avg_salary = NULL,
+                search_min_salary = NULL,
+                search_max_salary = NULL
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM salary_record r
+                JOIN salary_employer e ON e.id = r.employer_id
+                WHERE e.canonical_cluster_id = c.id
+                  AND r.is_worksite = false
+                  AND r.employer_name <> 'Unknown'
+                  AND r.wage_annual IS NOT NULL
+                  AND r.wage_annual > 0
+            )
+        """)
+        zeroed_search_stats = cursor.rowcount
+        search_elapsed = time.time() - search_start
+
     elapsed = time.time() - start_time
     logger.info(
         f"Updated {updated_with_employers:,} clusters with employers, "
         f"{updated_zero_employers:,} clusters with zero employers in {elapsed:.1f}s"
+    )
+    logger.info(
+        f"Updated search-scope aggregates: {updated_search_stats:,} clusters "
+        f"with searchable records, {zeroed_search_stats:,} cleared, "
+        f"in {search_elapsed:.1f}s"
     )
 
 
