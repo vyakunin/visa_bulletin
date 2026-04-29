@@ -992,6 +992,12 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
 
     start_time = time.time()
     with connection.cursor() as cursor:
+        # The aggregations below scan all of salary_record (~1.5M rows). The
+        # 45s default statement_timeout for application connections kills that.
+        # Lift it for this session — VACUUM ANALYZE / clustering scripts are
+        # expected to take minutes.
+        cursor.execute("SET statement_timeout = 0")
+
         # 1. Update clusters that have at least one employer from aggregation
         cursor.execute("""
             WITH agg AS (
