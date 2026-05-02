@@ -1,5 +1,6 @@
 """Employer rankings/leaderboard view."""
 
+import json
 from datetime import date
 
 from django.conf import settings
@@ -204,6 +205,52 @@ def employer_rankings_view(request):
     latest_available_year = fy_options[0]["year"] if fy_options else None
     show_recency_note = bool(latest_available_year and latest_available_year < current_year)
 
+    page_title = f"Top {program_label} Sponsors ({period_label}) | U.S. Immigration Data"
+    page_description = (
+        f"The top 100 {program_label} sponsors ranked by recent filing volume. "
+        f"Data from official DOL "
+        f"{'LCA and PERM' if program == 'all' else 'PERM' if program == 'perm' else 'LCA'} "
+        "disclosure files."
+    )
+    canonical_url = request.build_absolute_uri()
+
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": page_title,
+        "description": page_description,
+        "url": canonical_url,
+        "creator": {
+            "@type": "Organization",
+            "name": "U.S. Immigration Data",
+            "url": "https://visa-bulletin.us",
+        },
+        "isAccessibleForFree": True,
+        "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "keywords": (
+            f"{program_label} sponsors, H-1B employers, PERM employers, "
+            "top green card sponsors, LCA filings, visa sponsorship rankings"
+        ),
+        "dateModified": date.today().isoformat(),
+        "mainEntity": {
+            "@type": "ItemList",
+            "itemListOrder": "https://schema.org/ItemListOrderDescending",
+            "numberOfItems": len(rankings),
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": i + 1,
+                    "item": {
+                        "@type": "Organization",
+                        "name": r["cluster_name"],
+                        "url": request.build_absolute_uri(f"/employer/{r['cluster_slug']}/"),
+                    },
+                }
+                for i, r in enumerate(rankings[:100])
+            ],
+        },
+    }
+
     context = {
         "rankings": rankings,
         "program": program,
@@ -216,14 +263,10 @@ def employer_rankings_view(request):
         "latest_available_year": latest_available_year,
         "current_year": current_year,
         "show_recency_note": show_recency_note,
-        "page_title": f"Top {program_label} Sponsors ({period_label}) | U.S. Immigration Data",
-        "page_description": (
-            f"The top 100 {program_label} sponsors ranked by recent filing volume. "
-            f"Data from official DOL "
-            f"{'LCA and PERM' if program == 'all' else 'PERM' if program == 'perm' else 'LCA'} "
-            "disclosure files."
-        ),
-        "canonical_url": request.build_absolute_uri(),
+        "page_title": page_title,
+        "page_description": page_description,
+        "canonical_url": canonical_url,
+        "structured_data": json.dumps(structured_data),
     }
 
     return render(request, "webapp/employer_rankings.html", context)
