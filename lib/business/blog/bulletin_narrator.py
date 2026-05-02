@@ -405,6 +405,7 @@ class BulletinNarrator:
                         "weight_pct": round(weight * 100, 1),
                     })
                 expert_rows.sort(key=lambda r: r["weight_pct"], reverse=True)
+                expert_rows = [r for r in expert_rows if r["weight_pct"] > 0]
                 entry["top_experts"] = expert_rows[:3]
 
             series_data.append(entry)
