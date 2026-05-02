@@ -539,6 +539,36 @@ def _build_methodology_content() -> str:
     chart1_json = _build_chart_india_eb2_history()
     chart2_json = _build_chart_model_vs_persistence_6m()
     chart3_json = _build_chart_seasonal_rhythm()
+
+    if chart2_json == "{}":
+        chart_mae_block = ""
+    else:
+        chart_mae_block = (
+            "<p>\n"
+            "  The natural comparison baseline is <strong>6m-lagged persistence</strong>: whatever the cutoff was\n"
+            "  6 months ago is the “no change” forecast. During periods when cutoffs advance rapidly,\n"
+            "  that 6-month lag is large — a model that tracks the trend beats persistence substantially.\n"
+            "  The chart below shows China EB-2 from 2018. During the 2019–2022 advancing window the model\n"
+            "  prediction (green) stays much closer to the actual (blue) than the naive persistence baseline (grey).\n"
+            "  In the stall period after 2022 the three lines converge — the model correctly sees little movement.\n"
+            "</p>\n"
+            "\n"
+            '<div id="chart-mae-example" style="width:100%;max-width:800px;"></div>\n'
+            "<script>\n"
+            "(function() {\n"
+            f"  var data = {chart2_json};\n"
+            "  if (data && data.data) {\n"
+            "    Plotly.newPlot('chart-mae-example', data.data, data.layout, {responsive: true, displayModeBar: false});\n"
+            "  }\n"
+            "})();\n"
+            "</script>\n"
+            '<p class="small text-muted">\n'
+            "  China EB-2 filing cutoff, 2018–present. Green dashed: this model’s prediction made 6 months before the\n"
+            "  bulletin. Grey dashed: naive “no-change” persistence from 6 months ago. The gap between grey and actual\n"
+            "  shows the missed advance that persistence cannot predict; the model closes much of that gap.\n"
+            "  Lines converge after 2022 when the series stalls — correct behaviour, not a flaw.\n"
+            "</p>"
+        )
     metrics = _get_model_metrics()
 
     _table_order = [
@@ -718,30 +748,7 @@ def _build_methodology_content() -> str:
   MAE is measured in days of error between the predicted cutoff date and the actual cutoff date. This is
   measured in <em>priority date space</em>, not in calendar time.
 </p>
-<p>
-  The natural comparison baseline is <strong>6m-lagged persistence</strong>: whatever the cutoff was
-  6 months ago is the "no change" forecast. During periods when cutoffs advance rapidly,
-  that 6-month lag is large — a model that tracks the trend beats persistence substantially.
-  The chart below shows China EB-2 from 2018. During the 2019–2022 advancing window the model
-  prediction (green) stays much closer to the actual (blue) than the naive persistence baseline (grey).
-  In the stall period after 2022 the three lines converge — the model correctly sees little movement.
-</p>
-
-<div id="chart-mae-example" style="width:100%;max-width:800px;"></div>
-<script>
-(function() {{
-  var data = {chart2_json};
-  if (data && data.data) {{
-    Plotly.newPlot('chart-mae-example', data.data, data.layout, {{responsive: true, displayModeBar: false}});
-  }}
-}})();
-</script>
-<p class="small text-muted">
-  China EB-2 filing cutoff, 2018–present. Green dashed: this model's prediction made 6 months before the
-  bulletin. Grey dashed: naive "no-change" persistence from 6 months ago. The gap between grey and actual
-  shows the missed advance that persistence cannot predict; the model closes much of that gap.
-  Lines converge after 2022 when the series stalls — correct behaviour, not a flaw.
-</p>
+{chart_mae_block}
 
 <hr>
 
