@@ -394,7 +394,7 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
 
                         if isinstance(m_meta, dict):
                             preds = m_meta.get("expert_preds", {})
-                            weights = m_meta.get("weights", {})
+                            weights = m_meta.get("weights") or m_meta.get("expert_weights", {})
                             for name, pred_date in preds.items():
                                 expert_data[name] = {
                                     "pred": pred_date.isoformat() if pred_date else None,
