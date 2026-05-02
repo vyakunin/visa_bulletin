@@ -172,23 +172,90 @@ These are documented for future work; they are **not** part of the
 
 ### 6. ~500 MB of indexes on `salary_record` are unused
 
-From `pg_stat_user_indexes` (`idx_scan = 0` over the lifetime of the
-DB). Dropping them frees buffer cache and speeds writes.
+From `pg_stat_user_indexes` (`idx_scan = 0` over ~3 months of DB
+lifetime, including 2.5 days of post-graduation prod traffic).
+
+Dropped on 2026-05-02 via `DROP INDEX CONCURRENTLY` directly on prod
+(13 indexes, idempotent). Conservative subset: kept anything with
+non-zero scans on the previous prod database.
 
 | Index                                       | Size  |
 |---------------------------------------------|------:|
-| `salary_reco_employe_c93e9a_idx`            | 80 MB |
-| `salary_reco_employe_892342_idx`            | 37 MB |
-| `salary_reco_job_tit_7b8349_idx`            | 46 MB |
-| `salary_record_employer_name_e42fa6a7` (+ `_like`) | 84 MB |
-| `salary_record_job_title_89d21c95` (+ `_like`)     | 74 MB |
-| `salary_record_soc_code_1b8d83ff` (+ `_like`)      | 44 MB |
-| `salary_record_source_file_a0692cee` (+ date/`_like`) | 51 MB |
-| `salary_record_ingest_version_id_…`         | 25 MB |
+| `salary_reco_employe_c93e9a_idx`            | 52 MB |
+| `salary_reco_job_tit_7b8349_idx`            | 23 MB |
+| `salary_record_employer_name_e42fa6a7` (+ `_like`) | 42 MB |
+| `salary_record_job_title_89d21c95` (+ `_like`)     | 38 MB |
+| `salary_reco_employe_892342_idx`            | 18 MB |
+| `salary_reco_soc_cod_8cdf26_idx`            | 11 MB |
+| `salary_record_soc_code_1b8d83ff` (+ `_like`)      | 20 MB |
+| `salary_record_source_file_a0692cee`        | 11 MB |
+| `salary_record_source_file_date_436fb5ad`   | 10 MB |
+| `salary_record_ingest_version_id_ad9dc99b`  | 10 MB |
 
-Drop with `DROP INDEX CONCURRENTLY` so writes aren't blocked. Confirm
-they remain at zero scans after a week of normal traffic before
-committing the drop.
+Result: `salary_record` index size 877 MB → 641 MB (−236 MB / −27%).
+The dropped indexes had never been paged into RAM, so memory free
+didn't change immediately — the win is reduced cache pressure going
+forward and faster writes. No regressions on any main page.
+
+**Status: Done** (2026-05-02, prod only — staging will pick this up
+on next graduation; a migration is the durable record).
+
+### A. Free-text employer search picks a fan-out plan
+
+For `/salaries/?employer=<short-text>&page=N` (especially deep pages
+crawled by bots), the planner does a **parallel index scan backward
+on `wage_annual` + filter on the cluster join** thinking LIMIT+OFFSET
+will let it stop early. For a substring like `'%STANDARD%'`, the join
+filter rejects ~4 of every 5 rows, so it scans ~530k rows to find
+300, doing ~134k cold disk page reads (~1 GB I/O). On idle DB this
+runs in ~5 s, but under live disk contention it hits the 45 s
+`statement_timeout` and gets cancelled. ~330 of these cancels per day
+in prod logs.
+
+**Fix:** restructure the ORM to resolve the cluster set first via the
+trigram index on `salary_employer_cluster.canonical_name`, then drive
+the salary_record query off `canonical_cluster_id__in=[…]`:
+
+```python
+cluster_ids = list(
+    EmployerCluster.objects.filter(
+        canonical_name__icontains=employer_filter
+    ).values_list("id", flat=True)[:_MAX_CLUSTER_IDS]
+)
+records = records.filter(employer__canonical_cluster_id__in=cluster_ids)
+```
+
+Two queries instead of one, but each is cheap: the first hits the
+GIN trigram index, the second hits the FK B-tree. The planner can no
+longer trick itself into the "scan wage_annual DESC" plan because the
+`canonical_cluster_id__in` filter is unambiguously selective. Cap at
+2000 cluster ids so a bot typing one character (`'%A%'`) doesn't
+produce a runaway IN-list — well above any meaningful real search.
+
+This also covers issue B (the avg/min/max aggregate) — same filter
+shape, same root cause.
+
+**Status: Done** (2026-05-02). [webapp/views/salary/search.py](../webapp/views/salary/search.py).
+
+### C. `_get_cluster_or_404` falls back to seq-scan icontains
+
+[webapp/views/employers/profile.py:42](../webapp/views/employers/profile.py)
+catches stale `/employer/<slug>/` requests by trying
+
+```python
+Employer.objects.filter(name_normalized__icontains=slug_normalized)
+```
+
+There's no GIN trigram on `salary_employer.name_normalized`, so this
+seq-scans 287k rows per request (~1.1 s each in prod logs). Bots hit
+stale Google-indexed slugs constantly so this fires a lot.
+
+**Fix:** add `CREATE INDEX CONCURRENTLY se_name_normalized_trgm` —
+mirror of the existing `sr_ec_canonical_name_trgm` on the cluster
+table. ~10–15 MB index, drops these queries to <50 ms.
+
+**Status: Done** (2026-05-02). Migration
+[0046_employer_name_normalized_trigram_index.py](../models/migrations/0046_employer_name_normalized_trigram_index.py).
 
 ### 7. Lightsail 2 GB plan is undersized for this workload
 

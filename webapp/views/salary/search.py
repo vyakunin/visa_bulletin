@@ -32,6 +32,15 @@ from webapp.forms import SalarySearchForm, WorksiteSearchForm
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
 
+# Cap on how many cluster ids we resolve from a free-text employer search
+# before handing them to the salary_record filter. With the trigram GIN, a
+# typical multi-character substring matches 100–500 clusters; bots typing
+# very short strings (`%A%`, `%I%`) can trigger tens of thousands of matches
+# and the resulting `IN (...)` clause becomes the bottleneck instead of the
+# downstream join. 2000 is well above any meaningful real search but keeps
+# the planner's job bounded.
+_MAX_CLUSTER_IDS = 2000
+
 
 def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
     """Cache (count, stats) for a filtered queryset.
@@ -225,12 +234,23 @@ def salary_search_view(request):
             employer__canonical_cluster_id=matched_cluster.id
         )
     elif employer_filter:
-        # Free-text path: user typed a name and submitted without selecting.
-        # Hits the trigram GIN index (sr_ec_canonical_name_trgm) but still
-        # has to recheck against the heap; keep it as the fallback.
-        records = records.filter(
-            employer__canonical_cluster__canonical_name__icontains=employer_filter
+        # Free-text path: user typed a name and submitted without picking a
+        # suggestion. Done in two queries so the planner can't trick itself
+        # into a "scan wage_annual DESC, filter join" plan that ends up
+        # touching half the table for common substrings like "STANDARD" —
+        # see docs/PERFORMANCE_IMPROVEMENTS.md §A. The first query hits the
+        # trigram index on canonical_name, the second is a plain FK lookup.
+        cluster_ids = list(
+            EmployerCluster.objects.filter(
+                canonical_name__icontains=employer_filter
+            ).values_list("id", flat=True)[:_MAX_CLUSTER_IDS]
         )
+        if cluster_ids:
+            records = records.filter(
+                employer__canonical_cluster_id__in=cluster_ids
+            )
+        else:
+            records = records.none()
     if state_filter:
         records = records.filter(worksite_state=state_filter)
     records = apply_visa_program_filter(records, program_filter)
