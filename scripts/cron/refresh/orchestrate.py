@@ -209,9 +209,24 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
         "grep visa_bulletin_web | xargs -r docker rm -f"
     )
     runner.run_shell(cleanup_cmd, timeout_sec=15)
+    # Derive IMAGE_TAG the same way start_remote_services does: ${BRANCH}-${SHA} on the
+    # target host. Without this, docker-compose up falls back to the :latest tag pinned
+    # in docker-compose.yml, which was built from the *previous* prod commit and silently
+    # downgrades the running container right after start_remote_services pinned the new
+    # build.
+    image_tag_cmd = (
+        f"cd {shlex.quote(str(project_root))} && "
+        "BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) && "
+        "SHA=$(git rev-parse --short HEAD 2>/dev/null) && "
+        'echo "${BRANCH}-${SHA}"'
+    )
+    tag_result = runner.run_shell(image_tag_cmd, timeout_sec=5)
+    image_tag = (tag_result.stdout or "").strip() or "latest"
     restart_cmd = (
         f"export DOCKER_HOST=unix:///var/run/docker.sock && "
         f"cd {shlex.quote(str(project_root))} && "
+        "set -a && [ -f .env ] && source .env; set +a && "
+        f"export IMAGE_TAG={shlex.quote(image_tag)} && "
         f"docker-compose {compose_args} up -d"
     )
     result = runner.run_shell(restart_cmd, timeout_sec=120)
@@ -223,7 +238,8 @@ def _write_prod_safe_override(runner: Runner, project_root: Path, host_ip: str) 
         )
     else:
         logger.info(
-            "Restarted web container with prod-safe override (using Docker image code)"
+            "Restarted web container with prod-safe override (image=%s)",
+            image_tag,
         )
 
 
@@ -500,6 +516,34 @@ def _run_orchestrate_locked(
 ) -> int:
     """Core orchestration logic, called while holding the lock file."""
 
+    # Graduation cooldown: refuse to run on a host that just became prod.
+    # The per-host .orchestrator.lock cannot block a second orchestrator running on the
+    # *other* host, and `is_this_host_active` happily green-lights the just-graduated
+    # host (its .env was just rewritten to ACTIVE=this-host). A second orchestrator
+    # launched there interprets the post-grad state as "fresh pre-grad" and
+    # re-runs traffic_switch in the opposite direction, flipping the cluster back.
+    # Skip the cooldown only with --no-traffic-switch (no irreversible action) or
+    # REFRESH_FORCE=1 (operator override after manual recovery).
+    cooldown_marker = Path(config.project_root) / ".last_graduated_at"
+    cooldown_secs = int(os.environ.get("REFRESH_GRADUATION_COOLDOWN_SEC", "21600"))
+    force = os.environ.get("REFRESH_FORCE", "").strip().lower() in ("1", "true", "yes")
+    if not no_traffic_switch and not force and cooldown_marker.exists():
+        try:
+            import time as _t
+            last_grad = int(cooldown_marker.read_text().strip())
+            age = int(_t.time()) - last_grad
+            if 0 <= age < cooldown_secs:
+                hours_left = (cooldown_secs - age) / 3600
+                logger.error(
+                    "This host graduated %d sec ago (marker %s). Cooldown is %d sec "
+                    "(~%.1f h remaining). A second graduation would flip IPs back. "
+                    "Set REFRESH_FORCE=1 to override or delete the marker after manual recovery.",
+                    age, cooldown_marker, cooldown_secs, hours_left,
+                )
+                return 1
+        except (ValueError, OSError) as e:
+            logger.warning("Cooldown marker %s unreadable, ignoring: %s", cooldown_marker, e)
+
     # Validate .env against actual AWS state to catch corrupted .env from partial runs.
     # Logs errors with recovery instructions on mismatch but does not abort (non-fatal)
     # so a misconfigured AWS CLI doesn't block the orchestrator.
@@ -770,7 +814,25 @@ def _run_orchestrate_locked(
         skip_staging_ip=not reassign_staging_ip,
     )
 
+    # Write a "last graduated at" marker on the new prod so a second orchestrator
+    # launched there cannot re-graduate the cluster back. The lock file at
+    # `.orchestrator.lock` is per-host and does not block this scenario, since the
+    # second orchestrator runs on a different host (the new prod) where no lock exists.
+    # Without this, accidentally double-launching the orchestrator (e.g. via a
+    # mis-read SSH-nohup launch) re-runs traffic_switch on the new prod's worldview
+    # and flips the IPs back. The cooldown check at the top of this function reads it.
     import time
+    _now = int(time.time())
+    runner_marker_path = remote_root / ".last_graduated_at"
+    remote.run_shell(
+        f"echo {_now} > {shlex.quote(str(runner_marker_path))}",
+        timeout_sec=10,
+    )
+    logger.info(
+        "Wrote graduation cooldown marker on new prod: %s (timestamp=%d)",
+        runner_marker_path,
+        _now,
+    )
 
     logger.info("Safety interval: %s sec", safety_interval_sec)
     time.sleep(safety_interval_sec)

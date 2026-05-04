@@ -6,6 +6,15 @@ This file is maintained alongside `deployment.mdc`. Each time the orchestrator h
 
 ---
 
+## Known issues from 2026-05-04 graduation
+
+- **Concurrent orchestrators on different hosts re-flip the cluster (FIXED):** The `.orchestrator.lock` file is written under `config.project_root` and is therefore *per-host*. It blocks two orchestrators on the same machine but cannot block one on the OLD prod and another on the NEW prod simultaneously. After a successful graduation, the new prod's `.env` reads `ACTIVE = this-host`, so `is_this_host_active` and `validate_env_against_aws` both pass — a second orchestrator launched on the new prod cheerfully runs `traffic_switch` against its inactive (= the old prod), swapping the IPs back. **Fix:** the orchestrator now writes a `.last_graduated_at` timestamp file on the new prod after a successful graduation. On startup, the orchestrator refuses to run `traffic_switch` if the marker is younger than `REFRESH_GRADUATION_COOLDOWN_SEC` (default 21600 = 6 h). Override with `REFRESH_FORCE=1` after manual recovery; `--no-traffic-switch` always bypasses the cooldown (no irreversible action).
+- **`ssh "... nohup … & disown; ps -p $!"` is misleading and lets you launch a duplicate (operator caution):** When you launch the orchestrator with `nohup … &; disown; sleep 2; ps -p $!`, the `ps` query frequently returns an empty row (PID race / disowned subshell), making it look like the launch failed even though it succeeded. Resist the urge to relaunch. Verify by `tail` of the log file, not by `ps -p $!`. Combined with the cooldown above, a duplicate launch is now an error rather than a silent IP flip.
+- **Prod-safe override `docker-compose up -d` silently downgraded the running image to `:latest` (FIXED):** `_write_prod_safe_override` re-ran `docker-compose up -d` after rewriting the override file but never set `IMAGE_TAG`. Compose fell back to `${IMAGE_TAG:-latest}` from `docker-compose.yml`, recreating the container against the old `:latest` image — discarding the `staging-<sha>` image that `start_remote_services` had just pinned. **Fix:** the override restart now derives `IMAGE_TAG` from `git rev-parse HEAD` on the new prod (same logic as `start_remote_services`) and exports it before `docker-compose up -d`.
+- **Operator pre-flight: query AWS, not only `.env`.** Before triggering graduation, dump `aws lightsail get-static-ips --region us-east-1` and verify the static-IP attachments match the *expected* pre-graduation roles (active instance has prod IP, inactive has staging IP). If a previous attempt left them half-migrated, the orchestrator's per-step idempotency will mask the inconsistency and may run the wrong direction. The babysitting checklist in `deployment.mdc` already includes this — run it *before* the orchestrator too.
+
+---
+
 ## Known issues from 2026-02-21 graduation
 
 - **AWS CLI timeout:** `attach-static-ip` can take >30s. Fixed: timeout increased to 120s in `traffic_switch.py`. The operation succeeds server-side even if CLI times out, leaving the orchestrator in an inconsistent state (IP swapped but post-switch steps skipped).
