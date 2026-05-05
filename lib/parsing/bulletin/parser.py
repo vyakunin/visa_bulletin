@@ -147,6 +147,11 @@ def extract_table_legacy(table):
     is_family = "family" in first_cell_text
     is_employment = "employment" in first_cell_text
 
+    # Feb–April 2004 format: row 0 is a single colspan'd title cell
+    # ("Priority Dates for Family Based Immigrant Visas"), row 1 holds the
+    # actual country headers, row 2+ is data.
+    title_row_is_colspan = len(cells) == 1 and (is_family or is_employment)
+
     if not is_family and not is_employment:
         # 2001-2003 format: type may be in second row's first cell
         if len(table_rows) >= 2:
@@ -167,8 +172,13 @@ def extract_table_legacy(table):
     else:
         return None
 
-    # Header row: row 0 in 2004+ format; in 2001-2003 row 0 is header, row 1 is type
-    if first_cell_text and (is_family or is_employment):
+    # Header row: row 0 in 2004+ format (header-row carries the type), row 1
+    # in 2001-2003 (header is row 0, type is in row 1's first cell), row 1 in
+    # the Feb–April 2004 transitional format (row 0 is just a colspan title).
+    if title_row_is_colspan and len(table_rows) >= 2:
+        header_cells = table_rows[1].find_all(["td", "th"])
+        data_start_idx = 2
+    elif first_cell_text and (is_family or is_employment):
         data_start_idx = 1
         header_cells = cells
     else:

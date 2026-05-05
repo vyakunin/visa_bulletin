@@ -490,15 +490,15 @@ class BulletinNarrator:
             regime_label, _ = REGIME_LABELS.get(regime, (regime, "secondary"))
 
             if regime == "advancing":
-                text = f"{label} is in an **advancing** pattern with consistent forward movement."
+                text = f"{label} is in an <strong>advancing</strong> pattern with consistent forward movement."
             elif regime == "stalled":
-                text = f"{label} has been **stalled** with minimal cutoff movement."
+                text = f"{label} has been <strong>stalled</strong> with minimal cutoff movement."
             elif regime == "retrogressing":
-                text = f"{label} is **retrogressing** — cutoff dates are moving backward."
+                text = f"{label} is <strong>retrogressing</strong> — cutoff dates are moving backward."
             elif regime == "recovering":
-                text = f"{label} is **recovering** from a recent retrogression period."
+                text = f"{label} is <strong>recovering</strong> from a recent retrogression period."
             elif regime == "volatile":
-                text = f"{label} shows **volatile** behavior with unpredictable swings."
+                text = f"{label} shows <strong>volatile</strong> behavior with unpredictable swings."
             else:
                 text = f"{label}: regime {regime_label}."
 
