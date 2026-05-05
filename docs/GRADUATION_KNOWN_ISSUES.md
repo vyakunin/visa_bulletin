@@ -6,6 +6,14 @@ This file is maintained alongside `deployment.mdc`. Each time the orchestrator h
 
 ---
 
+## Known issues from 2026-05-05 graduation
+
+- **Smoke `_curl_localhost` parsed empty-body 302 as HTTP 0 (FIXED):** `curl -s -w '\n%{http_code}'` on a redirect with no body produces `\n302`. The helper called `.strip()` *before* `rsplit("\n", 1)`, leaving `"302"` as a single element — parsing fell through to `(0, output)`. Smoke aborted on `/predictions/employment_based/` even though the URL was healthy. **Fix:** parse from the last newline forward (`rfind("\n")`), no leading-strip; preserves correct parsing for both empty and non-empty bodies. The `bazel-bin/scripts/cron/refresh_and_switch_py` binary on the orchestrator host must be **rebuilt** after pulling — runfiles are baked at build time.
+- **Hotfix code-path required to fix smoke on the active host.** `scripts/cron/refresh/smoke.py` runs in the orchestrator on the *active* (currently-prod) instance, not in the inactive image. Cherry-pick the fix to **both** `staging` (so future graduations reuse the patched binary after the IP swap rebuilds it on the new prod) **and** `prod` (so the current-cycle orchestrator picks it up immediately via `git pull` + local `bazel build`).
+- **Cherry-picking to `staging` mid-graduation can race the image build.** The orchestrator derives the inactive's image tag from staging HEAD's short SHA. If you cherry-pick a new commit to `staging` before kicking off graduation, the orchestrator may try to pull `staging-<new-sha>` while CI is still building it, failing `start_remote_services` with `failed to resolve reference … not found`. Either wait for the staging CI run to finish, or apply the orchestrator-only hotfix to `prod` only (then cherry-pick to `staging` *after* the IP swap). Confirm with `gh run list --branch staging --limit 1` before starting.
+
+---
+
 ## Known issues from 2026-05-04 graduation
 
 - **Concurrent orchestrators on different hosts re-flip the cluster (FIXED):** The `.orchestrator.lock` file is written under `config.project_root` and is therefore *per-host*. It blocks two orchestrators on the same machine but cannot block one on the OLD prod and another on the NEW prod simultaneously. After a successful graduation, the new prod's `.env` reads `ACTIVE = this-host`, so `is_this_host_active` and `validate_env_against_aws` both pass — a second orchestrator launched on the new prod cheerfully runs `traffic_switch` against its inactive (= the old prod), swapping the IPs back. **Fix:** the orchestrator now writes a `.last_graduated_at` timestamp file on the new prod after a successful graduation. On startup, the orchestrator refuses to run `traffic_switch` if the marker is younger than `REFRESH_GRADUATION_COOLDOWN_SEC` (default 21600 = 6 h). Override with `REFRESH_FORCE=1` after manual recovery; `--no-traffic-switch` always bypasses the cooldown (no irreversible action).
