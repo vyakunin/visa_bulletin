@@ -187,6 +187,71 @@ ssh prod_2Gb_vm "grep -E 'REFRESH_(ACTIVE|INACTIVE)_PRIVATE_IP' /opt/visa_bullet
 # VisaBulletin2GB private IP: 172.26.13.90; VisaBulletinStaging: 172.26.7.74
 ```
 
+**7. Public-URL HTTP coverage — main entries, autocompletes, latest blog posts, tail pages.** The orchestrator's smoke test only hits `localhost:8000` *during* graduation, against the inactive host. After the IP swap, run this sweep against the *public* URL to catch DNS/HTTPS/cache regressions and prove the new prod actually serves real traffic. All endpoints must return the expected status; cold-first hits up to ~12s on heavy aggregation pages are acceptable, but warm-cache re-hits must be sub-second.
+
+```bash
+BASE="https://visa-bulletin.us"
+chk() {
+  local url="$1" expect="$2"
+  local out; out=$(curl -s -o /tmp/body.html -w "%{http_code}|%{time_total}" --max-time 30 "$BASE$url")
+  printf "%-55s %s (expect %s)\n" "$url" "$out" "$expect"
+}
+# Main entry points
+for u in / /salaries/ /worksites/ /employers/ /employers/rankings/ /job-titles/ \
+         /analysis/ /faq/ /about/ /contact/ /health/ /predictions/ \
+         /employment-based/ /family-sponsored/ /spaghetti/ \
+         /employment-based/india/ /employment-based/china/ /family-sponsored/india/ \
+         /sitemap.xml /robots.txt /llms.txt; do chk "$u" 200; done
+chk /predictions/employment_based/ 302   # redirects to latest YYYY-M
+
+# Autocomplete APIs (must return non-empty JSON)
+for q in google amazon microsoft; do
+  curl -s "$BASE/api/company-autocomplete/?q=$q" | head -c 60; echo
+done
+for q in software data manager; do
+  curl -s "$BASE/api/job-title-autocomplete/?q=$q" | head -c 60; echo
+done
+
+# Latest blog posts (every post linked from /analysis/ landing must render)
+curl -s "$BASE/analysis/" | grep -oE '/analysis/[a-z0-9-]+/' | sort -u | while read s; do chk "$s" 200; done
+
+# Tail pages — pick top employer + top job-title slugs from autocomplete results,
+# plus the freshest /predictions/{employment,family}_based/YYYY-M/ detail pages.
+# Cold first hit can be slow; warm should be <300ms. Confirm Plotly chart renders:
+curl -s "$BASE/predictions/employment_based/$(date +%Y-%-m)/" | grep -c plotly  # expect ≥1
+```
+
+**8. Latest-bulletin blog post regenerated on the new staging instance.** Graduation does **not** re-run the blog narrator on the new staging — it only updates code and restarts services. Whatever post is in the new staging's DB is whatever the *old prod* had. If the narrator changed in this cycle (or any post needs a re-render before the next data-refresh pipeline), regenerate on the new staging explicitly:
+
+```bash
+# After confirming new staging container runs the new image:
+ssh staging_2Gb_vm "docker ps --format '{{.Names}} {{.Image}}'"
+# If still on the old image, pull + recreate (handles docker-compose 1.29.2 ContainerConfig bug):
+ssh staging_2Gb_vm "docker pull ghcr.io/vyakunin/visa_bulletin:staging-<sha>"
+ssh staging_2Gb_vm "docker rm -f visa_bulletin_web 2>/dev/null; \
+                    cd /opt/visa_bulletin && \
+                    IMAGE_TAG=staging-<sha> docker-compose -f deployment/docker-compose.yml up -d web"
+# Then regenerate (use the in-container Django setup, not host bazel):
+ssh staging_2Gb_vm "docker exec -e DJANGO_SETTINGS_MODULE=django_config.settings visa_bulletin_web \
+                    python scripts/oneoff/generate_initial_blog_post.py --month $(date +%Y-%m)"
+```
+
+The orchestrator stops the new staging instance after `safety_interval` (default 600s). Do this regen *before* the safety interval elapses, or restart the instance later.
+
+**9. Performance baseline (warm cache).** After 1–2 minutes of bot/user traffic the page caches warm up. Pick a handful of representative cold-then-warm URLs and confirm warm-cache times are <300ms — sustained warm-cache slowness indicates Redis is unreachable, the worker is OOM, or burst credits are exhausted (see "Lightsail burst capacity" in `docs/GRADUATION_KNOWN_ISSUES.md`).
+
+```bash
+for u in /worksites/ /employers/rankings/ /predictions/family_sponsored/$(date +%Y-%-m)/ /employer/google-llc/; do
+  curl -s -o /dev/null "$BASE$u"  # cold (warms cache)
+  t=$(curl -s -o /dev/null -w "%{time_total}" "$BASE$u")  # warm
+  printf "%-55s warm=%ss\n" "$u" "$t"
+done
+```
+
+**Known non-regressions (do not flag during babysit):**
+- `/metric-report/` returns 404 unless `bazel run //scripts/vqs:generate_metric_report` has been run and the artefact baked into the image. Most prod deploys ship without it.
+- Regime-description bullets in blog posts emit literal `**markdown**` asterisks (template renders the string unprocessed). Pre-existing across all bulletin analyses.
+
 ## Rule: Never Use Development Scripts on Production
 
 **NEVER use `restart_server.sh` on production instances.** Production uses Gunicorn in Docker containers — manage via `docker-compose restart`.
