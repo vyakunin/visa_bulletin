@@ -192,8 +192,12 @@ class BulletinNarrator:
         movements = {"family": [], "employment": []}
 
         def get_cutoffs(b):
+            # cutoff_date for "C" rows is stored as the bulletin publication_date
+            # (see lib/parsing/bulletin/table_to_cutoff_data.py). Treat is_current=True
+            # as "no real cutoff" so consecutive Current months don't masquerade as a
+            # 30-day advance.
             return {
-                f"{c.visa_class}_{c.country}": c.cutoff_date
+                f"{c.visa_class}_{c.country}": (None if c.is_current else c.cutoff_date)
                 for c in b.cutoff_dates.filter(action_type="final_action")
             }
 
@@ -355,7 +359,7 @@ class BulletinNarrator:
             cutoff = pred_bulletin.cutoffs.filter(
                 visa_class=visa_class,
                 country=country_val,
-                action_type="filing",
+                action_type="final_action",
             ).first()
             if not cutoff:
                 continue
