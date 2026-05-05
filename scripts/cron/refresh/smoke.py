@@ -52,15 +52,18 @@ def _curl_localhost(
         f"'http://localhost:8000{path}'",
         timeout_sec=timeout_sec + 5,
     )
-    output = (result.stdout or "").strip()
-    lines = output.rsplit("\n", 1)
-    if len(lines) == 2:
-        body, code_str = lines
-        try:
-            return int(code_str), body
-        except ValueError:
-            pass
-    return 0, output
+    # `-w '\n%{http_code}'` always appends "\n<code>" after the body, so the
+    # code is everything after the last newline. An empty body (302 redirect
+    # with no payload) produces "\n302" — do NOT .strip() before splitting,
+    # otherwise rsplit returns a single element and parsing falls through to 0.
+    output = result.stdout or ""
+    nl = output.rfind("\n")
+    code_str = output[nl + 1:].strip() if nl >= 0 else output.strip()
+    body = output[:nl] if nl >= 0 else ""
+    try:
+        return int(code_str), body
+    except ValueError:
+        return 0, output
 
 
 def run_smoke_tests(runner: Runner, db_name: str, config: RefreshConfig) -> None:
