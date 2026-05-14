@@ -41,9 +41,15 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
 
     When submission_date is provided, also computes maturity_month (first month the cutoff
     is projected to reach the priority date) and trajectory (step-by-step cutoff path).
+
+    The expensive predict_regime_switched() call is cached by (knowledge_date, visa_class,
+    country, action_type) — independent of submission_date — because the trajectory is
+    the same for every user; only the per-user maturity_month derivation differs.
     """
     if category != VisaCategory.EMPLOYMENT_BASED.value:
         return {}
+
+    from django.core.cache import cache
 
     from lib.business.vqs.solver import predict_regime_switched
     from models.bulletin import Bulletin
@@ -56,17 +62,43 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
     latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
     knowledge_date = latest_bulletin.publication_date if latest_bulletin else date.today()
 
+    # TTL: until the next bulletin publishes (knowledge_date + ~1 month). A user
+    # request after the next publish will see a new knowledge_date → new cache key,
+    # so stale entries naturally fall out; still cap entries at ~31 days for safety.
+    next_publish = knowledge_date + relativedelta(months=1)
+    ttl_seconds = max(
+        60,
+        int((datetime.combine(next_publish, datetime.min.time()) - datetime.now()).total_seconds()),
+    )
+    ttl_seconds = min(ttl_seconds, 31 * 24 * 3600)
+
     for label, vqs_class in VQS_VISA_CLASS_MAP.items():
         try:
-            outcome = predict_regime_switched(
-                knowledge_date=knowledge_date,
-                visa_class=vqs_class,
-                country=country,
-                action_type=action_type,
-                priority_date=submission_date,
-            )
-            next_cutoff = outcome.predicted_cutoff
+            cache_key = f"vqs_outcome.v1.{knowledge_date.isoformat()}.{vqs_class}.{country}.{action_type}"
+            outcome = cache.get(cache_key)
+            if outcome is None:
+                # Pass priority_date=None so the trajectory loop runs the full 24 steps
+                # (otherwise it breaks early once cutoff >= priority_date, and the cached
+                # outcome would be truncated for the first user's PD).
+                outcome = predict_regime_switched(
+                    knowledge_date=knowledge_date,
+                    visa_class=vqs_class,
+                    country=country,
+                    action_type=action_type,
+                    priority_date=None,
+                )
+                cache.set(cache_key, outcome, ttl_seconds)
+
             results = outcome.results
+            # Derive per-user maturity_month from the (cached) trajectory.
+            maturity_month = None
+            if submission_date is not None:
+                for r in results:
+                    if r.cutoff_date is not None and r.cutoff_date >= submission_date:
+                        maturity_month = r.month
+                        break
+
+            next_cutoff = outcome.predicted_cutoff
             confidence = outcome.confidence
             cutoff_6m = results[5].cutoff_date if len(results) > 5 else None
             cutoff_12m = results[11].cutoff_date if len(results) > 11 else None
@@ -74,7 +106,7 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
                 "next_cutoff": next_cutoff,
                 "cutoff_6m": cutoff_6m,
                 "cutoff_12m": cutoff_12m,
-                "maturity_month": outcome.maturity_month,
+                "maturity_month": maturity_month,
                 "trajectory": [
                     (r.month, r.cutoff_date)
                     for r in results
