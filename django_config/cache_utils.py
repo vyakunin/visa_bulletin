@@ -12,6 +12,9 @@ import re
 from django.core.cache import cache
 
 # Same bot list as nginx gptbot-rate-limit.conf (case-insensitive match).
+# HealthCheck is included so docker-compose healthchecks don't poison the page
+# cache — their localhost requests have no real Host header and bake
+# "localhost:8000" into <link rel="canonical">.
 BOT_USER_AGENT_PATTERNS = (
     r"GPTBot",
     r"Googlebot",
@@ -21,6 +24,7 @@ BOT_USER_AGENT_PATTERNS = (
     r"Baiduspider",
     r"YandexBot",
     r"facebookexternalhit",
+    r"HealthCheck",
 )
 _BOT_RE = re.compile("|".join(f"(?:{p})" for p in BOT_USER_AGENT_PATTERNS), re.I)
 

@@ -45,10 +45,16 @@ def _curl_localhost(
 
     When host_header is set (e.g. runner.host for RemoteRunner), send that as Host
     so Django ALLOWED_HOSTS accepts the request when checking the inactive host.
+
+    Always sends ``X-Forwarded-Proto: https`` so Django's ``request.build_absolute_uri()``
+    resolves to https URLs — otherwise the @cache_page_skip_bots decorator bakes
+    ``http://<host>/...`` into <link rel="canonical"> and serves it to real visitors.
+    Callers targeting prod pages should pass ``host_header="visa-bulletin.us"``.
     """
     host_opt = f" -H {shlex.quote('Host: ' + host_header)}" if host_header else ""
     result = runner.run_shell(
         f"curl -s -w '\\n%{{http_code}}' --max-time {timeout_sec}{host_opt} "
+        f"-H 'X-Forwarded-Proto: https' "
         f"'http://localhost:8000{path}'",
         timeout_sec=timeout_sec + 5,
     )
@@ -288,7 +294,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     # Use "localhost" as the Host header (not runner.host, which may be a private IP not in
     # ALLOWED_HOSTS). Since curl runs ON the remote machine via SSH, "localhost" is always
     # valid and is always included in the staging/prod override's ALLOWED_HOSTS.
-    status, _ = _curl_localhost(runner, "/", host_header="localhost")
+    status, _ = _curl_localhost(runner, "/", host_header="visa-bulletin.us")
     if status != 200:
         raise RuntimeError(
             f"Homepage returned HTTP {status} (expected 200). "
@@ -297,7 +303,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Homepage: OK (200)")
 
     status, body = _curl_localhost(
-        runner, "/api/job-title-autocomplete/?q=software&limit=5", host_header="localhost"
+        runner, "/api/job-title-autocomplete/?q=software&limit=5", host_header="visa-bulletin.us"
     )
     if status != 200:
         raise RuntimeError(
@@ -324,7 +330,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     )
 
     status, body = _curl_localhost(
-        runner, "/api/company-autocomplete/?q=google&limit=5", host_header="localhost"
+        runner, "/api/company-autocomplete/?q=google&limit=5", host_header="visa-bulletin.us"
     )
     if status != 200:
         raise RuntimeError(
@@ -350,7 +356,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         "[HTTP] Employer autocomplete: OK (%d results, fields validated)", len(results)
     )
 
-    status, body = _curl_localhost(runner, "/job-titles/", host_header="localhost")
+    status, body = _curl_localhost(runner, "/job-titles/", host_header="visa-bulletin.us")
     if status != 200:
         raise RuntimeError(f"Job title directory returned HTTP {status}.")
     if body.count("/job-title/") < MIN_DIRECTORY_ENTRIES:
@@ -360,7 +366,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
         )
     logger.info("[HTTP] Job title directory: OK (has entries)")
 
-    status, body = _curl_localhost(runner, "/employers/", host_header="localhost")
+    status, body = _curl_localhost(runner, "/employers/", host_header="visa-bulletin.us")
     if status != 200:
         raise RuntimeError(f"Employer directory returned HTTP {status}.")
     if body.count("/employer/") < MIN_DIRECTORY_ENTRIES:
@@ -371,7 +377,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Employer directory: OK (has entries)")
 
     status, _ = _curl_localhost(
-        runner, "/salaries/", timeout_sec=30, host_header="localhost"
+        runner, "/salaries/", timeout_sec=30, host_header="visa-bulletin.us"
     )
     if status != 200:
         raise RuntimeError(
@@ -381,7 +387,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Salaries page: OK (200)")
 
     status, _ = _curl_localhost(
-        runner, "/", timeout_sec=30, host_header="localhost"
+        runner, "/", timeout_sec=30, host_header="visa-bulletin.us"
     )
     if status != 200:
         raise RuntimeError(
@@ -392,7 +398,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
 
     # Blog / analysis pages — templates hardcode /analysis/<slug>/ links; a 404 here means
     # every 'How it works →' popover on the dashboard would be broken after graduation.
-    status, body = _curl_localhost(runner, "/analysis/", host_header="localhost")
+    status, body = _curl_localhost(runner, "/analysis/", host_header="visa-bulletin.us")
     if status != 200:
         raise RuntimeError(
             f"Blog listing (/analysis/) returned HTTP {status} (expected 200). "
@@ -406,7 +412,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
     logger.info("[HTTP] Blog listing (/analysis/): OK (200, has links)")
 
     status, _ = _curl_localhost(
-        runner, f"/analysis/{REQUIRED_BLOG_SLUG}/", host_header="localhost"
+        runner, f"/analysis/{REQUIRED_BLOG_SLUG}/", host_header="visa-bulletin.us"
     )
     if status != 200:
         raise RuntimeError(
@@ -418,7 +424,7 @@ def _run_http_smoke_tests(runner: Runner) -> None:
 
     # Prediction category landing — redirects (302) to latest bulletin month detail page
     status, _ = _curl_localhost(
-        runner, "/predictions/employment_based/", host_header="localhost"
+        runner, "/predictions/employment_based/", host_header="visa-bulletin.us"
     )
     if status not in (200, 302):
         raise RuntimeError(
@@ -429,8 +435,10 @@ def _run_http_smoke_tests(runner: Runner) -> None:
 
     # VQS prediction detail chart — follow the category landing redirect (302 → YYYY-M page)
     # to verify chart_builder produces Plotly data. Uses curl -L to follow the redirect.
+    # Pass Host + X-Forwarded-Proto so cached HTML doesn't bake localhost into canonical/og:url.
     result = runner.run_shell(
-        "curl -s -L -w '\\n%{http_code}' --max-time 30 -H 'Host: localhost' "
+        "curl -s -L -w '\\n%{http_code}' --max-time 30 "
+        "-H 'Host: visa-bulletin.us' -H 'X-Forwarded-Proto: https' "
         "'http://localhost:8000/predictions/employment_based/'",
         timeout_sec=35,
     )

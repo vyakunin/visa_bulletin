@@ -128,8 +128,14 @@ def _wait_app_healthy_via_ssh(
 
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
+        # Pass Host + X-Forwarded-Proto so Django's request.build_absolute_uri()
+        # resolves to the production URL — otherwise the @cache_page_skip_bots
+        # decorator on dashboard_view caches HTML with "localhost:8000" baked
+        # into <link rel="canonical">.
         result = runner.run_shell(
-            "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
+            "curl -s -o /dev/null -w '%{http_code}' --max-time 5 "
+            "-H 'Host: visa-bulletin.us' -H 'X-Forwarded-Proto: https' "
+            "http://localhost:8000/",
             timeout_sec=15,
         )
         code = (result.stdout or "").strip()
