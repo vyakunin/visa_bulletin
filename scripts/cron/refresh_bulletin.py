@@ -126,8 +126,23 @@ def discover_bulletin_sources() -> list:
     return discovered
 
 
+MAX_FAILED_RETRIES = 10
+
+
 def get_pending_bulletin_source_ids() -> list[int]:
-    """Return IDs of visa bulletin sources without a completed ingest run."""
+    """Return IDs of visa bulletin sources without a completed ingest run.
+
+    Sources that have accumulated ``MAX_FAILED_RETRIES`` failed IngestRuns
+    without ever completing are excluded as "permanently failed" — typically
+    legacy bulletins (pre-2017) whose HTML format the current parser cannot
+    decode. Without this gate the hourly cron retries them forever, producing
+    thousands of redundant FAILED rows and burying real errors in the log.
+
+    To force a retry after fixing the parser, delete the FAILED IngestRun rows
+    for the affected source(s) or pass them explicitly via a one-off script.
+    """
+    from django.db.models import Count
+
     domain = DataDomain.VISA_BULLETIN.value
     all_ids = set(
         DataSource.objects.filter(domain=domain).values_list("id", flat=True)
@@ -138,7 +153,29 @@ def get_pending_bulletin_source_ids() -> list[int]:
             status=IngestStatus.COMPLETED,
         ).values_list("source_id", flat=True)
     )
-    return sorted(all_ids - completed_ids)
+    failed_counts = (
+        IngestRun.objects.filter(
+            source__domain=domain,
+            status=IngestStatus.FAILED,
+        )
+        .values("source_id")
+        .annotate(n=Count("id"))
+    )
+    permanently_failed = {
+        row["source_id"] for row in failed_counts if row["n"] >= MAX_FAILED_RETRIES
+    }
+    permanently_failed -= completed_ids  # any later completion overrides the gate
+
+    if permanently_failed:
+        logger.warning(
+            "Skipping %d permanently-failed bulletin source(s) (>= %d failed retries, no completion). "
+            "IDs: %s",
+            len(permanently_failed),
+            MAX_FAILED_RETRIES,
+            sorted(permanently_failed),
+        )
+
+    return sorted(all_ids - completed_ids - permanently_failed)
 
 
 def ingest_sources(source_ids: list[int]) -> int:
