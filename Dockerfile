@@ -67,13 +67,18 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt \
     && python -c "import psycopg2; import django; print('OK: psycopg2 + django importable')"
 
-# Create necessary directories and ensure __init__.py for all Python packages
-# (Bazel handles imports via runfiles, so __init__.py files are not in the repo;
-# standard Python/gunicorn needs them for package discovery)
+# Create necessary directories and ensure __init__.py for all Python packages.
+# Bazel handles imports via runfiles, so __init__.py files are not in the repo
+# (see the "No __init__.py Files" rule); standard Python/gunicorn needs them for
+# package discovery at runtime, so we create them at image-build time.
+#
+# Use `touch` unconditionally — it succeeds whether the file exists or not. The
+# previous variant (`test ! -f X && touch X`) propagated a non-zero exit code
+# the first time any directory already had __init__.py, breaking the && chain.
 RUN mkdir -p saved_pages logs static && \
     find /app/webapp /app/models /app/lib /app/extractors \
         -type d ! -path '*/__pycache__/*' \
-        -exec sh -c 'test ! -f "$1/__init__.py" && touch "$1/__init__.py"' _ {} \; && \
+        -exec sh -c 'touch "$1/__init__.py"' _ {} \; && \
     chown -R visabulletin:visabulletin /app
 
 # Switch to non-root user
