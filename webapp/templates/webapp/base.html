@@ -28,13 +28,18 @@
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
 
-    {# hreflang annotations: only declared on pages that have an actual
-       cross-language equivalent. Per Google spec, `hreflang="es"` on a page
-       MUST point to its Spanish counterpart — declaring it globally would
-       tell Google that e.g. `/employer/google-llc/` has a Spanish version at
-       `/es/`, which is false.
-       Only the bare `/` landing and `/es/` itself declare the pair. The
-       Spanish landing overrides {% block hreflang %} unconditionally. #}
+    {% comment %}
+    hreflang annotations: only declared on pages that have an actual
+    cross-language equivalent. Per Google spec, hreflang="es" on a page MUST
+    point to its Spanish counterpart — declaring it globally would tell Google
+    that e.g. /employer/google-llc/ has a Spanish version at /es/, which is
+    false. Only the bare / landing and /es/ itself declare the pair. The
+    Spanish landing template overrides the hreflang block unconditionally.
+
+    Do not use {# ... #} for this comment — that syntax is single-line in
+    Django templates, so a multi-line {# ... #} leaks any template tags on
+    subsequent lines into the real parse. Hit this on 2026-05-16.
+    {% endcomment %}
     {% block hreflang %}{% if request.path == "/" and not request.GET %}
     <link rel="alternate" hreflang="en" href="https://visa-bulletin.us/">
     <link rel="alternate" hreflang="es" href="https://visa-bulletin.us/es/">
