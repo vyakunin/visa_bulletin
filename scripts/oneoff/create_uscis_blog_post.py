@@ -36,215 +36,121 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 SLUG = "uscis-visa-bulletin-filing-dates-explained"
-TITLE = "USCIS Visa Bulletin Filing Dates: What That Monthly USCIS Notice Actually Decides"
+TITLE = "USCIS Visa Bulletin: What the Monthly USCIS Notice Actually Decides for AOS Filers"
 CATEGORY = "Guides"
 
-# HTML content. Keeps the same shape as existing posts (h1/h2/h3/p/ul/li,
-# Bootstrap classes where useful). Internal links to the dashboard + the
-# methodology post create the topical funnel back into the prediction tool.
+# Kept deliberately short. The first 100 words answer the search intent; the
+# CTA to the live tracker is above the fold; only two follow-up Q&As.
 CONTENT = """\
 <div class="blog-content">
 
 <p class="lead">
-If you searched <em>"USCIS visa bulletin"</em> expecting a bulletin published
-<strong>by USCIS itself</strong>, you are not alone — but USCIS doesn&#39;t publish the bulletin.
-USCIS publishes <strong>one short notice each month</strong> that decides whether
-adjustment-of-status (I-485) applicants use the <strong>Final Action Dates</strong> chart
-or the <strong>Dates for Filing</strong> chart in the State Department&#39;s visa bulletin.
-That single sentence&#39;s worth of guidance changes when tens of thousands of people
-can file I-485, and most of the confusion online comes from missing it.
+There is no separate "USCIS visa bulletin." USCIS does not publish the bulletin —
+the bulletin comes from the <a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" rel="noopener" target="_blank">State Department</a>.
+What USCIS publishes is <strong>one short notice each month</strong> deciding which
+of the bulletin&#39;s two charts I-485 (adjustment-of-status) filers may use that
+month. That single decision shifts AOS filing windows by months.
 </p>
 
-<p>
-This guide explains, in plain language, what USCIS&#39;s monthly determination is,
-where to find it, why it matters for AOS filers, and how to read both charts
-without getting them mixed up.
-</p>
-
-<h2 id="two-charts">Why the visa bulletin has two charts each month</h2>
-
-<p>
-Every month the U.S. Department of State (DOS) publishes the
-<a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" rel="noopener" target="_blank">visa bulletin</a>
-with <strong>two separate priority-date charts</strong> per category (employment-based
-EB-1 through EB-5, and family-sponsored F1 through F4):
-</p>
-
-<ul>
-  <li><strong>Final Action Dates (Chart A).</strong> The cutoff that controls when a
-  green card can actually be <em>approved</em>. If your priority date is earlier than
-  this cutoff, a visa number is available for your case to be adjudicated.</li>
-  <li><strong>Dates for Filing (Chart B).</strong> A more permissive cutoff that
-  signals when DOS expects to need filed cases in the near future. Filing on
-  this chart does <em>not</em> mean approval — only that USCIS may accept the
-  application and start work on it.</li>
-</ul>
-
-<p>
-Both charts come from the State Department. <strong>USCIS</strong> — a separate
-agency, part of DHS — adjudicates I-485 adjustment-of-status applications for
-people already in the U.S. on a nonimmigrant visa. Each month, USCIS decides
-which of the two charts I-485 applicants are allowed to use that month.
-</p>
-
-<h2 id="uscis-determination">What USCIS&#39;s monthly determination actually says</h2>
-
-<p>
-On the same day the State Department publishes the bulletin (typically
-the 8th to 15th of the month before the bulletin&#39;s effective month), USCIS
-publishes a notice at <a href="https://www.uscis.gov/visabulletininfo" rel="noopener" target="_blank">uscis.gov/visabulletininfo</a>
-with the following per category:
-</p>
-
-<ul>
-  <li><strong>For employment-based filings:</strong> use Chart A (Final Action) or Chart B (Dates for Filing).</li>
-  <li><strong>For family-sponsored filings:</strong> use Chart A or Chart B.</li>
-</ul>
-
-<p>
-The determination is binary per category — USCIS picks one chart for the
-month for each category. The choice is driven by whether USCIS has enough
-pending I-485 cases to keep adjudication moving. When USCIS&#39;s pipeline
-runs low, they tend to choose Dates for Filing so more cases enter the
-queue; when they have plenty, they choose Final Action.
-</p>
-
-<div class="alert alert-info">
-<strong>Critical:</strong> the USCIS determination overrides the State Department
-chart for <em>I-485 filing eligibility only</em>. Consular processing (people
-applying from outside the U.S.) always uses Final Action Dates regardless of
-what USCIS chose for AOS filers that month.
+<div class="alert alert-primary d-flex flex-column flex-md-row align-items-md-center gap-2 mt-3 mb-4">
+    <span class="me-md-auto">
+        <strong>Want to skip the explanation?</strong>
+        Pick your category and country on the live tracker — both charts and a
+        12-month projection are on one page.
+    </span>
+    <a class="btn btn-primary" href="/employment-based/india/">
+        <i class="bi bi-calendar-check"></i> India EB tracker
+    </a>
+    <a class="btn btn-outline-primary" href="/">
+        All categories &rarr;
+    </a>
 </div>
 
-<h2 id="why-it-matters">Why the chart choice matters for AOS applicants</h2>
-
-<p>
-The gap between Final Action Dates and Dates for Filing can be large —
-several months, sometimes a full year for backlogged categories like
-India EB-2 or China EB-3. When USCIS allows the Dates for Filing chart:
-</p>
+<h2 id="two-charts">The bulletin&#39;s two charts, in 30 seconds</h2>
 
 <ul>
-  <li><strong>You can file I-485 sooner.</strong> Sometimes a year or more earlier than the actual visa-availability date.</li>
-  <li><strong>Dependents file at the same time.</strong> Children aging out of derivative status (CSPA) lock in their age at I-485 filing, so an earlier filing date can matter enormously.</li>
-  <li><strong>You can apply for I-765 (EAD) and I-131 (Advance Parole)</strong> with the I-485, gaining work authorization independent of the underlying H-1B/L-1, and re-entry flexibility.</li>
-  <li><strong>You can change jobs more easily under AC21</strong> once the I-485 has been pending 180 days.</li>
+  <li><strong>Final Action Dates (Chart A)</strong> — cutoff for green-card
+      <em>approval</em>. Visa number available; case can be adjudicated.</li>
+  <li><strong>Dates for Filing (Chart B)</strong> — earlier cutoff for when USCIS
+      may <em>accept</em> the I-485 paperwork, even though the number is not yet
+      available.</li>
 </ul>
 
 <p>
-Conversely, when USCIS picks Final Action Dates, AOS filers must wait — even
-if Dates for Filing on the bulletin would otherwise suggest they could file.
-This single chart-selection decision routinely shifts AOS filing windows by
-months, which is why subscribing to the USCIS notice (or checking
-visabulletininfo on the 8th–15th) matters as much as reading the bulletin
-itself.
-</p>
-
-<h2 id="reading-bulletin">Reading the bulletin once you know the chart</h2>
-
-<p>
-With USCIS&#39;s determination in hand:
-</p>
-
-<ol>
-  <li>Open the relevant State Department bulletin.</li>
-  <li>Locate your <strong>visa category</strong> (e.g. EB-2) and <strong>chargeability country</strong> (India, China, Mexico, Philippines, or "All Chargeability Areas").</li>
-  <li>Read the cell using the chart USCIS designated for your filing type (AOS) and category (EB or family).</li>
-  <li>Compare to your priority date — the date your I-140 (EB) or I-130 (family) was filed. If your priority date is <em>earlier</em> than the cutoff in the cell, a number is available.</li>
-</ol>
-
-<p>
-The bulletin uses <strong>C</strong> for "Current" (anyone with that
-chargeability and category can file) and <strong>U</strong> for "Unavailable"
-(no one can file that month).
-</p>
-
-<h2 id="predictions">Predicting next month&#39;s chart and cutoff</h2>
-
-<p>
-USCIS&#39;s monthly chart-selection notice and the State Department&#39;s cutoff
-movements both follow patterns that can be modeled. The
-<a href="/predictions/employment_based/">Bulletin Forecast Model</a> on this
-site projects each category&#39;s cutoff six to twelve months ahead and tracks
-the historical accuracy of those projections. The
-<a href="/">live dashboard</a> shows where your priority date currently sits
-relative to projected cutoffs, so you can estimate when your I-485 filing
-window will open under each chart.
-</p>
-
-<p>
-<a href="/analysis/how-my-prediction-model-works/" class="btn btn-outline-primary">Read how the prediction model works →</a>
-</p>
-
-<h2 id="checklist">Monthly checklist for AOS filers</h2>
-
-<p>Every month, when the visa bulletin drops (typically the 8th–15th):</p>
-
-<ol>
-  <li><strong>Check the State Department bulletin</strong> for both Final Action Dates and Dates for Filing in your category + country.</li>
-  <li><strong>Check uscis.gov/visabulletininfo</strong> for which chart USCIS designated for your category.</li>
-  <li><strong>Compare the designated chart&#39;s cutoff</strong> to your priority date.</li>
-  <li>If your date is current under the designated chart and you haven&#39;t filed I-485 yet, <strong>file it.</strong> The window can close again next month if cutoffs retrogress.</li>
-  <li><strong>Subscribe to the USCIS visa bulletin information page</strong> or set a calendar reminder for the 10th of each month — the determination posts within a day or two of the State Department bulletin.</li>
-</ol>
-
-<h2 id="faq">Common questions</h2>
-
-<h3>Does USCIS publish its own visa bulletin?</h3>
-<p>
-No. The visa bulletin is published by the U.S. Department of State,
-which is responsible for visa-number allocation. USCIS publishes a
-monthly chart-selection determination at
+Each month USCIS posts a one-paragraph notice at
 <a href="https://www.uscis.gov/visabulletininfo" rel="noopener" target="_blank">uscis.gov/visabulletininfo</a>
-that decides which State Department chart I-485 (AOS) filers must use that
-month. The chart-selection notice is much shorter than the bulletin itself —
-typically one paragraph per category.
+saying, per category (EB or family), <em>"use Chart A"</em> or <em>"use Chart B."</em>
+That is the entire content of the notice. The chart selection only affects AOS
+filers inside the U.S. — consular processing always uses Final Action Dates.
 </p>
 
-<h3>What if USCIS chooses Final Action Dates and I already filed under Dates for Filing in a previous month?</h3>
+<h2 id="why-it-matters">Why the chart choice matters</h2>
+
 <p>
-Filings that USCIS accepted in a previous month stay pending — the chart
-change only affects <em>new</em> filings in the current month. Pending I-485s
-continue to wait for the Final Action Date in their category to reach their
-priority date before they can be approved.
+The gap between Chart A and Chart B can be a year or more in backlogged
+categories (India EB-2, China EB-3, F2B Philippines). When USCIS allows Chart
+B, an AOS filer can:
 </p>
 
-<h3>Why does USCIS switch between charts month to month?</h3>
+<ul>
+  <li>File I-485 a year or more earlier than their visa number actually becomes available.</li>
+  <li>File I-765 (EAD) and I-131 (Advance Parole) alongside — work authorization decoupled from H-1B/L-1, plus travel flexibility.</li>
+  <li>Lock in CSPA age for derivative children before they turn 21.</li>
+  <li>Use AC21 to change jobs once the I-485 has been pending 180 days.</li>
+</ul>
+
+<h2 id="how-to-tell">How to tell where you stand today</h2>
+
 <p>
-USCIS&#39;s stated factor is whether they have enough pending I-485 inventory
-to keep up with visa-number availability. When their pending queue is low,
-they pick Dates for Filing to let more cases in; when the queue is full,
-they pick Final Action Dates to slow intake. In practice, predicting USCIS&#39;s
-choice is harder than predicting the State Department&#39;s cutoff movements,
-because USCIS doesn&#39;t publish its inventory in real time.
+Reading the bulletin is two lookups: your category × your chargeability
+country. The per-country pages on this site show both charts overlaid plus a
+12-month projection — pick whichever applies:
 </p>
 
-<h3>Does the chart selection apply to consular processing too?</h3>
+<ul class="list-unstyled">
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/employment-based/india/">India — employment-based</a></li>
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/employment-based/china/">China — employment-based</a></li>
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/employment-based/philippines/">Philippines — employment-based</a></li>
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/employment-based/mexico/">Mexico — employment-based</a></li>
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/employment-based/all/">All other countries — employment-based</a></li>
+  <li><i class="bi bi-arrow-right-short"></i> <a href="/family-sponsored/all/">Family-sponsored — all countries</a></li>
+</ul>
+
 <p>
-No. People processing their immigrant visas at a U.S. consulate abroad
-always use the <strong>Final Action Dates</strong> chart. The USCIS chart-selection
-notice only affects I-485 adjustment-of-status applicants who are already
-in the U.S.
+On each page: switch <em>Action Type</em> between "Final Action" and "Filing"
+to compare the two charts side by side. The projection table shows the model&#39;s
+estimated cutoff at the next bulletin, 6 months, and 12 months out — which
+answers <em>"when does my I-485 window open under each chart?"</em>
 </p>
 
-<h2 id="bottom-line">Bottom line</h2>
-
 <p>
-"USCIS visa bulletin" usually refers to one of two things, and confusing
-them costs people months of waiting:
+<a href="/predictions/employment_based/" class="btn btn-outline-secondary btn-sm">
+    Historical prediction accuracy &rarr;
+</a>
+<a href="/analysis/how-my-prediction-model-works/" class="btn btn-outline-secondary btn-sm">
+    How the model works &rarr;
+</a>
 </p>
 
-<ol>
-  <li><strong>The State Department visa bulletin</strong> — where the actual cutoffs live.</li>
-  <li><strong>USCIS&#39;s monthly chart-selection notice</strong> — where AOS filers learn whether they can use the more permissive Dates for Filing chart that month.</li>
-</ol>
+<h2 id="faq">Two questions people ask</h2>
 
+<h3>What if USCIS picks Chart A this month but I filed under Chart B last month?</h3>
 <p>
-Read both, every month. The
-<a href="/">priority date tracker on this site</a>
-shows your current position against both charts and the projected cutoffs
-for the next 12 months, so you know when each filing window is likely
-to open.
+Filings USCIS accepted in a prior month stay pending. The chart change only
+affects <em>new</em> filings in the current month. Your pending I-485 still
+waits for Final Action Dates to reach your priority date before it can be
+approved — that part never changes.
+</p>
+
+<h3>Can I predict which chart USCIS will pick next month?</h3>
+<p>
+USCIS picks Chart B when their pending-I-485 inventory is low (to let more
+cases in) and Chart A when it is full (to slow intake). Their inventory is
+not published in real time, so chart selection is harder to predict than the
+underlying cutoff movement. The projection on this site forecasts cutoffs,
+not chart selection — but cutoff projections under both charts are usually
+the more actionable number anyway, because once your priority date passes
+either cutoff the chart selection is no longer a constraint.
 </p>
 
 </div>

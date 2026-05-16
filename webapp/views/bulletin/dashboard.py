@@ -349,10 +349,13 @@ def dashboard_view(request, category=None, country=None):
     chart_data = None
 
     # Build SEO metadata
-    # Treat bare `/` with no filter query string as "root landing" so the SEO
-    # title/description use evergreen generic wording instead of the India-EB
-    # defaults. /employment-based/india/ etc. still get country-specific SEO.
-    is_root_landing = request.path == "/" and not request.GET
+    # Treat bare `/` as "root landing" — but only filter params should defeat
+    # the evergreen SEO title. utm/stg/_gl/fbclid/etc. trackers + cache-busters
+    # are irrelevant to SEO intent. Filter params are the ones this view reads:
+    # category, country, action_type, submission_date.
+    filter_params = ("category", "country", "action_type", "submission_date")
+    has_filter_param = any(p in request.GET for p in filter_params)
+    is_root_landing = request.path == "/" and not has_filter_param
     seo = build_seo_metadata(category, country, request.build_absolute_uri(), is_root=is_root_landing)
     action_type_display = (
         ActionType(action_type).label

@@ -179,7 +179,7 @@
                     {% include "webapp/includes/percentiles_row.html" with percentiles=stats.salary_percentiles %}
 
                     <p class="mb-3">
-                        <a href="/salaries/?role={{ cluster.slug }}">
+                        <a href="/salaries/?q={{ cluster.canonical_title|urlencode }}">
                             See all H-1B/PERM filings for this role &rarr;
                         </a>
                     </p>
