@@ -16,6 +16,7 @@ alwaysApply: true
 | **Origin nginx logs (homeserver `vb_nginx`)** | Every HTTP request including bots, status codes, latency, real IPs via `CF-Connecting-IP`, full UA strings | `ssh homeserver "docker logs vb_nginx 2>&1"`. **Log retention is short** (10MB × 3 files per `daemon.json`); typical span ~18-24h. |
 | **Postgres (visa_bulletin DB)** | Product-side state: bulletin records, employer counts, salary record counts, ingest run history, VQS prediction cache hit rates | `docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin` on homeserver |
 | **Cloudflare** | Edge metrics (cache hit %, requests by country, attacks) — via CF dashboard or API. Account id stored at `~/tokens/cloudflare_account_id`, API token at `~/tokens/cloudflare_api_token`. | Not yet wired into daily_checkup MCP — manual lookup if needed. |
+| **UptimeRobot** (uptime monitoring of `visa-bulletin.us`) | Synthetic uptime checks; DOWN/UP transitions; status pages. Currently emails `alert@uptimerobot.com` → `vyakunin@gmail.com` for each transition (subjects `Monitor is DOWN: visa-bulletin.us` / `Monitor is UP: visa-bulletin.us`). Verified active since pre-2026-05-08 Lightsail era. | Dashboard: `https://uptimerobot.com/dashboard`. Per-monitor history visible there. The current email path is the source of the daily_checkup MCP's `uptime` Gmail query — see `mcp/daily_checkup_server.py:GMAIL_QUERIES`. |
 
 ## What's NOT Installed (Verified Gaps)
 
@@ -62,6 +63,41 @@ ssh homeserver "docker logs vb_nginx 2>&1 | grep -v -E 'bot|Bot|crawler|spider' 
 
 ### Daily checkup MCP — already aggregates GC + nginx + Postgres
 The `mcp/daily_checkup_server.py` runs every morning and produces a structured report with traffic deltas, top-mover paths, and per-surface popularity vs performance. **If you need a fast snapshot of "where are we vs last week", read the latest morning digest before running ad-hoc queries.** Logs live in `~/cursor_projects/personal_projects/daily_checkup/logs/reports_*.json`.
+
+## Auto-dispatch to Telegram bot on monitoring incidents
+
+UptimeRobot has **native integration channels** including Telegram — there is
+no need to build a Gmail-polling middleman to forward DOWN alerts to a bot.
+
+### Recommended setup (NOT YET WIRED)
+
+1. **In the UptimeRobot dashboard** → My Settings → Alert Contacts → Add Alert
+   Contact → Type: Telegram. Provide:
+   - Bot token: contents of `~/tokens/tg_bot_visa_bulletin`
+   - Chat ID: `132118323` (the user's Telegram user_id; same as the
+     `recipient_chat_id` in `~/cursor_projects/personal_projects/daily_checkup/registry.yaml`)
+2. **Edit the existing `visa-bulletin.us` monitor** → Alert Contacts to Notify
+   → check the new Telegram contact + (optionally) keep the email contact.
+3. **Test from UptimeRobot** ("Test Notification" button) — the bot
+   `vyakunin_visa_bulletin_bot` should receive the message immediately.
+4. **The existing per-project bot listener auto-spawns Claude** when messages
+   arrive on that bot (see `daily_checkup/registry.yaml` delivery section).
+   Claude gets the visa_bulletin project context loaded and can ssh
+   homeserver, check container health, restart vb_web if needed, etc.
+
+Real-time, no polling, no Gmail tokens needed for this path. Compared to the
+Gmail-polling alternative (cron every 5 min on the Mac, depends on Mac being
+awake AND Gmail OAuth being valid), the native UptimeRobot → Telegram path
+is strictly better: faster (real-time vs ~5min latency), more resilient (no
+Mac-awake dependency), and has zero local code to maintain.
+
+### Why this row exists in the rule
+
+The user asked "set up something to dispatch Claude when monitoring fires"
+on 2026-05-17. The first design draft was a Gmail-polling dispatcher script.
+UptimeRobot's native Telegram channel makes that script unnecessary. Future
+sessions should default to the native channel when a service offers one,
+rather than building Gmail-poll glue.
 
 ## Rule: Check This Inventory Before Answering "Do We Have X?"
 
