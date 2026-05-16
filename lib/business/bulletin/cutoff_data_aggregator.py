@@ -241,20 +241,38 @@ def _finalize_aggregated_data(
 
 
 def _build_page_title(
-    category_display: str, country_display: str, category: str, country: str
+    category_display: str, country_display: str, category: str, country: str,
+    is_root: bool = False,
 ) -> str:
-    """Build dynamic page title based on category and country"""
+    """Build dynamic page title based on category and country.
+
+    When ``is_root`` is True (i.e. request landed on bare `/` with no filter
+    query string), use an evergreen generic title. Per GSC baseline 2026-05-16
+    (see [[project_gsc_seo_baseline]]), the query "visa bulletin" alone has
+    254k impressions/4w at CTR 0.17% because the country-specific title
+    ("India Employment-Based…") mismatches the generic search intent. Generic
+    visitors landing on `/` still get the India dashboard underneath — the
+    filter UI is right at the top — but the title now matches what they
+    searched for, which should lift CTR materially.
+    """
     current_year = date.today().year
     current_month_name = date.today().strftime("%B")
 
+    if is_root:
+        return "U.S. Visa Bulletin — Priority Dates, Predictions & Tracker"
     if country == Country.ALL.value and category == VisaCategory.FAMILY_SPONSORED.value:
         return f"Visa Bulletin Predictions {current_year} - Priority Date Tracker"
-    else:
-        return f"{country_display} {category_display} Visa Bulletin Predictions & Tracker - {current_month_name} {current_year}"
+    return f"{country_display} {category_display} Visa Bulletin Predictions & Tracker - {current_month_name} {current_year}"
 
 
-def _build_page_description(category_display: str, country_display: str) -> str:
-    """Build page description for SEO"""
+def _build_page_description(category_display: str, country_display: str, is_root: bool = False) -> str:
+    """Build page description for SEO."""
+    if is_root:
+        return (
+            "Live U.S. visa bulletin priority dates, predictions, and historical trends. "
+            "Covers all employment-based (EB-1/2/3/4/5) and family-sponsored (F1–F4) categories "
+            "for every country, with month-by-month projections based on the Bulletin Forecast Model."
+        )
     return (
         f"Track current priority dates and projections for {country_display} {category_display} visas. "
         f"View historical trends, see when dates will move, and estimate your green card wait time."
@@ -291,14 +309,17 @@ def _build_structured_data(
     }
 
 
-def build_seo_metadata(category: str, country: str, request_uri: str) -> dict:
+def build_seo_metadata(category: str, country: str, request_uri: str, is_root: bool = False) -> dict:
     """
-    Build SEO metadata for the dashboard page
+    Build SEO metadata for the dashboard page.
 
     Args:
         category: Visa category value
         country: Country value
         request_uri: Full request URI for canonical URL
+        is_root: True when serving the bare `/` URL with no filter query
+                 string — switches title + description to evergreen generic
+                 wording that matches "visa bulletin" search intent.
 
     Returns:
         Dict with page_title, page_description, structured_data, etc.
@@ -306,8 +327,8 @@ def build_seo_metadata(category: str, country: str, request_uri: str) -> dict:
     category_display = _get_display_label(VisaCategory, category)
     country_display = _get_display_label(Country, country)
 
-    page_title = _build_page_title(category_display, country_display, category, country)
-    page_description = _build_page_description(category_display, country_display)
+    page_title = _build_page_title(category_display, country_display, category, country, is_root=is_root)
+    page_description = _build_page_description(category_display, country_display, is_root=is_root)
     structured_data = _build_structured_data(
         page_title, page_description, category_display, country_display, request_uri
     )

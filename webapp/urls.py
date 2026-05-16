@@ -1,6 +1,7 @@
 """URL configuration for webapp"""
 
 from django.urls import path
+from django.views.generic import RedirectView
 
 from webapp.views.blog_views import blog_detail, blog_list
 from webapp.views.bulletin.dashboard import dashboard_view
@@ -23,8 +24,15 @@ from webapp.views.prediction_views import (
     prediction_list,
     spaghetti_view,
 )
+from webapp.views.salary.by_state import salary_by_state_view
 from webapp.views.salary.search import salary_search_view, worksite_search_view
-from webapp.views.static.pages import about_view, contact_view, faq_view, health_view
+from webapp.views.static.pages import (
+    about_view,
+    contact_view,
+    faq_view,
+    health_view,
+    spanish_landing_view,
+)
 
 urlpatterns = [
     path("analysis/", blog_list, name="blog_list"),
@@ -56,8 +64,27 @@ urlpatterns = [
     path("faq/", faq_view, name="faq"),
     path("about/", about_view, name="about"),
     path("contact/", contact_view, name="contact"),
+    # Spanish landing — single-page explainer for "boletín de visas" search demand
+    path("es/", spanish_landing_view, name="spanish_landing"),
     # Salary Database
     path("salaries/", salary_search_view, name="salary_search"),
+    # Deep salary URLs — role/employer redirects to canonical profile pages,
+    # by-state has its own per-state landing page.
+    path(
+        "salaries/role/<slug:slug>/",
+        RedirectView.as_view(url="/job-title/%(slug)s/", permanent=True),
+        name="salary_role_redirect",
+    ),
+    path(
+        "salaries/employer/<slug:slug>/",
+        RedirectView.as_view(url="/employer/%(slug)s/", permanent=True),
+        name="salary_employer_redirect",
+    ),
+    path(
+        "salaries/by-state/<slug:state>/",
+        salary_by_state_view,
+        name="salary_by_state",
+    ),
     path("worksites/", worksite_search_view, name="worksite_search"),
     path(
         "api/company-autocomplete/",

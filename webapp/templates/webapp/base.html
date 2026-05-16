@@ -27,6 +27,15 @@
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
+
+    {# hreflang annotations: declared on every page so search engines know the
+       English-default ↔ Spanish-landing relationship. The Spanish landing
+       overrides {% block hreflang %} to swap the self-reference. #}
+    {% block hreflang %}
+    <link rel="alternate" hreflang="en" href="https://visa-bulletin.us/">
+    <link rel="alternate" hreflang="es" href="https://visa-bulletin.us/es/">
+    <link rel="alternate" hreflang="x-default" href="https://visa-bulletin.us/">
+    {% endblock %}
     
     <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="{{ og_type|default:'website' }}">
@@ -632,6 +641,11 @@
                         <i class="bi bi-envelope"></i> Contact
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-navbar" target="_blank" rel="noopener" style="color: #db61a2;">
+                        <i class="bi bi-heart-fill"></i> Support
+                    </a>
+                </li>
             </ul>
         </div>
     </nav>
@@ -679,14 +693,15 @@
                 <span class="text-white-50 mx-1 d-none d-sm-inline">|</span>
                 
                 <!-- Support -->
-                <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee" target="_blank" rel="noopener"
+                <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-footer" target="_blank" rel="noopener"
                    class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
                     <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
                 </a>
-                <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors" target="_blank" rel="noopener"
-                   class="btn btn-sm btn-outline-light" style="font-weight: 600;">
-                    <i class="bi bi-github"></i> Sponsor
-                </a>
+                <small class="text-white-50 ms-1">
+                    <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-footer" target="_blank" rel="noopener" class="footer-link">
+                        or GitHub Sponsors &rarr;
+                    </a>
+                </small>
             </div>
             
             <p class="mb-2">
@@ -893,17 +908,19 @@
         <div class="container d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
             <span class="bar-text" style="color: #444;">
                 <i class="bi bi-heart-fill" style="color: #db61a2;"></i>
-                If this helped you track your visa dates, consider supporting the project
+                <strong>$3 = about a week of server costs.</strong>
+                If this helped you track your dates, buy me a coffee.
             </span>
-            <div class="d-flex gap-2 align-items-center">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
                 <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-sticky" target="_blank" rel="noopener"
                    class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
                     <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
                 </a>
-                <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-sticky" target="_blank" rel="noopener"
-                   class="btn btn-sm btn-outline-secondary" style="font-weight: 600;">
-                    <i class="bi bi-github"></i> GitHub Sponsors
-                </a>
+                <small class="text-muted">
+                    <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-sticky" target="_blank" rel="noopener">
+                        or GitHub Sponsors &rarr;
+                    </a>
+                </small>
                 <button onclick="dismissDonationBar()" class="btn btn-sm btn-link p-1" aria-label="Dismiss donation bar" style="color: #999; text-decoration: none;">
                     <i class="bi bi-x-lg"></i>
                 </button>
@@ -911,19 +928,23 @@
         </div>
     </div>
     <script>
+        // localStorage so dismissal persists across tabs and reopened sessions
+        // (sessionStorage made the bar re-appear on every new tab — anti-conversion).
         (function() {
-            if (sessionStorage.getItem('donation-bar-dismissed')) {
-                var bar = document.getElementById('sticky-donation-bar');
-                if (bar) bar.style.display = 'none';
-            } else {
-                document.body.classList.add('has-donation-bar');
-            }
+            try {
+                if (localStorage.getItem('donation-bar-dismissed')) {
+                    var bar = document.getElementById('sticky-donation-bar');
+                    if (bar) bar.style.display = 'none';
+                    return;
+                }
+            } catch (e) { /* localStorage blocked — show bar */ }
+            document.body.classList.add('has-donation-bar');
         })();
         function dismissDonationBar() {
             var bar = document.getElementById('sticky-donation-bar');
             if (bar) bar.style.display = 'none';
             document.body.classList.remove('has-donation-bar');
-            sessionStorage.setItem('donation-bar-dismissed', '1');
+            try { localStorage.setItem('donation-bar-dismissed', '1'); } catch (e) {}
         }
     </script>
     {% endif %}

@@ -4,31 +4,33 @@ alwaysApply: true
 
 # Branching and Deployment Strategy
 
-**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md` (includes transition instructions and checklist)
+> **Migration status (2026-05-08):** prod runs on `homeserver` (Dell Wyse 5070, single Docker stack) — see `deployment.mdc`. Lightsail kept reachable for rollback during burn-in. The 3-branch model below still applies; only the deploy mechanics changed (docker pull + recreate vs. Lightsail IP flip).
+
+**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md` (includes transition instructions and checklist; **may still describe pre-migration Lightsail flow** — defer to this rule + deployment.mdc for current process)
 
 ## Three Branches
 
 - **`main`** — Development. Can be messy, broken, WIP. Nothing deploys from `main`.
-- **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to staging instance. Data refreshes run here. Patched until ready for graduation.
-- **`prod`** — **Mirror of production. NEVER update unless the change is actually deployed to the prod-serving instance.** Updated only in two cases: (1) graduation — fast-forward to match `staging` after IP flip, (2) critical hotfix — fix deployed directly to the prod-serving instance. The branch must always reflect exactly what's running in production.
+- **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to the staging stack (when dual-env is built; currently the staging hostname routes to the same stack as prod). Data refreshes will run here.
+- **`prod`** — **Mirror of production. NEVER update unless the change is actually deployed to production.** Updated only in two cases: (1) promotion — fast-forward to match `staging` after staging is verified, (2) critical hotfix — fix deployed directly. The branch must always reflect exactly what's running.
 
 ## Separation of Concerns
 
 Three independent operations — never conflate them:
 
-- **Code deployment**: `git push` branch to instance + restart container. No data refresh.
-- **Data refresh**: orchestrator pipeline on staging instance. See `docs/PIPELINE_RUNBOOK.md`.
-- **Graduation (IP flip)**: swap Lightsail static IPs so staging becomes prod. Then fast-forward `prod` branch to match `staging`.
+- **Code deployment**: `docker compose pull web && docker compose up -d web` on homeserver against the stack you're deploying to. No data refresh.
+- **Data refresh**: weekly job that ingests new salary/bulletin data. Will run against the staging DB (when dual-env is built); intermediate state today is "still on Lightsail / not yet running on homeserver".
+- **Promotion (staging → prod)**: when dual-env exists, this is either (a) deploying the staging-tested image tag to the prod stack, or (b) atomically swapping the postgres-data volumes (for DB-level promotion after a refresh). No more IP flips.
 
 ## Workflows (Summary)
 
-**Feature:** `main` → cherry-pick to `staging` → deploy to staging instance → test → iterate. **Never to `prod`.**
+**Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**
 
-**Graduation (automated):** run orchestrator on prod with `--from-step warm_cache` → warm cache → smoke → IP swap → HTTPS → public URL smoke → update envs (both) → prod-safe override → git branch update → stop old instance. See `deployment.mdc` for full flow.
+**Promotion (post-dual-env):** verify staging → fast-forward `prod` from `staging` → `cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web` on homeserver.
 
-**Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod-serving instance → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
+**Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod stack → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
-**Data refresh:** orchestrator on staging → graduation (IP flip) if promoting fresh data to prod
+**Data refresh (post-dual-env):** reset staging DB from prod → run refresh pipeline against staging → smoke staging → atomic flip (swap postgres-data volumes between prod and staging stacks). See `deployment.mdc` "Weekly DB Refresh Pattern".
 
 ## Local Worktree Layout
 
@@ -60,23 +62,27 @@ git push origin prod
 
 - **Never scp files to servers.** All changes through git branches.
 - **Never check out staging/prod in the main workspace.** Use worktrees.
-- **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only graduation (fast-forward from staging) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving instance, it doesn't belong on the `prod` branch.
+- **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (fast-forward from staging after staging is verified) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch.
 - **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree. All features go through staging first.
-- **Tags mark releases.** `v1.X.Y` on `staging` before IP flip, then on `prod` after fast-forward.
-- **Code deploy ≠ data refresh.** Quick code fix = commit + push + git pull + restart. Data refresh = orchestrator pipeline (hours).
-- **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving.
-- **After graduation, roles swap but instance names are sticky.** `prod_2Gb_vm` points to the prod static IP (after rotation = old staging instance, e.g. VisaBulletinStaging). `staging_2Gb_vm` points to the staging static IP (after rotation = old prod instance, e.g. VisaBulletin2GB, which is typically **stopped** and unreachable until the next pipeline). See deployment.mdc "Production Instances" for verification.
+- **Tags mark releases.** `v1.X.Y` on `staging` before promotion, then on `prod` after fast-forward.
+- **Code deploy ≠ data refresh.** Code deploy = `docker compose pull web && docker compose up -d web` (~30 s). Data refresh = weekly pipeline run on the staging DB followed by atomic flip (~30 min total).
+- **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.cursor/rules/deployment.mdc`. Never `docker-compose up/down` without knowing what's actually serving — `vb_web`, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared` are the current prod containers.
+- **No more IP flips.** Production runs on the homeserver as a single Compose stack; promotion happens via image-tag bump in `docker compose up -d` or postgres-data volume swap (when dual-env is built). The Lightsail aliases `prod_2Gb_vm`/`staging_2Gb_vm` only matter during burn-in rollback.
 
 ## Code Deployment (Quick Reference)
 
+**Image-tag deploy on homeserver** (the current production model):
 ```bash
-# Cherry-pick to staging worktree and deploy
+# Cherry-pick to staging worktree, push (CI builds image automatically)
 cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push origin staging
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git reset --hard origin/staging"
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
+# Wait for GHA to publish ghcr.io/vyakunin/visa_bulletin:staging-<sha>
 
-# Hotfix: cherry-pick to prod worktree and deploy
-cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <hash> && git push origin prod
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git reset --hard origin/prod"
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
+# Once dual-env is built, deploy to staging stack first:
+ssh homeserver.local "cd /opt/stack/visa_bulletin_staging && IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web"
+# Smoke-test https://staging.visa-bulletin.us/, then promote:
+cd ~/cursor_projects/visa_bulletin_prod && git merge --ff-only staging && git push origin prod
+ssh homeserver.local "cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web"
+
+# Until dual-env exists, only the single-stack deploy applies:
+ssh homeserver.local "cd /opt/stack/visa_bulletin && docker compose pull web && docker compose up -d web"
 ```

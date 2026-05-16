@@ -1,0 +1,7 @@
+# Visa-bulletin homeserver crontab — install for user `vyakunin` via `crontab -e`.
+#
+# Daily Postgres backup → Google Drive (01:00 UTC = 03:00 Berlin in summer, off-peak).
+0 1 * * * /opt/stack/visa_bulletin/scripts/backup_to_gdrive.sh >> /opt/stack/visa_bulletin/logs/cron/backup.log 2>&1
+
+# Hourly bulletin refresh (added during Lightsail-to-homeserver cutover 2026-05-08).
+0 * * * * docker exec -w /app vb_web python3 -m scripts.cron.refresh_bulletin >> /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log 2>&1

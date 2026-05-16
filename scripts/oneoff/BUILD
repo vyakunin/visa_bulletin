@@ -9,6 +9,23 @@ py_binary(
 )
 
 py_binary(
+    name = "create_uscis_blog_post",
+    srcs = ["create_uscis_blog_post.py"],
+    main = "create_uscis_blog_post.py",
+    deps = [
+        "//django_config:settings",
+        "//models:blog",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)
+
+py_binary(
     name = "export_import_vqs_predictions",
     srcs = ["export_import_vqs_predictions.py"],
     main = "export_import_vqs_predictions.py",

@@ -24,6 +24,7 @@ py_library(
         "//webapp/views/employers:rankings",
         "//webapp/views/job_titles:directory",
         "//webapp/views/job_titles:profile",
+        "//webapp/views/salary:by_state",
         "//webapp/views/salary:search",
         "//webapp/views/static:pages",
         requirement("Django"),

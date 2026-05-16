@@ -61,7 +61,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
             "employer__canonical_cluster__slug",
         )
         .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
-        .order_by("-count")[:10]
+        .order_by("-count")[:25]
     )
 
     top_job_titles = list(
@@ -71,7 +71,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
             "job_title_entity__canonical_cluster__slug",
         )
         .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
-        .order_by("-count")[:10]
+        .order_by("-count")[:25]
     )
 
     stats = {

@@ -270,11 +270,29 @@ def salary_search_view(request):
 
     market_stats = None
     market_chart_data = {}
+    state_links = []
     if not has_filters and not no_data_yet:
         market_stats = get_market_overview_stats()
         geographic_dist = market_stats.get("geographic_dist", [])
         geographic_dist_by_median = market_stats.get("geographic_dist_by_median", [])
         yoy_trends = market_stats.get("yoy_trends", [])
+
+        # Build a name + slug-augmented list of per-state entries so the
+        # template can render crawler-readable links (charts above are pixels;
+        # crawlers need <a href> text).
+        state_name_map = {code: name for code, name in US_STATES}
+        for entry in geographic_dist:
+            code = (entry.get("worksite_state") or "").upper()
+            name = state_name_map.get(code)
+            if not name:
+                continue
+            state_links.append({
+                "code": code,
+                "slug": code.lower(),
+                "name": name,
+                "median_salary": entry.get("median_salary"),
+                "count": entry.get("count") or 0,
+            })
 
         if geographic_dist:
             market_chart_data["state_filings"] = build_geographic_chart(
@@ -398,6 +416,7 @@ def salary_search_view(request):
         "max_salary": stats["max_salary"],
         "market_stats": market_stats,
         "market_chart_data": market_chart_data,
+        "state_links": state_links,
         # Pagination
         "page": pagination["page"],
         "total_pages": pagination["total_pages"],

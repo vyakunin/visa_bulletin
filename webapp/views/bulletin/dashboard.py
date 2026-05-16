@@ -349,7 +349,11 @@ def dashboard_view(request, category=None, country=None):
     chart_data = None
 
     # Build SEO metadata
-    seo = build_seo_metadata(category, country, request.build_absolute_uri())
+    # Treat bare `/` with no filter query string as "root landing" so the SEO
+    # title/description use evergreen generic wording instead of the India-EB
+    # defaults. /employment-based/india/ etc. still get country-specific SEO.
+    is_root_landing = request.path == "/" and not request.GET
+    seo = build_seo_metadata(category, country, request.build_absolute_uri(), is_root=is_root_landing)
     action_type_display = (
         ActionType(action_type).label
         if action_type in [c.value for c in ActionType]
@@ -403,10 +407,16 @@ def dashboard_view(request, category=None, country=None):
     else:
         visible_classes = DEFAULT_VISIBLE_VISA_CLASSES
 
+    # Slug for the currently-selected country, for contextual deep-link URLs.
+    country_slug = Country.slug_for_value(country) or "all"
+    category_slug = category_slugs.get(category, "employment-based")
+
     context = {
         # Filter state
         "category": category,
         "country": country,
+        "country_slug": country_slug,
+        "category_slug": category_slug,
         "action_type": action_type,
         "submission_date": submission_date,
         "chart_data": chart_data,

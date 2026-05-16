@@ -1,5 +1,6 @@
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
@@ -43,3 +44,17 @@ bulletin_accuracy.json
 longterm_accuracy.json
 longterm_accuracy_summary.json
 baseline_comparison.json
+
+# Personal Claude Code config + generated bundle (not for the public repo).
+# CLAUDE.md is regenerated from .cursor/rules/* + skills on each session;
+# .claude/ holds the user's per-project settings + skills;
+# .sync_base/ is the rules-sync tool's baseline state.
+.claude/
+.sync_base/
+CLAUDE.md
+# .cursor/rules/*.mdc files that are symlinks to ~/.cursor/shared_rules/
+# (general_*.mdc + standalone-symlinked rules like large_file_hygiene) — they
+# only resolve on the rule-author's machine. Project-local .mdc files (no
+# general_ prefix, no symlink) ARE tracked.
+.cursor/rules/general_*.mdc
+.cursor/rules/large_file_hygiene.mdc

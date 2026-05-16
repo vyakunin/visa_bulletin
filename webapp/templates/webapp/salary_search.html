@@ -349,6 +349,25 @@
                 </div>
                 {% endif %}
             </div>
+            {% if state_links %}
+            <!-- Crawler-readable per-state links (chart pixels above are invisible to bots). -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Salaries by State</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        {% for s in state_links %}
+                        <li>
+                            <a href="{% url 'salary_by_state' state=s.slug %}">{{ s.name }}</a>
+                            &mdash; ${{ s.median_salary|floatformat:0|intcomma }} median,
+                            {{ s.count|intcomma }} filings
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
             
             {% if market_chart_data.filing_volume or market_chart_data.salary_trend %}

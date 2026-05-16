@@ -1,0 +1,253 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
+
+{% block extra_head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Home", "item": "{{ request.scheme }}://{{ request.get_host }}/"},
+    {"@type": "ListItem", "position": 2, "name": "Salaries", "item": "{{ request.scheme }}://{{ request.get_host }}/salaries/"},
+    {"@type": "ListItem", "position": 3, "name": "{{ state_name }}", "item": "{{ canonical_url }}"}
+  ]
+}
+</script>
+<style>
+    .stats-card {
+        background: linear-gradient(135deg, var(--gov-navy) 0%, #004080 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 1.25rem;
+        text-align: center;
+    }
+    .stats-card h3 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .stats-card p { margin-bottom: 0; opacity: 0.9; }
+    .percentile-cell { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
+{% block content %}
+<main>
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <!-- Breadcrumb / back link -->
+                <p class="mb-2">
+                    <a href="{% url 'salary_search' %}" class="text-decoration-none">&larr; All salaries</a>
+                </p>
+
+                <!-- Header -->
+                <div class="mb-4">
+                    <h1>Salaries in {{ state_name }}</h1>
+                    <p class="text-muted mb-1">
+                        H-1B &amp; Green Card (PERM) salary data for filings with a worksite in {{ state_name }}.
+                    </p>
+                    <small class="text-muted d-block">
+                        Source: U.S. Department of Labor (DOL) public disclosure data. Represents base salary only;
+                        excludes RSUs, signing bonuses, and variable compensation.
+                    </small>
+                </div>
+
+                {% if total_filings == 0 %}
+                <div class="alert alert-info">
+                    No salary filings found for {{ state_name }} yet.
+                    <a href="{% url 'salary_search' %}">Browse all salary records &rarr;</a>
+                </div>
+                {% else %}
+
+                <!-- Stat cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3 col-6 mb-3">
+                        <div class="stats-card">
+                            <h3>{{ total_filings|intcomma }}</h3>
+                            <p>Total Filings</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6 mb-3">
+                        <div class="stats-card">
+                            <h3>${{ median_salary|floatformat:0|intcomma }}</h3>
+                            <p>Median Salary</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6 mb-3">
+                        <div class="stats-card">
+                            <h3>${{ avg_salary|floatformat:0|intcomma }}</h3>
+                            <p>Average Salary</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6 mb-3">
+                        <div class="stats-card">
+                            <h3>${{ max_salary|floatformat:0|intcomma }}</h3>
+                            <p>Maximum</p>
+                        </div>
+                    </div>
+                </div>
+
+                {% if percentiles %}
+                <!-- Percentile band -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Salary Distribution &mdash; {{ state_name }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>P10</th>
+                                        <th>P25</th>
+                                        <th>P50 (Median)</th>
+                                        <th>P75</th>
+                                        <th>P90</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="percentile-cell">
+                                        <td>${{ percentiles.p10|floatformat:0|intcomma }}</td>
+                                        <td>${{ percentiles.p25|floatformat:0|intcomma }}</td>
+                                        <td><strong>${{ percentiles.p50|floatformat:0|intcomma }}</strong></td>
+                                        <td>${{ percentiles.p75|floatformat:0|intcomma }}</td>
+                                        <td>${{ percentiles.p90|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if program_breakdown.total %}
+                <!-- Program breakdown -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Breakdown by Visa Program</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Program</th>
+                                        <th class="text-end">Filings</th>
+                                        <th class="text-end">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>H-1B (Specialty Occupation)</td>
+                                        <td class="text-end">{{ program_breakdown.h1b_count|intcomma }}</td>
+                                        <td class="text-end">
+                                            {% widthratio program_breakdown.h1b_count program_breakdown.total 100 %}%
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>PERM (Green Card Labor Certification)</td>
+                                        <td class="text-end">{{ program_breakdown.perm_count|intcomma }}</td>
+                                        <td class="text-end">
+                                            {{ program_breakdown.perm_ratio|floatformat:1 }}%
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Top employers in this state -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Top 25 Employers in {{ state_name }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Employer</th>
+                                        <th class="text-end">Filings</th>
+                                        <th class="text-end">Median Salary</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for employer in top_employers %}
+                                    <tr>
+                                        <td>
+                                            <a href="{% url 'employer_profile' slug=employer.employer__canonical_cluster__slug %}">
+                                                <strong>{{ employer.employer__canonical_cluster__canonical_name }}</strong>
+                                            </a>
+                                        </td>
+                                        <td class="text-end">{{ employer.count|intcomma }}</td>
+                                        <td class="text-end">${{ employer.median_salary|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3">No employer data available.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top job titles in this state -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Top 25 Roles in {{ state_name }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Role</th>
+                                        <th class="text-end">Filings</th>
+                                        <th class="text-end">Median Salary</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for title in top_job_titles %}
+                                    <tr>
+                                        <td>
+                                            <a href="{% url 'job_title_profile' slug=title.job_title_entity__canonical_cluster__slug %}">
+                                                <strong>{{ title.job_title_entity__canonical_cluster__canonical_title }}</strong>
+                                            </a>
+                                        </td>
+                                        <td class="text-end">{{ title.count|intcomma }}</td>
+                                        <td class="text-end">${{ title.median_salary|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3">No role data available.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drill-down link -->
+                <p class="mt-3">
+                    <a class="btn btn-outline-primary"
+                       href="{% url 'salary_search' %}?state={{ state_code }}">
+                        <i class="bi bi-search"></i> Search all filings in {{ state_name }} &rarr;
+                    </a>
+                </p>
+
+                {% endif %}
+
+                <p class="mt-4">
+                    <a href="{% url 'salary_search' %}" class="text-decoration-none">&larr; All salaries</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -4,17 +4,95 @@ alwaysApply: true
 
 # Deployment and Rollout Rules
 
-## Production Instances
+> **Migration status:** Production migrated from AWS Lightsail to a self-hosted Dell Wyse 5070 (alias `homeserver`) on 2026-05-08. Lightsail kept reachable on `44.209.204.255` for rollback during the burn-in period; will be decommissioned once burn-in passes. Sections marked **[Lightsail — kept for rollback]** below describe the OLD production and only apply if a rollback is in progress. Everything else describes the **current** production.
 
-| Alias | Static IP | RAM | Role | Notes |
-|-------|-----------|-----|------|-------|
-| `prod_2Gb_vm` | 44.209.204.255 | 2GB | Production | After rotation: VisaBulletinStaging (old staging) has prod IP |
-| `staging_2Gb_vm` | 54.196.241.197 | 2GB | Staging | After rotation: VisaBulletin2GB (old prod); **often stopped** |
-| `backup_0_5Gb_vm` | 3.227.71.176 | 0.5GB | Backup | — |
+## Production Topology (current)
 
-**After a successful graduation (rotation):** IPs are swapped. Instance names do not change. `prod_2Gb_vm` connects to whichever instance currently has the prod static IP. Staging is often unreachable (SSH timeout) after graduation — the staging instance is stopped post-rotation; start it when needed.
+Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on `homeserver` (Ubuntu 24.04, Dell Wyse 5070, 8 GB RAM, 64 GB SSD, IP 192.168.1.152). All public traffic enters via Cloudflare Tunnel — there are **no router port forwards**. TLS terminates at the Cloudflare edge.
 
-**Verify current mapping:** `aws lightsail get-static-ips --region us-east-1` and check `aws lightsail get-instance --instance-name VisaBulletin2GB` / `VisaBulletinStaging`.
+| Container | Purpose | Image / Notes |
+|---|---|---|
+| `vb_postgres` | PostgreSQL 14, ~3.9 GB DB on `./postgres-data/` | `postgres:14` |
+| `vb_redis` | Page cache, Django sessions | `redis:7-alpine`, 512 MB maxmemory allkeys-lru |
+| `vb_web` | Django + gunicorn 23 (3 workers × 2 threads) | `ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG}` |
+| `vb_nginx` | Static file serving + reverse-proxy to web | `nginx:1.27-alpine`, listens on internal `:80` and LAN-side `:8080` |
+| `vb_cloudflared` | Cloudflare Tunnel connector (4× QUIC to CF edge) | `cloudflare/cloudflared:latest` |
+
+**Public hostnames** (CF Tunnel ingress; tunnel id stored at `~/tokens/cloudflare_tunnel_homeserver_id` on the Mac):
+- `visa-bulletin.us`, `www.visa-bulletin.us` — production
+- `staging.visa-bulletin.us` — currently routes to **same** stack as prod (placeholder until dual-environment is built; see below)
+
+**SSH access:** `ssh -i ~/.ssh/homeserver_ed25519 vyakunin@homeserver.local`. User `vyakunin` is in groups `sudo` and `docker`. The pre-cutover Lightsail aliases (`prod_2Gb_vm`, `staging_2Gb_vm`, `backup_0_5Gb_vm`) still work but only for the old Lightsail instances.
+
+## Production Deploy Process (current)
+
+**Code deploy** is a docker pull + recreate, no downtime:
+
+```bash
+ssh homeserver.local
+cd /opt/stack/visa_bulletin
+# Update IMAGE_TAG in .env if needed (default is "latest" which tracks prod branch builds)
+docker compose pull web
+docker compose up -d web   # recreates only web; postgres, redis, nginx, cloudflared untouched
+docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn boot
+curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
+```
+
+**Building images** still happens via the GitHub Actions workflow on push to `staging`/`prod` branches — see "Docker Image Strategy" below. Nothing about the build/registry side changed; only the runtime moved.
+
+## Future: Dual-Environment (NOT YET IMPLEMENTED)
+
+The current single-stack setup serves both production and staging hostnames against the same DB. The intended future state is **two parallel stacks** sharing one cloudflared:
+
+```
+/opt/stack/visa_bulletin_prod/      → visa-bulletin.us, www.visa-bulletin.us
+/opt/stack/visa_bulletin_staging/   → staging.visa-bulletin.us
+/opt/stack/_shared/                 → vb_cloudflared (ingress: route by Host header to prod_nginx or stg_nginx)
+```
+
+**Why:** (1) safer code rollouts (new image deployed to staging stack first, smoke-tested, then promoted to prod), (2) **weekly DB refresh runs against staging DB** so production reads are never blocked. The Lightsail orchestrator's instance-rotation logic doesn't translate; the dual-stack pattern replaces it. See "Weekly DB refresh pattern" below for the spec.
+
+## Weekly DB Refresh Pattern (spec — not yet implemented)
+
+The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, index drop/rebuild, ~30 min) that would lock the prod DB during ingest. The new pattern keeps prod read-only throughout:
+
+1. **Reset staging DB:** `pg_dump prod | pg_restore staging` (~5 min). Now staging has a snapshot of current prod.
+2. **Run refresh on staging stack:** the existing `scripts/cron/refresh_data.sh` pipeline runs against the staging DB. Drops indexes, ingests, rebuilds indexes, runs clustering, vacuums.
+3. **Smoke staging:** verify `staging.visa-bulletin.us` renders correct data, no regressions, row counts make sense.
+4. **Atomic flip:** stop both stacks (~30 s blip), `mv prod/postgres-data → archive_<date>/`, `mv staging/postgres-data → prod/postgres-data`, restart both.
+5. **Re-seed staging DB** as a fresh copy of new-prod for the next cycle.
+
+**Hourly bulletin refresh** is light (one HTTP fetch + ~1 row insert) and stays on prod. **Cron entry on homeserver:**
+
+```
+0 * * * * docker exec -w /app vb_web python3 -m scripts.cron.refresh_bulletin >> /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log 2>&1
+```
+
+Lightsail crons are **disabled** (commented out in `ubuntu@prod_2Gb_vm`'s crontab; can be re-enabled if rollback is needed during burn-in).
+
+## Rollback to Lightsail (during burn-in only)
+
+If something goes wrong on homeserver and we need to flip back to Lightsail:
+
+```bash
+# Set CF DNS records back to A 44.209.204.255 (proxied)
+CF_TOKEN=$(cat ~/tokens/cloudflare_api_token)
+ZONE_ID=$(cat ~/tokens/cloudflare_zone_id_visa_bulletin)  # mode 600
+for name in "visa-bulletin.us" "www.visa-bulletin.us"; do
+  # Find current record id (CNAME → tunnel)
+  REC_ID=$(curl -s -H "Authorization: Bearer $CF_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$name" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['result'][0]['id'])")
+  # Replace with A record back to Lightsail
+  curl -s -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$REC_ID" \
+    -d "{\"type\":\"A\",\"name\":\"$name\",\"content\":\"44.209.204.255\",\"ttl\":1,\"proxied\":true}"
+done
+# Re-enable Lightsail crons
+ssh -i ~/.ssh/lightsail_visa_bulletin ubuntu@prod_2Gb_vm 'crontab -l | sed "s|^# DISABLED-CUTOVER ||" | crontab -'
+```
+
+DNS propagates in ~10s when proxied. Effective rollback in <60 seconds.
 
 ## Docker Image Strategy
 
@@ -97,7 +175,9 @@ ssh prod_2Gb_vm "docker exec visa_bulletin_web python -c 'from django.conf impor
 
 **Regression test:** `tests/test_debug_safety.py` — asserts `assert_debug_is_safe` raises on DEBUG+prod-hostname and is a no-op otherwise. Must stay green.
 
-## Rule: Graduation (Staging to Prod) via Orchestrator
+## Rule: Graduation (Staging to Prod) via Orchestrator [Lightsail — kept for rollback]
+
+> **DEPRECATED post-migration (2026-05-08).** This entire section describes the OLD Lightsail dual-instance graduation flow (rotate static IPs to swap "prod" and "staging" hosts). On homeserver there is only one box; the new flow is `docker compose pull web && docker compose up -d web` (see "Production Deploy Process" above), and the new weekly DB refresh uses the staging-DB-flip pattern (see above). **Only follow the steps below if a Lightsail rollback is in progress during burn-in.**
 
 **Graduation is automated.** Run on the **current prod** instance (the one with prod static IP).
 
@@ -146,7 +226,9 @@ All steps after IP swap (5-13) are non-fatal — warnings only, since the swap a
 **See `docs/GRADUATION_KNOWN_ISSUES.md` for known graduation failure modes and their fixes.**
 **See `docs/DEPLOY_KEY_SETUP.md` for deploy key setup (one-time per instance).**
 
-## Post-Graduation Babysitting Checklist
+## Post-Graduation Babysitting Checklist [Lightsail — kept for rollback]
+
+> **DEPRECATED post-migration.** Only follow during a Lightsail rollback. The current homeserver post-deploy verification is just `curl https://visa-bulletin.us/ → 200` plus `docker compose logs --tail 30 web` for any Django errors.
 
 After every graduation, verify these 6 things:
 
@@ -283,7 +365,9 @@ Always use the correct SSH alias based on the target instance. When in doubt, ve
 
 **❌ Don't use raw IPs or old `lightsail` aliases.**
 
-## AWS IAM (visa-bulletin-deploy profile)
+## AWS IAM (visa-bulletin-deploy profile) [Lightsail — kept for rollback / decommission]
+
+> **DEPRECATED post-migration.** Only used during Lightsail rollback or final decommission (snapshot + delete instances + delete static IPs). Once the Lightsail account is closed, this section can go.
 
 IAM user `visa-bulletin-deploy` with `lightsail:*`. Profile: `visa-bulletin-deploy` in `~/.aws/credentials`.
 
@@ -295,7 +379,9 @@ aws lightsail get-static-ips --region us-east-1
 
 **Giving instances AWS privileges:** Lightsail instances do not support IAM instance roles. To let a script call Lightsail API, provide IAM credentials via `aws configure` with a dedicated profile on the instance (stored outside the repo), or run the orchestrator from a machine that already has credentials.
 
-## Rule: Refresh Orchestrator Preliminary Steps
+## Rule: Refresh Orchestrator Preliminary Steps [Lightsail — superseded]
+
+> **SUPERSEDED post-migration.** The orchestrator's two-instance preliminary steps (stop Redis/Gunicorn on inactive, terminate Postgres connections on inactive) only made sense when prod and staging lived on separate Lightsail instances. The new homeserver dual-environment design (see "Future: Dual-Environment" above) keeps both environments running simultaneously; the staging-DB-flip pattern eliminates the need to stop services for ingest. Only refer to this section if a Lightsail rollback is in progress.
 
 The refresh orchestrator (run on active, pipeline on inactive/staging) before the pipeline:
 1. Waits for SSH + DB reachable (`run_psql(db_name, "SELECT 1")` with retries)

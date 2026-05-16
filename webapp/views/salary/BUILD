@@ -19,3 +19,16 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "by_state",
+    srcs = ["by_state.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//lib/business/salary:common_stats",
+        "//lib/utils:location_utils",
+        "//models:salary",
+        requirement("Django"),
+    ],
+)

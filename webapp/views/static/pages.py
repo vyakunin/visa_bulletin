@@ -87,3 +87,28 @@ def contact_view(request):
             "page_description": "Get in touch with questions, feedback, or bug reports about the Visa Bulletin tracker.",
         },
     )
+
+
+def spanish_landing_view(request):
+    """Spanish-language landing page.
+
+    Per GSC baseline 2026-05-16 (see [[project_gsc_seo_baseline]]), Spanish
+    queries like "boletin de visas" + month variants pull ~3-5k impressions/4w
+    at ~0.13% CTR with no Spanish content on the site. Full Django i18n is
+    days of work; this single page + reciprocal hreflang on `/` is the quick
+    win that converts the Spanish search demand. Data widgets (dashboard,
+    salaries, predictions) stay English — the page links to them with a clear
+    note that the live data is in English.
+    """
+    return render(
+        request,
+        "webapp/spanish_landing.html",
+        {
+            "page_title": "Boletín de Visas — Fechas de Prioridad, Predicciones y Análisis | visa-bulletin.us",
+            "page_description": (
+                "Boletín de visas mensual del Departamento de Estado de EE.UU. en español: "
+                "fechas de prioridad EB-1/2/3/4/5 y F1-F4, predicciones del modelo Bulletin "
+                "Forecast, y guía para solicitantes I-485 (USCIS)."
+            ),
+        },
+    )

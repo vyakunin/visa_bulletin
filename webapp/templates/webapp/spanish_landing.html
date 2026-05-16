@@ -1,0 +1,190 @@
+{% extends "webapp/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block hreflang %}
+<link rel="alternate" hreflang="en" href="https://visa-bulletin.us/">
+<link rel="alternate" hreflang="es" href="https://visa-bulletin.us/es/">
+<link rel="alternate" hreflang="x-default" href="https://visa-bulletin.us/">
+{% endblock %}
+
+{% block hero_heading %}<div class="display-4"><i class="bi bi-globe-americas"></i> Boletín de Visas</div>{% endblock %}
+
+{% block content %}
+<div class="container py-4" lang="es">
+
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Boletín de Visas (español)</li>
+        </ol>
+    </nav>
+
+    <h1 class="mb-3">Boletín de Visas — Fechas de Prioridad, Predicciones y Análisis</h1>
+
+    <p class="lead">
+        Esta página explica en español el <strong>Boletín de Visas</strong> que publica
+        mensualmente el Departamento de Estado de EE.UU., cómo leer las fechas de prioridad,
+        la determinación mensual de USCIS sobre el cuadro de presentación (I-485), y dónde
+        encontrar predicciones y datos en vivo en este sitio.
+    </p>
+
+    <div class="alert alert-info">
+        <strong>Nota:</strong> el panel interactivo, las tablas de predicciones y los datos de
+        salarios están actualmente disponibles solo en inglés. Los enlaces más abajo te llevan
+        a la versión en inglés, donde toda la información es visual (fechas, categorías,
+        países) y no requiere conocimientos avanzados del idioma.
+    </div>
+
+    <h2 class="mt-4">¿Qué es el Boletín de Visas?</h2>
+    <p>
+        Cada mes, el Departamento de Estado de EE.UU. publica el
+        <a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" rel="noopener" target="_blank">Boletín de Visas</a>,
+        un documento oficial que indica qué solicitantes de residencia permanente (green card)
+        pueden avanzar en su trámite ese mes. El boletín cubre todas las categorías de visas
+        basadas en empleo (<strong>EB-1, EB-2, EB-3, EB-4, EB-5</strong>) y todas las categorías
+        familiares (<strong>F1, F2A, F2B, F3, F4</strong>), desglosadas por país de cargo
+        (China continental, India, México, Filipinas, y "Todos los demás países").
+    </p>
+
+    <h2 class="mt-4">¿Qué son las fechas de prioridad?</h2>
+    <p>
+        Tu <strong>fecha de prioridad</strong> es la fecha en que el USCIS o el DOL (Departamento
+        de Trabajo) recibió la primera solicitud que abrió tu caso — típicamente:
+    </p>
+    <ul>
+        <li><strong>Categorías basadas en empleo (EB):</strong> la fecha en que tu empleador
+            presentó la <em>Solicitud de Certificación Laboral (PERM)</em>, o la I-140 si no
+            requería PERM (EB-1, ciertas EB-2 NIW).</li>
+        <li><strong>Categorías familiares (F):</strong> la fecha en que tu familiar ciudadano
+            o residente permanente presentó la I-130 a tu nombre.</li>
+    </ul>
+    <p>
+        Tu fecha de prioridad <em>se hace actual</em> cuando los cortes publicados en el boletín
+        avanzan más allá de tu fecha. En ese momento puedes solicitar la residencia
+        (I-485 dentro de EE.UU. o procesamiento consular fuera).
+    </p>
+
+    <h2 class="mt-4">Los dos cuadros del boletín y la decisión mensual de USCIS</h2>
+    <p>
+        El boletín publica <strong>dos cuadros</strong> por categoría:
+    </p>
+    <ul>
+        <li><strong>Fechas de Acción Final (Final Action Dates):</strong> el corte que
+            controla cuándo USCIS puede <em>aprobar</em> tu green card.</li>
+        <li><strong>Fechas de Presentación (Dates for Filing):</strong> un corte más permisivo
+            que indica cuándo USCIS puede <em>aceptar</em> tu I-485 para empezar el trámite.</li>
+    </ul>
+    <p>
+        Cada mes, USCIS publica en
+        <a href="https://www.uscis.gov/visabulletininfo" rel="noopener" target="_blank">uscis.gov/visabulletininfo</a>
+        una determinación que dice cuál de los dos cuadros pueden usar los solicitantes de
+        I-485 (ajuste de estatus dentro de EE.UU.) ese mes. Esta decisión cambia mes a mes
+        y puede adelantar o retrasar varios meses tu ventana de presentación.
+    </p>
+    <p>
+        Si te interesa entender en detalle cómo USCIS toma esta decisión y por qué importa
+        para tu I-485, hay una <a href="/analysis/uscis-visa-bulletin-filing-dates-explained/">guía completa en inglés</a>.
+    </p>
+
+    <h2 class="mt-4">Predicciones de fechas de prioridad</h2>
+    <p>
+        Este sitio publica predicciones mensuales basadas en el modelo <strong>Bulletin Forecast
+        Model</strong>, que combina:
+    </p>
+    <ul>
+        <li>Patrones históricos de movimiento de cortes</li>
+        <li>Datos del backlog I-140 (cola de demanda I-485)</li>
+        <li>Ciclos del año fiscal del gobierno (octubre–septiembre)</li>
+        <li>Excedente EB-1 que fluye a EB-2 bajo INA §202</li>
+        <li>Patrones de emisión en el resto del mundo (ROW)</li>
+    </ul>
+    <p>
+        Las predicciones cubren los próximos <strong>12 meses</strong> y se evalúan retroactivamente
+        contra lo que el boletín efectivamente publicó. Puedes ver la
+        <a href="/predictions/employment_based/">precisión histórica del modelo</a> antes de
+        confiar en sus proyecciones.
+    </p>
+
+    <h2 class="mt-4">Datos en vivo (interfaz en inglés)</h2>
+    <p>
+        Los datos completos viven en el panel principal del sitio. Los nombres de categorías,
+        países y fechas son universales, así que la interfaz es navegable sin conocimientos
+        avanzados de inglés:
+    </p>
+    <div class="row g-3 my-3">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-calendar-check"></i>
+                        Panel de fechas de prioridad
+                    </h5>
+                    <p class="card-text">Mira el corte actual y las predicciones para tu categoría y país.</p>
+                    <a href="/" class="btn btn-primary">Abrir panel (inglés) &rarr;</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        Precisión histórica del modelo
+                    </h5>
+                    <p class="card-text">Revisa cuán cerca estuvieron las predicciones pasadas de los cortes que el boletín publicó.</p>
+                    <a href="/predictions/employment_based/" class="btn btn-outline-primary">Ver archivo de precisión &rarr;</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-currency-dollar"></i>
+                        Salarios H-1B y PERM
+                    </h5>
+                    <p class="card-text">Datos públicos del Departamento de Trabajo: salarios por empleador, rol y estado.</p>
+                    <a href="/salaries/" class="btn btn-outline-primary">Ver salarios &rarr;</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-newspaper"></i>
+                        Análisis mensual del boletín
+                    </h5>
+                    <p class="card-text">Cada mes publicamos un análisis del nuevo boletín con contexto y predicciones.</p>
+                    <a href="/analysis/" class="btn btn-outline-primary">Ver análisis &rarr;</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="mt-4">Cobertura</h2>
+    <ul>
+        <li><strong>Categorías basadas en empleo:</strong> EB-1 (prioridad extraordinaria),
+            EB-2 (profesional avanzado / NIW), EB-3 (profesional / trabajador calificado),
+            EB-4 (inmigrantes especiales), EB-5 (inversor).</li>
+        <li><strong>Categorías familiares:</strong> F1 (hijos adultos solteros de ciudadanos
+            estadounidenses), F2A (cónyuges e hijos menores de LPR), F2B (hijos adultos
+            solteros de LPR), F3 (hijos adultos casados de ciudadanos), F4 (hermanos de
+            ciudadanos).</li>
+        <li><strong>Países de cargo:</strong> China continental, India, México, Filipinas,
+            y "Todos los demás países" (que cubre todos los países sin backlog significativo).</li>
+    </ul>
+
+    <h2 class="mt-4">¿Tienes preguntas o sugerencias?</h2>
+    <p>
+        Escríbeme a <a href="mailto:vyakunin@gmail.com">vyakunin@gmail.com</a>. Si esta página
+        es útil para la comunidad hispanohablante, considera apoyar el proyecto:
+        <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-es" target="_blank" rel="noopener">
+            invítame un café &rarr;
+        </a>
+    </p>
+
+</div>
+{% endblock %}

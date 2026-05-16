@@ -239,6 +239,12 @@
                         Latest analysis: <a href="{% url 'blog_detail' latest_post.slug %}">{{ latest_post.title }}</a>
                     </p>
                     {% endif %}
+                    <p class="small mb-0 mt-2">
+                        <i class="bi bi-cash-coin me-1"></i>
+                        <a href="/salaries/?program=perm&country={{ country_slug }}">
+                            See salaries for top {{ country_display }} {{ category_display }} sponsors &rarr;
+                        </a>
+                    </p>
                 </div>
             </div>
             {% elif has_data and visa_class_data and vqs_predictions %}
@@ -285,7 +291,11 @@
             <p class="small text-muted mb-3">
                 <i class="bi bi-exclamation-triangle"></i> <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
+                &nbsp;|&nbsp;
+                <a href="/predictions/employment_based/" style="color: #0066CC; text-decoration: underline;">How accurate were past predictions? See backtest →</a>
             </p>
+
+            {% include "webapp/includes/support_cta.html" %}
 
             <!-- Chart -->
             <div class="card" id="chart-container">

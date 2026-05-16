@@ -177,7 +177,13 @@
                 <div class="card-body">
                     <!-- Percentiles -->
                     {% include "webapp/includes/percentiles_row.html" with percentiles=stats.salary_percentiles %}
-                    
+
+                    <p class="mb-3">
+                        <a href="/salaries/?role={{ cluster.slug }}">
+                            See all H-1B/PERM filings for this role &rarr;
+                        </a>
+                    </p>
+
                     <!-- Histogram Chart -->
                     {% if chart_data.salary_histogram %}
                     {% include "webapp/includes/multiline_chart_with_checkboxes.html" with element_id="chart-salary-histogram" min_height="300" %}

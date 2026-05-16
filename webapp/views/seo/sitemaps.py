@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.utils.location_utils import US_STATES
 from models.blog import BlogPost
 from models.bulletin import Bulletin
 from models.enums.country import Country
@@ -110,7 +111,7 @@ def sitemap_view(request):
     ]
 
     # Static pages — all reflect data that changes on each pipeline refresh
-    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/about/", "/contact/"):
+    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/about/", "/contact/", "/es/"):
         xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=bulletin_lastmod))
 
     # Category landing pages (updated when new bulletin arrives)
@@ -126,6 +127,16 @@ def sitemap_view(request):
             slug = Country.slug_for_value(c.value)
             if slug:
                 xml_parts.extend(_url_entry(f"{base_url}/{cat_slug}/{slug}/", lastmod=bulletin_lastmod))
+
+    # Per-state salary landing pages (one per US state + DC).
+    # Iterate the canonical US_STATES list so new entries appear automatically.
+    for code, _name in US_STATES:
+        xml_parts.extend(_url_entry(
+            f"{base_url}/salaries/by-state/{code.lower()}/",
+            lastmod=bulletin_lastmod,
+            changefreq="weekly",
+            priority="0.6",
+        ))
 
     # Employer profile pages (top 10,000 by filing count)
     try:

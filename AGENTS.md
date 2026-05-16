@@ -1,6 +1,6 @@
 # Critical Development Rules
 
-Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+, Docker on AWS Lightsail. See `.cursor/rules/` for detailed project and general rules.
+Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+. **Production runs on a self-hosted Dell Wyse 5070 ("homeserver") behind Cloudflare Tunnel** (migrated from AWS Lightsail on 2026-05-08; see `.cursor/rules/deployment.mdc` and `homeserver.mdc` for topology). Lightsail kept reachable on `44.209.204.255` for rollback during burn-in.
 
 General rules (coding style, git, testing, logging, etc.) are symlinked from `~/.cursor/shared_rules/`. See `rules_management.mdc` for the shared rules structure and new-project setup.
 
@@ -127,7 +127,7 @@ ssh production "systemctl status app"
 ssh -i ~/.ssh/key.pem user@192.168.1.100
 ```
 
-Project aliases: `prod_2Gb_vm`, `staging_2Gb_vm`, `backup_0_5Gb_vm`. See `deployment.mdc` for details.
+Project aliases: `homeserver.local` (current production, Wyse 5070, key `~/.ssh/homeserver_ed25519`, user `vyakunin`); `prod_2Gb_vm`/`staging_2Gb_vm`/`backup_0_5Gb_vm` (old Lightsail, kept for rollback during burn-in only). See `deployment.mdc` for details.
 
 ---
 
@@ -139,3 +139,20 @@ Project aliases: `prod_2Gb_vm`, `staging_2Gb_vm`, `backup_0_5Gb_vm`. See `deploy
 - Never bypass migrations (`--fake` or `--skip-checks` in production)
 - Test migrations on development database first
 - Check for reversibility when possible
+
+---
+
+## Daily Checkup (opt-in)
+
+This project can plug into the morning digest pipeline run from `~/cursor_projects/personal_projects/daily_checkup/` (Claude Code skill: `/daily_checkup`).
+
+**To opt in:** implement a stdio MCP server exposing a `daily_checkup` tool per the contract at `~/.cursor/shared_rules/daily_checkup.mdc`, then add the project to `~/cursor_projects/personal_projects/daily_checkup/registry.yaml`. **Not yet implemented.**
+
+**Likely signals to surface from this project:**
+
+- Public site availability + last-hour 5xx rate from cloudflared / nginx (`vb_nginx` access log)
+- Hourly bulletin-refresh cron status: did it run, did it parse, any errors? (`/opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log`)
+- Homeserver headroom — `df -h /`, `free -h` (Wyse 5070 is 64 GB disk / 8 GB RAM)
+- Postgres DB size growth + any vacuum / replication warnings
+- Lightsail rollback path: is `44.209.204.255` still reachable during burn-in?
+- Cloudflare tunnel connector state (`vb_cloudflared` — 4 QUIC connections healthy?)
