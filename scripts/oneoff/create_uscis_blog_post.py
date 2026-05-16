@@ -52,18 +52,20 @@ of the bulletin&#39;s two charts I-485 (adjustment-of-status) filers may use tha
 month. That single decision shifts AOS filing windows by months.
 </p>
 
-<div class="alert alert-primary d-flex flex-column flex-md-row align-items-md-center gap-2 mt-3 mb-4">
-    <span class="me-md-auto">
+<div class="alert alert-primary mt-3 mb-4">
+    <p class="mb-2">
         <strong>Want to skip the explanation?</strong>
         Pick your category and country on the live tracker — both charts and a
         12-month projection are on one page.
-    </span>
-    <a class="btn btn-primary" href="/employment-based/india/">
-        <i class="bi bi-calendar-check"></i> India EB tracker
-    </a>
-    <a class="btn btn-outline-primary" href="/">
-        All categories &rarr;
-    </a>
+    </p>
+    <p class="mb-0">
+        <a class="btn btn-primary" href="/employment-based/india/" style="white-space: nowrap;">
+            <i class="bi bi-calendar-check"></i> India EB tracker
+        </a>
+        <a class="btn btn-outline-primary" href="/" style="white-space: nowrap;">
+            All categories &rarr;
+        </a>
+    </p>
 </div>
 
 <h2 id="two-charts">The bulletin&#39;s two charts, in 30 seconds</h2>
