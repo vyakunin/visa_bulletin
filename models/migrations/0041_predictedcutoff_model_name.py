@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('models', '0040_salaryrecord_sr_emp_case_sub_and_more'),
+        ('models', '0040_predictedcutoff_expert_predictions'),
     ]
 
     operations = [

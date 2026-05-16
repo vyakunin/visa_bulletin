@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('models', '0037_employer_directory_partial_index'),
+        ('models', '0038_salaryrecord_sr_emp_case_sub_and_more'),
     ]
 
     operations = [
