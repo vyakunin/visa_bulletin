@@ -26,7 +26,35 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on `h
 
 ## Production Deploy Process (current)
 
-**Code deploy** is a docker pull + recreate, no downtime:
+**Code deploy is `docker compose pull web && docker compose up -d web`. It has
+~10-15s of customer-facing 502s** while the old container stops and the new
+one boots (migrate + collectstatic + gunicorn). CF-cached pages keep serving
+from the edge during the window; uncached/POST requests fail.
+
+### Rule: check the low-traffic window before pushing to prod
+
+Per the GSC + GoatCounter daily-checkup data, dashboard traffic is ~5-7k
+views/day with a clear monthly cycle. Before doing a prod deploy, consult
+the **most recent daily_checkup digest** (or pull `gsc_query_search_analytics`
++ GoatCounter directly) to find the local low-traffic hour. As of mid-2026
+the rough pattern is:
+
+| Window (UTC) | Berlin local | PDT local | Typical traffic |
+|---|---|---|---|
+| 22:00-06:00 | 00:00-08:00 | 15:00-23:00 | **low** (deploy-safe) |
+| 06:00-12:00 | 08:00-14:00 | 23:00-05:00 | medium |
+| 12:00-22:00 | 14:00-00:00 | 05:00-15:00 | **peak** (avoid) |
+
+Re-verify these bands quarterly — the user base skews US + India so the
+peak shifts seasonally. The daily_checkup MCP can be extended to surface a
+"current hourly position vs cycle" line if this needs to be automated.
+
+If a deploy genuinely cannot wait for the low-traffic window (security
+patch, broken bulletin parser before publication), accept the 502 window
+and proceed — but state explicitly *"deploying at peak, expected ~3-5 user
+errors"* so the cost is visible.
+
+### Deploy command
 
 ```bash
 ssh homeserver.local
@@ -36,7 +64,21 @@ docker compose pull web
 docker compose up -d web   # recreates only web; postgres, redis, nginx, cloudflared untouched
 docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn boot
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
+# After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
+docker exec vb_redis redis-cli -n 1 FLUSHDB
 ```
+
+### Optional: zero-downtime via blue/green (NOT YET BUILT)
+
+Notion follow-up ticket exists for building a reusable
+`tools/blue_green_deploy.sh` script that uses the existing dual-stack
+(`visa_bulletin` + `visa_bulletin_staging` compose projects sharing
+`vb_public`). High-level dance: repoint staging container's DB to prod
+postgres → CF Tunnel ingress swap (prod hostnames → `vb_stg_nginx`) →
+recreate `vb_web` with no traffic on it → swap CF ingress back → revert
+staging DB. Per-deploy overhead ~30-60s, customer downtime 0s. Build it
+when deploy frequency or off-peak constraints justify the orchestration
+cost.
 
 **Building images** still happens via the GitHub Actions workflow on push to `staging`/`prod` branches — see "Docker Image Strategy" below. Nothing about the build/registry side changed; only the runtime moved.
 
