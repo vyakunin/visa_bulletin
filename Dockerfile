@@ -76,7 +76,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # previous variant (`test ! -f X && touch X`) propagated a non-zero exit code
 # the first time any directory already had __init__.py, breaking the && chain.
 RUN mkdir -p saved_pages logs static && \
-    find /app/webapp /app/models /app/lib /app/extractors \
+    find /app/webapp /app/models /app/lib \
         -type d ! -path '*/__pycache__/*' \
         -exec sh -c 'touch "$1/__init__.py"' _ {} \; && \
     chown -R visabulletin:visabulletin /app
