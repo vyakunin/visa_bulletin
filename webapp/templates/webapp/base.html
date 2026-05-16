@@ -28,14 +28,18 @@
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
 
-    {# hreflang annotations: declared on every page so search engines know the
-       English-default ↔ Spanish-landing relationship. The Spanish landing
-       overrides {% block hreflang %} to swap the self-reference. #}
-    {% block hreflang %}
+    {# hreflang annotations: only declared on pages that have an actual
+       cross-language equivalent. Per Google spec, `hreflang="es"` on a page
+       MUST point to its Spanish counterpart — declaring it globally would
+       tell Google that e.g. `/employer/google-llc/` has a Spanish version at
+       `/es/`, which is false.
+       Only the bare `/` landing and `/es/` itself declare the pair. The
+       Spanish landing overrides {% block hreflang %} unconditionally. #}
+    {% block hreflang %}{% if request.path == "/" and not request.GET %}
     <link rel="alternate" hreflang="en" href="https://visa-bulletin.us/">
     <link rel="alternate" hreflang="es" href="https://visa-bulletin.us/es/">
     <link rel="alternate" hreflang="x-default" href="https://visa-bulletin.us/">
-    {% endblock %}
+    {% endif %}{% endblock %}
     
     <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="{{ og_type|default:'website' }}">
