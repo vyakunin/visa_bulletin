@@ -42,6 +42,22 @@ Prod and staging are separate compose projects sharing the `vb_public` external 
 
 Why dual-stack: (1) safe code rollouts (deploy new image to staging first, smoke-test, promote to prod); (2) **weekly DB refresh runs against the staging DB**, then atomically promotes (DB volume swap or pg_dump → restore), keeping prod DB read-only during the heavy ingest. The Lightsail orchestrator's instance-rotation logic doesn't translate; this dual-stack pattern replaces it.
 
+## Postgres tuning (applied 2026-05-17)
+
+Both `vb_postgres` and `vb_stg_postgres` run with these non-default planner / cost settings, persisted via `ALTER SYSTEM` to `postgresql.auto.conf` inside `./postgres-data/`:
+
+| Setting | Value | Why |
+|---|---|---|
+| `random_page_cost` | 1.1 | SSD (default 4 assumes spinning rust → biases planner away from index-only scans) |
+| `effective_io_concurrency` | 200 | SSD parallel I/O capacity (default 1 = HDD) |
+| `effective_cache_size` | 3 GB | OS file-cache hint — conservatively below total RAM since pb_postgres / pf / ha share the box |
+| `work_mem` | 16 MB | Sort + hash buckets per query (default 4MB caused spill-to-disk on hash joins) |
+| `default_statistics_target` | 200 | Better selectivity estimates for trigram / multi-column predicates (default 100) |
+
+**`shared_buffers` is NOT tuned yet** (still at default 128 MB) — bumping it requires a postgres restart. Defer to the next maintenance window; if you tune it, pick ≤ 512 MB per instance so the prod + staging pair doesn't pin >1 GB of RAM on this 8 GB host (mind co-tenancy with `pb_postgres`, `pf`, `ha_homeassistant`, etc.).
+
+**Re-applying after a `postgres-data/` wipe** (e.g. weekly-refresh restore destroys `postgresql.auto.conf`): re-run the ALTER SYSTEM block from `docs/deployment/postgres_tuning.md` (or grep this file's table) and `SELECT pg_reload_conf();`. The dual-stack refresh playbook should re-emit these settings as part of the staging-DB rebuild.
+
 ## Common mistakes (visa_bulletin-specific)
 
 - **Don't touch `/opt/stack/visa_bulletin/` or `/opt/stack/visa_bulletin_staging/` when adding a new LAN service.** visa_bulletin is the only public production stack on this box. Do not edit either compose file, restart any `vb_*` container, attach those compose projects to `homelab_proxy`, or change `vb_public`. Public ingress (Cloudflare Tunnel → `vb_nginx:80` / `vb_stg_nginx:80` over `vb_public`) must stay exactly as it is. New LAN services are additive: separate compose, separate network, Traefik labels — never a touch on visa_bulletin.

@@ -1,13 +1,32 @@
 """Generic filter application utilities for Django querysets"""
 
-from django.db.models import Q
-
 from models.enums.visa_program import VisaProgram
 
 
 def apply_text_search_filter(queryset, query: str, fields: list[str]):
     """
     Apply case-insensitive text search across multiple fields.
+
+    Implementation note (PostgreSQL planner workaround):
+
+    Django's ``__icontains`` emits ``UPPER(field::text) LIKE UPPER(%s)`` —
+    the existing ``gin (UPPER(...) gin_trgm_ops)`` indexes match this
+    predicate. BUT when the caller also chains
+    ``order_by('-wage_annual', '-fiscal_year')[:N]`` (the
+    salary_search_view / worksite_search_view list path), the planner falls
+    into a classic LIMIT-pessimization: it picks
+    ``Index Scan Backward on salary_record_wage_annual_*`` and filters the
+    ILIKE predicate inline, expecting the LIMIT to be reached quickly.
+    For low-match-low-wage keywords (CASHIER, KEEPER, COOK, MAID) it scans
+    ~1.2M heap rows before finding 50 matches → 10-15s.
+
+    The fix is to *force materialization* of the trigram filter as a
+    separate plan step. PostgreSQL treats a subquery with ``OFFSET 0`` as
+    an optimization fence (will not inline it). We inject
+    ``WHERE id IN (SELECT id FROM <table> WHERE <UPPER-LIKE-OR-clauses> OFFSET 0)``
+    via ``.extra(where=...)``. With this fence the planner picks Bitmap Heap
+    Scan via the trigram indexes (~30ms) and Nested Loop joins by pkey to
+    the outer ORDER BY / LIMIT — total ~50ms for the same CASHIER query.
 
     Args:
         queryset: Django queryset to filter
@@ -20,12 +39,25 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
     if not query:
         return queryset
 
-    # Build Q objects for OR search across fields
-    q_objects = Q()
+    model = queryset.model
+    table = model._meta.db_table
+    fragments = []
+    params: list[str] = []
+    pattern = f"%{query}%"
     for field in fields:
-        q_objects |= Q(**{f"{field}__icontains": query})
-
-    return queryset.filter(q_objects)
+        column = model._meta.get_field(field).column
+        fragments.append(
+            f'UPPER("{table}"."{column}"::text) LIKE UPPER(%s)'
+        )
+        params.append(pattern)
+    or_clauses = " OR ".join(fragments)
+    # OFFSET 0 = PostgreSQL optimization fence; do not remove without
+    # re-running the EXPLAIN ANALYZE in deployment.mdc's Django-side recipe.
+    subquery_sql = (
+        f'"{table}"."id" IN '
+        f'(SELECT "id" FROM "{table}" WHERE {or_clauses} OFFSET 0)'
+    )
+    return queryset.extra(where=[subquery_sql], params=params)  # noqa: SLF001
 
 
 def apply_visa_program_filter(

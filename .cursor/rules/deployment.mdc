@@ -26,7 +26,35 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on `h
 
 ## Production Deploy Process (current)
 
-**Code deploy** is a docker pull + recreate, no downtime:
+**Code deploy is `docker compose pull web && docker compose up -d web`. It has
+~10-15s of customer-facing 502s** while the old container stops and the new
+one boots (migrate + collectstatic + gunicorn). CF-cached pages keep serving
+from the edge during the window; uncached/POST requests fail.
+
+### Rule: check the low-traffic window before pushing to prod
+
+Per the GSC + GoatCounter daily-checkup data, dashboard traffic is ~5-7k
+views/day with a clear monthly cycle. Before doing a prod deploy, consult
+the **most recent daily_checkup digest** (or pull `gsc_query_search_analytics`
++ GoatCounter directly) to find the local low-traffic hour. As of mid-2026
+the rough pattern is:
+
+| Window (UTC) | Berlin local | PDT local | Typical traffic |
+|---|---|---|---|
+| 22:00-06:00 | 00:00-08:00 | 15:00-23:00 | **low** (deploy-safe) |
+| 06:00-12:00 | 08:00-14:00 | 23:00-05:00 | medium |
+| 12:00-22:00 | 14:00-00:00 | 05:00-15:00 | **peak** (avoid) |
+
+Re-verify these bands quarterly — the user base skews US + India so the
+peak shifts seasonally. The daily_checkup MCP can be extended to surface a
+"current hourly position vs cycle" line if this needs to be automated.
+
+If a deploy genuinely cannot wait for the low-traffic window (security
+patch, broken bulletin parser before publication), accept the 502 window
+and proceed — but state explicitly *"deploying at peak, expected ~3-5 user
+errors"* so the cost is visible.
+
+### Deploy command
 
 ```bash
 ssh homeserver.local
@@ -36,7 +64,81 @@ docker compose pull web
 docker compose up -d web   # recreates only web; postgres, redis, nginx, cloudflared untouched
 docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn boot
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
+# After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
+docker exec vb_redis redis-cli -n 1 FLUSHDB
 ```
+
+### Rule: Capture a pre-deploy perf baseline + post-deploy verification window
+
+**Every prod deploy (code, schema, infra) MUST include a pre-deploy baseline snapshot AND a 30-minute post-deploy verification window** with the same signals. Latency / 5xx regressions after a deploy are common (planner picks a new plan after schema changes, a new view forgets to use `select_related`, a Redis cache clear cold-starts every page) and they are catastrophically cheap to detect early and expensive to detect via user reports. This rule exists because the 2026-05-17 staging-crawl incident showed that perf regressions silently degrade UX for hours unless deliberately monitored — and because that incident's own fix (trigram indexes) needed verification it wasn't trivially providing.
+
+**Pre-deploy snapshot (T-5min, save to /tmp/predeploy_$(date +%s).txt or paste into chat):**
+
+```bash
+ssh homeserver "uptime; \
+  free -h | head -2; \
+  docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'; \
+  echo '--- 5xx last 30 min ---'; \
+  docker logs vb_nginx --since 30m 2>&1 | grep -E '\\] \"[A-Z]+ [^\"]+\" 5' | wc -l; \
+  echo '--- gunicorn SLOW REQUEST last 30 min ---'; \
+  docker logs vb_web --since 30m 2>&1 | grep -c 'SLOW REQUEST'; \
+  echo '--- request rate last 5 min ---'; \
+  docker logs vb_nginx --since 5m 2>&1 | grep -cE '\\] \"[A-Z]+'"
+```
+
+**During deploy:** keep `docker logs -f vb_web` open in one terminal. Expected: the ~10-15s 502 window during container swap. Anything else is a regression — abort and roll back per the rollback section.
+
+**Post-deploy verification (T+5, T+15, T+30):** re-run the snapshot block above and compare against pre-deploy. Acceptable drift:
+
+| Signal | Pre → Post acceptable | Investigate / roll back |
+|---|---|---|
+| Host load (1m) | within 1.5× of pre | >2× and sustained 5+ min |
+| vb_postgres %CPU | within 1.5× of pre | >3× and sustained 5+ min |
+| vb_web mem (per container) | within 1.3× of pre | >1.5× and growing |
+| nginx 5xx / 30 min | ≤ pre + 5 (cold-start 502s normal) | > pre + 15, or any sustained 5xx after T+5 |
+| gunicorn SLOW REQUEST / 30 min | ≤ pre + 10% | > pre + 50% — almost certainly a planner regression |
+
+**For DB-touching deploys** (schema changes, new indexes, query rewrites): also EXPLAIN ANALYZE the affected query path **inside Django** (parameterized) — not just literal psql, because Django's `__icontains` emits `UPPER(field) LIKE UPPER(%s)` and the planner gives different plans for parameterized vs literal strings. Use the recipe:
+
+```bash
+ssh homeserver "docker exec vb_web python3 -c \"
+import django, os, time
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_config.settings')
+django.setup()
+from django.db import connection
+from django.conf import settings
+settings.DEBUG = True
+from models.salary import SalaryRecord
+from django.db.models import Q
+qs = SalaryRecord.objects.filter(Q(job_title__icontains='CASHIER') | Q(soc_title__icontains='CASHIER')).exclude(is_worksite=True).exclude(employer_name='Unknown').filter(wage_annual__isnull=False, wage_annual__gt=0).order_by('-wage_annual','-fiscal_year')
+t0=time.time(); list(qs[:50]); print(f'{(time.time()-t0)*1000:.0f}ms')
+print(connection.queries[-1]['sql'][:300])
+\""
+```
+
+A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path).
+
+**Heavy mutations (CREATE INDEX, ALTER TABLE, schema migrations) MUST use the CONCURRENTLY form so reads + writes continue.** A non-concurrent ALTER on `salary_record` (1.5M rows) acquires AccessExclusiveLock and blocks every reader for the duration → effective outage. See migrations 0044, 0046, 0047 for examples of the `RunSQL(... atomic=False)` pattern.
+
+**Rollback triggers — if any of these fire in the verification window, roll back immediately, don't try to fix forward in prod:**
+- Sustained 5xx > 5/min for 5 consecutive min.
+- p95 request latency >5× pre-deploy.
+- vb_postgres CPU saturated (>80%) for 5+ min without an obvious upstream cause (cron, ANALYZE).
+- Bot/scraper crawl that the deploy was supposed to mitigate is *worse* afterward.
+
+Rollback is just `IMAGE_TAG=<previous_sha>` in .env + `docker compose pull web && docker compose up -d web` + flush Redis. No fancy orchestrator needed since the registry keeps the prior image.
+
+### Optional: zero-downtime via blue/green (NOT YET BUILT)
+
+Notion follow-up ticket exists for building a reusable
+`tools/blue_green_deploy.sh` script that uses the existing dual-stack
+(`visa_bulletin` + `visa_bulletin_staging` compose projects sharing
+`vb_public`). High-level dance: repoint staging container's DB to prod
+postgres → CF Tunnel ingress swap (prod hostnames → `vb_stg_nginx`) →
+recreate `vb_web` with no traffic on it → swap CF ingress back → revert
+staging DB. Per-deploy overhead ~30-60s, customer downtime 0s. Build it
+when deploy frequency or off-peak constraints justify the orchestration
+cost.
 
 **Building images** still happens via the GitHub Actions workflow on push to `staging`/`prod` branches — see "Docker Image Strategy" below. Nothing about the build/registry side changed; only the runtime moved.
 
