@@ -66,38 +66,68 @@ The `mcp/daily_checkup_server.py` runs every morning and produces a structured r
 
 ## Auto-dispatch to Telegram bot on monitoring incidents
 
-UptimeRobot has **native integration channels** including Telegram — there is
-no need to build a Gmail-polling middleman to forward DOWN alerts to a bot.
+**Active setup (free-tier UptimeRobot):** Gmail-polling dispatcher at
+`~/cursor_projects/personal_projects/gmail_dispatcher/server.py`, launchd job
+`com.user.gmail_dispatcher` running every 5 min. Per-project rules live in
+`~/cursor_projects/personal_projects/daily_checkup/registry.yaml` under each
+project's `dispatch_rules:` key. On Gmail match, the dispatcher sends a
+message FROM the user's Telegram account (via telethon + the existing user
+session at `~/tokens/telegram_session_string`) TO the project bot
+(`vyakunin_visa_bulletin_bot` for this project). The `listen_wa_receiver`
+long-polls Telegram getUpdates, sees the new user→bot message, and
+auto-spawns Claude with this project's CLAUDE.md loaded — same path as if
+you typed in the bot chat manually.
 
-### Recommended setup (NOT YET WIRED)
+**Latency:** ~5 min worst case (one cron tick). Mac must be awake; on wake,
+the next StartInterval tick covers any missed window within 5 min.
 
-1. **In the UptimeRobot dashboard** → My Settings → Alert Contacts → Add Alert
-   Contact → Type: Telegram. Provide:
-   - Bot token: contents of `~/tokens/tg_bot_visa_bulletin`
-   - Chat ID: `132118323` (the user's Telegram user_id; same as the
-     `recipient_chat_id` in `~/cursor_projects/personal_projects/daily_checkup/registry.yaml`)
-2. **Edit the existing `visa-bulletin.us` monitor** → Alert Contacts to Notify
-   → check the new Telegram contact + (optionally) keep the email contact.
-3. **Test from UptimeRobot** ("Test Notification" button) — the bot
-   `vyakunin_visa_bulletin_bot` should receive the message immediately.
-4. **The existing per-project bot listener auto-spawns Claude** when messages
-   arrive on that bot (see `daily_checkup/registry.yaml` delivery section).
-   Claude gets the visa_bulletin project context loaded and can ssh
-   homeserver, check container health, restart vb_web if needed, etc.
+**Dedup:** `~/cursor_projects/personal_projects/daily_checkup/dispatcher_seen.json`
+keyed by Gmail `message_id`. Each DOWN message fires exactly once, ever.
+UptimeRobot sends one email per state transition, so an N-hour outage
+produces one DOWN dispatch + zero on the matching UP (UP messages do not
+match the rule's subject filter).
 
-Real-time, no polling, no Gmail tokens needed for this path. Compared to the
-Gmail-polling alternative (cron every 5 min on the Mac, depends on Mac being
-awake AND Gmail OAuth being valid), the native UptimeRobot → Telegram path
-is strictly better: faster (real-time vs ~5min latency), more resilient (no
-Mac-awake dependency), and has zero local code to maintain.
+### Why NOT UptimeRobot's native Telegram channel
 
-### Why this row exists in the rule
+Sounds cleaner, but **gated to paid plans only** (Solo $7-8/mo+; verified
+in the dashboard 2026-05-17). On the free tier the integrations menu shows
+"Available only in Solo, Team and Enterprise. Upgrade now." for Telegram,
+Webhook, Slack, MS Teams, Mattermost, Zapier, and PagerDuty. Free-tier-only
+options: Discord, Google Chat, Splunk, Pushbullet, Pushover, and the mobile
+apps. None of those reach the existing per-project bot listener without
+extra glue, and Discord+bridge would be more code than the Gmail polling
+that already works.
 
-The user asked "set up something to dispatch Claude when monitoring fires"
-on 2026-05-17. The first design draft was a Gmail-polling dispatcher script.
-UptimeRobot's native Telegram channel makes that script unnecessary. Future
-sessions should default to the native channel when a service offers one,
-rather than building Gmail-poll glue.
+Yesterday's earlier version of this section said "use the native Telegram
+channel"; that was wrong, since I had not verified plan tier. Corrected
+2026-05-17. If donation income ever justifies $84-96/year, swap to native:
+real-time vs polling, no Mac-awake dependency.
+
+### Gmail query DSL footgun
+
+`newer_than:30m` does NOT mean 30 minutes — Gmail's `newer_than` only
+supports `d` (days), `m` (MONTH, not minutes), `y` (years). For minute-level
+filtering use `after:<epoch_seconds>`. For our dispatcher, `newer_than:1d`
+is fine since dedup via state catches re-runs.
+
+Hit this on 2026-05-17 first run — `newer_than:30m` matched April history
+and dispatched 4 stale DOWN alerts before I caught it. Always `--dry-run`
+the dispatcher first after editing a query.
+
+### Adding a new project to dispatch
+
+In `daily_checkup/registry.yaml`, under that project's stanza:
+
+```yaml
+    dispatch_rules:
+      - query: 'in:inbox from:<sender> subject:"<exact subject>" newer_than:1d'
+        forward_to_bot: vyakunin_<project>_bot
+        prefix: "🚨 <human-readable headline>"
+```
+
+Then **always** run `cd ~/cursor_projects/personal_projects/gmail_dispatcher
+&& uv run python server.py --dry-run` once to verify the query matches what
+you expect before the next cron tick.
 
 ## Rule: Check This Inventory Before Answering "Do We Have X?"
 
