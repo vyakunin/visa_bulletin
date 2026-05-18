@@ -1,6 +1,8 @@
 {% extends "webapp/base.html" %}
 {% load humanize %}
 
+{% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
+
 {% block container_class %}salary-container{% endblock %}
 
 {% block extra_head %}
@@ -123,6 +125,13 @@
 <main>
     <div class="row">
         <div class="col-12">
+            {# Dynamic H1 + intro echo the active filter set so the landed   #}
+            {# page reflects the SERP snippet — see _build_salary_seo.       #}
+            <h1 class="h3 mb-2">{{ page_heading }}</h1>
+            {% if page_intro %}
+            <p class="text-muted mb-4">{{ page_intro }}</p>
+            {% endif %}
+
             <!-- Search Card -->
             <div class="card search-card mb-4">
                 <div class="card-header">
