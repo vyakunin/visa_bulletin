@@ -1,6 +1,9 @@
 """Salary and worksite search views."""
 
 import hashlib
+import json
+from datetime import date as _date
+from typing import NamedTuple
 
 from django.conf import settings
 from django.core.cache import cache
@@ -31,6 +34,297 @@ from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
+
+_STATIC_PAGE_TITLE = "H-1B & PERM Salary Database | U.S. Immigration Data"
+_STATIC_PAGE_DESCRIPTION = (
+    "Search H-1B and PERM salary data from official DOL disclosure files. "
+    "Find salaries by role, employer, and location."
+)
+_STATIC_PAGE_HEADING = "H-1B & Green Card Salary Database"
+# SERP meta-description cap — Google currently truncates at ~155–160 chars.
+_DESCRIPTION_MAX_CHARS = 165
+
+
+class _SalarySEO(NamedTuple):
+    """SEO/SERP fields for the salary search page, dynamic on active filters.
+
+    page_intro is None when the page should render no intro paragraph
+    (currently only on the bare /salaries/ landing). structured_data is a
+    JSON-LD string (pre-escaped for <script> context) or None.
+    """
+
+    page_title: str
+    page_description: str
+    page_heading: str
+    page_intro: str | None
+    structured_data: str | None
+
+
+def _program_label(program_filter: str) -> str:
+    """Human-readable program label for SEO copy ('h1b' → 'H-1B')."""
+    return {
+        "h1b": "H-1B",
+        "perm": "Green Card (PERM)",
+    }.get(program_filter, "H-1B & PERM")
+
+
+def _format_money(amount) -> str | None:
+    """Format a numeric salary as $123,456, or None if unset/non-numeric."""
+    if amount is None:
+        return None
+    try:
+        return f"${float(amount):,.0f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _embed_jsonld(payload: dict) -> str:
+    """Serialize a JSON-LD payload safely for embedding in a <script> tag.
+
+    Escapes the four characters that can break out of a <script> context
+    (<, >, &, and the U+2028/U+2029 line terminators) per the OWASP JSON-in-
+    HTML guidance. Without this, an employer name containing literal
+    '</script>' would terminate the surrounding tag.
+    """
+    raw = json.dumps(payload, ensure_ascii=False)
+    return (
+        raw.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+
+
+def _build_dataset_jsonld(
+    *,
+    employer_name: str,
+    canonical_url: str,
+    total_results: int,
+    avg_salary,
+    min_salary,
+    max_salary,
+) -> str:
+    """schema.org Dataset payload for an employer-scoped salary page."""
+    avg_str = _format_money(avg_salary)
+    min_str = _format_money(min_salary)
+    max_str = _format_money(max_salary)
+    avg_clause = f" Average {avg_str}." if avg_str else ""
+    range_clause = (
+        f" Range {min_str}–{max_str}." if (min_str and max_str) else ""
+    )
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": f"{employer_name} H-1B & PERM Salary Records",
+        "description": (
+            f"{total_results:,} H-1B and PERM salary records at "
+            f"{employer_name}, filed with the U.S. Department of Labor."
+            f"{avg_clause}{range_clause}"
+        ),
+        "url": canonical_url,
+        "keywords": (
+            f"H-1B salary, PERM salary, green card salary, "
+            f"{employer_name}, visa sponsorship"
+        ),
+        "creator": {
+            "@type": "Organization",
+            "name": "U.S. Department of Labor",
+            "url": "https://www.dol.gov",
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "U.S. Immigration Data",
+            "url": "https://visa-bulletin.us",
+        },
+        "isAccessibleForFree": True,
+        "license": "https://www.usa.gov/government-works",
+        "dateModified": _date.today().isoformat(),
+    }
+    return _embed_jsonld(payload)
+
+
+def _scope_clause(
+    *,
+    employer_label: str,
+    query_label: str,
+    state_label: str,
+    fiscal_year_filter,
+    filing_year_filter,
+) -> str:
+    """Compose the scope half of the meta description ('at X for "y" in CA')."""
+    bits: list[str] = []
+    if employer_label:
+        bits.append(f"at {employer_label}")
+    if query_label:
+        bits.append(f'for "{query_label}"')
+    if state_label:
+        bits.append(f"in {state_label}")
+    if fiscal_year_filter:
+        bits.append(f"in fiscal year {fiscal_year_filter}")
+    elif filing_year_filter:
+        bits.append(f"filed in {filing_year_filter}")
+    return " ".join(bits)
+
+
+def _build_dynamic_title(
+    *,
+    employer_label: str,
+    query_label: str,
+    state_label: str,
+    program_filter: str,
+    fiscal_year_filter,
+    filing_year_filter,
+) -> str:
+    """Pick a SERP-friendly title shape from the active filter combination."""
+    if employer_label and query_label:
+        return f"{query_label} at {employer_label} — H-1B & PERM Salaries"
+    if employer_label:
+        return f"{employer_label} — H-1B & PERM Salary Records"
+    if query_label and state_label:
+        return f"{query_label} Salaries in {state_label} — H-1B & PERM"
+    if state_label:
+        return f"{state_label} H-1B & PERM Salary Data"
+    if query_label:
+        return f"{query_label} Salaries — H-1B & PERM Database"
+    if fiscal_year_filter:
+        return f"FY{fiscal_year_filter} H-1B & PERM Salary Data"
+    if filing_year_filter:
+        return f"{filing_year_filter} H-1B & PERM Salary Filings"
+    if program_filter:
+        return f"{_program_label(program_filter)} Salary Data | U.S. Immigration Data"
+    return _STATIC_PAGE_TITLE
+
+
+def _build_dynamic_heading(
+    *,
+    employer_label: str,
+    query_label: str,
+    state_label: str,
+) -> str:
+    """Pick an H1 heading that mirrors the title but reads as a page header."""
+    if employer_label and query_label:
+        return f"{query_label} salaries at {employer_label}"
+    if employer_label:
+        return f"{employer_label} salary records"
+    if query_label and state_label:
+        return f"{query_label} salaries in {state_label}"
+    if state_label:
+        return f"{state_label} H-1B & PERM salaries"
+    if query_label:
+        return f"{query_label} salaries"
+    return "Search results"
+
+
+def _build_salary_seo(
+    *,
+    has_filters: bool,
+    query: str,
+    employer_filter: str,
+    matched_cluster,
+    state_filter: str,
+    program_filter: str,
+    fiscal_year_filter,
+    filing_year_filter,
+    total_results: int,
+    avg_salary,
+    min_salary,
+    max_salary,
+    canonical_url: str,
+    page_url: str,
+    state_name_map: dict[str, str],
+) -> _SalarySEO:
+    """Compute dynamic SEO fields so the SERP snippet and landed page both
+    echo the searcher's exact query when filters are active. Bare /salaries/
+    keeps the static copy so the high-impression landing page is unchanged.
+    """
+    if not has_filters:
+        return _SalarySEO(
+            page_title=_STATIC_PAGE_TITLE,
+            page_description=_STATIC_PAGE_DESCRIPTION,
+            page_heading=_STATIC_PAGE_HEADING,
+            page_intro=None,
+            structured_data=None,
+        )
+
+    employer_label = (
+        matched_cluster.canonical_name
+        if matched_cluster is not None
+        else employer_filter.strip()
+    )
+    query_label = query.strip()
+    state_label = state_name_map.get(state_filter.upper(), "") if state_filter else ""
+    program_label = _program_label(program_filter)
+
+    page_title = _build_dynamic_title(
+        employer_label=employer_label,
+        query_label=query_label,
+        state_label=state_label,
+        program_filter=program_filter,
+        fiscal_year_filter=fiscal_year_filter,
+        filing_year_filter=filing_year_filter,
+    )
+    page_heading = _build_dynamic_heading(
+        employer_label=employer_label,
+        query_label=query_label,
+        state_label=state_label,
+    )
+    scope = _scope_clause(
+        employer_label=employer_label,
+        query_label=query_label,
+        state_label=state_label,
+        fiscal_year_filter=fiscal_year_filter,
+        filing_year_filter=filing_year_filter,
+    )
+    count_label = f"{total_results:,}" if total_results else "No"
+    avg_str = _format_money(avg_salary)
+    min_str = _format_money(min_salary)
+    max_str = _format_money(max_salary)
+
+    base_clause = (
+        f"{count_label} {program_label} salary records {scope}".rstrip()
+    )
+    avg_clause = f" Average {avg_str}." if avg_str else ""
+    range_clause = (
+        f" Range {min_str}–{max_str}." if (min_str and max_str) else ""
+    )
+    source_clause = " From official U.S. Department of Labor disclosure data."
+
+    page_description = (
+        f"{base_clause}.{avg_clause}{range_clause}{source_clause}"
+    )
+    if len(page_description) > _DESCRIPTION_MAX_CHARS:
+        # Drop the source clause first; keep the data-bearing parts.
+        page_description = (
+            f"{base_clause}.{avg_clause}{range_clause}".strip()
+        )
+
+    page_intro = (
+        f"{count_label} {program_label} records {scope}, sourced from "
+        f"U.S. Department of Labor disclosures."
+    ).strip()
+
+    # Dataset JSON-LD only fires when an employer scope is present — that's
+    # the page Google may surface as a structured "Dataset" rich result.
+    structured_data = None
+    if employer_label:
+        structured_data = _build_dataset_jsonld(
+            employer_name=employer_label,
+            canonical_url=page_url,
+            total_results=total_results,
+            avg_salary=avg_salary,
+            min_salary=min_salary,
+            max_salary=max_salary,
+        )
+
+    return _SalarySEO(
+        page_title=page_title,
+        page_description=page_description,
+        page_heading=page_heading,
+        page_intro=page_intro,
+        structured_data=structured_data,
+    )
+
 
 # Cap on how many cluster ids we resolve from a free-text employer search
 # before handing them to the salary_record filter. With the trigram GIN, a
@@ -364,6 +658,28 @@ def salary_search_view(request):
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
 
+    # Dynamic SEO — title / description / H1 echo the active filter set so the
+    # SERP snippet and landed page both reflect the searcher's exact query.
+    # See _build_salary_seo for the per-filter copy shapes.
+    canonical_url = request.build_absolute_uri(reverse("salary_search"))
+    seo = _build_salary_seo(
+        has_filters=has_filters,
+        query=query,
+        employer_filter=employer_filter,
+        matched_cluster=matched_cluster,
+        state_filter=state_filter,
+        program_filter=program_filter,
+        fiscal_year_filter=fiscal_year_filter,
+        filing_year_filter=filing_year_filter,
+        total_results=total_results or 0,
+        avg_salary=stats["avg_salary"],
+        min_salary=stats["min_salary"],
+        max_salary=stats["max_salary"],
+        canonical_url=canonical_url,
+        page_url=request.build_absolute_uri(),
+        state_name_map={code: name for code, name in US_STATES},
+    )
+
     # Use select_related for employer and job title cluster slugs (profile links)
     # Use only() to reduce data loaded - we only need these fields for the list view
     records = (
@@ -430,10 +746,13 @@ def salary_search_view(request):
         "has_pagination": pagination["total_pages"] > 1,
         "pagination_query": build_pagination_query_string(params),
         "page_range": pagination["page_range"],
-        # SEO
-        "page_title": "H-1B & PERM Salary Database | U.S. Immigration Data",
-        "page_description": "Search H-1B and PERM salary data from official DOL disclosure files. Find salaries by role, employer, and location.",
-        "canonical_url": request.build_absolute_uri(reverse("salary_search")),
+        # SEO (dynamic — see _build_salary_seo)
+        "page_title": seo.page_title,
+        "page_description": seo.page_description,
+        "page_heading": seo.page_heading,
+        "page_intro": seo.page_intro,
+        "structured_data": seo.structured_data,
+        "canonical_url": canonical_url,
         # Autocomplete URLs (shared component used for both Job Title and Employer)
         "company_autocomplete_url": request.build_absolute_uri(
             reverse("company_autocomplete")

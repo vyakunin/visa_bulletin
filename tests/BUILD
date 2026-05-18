@@ -408,6 +408,7 @@ py_test(
         requirement("Django"),
         requirement("asgiref"),
         requirement("sqlparse"),
+        requirement("psycopg2_binary"),
     ],
     python_version = "PY3",
     srcs_version = "PY3",
