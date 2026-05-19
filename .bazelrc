@@ -42,3 +42,11 @@ startup --host_jvm_args=-XX:+UseParallelGC
 test --spawn_strategy=local
 test --flaky_test_attempts=2
 
+# Inline XML generation instead of a separate subprocess.
+# Why: the standalone generate-xml.sh wrapper uses a multi-byte sed regex that
+# segfaults intermittently on macOS BSD sed under full-suite parallelism — the
+# tests themselves pass (exit 0) but the wrapper crashes and bazel reports
+# the whole run failed. Inlining XML generation into the test runner bypasses
+# the buggy subprocess entirely. No effect on Linux/CI.
+test --noexperimental_split_xml_generation
+
