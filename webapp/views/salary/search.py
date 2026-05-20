@@ -8,6 +8,7 @@ from typing import NamedTuple
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Avg, Count, Max, Min
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 
@@ -27,6 +28,7 @@ from lib.utils.filter_utils import (
 )
 from lib.utils.location_utils import US_STATES
 from lib.utils.pagination import (
+    MAX_PAGE,
     build_pagination_query_string,
     calculate_pagination_info,
 )
@@ -34,6 +36,11 @@ from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
+
+_PAGE_CAP_GONE_BODY = (
+    "This page is beyond the listing depth cap (page=100). "
+    "Use the filters at /salaries/ or /worksites/ to narrow your search."
+)
 
 _STATIC_PAGE_TITLE = "H-1B & PERM Salary Database | U.S. Immigration Data"
 _STATIC_PAGE_DESCRIPTION = (
@@ -462,6 +469,9 @@ def salary_search_view(request):
     except (ValueError, TypeError):
         page = 1
 
+    if page > MAX_PAGE:
+        return HttpResponse(_PAGE_CAP_GONE_BODY, status=410, content_type="text/plain")
+
     # Resolve the employer slug to a real cluster up front. If the slug doesn't
     # match anything (stale link, edited URL), drop it and fall back to the
     # text path so the user still gets results.
@@ -813,7 +823,13 @@ def worksite_search_view(request):
     city_filter = cleaned_data.get("city", "") or ""
     program_filter = cleaned_data.get("program", "") or ""
     year_filter = cleaned_data.get("year")
-    page = cleaned_data.get("page", 1) or 1
+    try:
+        page = cleaned_data.get("page") or int(request.GET.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
+
+    if page > MAX_PAGE:
+        return HttpResponse(_PAGE_CAP_GONE_BODY, status=410, content_type="text/plain")
 
     # Build params dict for compatibility with existing code
     params = {

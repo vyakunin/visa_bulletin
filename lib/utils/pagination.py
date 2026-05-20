@@ -6,6 +6,16 @@ Keyset (cursor) pagination uses opaque cursor strings; format is internal.
 
 import base64
 
+# Hard cap on page number for offset-based listing pages. Postgres has to
+# materialize and sort `(page - 1) * per_page` rows just to skip them — at
+# page=1263 that's 63k+ sorted rows on a filtered query, which is what
+# pushed /salaries/ and /worksites/ into shm exhaustion under bot crawls.
+# Past page 100 the long tail is uninteresting to real users (no one
+# scrolls 5000 rows deep into a salary list) and the URLs only exist
+# because crawlers walk pagination links. Returning 410 Gone above this
+# cap kills the bot pattern + the slow-tail in one move.
+MAX_PAGE = 100
+
 
 def encode_keyset_cursor(order_value: int, pk: int, direction: str = "next") -> str:
     """

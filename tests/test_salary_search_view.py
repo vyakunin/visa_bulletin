@@ -237,3 +237,43 @@ class SalarySearchSEOTest(TestCase):
 
         description = response.context["page_description"]
         self.assertLessEqual(len(description), 165, description)
+
+
+class SalarySearchPageCapTest(TestCase):
+    """Deep-OFFSET cap: bots that crawl /salaries/?page=1263 used to drive
+    Postgres to materialize 63k+ sorted rows per request, exhausting shared
+    memory. Past page=100 we return 410 Gone instead.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+
+    def test_page_100_still_renders(self):
+        # The cap is inclusive: page=100 is the last allowed listing page.
+        response = self.client.get(reverse("salary_search"), {"page": "100"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_page_101_returns_410(self):
+        response = self.client.get(reverse("salary_search"), {"page": "101"})
+        self.assertEqual(response.status_code, 410)
+
+    def test_bot_crawl_page_1263_returns_410(self):
+        # Real-world bot-crawl pattern that triggered shm exhaustion.
+        response = self.client.get(reverse("salary_search"), {"page": "1263"})
+        self.assertEqual(response.status_code, 410)
+
+    def test_page_cap_with_filters_returns_410(self):
+        response = self.client.get(
+            reverse("salary_search"),
+            {"page": "500", "q": "Engineer", "state": "CA"},
+        )
+        self.assertEqual(response.status_code, 410)
+
+    def test_worksite_page_cap_returns_410(self):
+        response = self.client.get(reverse("worksite_search"), {"page": "1263"})
+        self.assertEqual(response.status_code, 410)
+
+    def test_worksite_page_100_still_renders(self):
+        response = self.client.get(reverse("worksite_search"), {"page": "100"})
+        self.assertEqual(response.status_code, 200)
