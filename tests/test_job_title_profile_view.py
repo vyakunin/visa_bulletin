@@ -1254,5 +1254,84 @@ class TestJobTitleDirectoryCanonical(TestCase):
         self.assertIn('<link rel="canonical"', content)
 
 
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "test_similar_clusters_cache",
+        }
+    }
+)
+class TestSimilarClustersCaching(TestCase):
+    """Per-cluster cache for the icontains lookup that builds "Similar Job
+    Titles." Bot crawls used to fire the SeqScan on every /job-title/<slug>/
+    hit; the cache makes second-and-onwards hits free.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.target = JobTitleCluster.objects.create(
+            canonical_title="Software Engineer",
+            slug="software-engineer-cache-test",
+            total_filings=300,
+        )
+        # Three siblings that share the first word "Software" — should appear
+        # in the similar list, ordered by total_filings desc.
+        for slug, title, filings in [
+            ("software-developer-cache", "Software Developer", 250),
+            ("software-architect-cache", "Software Architect", 180),
+            ("software-tester-cache", "Software Tester", 90),
+        ]:
+            JobTitleCluster.objects.create(
+                canonical_title=title, slug=slug, total_filings=filings,
+            )
+        # Unrelated cluster — must NOT appear in the result.
+        JobTitleCluster.objects.create(
+            canonical_title="Data Analyst",
+            slug="data-analyst-cache",
+            total_filings=500,
+        )
+
+    def test_first_call_queries_db_second_call_hits_cache(self):
+        from webapp.views.job_titles.profile import _get_similar_clusters
+
+        with self.assertNumQueries(1):
+            first = _get_similar_clusters(self.target)
+        with self.assertNumQueries(0):
+            second = _get_similar_clusters(self.target)
+
+        self.assertEqual([c.slug for c in first], [c.slug for c in second])
+        slugs = [c.slug for c in first]
+        self.assertIn("software-developer-cache", slugs)
+        self.assertNotIn("data-analyst-cache", slugs)
+        self.assertNotIn(self.target.slug, slugs)
+
+    def test_results_ordered_by_total_filings_desc(self):
+        from webapp.views.job_titles.profile import _get_similar_clusters
+
+        result = _get_similar_clusters(self.target)
+
+        slugs = [c.slug for c in result]
+        self.assertEqual(
+            slugs,
+            [
+                "software-developer-cache",
+                "software-architect-cache",
+                "software-tester-cache",
+            ],
+        )
+
+    def test_empty_canonical_title_returns_empty_list(self):
+        from webapp.views.job_titles.profile import _get_similar_clusters
+
+        empty_cluster = JobTitleCluster.objects.create(
+            canonical_title="", slug="empty-cluster-cache", total_filings=0,
+        )
+        with self.assertNumQueries(0):
+            self.assertEqual(_get_similar_clusters(empty_cluster), [])
+
+
 if __name__ == "__main__":
     unittest.main()

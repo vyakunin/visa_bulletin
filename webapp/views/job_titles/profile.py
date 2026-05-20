@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import F
 from django.http import Http404
 from django.shortcuts import redirect, render
@@ -15,6 +16,45 @@ from lib.business.salary.job_title_stats import (
     get_related_job_titles,
 )
 from models.job_title import JobTitle, JobTitleCluster
+
+# Cache key version — bump to invalidate all similar-cluster cache entries
+# without flushing the rest of the cache (e.g. after re-clustering changes
+# canonical_title for many clusters).
+_SIMILAR_CLUSTERS_CACHE_VERSION = 1
+# Day-long TTL: the canonical_title universe only changes when the clustering
+# pipeline runs, and a one-day staleness on a "Related Job Titles" sidebar is
+# imperceptible.
+_SIMILAR_CLUSTERS_CACHE_TTL = 60 * 60 * 24
+
+
+def _get_similar_clusters(cluster: JobTitleCluster) -> list[JobTitleCluster]:
+    """Return up to 5 other clusters whose canonical_title shares the first
+    word of this cluster's title.
+
+    Cached per-cluster because the underlying icontains lookup is a SeqScan
+    on canonical_title (no trigram index on the column yet) and the answer
+    is stable between clustering pipeline runs. Bot crawls walk every
+    /job-title/<slug>/ — without this cache, every crawl fires the SeqScan
+    and produces the slow-tail the operator sees in nginx logs.
+    """
+    if not cluster.canonical_title:
+        return []
+    cache_key = (
+        f"job_title_similar.v{_SIMILAR_CLUSTERS_CACHE_VERSION}.{cluster.id}"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    first_word = cluster.canonical_title.split()[0]
+    similar = list(
+        JobTitleCluster.objects.filter(slug__isnull=False)
+        .exclude(id=cluster.id)
+        .filter(canonical_title__icontains=first_word)
+        .annotate(total_count=F("total_filings"))
+        .order_by("-total_count")[:5]
+    )
+    cache.set(cache_key, similar, _SIMILAR_CLUSTERS_CACHE_TTL)
+    return similar
 
 
 def _cache_profile_view(timeout_seconds: int):
@@ -115,19 +155,9 @@ def job_title_profile_view(request, slug: str):
     # Build chart data
     chart_data = build_job_title_profile_charts(stats, cluster.canonical_title)
 
-    # Get similar job titles (from other clusters with similar names)
-    similar_clusters = []
-    if cluster.canonical_title:
-        # Find clusters with similar canonical titles
-        similar_clusters = list(
-            JobTitleCluster.objects.filter(slug__isnull=False)
-            .exclude(id=cluster.id)
-            .filter(
-                canonical_title__icontains=cluster.canonical_title.split()[0]
-            )  # Match first word
-            .annotate(total_count=F("total_filings"))
-            .order_by("-total_count")[:5]
-        )
+    # Get similar job titles (from other clusters with similar names) —
+    # cached per-cluster; see _get_similar_clusters.
+    similar_clusters = _get_similar_clusters(cluster)
 
     # Build SEO metadata (use cluster.total_filings so it matches directory)
     total_filings = cluster.total_filings or 0
