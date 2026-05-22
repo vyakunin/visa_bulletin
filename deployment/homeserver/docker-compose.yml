@@ -72,19 +72,13 @@ services:
       - ./staticfiles:/usr/share/nginx/static:ro
     ports:
       - "8080:80"   # LAN-side access for testing; cloudflared uses internal nginx:80
-    networks: [vb]
+    networks: [vb, vb_public]
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: vb_cloudflared
-    restart: unless-stopped
-    depends_on:
-      - nginx
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
-    networks: [vb]
+  # Cloudflare Tunnel connector lives in /opt/stack/_shared/docker-compose.yml
+  # (shared_cloudflared). It reaches vb_nginx via the external vb_public network.
 
 networks:
   vb:
     driver: bridge
+  vb_public:
+    external: true

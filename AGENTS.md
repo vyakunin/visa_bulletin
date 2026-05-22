@@ -1,8 +1,8 @@
 # Critical Development Rules
 
-Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+. **Production runs on a self-hosted Dell Wyse 5070 ("homeserver") behind Cloudflare Tunnel** (migrated from AWS Lightsail on 2026-05-08; see `.cursor/rules/deployment.mdc` and `homeserver.mdc` for topology). Lightsail kept reachable on `44.209.204.255` for rollback during burn-in.
+Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+. **Production runs on a self-hosted Dell Wyse 5070 ("homeserver") behind Cloudflare Tunnel** (migrated from AWS Lightsail on 2026-05-08; see `.claude/rules/deployment.md` and `homeserver.md` for topology). Lightsail kept reachable on `44.209.204.255` for rollback during burn-in.
 
-General rules (coding style, git, testing, logging, etc.) are symlinked from `~/.cursor/shared_rules/`. See `rules_management.mdc` for the shared rules structure and new-project setup.
+General rules (coding style, git, testing, logging, etc.) are in `~/.claude/rules/`. See `rules_management.md` for the shared rules structure and new-project setup.
 
 ---
 
@@ -110,7 +110,7 @@ ss -tlnp | grep 8000
 
 Understand which container is *actually serving traffic* before touching anything. Legacy containers may depend on Docker DNS (`redis` hostname). Stopping ANY container on the shared network can break DNS for the serving container.
 
-`docker pull` and `docker logs` are always safe. `docker-compose up -d` is **not**. See `.cursor/rules/deployment.mdc` for the full pre-flight checklist.
+`docker pull` and `docker logs` are always safe. `docker-compose up -d` is **not**. See `.claude/rules/deployment.md` for the full pre-flight checklist.
 
 ---
 
@@ -127,7 +127,7 @@ ssh production "systemctl status app"
 ssh -i ~/.ssh/key.pem user@192.168.1.100
 ```
 
-Project aliases: `homeserver.local` (current production, Wyse 5070, key `~/.ssh/homeserver_ed25519`, user `vyakunin`); `prod_2Gb_vm`/`staging_2Gb_vm`/`backup_0_5Gb_vm` (old Lightsail, kept for rollback during burn-in only). See `deployment.mdc` for details.
+Project aliases: `homeserver.local` (current production, Wyse 5070, key `~/.ssh/homeserver_ed25519`, user `vyakunin`); `prod_2Gb_vm`/`staging_2Gb_vm`/`backup_0_5Gb_vm` (old Lightsail, kept for rollback during burn-in only). See `deployment.md` for details.
 
 ---
 
@@ -146,7 +146,7 @@ Project aliases: `homeserver.local` (current production, Wyse 5070, key `~/.ssh/
 
 This project can plug into the morning digest pipeline run from `~/cursor_projects/personal_projects/daily_checkup/` (Claude Code skill: `/daily_checkup`).
 
-**To opt in:** implement a stdio MCP server exposing a `daily_checkup` tool per the contract at `~/.cursor/shared_rules/daily_checkup.mdc`, then add the project to `~/cursor_projects/personal_projects/daily_checkup/registry.yaml`. **Not yet implemented.**
+**To opt in:** implement a stdio MCP server exposing a `daily_checkup` tool per the contract at `~/.claude/rules/daily_checkup.md`, then add the project to `~/cursor_projects/personal_projects/daily_checkup/registry.yaml`. **Not yet implemented.**
 
 **Likely signals to surface from this project:**
 
