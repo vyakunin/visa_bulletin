@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import shlex
+import socket
 import subprocess
 import sys
 from collections import defaultdict
@@ -103,6 +104,14 @@ TRAFFIC_DROP_YELLOW_PCT = -30
 TRAFFIC_DROP_RED_PCT = -60
 
 GC_TIMEOUT = 15
+# GoatCounter sporadically returns 404 (and 429) for valid requests, especially
+# on /stats/total for a fresh time window — same symptom whether the caller is
+# concurrent or the upstream is shedding. Linear 3×1s (6s total) wasn't enough
+# on bad days (2 misses out of 17 morning runs). Exponential 1/2/4/8/16
+# tolerates ~31s of upstream churn before giving up.
+GC_RETRY_STATUSES = (404, 429, 502, 503, 504)
+GC_RETRIES = 5
+GC_RETRY_BACKOFF_S = 1.0
 PROBE_TIMEOUT = 8
 
 # Surface buckets — order matters; first match wins. Names are stable keys;
@@ -360,6 +369,11 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
 '
 printf '==SECTION:cloudflared==\n'
 docker inspect vb_cloudflared --format '{{{{.RestartCount}}}}|{{{{.State.Status}}}}' 2>/dev/null
+# Force success: we ran with `set +e` to tolerate per-command failures and
+# collect partial data. Without this, the script's exit code is the last
+# command's rc — e.g. `docker inspect` returns 1 when vb_cloudflared isn't
+# present, which made _run_ssh raise RuntimeError despite a full snapshot.
+exit 0
 """
     return _parse_sectioned(_run_ssh(script, timeout=60))
 
@@ -588,9 +602,31 @@ def _read_gc_token() -> str:
 
 
 async def _gc_get(client: httpx.AsyncClient, path: str, **params) -> dict:
-    r = await client.get(f"{GOATCOUNTER_BASE}{path}", params=params, timeout=GC_TIMEOUT)
-    r.raise_for_status()
-    return r.json()
+    url = f"{GOATCOUNTER_BASE}{path}"
+    last_exc: Exception | None = None
+    for attempt in range(GC_RETRIES + 1):
+        try:
+            r = await client.get(url, params=params, timeout=GC_TIMEOUT)
+            if r.status_code in GC_RETRY_STATUSES and attempt < GC_RETRIES:
+                backoff = GC_RETRY_BACKOFF_S * (2 ** attempt)
+                logger.info("goatcounter %s -> %d, retry %d/%d after %.1fs",
+                            path, r.status_code, attempt + 1, GC_RETRIES, backoff)
+                await asyncio.sleep(backoff)
+                continue
+            r.raise_for_status()
+            return r.json()
+        except (httpx.TransportError, httpx.TimeoutException) as e:
+            last_exc = e
+            if attempt < GC_RETRIES:
+                backoff = GC_RETRY_BACKOFF_S * (2 ** attempt)
+                logger.info("goatcounter %s transport error %s, retry %d/%d after %.1fs",
+                            path, type(e).__name__, attempt + 1, GC_RETRIES, backoff)
+                await asyncio.sleep(backoff)
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("goatcounter retry loop exited without response")
 
 
 def _bucket_path(p: str) -> str:
@@ -698,7 +734,7 @@ async def _call_gsc_tools(calls: list[tuple[str, dict]]) -> list[str]:
     """
     entry = _load_global_mcp("gsc")
     env = {**os.environ, **(entry.get("env") or {})}
-    gsc_cwd = "/Users/vyakunin/cursor_projects/personal_projects/gsc_mcp"
+    gsc_cwd = "/Users/vyakunin/cursor_projects/agent_infra/gsc_mcp"
     params = StdioServerParameters(
         command=entry["command"],
         args=list(entry.get("args") or []),
@@ -809,6 +845,74 @@ async def _gather_gsc() -> dict:
     movers.sort(key=lambda r: -abs(r["delta_clicks"]))
     movers = movers[:8]
 
+    # Per-property (surface) breakdown: same TOP_PROPERTY_SURFACES bucket the
+    # GoatCounter / nginx sections already use. Strips the domain prefix from
+    # the GSC URL before bucketing because _bucket_path expects a site-relative
+    # path. Gives per-surface clicks / impressions / CTR / avg-position with
+    # MoM delta — see feedback request 2026-05-18 "more detailed per property
+    # analysis in check up".
+    def _strip_domain(url: str) -> str:
+        for prefix in ("https://www.visa-bulletin.us", "https://visa-bulletin.us",
+                        "http://www.visa-bulletin.us", "http://visa-bulletin.us"):
+            if url.startswith(prefix):
+                return url[len(prefix):] or "/"
+        return url
+
+    def _agg_by_surface(rows: list[dict]) -> dict[str, dict]:
+        # Weighted aggregation: clicks/impressions sum; position weighted by impressions
+        agg: dict[str, dict] = defaultdict(lambda: {
+            "clicks": 0, "impressions": 0, "pos_weight_num": 0.0, "pos_weight_den": 0,
+        })
+        for r in rows:
+            url = (r.get("keys") or [""])[0]
+            path = _strip_domain(url)
+            surface = _bucket_path(path)
+            clicks = r.get("clicks") or 0
+            impr = r.get("impressions") or 0
+            pos = r.get("position") or 0.0
+            agg[surface]["clicks"] += clicks
+            agg[surface]["impressions"] += impr
+            agg[surface]["pos_weight_num"] += pos * impr
+            agg[surface]["pos_weight_den"] += impr
+        out: dict[str, dict] = {}
+        for surface, d in agg.items():
+            impr = d["impressions"]
+            clicks = d["clicks"]
+            avg_pos = d["pos_weight_num"] / d["pos_weight_den"] if d["pos_weight_den"] else 0.0
+            ctr = (clicks / impr) if impr else 0.0
+            out[surface] = {
+                "clicks": clicks,
+                "impressions": impr,
+                "ctr": ctr,
+                "avg_position": avg_pos,
+            }
+        return out
+
+    surface_this = _agg_by_surface(rows_pages_this)
+    surface_cycle = _agg_by_surface(rows_pages_cycle)
+    all_surfaces = set(surface_this) | set(surface_cycle)
+    surface_breakdown = []
+    for s in all_surfaces:
+        cur = surface_this.get(s, {"clicks": 0, "impressions": 0, "ctr": 0, "avg_position": 0})
+        cyc = surface_cycle.get(s, {"clicks": 0, "impressions": 0, "ctr": 0, "avg_position": 0})
+        if cur["clicks"] + cyc["clicks"] < 2:
+            continue
+        surface_breakdown.append({
+            "surface": s,
+            "clicks_this": cur["clicks"],
+            "clicks_cycle": cyc["clicks"],
+            "impressions_this": cur["impressions"],
+            "impressions_cycle": cyc["impressions"],
+            "ctr_this": cur["ctr"],
+            "ctr_cycle": cyc["ctr"],
+            "pos_this": cur["avg_position"],
+            "pos_cycle": cyc["avg_position"],
+            "delta_clicks": cur["clicks"] - cyc["clicks"],
+        })
+    # Sort by absolute current clicks (most-trafficked surfaces first); ties
+    # broken by delta magnitude so flat surfaces sink below mover.
+    surface_breakdown.sort(key=lambda r: (-r["clicks_this"], -abs(r["delta_clicks"])))
+
     return {
         "this_window": [this_start.isoformat(), this_end.isoformat()],
         "cycle_window": [cycle_start.isoformat(), cycle_end.isoformat()],
@@ -816,6 +920,7 @@ async def _gather_gsc() -> dict:
         "totals_cycle": totals_cycle,
         "top_queries": top_queries,
         "top_movers": movers,
+        "surface_breakdown": surface_breakdown,
     }
 
 
@@ -836,12 +941,29 @@ def _load_global_mcp(name: str) -> dict:
     return entry
 
 
+def _inject_workspace_port(env: dict) -> None:
+    """Give google_workspace a unique free port so parallel spawns don't collide.
+
+    workspace-mcp binds a localhost HTTP server for OAuth callbacks at startup;
+    default 8000. The orchestrator (agent_infra dispatcher) runs personal_projects
+    + visa_bulletin in parallel and both spawn google_workspace independently,
+    racing for :8000 → one fails. Cached refresh tokens mean the callback URL
+    almost never gets hit during normal checkups, so a non-8000 port is safe here.
+    """
+    if env.get("WORKSPACE_MCP_PORT") or env.get("PORT"):
+        return
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        env["WORKSPACE_MCP_PORT"] = str(s.getsockname()[1])
+
+
 async def _call_gw_tools(calls: list[tuple[str, dict]]) -> list[str]:
     """Spawn one google_workspace MCP, run multiple tool calls reusing the
     same session, return raw text payloads.
     """
     entry = _load_global_mcp("google_workspace")
     env = {**os.environ, **(entry.get("env") or {})}
+    _inject_workspace_port(env)
     params = StdioServerParameters(
         command=entry["command"],
         args=list(entry.get("args") or []),
@@ -1464,6 +1586,27 @@ def _section_gsc(gsc: dict) -> tuple[dict | None, str]:
             lines.append(
                 f"- `{url[:70]}`: {m['clicks_this']} vs {m['clicks_cycle']} clicks "
                 f"({sign}{m['delta_clicks']})"
+            )
+    if gsc.get("surface_breakdown"):
+        lines.append("")
+        lines.append("**Per-property breakdown (by site surface):**")
+        lines.append("_Property = dashboard / predictions / salaries / employer_profile / "
+                     "employer_directory / employer_rankings / job_title_profile / "
+                     "job_title_directory / seo_landing_fam / blog / worksites / static_pages / other._")
+        for sb in gsc["surface_breakdown"][:14]:
+            ctr_this = sb["ctr_this"] * 100
+            ctr_cycle = sb["ctr_cycle"] * 100
+            delta = sb["delta_clicks"]
+            sign = "+" if delta >= 0 else ""
+            pos_str = ""
+            if sb["pos_this"]:
+                pos_delta = (sb["pos_this"] - sb["pos_cycle"]) if sb["pos_cycle"] else 0
+                pos_sign = "+" if pos_delta >= 0 else ""
+                pos_str = f", pos {sb['pos_this']:.1f} ({pos_sign}{pos_delta:.1f})"
+            lines.append(
+                f"- **{sb['surface']}** — clicks {sb['clicks_this']} vs {sb['clicks_cycle']} "
+                f"({sign}{delta}), impr {_humanize(sb['impressions_this'])} vs "
+                f"{_humanize(sb['impressions_cycle'])}, CTR {ctr_this:.1f}% vs {ctr_cycle:.1f}%{pos_str}"
             )
     importance = {"red": 5, "yellow": 4, "green": 3}[status]
     title = "SEO (Google Search Console, 7d vs 4 weeks ago)"
