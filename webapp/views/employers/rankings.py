@@ -212,7 +212,7 @@ def employer_rankings_view(request):
         f"{'LCA and PERM' if program == 'all' else 'PERM' if program == 'perm' else 'LCA'} "
         "disclosure files."
     )
-    canonical_url = request.build_absolute_uri()
+    canonical_url = request.build_absolute_uri(request.path)
 
     structured_data = {
         "@context": "https://schema.org",

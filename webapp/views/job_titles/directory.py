@@ -145,7 +145,7 @@ def job_title_directory_view(request):
         "page_range": pagination["page_range"],
         "page_title": "H-1B Salaries by Job Title — LCA & PERM Database",
         "page_description": "Average H-1B and PERM sponsorship salaries by job title, from U.S. DOL LCA filings. Browse occupations, salary ranges, and top sponsoring employers.",
-        "canonical_url": request.build_absolute_uri(),
+        "canonical_url": request.build_absolute_uri(request.path),
         "job_title_autocomplete_url": request.build_absolute_uri(
             reverse("job_title_autocomplete")
         ),
