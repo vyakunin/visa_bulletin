@@ -36,12 +36,14 @@ py_library(
     deps = [
         ":cutoff_projection",
         ":visa_class_utils",
+        "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models/enums:action_type",
         "//models/enums:country",
         "//models/enums:employment_preference",
         "//models/enums:family_preference",
         "//models/enums:visa_category",
+        requirement("Django"),
     ],
 )
 

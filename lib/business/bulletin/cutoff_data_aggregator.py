@@ -9,12 +9,34 @@ from datetime import date
 from itertools import groupby
 from operator import attrgetter
 
+from django.core.cache import cache
+
 from lib.business.bulletin.cutoff_projection import calculate_projection
+from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.employment_preference import EmploymentPreference
 from models.enums.family_preference import FamilyPreference
 from models.enums.visa_category import VisaCategory
 from models.visa_cutoff_date import VisaCutoffDate
+
+_LATEST_BULLETIN_MONTH_CACHE_KEY = "seo_latest_bulletin_month_v1"
+_LATEST_BULLETIN_MONTH_TTL_SECONDS = 3600  # bulletin publishes monthly; 1h is plenty
+
+
+def _latest_bulletin_month() -> date | None:
+    """Return the publication_date of the newest published bulletin in the DB,
+    cached for an hour. Used by SEO titles so the page reflects the bulletin
+    month users are actually searching for (e.g. "EB-2 China June 2026") even
+    after the calendar month has rolled past it. Falls back to today() when
+    the DB is empty or unreachable.
+    """
+    cached = cache.get(_LATEST_BULLETIN_MONTH_CACHE_KEY)
+    if cached:
+        return cached
+    latest = Bulletin.objects.order_by("-publication_date").values_list("publication_date", flat=True).first()
+    if latest:
+        cache.set(_LATEST_BULLETIN_MONTH_CACHE_KEY, latest, _LATEST_BULLETIN_MONTH_TTL_SECONDS)
+    return latest
 
 
 @dataclass
@@ -255,14 +277,25 @@ def _build_page_title(
     filter UI is right at the top — but the title now matches what they
     searched for, which should lift CTR materially.
     """
-    current_year = date.today().year
-    current_month_name = date.today().strftime("%B")
+    # Anchor SEO month/year on the latest *published bulletin*, not today's
+    # calendar date. Users searching "EB-2 China June 2026" want the page to
+    # match the bulletin month they're tracking; using today() would still
+    # say "May 2026" for two weeks after the June bulletin lands.
+    bulletin_month = _latest_bulletin_month() or date.today()
+    bulletin_year = bulletin_month.year
+    bulletin_month_name = bulletin_month.strftime("%B")
 
     if is_root:
         return "U.S. Visa Bulletin — Priority Dates, Predictions & Tracker"
     if country == Country.ALL.value and category == VisaCategory.FAMILY_SPONSORED.value:
-        return f"Visa Bulletin Predictions {current_year} - Priority Date Tracker"
-    return f"{country_display} {category_display} Visa Bulletin Predictions & Tracker - {current_month_name} {current_year}"
+        return f"Visa Bulletin Predictions {bulletin_year} - Priority Date Tracker"
+    # Country-specific: lead with the high-intent fragment users type into
+    # Google ("EB-2 China Priority Date — June 2026") so the SERP snippet
+    # matches the query verbatim. Brand suffix kept for recognition.
+    return (
+        f"{country_display} {category_display} Priority Date — "
+        f"{bulletin_month_name} {bulletin_year} Visa Bulletin & Predictions"
+    )
 
 
 def _build_page_description(category_display: str, country_display: str, is_root: bool = False) -> str:
@@ -273,9 +306,11 @@ def _build_page_description(category_display: str, country_display: str, is_root
             "Covers all employment-based (EB-1/2/3/4/5) and family-sponsored (F1–F4) categories "
             "for every country, with month-by-month projections based on the Bulletin Forecast Model."
         )
+    bulletin_month = _latest_bulletin_month() or date.today()
+    bulletin_label = bulletin_month.strftime("%B %Y")
     return (
-        f"Track current priority dates and projections for {country_display} {category_display} visas. "
-        f"View historical trends, see when dates will move, and estimate your green card wait time."
+        f"{bulletin_label} visa bulletin priority dates for {country_display} {category_display}. "
+        f"Current cutoffs, month-over-month movement, and next-bulletin predictions from our forecast model."
     )
 
 
