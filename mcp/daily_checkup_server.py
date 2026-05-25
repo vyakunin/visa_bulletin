@@ -1128,13 +1128,36 @@ def _humanize(n: int | float) -> str:
     return f"{n / 1_000_000:.2f}M"
 
 
+_STAGING_PREFIX = "vb_stg_"
+# Staging stack (vb_stg_*) is brought up on demand for the dual-env validation
+# / DB-refresh dance — see homeserver_visa_bulletin.md. Steady state is
+# "Exited (0)" (cleanly stopped). Only alarm on the prod containers; for
+# staging, alarm only if a container is running-but-unhealthy or exited with
+# a non-zero rc.
+_CLEAN_EXIT_RE = re.compile(r"^Exited \(0\)")
+
+
+def _is_unhealthy(container: dict) -> bool:
+    state = container["state"].lower()
+    status = container["status"]
+    if container["name"].startswith(_STAGING_PREFIX):
+        # Staging: only "running but unhealthy" or "exited non-zero" counts.
+        if state == "running" and "unhealthy" in status.lower():
+            return True
+        if state == "exited" and not _CLEAN_EXIT_RE.match(status):
+            return True
+        return False
+    # Prod: anything not cleanly running is a problem.
+    return state != "running" or "unhealthy" in status.lower()
+
+
 def _section_containers(rows: list[dict]) -> tuple[dict | None, str]:
     """Return (section_dict_or_None, status)."""
     if not rows:
         return ({"title": "Containers UNREACHABLE",
                  "body": "Could not enumerate vb_* containers.",
                  "importance": 5}, "red")
-    down = [c for c in rows if c["state"].lower() != "running" or "unhealthy" in c["status"].lower()]
+    down = [c for c in rows if _is_unhealthy(c)]
     if down:
         body = "\n".join(f"- **{c['name']}** ({c['state']}): {c['status']}" for c in down)
         return ({"title": "Containers DOWN / unhealthy", "body": body, "importance": 5}, "red")
