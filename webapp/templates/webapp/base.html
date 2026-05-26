@@ -188,6 +188,29 @@
     <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"></noscript>
     
     <!-- Analytics (Privacy-focused, GDPR compliant) -->
+    <script>
+        // window.goatcounter must be set BEFORE count.js loads; count.js reads it once at boot.
+        window.goatcounter = window.goatcounter || {};
+
+        // Strip query strings so /employment-based/india/?action_type=final_action and
+        // .../?action_type=dates_for_filing collapse into one path in the Pages dashboard.
+        // Query strings carry view-state, not a different surface.
+        window.goatcounter.path = function(p) { return p.split('?')[0]; };
+
+        // Outbound-link clicks are tracked as GC events (event=true) so they appear in
+        // the Events tab instead of polluting the Pages top-N. Trigger via
+        // [data-gc-event="ext-..."] on the <a> tag — replaces the old
+        // data-goatcounter-click attribute, which submitted clicks as fake pageviews.
+        document.addEventListener('click', function(e) {
+            var t = e.target.closest('[data-gc-event]');
+            if (!t || !window.goatcounter || !window.goatcounter.count) return;
+            window.goatcounter.count({
+                path:  t.getAttribute('data-gc-event'),
+                event: true,
+                title: (t.textContent || '').trim().slice(0, 50) || t.href
+            });
+        });
+    </script>
     {% if analytics_script %}
     {{ analytics_script|safe }}
     {% endif %}
@@ -651,7 +674,7 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-navbar" target="_blank" rel="noopener" style="color: #db61a2;">
+                    <a class="nav-link" href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-navbar" target="_blank" rel="noopener" style="color: #db61a2;">
                         <i class="bi bi-heart-fill"></i> Support
                     </a>
                 </li>
@@ -702,12 +725,12 @@
                 <span class="text-white-50 mx-1 d-none d-sm-inline">|</span>
                 
                 <!-- Support -->
-                <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-footer" target="_blank" rel="noopener"
+                <a href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-footer" target="_blank" rel="noopener"
                    class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
                     <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
                 </a>
                 <small class="text-white-50 ms-1">
-                    <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-footer" target="_blank" rel="noopener" class="footer-link">
+                    <a href="https://github.com/sponsors/vyakunin" data-gc-event="ext-github-sponsors-footer" target="_blank" rel="noopener" class="footer-link">
                         or GitHub Sponsors &rarr;
                     </a>
                 </small>
@@ -921,12 +944,12 @@
                 If this helped you track your dates, buy me a coffee.
             </span>
             <div class="d-flex gap-2 align-items-center flex-wrap">
-                <a href="https://buymeacoffee.com/vyakunin" data-goatcounter-click="ext-buymeacoffee-sticky" target="_blank" rel="noopener"
+                <a href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-sticky" target="_blank" rel="noopener"
                    class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
                     <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
                 </a>
                 <small class="text-muted">
-                    <a href="https://github.com/sponsors/vyakunin" data-goatcounter-click="ext-github-sponsors-sticky" target="_blank" rel="noopener">
+                    <a href="https://github.com/sponsors/vyakunin" data-gc-event="ext-github-sponsors-sticky" target="_blank" rel="noopener">
                         or GitHub Sponsors &rarr;
                     </a>
                 </small>
