@@ -663,6 +663,16 @@ def _build_methodology_content() -> str:
   and where it still falls short.
 </p>
 
+<div class="alert alert-info small mb-4" role="note">
+  <strong>Scope of accuracy claims on this page.</strong>
+  Every MAE / accuracy number below is measured against six focus series:
+  <strong>India EB-1, EB-2, EB-3</strong> and <strong>China EB-1, EB-2, EB-3</strong>.
+  These are the oversubscribed series with non-trivial cutoffs and enough history to backtest.
+  For everything else — Rest-of-World (ROW), Mexico, Philippines, EB-4, EB-5, family-sponsored —
+  the published prediction falls back to a no-change baseline (persistence). The "model" has
+  nothing to add on those series, so don't read the headline MAE numbers as if they cover them.
+</div>
+
 <hr>
 
 <h3>1. Why Linear Extrapolation Fails</h3>
