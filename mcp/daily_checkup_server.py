@@ -27,6 +27,9 @@ Setup:
 from __future__ import annotations
 
 import asyncio
+import csv as csv_mod
+import gzip
+import io
 import json
 import logging
 import os
@@ -35,6 +38,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -112,6 +116,29 @@ GC_TIMEOUT = 15
 GC_RETRY_STATUSES = (404, 429, 502, 503, 504)
 GC_RETRIES = 5
 GC_RETRY_BACKOFF_S = 1.0
+
+# Long-tail accuracy via GC /api/v0/export (per user 2026-05-27): the
+# /stats/hits endpoint is server-side capped at 100 paths regardless of
+# `limit`, which on visa-bulletin.us covers only ~57% of weekly pageviews.
+# The export endpoint is 1/hour rate-limited per token and returns the full
+# per-hit CSV. Cache aggressively so daily checkup + ad-hoc invocations
+# share one export per ~6 hours.
+GC_EXPORT_CACHE_DIR = Path.home() / ".cache" / "vb_daily_checkup"
+GC_EXPORT_CACHE_TTL_S = 6 * 3600
+GC_EXPORT_POLL_INTERVAL_S = 3.0
+# /export jobs on visa-bulletin.us run ~60-90s for the full 350k-hit history;
+# 40 polls × 3s = 120s leaves a comfortable margin without blowing the
+# 60s MCP response budget (the export is fire-and-forget for the *next*
+# checkup — this run still completes if the export doesn't land in time).
+GC_EXPORT_MAX_POLLS = 40
+
+# Watchpoint thresholds for the "non-IND EB vs IND homepage" red flag (user
+# request 2026-05-27): today the homepage template == India EB dashboard.
+# If the rest of EB starts approaching India in views, the default needs
+# revisiting.
+MAIN_ENTRY_NONIND_EB_RATIO_YELLOW = 0.50
+MAIN_ENTRY_NONIND_EB_RATIO_RED = 0.70
+
 PROBE_TIMEOUT = 8
 
 # Surface buckets — order matters; first match wins. Names are stable keys;
@@ -142,6 +169,36 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("api", re.compile(r"^/api/")),
     ("static_meta", re.compile(r"^/(robots\.txt|sitemap\.xml|favicon)")),
 ]
+
+# Finer-grained classifier for the combined "main entry" line (homepage + EB
+# dashboards + FS dashboards). The default SURFACE_PATTERNS lumps `/` and
+# `/employment-based/*` into one `dashboard` bucket — correct for traffic
+# aggregation, but loses the IND-vs-non-IND split we need to flag when the
+# rest of EB starts approaching India in views (user request 2026-05-27).
+# Returns a bucket key or None.
+_MAIN_ENTRY_HOME_RE     = re.compile(r"^/(\?|$)")
+_MAIN_ENTRY_EB_INDIA_RE = re.compile(r"^/employment-based/india/?(\?|$)")
+_MAIN_ENTRY_EB_OTHER_RE = re.compile(r"^/employment-based/(?!india/?(\?|$))")
+_MAIN_ENTRY_FS_RE       = re.compile(r"^/family-sponsored/")
+
+
+def _main_entry_bucket(path: str) -> str | None:
+    """`home` | `eb_india` | `eb_other` | `fs` | None.
+
+    `home` is just `/`. Per `project_homepage_is_india_eb` the homepage
+    template == India EB dashboard, so for the IND-EB-vs-non-IND watchpoint
+    we sum `home + eb_india` as one side of the ratio.
+    """
+    if _MAIN_ENTRY_HOME_RE.match(path):
+        return "home"
+    if _MAIN_ENTRY_EB_INDIA_RE.match(path):
+        return "eb_india"
+    if _MAIN_ENTRY_EB_OTHER_RE.match(path):
+        return "eb_other"
+    if _MAIN_ENTRY_FS_RE.match(path):
+        return "fs"
+    return None
+
 
 SURFACE_LABELS: dict[str, str] = {
     "donation_click":      "Donation-button clicks (ext-* events, NOT pageviews)",
@@ -636,6 +693,133 @@ def _bucket_path(p: str) -> str:
     return "other"
 
 
+async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
+    """Run /api/v0/export round-trip and return the path to the cached CSV.
+
+    GoatCounter caps `/stats/hits` at 100 paths, missing ~43% of the long
+    tail on visa-bulletin.us. /export gives the full per-hit CSV but is
+    1/hour rate-limited per token; we cache for GC_EXPORT_CACHE_TTL_S so
+    daily-checkup + ad-hoc invocations share one export. Falls back to a
+    stale cache on rate-limit; returns None only if no cache exists and the
+    fresh fetch failed.
+    """
+    GC_EXPORT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path = GC_EXPORT_CACHE_DIR / "gc_export.csv"
+    if csv_path.exists():
+        age_s = time.time() - csv_path.stat().st_mtime
+        if age_s < GC_EXPORT_CACHE_TTL_S:
+            logger.info("gc export: using fresh cache (%ds old)", int(age_s))
+            return csv_path
+
+    try:
+        create = await client.post(
+            f"{GOATCOUNTER_BASE}/export",
+            json={"format": "csv"},
+            timeout=GC_TIMEOUT,
+        )
+    except (httpx.TransportError, httpx.TimeoutException) as e:
+        logger.warning("gc export POST transport error: %s", e)
+        return csv_path if csv_path.exists() else None
+
+    if create.status_code == 429:
+        logger.info("gc export rate-limited; serving stale cache (or None): %s",
+                    create.text[:200])
+        return csv_path if csv_path.exists() else None
+    if create.status_code >= 400:
+        logger.warning("gc export POST %d: %s", create.status_code, create.text[:200])
+        return csv_path if csv_path.exists() else None
+
+    try:
+        job = create.json()
+    except (ValueError, json.JSONDecodeError):
+        logger.warning("gc export response not JSON: %s", create.text[:200])
+        return csv_path if csv_path.exists() else None
+    job_id = job.get("id")
+    if job_id is None:
+        logger.warning("gc export response missing id: %s", job)
+        return csv_path if csv_path.exists() else None
+
+    finished = False
+    for attempt in range(GC_EXPORT_MAX_POLLS):
+        await asyncio.sleep(GC_EXPORT_POLL_INTERVAL_S)
+        try:
+            r = await client.get(f"{GOATCOUNTER_BASE}/export/{job_id}", timeout=GC_TIMEOUT)
+            r.raise_for_status()
+        except (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            logger.info("gc export poll attempt %d failed: %s", attempt, e)
+            continue
+        if (r.json() or {}).get("finished_at"):
+            finished = True
+            break
+    if not finished:
+        logger.warning("gc export poll timed out after %d attempts; serving stale cache",
+                       GC_EXPORT_MAX_POLLS)
+        return csv_path if csv_path.exists() else None
+
+    try:
+        dl = await client.get(
+            f"{GOATCOUNTER_BASE}/export/{job_id}/download",
+            timeout=GC_TIMEOUT * 4,
+        )
+        dl.raise_for_status()
+    except (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+        logger.warning("gc export download failed: %s", e)
+        return csv_path if csv_path.exists() else None
+
+    csv_path.write_bytes(dl.content)
+    logger.info("gc export downloaded: %d bytes", len(dl.content))
+    return csv_path
+
+
+def _aggregate_csv_path_counts(
+    csv_path: Path,
+    windows: list[tuple[str, date, date]],
+) -> dict[str, dict[str, int]]:
+    """Read GC export CSV and return `{window_name: {path: count}}`.
+
+    CSV schema (as of 2026-05): Path, Title, Event, UserAgent, Browser,
+    System, Session, Bot, Referrer, Referrer scheme, Screen size, Location,
+    FirstVisit, Date (ISO 8601 UTC). Each row is one hit. Bot rows (Bot != "0")
+    are dropped to match /stats/total numbers (which exclude bots).
+
+    Quirks:
+    - The file is gzip-compressed (download serves `.csv.gz` regardless of
+      Accept-Encoding). Auto-detect via magic bytes.
+    - The header is prefixed with a literal `'2'` byte (GoatCounter quirk;
+      seen on every export). Strip if present so the first column name
+      reads as `Path` not `2Path`.
+    - Paths include query strings on older rows (pre-2026-05 query-strip
+      change); strip query for consistency with current GC UI counts.
+    - **`/stats/total` counts FirstVisit=1 (first hit per session), not raw
+      hits**. To make per-surface sums match the headline "8.7k pageviews"
+      number, filter to FirstVisit=1 here. CSV with Bot=0 alone yields ~50%
+      more rows (subsequent-hit-in-session) than the API reports.
+    """
+    out: dict[str, dict[str, int]] = {name: defaultdict(int) for name, _, _ in windows}
+    raw = csv_path.read_bytes()
+    if raw[:2] == b"\x1f\x8b":  # gzip magic
+        raw = gzip.decompress(raw)
+    text = raw.decode("utf-8", errors="replace")
+    if text.startswith("2Path,"):
+        text = text[1:]
+    rdr = csv_mod.DictReader(io.StringIO(text))
+    for row in rdr:
+        raw_date = (row.get("Date") or "")[:10]
+        try:
+            d = date.fromisoformat(raw_date)
+        except ValueError:
+            continue
+        if (row.get("Bot") or "0") != "0":
+            continue
+        if (row.get("FirstVisit") or "0") != "1":
+            continue
+        path = (row.get("Path") or "").split("?", 1)[0]
+        for name, start, end in windows:
+            if start <= d <= end:
+                out[name][path] += 1
+    return {name: dict(counts) for name, counts in out.items()}
+
+
 async def _gather_goatcounter() -> dict:
     """Pull weekly totals + top paths bucketed by surface.
 
@@ -654,9 +838,13 @@ async def _gather_goatcounter() -> dict:
     prev_start = prev_end - timedelta(days=6)
     cycle_end = today - timedelta(days=28)
     cycle_start = cycle_end - timedelta(days=6)
+    # 28-day-average-per-week baseline (user 2026-05-27 — comparable to
+    # both `prev_7d` and `cycle_7d` but smoother / less cycle-noisy).
+    last28_end = today
+    last28_start = today - timedelta(days=27)
 
     headers = {"Authorization": f"Bearer {token}"}
-    # GoatCounter returns 404 on concurrent requests; serialize (6 calls, ~3s).
+    # GoatCounter returns 404 on concurrent requests; serialize.
     async with httpx.AsyncClient(headers=headers) as client:
         totals_this = await _gc_get(client, "/stats/total",
                                     start=this_start.isoformat(), end=this_end.isoformat())
@@ -664,10 +852,15 @@ async def _gather_goatcounter() -> dict:
                                     start=prev_start.isoformat(), end=prev_end.isoformat())
         totals_cycle = await _gc_get(client, "/stats/total",
                                      start=cycle_start.isoformat(), end=cycle_end.isoformat())
+        totals_last28 = await _gc_get(client, "/stats/total",
+                                      start=last28_start.isoformat(), end=last28_end.isoformat())
         hits_this = await _gc_get(client, "/stats/hits", limit=100,
                                   start=this_start.isoformat(), end=this_end.isoformat())
         hits_cycle = await _gc_get(client, "/stats/hits", limit=100,
                                    start=cycle_start.isoformat(), end=cycle_end.isoformat())
+        # Long-tail accuracy: full per-hit CSV via /export. Independent of the
+        # top-100 cap on /stats/hits. Rate-limit-tolerant via 6h cache.
+        csv_path = await _gc_export_full_csv(client)
 
     def _bucket_hits(payload: dict) -> tuple[dict[str, int], dict[str, int]]:
         by_surface: dict[str, int] = defaultdict(int)
@@ -682,21 +875,44 @@ async def _gather_goatcounter() -> dict:
     surf_this, paths_this = _bucket_hits(hits_this)
     surf_cycle, paths_cycle = _bucket_hits(hits_cycle)
 
-    # Per-surface deltas vs 4-weeks-ago (cycle-aware baseline)
-    all_surfaces = set(surf_this) | set(surf_cycle)
-    surface_deltas = []
-    for s in all_surfaces:
-        cur = surf_this.get(s, 0)
-        cyc = surf_cycle.get(s, 0)
-        delta_pct = ((cur - cyc) / cyc * 100) if cyc else None
-        surface_deltas.append({"surface": s, "this_week": cur, "cycle_ago": cyc, "delta_pct": delta_pct})
-    surface_deltas.sort(key=lambda r: -r["this_week"])
+    # CSV-derived path counts across all 4 windows (used for both main-entry
+    # breakdown and full-coverage per-surface counts). Available iff the
+    # /export endpoint succeeded (or stale cache is present).
+    path_counts_by_window: dict[str, dict[str, int]] | None = None
+    csv_status = "missing"
+    csv_age_s: float | None = None
+    if csv_path is not None and csv_path.exists():
+        csv_age_s = time.time() - csv_path.stat().st_mtime
+        csv_status = "ok" if csv_age_s < GC_EXPORT_CACHE_TTL_S else "stale"
+        windows = [
+            ("this_7d",  this_start,   this_end),
+            ("prev_7d",  prev_start,   prev_end),
+            ("cycle_7d", cycle_start,  cycle_end),
+            ("last_28d", last28_start, last28_end),
+        ]
+        path_counts_by_window = _aggregate_csv_path_counts(csv_path, windows)
 
-    # Top movers (vs 4 weeks ago, paths present in either window)
+    # Per-surface deltas. Prefer CSV path_counts (100% coverage, all 4
+    # windows). Fall back to top-100 hit counts when CSV unavailable.
+    csv_source = path_counts_by_window is not None
+    surface_deltas = _build_surface_deltas(
+        path_counts_by_window=path_counts_by_window,
+        fallback_surf_this=surf_this,
+        fallback_surf_cycle=surf_cycle,
+    )
+
+    # Top movers (vs 4 weeks ago, paths present in either window). Use CSV
+    # paths when available so the mover list isn't capped at top-100 either.
+    if csv_source:
+        paths_this_full = path_counts_by_window["this_7d"]
+        paths_cycle_full = path_counts_by_window["cycle_7d"]
+    else:
+        paths_this_full = paths_this
+        paths_cycle_full = paths_cycle
     movers = []
-    for p in set(paths_this) | set(paths_cycle):
-        cur = paths_this.get(p, 0)
-        cyc = paths_cycle.get(p, 0)
+    for p in set(paths_this_full) | set(paths_cycle_full):
+        cur = paths_this_full.get(p, 0)
+        cyc = paths_cycle_full.get(p, 0)
         if cur + cyc < 50:
             continue
         delta_pct = ((cur - cyc) / cyc * 100) if cyc else None
@@ -704,19 +920,100 @@ async def _gather_goatcounter() -> dict:
     movers.sort(key=lambda r: -abs(r["this_week"] - r["cycle_ago"]))
     movers = movers[:10]
 
+    # Main-entry (home + EB + FS) breakdown — IND-EB-vs-rest watchpoint.
+    main_entry: dict[str, dict[str, int]] | None = None
+    if path_counts_by_window is not None:
+        main_entry = {}
+        for win_name, counts in path_counts_by_window.items():
+            buckets: dict[str, int] = defaultdict(int)
+            for path, cnt in counts.items():
+                b = _main_entry_bucket(path)
+                if b:
+                    buckets[b] += cnt
+            buckets["all"] = (
+                buckets.get("home", 0) + buckets.get("eb_india", 0)
+                + buckets.get("eb_other", 0) + buckets.get("fs", 0)
+            )
+            main_entry[win_name] = dict(buckets)
+
     return {
         "totals_this_week": totals_this,
         "totals_prev_week": totals_prev,
         "totals_cycle_ago": totals_cycle,
+        "totals_last_28d": totals_last28,
         "surfaces": surface_deltas,
+        "surfaces_source": "csv_full" if csv_source else "top100_hits",
         "top_movers": movers,
         "top_paths_this_week_truncated": hits_this.get("more", False),
+        "top100_coverage_this_pct": (
+            (sum(paths_this.values()) / (totals_this.get("total") or 1)) * 100
+            if totals_this.get("total") else None
+        ),
+        "main_entry": main_entry,
+        "csv_status": csv_status,
+        "csv_age_s": csv_age_s,
         "window": {
             "this": [this_start.isoformat(), this_end.isoformat()],
             "prev": [prev_start.isoformat(), prev_end.isoformat()],
             "cycle_ago": [cycle_start.isoformat(), cycle_end.isoformat()],
+            "last_28d": [last28_start.isoformat(), last28_end.isoformat()],
         },
     }
+
+
+def _build_surface_deltas(
+    *,
+    path_counts_by_window: dict[str, dict[str, int]] | None,
+    fallback_surf_this: dict[str, int],
+    fallback_surf_cycle: dict[str, int],
+) -> list[dict]:
+    """Per-surface counts across all 4 windows + MoM cycle delta.
+
+    When CSV is available, sums every path's count into its surface bucket —
+    so the surface totals match `/stats/total` (no top-100 cap). Otherwise
+    falls back to the top-100 `/stats/hits` buckets (this_week and cycle_ago
+    only; prev_week / last_28d_per_week left as None).
+    """
+    if path_counts_by_window is None:
+        all_surfaces = set(fallback_surf_this) | set(fallback_surf_cycle)
+        rows = []
+        for s in all_surfaces:
+            cur = fallback_surf_this.get(s, 0)
+            cyc = fallback_surf_cycle.get(s, 0)
+            delta_pct = ((cur - cyc) / cyc * 100) if cyc else None
+            rows.append({
+                "surface": s,
+                "this_week": cur,
+                "cycle_ago": cyc,
+                "prev_week": None,
+                "last28_per_week": None,
+                "delta_pct": delta_pct,
+            })
+        rows.sort(key=lambda r: -r["this_week"])
+        return rows
+
+    by_surface: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for win_name, path_counts in path_counts_by_window.items():
+        for path, cnt in path_counts.items():
+            surf = _bucket_path(path)
+            by_surface[surf][win_name] += cnt
+    rows = []
+    for surf, win_map in by_surface.items():
+        cur = win_map.get("this_7d", 0)
+        cyc = win_map.get("cycle_7d", 0)
+        prev = win_map.get("prev_7d", 0)
+        last28 = win_map.get("last_28d", 0)
+        delta_pct = ((cur - cyc) / cyc * 100) if cyc else None
+        rows.append({
+            "surface": surf,
+            "this_week": cur,
+            "cycle_ago": cyc,
+            "prev_week": prev,
+            "last28_per_week": last28 / 4 if last28 else 0,
+            "delta_pct": delta_pct,
+        })
+    rows.sort(key=lambda r: -r["this_week"])
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -789,15 +1086,19 @@ async def _gather_gsc() -> dict:
             **common, "start_date": this_start.isoformat(), "end_date": this_end.isoformat(),
             "dimensions": ["query"], "row_limit": 25,
         }),
-        # Top pages this week
+        # ALL pages this week — needed for accurate per-surface breakdown.
+        # /job-title/<slug>/ and /employer/<slug>/ have thousands of pages
+        # each; a small row_limit silently zeros out their click counts.
+        # 25000 is the GSC API cap; visa-bulletin.us has ~10-15k indexed
+        # pages so this captures everything.
         ("gsc_query_search_analytics", {
             **common, "start_date": this_start.isoformat(), "end_date": this_end.isoformat(),
-            "dimensions": ["page"], "row_limit": 25,
+            "dimensions": ["page"], "row_limit": 25000,
         }),
-        # Top pages cycle-ago (for movers)
+        # ALL pages cycle-ago (for symmetric per-surface deltas + movers)
         ("gsc_query_search_analytics", {
             **common, "start_date": cycle_start.isoformat(), "end_date": cycle_end.isoformat(),
-            "dimensions": ["page"], "row_limit": 50,
+            "dimensions": ["page"], "row_limit": 25000,
         }),
     ]
     raw_results = await _call_gsc_tools(calls)
@@ -1357,9 +1658,12 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
     pv_this = gc["totals_this_week"].get("total") or 0
     pv_prev = gc["totals_prev_week"].get("total") or 0
     pv_cycle = gc["totals_cycle_ago"].get("total") or 0
+    pv_28 = (gc.get("totals_last_28d") or {}).get("total") or 0
+    pv_28_wk = pv_28 / 4 if pv_28 else 0
     # Primary signal: vs 4 weeks ago (one bulletin cycle, same day-of-week phase).
     delta_cycle = ((pv_this - pv_cycle) / pv_cycle * 100) if pv_cycle else None
     delta_wow = ((pv_this - pv_prev) / pv_prev * 100) if pv_prev else None
+    delta_28 = ((pv_this - pv_28_wk) / pv_28_wk * 100) if pv_28_wk else None
     if delta_cycle is not None and delta_cycle <= TRAFFIC_DROP_RED_PCT:
         status = "red"
     elif delta_cycle is not None and delta_cycle <= TRAFFIC_DROP_YELLOW_PCT:
@@ -1373,18 +1677,93 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
 
     lines = [
         f"- Pageviews 7d: **{_humanize(pv_this)}** "
-        f"vs 4 weeks ago **{_humanize(pv_cycle)}** {_fmt(delta_cycle, 'MoM cycle')}, "
-        f"vs last week **{_humanize(pv_prev)}** {_fmt(delta_wow, 'WoW')}",
-        "_Note: bulletin publishes monthly (~8th–15th) so WoW is misleading mid-cycle; MoM cycle is the primary signal._",
+        f"vs **{_humanize(pv_cycle)}** 4w ago {_fmt(delta_cycle, 'MoM cycle')} · "
+        f"vs **{_humanize(pv_prev)}** last week {_fmt(delta_wow, 'WoW')} · "
+        f"vs **{_humanize(pv_28_wk)}/wk** 28d-avg {_fmt(delta_28, '28d')}",
+        "_Note: bulletin publishes monthly (~8th–15th) so WoW is misleading mid-cycle; MoM cycle + 28d-avg are the primary signals._",
         "",
-        "**By surface (top 100 paths, vs same 7d window 4 weeks ago — every delta is MoM cycle):**",
     ]
-    for s in gc["surfaces"]:
-        label = SURFACE_LABELS.get(s["surface"], s["surface"])
+
+    # Combined main-entry line (user request 2026-05-27): home + EB + FS
+    # dashboards are one funnel. We additionally break out the IND-EB-vs-
+    # rest-of-EB split and flag if non-IND-EB approaches IND-EB+home — the
+    # homepage today serves India-EB by default, so if other countries
+    # become comparable, the homepage default needs revisiting.
+    me = gc.get("main_entry") or {}
+    csv_st = gc.get("csv_status", "missing")
+    if me.get("this_7d"):
+        this7 = me["this_7d"]
+        cyc7 = me.get("cycle_7d") or {}
+        prev7 = me.get("prev_7d") or {}
+        last28 = me.get("last_28d") or {}
+
+        def _v(d: dict, k: str) -> int:
+            return int(d.get(k) or 0)
+
+        def _delta(cur: float, base: float, label: str) -> str:
+            if not base:
+                return f"(no {label} baseline)"
+            return _fmt((cur - base) / base * 100, label)
+
+        all_this = _v(this7, "all")
+        all_cyc = _v(cyc7, "all")
+        all_prev = _v(prev7, "all")
+        all_28 = _v(last28, "all")
+        all_28_wk = all_28 / 4 if all_28 else 0
+
         lines.append(
-            f"- {label}: **{_humanize(s['this_week'])}** "
-            f"vs {_humanize(s['cycle_ago'])} 4w ago {_fmt(s['delta_pct'], 'MoM')}"
+            f"- **Main entry (home + EB + FS dashboards): {_humanize(all_this)} 7d** · "
+            f"vs **{_humanize(all_cyc)}** 4w ago {_delta(all_this, all_cyc, 'MoM')} · "
+            f"vs **{_humanize(all_prev)}** last week {_delta(all_this, all_prev, 'WoW')} · "
+            f"vs **{_humanize(all_28_wk)}/wk** 28d-avg {_delta(all_this, all_28_wk, '28d')}"
         )
+
+        home_pv = _v(this7, "home")
+        ind_pv = _v(this7, "eb_india")
+        nonind_pv = _v(this7, "eb_other")
+        fs_pv = _v(this7, "fs")
+        # Homepage today serves the India-EB dashboard, so combine home + eb_india
+        # for the IND side of the watchpoint ratio.
+        ind_side = home_pv + ind_pv
+        ratio = (nonind_pv / ind_side) if ind_side else None
+        flag = ""
+        if ratio is not None:
+            if ratio >= MAIN_ENTRY_NONIND_EB_RATIO_RED:
+                flag = "  🔴 **adjust homepage** — non-IND-EB ≥70% of IND-EB+home"
+                if status != "red":
+                    status = "red"
+            elif ratio >= MAIN_ENTRY_NONIND_EB_RATIO_YELLOW:
+                flag = "  🟡 watch — non-IND-EB ≥50% of IND-EB+home"
+                if status == "green":
+                    status = "yellow"
+        lines.append(
+            f"  - Breakdown 7d: `/` **{_humanize(home_pv)}** · "
+            f"`/employment-based/india/` **{_humanize(ind_pv)}** · "
+            f"other EB **{_humanize(nonind_pv)}** · "
+            f"FS **{_humanize(fs_pv)}**"
+            + (f" · non-IND-EB / (IND-EB+home) = {ratio*100:.0f}%" if ratio is not None else "")
+            + flag
+        )
+        if csv_st == "stale":
+            age_s = gc.get("csv_age_s")
+            age_h = (age_s / 3600) if age_s else None
+            lines.append(
+                f"  _CSV cache ~{age_h:.0f}h old (TTL {GC_EXPORT_CACHE_TTL_S//3600}h) — "
+                f"fresh export rate-limited; counts may lag a few hours._"
+                if age_h is not None
+                else "  _CSV cache stale; fresh export rate-limited._"
+            )
+    else:
+        lines.append(
+            "- _Main-entry combined line unavailable: GC `/api/v0/export` "
+            "not yet cached (1/hr rate limit). Will populate on the next "
+            "successful export — usually within one daily-checkup cycle._"
+        )
+
+    # Per-surface counts moved to "Per-property dashboard" section (which
+    # joins GC + GSC + nginx-perf per route). Keep only the top-mover list
+    # here — same-path absolute swings, useful as the "what changed most"
+    # row that doesn't fit a fixed surface taxonomy.
     if gc["top_movers"]:
         lines.append("")
         lines.append("**Top movers vs 4 weeks ago (absolute change):**")
@@ -1393,9 +1772,6 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
                 f"- `{m['path']}`: {_humanize(m['this_week'])} vs "
                 f"{_humanize(m['cycle_ago'])} {_fmt(m['delta_pct'], 'MoM')}"
             )
-    if gc["top_paths_this_week_truncated"]:
-        lines.append("")
-        lines.append("_Note: GoatCounter API caps at top-100 paths; longer tail not visible without full export._")
     importance = {"red": 5, "yellow": 4, "green": 3}[status]
     return ({"title": "Traffic (GoatCounter, 7d vs 4 weeks ago)", "body": "\n".join(lines), "importance": importance}, status)
 
@@ -1424,111 +1800,175 @@ TOP_PROPERTY_SURFACES = [
 ]
 
 
-def _section_top_properties(nx: dict, gc: dict | None) -> tuple[dict | None, str]:
-    """Per-surface joined view: popularity (from GoatCounter, cycle-aware MoM)
-    plus performance (from origin nginx 24h: mean latency + slow-tail counts).
+def _section_top_properties(
+    nx: dict, gc: dict | None, gsc: dict | None
+) -> tuple[dict | None, str]:
+    """Per-surface joined view: popularity (GC, all 4 windows) + SEO (GSC
+    clicks/impr/CTR/pos) + performance (origin nginx 24h).
 
-    Answers the daily question "trends in popularity, performance" for top
-    properties (salaries, employer/, job-titles, predictions, SEO landings).
+    One row per surface, multi-line so phone-readable. Replaces the older
+    split "Top properties" + GoatCounter "By surface" + GSC "Per-property
+    breakdown" lists (user request 2026-05-27 — consolidate so MoM/WoW/28d
+    + Google sit alongside performance per route).
     """
     lat: dict = nx.get("surface_latency") or {}
-    if not lat and (not gc or not gc.get("surfaces")):
-        return (None, "green")
-
-    # Build GC popularity lookup by surface name.
     gc_by_surface: dict[str, dict] = {}
     if gc:
         for s in gc.get("surfaces") or []:
             gc_by_surface[s["surface"]] = s
+    gsc_by_surface: dict[str, dict] = {}
+    if gsc:
+        for sb in gsc.get("surface_breakdown") or []:
+            gsc_by_surface[sb["surface"]] = sb
+
+    if not lat and not gc_by_surface and not gsc_by_surface:
+        return (None, "green")
 
     status = "green"
-    rows: list[dict] = []
     for surf in TOP_PROPERTY_SURFACES:
         lat_row = lat.get(surf)
-        gc_row = gc_by_surface.get(surf)
-        # Always include every top property — even if both GC and nginx
-        # are zero, the row makes the absence visible. salaries in particular
-        # has historically had 9k+ nginx hits/day but zero GC tracking, which
-        # is the kind of anomaly that hides if we silently drop missing rows.
         n3 = lat_row["n_over_3s"] if lat_row else 0
         n10 = lat_row["n_over_10s"] if lat_row else 0
         if n10 >= PERF_RED_N10:
             status = "red"
         elif n3 >= PERF_YELLOW_N3 and status == "green":
             status = "yellow"
-        rows.append({"surface": surf, "lat": lat_row, "gc": gc_row})
 
-    # Sort by GC 7d traffic desc (fallback to nginx 24h count if GC missing,
-    # 0 otherwise — keeps fully-empty rows at the bottom but visible).
-    def _sort_key(r: dict) -> int:
-        if r["gc"]:
-            return -int(r["gc"].get("this_week") or 0)
-        if r["lat"]:
-            return -int(r["lat"].get("count") or 0)
+    # Sort by GC 7d traffic desc; fallback to nginx 24h count, then 0.
+    def _sort_key(surf: str) -> int:
+        gc_row = gc_by_surface.get(surf)
+        if gc_row:
+            return -int(gc_row.get("this_week") or 0)
+        lat_row = lat.get(surf)
+        if lat_row:
+            return -int(lat_row.get("count") or 0)
         return 0
-    rows.sort(key=_sort_key)
-    # Show all top properties (no truncation) — the list is bounded by
-    # TOP_PROPERTY_SURFACES (~12 entries).
+    ordered_surfaces = sorted(TOP_PROPERTY_SURFACES, key=_sort_key)
 
-    def _fmt_pct(d: float | None) -> str:
-        if d is None:
-            return "(no MoM baseline)"
-        sign = "+" if d >= 0 else ""
-        return f"{sign}{d:.0f}% MoM"
-
+    surfaces_source = (gc or {}).get("surfaces_source", "top100_hits")
+    source_blurb = (
+        "GC 7d/prev/MoM/28d = full path coverage via /api/v0/export (100% of pageviews). "
+        if surfaces_source == "csv_full"
+        else "GC 7d/MoM = top-100 paths from /stats/hits (long tail not visible until next CSV export lands). "
+    )
     lines = [
-        "_Popularity = GoatCounter 7d vs same 7d window 4 weeks ago (cycle-aware). "
-        "Performance = origin nginx 24h, all real-page hits including bots._",
+        f"_{source_blurb}GSC = clicks/impr/CTR/pos 7d vs 4w ago (final data, ~2d lag). "
+        f"Perf = origin nginx 24h, real pages (incl. bots)._",
         "",
     ]
-    for r in rows:
-        surf = r["surface"]
-        label = SURFACE_LABELS.get(surf, surf)
-        lat_row = r["lat"]
-        gc_row = r["gc"]
-        pop_bit = ""
-        if gc_row:
-            cur = int(gc_row.get("this_week") or 0)
-            cyc = int(gc_row.get("cycle_ago") or 0)
-            pop_bit = (
-                f"**{_humanize(cur)}** views 7d "
-                f"(vs {_humanize(cyc)} 4w ago, {_fmt_pct(gc_row.get('delta_pct'))})"
-            )
-        else:
-            pop_bit = "(no GC data — outside top-100)"
-        perf_bit = ""
-        if lat_row:
-            mean_ms = int(lat_row["mean_ms"])
-            cnt = lat_row["count"]
-            n1, n3, n10 = lat_row["n_over_1s"], lat_row["n_over_3s"], lat_row["n_over_10s"]
-            tail_bits = []
-            if n1:
-                tail_bits.append(f"{n1} >1s")
-            if n3:
-                tail_bits.append(f"{n3} >3s")
-            if n10:
-                tail_bits.append(f"**{n10} >10s**")
-            tail = ", ".join(tail_bits) if tail_bits else "no slow tail"
-            perf_bit = (
-                f"mean **{mean_ms}ms** over {_humanize(cnt)} hits 24h ({tail})"
-            )
-            # Flag the salaries-style anomaly: high nginx volume but no GC.
-            if not gc_row and cnt > 1000:
-                perf_bit += " ⚠️ **anomaly: high nginx traffic but invisible to GC**"
-        else:
-            perf_bit = "(no nginx data)"
-        lines.append(f"- {label}: {pop_bit} · {perf_bit}")
+    for surf in ordered_surfaces:
+        block = _format_property_block(
+            surf=surf,
+            gc_row=gc_by_surface.get(surf),
+            gsc_row=gsc_by_surface.get(surf),
+            lat_row=lat.get(surf),
+        )
+        lines.extend(block)
 
     title_suffix = {"red": " — CRITICAL (slow tail)", "yellow": " — slow tail", "green": ""}[status]
-    importance = {"red": 5, "yellow": 3, "green": 2}[status]
+    importance = {"red": 5, "yellow": 4, "green": 3}[status]
     return (
         {
-            "title": f"Top properties (popularity + performance){title_suffix}",
+            "title": f"Per-property dashboard{title_suffix}",
             "body": "\n".join(lines),
             "importance": importance,
         },
         status,
     )
+
+
+def _fmt_pct_signed(d: float | None, label: str) -> str:
+    if d is None:
+        return f"(no {label})"
+    sign = "+" if d >= 0 else ""
+    return f"{sign}{d:.0f}% {label}"
+
+
+def _format_property_block(
+    *,
+    surf: str,
+    gc_row: dict | None,
+    gsc_row: dict | None,
+    lat_row: dict | None,
+) -> list[str]:
+    """Multi-line block for one property in the per-property dashboard.
+
+    Layout per surface:
+      - **<label>**
+          GC: <7d> · MoM · WoW · 28d-avg
+          GSC: <clicks> clicks · <impr> impr · CTR <x%> · pos <p>
+          Perf: mean Xms over N hits 24h (n1>1s · n3>3s · n10>10s)
+    Each sub-line is omitted (replaced with a one-word marker) when the
+    source has no data — better to see the gap than to hide it.
+    """
+    label = SURFACE_LABELS.get(surf, surf)
+    lines = [f"- **{label}**"]
+
+    # GoatCounter — volume + cycle/WoW/28d deltas
+    if gc_row:
+        cur = int(gc_row.get("this_week") or 0)
+        cyc = int(gc_row.get("cycle_ago") or 0)
+        prev = gc_row.get("prev_week")
+        l28_wk = gc_row.get("last28_per_week")
+        delta_mom = gc_row.get("delta_pct")
+        delta_wow = ((cur - prev) / prev * 100) if prev else None
+        delta_28 = ((cur - l28_wk) / l28_wk * 100) if l28_wk else None
+        bits = [
+            f"**{_humanize(cur)}** views 7d",
+            f"vs {_humanize(cyc)} 4w ago {_fmt_pct_signed(delta_mom, 'MoM')}",
+        ]
+        if prev is not None:
+            bits.append(f"vs {_humanize(prev)} last wk {_fmt_pct_signed(delta_wow, 'WoW')}")
+        if l28_wk:
+            bits.append(f"vs {_humanize(l28_wk)}/wk 28d-avg {_fmt_pct_signed(delta_28, '28d')}")
+        lines.append(f"  GC: {' · '.join(bits)}")
+    else:
+        lines.append("  GC: no data")
+
+    # GSC — clicks + impressions + CTR + position with cycle delta
+    if gsc_row:
+        cl_t = gsc_row.get("clicks_this", 0)
+        cl_c = gsc_row.get("clicks_cycle", 0)
+        im_t = gsc_row.get("impressions_this", 0)
+        im_c = gsc_row.get("impressions_cycle", 0)
+        ctr_t = (gsc_row.get("ctr_this", 0) or 0) * 100
+        pos_t = gsc_row.get("pos_this", 0) or 0
+        pos_c = gsc_row.get("pos_cycle", 0) or 0
+        delta_cl_pct = ((cl_t - cl_c) / cl_c * 100) if cl_c else None
+        pos_delta = (pos_t - pos_c) if (pos_t and pos_c) else None
+        pos_bit = f"pos **{pos_t:.1f}**"
+        if pos_delta is not None:
+            sign = "+" if pos_delta >= 0 else ""
+            pos_bit += f" ({sign}{pos_delta:.1f})"
+        lines.append(
+            f"  GSC: **{cl_t}** clicks vs {cl_c} {_fmt_pct_signed(delta_cl_pct, 'MoM')} · "
+            f"{_humanize(im_t)} impr (vs {_humanize(im_c)}) · "
+            f"CTR **{ctr_t:.1f}%** · {pos_bit}"
+        )
+    else:
+        lines.append("  GSC: no data (no clicks/impressions this week)")
+
+    # Performance — mean latency + slow-tail
+    if lat_row:
+        mean_ms = int(lat_row["mean_ms"])
+        cnt = lat_row["count"]
+        n1, n3, n10 = lat_row["n_over_1s"], lat_row["n_over_3s"], lat_row["n_over_10s"]
+        tail_bits = []
+        if n1:
+            tail_bits.append(f"{n1} >1s")
+        if n3:
+            tail_bits.append(f"{n3} >3s")
+        if n10:
+            tail_bits.append(f"**{n10} >10s**")
+        tail = ", ".join(tail_bits) if tail_bits else "no slow tail"
+        perf_bit = f"mean **{mean_ms}ms** over {_humanize(cnt)} hits 24h ({tail})"
+        if not gc_row and cnt > 1000:
+            perf_bit += " ⚠️ **anomaly: nginx traffic but invisible to GC**"
+        lines.append(f"  Perf: {perf_bit}")
+    else:
+        lines.append("  Perf: no nginx traffic 24h")
+
+    return lines
 
 
 # GSC traffic-drop thresholds (cycle-aware, on clicks).
@@ -1610,27 +2050,7 @@ def _section_gsc(gsc: dict) -> tuple[dict | None, str]:
                 f"- `{url[:70]}`: {m['clicks_this']} vs {m['clicks_cycle']} clicks "
                 f"({sign}{m['delta_clicks']})"
             )
-    if gsc.get("surface_breakdown"):
-        lines.append("")
-        lines.append("**Per-property breakdown (by site surface):**")
-        lines.append("_Property = dashboard / predictions / salaries / employer_profile / "
-                     "employer_directory / employer_rankings / job_title_profile / "
-                     "job_title_directory / seo_landing_fam / blog / worksites / static_pages / other._")
-        for sb in gsc["surface_breakdown"][:14]:
-            ctr_this = sb["ctr_this"] * 100
-            ctr_cycle = sb["ctr_cycle"] * 100
-            delta = sb["delta_clicks"]
-            sign = "+" if delta >= 0 else ""
-            pos_str = ""
-            if sb["pos_this"]:
-                pos_delta = (sb["pos_this"] - sb["pos_cycle"]) if sb["pos_cycle"] else 0
-                pos_sign = "+" if pos_delta >= 0 else ""
-                pos_str = f", pos {sb['pos_this']:.1f} ({pos_sign}{pos_delta:.1f})"
-            lines.append(
-                f"- **{sb['surface']}** — clicks {sb['clicks_this']} vs {sb['clicks_cycle']} "
-                f"({sign}{delta}), impr {_humanize(sb['impressions_this'])} vs "
-                f"{_humanize(sb['impressions_cycle'])}, CTR {ctr_this:.1f}% vs {ctr_cycle:.1f}%{pos_str}"
-            )
+    # Per-surface GSC breakdown moved to "Per-property dashboard" section.
     importance = {"red": 5, "yellow": 4, "green": 3}[status]
     title = "SEO (Google Search Console, 7d vs 4 weeks ago)"
     if status == "red":
@@ -1835,16 +2255,17 @@ async def daily_checkup(since: str | None = None) -> str:
             sections.append(s)
         statuses.append(st)
 
-    # GoatCounter section
+    # GoatCounter section (totals + main-entry + top movers; per-surface
+    # detail lives in the Per-property dashboard below).
     if gc_data is not None:
         s, st = _section_goatcounter(gc_data)
         sections.append(s)
         statuses.append(st)
 
-    # Top properties (popularity from GC + performance from nginx 24h).
-    # Needs at least nginx surface_latency or gc.surfaces; will skip if neither.
+    # Per-property dashboard: GC volume + GSC clicks/impr/CTR/pos + nginx
+    # latency, one block per route. Needs at least one of the three.
     if snap is not None:
-        s, st = _section_top_properties(nx_parsed, gc_data)
+        s, st = _section_top_properties(nx_parsed, gc_data, gsc_data)
         if s:
             sections.append(s)
             statuses.append(st)
