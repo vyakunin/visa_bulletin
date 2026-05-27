@@ -289,10 +289,18 @@
             {% endif %}
 
             <p class="small text-muted mb-3">
-                <i class="bi bi-exclamation-triangle"></i> <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
+                <i class="bi bi-exclamation-triangle"></i>
+                {% if show_vqs_column %}
+                <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
                 &nbsp;|&nbsp;
                 <a href="/predictions/employment_based/" style="color: #0066CC; text-decoration: underline;">How accurate were past predictions? See backtest →</a>
+                {% else %}
+                <em>Estimates use linear extrapolation from each Family-Sponsored category's historical advancement rate. The full Bulletin Forecast Model is currently calibrated on I-140 demand data and runs on Employment-Based series only; Family-Sponsored gets a simpler model. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
+                <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
+                &nbsp;|&nbsp;
+                <a href="/predictions/family_sponsored/" style="color: #0066CC; text-decoration: underline;">How accurate were past predictions? See backtest →</a>
+                {% endif %}
             </p>
 
             {% include "webapp/includes/support_cta.html" %}
@@ -386,7 +394,11 @@
                         <ul>
                             <li><strong>Solid lines</strong>: Historical priority date cutoffs for each visa class</li>
                             <li><strong>Red dashed line</strong>: Your application's priority date</li>
+                            {% if show_vqs_column %}
                             <li><strong>Dotted lines</strong>: Bulletin Forecast Model projections using historical patterns, I-140 demand data, and fiscal year cycles (diamond = estimated date your priority date becomes current). <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}">How it works →</a></li>
+                            {% else %}
+                            <li><strong>Diamond marker</strong> (if priority date entered): estimated date your priority date becomes current, computed by linear extrapolation of the category's historical advancement rate. Family-Sponsored series don't have a forward-projected dotted line on this chart.</li>
+                            {% endif %}
                             <li><strong>Click on any data point</strong>: Opens the official visa bulletin for that month
                             </li>
                         </ul>
