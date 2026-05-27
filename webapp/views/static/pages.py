@@ -19,7 +19,10 @@ def health_view(request):
     Returns 200 only if main pages respond with status 200, load time <1s each,
     and meaningful non-empty content. Otherwise returns 503.
     """
-    client = Client()
+    # Force Host=localhost so the self-probes pass DisallowedHost middleware
+    # without leaking `testserver` into prod ALLOWED_HOSTS. Without this every
+    # /health/ probe returns 400 → /health/ reports 503.
+    client = Client(HTTP_HOST="localhost")
     for path in HEALTH_CHECK_PATHS:
         start = time.monotonic()
         try:
