@@ -59,7 +59,16 @@ def _trim_histogram_to_data_range(
 def build_salary_histogram_chart(
     histogram_data: dict, title: str, label: str | None = None
 ) -> str:
-    """Build salary distribution histogram with overlays."""
+    """Build salary distribution histogram with overlays.
+
+    Serialized as a plain dict + json.dumps rather than via plotly.graph_objs
+    Figure + PlotlyJSONEncoder. The two outputs are equivalent on the client
+    side (plotly.js resolves the named template), but the dict path is ~700x
+    faster (~0.05 ms vs ~36 ms per chart) and yields ~8x smaller payloads.
+    The hot caller is the employer profile page which builds 5–10 of these
+    per cold-cache hit; the old path was the dominant cost on bot-driven
+    /employer/<slug>/ requests (see Notion 36662b8d residual investigation).
+    """
     bins = histogram_data.get("bins", [])
     overlays = histogram_data.get("overlays", [])
     default_label = histogram_data.get("label", "All Filings")
@@ -68,16 +77,17 @@ def build_salary_histogram_chart(
     counts = [bin_data["count"] for bin_data in bins]
 
     if not bins:
-        fig = go.Figure()
-        fig.update_layout(
-            title=title,
-            xaxis_title="Salary Range",
-            yaxis_title="Number of Filings",
-            height=400,
-            template="plotly_white",
-            showlegend=False,
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        return json.dumps({
+            "data": [],
+            "layout": {
+                "title": {"text": title},
+                "xaxis": {"title": {"text": "Salary Range"}},
+                "yaxis": {"title": {"text": "Number of Filings"}},
+                "height": 400,
+                "template": "plotly_white",
+                "showlegend": False,
+            },
+        })
 
     overlay_counts_list = [o.get("counts", []) for o in overlays if o.get("counts")]
     labels, counts, overlay_counts_list = _trim_histogram_to_data_range(
@@ -86,50 +96,46 @@ def build_salary_histogram_chart(
 
     max_count = max(counts) if counts else 0
     y_max = max_count * 1.2 if max_count else 1
+    n = len(labels)
 
-    data = [
-        go.Bar(
-            x=labels,
-            y=counts,
-            name=label,
-            opacity=0.35,
-            marker_color="rgba(100, 100, 100, 0.45)",
-            hovertemplate=f"<b>%{{x}}</b><br>{label}: %{{y:,}}<extra></extra>",
-        )
-    ]
+    data: list[dict] = [{
+        "type": "bar",
+        "x": labels,
+        "y": counts,
+        "name": label,
+        "opacity": 0.35,
+        "marker": {"color": "rgba(100, 100, 100, 0.45)"},
+        "hovertemplate": f"<b>%{{x}}</b><br>{label}: %{{y:,}}<extra></extra>",
+    }]
 
     for overlay, overlay_counts in zip(
         [o for o in overlays if o.get("counts")], overlay_counts_list
     ):
-        data.append(
-            go.Scatter(
-                x=labels,
-                y=overlay_counts,
-                mode="lines+markers",
-                name=overlay.get("employer_name", "Overlay"),
-                hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,}<extra></extra>",
-            )
-        )
+        data.append({
+            "type": "scatter",
+            "x": labels,
+            "y": overlay_counts,
+            "mode": "lines+markers",
+            "name": overlay.get("employer_name", "Overlay"),
+            "hovertemplate": "<b>%{x}</b><br>%{fullData.name}: %{y:,}<extra></extra>",
+        })
 
-    fig = go.Figure(data=data)
-    n = len(labels)
-    fig.update_layout(
-        title=title,
-        xaxis_title="Salary Range",
-        yaxis_title="Number of Filings",
-        height=450,
-        template="plotly_white",
-        showlegend=False,
-        xaxis={
+    layout = {
+        "title": {"text": title},
+        "xaxis": {
+            "title": {"text": "Salary Range"},
             "tickangle": -45,
             "range": [-0.5, n - 0.5],
             "autorange": False,
         },
-        yaxis={"range": [0, y_max]},
-        margin=dict(t=30, r=10, b=90, l=45),
-        autosize=True,
-    )
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        "yaxis": {"title": {"text": "Number of Filings"}, "range": [0, y_max]},
+        "height": 450,
+        "template": "plotly_white",
+        "showlegend": False,
+        "margin": {"t": 30, "r": 10, "b": 90, "l": 45},
+        "autosize": True,
+    }
+    return json.dumps({"data": data, "layout": layout})
 
 
 def build_experience_salary_chart(histogram_data: dict, title: str) -> str:
