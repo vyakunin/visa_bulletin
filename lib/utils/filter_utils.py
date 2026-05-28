@@ -36,7 +36,12 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
     Returns:
         Filtered queryset
     """
-    if not query:
+    if not query or len(query.strip()) < 3:
+        # Trigrams need ≥3 chars to use the GIN index. Patterns of 1-2 chars
+        # match every row and PostgreSQL falls back to a sequential scan on
+        # the full table — ~22s on /salaries/?q=R, ~5s on q=ENGINEERS truncated
+        # by a deep page=N. Treat short q the same as no q (the result is
+        # effectively meaningless anyway). Notion 36662b8d residual fix.
         return queryset
 
     model = queryset.model
