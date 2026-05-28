@@ -1,0 +1,86 @@
+# Unified Ingest Framework Rules
+
+## Rule: Always Use Unified Ingest Framework for Data Imports
+
+**ALWAYS use the unified ingest framework (`lib/ingest/`) for ALL data imports. NEVER create individual import functions or scripts.**
+
+### Framework Architecture
+
+The unified ingest framework provides:
+- **Plugin-based architecture** - Each data source is a plugin
+- **Automatic pipeline** - Download → Parse → Transform → Load
+- **Checkpoint/resume** - Can resume from any stage if interrupted
+- **Progress tracking** - Tracks records processed, errors, timing
+- **Error handling** - Automatic error tracking and reporting
+- **Version tracking** - Links records to ingest versions for rollback
+
+### Location
+
+- **Framework:** `lib/ingest/` (orchestrator, registry, base classes)
+- **Plugins:** `lib/ingest/plugins/` (one plugin per data source)
+- **Documentation:** `docs/UNIFIED_INGEST_PIPELINE_DESIGN.md`
+
+### ✅ GOOD - Create Plugin
+
+```python
+# lib/ingest/plugins/dol_worksite.py
+class WorksiteLocationDataSourcePlugin(DataSourcePlugin):
+    """Plugin for DOL Worksites disclosure data"""
+    domain = DataDomain.DOL
+    source_type = SourceType.WORKSITE
+    
+    def discover_sources(self) -> list[SourceInfo]:
+        """Discover worksite files from DOL website"""
+        ...
+    
+    def parse(self, filepath: Path, run: IngestRun) -> Iterator[dict]:
+        """Stream parse Excel/CSV files"""
+        ...
+    
+    def transform(self, record: dict) -> WorksiteRecord | None:
+        """Transform to WorksiteRecord model"""
+        ...
+```
+
+### ❌ BAD - Individual Import Function
+
+```python
+# DON'T create functions like this:
+def import_worksite_file(filepath: Path, ...) -> tuple[int, int, int]:
+    """Import worksite file"""
+    # Manual import logic...
+```
+
+### Existing Plugins
+
+- `lib/ingest/plugins/dol_lca.py` - H1BSalaryDataSourcePlugin (LCA files → SalaryRecord)
+- `lib/ingest/plugins/dol_perm.py` - PERMSalaryDataSourcePlugin (PERM files → SalaryRecord)
+- `lib/ingest/plugins/dol_worksite.py` - WorksiteLocationDataSourcePlugin (worksite files → WorksiteRecord)
+- `lib/ingest/plugins/visa_bulletin.py` - VisaBulletinPlugin (bulletins → VisaCutoffDate)
+
+### Adding New Data Source
+
+1. **Add SourceType enum** (if new type) to `models/ingest/enums.py`
+2. **Create plugin** in `lib/ingest/plugins/` extending `DataSourcePlugin`
+3. **Register plugin** in `lib/ingest/plugins/__init__.py`
+4. **Add to BUILD** file
+5. **Use via orchestrator:** `PipelineOrchestrator().run_ingest(...)`
+
+### Legacy Importers
+
+**These are DEPRECATED and should NOT be used for new data sources:**
+- Individual `import_*_file()` functions
+- Scripts that bypass the framework
+- Manual download/parse/load logic
+
+**Legacy code may still exist for backward compatibility but should not be extended.**
+
+### Rationale
+
+- ✅ Consistent architecture across all data sources
+- ✅ Automatic resumability and error handling
+- ✅ Progress tracking and instrumentation
+- ✅ Version tracking for rollbacks
+- ✅ Single place to optimize performance
+- ✅ Easier to add new data sources (just create plugin)
+
