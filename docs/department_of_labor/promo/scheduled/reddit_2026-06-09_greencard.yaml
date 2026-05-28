@@ -1,0 +1,54 @@
+# Source draft: ../drafts/REDDIT_GREENCARD_2026-06-09.md
+# Trigger via at/cron — see ~/cursor_projects/agent_infra/scripts/README.md.
+#
+# r/greencard's Dec 2025 attempt got 1↑/0 (likely AutoMod). Body structure here
+# minimizes link count (zero links in body) per v3.1 anti-AutoMod pattern.
+# If filtered: modmail with prior r/immigration + r/EB2 post URLs as evidence,
+# wait 48h, do NOT repost on auto-removal.
+
+subreddit: greencard
+title: "Built a green card priority date predictor + database of every H-1B / PERM filing — looking for testers + feedback"
+flair_id: null   # Top 10 doesn't use flair.
+scheduled_time: "2026-06-09T14:00:00Z"
+
+body: |
+  Hi r/greencard — built two things and they connect, looking for people who'll try them and tell me what's broken.
+
+  **1) Priority date predictor**
+
+  For every EB category × country (and FB too — F1 through F4), the model predicts where the next bulletin's cutoff will land, and shows you which signals went into the prediction. There's a public accuracy archive of every past prediction vs the real cutoff — that's the page to open first because it's the only honest way to judge if the model is worth trusting.
+
+  Honest about limits: works well on slow-moving categories (India EB-3, EB-2 India), rough at fiscal-year boundary, and useless at predicting USCIS policy moves before they're announced.
+
+  **2) Employer + salary database**
+
+  Indexed every DOL H-1B + PERM disclosure — 1.5M records, 287k employers. You can look up a specific company and see:
+
+  • Certified base wages by role, by year, by state — the LCA floor an employer swore to under penalty of perjury
+  • H-1B filing volume per role and year
+  • Approval rate
+  • Top job titles they sponsor and median salary for each
+
+  Most useful when an offer comes in and you want a hard floor on the base salary to negotiate against. RSUs/bonuses aren't in DOL data, so this is the floor, not the total — but it's a number the employer legally certified, not a glassdoor data point.
+
+  **The two halves connect**
+
+  Pick the company → look at their certified wages for your role + state → cross-check with what your priority date is likely to do in the prediction model. Together they sketch what an offer is really worth.
+
+  Free, no signup, no email gate. Specific links in the first comment so this stays readable.
+
+  What I'd love: poke around, tell me what's broken or missing. Especially: a category where the prediction has been wrong, or a feature that would change your decisions.
+
+first_comment: |
+  Support (if this saves you time and you want to keep it running):
+  • Buy me a coffee: https://buymeacoffee.com/vyakunin
+  • GitHub Sponsors: https://github.com/sponsors/vyakunin
+
+  Specific pages, as promised:
+  • EB predictions + accuracy archive: https://visa-bulletin.us/predictions/employment_based/2026-6/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • FB predictions + accuracy archive: https://visa-bulletin.us/predictions/family_sponsored/2026-6/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • How the model works (methodology): https://visa-bulletin.us/analysis/how-my-prediction-model-works/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • Top sponsors leaderboard (by H-1B volume): https://visa-bulletin.us/employers/rankings/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • Example employer profile (Google): https://visa-bulletin.us/employer/google-llc/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • Example job-title page (Software Engineer): https://visa-bulletin.us/job-title/software-engineer-161559609/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard
+  • Per-state salaries (e.g. California): https://visa-bulletin.us/salaries/by-state/CA/?utm_source=reddit&utm_medium=social&utm_campaign=may2026_promo&utm_content=greencard

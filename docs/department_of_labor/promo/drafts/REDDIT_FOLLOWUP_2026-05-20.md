@@ -108,9 +108,9 @@ I indexed 1.5M DOL H-1B + PERM disclosure records (the certified-wage filings ev
 - Job-title directory — every role aggregated across employers (median salary, top sponsors, salary distribution): https://visa-bulletin.us/job-titles/
 - Full salary search: https://visa-bulletin.us/salaries/
 
-Caveat that bears repeating: this is **base salary only** (what employers swore to pay under penalty of perjury on the LCA / PERM). It excludes RSUs / bonuses / sign-on. If you're benchmarking Big Tech, Levels.fyi is closer to total comp; this is closer to "the guaranteed floor + the sponsorship picture."
+Caveat that bears repeating: this is **base salary only** (what employers swore to pay under penalty of perjury on the LCA). It excludes RSUs / bonuses / sign-on. If you're benchmarking Big Tech, Levels.fyi is closer to total comp; this is the certified floor — the number the employer is legally on the hook for.
 
-The two halves connect: pick a company you're interviewing with → see whether they actually file PERMs or just churn H-1Bs → see what they certified for your role → compare to what your priority date is likely to do under the prediction model.
+The two halves connect: pick a company you're interviewing with → see what they certified for your role + state → compare to what your priority date is likely to do under the prediction model.
 
 If this saves you time: development tools, hosting, and my time will be easier to justify if you support me. https://buymeacoffee.com/vyakunin or [github.com/sponsors/vyakunin](https://github.com/sponsors/vyakunin). Either is appreciated. Either is fine if not.
 

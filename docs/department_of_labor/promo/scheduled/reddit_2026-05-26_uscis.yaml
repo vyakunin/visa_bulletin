@@ -1,0 +1,60 @@
+# Source draft: ../drafts/REDDIT_USCIS_2026-05-26.md
+# Trigger via at/cron — see ~/cursor_projects/agent_infra/scripts/README.md.
+#
+# IMPORTANT: this post tags 4 commenters by username (u/blyubird, u/Most_Bother8759,
+# u/arika1447, u/Former_Inflation3504). Re-hover each on Reddit before submit to
+# spell-check — wrong handles read as astroturf.
+
+subreddit: USCIS
+title: "Built a model that predicts the next visa bulletin — open to critique"
+flair_id: null   # Legacy field — not used by submit_reddit_via_browser.py.
+flair_text: "Self Post"   # POSTED 2026-05-26 18:17 UTC with this flair.
+                          # r/USCIS has no "Resource" flair; Self Post is the
+                          # neutral content-type fit for a tool-discussion post.
+scheduled_time: "2026-05-26T22:00:00Z"
+# Status: POSTED 2026-05-26 18:17 UTC via manual Playwright drive.
+# Post: https://old.reddit.com/r/USCIS/comments/1togz6h/
+# First comment: https://old.reddit.com/r/USCIS/comments/1togz6h/built_a_model_that_predicts_the_next_visa/oo116u6/
+
+body: |
+  In December I posted a visualizer for 10 years of bulletin movement here (https://www.reddit.com/r/USCIS/comments/1pbpki2/i_visualized_10_years_of_visa_bulletin_priority/). The projection logic was naive extrapolation, and several of you called that out:
+
+  u/blyubird: estimates should be based on the backlog, visa availability, ROW demand, I-140 trends, projected spillovers, not just past dates
+
+  u/Most_Bother8759: find out all the measurable variables that actually affect the delay/approval timeline
+
+  u/arika1447: combine historical USCIS data + historical bulletin movements; predict on quarterly data
+
+  u/Former_Inflation3504: when EB-1 India = 2050 and EB-2 = 2036, something is wrong, trends are not linear
+
+  Took those critiques and rebuilt. Specific page links are in the first comment.
+
+  What's new on the prediction side:
+
+  • Methodology write-up: what signals the model uses and how each is weighted.
+
+  • Each prediction page shows which signals contributed and how much weight each got. A "100% no-change baseline" flags itself as a flat line instead of pretending to be a forecast.
+
+  • Works best on long-stalled categories with steady movement (India EB-3 / EB-2). Rough on anything near an October fiscal-year reset, on EB-5 reserved buckets, and on months where DOS announces a policy change.
+
+  • Public accuracy archive: every past prediction vs the real DOS cutoff, every category, every month. I grade it against reality monthly.
+
+  If the archive shows it wrong for your category, tell me which month.
+
+  Also new since December: DOL salary database. I indexed 1.5M DOL H-1B + PERM disclosure records. Searchable by company, role, or state.
+
+  One caveat: base salary only, what employers swore to pay under penalty of perjury on the LCA. No RSUs, bonuses, or sign-on. For Big Tech total comp use levels.fyi; this is the certified floor — the number the employer is legally on the hook for.
+
+  Open to critique on either piece. What's helpful, what's broken, which category the predictions are wrong on.
+
+first_comment: |
+  Support (if this saves you time and you want to keep it running):
+  • Buy me a coffee: https://buymeacoffee.com/vyakunin
+  • GitHub Sponsors: https://github.com/sponsors/vyakunin
+
+  Specific pages, as promised in the post:
+  • 2026-06 predictions + accuracy archive: https://visa-bulletin.us/predictions/employment_based/2026-6/
+  • How the model works (methodology): https://visa-bulletin.us/analysis/how-my-prediction-model-works/
+  • Example employer profile (Google): https://visa-bulletin.us/employer/google-llc/
+  • Example job-title page (Software Engineer): https://visa-bulletin.us/job-title/software-engineer-161559609/
+  • Per-state salaries (e.g. California): https://visa-bulletin.us/salaries/by-state/CA/
