@@ -42,10 +42,14 @@ _PAGE_CAP_GONE_BODY = (
     "Use the filters at /salaries/ or /worksites/ to narrow your search."
 )
 
-_STATIC_PAGE_TITLE = "H-1B & PERM Salary Database | U.S. Immigration Data"
+_STATIC_PAGE_TITLE = (
+    "H-1B & PERM Salary Database: What 1.5M+ DOL Filings Actually Pay "
+    "(by Employer + Role)"
+)
 _STATIC_PAGE_DESCRIPTION = (
-    "Search H-1B and PERM salary data from official DOL disclosure files. "
-    "Find salaries by role, employer, and location."
+    "Look up real H-1B and PERM wages from official DOL filings — by company, "
+    "job title, and city. Compare offers, negotiate, or research filing "
+    "trends. Free."
 )
 _STATIC_PAGE_HEADING = "H-1B & Green Card Salary Database"
 # SERP meta-description cap — Google currently truncates at ~155–160 chars.

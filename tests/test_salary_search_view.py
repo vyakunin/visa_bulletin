@@ -140,7 +140,8 @@ class SalarySearchSEOTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.context["page_title"],
-            "H-1B & PERM Salary Database | U.S. Immigration Data",
+            "H-1B & PERM Salary Database: What 1.5M+ DOL Filings Actually Pay "
+            "(by Employer + Role)",
         )
         # Bare landing emits no intro paragraph and no Dataset JSON-LD —
         # those are reserved for filter-scoped pages.
