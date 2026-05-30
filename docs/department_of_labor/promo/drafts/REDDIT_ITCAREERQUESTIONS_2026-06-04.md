@@ -24,11 +24,7 @@ What it shows for any company you look up:
 • Top job titles they sponsor and median salary for each
 • YoY growth (are they still actively hiring sponsorship?)
 
-When this is useful in a career conversation:
-
-• You're comparing two offers and you want to see what the company actually pays for your role at that level. The certified wage is the floor — under penalty of perjury — so it's a hard data point you can quote in a negotiation.
-• You're sizing up a company's actual hiring footprint in your role — H-1B filing volume by year and title shows whether they're scaling up, flat, or pulling back.
-• An offer says "remote" but you want to know where the company's filings actually went — per-state pages show that.
+You can look up your job title or a potential employer to see what they've actually been paying and filing recently — handy when you're comparing offers, sizing up where a company is investing, or checking whether a "remote" role's filings really went where they say.
 
 Limits:
 

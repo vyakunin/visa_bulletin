@@ -66,9 +66,20 @@ no launchd plist (the schedule step got skipped). For each upcoming YAML with no
 flag it as "drafted but NOT scheduled — won't fire."
 
 Show the drafts (compact summary: sub, date, lead/angle; full body on request) for
-**approval**. Only after the user approves, schedule via
-`~/cursor_projects/agent_infra/scripts/schedule_reddit_post.py` (see that dir's
-README). Scheduling a public post is Tier 3 — never auto-schedule unprompted.
+**approval**. Scheduling a public post is Tier 3 — never auto-schedule unprompted.
+
+Only after approval, schedule each via the campaign's launchd pattern (NOT
+`schedule_reddit_post.py`, which is the unused PRAW path — this account posts via the
+browser): create `agent_infra/scripts/_run_reddit_<name>_<YYYY-MM-DD>.sh` (model it on
+an existing `_run_reddit_*.sh` — it kills stale playwright, then
+`uv run submit_reddit_via_browser.py --config <yaml>`, then Telegram-pings success/fail)
+plus `~/Library/LaunchAgents/com.user.reddit_<name>_<num>.plist` with a
+`StartCalendarInterval`, then `launchctl load` it. **launchd fires in LOCAL Mac time**:
+Berlin is UTC+2 in summer (CEST), so a 14:00-UTC slot = Hour 16 in the plist — always
+recompute the offset (`date`). Verify with `launchctl list | grep reddit`.
+**Flair gotcha:** if the sub requires a post flair and the YAML's `flair_text` is null,
+`submit_reddit_via_browser.py` fails (rc=7, the developersindia failure). Dry-run new
+(sub+content) combos to enumerate flair before the scheduled fire.
 
 ## Email-triggered proactive mode (the standing subscriptions)
 

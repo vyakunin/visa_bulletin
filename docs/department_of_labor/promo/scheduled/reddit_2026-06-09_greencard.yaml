@@ -16,7 +16,7 @@ body: |
 
   **1) Priority date predictor**
 
-  For every EB category × country (and FB too — F1 through F4), the model predicts where the next bulletin's cutoff will land, and shows you which signals went into the prediction. There's a public accuracy archive of every past prediction vs the real cutoff — that's the page to open first because it's the only honest way to judge if the model is worth trusting.
+  For every EB category × country (and FB too — F1 through F4), the model predicts where the next bulletin's cutoff will land, and shows you which signals went into the prediction. It's new — only a few live predictions so far — but each is logged in a public accuracy archive next to the real cutoff, so you can watch the track record build and judge it yourself.
 
   Limits: works well on slow-moving categories (India EB-3, EB-2 India), rough at the fiscal-year boundary, and useless at predicting USCIS policy moves before they're announced.
 

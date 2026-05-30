@@ -23,11 +23,11 @@ body: |
 
   • Tell you whether you'll age out — that depends on USCIS processing speed for your category, which is a separate problem from priority-date movement.
 
-  There's a public accuracy archive — every prediction the model has ever made, side-by-side with the real cutoff DOS published. EB-2 India and EB-2 ROW are the categories I check most because they're where this sub lives. If you scroll through and find a month where the model was badly wrong, that's the most useful kind of feedback — leave a comment with the month + category.
+  It's early — only a few live predictions so far — but each one is logged in a public accuracy archive next to the real cutoff DOS, so the track record builds in the open. EB-2 India and EB-2 ROW are the ones I watch most.
 
-  I also built a database of every DOL H-1B + PERM filing (1.5M records) — most useful as a salary reference: certified base wages by role + employer + state, under penalty of perjury on the LCA. Useful when an EB-2 candidate is negotiating a transfer or comparing offers. Links in the first comment.
+  I also built a database of every DOL H-1B + PERM filing (1.5M records) — a salary reference: certified base wages by role + employer + state. Useful when negotiating a transfer or comparing offers. Links in the first comment.
 
-  Free, no signup. Open to critique on the model — especially "your model is wrong about EB-2 [category] in [month]" kind of comments.
+  Free, no signup. Appreciate any feedback — I'll try to make it more useful.
 
 first_comment: |
   Support (if this saves you time and you want to keep it running):
