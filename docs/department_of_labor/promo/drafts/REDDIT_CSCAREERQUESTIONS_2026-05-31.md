@@ -14,7 +14,7 @@ Verify Sunday — sub uses "Experienced", "New Grad", "Meta", "Student". Probabl
 
 ## Body
 
-Pulled the entire DOL H-1B + PERM disclosure dataset (1.5M records, 287k employers, FY2018-FY2026 partial) to look at one question: what do top tech employers actually certify on the LCA — the base-wage floor they swore to under penalty of perjury, by role + employer + state.
+Pulled the entire DOL H-1B + PERM disclosure dataset (1.5M records, 287k employers, FY2008–2026) to look at one question: what do top tech employers actually certify on the LCA — the base-wage floor they swore to under penalty of perjury, by role + employer + state.
 
 A few patterns from the data:
 
@@ -26,11 +26,11 @@ Big Tech sponsors with the deepest filing history (useful for FY2024–2026 wage
 
 **2) Certified wages span a wide band even at the "same" company / role.**
 
-Pulling SWE-equivalent titles at the top 10 tech employers shows ranges of 1.4–1.8× between 25th and 75th percentile of certified wages — wider than I expected. Geography explains some (Bay Area > Austin > Atlanta), but seniority + role specialization explain more.
+Across software-engineer titles (FY2022+), the 25th–75th percentile of certified base wages runs about $113k–$158k — roughly 1.4×, and wider at individual employers. Geography explains some (Bay Area > Austin > Atlanta), but seniority + role specialization explain more.
 
-**3) FY2026 (current) shows volume drop vs FY2024 peak.**
+**3) Filing volume held steady ~100k–130k a year, FY2016–FY2024.**
 
-Total H-1B initial-employment certifications are tracking below the FY2024 peak. PERM filings are flatter. Could be cyclical demand, could be policy changes — the dataset doesn't say which.
+The most recent fiscal years (FY2025–26) look low in the data only because DOL is still publishing those disclosures — that's a reporting lag, not a demand signal, so don't read a drop into them.
 
 The full data and per-employer / per-role / per-state breakdowns are at visa-bulletin.us. Free, no signup, no ads. Methodology / column definitions in the first comment along with specific page links.
 
