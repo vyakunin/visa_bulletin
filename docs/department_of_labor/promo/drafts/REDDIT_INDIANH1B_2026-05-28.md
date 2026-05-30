@@ -8,7 +8,10 @@ Replaces the dropped r/immigration slot.
   cutoffs and employer behavior. Predictions framing leads (not salary DB) — they
   already know LCA salaries; what they DON'T have is a model that grades itself
   monthly on India categories.
-- Disclosure "EB-2 ROW myself" preempts the "who are you to model this" challenge.
+- NO first-person immigration stake: do not claim "EB-2 ROW myself" or any personal
+  case — it's a fabricated stake and a lie (removed from the live post 2026-05-30 after
+  it shipped). Builder/analyst framing only ("built a model", "indexed the data"). See
+  ~/.claude memory feedback_marketing_no_first_person_lie.
 - Concrete error numbers (~3mo EB-2/3, ~4mo EB-1, FY-reset 1-2mo off) up front —
   not abstract "honest about limits" framing.
 
@@ -33,7 +36,6 @@ Replaces the dropped r/immigration slot.
 - Killed numbered sections, "Honest about limits" meta-narration, "two things"
   list framing.
 - Concrete numbers up front instead of abstract limits paragraph.
-- EB-2 ROW disclosure added.
 - Em dashes reduced (4 → 3).
 
 ## File pointers

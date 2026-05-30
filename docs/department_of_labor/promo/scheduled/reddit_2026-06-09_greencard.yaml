@@ -18,7 +18,7 @@ body: |
 
   For every EB category × country (and FB too — F1 through F4), the model predicts where the next bulletin's cutoff will land, and shows you which signals went into the prediction. There's a public accuracy archive of every past prediction vs the real cutoff — that's the page to open first because it's the only honest way to judge if the model is worth trusting.
 
-  Honest about limits: works well on slow-moving categories (India EB-3, EB-2 India), rough at fiscal-year boundary, and useless at predicting USCIS policy moves before they're announced.
+  Limits: works well on slow-moving categories (India EB-3, EB-2 India), rough at the fiscal-year boundary, and useless at predicting USCIS policy moves before they're announced.
 
   **2) Employer + salary database**
 

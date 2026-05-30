@@ -23,7 +23,7 @@ body: |
   • You're sizing up a company's actual hiring footprint in your role — H-1B filing volume by year and title shows whether they're scaling up, flat, or pulling back.
   • An offer says "remote" but you want to know where the company's filings actually went — per-state pages show that.
 
-  Honest about limits:
+  Limits:
 
   • Base salary only — RSUs / bonuses / sign-on are NOT in DOL filings. For total comp comparison, levels.fyi is closer; this is closer to "the guaranteed floor + the sponsorship picture".
   • Doesn't include roles that don't require an LCA filing (so non-sponsorship-track roles are invisible to this dataset).

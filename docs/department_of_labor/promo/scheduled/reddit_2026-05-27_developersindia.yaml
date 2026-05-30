@@ -6,8 +6,8 @@
 
 subreddit: developersIndia
 title: "Indexed 1.5M DOL H-1B + PERM filings — search which US companies actually sponsor for your role (free, no signup)"
-flair_text: "I Made This :snoo_wink:"   # Verified 2026-05-28 against /r/developersIndia/new/.json — 10/100 recent posts use this flair; tool-showcase fits.
-scheduled_time: "2026-05-28T12:00:00Z"   # 17:30 IST Thursday evening commute (original 02-04 UTC IST-morning window already missed for today).
+flair_text: "I Made This"   # 2026-05-28 retry: dropdown lists 24 flairs, plain "I Made This" (no :snoo_wink: suffix). Previous YAML had emoji suffix → submit_reddit_via_browser.py rc=7 (strict equality fail at /tmp/reddit_post_2026-05-28_developersindia_*.log).
+scheduled_time: "2026-05-29T12:00:00Z"   # Friday 17:30 IST evening commute — retry slot after 05-28 12:00 UTC failed on flair mismatch.
 
 body: |
   Built a free database of every H-1B and PERM filing the US Department of Labor has published. 1.5M records across 287k employers, going back several fiscal years.

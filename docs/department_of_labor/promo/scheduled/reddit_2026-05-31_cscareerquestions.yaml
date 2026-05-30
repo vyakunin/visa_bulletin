@@ -16,7 +16,7 @@ scheduled_time: "2026-05-31T14:00:00Z"
 body: |
   Pulled the entire DOL H-1B + PERM disclosure dataset (1.5M records, 287k employers, FY2018-FY2026 partial) to look at one question: what do top tech employers actually certify on the LCA — the base-wage floor they swore to under penalty of perjury, by role + employer + state.
 
-  A few patterns from the data, presented as findings rather than a pitch:
+  A few patterns from the data:
 
   **1) The certified wage is a negotiation-grade floor — and it's public.**
 
