@@ -693,7 +693,13 @@ Data is fetched from: https://travel.state.gov/content/travel/en/legal/visa-law0
 
 ## License
 
-This project is provided as-is for educational and informational purposes.
+This project is licensed under the **PolyForm Noncommercial License 1.0.0** —
+see [`LICENSE`](./LICENSE).
+
+- **Noncommercial use is free** — personal study, research, hobby projects, and
+  use by nonprofit / educational / government organizations.
+- **Commercial use requires a separate commercial license** from the copyright
+  holder (© 2026 Vladimir Yakunin). Contact the licensor to obtain one.
 
 ## Contributing
 
