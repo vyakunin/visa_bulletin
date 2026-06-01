@@ -16,7 +16,7 @@ from lib.ingest.registry import PluginRegistry
 from models.ingest.data_source import DataSource
 from models.ingest.enums import DataDomain, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
-from models.salary import SalaryRecord
+from models.salary import SalaryRecord, WorksiteRecord
 
 
 @pytest.mark.django_db
@@ -488,3 +488,38 @@ class TestPERMSalaryDataSourcePlugin:
         assert len(records) == 1
         # Should extract fiscal year from URL fallback (FY16 -> 2016)
         assert records[0]["_fiscal_year"] == 2016
+
+
+@pytest.mark.django_db
+class TestWorksiteFileTransformFy2026:
+    """Regression: FY2026 standalone worksite files (pw_worksites/lca_worksites)
+    carry only CASE_NUMBER + worksite location + SOC columns and have NO
+    JOB_TITLE. The transform required job_title and dropped every row -> 0
+    records ingested. It must now create a WorksiteRecord, falling back to the
+    SOC title for the missing job_title.
+    """
+
+    def _worksite_file_row(self):
+        # Column subset taken verbatim from pw_worksites_fy2026_q2.xlsx.
+        return {
+            "CASE_NUMBER": "I-200-26042-700001",
+            "WORKSITE_COUNTY": "SANTA CLARA",
+            "WORKSITE_STATE": "CA",
+            "WORKSITE_BLS_AREA": "41940",
+            "SOC_CODE": "15-1252",
+            "SOC_TITLE": "Software Developers",
+            "_fiscal_year": 2026,
+            "_source_file": "pw_worksites_fy2026_q2.xlsx",
+        }
+
+    def test_worksite_file_row_creates_record_without_job_title(self):
+        plugin = H1BSalaryDataSourcePlugin()
+        plugin._current_run = Mock()
+        result = plugin.transform(self._worksite_file_row())
+        assert isinstance(result, WorksiteRecord), (
+            "worksite-file row (no JOB_TITLE) must yield a WorksiteRecord, not be dropped"
+        )
+        assert result.worksite_state == "CA"
+        assert result.soc_code == "15-1252"
+        # job_title falls back to SOC title when the file omits JOB_TITLE.
+        assert result.job_title == "Software Developers"

@@ -695,18 +695,16 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             or ""
         )
 
-        # Parse job fields (job_title is required)
-        job_title_raw = get_column_value(record, column_mappings["job_title"])
-        if (
-            not job_title_raw
-            or job_title_raw.strip() == ""
-            or job_title_raw.strip().lower() == "unknown"
-        ):
-            logger.debug(f"Skipping record {case_number}: missing job_title")
-            return None
-        job_title = job_title_raw.strip()
+        # Job fields. Standalone worksite-location files (e.g. FY2026
+        # pw_worksites/lca_worksites) carry only CASE_NUMBER + worksite + SOC
+        # columns and have NO JOB_TITLE — these are valid worksite records, so
+        # fall back to the SOC title instead of dropping every row.
         soc_code = get_column_value(record, column_mappings["soc_code"]) or ""
         soc_title = get_column_value(record, column_mappings["soc_title"]) or ""
+        job_title_raw = get_column_value(record, column_mappings["job_title"])
+        job_title = (job_title_raw or "").strip()
+        if not job_title or job_title.lower() == "unknown":
+            job_title = soc_title.strip()
 
         # Validate wage fields are None or numeric before creating record
         wage_from = self._validate_wage_field(
