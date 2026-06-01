@@ -118,6 +118,40 @@ class TestWorksiteRecordCopyBug(TestCase):
         self.assertEqual(inserted.wage_unit, WageUnit.YEAR)
         inserted.delete()
 
+    def test_long_soc_code_does_not_overflow(self):
+        """Regression: FY2026 Q2 rows carry 'code - title' in SOC_CODE, e.g.
+        '15-1252 - Software Developers' (29 chars). That overflowed the old
+        varchar(20) soc_code column and aborted the LCA disclosure ingest
+        (run 18030: 'value too long for type character varying(20)'). Column
+        is now varchar(50)."""
+        long_soc = "15-1252 - Software Developers"
+        self.assertGreater(len(long_soc), 20, "fixture must exceed the old limit")
+        WorksiteRecord.objects.filter(case_number="I-200-26042-633112").delete()
+        rec = WorksiteRecord(
+            case_number="I-200-26042-633112",
+            visa_program=VisaProgram.H1B,
+            case_status=None,
+            job_title="SOFTWARE DEVELOPER",
+            soc_code=long_soc,
+            soc_title="Software Developers",
+            worksite_city="MOUNTAIN VIEW",
+            worksite_state="CA",
+            worksite_zip="",
+            wage_from=Decimal("150000"),
+            wage_to=None,
+            wage_unit=WageUnit.YEAR,
+            wage_annual=Decimal("150000"),
+            prevailing_wage=Decimal("150000"),
+            prevailing_wage_unit=WageUnit.YEAR,
+            fiscal_year=2026,
+        )
+        rec.save()  # would raise DataError (value too long) on varchar(20)
+        self.assertEqual(
+            WorksiteRecord.objects.get(case_number="I-200-26042-633112").soc_code,
+            long_soc,
+        )
+        rec.delete()
+
 
 if __name__ == "__main__":
     unittest.main()

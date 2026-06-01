@@ -421,7 +421,9 @@ class SalaryRecord(models.Model):
     job_title = models.CharField(max_length=255, db_index=True, help_text="Job title")
 
     soc_code = models.CharField(
-        max_length=20,
+        # 50 (not 20): some DOL files put "15-1252 - Software Developers"
+        # (code + title) in the SOC_CODE column, which overflows varchar(20).
+        max_length=50,
         blank=True,
         db_index=True,
         help_text="Standard Occupational Classification code",
@@ -745,7 +747,9 @@ class WorksiteRecord(models.Model):
     job_title = models.CharField(max_length=255, db_index=True, help_text="Job title")
 
     soc_code = models.CharField(
-        max_length=20,
+        # 50 (not 20): some DOL files put "15-1252 - Software Developers"
+        # (code + title) in the SOC_CODE column, which overflows varchar(20).
+        max_length=50,
         blank=True,
         db_index=True,
         help_text="Standard Occupational Classification code",

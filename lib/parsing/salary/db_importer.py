@@ -84,11 +84,18 @@ LCA_COLUMN_MAPPINGS = {
 }
 
 PERM_COLUMN_MAPPINGS = {
+    # FY2026+ revised PERM (ETA-9089) disclosure files renamed columns to the
+    # EMP_*/PWD_*/JOB_OPP_* scheme; older files use EMPLOYER_*/PW_*. Keep both.
     "case_number": ["CASE_NUMBER", "CASE_NO"],
     "case_status": ["CASE_STATUS", "Case_Status"],
-    "employer_name": ["EMPLOYER_NAME", "Employer_Name", "EMPLOYER_BUSINESS_NAME"],
-    "employer_city": ["EMPLOYER_CITY", "Employer_City"],
-    "employer_state": ["EMPLOYER_STATE", "Employer_State"],
+    "employer_name": [
+        "EMPLOYER_NAME",
+        "Employer_Name",
+        "EMPLOYER_BUSINESS_NAME",
+        "EMP_BUSINESS_NAME",
+    ],
+    "employer_city": ["EMPLOYER_CITY", "Employer_City", "EMP_CITY"],
+    "employer_state": ["EMPLOYER_STATE", "Employer_State", "EMP_STATE"],
     "job_title": [
         "JOB_TITLE",
         "PW_JOB_TITLE_9089",
@@ -96,8 +103,8 @@ PERM_COLUMN_MAPPINGS = {
         "PW_JOB_TITLE",
         "JOB_INFO_JOB_TITLE",
     ],
-    "soc_code": ["PW_SOC_CODE", "PW_SOC_Code", "SOC_CODE"],
-    "soc_title": ["PW_SOC_TITLE", "SOC_TITLE"],
+    "soc_code": ["PW_SOC_CODE", "PW_SOC_Code", "SOC_CODE", "PWD_SOC_CODE"],
+    "soc_title": ["PW_SOC_TITLE", "SOC_TITLE", "PWD_SOC_TITLE"],
     "worksite_city": [
         "WORKSITE_CITY",
         "EMPLOYER_CITY",

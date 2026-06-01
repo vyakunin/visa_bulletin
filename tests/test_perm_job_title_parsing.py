@@ -98,5 +98,63 @@ class TestPermJobTitleParsing(unittest.TestCase):
         )
 
 
+class TestPermFy2026ColumnScheme(unittest.TestCase):
+    """Regression: FY2026 revised PERM (ETA-9089) files renamed columns to the
+    EMP_*/PWD_* scheme. The importer only knew EMPLOYER_*/PW_*, so every row
+    failed the required 'employer_name' lookup and was skipped -> 0 records
+    ingested from perm_disclosure_data_fy2026_q2.xlsx.
+    """
+
+    def _fy2026_row(self):
+        # Header subset taken verbatim from perm_disclosure_data_fy2026_q2.xlsx.
+        return {
+            "CASE_NUMBER": "A-26042-633112",
+            "CASE_STATUS": "CERTIFIED",
+            "EMP_BUSINESS_NAME": "ACME ROBOTICS INC",
+            "EMP_CITY": "MOUNTAIN VIEW",
+            "EMP_STATE": "CA",
+            "JOB_TITLE": "SOFTWARE DEVELOPER",
+            "PWD_SOC_CODE": "15-1252",
+            "PWD_SOC_TITLE": "Software Developers",
+            "JOB_OPP_WAGE_FROM": "150000",
+            "JOB_OPP_WAGE_PER": "Year",
+        }
+
+    def test_employer_name_resolves_from_emp_business_name(self):
+        row = self._fy2026_row()
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["employer_name"]),
+            "ACME ROBOTICS INC",
+            "FY2026 EMP_BUSINESS_NAME must map to employer_name (else row skipped -> 0 records)",
+        )
+
+    def test_employer_city_state_resolve_from_emp_columns(self):
+        row = self._fy2026_row()
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["employer_city"]), "MOUNTAIN VIEW"
+        )
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["employer_state"]), "CA"
+        )
+
+    def test_soc_resolves_from_pwd_columns(self):
+        row = self._fy2026_row()
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["soc_code"]), "15-1252"
+        )
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["soc_title"]),
+            "Software Developers",
+        )
+
+    def test_legacy_employer_name_still_resolves(self):
+        # Backward-compat: pre-FY2026 files must keep working.
+        row = {"EMPLOYER_NAME": "SALUS HEALTHCARE"}
+        self.assertEqual(
+            get_column_value(row, PERM_COLUMN_MAPPINGS["employer_name"]),
+            "SALUS HEALTHCARE",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
