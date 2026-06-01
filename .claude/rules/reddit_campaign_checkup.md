@@ -2,8 +2,12 @@
 
 How to "check in on the Reddit posts" for the visa-bulletin.us promo campaign. The
 campaign posts from the Reddit account **CivilCandidate1349** via the `reddit_post`
-MCP / `submit_reddit_via_browser.py`, scheduled through launchd. Drafts live in
-`docs/department_of_labor/promo/{drafts,scheduled}/`.
+MCP / `submit_reddit_via_browser.py`, scheduled through launchd. Drafts + the
+scheduled YAMLs live in the PRIVATE repo
+`~/cursor_projects/visa_bulletin_platform/marketing/{drafts,scheduled}/` (moved
+out of the public repo 2026-06-01 — marketing is private). The launchd
+run-scripts (`agent_infra/scripts/_run_reddit_*.sh`) read the scheduled YAMLs
+from that private path.
 
 Run all four sections every checkup, in order. Report a compact phone-formatted
 digest (per `~/.claude/rules/chat_formatting.md`): lead with health, then perf, then
@@ -92,6 +96,16 @@ Reddit emails CivilCandidate1349's notifications to vyakunin@gmail.com from
   replies.
 - **`reddit-messages`** — `subject:("new message" OR "mentioned you" OR "wants to chat")`
   minus AutoModerator → DMs, modmail (mute/ban/removal notices), username mentions.
+- **`f5bot-mentions`** — `from:admin@f5bot.com subject:"F5Bot found something"` → keyword
+  hits on Reddit/HN/Lobsters. F5Bot account: f5bot.com, login `vyakunin@gmail.com`, password
+  at `~/tokens/f5bot` (mode 600; reset 2026-05-30 — not in LastPass). Keywords are literal
+  case-insensitive substrings (no OR; one phrase per alert). **Every enabled keyword carries
+  the `no-url=/r/immigration/` flag** — CivilCandidate1349 is permanently banned there, so
+  alerts from that sub are useless noise (the free `no-url=/r/<sub>/` flag does the exclusion;
+  trailing slash matters so it doesn't catch r/immigrationlaw). When revising keywords to
+  match current functionality, cover BOTH product surfaces: prediction (priority date /
+  visa bulletin forecast) AND the salary/employer DB (h1b salary, lca wage, certified wage).
+  Full strategy + current keyword inventory: `~/cursor_projects/visa_bulletin_platform/marketing/BLIND_THREAD_MONITORING.md`.
 
 When one fires, the dispatcher forwards it and `listen_chat_receiver` auto-spawns a
 listener in this project. **That listener should act proactively, not just ack:** pull
@@ -116,7 +130,45 @@ Run every draft body through the style rules and fix violations:
   "asking for money" spam trigger some subs cite (r/immigration removal). On
   high-risk subs, flag it for the user rather than assume it's safe.
 
+## Draft style — corrections log (update on every user edit)
+
+When Vladimir corrects a draft, fold the lesson in here so the next draft starts closer.
+Standing rules learned from his edits:
+
+- **Replies/comments: short. One small paragraph by default.** He repeatedly cuts
+  multi-point structure ("too much repetitive", "I don't like these blocks",
+  "go much shorter, one small paragraph"). A comment answering one question = one tight
+  paragraph, not a numbered pitch. Reserve the structured multi-section format for
+  top-level *posts*, not comment replies.
+- **Honesty over overpromising on prediction accuracy.** When a category is genuinely
+  hard to predict (EB-3 Rest of World, anything demand/policy-driven), say so plainly:
+  "I'm not aware of a reliable prediction for X — tried hard to build one from open data,
+  it's almost entirely unpredictable." Then point to the **historical trend** (what the
+  cutoff actually did) rather than implying the model forecasts it well. Don't sell a
+  forecast the model can't deliver.
+- **Drop canned benefit blocks.** No "when it's useful in a career conversation: •…•…"
+  lists. One plain line instead ("you can check your job title or an employer to see how
+  they've been doing recently").
+- **The model is new — ~3 real live predictions so far.** Don't overstate the accuracy
+  archive or imply a long track record. Frame as new, "appreciate any feedback".
+- **No first-person immigration stake** (see Style gate above) — builder/analyst voice only.
+- **Key links go in the POST BODY, not only the first comment.** The CivilCandidate1349
+  account has low site/subreddit karma, so its first comment is unreliable — it gets
+  AutoMod-filtered or can't be posted at all in stricter subs, leaving the body's "links in
+  the first comment" pointer dead. Put the 1–2 *key* deep links inline in the body (use
+  clean URLs without UTM — GC strips query strings anyway per `analytics.md`, so UTM adds
+  spam signal for zero analytics gain). **The donation block also goes at the BOTTOM of the
+  body** (Vladimir's call 2026-05-31) — same low-karma reasoning: an unreliable first
+  comment that never posts is worse than the "asking for money" spam-signal risk. Keep only
+  secondary/extra deep links in the first comment as a bonus-if-it-posts. Cap body deep
+  links low (≤2, excluding the 2 donation links) to limit the self-promo AutoMod hit.
+  **Exception: subs with a documented
+  AutoMod-removal history** (e.g. r/greencard, whose v3.1 pattern mandates zero deep links
+  in body) get only the bare `visa-bulletin.us` domain in the body, not deep links — flag
+  the tension to the user rather than overriding the anti-AutoMod design.
+
 ## Origin
 2026-05-30 — user asked for a documented checkup after a live r/IndianH1Bs post shipped
 with a fabricated "EB-2 ROW myself" stake and the next 4 posts turned out to be drafted
-but never scheduled.
+but never scheduled. Draft-style corrections log added same day after he asked for a rule
+that captures his edits.
