@@ -1,11 +1,61 @@
 # People Search — Build Scope (named PERM applicant search)
 
+> ## ⛔ DATA PREMISE DISPROVEN (2026-06-02) — feature NOT buildable as scoped
+>
+> Verified directly against the live DOL disclosure files (New-Form PERM
+> FY2024_Q4, FY2025_Q4, FY2026_Q2): **the foreign-worker beneficiary name is NOT
+> present in any PERM disclosure file DOL publishes.** Evidence:
+> - The new ETA-9089 PERM files have 135–137 columns and carry only
+>   **employer-POC, attorney (`ATTY_AG_*`), and preparer (`DECL_PREP_*`)** names —
+>   no beneficiary name column.
+> - Each row only flags `FW_INFO_APPX_A_ATTACHED = Y`; the worker's name is on
+>   **Appendix A, which DOL does not publish for PERM** (it publishes Appendix A
+>   for CW-1 / H-2B / LCA only — there is no `PERM_Appendix_A` file on the
+>   disclosure page).
+> - Published Appendix A files don't contain names regardless: the LCA Appendix A
+>   is 5 columns (`CASE_NUMBER`, # exempt workers, institution, field of study,
+>   degree date). "Appendix A" in disclosure = supplemental info, not identities.
+>
+> **The 2026-06-01 "premise corrected → feasible" claim below was wrong:** it
+> conflated the ETA-9089 *form* (which collects the name) with the *published
+> disclosure data* (which never releases it). There is no public DOL source of
+> PERM beneficiary names tied to cases, so a named-applicant search cannot be
+> built from data we ingest. **Everything below is retained for the record only.**
+>
+> **Re-verified 2026-06-02 (owner pushback — "I saw my name"):** downloaded the
+> live DOL files and grepped every cell. Old-form PERM FY2008–FY2014 (25–27 cols:
+> employer/job/wage/country-of-citizenship/class-of-admission — **no name column
+> at all**), new-form PERM FY2024 (135 cols) and FY2026 Q2 (137 cols): zero
+> beneficiary-name column in any; the only person-name columns are employer-POC,
+> attorney/agent, and preparer. H-1B/LCA record layout confirmed identical — only
+> employer/contact/attorney/preparer names; the worker appears only as a *count*.
+> A grep for the owner's surname returned **0 hits across all PERM years
+> FY2008–FY2014 + FY2024 + FY2026**. Premise stays disproven across both form
+> versions and the H-1B program. (Not row-grepped: FY2015/16 PERM + the full H-1B
+> data files — same nameless layouts, so structurally cannot contain a name.)
+>
+> **Viable pivot (same files):** an attorney / law-firm search IS feasible —
+> `ATTY_AG_FIRST/MIDDLE/LAST_NAME` + `ATTY_AG_LAW_FIRM_NAME` are in every PERM row
+> (and LCA has analogous attorney fields). Professionals acting commercially, so
+> none of the doxxing/brand risk of naming applicants. Awaiting owner direction.
+
 > **Decision (owner, 2026-06-01):** build it. The earlier feasibility/ethics
 > review (kept as an appendix below) leaned against a public named-search
 > feature; the owner has weighed that and decided to proceed. This doc is now an
 > **engineering scope**, not a should-we review.
+>
+> **Decisions locked (owner, 2026-06-02)** — all four §7 questions resolved:
+> 1. **Separate `PermApplicant` table** (PII segregated from the hot table).
+> 2. **Person pages INDEXABLE** — owner override of the noindex recommendation.
+>    Rationale: it's publicly available government data; the goal is to make it
+>    accessible and capture long-tail search traffic. The reversibility-asymmetry
+>    + doxxing/brand risk was raised and explicitly accepted. The per-case
+>    `suppressed` opt-out + a takedown path are now the primary harm mitigation
+>    (see §5); ship them on day one.
+> 3. **Open to all** — throttle-only, no gating.
+> 4. **Coverage accepted** — PERM-only, FY2024+, H-1B never named.
 
-**Status:** scoped, not started.
+**Status:** scoped + decisions locked, not started.
 **Coverage reality (state up front):** names exist **only** in the revised
 **PERM ETA-9089** disclosure files (FY2024+). LCA/H-1B files never name the
 beneficiary. So this feature covers **PERM (green-card labor-cert) applicants
@@ -103,10 +153,15 @@ re-ingest:
 
 ## 5. Abuse / SEO controls (engineering — ship WITH the feature, not after)
 
-- **Person/result pages: `noindex` + `X-Robots-Tag: noindex` + excluded from
-  `sitemap.xml`** by default. This is the single biggest harm lever (a
-  Google-permanent named page). Recommend default no-index; flip via env only on
-  an explicit decision.
+- **Indexability — DECIDED 2026-06-02: person pages ARE indexable** (owner
+  override; goal is accessibility + search traffic). Still implement an
+  `X-Robots-Tag` / `<meta robots>` toggle wired to an env var (default
+  `index,follow` per the decision) so it can be flipped to `noindex` instantly
+  without a template redeploy — this is the single biggest harm lever and must
+  stay one env flip away. Because pages are indexed, the **`suppressed` opt-out
+  and a takedown path become load-bearing**, not optional: a person who asks to
+  be removed must drop out of results immediately (hidden from search + the page
+  410/noindex'd) so Google de-indexes it.
 - **Rate-limit** `/api/applicant-autocomplete/` and `/people/` at nginx (mirror
   the existing bot rate-limit map in `deployment/nginx/`).
 - **Feature flag** (env, e.g. `PEOPLE_SEARCH_ENABLED`) so the whole surface can
@@ -124,13 +179,16 @@ re-ingest:
 
 (Matches the earlier ~3–5 d ballpark.)
 
-## 7. Decisions needed before Phase 1 (build-relevant only)
+## 7. Decisions before Phase 1 — ALL RESOLVED (owner, 2026-06-02)
 
-1. **Separate `PermApplicant` table (recommended) vs inline fields?**
-2. **Person pages `noindex` (recommended) vs indexable for SEO?**
-3. **Open to all vs gated** (throttle-only, or require something)?
-4. **Coverage acceptable?** PERM-only, FY2024+ only, H-1B never named — confirm
-   that's the intended scope, not a surprise.
+1. ✅ **Separate `PermApplicant` table** (PII segregated). Inline rejected.
+2. ✅ **Person pages indexable** (`index,follow` default), env-toggle to `noindex`
+   retained. Owner override of the noindex recommendation — see locked-decisions
+   block at top + §5.
+3. ✅ **Open to all** — throttle/rate-limit only, no gating.
+4. ✅ **Coverage accepted** — PERM-only, FY2024+ only, H-1B never named.
+
+No open decisions remain; Phase 1 is unblocked.
 
 ---
 

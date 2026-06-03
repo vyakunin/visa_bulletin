@@ -13,6 +13,22 @@ Run all four sections every checkup, in order. Report a compact phone-formatted
 digest (per `~/.claude/rules/chat_formatting.md`): lead with health, then perf, then
 the unreplied-comment drafts, then the next-to-schedule approvals.
 
+## No-go subreddits (do NOT schedule or post)
+
+These subs have removed/banned CivilCandidate1349's promo and explicitly disallow
+advertising. Don't draft, schedule, or re-post to them; don't modmail-appeal
+(repeat violations escalate to account ban):
+
+- **r/immigration** — post removed + locked; account permanently banned there.
+- **r/EB2** — post `1tuwd0k` (2026-06-02) removed by EB2-ModTeam within ~11 min:
+  "EB2 does not allow advertising and frequent violators will be banned." No
+  account ban yet, but one more promo post would trigger it. The deep links +
+  donation block read as an ad here.
+- **r/h1b** — earlier promo removed (see §1 written-off list).
+
+When a new sub is being considered, dry-run first and check its rules/AutoMod for
+a no-advertising / no-self-promotion clause before scheduling.
+
 ## 1. Health (Reddit)
 
 Per recent post: score, upvote ratio, comment count, removed/locked state.
@@ -81,9 +97,15 @@ plus `~/Library/LaunchAgents/com.user.reddit_<name>_<num>.plist` with a
 `StartCalendarInterval`, then `launchctl load` it. **launchd fires in LOCAL Mac time**:
 Berlin is UTC+2 in summer (CEST), so a 14:00-UTC slot = Hour 16 in the plist — always
 recompute the offset (`date`). Verify with `launchctl list | grep reddit`.
-**Flair gotcha:** if the sub requires a post flair and the YAML's `flair_text` is null,
-`submit_reddit_via_browser.py` fails (rc=7, the developersindia failure). Dry-run new
-(sub+content) combos to enumerate flair before the scheduled fire.
+**Flair gotcha:** subs that gate submit on a required post flair (r/EB2, r/USCIS,
+r/immigration) fail with `rc=4` ("submit did not redirect") if no flair commits.
+As of 2026-06-02 `submit_reddit_via_browser.py` **auto-picks a reasonable flair**
+when `flair_text` is unset on a gated sub (topic-match → generic catch-all →
+first safe flair; never a personal-status flair like Approved/Denied/I-485) and
+Telegram-notifies which it chose. Still prefer setting `flair_text` explicitly in
+the YAML for control, and dry-run new (sub+content) combos to enumerate flairs.
+The r/EB2 2026-06-02 post (`flair_text: null`) hit this — posted manually with
+"Visa Bulletin" flair; the auto-pick fix landed the same session.
 
 ## Email-triggered proactive mode (the standing subscriptions)
 

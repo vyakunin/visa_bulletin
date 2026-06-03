@@ -14,6 +14,7 @@
 # USAGE
 #   ./refresh_via_staging.sh reseed     # mirror prod DB -> staging (drops+restores)
 #   ./refresh_via_staging.sh ingest     # drop indexes -> discover+ingest DOL -> recreate -> cluster -> stats
+#   ./refresh_via_staging.sh cluster    # post-ingest ONLY: backfill+cluster+stats+vacuum (finish a load that ran with indexes live)
 #   ./refresh_via_staging.sh verify     # spot-check staging vs prod
 #   ./refresh_via_staging.sh all        # reseed + ingest + verify (NOT promote)
 #   ./refresh_via_staging.sh promote    # GATED: atomic postgres-data volume swap (asks first)
@@ -102,8 +103,17 @@ phase_ingest(){
   sweb scripts.salary.manage_salary_indexes --recreate \
     --snapshot data/index_snapshots/salary_indexes.yaml >>"$LOG" 2>&1 || \
     sweb scripts.salary.manage_salary_indexes --create-clustering-indexes >>"$LOG" 2>&1
-  # Post-ingest: link + cluster + stats. Order per scripts/cron/refresh/config.py
-  # and job_title_coherence.md (cluster_job_titles -> stats -> slugs).
+  phase_postingest
+}
+
+# Post-ingest: backfill links + cluster + stats + vacuum. Split out so it can be
+# run standalone (the `cluster` command) to FINISH a load that already landed —
+# e.g. an ingest that ran with indexes live (no drop/recreate needed) and was
+# interrupted before clustering. Order per scripts/cron/refresh/config.py and
+# job_title_coherence.md (cluster_job_titles -> stats -> slugs).
+phase_postingest(){
+  log "clear any stale RUNNING ingest_run rows"
+  spsql "UPDATE ingest_run SET status=4 WHERE status=2;" >/dev/null || true
   log "post-ingest: backfill source dates"
   sweb scripts.salary.backfill_source_file_date >>"$LOG" 2>&1 || log "WARN backfill_source_file_date"
   log "post-ingest: backfill job-title links"
@@ -118,8 +128,14 @@ phase_ingest(){
   sweb scripts.salary.update_job_title_cluster_stats >>"$LOG" 2>&1
   log "post-ingest: populate job-title slugs"
   sweb scripts.salary.populate_job_title_slugs >>"$LOG" 2>&1
-  log "vacuum analyze"
-  spsql "VACUUM ANALYZE;" >/dev/null || true
+  # PARALLEL 0: the staging postgres container has the Docker-default 64MB
+  # /dev/shm, and a parallel VACUUM tries to allocate a >64MB shared-memory
+  # segment -> "could not resize shared memory segment ... No space left on
+  # device". Disabling parallel workers keeps the whole-DB VACUUM ANALYZE
+  # single-process and within /dev/shm. (Alternative would be shm_size on the
+  # staging stack, but ANALYZE single-process is plenty for the stats refresh.)
+  log "vacuum analyze (non-parallel; staging /dev/shm is only 64MB)"
+  spsql "VACUUM (PARALLEL 0, ANALYZE);" >/dev/null || true
   prod_health
 }
 
@@ -131,9 +147,11 @@ phase_verify(){
 }
 
 # GATED. Promote = swap the postgres-data volumes between prod and staging
-# stacks. ~30s blip. NOT auto-run. Requires the operator to type CONFIRM.
+# stacks. ~1-2 min blip (cp of the data dir + postgres-healthy wait + web boot).
+# NOT auto-run. Requires the operator to type CONFIRM (pipe `echo CONFIRM |` to
+# run unattended).
 phase_promote(){
-  echo "PROMOTE will stop both stacks and swap prod<->staging postgres-data (~30s downtime)."
+  echo "PROMOTE will stop both stacks and swap prod<->staging postgres-data (~1-2 min downtime)."
   echo "Pre-req: phase_verify looked correct. Prod's current DB is archived first."
   read -r -p "Type CONFIRM to proceed: " ans
   [ "$ans" = "CONFIRM" ] || { echo "aborted"; exit 1; }
@@ -147,20 +165,41 @@ phase_promote(){
   log "archiving prod postgres-data -> postgres-data.pre_$ts and swapping in staging's"
   sudo mv "$PROD_DIR/postgres-data" "$PROD_DIR/postgres-data.pre_$ts"
   sudo cp -a "$STG_DIR/postgres-data" "$PROD_DIR/postgres-data"   # copy (keep staging usable)
-  log "restarting prod"
-  ( cd "$PROD_DIR" && docker compose up -d postgres && sleep 8 && docker compose up -d web nginx )
+  log "restarting prod postgres"
+  ( cd "$PROD_DIR" && docker compose up -d postgres )
+  for i in $(seq 1 20); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' "$PROD_PG" 2>/dev/null)" = healthy ] && break; sleep 3
+  done
+  # CRITICAL (learned 2026-06-01): the swapped-in data dir is the STAGING
+  # cluster, so pg_authid carries STAGING's password for visa_bulletin_user.
+  # Prod web connects with prod's .env password -> auth fails -> web crash-loops
+  # -> 502 on every uncached/dynamic page. Re-align the role password to prod's
+  # before starting web. 127.0.0.1 inside the container is trust auth, so this
+  # connects regardless of the stored password. (Prod & staging .env have
+  # DIFFERENT DB_PASSWORD; do NOT assume they match.)
+  log "aligning visa_bulletin_user password to prod .env (swap carried staging's)"
+  local ppw; ppw="$(prod_pw)"
+  docker exec -e PGPASSWORD="$ppw" "$PROD_PG" psql -h 127.0.0.1 -U "$DB_USER" -d postgres \
+    -c "ALTER USER $DB_USER WITH PASSWORD '$ppw';" >>"$LOG" 2>&1
+  log "starting prod web+nginx"
+  ( cd "$PROD_DIR" && docker compose up -d web nginx )
   ( cd "$STG_DIR" && docker compose up -d postgres web nginx )
+  log "flushing prod redis page cache (db1) so new data + correct canonical serve"
+  docker exec vb_redis redis-cli -n 1 FLUSHDB >>"$LOG" 2>&1 || true
   sleep 5; prod_health
   log "PROMOTE done. Rollback: stop prod, mv postgres-data.pre_$ts back, restart."
+  log "REMINDER: purge Cloudflare cache for top URLs (zone id ~/tokens/cloudflare_zone_id_visa_bulletin,"
+  log "  token ~/tokens/cloudflare_api_token_cache_purge) so the edge serves the new data."
 }
 
 cmd="${1:-all}"
 case "$cmd" in
   reseed)   phase_reseed ;;
   ingest)   phase_ingest ;;
+  cluster)  phase_postingest ;;
   verify)   phase_verify ;;
   all)      phase_reseed; phase_ingest; phase_verify; log "DONE (promote is separate + gated)";;
   promote)  phase_promote ;;
-  *) echo "usage: $0 {reseed|ingest|verify|all|promote}"; exit 2 ;;
+  *) echo "usage: $0 {reseed|ingest|cluster|verify|all|promote}"; exit 2 ;;
 esac
 log "phase '$cmd' complete. Full log: $LOG"

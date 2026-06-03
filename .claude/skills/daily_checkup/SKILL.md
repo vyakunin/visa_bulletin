@@ -3,18 +3,23 @@ name: daily_checkup
 description: visa_bulletin-only morning checkup — run the project's daily_checkup MCP, compose a focused digest, deliver on @vyakunin_visa_bulletin_bot. Project-scoped twin of the cross-project Kombi digest.
 ---
 
-Project-scoped variant of `/daily_checkup`. Cross-project digest lives at
-`~/cursor_projects/personal_projects/.claude/skills/daily_checkup/SKILL.md`
-(delivered via Kombi @vyakunin_agent_bot). This skill is the visa_bulletin
-slice only — invoked when the user types `/daily_checkup` on
-@vyakunin_visa_bulletin_bot.
+Project-scoped variant of `/daily_checkup` for visa_bulletin, shadowing the
+generic `~/.claude/skills/daily_checkup/SKILL.md` with the project's own
+investigation playbook + traffic KPI. As of 2026-06-03 the daily checkup is
+per-project: a 7am launchd job (`agent_infra/daily_checkup/run_daily.py`) spawns
+one `claude -p /daily_checkup` per project (Opus) in its own cwd, delivering to
+its own bot. There is no cross-project Kombi roll-up anymore. This skill runs in
+two modes:
+- **Scheduled** (`$DAILY_CHECKUP_SCHEDULED=1`, driver-spawned): gather → compose →
+  send to @vyakunin_visa_bulletin_bot → exit.
+- **Interactive**: user types `/daily_checkup` on @vyakunin_visa_bulletin_bot.
 
-The gather side is unchanged: the same `daily_checkup_server.py` under
-`~/cursor_projects/visa_bulletin/mcp/` produces the report. The cross-project
-orchestrator runs every morning at ~09:20 Berlin and writes
-`~/cursor_projects/agent_infra/daily_checkup/logs/reports_<stamp>.json` —
-**if a fresh enough report (≤30 min old) exists, reuse it. Otherwise spawn
-a fresh visa_bulletin-only run.**
+visa_bulletin always sends (never silent) — the traffic KPI line is the daily
+signal the user opens the chat for.
+
+The gather side is the same `daily_checkup_server.py` under
+`~/cursor_projects/visa_bulletin/mcp/`. If a fresh enough reports JSON (≤30 min
+old) exists in `agent_infra/daily_checkup/logs/`, reuse it; otherwise run fresh.
 
 ## Steps
 
@@ -55,12 +60,26 @@ The MCP returns RAW signals. Do not just paste them — **answer each red/yellow
 - **/salaries/ 4xx flood**: ~2k/day of 429 to /salaries/ is bingbot getting throttled — not a bug. Confirm with `docker logs vb_nginx --since 24h | awk '$7 ~ /^\\/salaries\\/?$/ && $9 ~ /^4/'`.
 - **Traffic deltas**: positive MoM is the goal — celebrate briefly. Negative MoM ≥ 30% → 🟡, ≥ 60% → 🔴; investigate the surface-by-surface breakdown and check GSC for ranking/visibility drops (mcp__gsc__gsc_query_search_analytics).
 
+### Step 2.5 — unified ticket block (visa_bulletin)
+
+Query the Notion follow-ups data source `d0ad4f4b-ed1c-4c69-9fa9-0202a2b0d4d2`
+(`mcp__notion__API-query-data-source`) filtered to `Project=visa_bulletin`,
+`Status not in (Done, Won't Do)`, sort `Due` asc. Bucket by `Due` vs today (`date
++%F`) + the `important` Subtag, same as every channel:
+🔴 past due (`Due < today`) · 🟡 due today · ⭐ important (Subtag has `important`,
+not already urgent) · 📅 coming week (`today < Due <= today+7`). Items `Due >
+today+7` or no Due collapse to a footer line. Render this block at the top of the
+digest (after the headline, before the project findings).
+**Filter gotcha:** `Status`/`Project` are `select`-typed — use `{"select":{...}}`,
+not `{"status":{...}}` (per `notion_followups.md`).
+
 ### Step 3 — compose the digest
 
 Telegram-mobile format. One screen = one user-readable summary. Style:
 
 - First line: `🤖 visa_bulletin checkup — <YYYY-MM-DD> <HH:MM> Berlin`
 - One-sentence headline: `<emoji> <status verdict>` (🟢 all clear / 🟡 needs attention / 🔴 act now). State the most important finding right after.
+- Then the unified ticket block from Step 2.5 (only the non-empty buckets).
 - One-line traffic mention (the user's #1 KPI): `Traffic: 7d <N> views (<+/-N%> MoM cycle)`. Cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
@@ -87,9 +106,12 @@ curl -sS "https://api.telegram.org/bot${TOKEN}/sendMessage" \
 
 Per `~/cursor_projects/personal_projects/.claude/skills/daily_checkup/SKILL.md` §"Followup tracker" — same data source (`d0ad4f4b-ed1c-4c69-9fa9-0202a2b0d4d2`), same de-dup rules. Tag `Project = visa_bulletin`. Only create when the item needs deferred action; if the user can act on it from the chat right now, skip Notion and let the conversation handle it.
 
-### Step 6 — hand back to listen_chat
+### Step 6 — do NOT hand off to listen_chat
 
-This skill is invoked from inside a running `/listen_chat` loop on the visa_bulletin bot. Do NOT spawn a new listener — just return. The caller (listen_chat Step 4 → "Slash-command dispatch") will loop back to `/wait_for_message`.
+Whether scheduled (standalone `claude -p`) or interactive (inside a `/listen_chat`
+loop), do NOT spawn a new listener. Scheduled: send + exit. Interactive: send +
+return (the caller loops back to `/wait_for_message`). The receiver auto-spawns a
+listener the moment the user replies to the bot.
 
 ## Anti-patterns
 

@@ -64,7 +64,13 @@ Both `vb_postgres` and `vb_stg_postgres` run with these non-default planner / co
 
 - Don't suggest changing `ALLOWED_HOSTS` to `*` — it's been explicitly listed (localhost, homeserver.local, 192.168.1.152, visa-bulletin.us, www.visa-bulletin.us, staging.visa-bulletin.us). Add hostnames as needed.
 
-- **Backup expectation:** the homeserver's 64 GB SSD is a single point of failure. Postgres `pg_dump` of `visa_bulletin` should be copied off-box (e.g., to Mac, B2 bucket) on a schedule. **Backup automation is not yet in place — do this before the Lightsail rollback path is deleted.**
+- **Backups (LIVE since 2026-06-03):** daily `pg_dump | gzip` → off-box via the
+  shared CLI `/opt/stack/_shared/backup_blob.sh visa_bulletin` (see homeserver
+  ref "Shared off-box backups"). Producer wrapper at
+  `/opt/stack/visa_bulletin/scripts/backup_to_gdrive.sh` (cron `0 1 * * *`).
+  Lands in `gdrive:_backups/visa_bulletin/{daily,weekly,monthly}/` with GFS
+  rotation; failures alert the agent_infra bot; monthly restore-verify (5th).
+  Pre-migration history remains in the old `gdrive:visa_bulletin_backups/` dir.
 
 ## Migration status (visa_bulletin AWS Lightsail → homeserver)
 
@@ -74,5 +80,5 @@ Both `vb_postgres` and `vb_stg_postgres` run with these non-default planner / co
 - ⏳ Burn-in period in progress — Lightsail kept reachable on `44.209.204.255` for rollback
 - ✅ Dual-environment (prod + staging stacks) deployed
 - ⏳ Weekly refresh-on-staging-DB-then-flip pattern not yet implemented
-- ⏳ Postgres backup automation not yet in place
+- ✅ Postgres backup automation LIVE (2026-06-03): daily off-box via shared `backup_blob.sh`, GFS rotation, failure alerts, monthly restore-verify
 - ⏳ Lightsail decommission (final snapshot, instance delete, static IP delete) — once burn-in passes
