@@ -49,8 +49,9 @@ services:
       - ./staticfiles:/app/staticfiles
       - ./saved_pages:/app/saved_pages
       - ./logs:/app/logs
+      - ./overrides/support_cta.html:/app/webapp/templates/webapp/includes/support_cta.html:ro
     networks: [vb]
-    command: ["sh", "-c", "python3 manage.py migrate --noinput && python3 manage.py collectstatic --noinput && exec gunicorn --workers ${WEB_CONCURRENCY:-3} --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 1000 --max-requests-jitter 100 django_config.wsgi:application"]
+    command: ["sh", "-c", "python3 manage.py migrate --noinput && python3 manage.py collectstatic --noinput && exec gunicorn --workers ${WEB_CONCURRENCY:-3} --threads 4 --bind 0.0.0.0:8000 --timeout 60 --max-requests 1000 --max-requests-jitter 100 django_config.wsgi:application"]
     healthcheck:
       # User-Agent "HealthCheck/1.0" triggers cache_page_skip_bots so this probe
       # doesn't poison the page cache (see django_config/cache_utils.py).
