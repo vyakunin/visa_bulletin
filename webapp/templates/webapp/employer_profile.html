@@ -442,11 +442,17 @@
 
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
-                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and green card (PERM) disclosure data. 
+                <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and green card (PERM) disclosure data.
                 Represents Base Salary only (excludes RSUs, signing bonuses, and variable compensation).
-                Data shown for fiscal years {{ start_year }} to present. 
+                Data shown for fiscal years {{ start_year }} to present.
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
             </div>
+
+            {# Affiliate slot (relocation/banking context). Renders nothing unless the
+               affiliate_card.html bind-mount override is present on prod AND the visitor
+               is non-EEA; plain include (no "ignore missing" — Django 4.2.8 rejects it),
+               resolves against the public-repo stub when the override is absent. #}
+            {% include "webapp/includes/affiliate_card.html" with placement="employer" %}
         </div>
     </div>
 </div>

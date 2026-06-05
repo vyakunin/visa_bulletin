@@ -1,0 +1,14 @@
+{% comment %}
+Graceful stub — renders NOTHING.
+
+The real, monetized affiliate card lives in the private ops repo
+(visa_bulletin_platform/monetization/affiliate_card.html) and is served to
+production via a homeserver bind-mount that overlays this file at
+/app/webapp/templates/webapp/includes/affiliate_card.html.
+
+This stub exists so the plain `{% include "webapp/includes/affiliate_card.html" %}`
+tags (employer_profile.html, job_title_profile.html, and the support_cta piggyback)
+resolve on a stock image too — Django 4.2.8's include tag has no `ignore missing`
+argument, so a missing partial would 500. With this stub, a stock image (no bind-
+mount) renders nothing instead of erroring; prod renders the real card.
+{% endcomment %}
