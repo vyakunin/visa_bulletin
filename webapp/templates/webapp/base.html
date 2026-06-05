@@ -685,7 +685,15 @@
     <div class="container mt-4 {% block container_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </div>
-    
+
+    {# Global affiliate-card placement (route B). Stub here = renders nothing; prod
+       bind-mounts the real monetization/affiliate_card.html. No placement arg → the
+       card derives it from the path, self-excludes legal/utility pages, and an
+       idempotency guard prevents a double-render where a page already includes the
+       card (profile pages explicitly; dashboard/salaries via the support_cta
+       piggyback). So this lights the card up on all OTHER content pages. #}
+    {% include "webapp/includes/affiliate_card.html" %}
+
     <footer class="container mt-5 mb-4">
         <hr style="border-color: rgba(255,255,255,0.2);">
         
