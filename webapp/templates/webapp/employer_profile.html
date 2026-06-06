@@ -448,10 +448,10 @@
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
             </div>
 
-            {# Affiliate slot (relocation/banking context). Renders nothing unless the
+            {% comment %}Affiliate slot (relocation/banking context). Renders nothing unless the
                affiliate_card.html bind-mount override is present on prod AND the visitor
                is non-EEA; plain include (no "ignore missing" — Django 4.2.8 rejects it),
-               resolves against the public-repo stub when the override is absent. #}
+               resolves against the public-repo stub when the override is absent.{% endcomment %}
             {% include "webapp/includes/affiliate_card.html" with placement="employer" %}
         </div>
     </div>

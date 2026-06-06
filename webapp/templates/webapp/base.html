@@ -686,12 +686,12 @@
         {% block content %}{% endblock %}
     </div>
 
-    {# Global affiliate-card placement (route B). Stub here = renders nothing; prod
+    {% comment %}Global affiliate-card placement (route B). Stub here = renders nothing; prod
        bind-mounts the real monetization/affiliate_card.html. No placement arg → the
        card derives it from the path, self-excludes legal/utility pages, and an
        idempotency guard prevents a double-render where a page already includes the
        card (profile pages explicitly; dashboard/salaries via the support_cta
-       piggyback). So this lights the card up on all OTHER content pages. #}
+       piggyback). So this lights the card up on all OTHER content pages.{% endcomment %}
     {% include "webapp/includes/affiliate_card.html" %}
 
     <footer class="container mt-5 mb-4">

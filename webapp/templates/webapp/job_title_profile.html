@@ -538,10 +538,10 @@
                 <strong>Note on Salary Data:</strong> For data quality, we exclude salaries below $30,000 (likely data entry errors) and above $1,000,000 (lacking automated validation for ultra-high compensation packages). This may affect statistics for some executive and specialized positions.
             </div>
 
-            {# Affiliate slot (relocation/banking context). Renders nothing unless the
+            {% comment %}Affiliate slot (relocation/banking context). Renders nothing unless the
                affiliate_card.html bind-mount override is present on prod AND the visitor
                is non-EEA; plain include (no "ignore missing" — Django 4.2.8 rejects it),
-               resolves against the public-repo stub when the override is absent. #}
+               resolves against the public-repo stub when the override is absent.{% endcomment %}
             {% include "webapp/includes/affiliate_card.html" with placement="jobtitle" %}
         </div>
     </div>
