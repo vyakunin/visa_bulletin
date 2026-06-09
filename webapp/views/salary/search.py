@@ -25,6 +25,7 @@ from lib.utils.filter_utils import (
     apply_fiscal_year_filter,
     apply_text_search_filter,
     apply_visa_program_filter,
+    fenced_page_ids,
 )
 from lib.utils.location_utils import US_STATES
 from lib.utils.pagination import (
@@ -694,10 +695,17 @@ def salary_search_view(request):
         state_name_map={code: name for code, name in US_STATES},
     )
 
-    # Use select_related for employer and job title cluster slugs (profile links)
-    # Use only() to reduce data loaded - we only need these fields for the list view
-    records = (
-        records.select_related(
+    # Resolve the ordered page of ids behind an OFFSET-0 fence (avoids
+    # LIMIT-pessimization on rare terms and the full dimension-table hash-joins
+    # on common terms — see fenced_page_ids), then fetch only those rows with
+    # the profile-link joins (nested-loop by pkey, sub-ms).
+    page_ids = fenced_page_ids(
+        records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
+    )
+    row_by_id = {
+        row.id: row
+        for row in SalaryRecord.objects.filter(pk__in=page_ids)
+        .select_related(
             "employer__canonical_cluster",
             "job_title_entity__canonical_cluster",
         )
@@ -714,10 +722,8 @@ def salary_search_view(request):
             "fiscal_year",
             "employer__canonical_cluster__slug",
         )
-        .order_by("-wage_annual", "-fiscal_year")[
-            pagination["offset"] : pagination["offset"] + per_page
-        ]
-    )
+    }
+    records = [row_by_id[pk] for pk in page_ids if pk in row_by_id]
 
     context = {
         # Form for rendering
@@ -895,9 +901,14 @@ def worksite_search_view(request):
 
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
-    records = records.order_by("-wage_annual", "-fiscal_year")[
-        pagination["offset"] : pagination["offset"] + per_page
-    ]
+    # OFFSET-0 fenced page resolution (see fenced_page_ids), then fetch the rows.
+    page_ids = fenced_page_ids(
+        records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
+    )
+    row_by_id = {
+        row.id: row for row in WorksiteRecord.objects.filter(pk__in=page_ids)
+    }
+    records = [row_by_id[pk] for pk in page_ids if pk in row_by_id]
 
     context = {
         # Form for rendering

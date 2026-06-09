@@ -1,32 +1,27 @@
 """Generic filter application utilities for Django querysets"""
 
+from django.db import connections
+
 from models.enums.visa_program import VisaProgram
 
 
 def apply_text_search_filter(queryset, query: str, fields: list[str]):
     """
-    Apply case-insensitive text search across multiple fields.
+    Apply case-insensitive substring search across multiple fields.
 
-    Implementation note (PostgreSQL planner workaround):
+    Emits an ``OR`` of ``UPPER(field::text) LIKE UPPER(%s)`` predicates, which
+    match the ``gin (UPPER(...) gin_trgm_ops)`` trigram indexes on
+    salary_record.job_title / soc_title (migration 0047) so PostgreSQL can use a
+    Bitmap Index Scan.
 
-    Django's ``__icontains`` emits ``UPPER(field::text) LIKE UPPER(%s)`` —
-    the existing ``gin (UPPER(...) gin_trgm_ops)`` indexes match this
-    predicate. BUT when the caller also chains
-    ``order_by('-wage_annual', '-fiscal_year')[:N]`` (the
-    salary_search_view / worksite_search_view list path), the planner falls
-    into a classic LIMIT-pessimization: it picks
-    ``Index Scan Backward on salary_record_wage_annual_*`` and filters the
-    ILIKE predicate inline, expecting the LIMIT to be reached quickly.
-    For low-match-low-wage keywords (CASHIER, KEEPER, COOK, MAID) it scans
-    ~1.2M heap rows before finding 50 matches → 10-15s.
-
-    The fix is to *force materialization* of the trigram filter as a
-    separate plan step. PostgreSQL treats a subquery with ``OFFSET 0`` as
-    an optimization fence (will not inline it). We inject
-    ``WHERE id IN (SELECT id FROM <table> WHERE <UPPER-LIKE-OR-clauses> OFFSET 0)``
-    via ``.extra(where=...)``. With this fence the planner picks Bitmap Heap
-    Scan via the trigram indexes (~30ms) and Nested Loop joins by pkey to
-    the outer ORDER BY / LIMIT — total ~50ms for the same CASHIER query.
+    Anti-pessimization note: callers that chain
+    ``order_by('-wage_annual', '-fiscal_year')[offset:offset+N]`` over this
+    filter MUST resolve their page through :func:`fenced_page_ids`, NOT a plain
+    sliced queryset. With the ``LIMIT`` visible to the planner the trigram
+    filter triggers a classic LIMIT-pessimization (Index Scan Backward on
+    ``wage_annual`` + inline trigram recheck, scanning ~1.2M heap rows for rare
+    low-wage terms like CASHIER). The aggregate/count path (no ORDER BY/LIMIT)
+    is unaffected and just gets a fast Bitmap count.
 
     Args:
         queryset: Django queryset to filter
@@ -51,18 +46,77 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
     pattern = f"%{query}%"
     for field in fields:
         column = model._meta.get_field(field).column
-        fragments.append(
-            f'UPPER("{table}"."{column}"::text) LIKE UPPER(%s)'
-        )
+        fragments.append(f'UPPER("{table}"."{column}"::text) LIKE UPPER(%s)')
         params.append(pattern)
-    or_clauses = " OR ".join(fragments)
-    # OFFSET 0 = PostgreSQL optimization fence; do not remove without
-    # re-running the EXPLAIN ANALYZE in deployment.mdc's Django-side recipe.
-    subquery_sql = (
-        f'"{table}"."id" IN '
-        f'(SELECT "id" FROM "{table}" WHERE {or_clauses} OFFSET 0)'
+    where = "(" + " OR ".join(fragments) + ")"
+    return queryset.extra(where=[where], params=params)  # noqa: SLF001
+
+
+def fenced_page_ids(
+    queryset, order_fields: tuple[str, ...], offset: int, limit: int
+) -> list:
+    """
+    Resolve one ordered page of primary keys behind a PostgreSQL ``OFFSET 0``
+    optimization fence, avoiding two planner traps on the salary/worksite list
+    views (a trigram-filtered queryset sorted by ``-wage_annual, -fiscal_year``
+    and sliced to a page):
+
+    * **Rare terms** (CASHIER): with the ``LIMIT`` visible the planner picks
+      ``Index Scan Backward on (wage_annual)`` and rechecks the trigram inline,
+      scanning ~1.2M heap rows before it finds N matches.
+    * **Common terms** (ENGINEERS, ~200k matches): resolving the page with the
+      dimension ``select_related`` joins still attached makes the planner
+      hash-join the whole match set against every (seq-scanned) dimension table
+      before applying the ``LIMIT`` — ~6s to keep 50 rows.
+
+    Fix: wrap the fully-filtered, projection-free queryset in a subquery with a
+    trailing ``OFFSET 0``. That is a PostgreSQL optimization fence — the inner
+    block is planned on its own and cannot be folded into the outer
+    ``ORDER BY``/``LIMIT``, so it produces the full match set via the cheapest
+    plan (Bitmap Heap Scan for selective trigrams, Seq Scan otherwise) while the
+    outer does only a top-N heapsort + ``LIMIT`` on bare ids. Callers then fetch
+    the ≤N full rows by pk with their joins (a nested loop by primary key,
+    sub-ms). Measured on prod: ENGINEERS p4 5959→1614ms, ARCHITECT 2444→479ms,
+    CASHIER 39→6ms.
+
+    Args:
+        queryset: the filtered queryset (any ``select_related``/``only`` and
+            ordering on it are ignored — only its WHERE clause is used).
+        order_fields: model field names; a ``-`` prefix means DESC
+            (e.g. ``("-wage_annual", "-fiscal_year")``).
+        offset: page slice start (rows to skip).
+        limit: page size.
+
+    Returns:
+        list of primary keys in order; empty list when nothing matches.
+    """
+    model = queryset.model
+    pk_col = model._meta.pk.column
+    order_cols = {
+        f: model._meta.get_field(f.lstrip("-")).column for f in order_fields
+    }
+
+    # Project only pk + ordering columns; drop ORM ordering and any joins.
+    inner = queryset.order_by().values_list(
+        model._meta.pk.name,
+        *[model._meta.get_field(f.lstrip("-")).name for f in order_fields],
     )
-    return queryset.extra(where=[subquery_sql], params=params)  # noqa: SLF001
+    compiler = inner.query.get_compiler(using=inner.db)
+    inner_sql, inner_params = compiler.as_sql()
+
+    order_sql = ", ".join(
+        f'"{order_cols[f]}" {"DESC" if f.startswith("-") else "ASC"}'
+        for f in order_fields
+    )
+    # OFFSET 0 = optimization fence; see docstring. Do not remove without
+    # re-running the EXPLAIN ANALYZE in deployment.md's Django-side recipe.
+    sql = (
+        f'SELECT "{pk_col}" FROM ({inner_sql} OFFSET 0) _fenced '
+        f"ORDER BY {order_sql} LIMIT %s OFFSET %s"
+    )
+    with connections[inner.db].cursor() as cursor:
+        cursor.execute(sql, list(inner_params) + [limit, offset])
+        return [row[0] for row in cursor.fetchall()]
 
 
 def apply_visa_program_filter(

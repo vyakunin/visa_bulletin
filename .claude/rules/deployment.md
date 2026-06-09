@@ -112,7 +112,7 @@ print(connection.queries[-1]['sql'][:300])
 \""
 ```
 
-A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path).
+A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path). **Implemented** for the salary / worksite list views by `lib/utils/filter_utils.py:fenced_page_ids` (an `OFFSET 0` fence resolves the ordered page of pks via a Bitmap Heap Scan, then the ≤50 rows are fetched by pk with `select_related`). Measured on prod: `ENGINEERS` p4 5959→1614ms, `Architect` 2444→479ms, `CASHIER` 39→6ms. If you reintroduce a `.order_by('-wage_annual','-fiscal_year')[slice]` over a trigram-filtered queryset anywhere, route it through `fenced_page_ids` or it will pessimize again.
 
 **Heavy mutations (CREATE INDEX, ALTER TABLE, schema migrations) MUST use the CONCURRENTLY form so reads + writes continue.** A non-concurrent ALTER on `salary_record` (1.5M rows) acquires AccessExclusiveLock and blocks every reader for the duration → effective outage. See migrations 0044, 0046, 0047 for examples of the `RunSQL(... atomic=False)` pattern.
 

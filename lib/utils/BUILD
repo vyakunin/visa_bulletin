@@ -55,6 +55,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//models/enums:visa_program",
+        requirement("Django"),
     ],
 )
 
