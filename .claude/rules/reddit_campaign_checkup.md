@@ -110,9 +110,11 @@ The r/EB2 2026-06-02 post (`flair_text: null`) hit this — posted manually with
 ## Email-triggered proactive mode (the standing subscriptions)
 
 Reddit emails CivilCandidate1349's notifications to vyakunin@gmail.com from
-`noreply@redditmail.com`. Two `email_subscriptions` filters forward them to
-`vyakunin_visa_bulletin_bot` (managed via the `email_subscriptions` MCP; rules in
-`agent_infra/gmail_dispatcher/rules/visa_bulletin.yaml`):
+`noreply@redditmail.com`. As of 2026-06-03 the three campaign-monitoring filters
+forward to **`vyakunin_visa_bulletin_platform_bot`** (moved off the core VB bot —
+Reddit/F5Bot is marketing, and marketing lives in the platform project). Rules in
+`agent_infra/gmail_dispatcher/rules/visa_bulletin_platform.yaml`, managed via the
+`email_subscriptions` MCP (run it from the `visa_bulletin_platform` cwd):
 
 - **`reddit-replies`** — `subject:"replied to your"` minus AutoModerator → comment/post
   replies.
@@ -130,7 +132,12 @@ Reddit emails CivilCandidate1349's notifications to vyakunin@gmail.com from
   Full strategy + current keyword inventory: `~/cursor_projects/visa_bulletin_platform/marketing/BLIND_THREAD_MONITORING.md`.
 
 When one fires, the dispatcher forwards it and `listen_chat_receiver` auto-spawns a
-listener in this project. **That listener should act proactively, not just ack:** pull
+listener in the **`visa_bulletin_platform`** project (the bot the filters now route
+to), not `visa_bulletin`. Note this campaign-checkup playbook still lives in the
+`visa_bulletin` rules tree, so the platform-spawned listener won't auto-load it —
+relocate or symlink it into `visa_bulletin_platform/.claude/rules/` if the
+proactive-handling steps below need to fire reliably there. **That listener should
+act proactively, not just ack:** pull
 the actual Reddit thread (§1 Playwright fetch of the `/comments/<id>.json` or the
 message), then **draft a reply suggestion for approval** (§3) — or, for a modmail
 mute/ban/removal, summarize the action + recommend next step (do NOT modmail-appeal a
