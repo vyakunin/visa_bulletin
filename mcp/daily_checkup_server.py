@@ -988,6 +988,8 @@ def _build_surface_deltas(
                 "prev_week": None,
                 "last28_per_week": None,
                 "delta_pct": delta_pct,
+                # WoW needs prev_7d, unavailable in the top-100 fallback path.
+                "wow_pct": None,
             })
         rows.sort(key=lambda r: -r["this_week"])
         return rows
@@ -1004,6 +1006,7 @@ def _build_surface_deltas(
         prev = win_map.get("prev_7d", 0)
         last28 = win_map.get("last_28d", 0)
         delta_pct = ((cur - cyc) / cyc * 100) if cyc else None
+        wow_pct = ((cur - prev) / prev * 100) if prev else None
         rows.append({
             "surface": surf,
             "this_week": cur,
@@ -1011,6 +1014,7 @@ def _build_surface_deltas(
             "prev_week": prev,
             "last28_per_week": last28 / 4 if last28 else 0,
             "delta_pct": delta_pct,
+            "wow_pct": wow_pct,
         })
     rows.sort(key=lambda r: -r["this_week"])
     return rows

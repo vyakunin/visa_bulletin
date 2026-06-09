@@ -80,7 +80,17 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - First line: `🤖 visa_bulletin checkup — <YYYY-MM-DD> <HH:MM> Berlin`
 - One-sentence headline: `<emoji> <status verdict>` (🟢 all clear / 🟡 needs attention / 🔴 act now). State the most important finding right after.
 - Then the unified ticket block from Step 2.5 (only the non-empty buckets).
-- One-line traffic mention (the user's #1 KPI): `Traffic: 7d <N> views (<+/-N%> MoM cycle)`. Cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`.
+- Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
+  - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
+  - Then a per-surface breakdown — **one surface (property) per line, each row showing absolute 7d views, MoM%, and WoW%** (user request 2026-06-04). Data is in the MCP's `_build_surface_deltas` rows: `this_week` (absolute), `delta_pct` (MoM vs `cycle_ago`), `wow_pct` (vs `prev_week`). Use a column header so rows stay terse + phone-readable (≤50 chars/line, no wide tables). Example:
+    ```
+    7d views / MoM / WoW:
+    employer  1.2k / +306% / +12%
+    job-title  980 / +428% / +8%
+    salaries  1.5k / +268% / −3%
+    dashboard 2.1k / −31% / −5%
+    ```
+  - Show `n/a` for WoW when `wow_pct` is null (top-100 fallback path with no prev_7d). Round views (1.2k) + percentages to whole numbers.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)
