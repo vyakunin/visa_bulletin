@@ -5,3 +5,11 @@
 
 # Hourly bulletin refresh (added during Lightsail-to-homeserver cutover 2026-05-08).
 0 * * * * docker exec -w /app vb_web python3 -m scripts.cron.refresh_bulletin >> /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log 2>&1
+
+# 5xx-spike watchdog (every 15 min). Scans recent vb_nginx logs; alerts the
+# visa_bulletin bot on a per-path 5xx burst (≥10/window) OR an overall rate
+# spike (≥2% & ≥20). Catches per-path app regressions UptimeRobot can't see
+# (it only pings `/`). Routes via alert.env (visa_bulletin bot token; mode 600,
+# not in git — create on the host). Added 2026-06-10 after the /salaries/
+# EmptyResultSet 500 regression went unalerted.
+*/15 * * * * ALERT_ENV=/opt/stack/visa_bulletin/scripts/alert.env /opt/stack/visa_bulletin/scripts/alert_5xx_spike.sh >> /opt/stack/visa_bulletin/logs/cron/alert_5xx.log 2>&1

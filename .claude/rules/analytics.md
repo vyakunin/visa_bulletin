@@ -60,6 +60,22 @@ The `mcp/daily_checkup_server.py` runs every morning and produces a structured r
 
 ## Auto-dispatch to Telegram bot on monitoring incidents
 
+### Two complementary alert paths
+
+| Watchdog | Covers | Blind to | Channel |
+|---|---|---|---|
+| **UptimeRobot** (external) | `visa-bulletin.us/` reachable / 200 | anything path-specific — it only pings `/`, so a 500 on `/salaries/?employer=X` is invisible | emails → `gmail_dispatcher` `uptimerobot-down` rule → visa_bulletin bot |
+| **5xx-spike watchdog** (homeserver cron, every 15 min) | per-path 5xx burst (≥10/window) + overall 5xx rate spike (≥2% & ≥20) on the live origin | sub-15-min blips below threshold; non-5xx regressions (wrong content, slow-but-200) | `alert_5xx_spike.sh` → visa_bulletin bot directly (`alert.env`) |
+
+The 5xx watchdog exists because UptimeRobot's `/`-only check missed the
+2026-06-10 `/salaries/` EmptyResultSet 500 regression entirely (it was 0.53% of
+total traffic; `/` stayed 200 throughout). Script:
+`deployment/homeserver/scripts/alert_5xx_spike.sh` (deployed to
+`/opt/stack/visa_bulletin/scripts/`), cron in `deployment/homeserver/crontab.sample`,
+thresholds env-overridable, 60-min per-path cooldown so a sustained outage
+alerts once/hour not every tick. The daily_checkup MCP's per-path 5xx RED
+(≥100/24h) is the slower digest-level backstop for the same class.
+
 **Active setup (free-tier UptimeRobot):** Gmail-polling dispatcher at
 `~/cursor_projects/personal_projects/gmail_dispatcher/server.py`, launchd job
 `com.user.gmail_dispatcher` running every 5 min. Per-project rules live in
