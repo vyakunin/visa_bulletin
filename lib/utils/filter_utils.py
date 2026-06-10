@@ -1,5 +1,7 @@
 """Generic filter application utilities for Django querysets"""
 
+from typing import NamedTuple
+
 from django.db import connections
 
 from models.enums.visa_program import VisaProgram
@@ -117,6 +119,67 @@ def fenced_page_ids(
     with connections[inner.db].cursor() as cursor:
         cursor.execute(sql, list(inner_params) + [limit, offset])
         return [row[0] for row in cursor.fetchall()]
+
+
+class FencedAggregate(NamedTuple):
+    """Result of :func:`fenced_aggregate` — count + wage stats over a page's
+    full filtered set. ``avg``/``min``/``max`` are None when count is 0.
+    """
+
+    count: int
+    avg: float | None
+    min: float | None
+    max: float | None
+
+
+def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
+    """``count(*)`` + ``avg``/``min``/``max`` of ``agg_field`` over the filtered
+    set, computed behind the same PostgreSQL ``OFFSET 0`` optimization fence as
+    :func:`fenced_page_ids`.
+
+    The count/stats aggregate is a separate query from the page-id resolution,
+    so it needs its own fence. Without it, a queryset that combines a trigram
+    text filter (``job_title``/``soc_title`` via :func:`apply_text_search_filter`)
+    with an FK-joined employer filter and a ``worksite_state`` filter
+    (e.g. ``q=Financial Analyst`` + Goldman Sachs + NY) compiles to a
+    **Nested Loop Semi Join**: the planner estimates the cluster+state branch at
+    ~1 row, puts the ~30k-row trigram Bitmap Heap Scan on the inner side, and
+    re-scans it per (under-estimated) outer row — the aggregate never completes
+    (>120s → the 504s observed on ``/salaries/``).
+
+    Wrapping the projection-free filtered rows in a trailing ``OFFSET 0``
+    subquery fences the inner block: the trigram predicate is evaluated as an
+    inline ``Filter`` on the already-narrowed cluster+state rows (a cheap nested
+    loop over indexed columns), and the aggregate runs over that. Measured on
+    prod: Goldman Sachs + "Financial Analyst" + NY aggregate >120s (timeout) →
+    22ms fenced.
+
+    Args:
+        queryset: the filtered queryset (any ``select_related``/``only`` and
+            ordering on it are ignored — only its WHERE clause is used).
+        agg_field: model field name to compute avg/min/max over
+            (e.g. ``"wage_annual"``). ``count`` is ``count(*)`` of the rows.
+
+    Returns:
+        :class:`FencedAggregate`.
+    """
+    model = queryset.model
+    col = model._meta.get_field(agg_field).column
+
+    # Project only the aggregate column; drop ORM ordering and any joins.
+    inner = queryset.order_by().values_list(agg_field, flat=True)
+    compiler = inner.query.get_compiler(using=inner.db)
+    inner_sql, inner_params = compiler.as_sql()
+
+    # OFFSET 0 = optimization fence; see docstring + fenced_page_ids.
+    sql = (
+        f'SELECT count(*), avg("{col}"), min("{col}"), max("{col}") '
+        f"FROM ({inner_sql} OFFSET 0) _fenced"
+    )
+    with connections[inner.db].cursor() as cursor:
+        cursor.execute(sql, list(inner_params))
+        count, avg, min_, max_ = cursor.fetchone()
+    return FencedAggregate(count=count or 0, avg=avg, min=min_, max=max_)
 
 
 def apply_visa_program_filter(

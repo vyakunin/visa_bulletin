@@ -7,7 +7,6 @@ from typing import NamedTuple
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, Count, Max, Min
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -25,6 +24,7 @@ from lib.utils.filter_utils import (
     apply_fiscal_year_filter,
     apply_text_search_filter,
     apply_visa_program_filter,
+    fenced_aggregate,
     fenced_page_ids,
 )
 from lib.utils.location_utils import US_STATES
@@ -360,17 +360,16 @@ def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
     cached = cache.get(key)
     if cached is not None:
         return cached["count"], cached["stats"]
-    agg = records.aggregate(
-        count=Count("id"),
-        avg_salary=Avg("wage_annual"),
-        min_salary=Min("wage_annual"),
-        max_salary=Max("wage_annual"),
-    )
-    count = agg["count"] or 0
+    # Aggregate behind an OFFSET-0 fence (see fenced_aggregate). A plain
+    # .aggregate() over a trigram + employer-FK + state filter compiles to a
+    # Nested Loop Semi Join that re-scans the whole trigram match set and times
+    # out (>120s → 504) for combos like q=Financial Analyst + Goldman + NY.
+    agg = fenced_aggregate(records, "wage_annual")
+    count = agg.count
     stats = {
-        "avg_salary": agg["avg_salary"],
-        "min_salary": agg["min_salary"],
-        "max_salary": agg["max_salary"],
+        "avg_salary": agg.avg,
+        "min_salary": agg.min,
+        "max_salary": agg.max,
     }
     cache.set(key, {"count": count, "stats": stats})
     return count, stats
