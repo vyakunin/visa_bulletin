@@ -417,50 +417,24 @@ py_test(
     },
 )
 
-py_test(
+django_py_test(
     name = "test_fenced_page_ids",
-    size = "small",
     srcs = ["test_fenced_page_ids.py"],
     deps = [
-        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
-        "//django_config:settings",
-        "//webapp:apps",
         "//lib/utils:filter_utils",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),
     ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
 )
 
-py_test(
+django_py_test(
     name = "test_fenced_aggregate",
-    size = "small",
     srcs = ["test_fenced_aggregate.py"],
     deps = [
-        ":django_setup",
         "//models:salary",
         "//models/enums:visa_program",
-        "//django_config:settings",
-        "//webapp:apps",
         "//lib/utils:filter_utils",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),
     ],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
 )
 
 py_test(

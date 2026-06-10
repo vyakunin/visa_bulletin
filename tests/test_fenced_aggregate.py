@@ -118,6 +118,24 @@ class FencedAggregateTest(TestCase):
         self.assertIsNone(min_)
         self.assertIsNone(max_)
 
+    def test_provably_empty_queryset_returns_zero_not_raises(self):
+        # Regression: the free-text employer path does ``records.none()`` when a
+        # typed employer name resolves to zero clusters (e.g.
+        # /salaries/?employer=LELAND+STANFORD+JR%2C+UNIVERSITY). A provably-empty
+        # queryset makes Django's compiler raise EmptyResultSet from as_sql();
+        # unhandled it became a 500 (325/day on prod). fenced_aggregate must
+        # swallow it and return zero-stats, matching the naive .aggregate().
+        for qs in (
+            SalaryRecord.objects.none(),
+            SalaryRecord.objects.filter(pk__in=[]),
+            SalaryRecord.objects.filter(employer__canonical_cluster_id__in=[]),
+        ):
+            count, avg, min_, max_ = fenced_aggregate(qs, "wage_annual")
+            self.assertEqual(count, 0)
+            self.assertIsNone(avg)
+            self.assertIsNone(min_)
+            self.assertIsNone(max_)
+
     def test_emits_offset_zero_fence(self):
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
@@ -128,3 +146,9 @@ class FencedAggregateTest(TestCase):
         self.assertIn("OFFSET 0", sql)
         self.assertIn("_fenced", sql)
         self.assertIn("count(*)", sql)
+
+
+if __name__ == "__main__":
+    import sys
+    import unittest
+    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful() else 1)

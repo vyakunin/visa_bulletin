@@ -2,6 +2,7 @@
 
 from typing import NamedTuple
 
+from django.core.exceptions import EmptyResultSet
 from django.db import connections
 
 from models.enums.visa_program import VisaProgram
@@ -104,7 +105,13 @@ def fenced_page_ids(
         *[model._meta.get_field(f.lstrip("-")).name for f in order_fields],
     )
     compiler = inner.query.get_compiler(using=inner.db)
-    inner_sql, inner_params = compiler.as_sql()
+    try:
+        inner_sql, inner_params = compiler.as_sql()
+    except EmptyResultSet:
+        # Provably-empty WHERE (the employer free-text ``records.none()`` path):
+        # Django raises EmptyResultSet from as_sql() rather than emitting SQL.
+        # No rows → no page.
+        return []
 
     order_sql = ", ".join(
         f'"{order_cols[f]}" {"DESC" if f.startswith("-") else "ASC"}'
@@ -169,7 +176,14 @@ def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
     # Project only the aggregate column; drop ORM ordering and any joins.
     inner = queryset.order_by().values_list(agg_field, flat=True)
     compiler = inner.query.get_compiler(using=inner.db)
-    inner_sql, inner_params = compiler.as_sql()
+    try:
+        inner_sql, inner_params = compiler.as_sql()
+    except EmptyResultSet:
+        # Provably-empty WHERE (e.g. the employer free-text path's
+        # ``records.none()`` when a typed name resolves to zero clusters):
+        # Django raises EmptyResultSet from as_sql() instead of emitting SQL.
+        # An empty set has count 0 and no wage stats.
+        return FencedAggregate(count=0, avg=None, min=None, max=None)
 
     # OFFSET 0 = optimization fence; see docstring + fenced_page_ids.
     sql = (

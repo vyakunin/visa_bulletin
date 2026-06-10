@@ -112,6 +112,18 @@ class FencedPageIdsTest(TestCase):
         ]
         self.assertNotIn(999999, [int(w) for w in wages])
 
+    def test_provably_empty_queryset_returns_empty_not_raises(self):
+        # Regression sibling of the fenced_aggregate fix: a provably-empty
+        # queryset (the employer free-text ``records.none()`` path) makes
+        # Django's compiler raise EmptyResultSet from as_sql(). fenced_page_ids
+        # must swallow it and return [], not 500.
+        for qs in (
+            SalaryRecord.objects.none(),
+            SalaryRecord.objects.filter(pk__in=[]),
+            SalaryRecord.objects.filter(employer__canonical_cluster_id__in=[]),
+        ):
+            self.assertEqual(fenced_page_ids(qs, ORDER, 0, 10), [])
+
     def test_emits_offset_zero_fence(self):
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
@@ -122,3 +134,9 @@ class FencedPageIdsTest(TestCase):
         self.assertIn("OFFSET 0", sql)
         self.assertIn("LIKE", sql)
         self.assertIn("_fenced", sql)
+
+
+if __name__ == "__main__":
+    import sys
+    import unittest
+    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful() else 1)
