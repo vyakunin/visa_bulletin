@@ -134,9 +134,3 @@ class FencedPageIdsTest(TestCase):
         self.assertIn("OFFSET 0", sql)
         self.assertIn("LIKE", sql)
         self.assertIn("_fenced", sql)
-
-
-if __name__ == "__main__":
-    import sys
-    import unittest
-    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful() else 1)
