@@ -16,43 +16,26 @@ setup_django_for_tests()
 
 
 @pytest.fixture(scope="session")
-def django_db_setup(django_db_setup, django_db_blocker):
-    """Create database tables once per test session"""
-    # Mark tables as already created to prevent handler from trying (optional dep)
+def django_db_setup(django_db_setup):
+    """Depend on pytest-django's real DB setup; set the legacy handler marker.
+
+    The depended-on `django_db_setup` (pytest-django) runs setup_databases() =
+    migrate, which creates EVERY table including Bulletin and VisaCutoffDate. The
+    old override here additionally did `schema_editor.create_model(Bulletin)` by
+    hand — a pre-migration leftover that now fails "relation already exists" and
+    aborts the fixture's transaction, erroring every test in the target. It was
+    dead weight masked for years by the false-green suite + the conftest-import
+    DB-collision crash (which meant this fixture never actually ran). Removed.
+
+    Only the `_TABLES_CREATED` marker survives: it tells the optional legacy
+    `bulletin_handler` not to attempt its own table creation.
+    """
     try:
         from extractors import bulletin_handler
 
         bulletin_handler._TABLES_CREATED = True
     except ImportError:
         pass
-
-    with django_db_blocker.unblock():
-        import logging
-
-        from django.db import connection
-
-        from models.bulletin import Bulletin
-        from models.visa_cutoff_date import VisaCutoffDate
-
-        logger = logging.getLogger(__name__)
-
-        with connection.schema_editor() as schema_editor:
-            try:
-                schema_editor.create_model(Bulletin)
-            except Exception as e:
-                # Table already exists - expected in test setup
-                logger.error(
-                    f"Failed to create model Bulletin (may already exist): {e}",
-                    exc_info=True,
-                )
-            try:
-                schema_editor.create_model(VisaCutoffDate)
-            except Exception as e:
-                # Table already exists - expected in test setup
-                logger.error(
-                    f"Failed to create model VisaCutoffDate (may already exist): {e}",
-                    exc_info=True,
-                )
 
 
 @pytest.fixture

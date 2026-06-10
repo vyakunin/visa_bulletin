@@ -38,7 +38,27 @@ def _load_env_file():
 
 
 def setup_django_for_tests():
-    """Configure Django for test environment and ensure test DB exists with migrations."""
+    """Configure Django for the test environment and ensure a migrated test DB.
+
+    Two test-runner regimes coexist in this suite, and the test-DB owner differs:
+
+    * Targets that depend on **pytest-django**: pytest-django loads first and
+      installs a DB-access *blocker*, then OWNS the test DB via its
+      django_db_setup fixture (Django setup_databases()). If we also tried to
+      create the DB here at import time, the blocker raises "Database access not
+      allowed" and the *entire conftest import fails* — collection dies and every
+      test in the target errors. This was the suite's "DB-collision" failure mode,
+      hidden until the false-green fix made tests actually run. So when
+      pytest-django is present we must NOT touch the DB here; we only point it at a
+      per-process test DB name (parallel bazel targets share one postgres server).
+
+    * Targets WITHOUT pytest-django (plain `unittest.TestCase`, run by pytest with
+      no DB plugin): nobody else creates the test DB, so we create+migrate it here
+      at import. There is no blocker in this regime, so it is safe.
+
+    Detection: pytest-django, when active, is imported before conftest, so it is in
+    sys.modules. That is the switch between the two regimes.
+    """
     global _test_db_created
     _load_env_file()
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
@@ -55,26 +75,46 @@ def setup_django_for_tests():
     if not apps.ready:
         django.setup()
 
-    # When run via unittest (not manage.py test), the test DB is never created.
-    # Optionally ensure DB_USER has CREATEDB, then create test_postgres and run migrations.
-    # Only run if this test uses the DB (psycopg2 loadable); skip if test has no DB deps.
-    if not _test_db_created and os.environ.get("RUNNING_TESTS") == "1":
-        try:
-            import psycopg2  # noqa: F401
-        except ImportError:
-            _test_db_created = True
-        else:
-            from tests.ensure_test_db import grant_createdb
+    if _test_db_created or os.environ.get("RUNNING_TESTS") != "1":
+        return
+    try:
+        import psycopg2  # noqa: F401
+    except ImportError:
+        # No DB driver — pure-unit run, nothing to create.
+        _test_db_created = True
+        return
 
-            grant_createdb()
-            from django.core.management import call_command
-            from django.db import connection
+    from tests.ensure_test_db import grant_createdb
 
-            # Bazel runs tests in parallel; each process needs its own DB to avoid "already exists".
-            base_name = connection.settings_dict["NAME"]
-            if base_name == "postgres":
-                connection.settings_dict["NAME"] = f"postgres_{os.getpid()}"
-            connection.creation.create_test_db(verbosity=0, autoclobber=True)
-            # Apply migrations so test DB has all tables (salary_employer, etc.).
-            call_command("migrate", verbosity=0)
-            _test_db_created = True
+    grant_createdb()
+
+    # Bazel runs each test target in its own process against one shared postgres
+    # server; a per-pid test DB name avoids "database already exists" collisions
+    # between parallel targets. Both regimes use the same name: we set TEST.NAME so
+    # pytest-django's setup_databases() honors it, and the legacy path below reads
+    # it back.
+    import sys
+
+    from django.conf import settings
+
+    db = settings.DATABASES["default"]
+    base = db.get("NAME") or "postgres"
+    db.setdefault("TEST", {})
+    test_name = db["TEST"].get("NAME") or f"test_{base}_{os.getpid()}"
+    db["TEST"]["NAME"] = test_name
+
+    if "pytest_django" in sys.modules:
+        # pytest-django owns DB creation (its blocker is active; creating here would
+        # raise "Database access not allowed" and fail conftest import). It will
+        # create+migrate test_name via setup_databases() when a DB-using test runs.
+        _test_db_created = True
+        return
+
+    # No pytest-django in this target: create + migrate the test DB ourselves.
+    from django.core.management import call_command
+    from django.db import connection
+
+    connection.creation.create_test_db(verbosity=0, autoclobber=True)
+    # Apply migrations so test DB has all tables (salary_employer, etc.).
+    call_command("migrate", verbosity=0)
+    _test_db_created = True

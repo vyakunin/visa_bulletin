@@ -106,7 +106,6 @@ django_py_test(
 
 django_py_test(
     name = "test_extractor",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_extractor.py"],
     data = [
@@ -129,7 +128,6 @@ django_py_test(
 
 django_py_test(
     name = "test_integration",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_integration.py"],
     data = [
@@ -818,7 +816,6 @@ django_py_test(
         "//lib/business/vqs/supply",
         "//models/enums:country",
     ],
-    tags = ["manual"],
 )
 
 django_py_test(
