@@ -39,7 +39,9 @@ class TestDataSource:
             source_type=SourceType.LCA,
         )
 
-        assert "DOL" in str(source)
+        # __str__ spells out the agency (DataDomain.DOL → "Department of Labor")
+        # per the project's spell-out-abbreviations convention.
+        assert "Department of Labor" in str(source)
         assert "LCA" in str(source)
         assert "example.com" in str(source)
 

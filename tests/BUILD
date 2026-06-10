@@ -354,7 +354,6 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_models",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_ingest_models.py"],
     deps = [
