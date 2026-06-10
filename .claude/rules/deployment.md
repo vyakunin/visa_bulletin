@@ -93,6 +93,24 @@ ssh homeserver "uptime; \
 | vb_web mem (per container) | within 1.3× of pre | >1.5× and growing |
 | nginx 5xx / 30 min | ≤ pre + 5 (cold-start 502s normal) | > pre + 15, or any sustained 5xx after T+5 |
 | gunicorn SLOW REQUEST / 30 min | ≤ pre + 10% | > pre + 50% — almost certainly a planner regression |
+| nginx 5xx on any **single** path / 30 min | 0 sustained | any path with sustained fast 500s (not 502 cold-start) → app exception on that query shape, roll back |
+
+**Adversarial-input smoke (run once at T+5, on any deploy that touches a view/query/filter).** A 200-status smoke on canonical URLs does NOT exercise empty/zero-result paths — the exact shape that 500'd on 2026-06-10 (`/salaries/?employer=<name-that-matches-no-cluster>` → `records.none()` → uncaught `EmptyResultSet`). Probe the zero-result + degenerate branches explicitly:
+
+```bash
+BASE="https://visa-bulletin.us"
+for u in \
+  "/salaries/?employer=ZZZNONEXISTENTEMPLOYER999" \
+  "/salaries/?q=ZZZNONEXISTENTTITLE999" \
+  "/salaries/?employer=ZZZNONEXISTENT&q=ZZZNONEXISTENT&state=NY" \
+  "/salaries/?employer=GOOGLE+LLC&page=99999" \
+  "/employers/?q=ZZZNONEXISTENT" \
+  "/job-titles/?q=ZZZNONEXISTENT" ; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$BASE$u")
+  printf "%-60s %s\n" "$u" "$code"   # every line MUST be 200 (empty result page), never 5xx
+done
+```
+Any 5xx here = an uncaught exception on the empty/degenerate branch → roll back, don't fix forward. Add the analogous zero-result URL for any new filterable list view you ship.
 
 **For DB-touching deploys** (schema changes, new indexes, query rewrites): also EXPLAIN ANALYZE the affected query path **inside Django** (parameterized) — not just literal psql, because Django's `__icontains` emits `UPPER(field) LIKE UPPER(%s)` and the planner gives different plans for parameterized vs literal strings. Use the recipe:
 

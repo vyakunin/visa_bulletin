@@ -94,6 +94,14 @@ BULLETIN_DATA_STALE_DAYS_RED = 50
 # 5xx as % of total responses in last 24h.
 NGINX_5XX_YELLOW_PCT = 0.5
 NGINX_5XX_RED_PCT = 2.0
+# A single path emitting many 5xx is almost always an app bug — an uncaught
+# exception on a specific query shape (e.g. the 2026-06-10 EmptyResultSet 500s
+# on /salaries/?employer=<unknown>: ~325/day, but only 0.53% of total traffic,
+# so the total-% thresholds above never tripped). Flag per-path absolute counts
+# directly so a localized regression surfaces even when it's a small slice of
+# overall volume.
+PATH_5XX_YELLOW = 30
+PATH_5XX_RED = 100
 # A single real client IP hitting more than this in 24h is a scraper / abuse
 # candidate. Now meaningful since 2026-05-14 (real_ip_module rewrites
 # $remote_addr from CF-Connecting-IP).
@@ -1615,7 +1623,16 @@ def _section_nginx(nx: dict) -> tuple[dict, str]:
     if nx.get("top_5xx_paths"):
         lines.append("- Top 5xx paths:")
         for p, c in nx["top_5xx_paths"][:5]:
-            lines.append(f"  - `{p}` — {c}")
+            # A localized 5xx spike on one path is an app regression — escalate
+            # on the absolute count, independent of the total-% threshold.
+            mark = ""
+            if c >= PATH_5XX_RED:
+                status = "red"
+                mark = " ⚠️ app-level 5xx spike (likely a code regression)"
+            elif c >= PATH_5XX_YELLOW and status != "red":
+                status = "yellow"
+                mark = " ⚠️"
+            lines.append(f"  - `{p}` — {c}{mark}")
     if nx.get("top_4xx_paths"):
         lines.append("- Top 4xx paths:")
         for p, c in nx["top_4xx_paths"][:5]:
