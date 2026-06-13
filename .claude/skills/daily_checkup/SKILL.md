@@ -10,12 +10,17 @@ per-project: a 7am launchd job (`agent_infra/daily_checkup/run_daily.py`) spawns
 one `claude -p /daily_checkup` per project (Opus) in its own cwd, delivering to
 its own bot. There is no cross-project Kombi roll-up anymore. This skill runs in
 two modes:
-- **Scheduled** (`$DAILY_CHECKUP_SCHEDULED=1`, driver-spawned): gather → compose →
-  send to @vyakunin_visa_bulletin_bot → exit.
+- **Scheduled** (driver injects `/daily_checkup --scheduled` into the Redis stream;
+  the visa_bulletin relay session runs this skill): gather → compose → reply.
 - **Interactive**: user types `/daily_checkup` on @vyakunin_visa_bulletin_bot.
 
-visa_bulletin always sends (never silent) — the traffic KPI line is the daily
-signal the user opens the chat for.
+visa_bulletin always sends (never silent — never `[[SILENT]]`); the traffic KPI line
+is the daily signal the user opens the chat for.
+
+**Delivery — relay mode (see generic skill "Delivery mode").** This runs inside the
+visa_bulletin **relay session**: the relay delivers your reply, so **emit the digest
+as your reply text** (`🤖 `-prefixed) — do NOT curl the Bot API in relay mode (Step 4's
+curl is the legacy `--headless` fallback only).
 
 The gather side is the same `daily_checkup_server.py` under
 `~/cursor_projects/visa_bulletin/mcp/`. If a fresh enough reports JSON (≤30 min
