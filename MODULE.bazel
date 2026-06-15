@@ -55,13 +55,7 @@ http_file(
     executable = True,
 )
 
-# Ruff linter/formatter - hermetic version (downloads binary from GitHub releases)
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-http_archive(
-    name = "ruff",
-    urls = ["https://github.com/astral-sh/ruff/releases/download/0.14.8/ruff-aarch64-apple-darwin.tar.gz"],
-    sha256 = "4efc019832a6b9225f650ee256d31b2e875021cae662963d533c78b5cf865f52",
-    type = "tar.gz",
-    strip_prefix = "ruff-aarch64-apple-darwin",
-    build_file_content = "filegroup(name = \"ruff_binary\", srcs = [\"ruff\"], visibility = [\"//visibility:public\"])",
-)
+# Ruff linter/formatter — hermetic, platform-selecting (mac arm64 / linux x86_64).
+# See tools/ruff.bzl: a single-platform pin broke commits on the Linux host.
+ruff_extension = use_extension("//tools:ruff.bzl", "ruff_extension")
+use_repo(ruff_extension, "ruff")
