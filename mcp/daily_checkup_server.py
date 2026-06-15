@@ -489,8 +489,17 @@ def _parse_resources(text: str) -> dict:
     return out
 
 
-def _parse_log_age(text: str) -> dict:
-    """Section format: first line = epoch mtime, rest = tail of log."""
+def _parse_log_age(text: str, latest_run_marker: str | None = None) -> dict:
+    """Section format: first line = epoch mtime, rest = tail of log.
+
+    `latest_run_marker`: a run-boundary string (e.g. the cron's banner line). When
+    given, errors are counted only from the MOST RECENT run, not the whole tail.
+    An hourly job hitting an external gov site logs the occasional transient
+    timeout that the very next run recovers from; scanning the full ~200-line
+    window (~1.5 days of hourly runs) re-surfaces a healed blip as "noisy" for
+    days. Only the latest run reflects current health — and a genuinely broken
+    run fails the latest run too, so real outages still flag.
+    """
     lines = text.strip().splitlines()
     if not lines or lines[0] == "MISSING":
         return {"present": False, "tail": ""}
@@ -513,8 +522,11 @@ def _parse_log_age(text: str) -> dict:
         r"|Validation failed in 0\.00s"
         r"|Pipeline failed at stage 5: Validation failed with 1 error\(s\)"
     )
+    scan = tail
+    if latest_run_marker and latest_run_marker in tail:
+        scan = tail[tail.rindex(latest_run_marker):]
     error_lines = [
-        line for line in tail.splitlines()
+        line for line in scan.splitlines()
         if re.search(r"\[ERROR\]|\[CRITICAL\]|\bFAILED\b", line) and not benign.search(line)
     ]
     return {
@@ -1732,6 +1744,16 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
 PERF_YELLOW_N3 = 50
 PERF_RED_N10 = 5
 
+# Surfaces that render heavy server-side Plotly (the predictions backtest):
+# a >10s cold tail is routine there, NOT a regression — it's the known heavy
+# render the cache-warmer ticket tracks, and at PERF_RED_N10=5 it tripped the
+# whole digest RED essentially every day (~14 >10s/24h is normal). Don't let it
+# escalate past YELLOW; only warn on a genuine spike well above the routine
+# tail. Every transactional surface (dashboard/salaries/profiles), where >10s
+# IS a real regression, keeps the strict PERF_RED_N10 default.
+PERF_HEAVY_SURFACES = {"predictions"}
+PERF_HEAVY_SPIKE_N10 = 30
+
 # Surfaces we treat as user-facing "top properties" — the others (api,
 # static_meta, other) are not interesting in this section.
 TOP_PROPERTY_SURFACES = [
@@ -1780,6 +1802,13 @@ def _section_top_properties(
         lat_row = lat.get(surf)
         n3 = lat_row["n_over_3s"] if lat_row else 0
         n10 = lat_row["n_over_10s"] if lat_row else 0
+        if surf in PERF_HEAVY_SURFACES:
+            # Known-heavy Plotly render — routine slow tail is not a regression.
+            # Never RED; only warn (yellow) on a genuine spike. The per-property
+            # block below still shows the raw >10s count, so it's not hidden.
+            if n10 >= PERF_HEAVY_SPIKE_N10 and status == "green":
+                status = "yellow"
+            continue
         if n10 >= PERF_RED_N10:
             status = "red"
         elif n3 >= PERF_YELLOW_N3 and status == "green":
@@ -2181,7 +2210,10 @@ async def daily_checkup(since: str | None = None) -> str:
         sections.append(s)
         statuses.append(st)
         # Bulletin refresh cron
-        s, st = _section_bulletin_refresh(_parse_log_age(snap.get("bulletin_refresh", "")))
+        s, st = _section_bulletin_refresh(
+            _parse_log_age(snap.get("bulletin_refresh", ""),
+                           latest_run_marker="=== Visa Bulletin Refresh ===")
+        )
         if s:
             sections.append(s)
         statuses.append(st)
