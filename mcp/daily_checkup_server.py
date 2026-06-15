@@ -35,7 +35,6 @@ import logging
 import os
 import re
 import shlex
-import socket
 import subprocess
 import sys
 import time
@@ -44,10 +43,12 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
-from mcp.client.stdio import stdio_client
 from mcp.server.fastmcp import FastMCP
 
-from mcp import ClientSession, StdioServerParameters
+# Shared transport-aware MCP-call helper (agent_infra) — handles stdio (gsc) AND
+# the google_workspace HTTP daemon. See ~/.claude/rules/daily_checkup.md.
+sys.path.insert(0, str(Path.home() / "cursor_projects" / "agent_infra" / "daily_checkup"))
+from mcp_call import call_mcp_tools  # noqa: E402
 
 logger = logging.getLogger("visa_bulletin_daily_checkup")
 logging.basicConfig(
@@ -58,7 +59,6 @@ logging.basicConfig(
 
 SSH_ALIAS = os.environ.get("HOMESERVER_SSH_ALIAS", "homeserver")
 USER_EMAIL = os.environ.get("DAILY_CHECKUP_USER_EMAIL", "vyakunin@gmail.com")
-GLOBAL_MCP_REGISTRY = Path.home() / "mcp" / "servers.json"
 SUB_MCP_TIMEOUT = 45
 PROD_STACK = "/opt/stack/visa_bulletin"
 STAGING_STACK = "/opt/stack/visa_bulletin_staging"
@@ -1033,33 +1033,8 @@ def _build_surface_deltas(
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _call_gsc_tools(calls: list[tuple[str, dict]]) -> list[str]:
-    """Spawn one gsc MCP, run multiple tool calls reusing the same session.
-
-    The canonical gsc registry entry uses `uv run --project <dir> python
-    gsc_server.py` — the `python gsc_server.py` part resolves relative to the
-    *spawner's* cwd, not `--project`. We're being spawned from
-    `visa_bulletin/mcp`, where `gsc_server.py` does not exist, so pin cwd to
-    the gsc project dir explicitly.
-    """
-    entry = _load_global_mcp("gsc")
-    env = {**os.environ, **(entry.get("env") or {})}
-    gsc_cwd = "/Users/vyakunin/cursor_projects/agent_infra/gsc_mcp"
-    params = StdioServerParameters(
-        command=entry["command"],
-        args=list(entry.get("args") or []),
-        env=env,
-        cwd=gsc_cwd,
-    )
-    out: list[str] = []
-    async with asyncio.timeout(SUB_MCP_TIMEOUT):
-        async with stdio_client(params) as (r, w):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                for tool, args in calls:
-                    res = await session.call_tool(tool, args)
-                    texts = [c.text for c in res.content if hasattr(c, "text")]
-                    out.append("\n".join(texts))
-    return out
+    """Run multiple gsc tool calls over one session; raw text payloads."""
+    return await call_mcp_tools("gsc", calls, timeout=SUB_MCP_TIMEOUT, parse=False)
 
 
 def _gsc_totals(rows: list[dict]) -> dict:
@@ -1244,54 +1219,9 @@ async def _gather_gsc() -> dict:
 _MSGID_RE = re.compile(r"Message ID:\s*([0-9a-f]+)", re.IGNORECASE)
 
 
-def _load_global_mcp(name: str) -> dict:
-    if not GLOBAL_MCP_REGISTRY.exists():
-        raise RuntimeError(f"MCP registry not found at {GLOBAL_MCP_REGISTRY}")
-    data = json.loads(GLOBAL_MCP_REGISTRY.read_text())
-    entry = data.get("mcpServers", {}).get(name)
-    if not entry:
-        raise RuntimeError(f"MCP '{name}' not in registry")
-    return entry
-
-
-def _inject_workspace_port(env: dict) -> None:
-    """Give google_workspace a unique free port so parallel spawns don't collide.
-
-    workspace-mcp binds a localhost HTTP server for OAuth callbacks at startup;
-    default 8000. The orchestrator (agent_infra dispatcher) runs personal_projects
-    + visa_bulletin in parallel and both spawn google_workspace independently,
-    racing for :8000 → one fails. Cached refresh tokens mean the callback URL
-    almost never gets hit during normal checkups, so a non-8000 port is safe here.
-    """
-    if env.get("WORKSPACE_MCP_PORT") or env.get("PORT"):
-        return
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        env["WORKSPACE_MCP_PORT"] = str(s.getsockname()[1])
-
-
 async def _call_gw_tools(calls: list[tuple[str, dict]]) -> list[str]:
-    """Spawn one google_workspace MCP, run multiple tool calls reusing the
-    same session, return raw text payloads.
-    """
-    entry = _load_global_mcp("google_workspace")
-    env = {**os.environ, **(entry.get("env") or {})}
-    _inject_workspace_port(env)
-    params = StdioServerParameters(
-        command=entry["command"],
-        args=list(entry.get("args") or []),
-        env=env,
-    )
-    out: list[str] = []
-    async with asyncio.timeout(SUB_MCP_TIMEOUT):
-        async with stdio_client(params) as (r, w):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                for tool, args in calls:
-                    res = await session.call_tool(tool, args)
-                    texts = [c.text for c in res.content if hasattr(c, "text")]
-                    out.append("\n".join(texts))
-    return out
+    """Run multiple google_workspace tool calls over one session; raw text payloads."""
+    return await call_mcp_tools("google_workspace", calls, timeout=SUB_MCP_TIMEOUT, parse=False)
 
 
 # Queries we run against Gmail. Each tuple is (label, query, importance_if_hit,
