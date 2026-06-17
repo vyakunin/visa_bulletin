@@ -115,6 +115,14 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
     predict    220   2%  77p   +159%/−4%
     ```
   - This is the SAME full-coverage data `scripts/gc_section_shares.py` prints (export CSV, 100% coverage). Round views (1.2k / 773) + percentages to whole numbers. Show `n/a` for share/pages/MoM/WoW when null — that means the MCP fell back to the top-100 `/stats/hits` path (export unavailable); flag it explicitly (`⚠️ top-100 only — long tail not counted this run`) rather than presenting truncated shares as real.
+  - **GSC stats next to the SEO surfaces (user request 2026-06-17).** For the two organic-profile rows (`employer_profile`, `job_title_profile`) — and any other surface you're flagging — append Google's own numbers on the next indented line: **clicks / impressions / avg-position (with the position trend arrow vs cycle)**. The data is already in the MCP's GSC section `surface_breakdown[]`, keyed by the SAME surface name: `clicks_this`, `impressions_this`, `pos_this`, `pos_cycle` (lower position = better; ↑=improving=pos went down, ↓=worsening). This lets the reader eyeball a GC view-drop against Google's side — **a GC drop with improving/flat GSC position is surge-unwind, not erosion** (the 2026-06-17 investigation: profiles mean-reverted off a late-May Google surge while position kept improving 8→6). Render inline, terse:
+    ```
+    employer   773   7%  659p  −11%/−15% ← tail
+       gsc: 389 clk · 22k impr · pos 6.0 ↑
+    job-title  471   5%  420p  −44%/−18% ← tail
+       gsc: 139 clk · 21k impr · pos 7.0 ↑
+    ```
+  - GSC lags ~2d so its window is offset from GC's by `GSC_LAG_DAYS` — they won't tie out to the unit, that's expected; it's the direction (position arrow) that matters. Show `gsc: n/a` if the GSC gather errored (in `errors`). Only attach GSC to organic surfaces (profiles, salaries, blog, dashboard) — not to `api`/`static_meta`/`donation_click`.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)
