@@ -8,7 +8,7 @@ This directory contains all project documentation organized by topic.
 
 **Operations & Data:**
 - **INGESTION_PLAYBOOK.md** - Step-by-step guide for running DOL data ingestion (development)
-- **DATA_REFRESH_STRATEGY.md** - Blue-green database architecture for production data refresh
+- Production data-refresh architecture and concrete hosting topology live in the private ops repo, not in this public repository.
 
 **Development Setup:**
 - **DEV_SETUP.md** - Local development environment setup (macOS)
@@ -67,8 +67,8 @@ Documentation for the unified ingest pipeline framework (download → parse → 
 Documentation for deployment, infrastructure, and operations.
 
 **Start Here:**
-- **NEW_INSTANCE_SETUP.md** - Living document for production instance setup (most current)
 - **ROLLOUT_FLOW.md** - Complete rollout process for new deployments
+- Concrete production-server setup (hosts, hardware, provisioning) lives in the private ops repo, not in this public repository.
 
 **Related Code:** `deployment/`, `scripts/deploy.sh`
 
@@ -127,12 +127,12 @@ Design documents for features that are planned or partially implemented.
 - Create plugin: See `lib/ingest/plugins/` for examples
 
 **Setting up new production instance:**
-- **Start here:** `deployment/NEW_INSTANCE_SETUP.md` (living document)
 - Rollout process: `deployment/ROLLOUT_FLOW.md`
+- Concrete server provisioning lives in the private ops repo (not in this public repository).
 
 **Understanding production data refresh:**
-- Architecture: `DATA_REFRESH_STRATEGY.md` (instance rotation)
 - Manual ingestion: `INGESTION_PLAYBOOK.md` (for testing/dev only)
+- The production refresh architecture lives in the private ops repo (not in this public repository).
 
 ### By Component
 

@@ -1,6 +1,6 @@
 # PostgreSQL Setup and Discovery Guide (Local Development)
 
-> **Note:** This guide is for **local macOS development**. For production PostgreSQL setup, see `deployment/NEW_INSTANCE_SETUP.md`.
+> **Note:** This guide is for **local macOS development**. Production PostgreSQL setup lives in the private ops repo, not in this public repository.
 
 ## PostgreSQL Physical Storage Location (macOS)
 
@@ -217,7 +217,7 @@ brew services list | grep postgresql
 | **Install Method** | Homebrew | APT package manager |
 | **Service Manager** | Homebrew Services | systemd |
 
-> **Note:** For production setup details, see `deployment/NEW_INSTANCE_SETUP.md`.
+> **Note:** Production setup details live in the private ops repo, not in this public repository.
 
 ## Bazel Integration
 
@@ -246,7 +246,7 @@ bazel run //:migrate
 
 ## Production Setup
 
-Production uses PostgreSQL 14 on AWS Lightsail. For production setup details, see:
-- `deployment/NEW_INSTANCE_SETUP.md` - Instance setup including PostgreSQL
-- `DATA_REFRESH_STRATEGY.md` - Blue-green database architecture
+Production uses PostgreSQL 14 on the production server.
+
+> Concrete hosting topology (hosts, IPs, hardware, the staging/standby/cutover mechanics, backup wiring, DR) lives in the private ops repo, not in this public repository. Public docs use abstract roles (production / staging / data-pipeline server).
 

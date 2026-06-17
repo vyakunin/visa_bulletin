@@ -32,7 +32,7 @@ Production uses an automated blue-green database refresh strategy with near-zero
 - **Rollback capability** with archived versions
 - **Near-zero downtime** (~2-3 seconds during swap)
 
-**See:** `docs/DATA_REFRESH_STRATEGY.md` for complete production refresh workflow.
+**See:** the private ops repo for the complete production refresh workflow. Concrete hosting topology and the staging/standby/cutover mechanics are not in this public repository.
 
 **Monitoring production refresh:**
 ```bash
@@ -640,7 +640,7 @@ curl -I http://localhost:8000/salaries/
 
 ## Related Documentation
 
-- **Production Data Refresh:** `docs/DATA_REFRESH_STRATEGY.md` - Blue-green automated refresh
+- **Production Data Refresh:** the automated refresh workflow lives in the private ops repo (not in this public repository)
 - **Pipeline Architecture:** `docs/ingest/ARCHITECTURE.md`
 - **Plugin Development:** `docs/ingest/PLUGIN_GUIDE.md`
 - **Employer Clustering:** `lib/business/salary/README.md`

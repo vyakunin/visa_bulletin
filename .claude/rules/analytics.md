@@ -1,14 +1,14 @@
 # Analytics Inventory (visa-bulletin.us)
 
-**Before claiming "we don't have X analytics data", verify against this list.** This rule exists because agents have repeatedly said "no analytics installed" when GoatCounter has been in production since the homeserver migration.
+**Before claiming "we don't have X analytics data", verify against this list.** This rule exists because agents have repeatedly said "no analytics installed" when GoatCounter has been in production for a long time.
 
 ## What's Installed
 
 | Source | What it answers | Auth / location |
 |---|---|---|
 | **GoatCounter** | Bot-filtered pageviews, unique-ish visits, top paths, geo (country), referrers, browser/OS — JS beacon only, no no-JS visits | API token at `~/tokens/goatcounter.token`; dashboard at `https://vyakunin.goatcounter.com/`; playbook at `docs/deployment/goatcounter.md` |
-| **Origin nginx logs (homeserver `vb_nginx`)** | Every HTTP request including bots, status codes, latency, real IPs via `CF-Connecting-IP`, full UA strings | `ssh homeserver "docker logs vb_nginx 2>&1"`. **Log retention is short** (10MB × 3 files per `daemon.json`); typical span ~18-24h. |
-| **Postgres (visa_bulletin DB)** | Product-side state: bulletin records, employer counts, salary record counts, ingest run history, VQS prediction cache hit rates | `docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin` on homeserver |
+| **Origin nginx logs (`vb_nginx`)** | Every HTTP request including bots, status codes, latency, real IPs via `CF-Connecting-IP`, full UA strings | SSH to the production server, then `docker logs vb_nginx 2>&1`. **Log retention is short** (10MB × 3 files per `daemon.json`); typical span ~18-24h. |
+| **Postgres (visa_bulletin DB)** | Product-side state: bulletin records, employer counts, salary record counts, ingest run history, VQS prediction cache hit rates | `docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin` on the production server |
 | **Cloudflare** | Edge metrics (cache hit %, requests by country, attacks) — via CF dashboard or API. Account id stored at `~/tokens/cloudflare_account_id`, API token at `~/tokens/cloudflare_api_token`. | Not yet wired into daily_checkup MCP — manual lookup if needed. |
 | **UptimeRobot** (uptime monitoring of `visa-bulletin.us`) | Synthetic uptime checks; DOWN/UP transitions; status pages. Currently emails `alert@uptimerobot.com` → `vyakunin@gmail.com` for each transition (subjects `Monitor is DOWN: visa-bulletin.us` / `Monitor is UP: visa-bulletin.us`). Verified active since pre-2026-05-08 Lightsail era. | Dashboard: `https://uptimerobot.com/dashboard`. Per-monitor history visible there. The current email path is the source of the daily_checkup MCP's `uptime` Gmail query — see `mcp/daily_checkup_server.py:GMAIL_QUERIES`. |
 
@@ -106,8 +106,8 @@ with a *correctly-labelled* "vb_web unreachable/restarting" message, so a real
 outage still pages but a deploy blip is never mislabelled as a code bug.
 
 **Delivery (2026-06-14):** alerts now go through the shared `notify_chat` sink on
-the minipc (`agent_infra/scripts/notify_chat.py`, `POST /notify` on
-`192.168.1.230:8771`, bearer-auth via `/opt/stack/_shared/notify_chat.env`), which
+the agent host (`agent_infra/scripts/notify_chat.py`, `POST /notify` on the host's
+LAN address `:8771`, bearer-auth via `/opt/stack/_shared/notify_chat.env`), which
 XADDs a synthetic owner message onto the `listen_chat:visa_bulletin` relay stream —
 so the **agent actually reacts** (investigate + act). The old path was a raw
 `curl …/sendMessage` bot self-post, which (being from the bot) never appeared in

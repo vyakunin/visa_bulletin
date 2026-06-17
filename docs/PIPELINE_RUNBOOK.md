@@ -171,7 +171,7 @@ ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && \
 |---------|-------|-----|
 | OOM killed | Large dataset on 2GB host | Monitor with `free -h`; kill Bazel server first (`bazel shutdown`) |
 | Very slow (<2k/min) | Indexes still present (should be dropped at step 3) | Verify indexes are dropped: `SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'salary_record'` |
-| Timeout (>8h) | Phase 2 LSH candidate explosion | See HARDENING_PLAN.md B3 for tuning |
+| Timeout (>8h) | Phase 2 LSH candidate explosion | Tune LSH banding / candidate-pruning thresholds in the clustering config |
 
 ### Step 8: indexes_restored
 
@@ -184,7 +184,7 @@ ssh prod_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && \
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Timeout (>24h) | Phase 2 with 400k+ employers | This is the longest step. Consider performance optimizations (HARDENING_PLAN.md B1-B3). |
+| Timeout (>24h) | Phase 2 with 400k+ employers | This is the longest step. Consider performance optimizations (batch sizing, index state, LSH tuning). |
 | OOM killed | 2GB host with large comparison set | Free memory first; indexes must be present for this step |
 
 ### Step 14: start_services
@@ -219,7 +219,7 @@ If the self-heal DB query fails (e.g., table doesn't exist), it falls through to
 ## Escalation
 
 1. **Step fails once**: Check stage log, identify root cause, fix, resume
-2. **Step fails repeatedly**: Check resource constraints (disk, memory, connections), review HARDENING_PLAN.md for known issues
+2. **Step fails repeatedly**: Check resource constraints (disk, memory, connections) for known issues
 3. **Pipeline stuck >48h**: Kill the process, investigate, consider running steps manually
 4. **Data corruption suspected**: Do NOT traffic-switch. Verify data on inactive host. If bad, re-run from `ensure_db` (fresh start)
 
