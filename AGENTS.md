@@ -17,15 +17,21 @@ General rules (coding style, git, testing, logging, etc.) are in `~/.claude/rule
 
 ---
 
-## Rule: Only Commit When Explicitly Asked
+## Rule: Auto-Commit + Push on Meaningful Changes
 
-**🚫 NEVER auto-commit changes. ONLY commit when user EXPLICITLY requests it. 🚫**
+**Default to committing AND pushing at the end of each completed, meaningful change — no need to be asked** (aligned with the global standing policy in `~/.claude/rules/git.md`, 2026-06-03; this reverses the prior "only commit when explicitly asked" rule, 2026-06-17 per user).
 
-**User must use words like:** "commit", "commit this", "push", "push to git", "save to git"
+**What counts as "meaningful + complete":** a feature/fix/refactor/doc-or-rule update finished to a coherent, building, test-passing state — the point you'd report it as done. One logical change = one focused, atomic commit. NOT mid-edit WIP, half-applied refactors, or broken intermediate states. Don't commit after every file save; commit at the natural "this is done" boundary.
 
-**❌ DO NOT COMMIT when user says:** "create a file", "add analytics", "looks good", "deploy", or when finishing any task/fix.
+**Mandatory safeguards (auto-commit is NOT blind `git add -A`):**
+1. **Build/tests green first** — `bazel build //...` + `bazel test //tests:all` clean for code changes (per `clean_baseline.md`). The pre-commit hook is a backstop, not the only check.
+2. **Never auto-stage secrets / large blobs / scratch** — scan for `.env`, `*token*`, credentials, keys, >10 MB data dumps, `.playwright-mcp/`, `__pycache__`, `.DS_Store`. Prefer targeted `git add <paths>`; only `git add -A` after verifying nothing sensitive/large/scratch is swept in.
+3. **visa_bulletin is a solo repo on `main`** → auto-commit to `main` is fine. Force-push to `main` always re-confirms (Tier 3).
+4. **Never `--no-verify`** (see rule below).
 
-**✅ What to do instead:** Create/modify files → show user what changed → WAIT for explicit commit request.
+**Still PAUSE (don't auto-commit) when:** the tree has unrelated changes you don't understand; a pre-commit hook fails (surface + fix, never bypass); secrets are unavoidably part of the change; or the user said "don't commit yet" / "hold off" / "local only" (honor until released).
+
+**Deploy ≠ commit, but both happen:** deploying still goes through the documented deploy flow (`deployment.md`); the commit captures the source-of-truth in the same task.
 
 ---
 
