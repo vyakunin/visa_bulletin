@@ -47,14 +47,13 @@ Uses the `google_workspace` MCP as a sub-client; subjects are batch-fetched for 
 ## Setup
 
 1. **GoatCounter API token** — save at `~/tokens/goatcounter.token` (mode 600). Generate via Settings → API in the GoatCounter dashboard. See `docs/deployment/goatcounter.md`.
-2. **SSH alias** — add to `~/.ssh/config`:
+2. **SSH alias** — configure a `homeserver` alias for the production server in
+   `~/.ssh/config` (concrete host, user, and key live in the private ops repo):
    ```
    Host homeserver
-       HostName homeserver.local
-       User vyakunin
-       IdentityFile ~/.ssh/homeserver_ed25519
-       StrictHostKeyChecking no
-       UserKnownHostsFile /dev/null
+       HostName <prod-host>
+       User <user>
+       IdentityFile <key>
    ```
    Or override with `HOMESERVER_SSH_ALIAS=<your-alias>`.
 3. **google_workspace MCP** — must be registered in `~/mcp/servers.json` and OAuth'd to your Gmail account. The server reads credentials from `~/tokens/google/`.
@@ -89,7 +88,7 @@ Thresholds are constants at the top of `daily_checkup_server.py`:
 
 | Constant | Default | What it controls |
 |---|---|---|
-| `DISK_YELLOW_PCT` / `_RED_PCT` | 70 / 85 | Homeserver SSD (64 GB) |
+| `DISK_YELLOW_PCT` / `_RED_PCT` | 70 / 85 | Production SSD (small) |
 | `MEM_YELLOW_PCT` / `_RED_PCT` | 80 / 92 | Homeserver RAM (8 GB) |
 | `CPU_LOAD_YELLOW` / `_RED` | 1.0 / 2.0 | load1 ÷ nproc |
 | `BULLETIN_REFRESH_YELLOW_MIN` / `_RED_MIN` | 90 / 180 | Hourly cron staleness |

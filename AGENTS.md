@@ -1,6 +1,6 @@
 # Critical Development Rules
 
-Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+. **Production runs on a self-hosted Dell Wyse 5070 ("homeserver") behind Cloudflare Tunnel** (migrated from AWS Lightsail on 2026-05-08; see `.claude/rules/deployment.md` and `homeserver.md` for topology). Lightsail kept reachable on `44.209.204.255` for rollback during burn-in.
+Django/PostgreSQL/Bazel application parsing visa bulletin data. Python 3.11+. **Production runs on a self-hosted server behind Cloudflare Tunnel** (migrated from AWS Lightsail on 2026-05-08; see `.claude/rules/deployment.md`). Concrete hosting topology — hosts, hardware, IPs, keys — lives in the **private ops repo** (`visa_bulletin_platform/hosting/`), not in this public repository.
 
 General rules (coding style, git, testing, logging, etc.) are in `~/.claude/rules/`. See `rules_management.md` for the shared rules structure and new-project setup.
 
@@ -133,7 +133,7 @@ ssh production "systemctl status app"
 ssh -i ~/.ssh/key.pem user@192.168.1.100
 ```
 
-Project aliases: `homeserver.local` (current production, Wyse 5070, key `~/.ssh/homeserver_ed25519`, user `vyakunin`); `prod_2Gb_vm`/`staging_2Gb_vm`/`backup_0_5Gb_vm` (old Lightsail, kept for rollback during burn-in only). See `deployment.md` for details.
+Use the SSH alias `homeserver` for the production server — its host, user, and key are configured in your private `~/.ssh/config` (concrete values live in the private ops repo, not this public repository). See `deployment.md` for the deploy flow.
 
 ---
 
@@ -158,7 +158,6 @@ This project can plug into the morning digest pipeline run from `~/cursor_projec
 
 - Public site availability + last-hour 5xx rate from cloudflared / nginx (`vb_nginx` access log)
 - Hourly bulletin-refresh cron status: did it run, did it parse, any errors? (`/opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log`)
-- Homeserver headroom — `df -h /`, `free -h` (Wyse 5070 is 64 GB disk / 8 GB RAM)
+- Production server headroom — `df -h /`, `free -h` (small SSD — watch disk pressure)
 - Postgres DB size growth + any vacuum / replication warnings
-- Lightsail rollback path: is `44.209.204.255` still reachable during burn-in?
-- Cloudflare tunnel connector state (`vb_cloudflared` — 4 QUIC connections healthy?)
+- Cloudflare tunnel connector state (`vb_cloudflared` — QUIC connections healthy?)

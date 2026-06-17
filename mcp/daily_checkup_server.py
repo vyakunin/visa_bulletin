@@ -19,8 +19,8 @@ Returns a CheckupReport JSON per the contract at
 State mutation: NONE. All reads.
 
 Setup:
-  - Add `Host homeserver` to ~/.ssh/config (HostName homeserver.local,
-    User vyakunin, IdentityFile ~/.ssh/homeserver_ed25519) — or override
+  - Configure an SSH alias `homeserver` for the production server in
+    ~/.ssh/config (host/user/key are in the private ops repo) — or override
     via env var HOMESERVER_SSH_ALIAS.
   - Save GoatCounter API token at ~/tokens/goatcounter.token (mode 600).
   - Register in the orchestrator's registry.yaml — see README.md.
@@ -77,7 +77,7 @@ GSC_SITE_URL = "sc-domain:visa-bulletin.us"
 GSC_LAG_DAYS = 3
 
 # Thresholds
-DISK_YELLOW_PCT = 70  # SSD is 64 GB; want headroom for Postgres growth.
+DISK_YELLOW_PCT = 70  # small SSD; want headroom for Postgres growth.
 DISK_RED_PCT = 85
 MEM_YELLOW_PCT = 80
 MEM_RED_PCT = 92

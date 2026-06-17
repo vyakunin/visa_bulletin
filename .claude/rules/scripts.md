@@ -18,7 +18,7 @@
 **❌ BAD:** `ssh prod_2Gb_vm "psql -U visa_bulletin_user -d visa_bulletin -c '...'"`
 
 **Debugging run_sql failures:**
-1. Check env vars: `ssh ubuntu@44.209.204.255 "cat /opt/visa_bulletin/.env | grep DB_"`
+1. Check env vars: `ssh homeserver "cat /opt/stack/visa_bulletin/.env | grep DB_"`
 2. Ensure `set -a && source .env && set +a` (not just `source .env`)
 3. List tables: `bazel run //:run_sql -- --query "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"`
 4. Test connection: `bazel run //:run_sql -- --query "SELECT 1"`
