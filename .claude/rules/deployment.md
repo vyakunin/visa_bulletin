@@ -143,6 +143,36 @@ A query that's <100ms via literal psql but >1s via this Django path is a planner
 
 Rollback is just `IMAGE_TAG=<previous_sha>` in .env + `docker compose pull web && docker compose up -d web` + flush Redis. No fancy orchestrator needed since the registry keeps the prior image.
 
+### Rule: Regenerate stored content after a generator/narrator change
+
+**A change to a content GENERATOR (`lib/business/blog/bulletin_narrator.py`, the
+blog-post builders, anything that writes `BlogPost.body_html`, predictions copy,
+baked HTML) only affects NEWLY-generated content. Already-published rows keep
+their old stored HTML until explicitly regenerated.** The hourly
+`refresh_bulletin` cron **skips already-published posts** (`if BlogPost.objects
+.filter(slug=…, is_published=True).exists(): return`) — it only creates NEW
+posts. So shipping a narrator fix is inert on existing pages until you regenerate.
+
+After deploying such a change, regenerate the affected published posts (the
+mechanical follow-up — do it, don't wait to be asked; cf. `vqs.md` "Run
+Mechanical Follow-Up Steps Automatically"):
+
+```bash
+# validate on staging first, then run the SAME on prod (vb_web). n ≥ analysis-post
+# count (currently 9) so it regenerates all in place (update_or_create) + prunes none.
+docker exec -w /app vb_stg_web python3 -c "import django; django.setup(); \
+  from scripts.oneoff.generate_initial_blog_posts import create_analysis_posts; create_analysis_posts(n=9)"
+docker exec vb_stg_redis redis-cli -n 1 FLUSHDB
+# verify the rendered page reflects the change, then repeat on prod (vb_web / vb_redis)
+# + CF-purge the /analysis/<slug>/ URLs (cloudflare.md).
+```
+
+Then **verify the rendered page actually changed** (`verify_end_state.md`) — a
+200 isn't enough; grep the rendered HTML for the expected delta. Origin:
+2026-06-18 — the `01f750b` surprise-card gating shipped to prod as code but the
+EB-4/EB-5 cards stayed live for hours because the 5 published posts were never
+regenerated; caught only when the user screenshotted staging.
+
 ### Rule: Diff staging vs prod HTML for top properties before graduation
 
 **Before promoting `staging-<sha>` to prod, diff a handful of top URLs between `https://staging.visa-bulletin.us/` and `https://visa-bulletin.us/` and read the diff manually.** Smoke tests confirm the page is HTTP 200; this confirms the page is *correct*. Code deploys can silently change content (template tweaks, view-context shifts, regenerated blog narrator output, new feature flags) in ways that no individual unit test covers but a side-by-side diff makes obvious.
