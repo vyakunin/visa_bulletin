@@ -998,7 +998,13 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
         # expected to take minutes.
         cursor.execute("SET statement_timeout = 0")
 
-        # 1. Update clusters that have at least one employer from aggregation
+        # 1. Update clusters that have at least one employer from aggregation.
+        # `updated_at` is bumped to NOW() ONLY when a headline filing count
+        # actually changed (IS DISTINCT FROM handles NULLs), so the sitemap
+        # `lastmod` is a truthful per-page freshness signal — never a cosmetic
+        # bump (see Notion: sitemap-lastmod ticket Part 2). The trigger is the
+        # integer counts, not avg_salary, to avoid decimal-rounding false
+        # positives; avg moves only when counts move in this append pipeline.
         cursor.execute("""
             WITH agg AS (
                 SELECT
@@ -1014,16 +1020,29 @@ def _update_cluster_statistics(batch_size: int, dry_run: bool):
             SET
                 total_lca_count = agg.lca_sum,
                 total_perm_count = agg.perm_sum,
-                avg_salary = agg.avg_sal
+                avg_salary = agg.avg_sal,
+                updated_at = CASE
+                    WHEN c.total_lca_count IS DISTINCT FROM agg.lca_sum
+                      OR c.total_perm_count IS DISTINCT FROM agg.perm_sum
+                    THEN NOW()
+                    ELSE c.updated_at
+                END
             FROM agg
             WHERE c.id = agg.cluster_id
         """)
         updated_with_employers = cursor.rowcount
 
-        # 2. Set clusters with zero employers to 0, 0, NULL
+        # 2. Set clusters with zero employers to 0, 0, NULL. Only bump
+        # `updated_at` on the real transition non-zero -> zero (a cluster that
+        # was already empty is left untouched).
         cursor.execute("""
             UPDATE salary_employer_cluster c
-            SET total_lca_count = 0, total_perm_count = 0, avg_salary = NULL
+            SET total_lca_count = 0, total_perm_count = 0, avg_salary = NULL,
+                updated_at = CASE
+                    WHEN c.total_lca_count <> 0 OR c.total_perm_count <> 0
+                    THEN NOW()
+                    ELSE c.updated_at
+                END
             WHERE NOT EXISTS (
                 SELECT 1 FROM salary_employer e WHERE e.canonical_cluster_id = c.id
             )

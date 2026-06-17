@@ -38,6 +38,7 @@ import logging
 from decimal import Decimal
 
 from django.db import connection
+from django.utils import timezone
 
 from django_config.logging_config import setup_logging
 from lib.utils.db_utils import bulk_update_batched
@@ -301,20 +302,38 @@ def main():
         JobTitleCluster.objects.order_by("id").values_list("id", flat=True)
     )
     canonical_updated = 0
+    freshness_bumped = 0
     processed = 0
+    now_ts = timezone.now()
     for i in range(0, len(all_cluster_ids), CLUSTER_BATCH_SIZE):
         batch_ids = all_cluster_ids[i : i + CLUSTER_BATCH_SIZE]
         clusters = list(JobTitleCluster.objects.filter(id__in=batch_ids))
+        # Clusters whose page content actually changed this run get a fresh
+        # `updated_at` (bulk_update bypasses auto_now). Trigger on the integer
+        # filing counts or canonical_title — a truthful sitemap `lastmod`
+        # freshness signal, never a cosmetic bump (Notion: sitemap-lastmod
+        # ticket Part 2). avg_salary is excluded from the trigger to avoid
+        # decimal-rounding false positives; it moves only when counts move.
+        changed = []
         for c in clusters:
             total, avg_sal = stats_by_cluster.get(c.id, (0, None))
+            recent = recent_by_cluster.get(c.id, 0)
+            counts_changed = (
+                c.total_filings != total or c.total_filings_recent != recent
+            )
             c.total_filings = total
             c.avg_salary = avg_sal
-            c.total_filings_recent = recent_by_cluster.get(c.id, 0)
+            c.total_filings_recent = recent
+            canonical_changed = False
             new_canonical = cluster_canonical.get(c.id)
             if new_canonical and new_canonical != c.canonical_title:
                 c.canonical_title = new_canonical
                 c.slug = None
                 canonical_updated += 1
+                canonical_changed = True
+            if counts_changed or canonical_changed:
+                c.updated_at = now_ts
+                changed.append(c)
         if clusters:
             bulk_update_batched(
                 clusters,
@@ -327,6 +346,11 @@ def main():
                     "slug",
                 ],
             )
+        if changed:
+            bulk_update_batched(
+                changed, batch_size=CLUSTER_BATCH_SIZE, fields=["updated_at"]
+            )
+            freshness_bumped += len(changed)
         processed += len(clusters)
         if processed % 5000 == 0 or processed == len(all_cluster_ids):
             logger.info(
@@ -340,6 +364,10 @@ def main():
     logger.info(
         "Done. Updated %s cluster canonical_titles (slugs nulled for re-generation by populate_job_title_slugs)",
         f"{canonical_updated:,}",
+    )
+    logger.info(
+        "Bumped updated_at (sitemap freshness) on %s clusters whose filings/title changed",
+        f"{freshness_bumped:,}",
     )
 
 

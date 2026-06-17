@@ -368,6 +368,29 @@ py_binary(
     },
 )
 
+py_library(
+    name = "cluster_existing_employers_lib",
+    srcs = ["cluster_existing_employers.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:rate_limited_logger",
+        "//lib/utils:db_utils",
+        "//lib/business/salary:employer_clustering",
+        "//models:salary",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("datasketch"),
+        requirement("tqdm"),
+        requirement("rapidfuzz"),
+    ],
+)
+
 py_binary(
     name = "cluster_existing_employers",
     srcs = ["cluster_existing_employers.py"],

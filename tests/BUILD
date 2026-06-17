@@ -302,6 +302,18 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_cluster_stats_freshness",
+    srcs = ["test_cluster_stats_freshness.py"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//models/enums:visa_program",
+        "//scripts/salary:cluster_existing_employers_lib",
+        "//scripts/salary:update_job_title_cluster_stats_lib",
+    ],
+)
+
+django_py_test(
     name = "test_fenced_aggregate",
     srcs = ["test_fenced_aggregate.py"],
     deps = [
