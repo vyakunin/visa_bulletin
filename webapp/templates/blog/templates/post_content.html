@@ -9,6 +9,19 @@
 
     <h3>1. Prediction vs Reality</h3>
     <p><em>Where our model diverged from the actual bulletin (threshold: &gt;14 days).</em></p>
+
+    <div class="alert alert-light border mb-3 py-2"><small>
+        <strong>How to read these.</strong> These compare our <em>next-month</em> call against the
+        actual bulletin. Final-action dates move in lumpy jumps — most months they don't move at all —
+        so a "no movement next month" call is usually correct, and that's where many of these land.
+        The harder, more useful test is the <em>multi-month trajectory</em>: on a 2016–2026
+        walk-forward backtest the model beats the naive "assume no change" baseline at the 6-month
+        horizon and calls the direction of movement far more often than that baseline. We only score
+        ourselves on the series we publicly predict (EB-1/2/3 China, India, and Rest of World);
+        policy-driven categories (EB-4/EB-5) are excluded because we don't forecast them. Full
+        methodology and the head-to-head backtest:
+        <a href="/analysis/how-my-prediction-model-works/">How our prediction model works</a>.
+    </small></div>
     {% if surprises %}
 
     {% if ci_coverage %}
