@@ -911,6 +911,38 @@ def _aggregate_csv_path_counts(
     return {name: dict(counts) for name, counts in out.items()}
 
 
+def _gc_export_max_ts(csv_path: Path) -> datetime | None:
+    """Newest row timestamp in the export CSV — marks the data cutoff.
+
+    GoatCounter beacons are near-real-time, but the daily run pulls the export
+    mid-morning, so the CURRENT day is partial (only hits up to this timestamp).
+    Comparison windows must anchor at the last COMPLETE day (= cutoff.date() - 1
+    day) and report the partial current day separately, else "this week"
+    includes a ~6h day and understates the trend. (user 2026-06-17.)
+    """
+    try:
+        raw = csv_path.read_bytes()
+    except OSError:
+        return None
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    text = raw.decode("utf-8", errors="replace")
+    if text.startswith("2Path,"):
+        text = text[1:]
+    mx: datetime | None = None
+    for row in csv_mod.DictReader(io.StringIO(text)):
+        ds = row.get("Date") or ""
+        if not ds:
+            continue
+        try:
+            ts = datetime.fromisoformat(ds.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if mx is None or ts > mx:
+            mx = ts
+    return mx
+
+
 async def _gather_goatcounter() -> dict:
     """Pull weekly totals + top paths bucketed by surface.
 
@@ -923,20 +955,37 @@ async def _gather_goatcounter() -> dict:
     """
     token = _read_gc_token()
     today = date.today()
-    this_end = today
-    this_start = today - timedelta(days=6)
-    prev_end = this_start - timedelta(days=1)
-    prev_start = prev_end - timedelta(days=6)
-    cycle_end = today - timedelta(days=28)
-    cycle_start = cycle_end - timedelta(days=6)
-    # 28-day-average-per-week baseline (user 2026-05-27 — comparable to
-    # both `prev_7d` and `cycle_7d` but smoother / less cycle-noisy).
-    last28_end = today
-    last28_start = today - timedelta(days=27)
-
     headers = {"Authorization": f"Bearer {token}"}
     # GoatCounter returns 404 on concurrent requests; serialize.
     async with httpx.AsyncClient(headers=headers) as client:
+        # Long-tail accuracy: the full per-hit CSV via /export is the ONLY
+        # analytical source for per-path / per-surface / pageview-total numbers.
+        # The /stats/hits endpoint is capped at 100 paths and is NEVER used as a
+        # fallback (user 2026-06-17: "never, ever use top 100 ... we care a lot
+        # about long tail"). If the export is unavailable, per-page data is
+        # reported as unavailable rather than silently truncated.
+        # Fetch it FIRST so we know the data cutoff before anchoring windows.
+        csv_path = await _gc_export_full_csv(client)
+        # Anchor ALL comparison windows at the last COMPLETE day. The export's
+        # newest row is the data cutoff; the current day is partial (the daily
+        # run pulls mid-morning), so including it understates "this week" and
+        # makes the trend look worse than reality. Anchor = cutoff.date() - 1.
+        # No export → fall back to `today` (per-page data is unavailable anyway).
+        # (user 2026-06-17: only compare full data, surface the partial day.)
+        cutoff_ts = (_gc_export_max_ts(csv_path)
+                     if csv_path is not None and csv_path.exists() else None)
+        cutoff_date = cutoff_ts.date() if cutoff_ts else None
+        anchor = (cutoff_date - timedelta(days=1)) if cutoff_date else today
+        this_end = anchor
+        this_start = anchor - timedelta(days=6)
+        prev_end = this_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=6)
+        cycle_end = anchor - timedelta(days=28)
+        cycle_start = cycle_end - timedelta(days=6)
+        # 28-day-average-per-week baseline (user 2026-05-27 — comparable to
+        # both `prev_7d` and `cycle_7d` but smoother / less cycle-noisy).
+        last28_end = anchor
+        last28_start = anchor - timedelta(days=27)
         totals_this = await _gc_get(client, "/stats/total",
                                     start=this_start.isoformat(), end=this_end.isoformat())
         totals_prev = await _gc_get(client, "/stats/total",
@@ -945,13 +994,6 @@ async def _gather_goatcounter() -> dict:
                                      start=cycle_start.isoformat(), end=cycle_end.isoformat())
         totals_last28 = await _gc_get(client, "/stats/total",
                                       start=last28_start.isoformat(), end=last28_end.isoformat())
-        # Long-tail accuracy: the full per-hit CSV via /export is the ONLY
-        # analytical source for per-path / per-surface / pageview-total numbers.
-        # The /stats/hits endpoint is capped at 100 paths and is NEVER used as a
-        # fallback (user 2026-06-17: "never, ever use top 100 ... we care a lot
-        # about long tail"). If the export is unavailable, per-page data is
-        # reported as unavailable rather than silently truncated.
-        csv_path = await _gc_export_full_csv(client)
 
     # No top-100 fallback: per-path / per-surface come solely from the export
     # CSV. These stay empty so the CSV-absent path reports "unavailable".
@@ -966,6 +1008,7 @@ async def _gather_goatcounter() -> dict:
     path_counts_by_window: dict[str, dict[str, int]] | None = None
     csv_status = "missing"
     csv_age_s: float | None = None
+    partial_pv: int | None = None  # pageviews on the excluded partial current day
     if csv_path is not None and csv_path.exists():
         csv_age_s = time.time() - csv_path.stat().st_mtime
         csv_status = "ok" if csv_age_s < GC_EXPORT_CACHE_TTL_S else "stale"
@@ -975,7 +1018,13 @@ async def _gather_goatcounter() -> dict:
             ("cycle_7d", cycle_start,  cycle_end),
             ("last_28d", last28_start, last28_end),
         ]
+        # Count the partial current day too (so we can report what was excluded),
+        # then pop it before any window math so it never leaks into the trend.
+        if cutoff_date is not None:
+            windows.append(("_partial", cutoff_date, cutoff_date))
         path_counts_by_window = _aggregate_csv_path_counts(csv_path, windows)
+        if cutoff_date is not None:
+            partial_pv = sum(path_counts_by_window.pop("_partial", {}).values())
 
     # Pageview totals derived from the (event-excluded, untruncated) CSV —
     # authoritative and consistent with the per-surface sums. /stats/total
@@ -1046,6 +1095,19 @@ async def _gather_goatcounter() -> dict:
         "main_entry": main_entry,
         "csv_status": csv_status,
         "csv_age_s": csv_age_s,
+        # Windows anchor at the last COMPLETE day (anchor); the partial current
+        # day is excluded from every comparison and reported separately so the
+        # trend is full-days-only. (user 2026-06-17.)
+        "anchor_last_complete_day": anchor.isoformat(),
+        "partial_day": (
+            {
+                "date": cutoff_date.isoformat(),
+                "pageviews_so_far": partial_pv,
+                "cutoff_utc": cutoff_ts.isoformat() if cutoff_ts else None,
+            }
+            if cutoff_date is not None
+            else None
+        ),
         "window": {
             "this": [this_start.isoformat(), this_end.isoformat()],
             "prev": [prev_start.isoformat(), prev_end.isoformat()],
@@ -1747,6 +1809,20 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
         "_Note: bulletin publishes monthly (~8th–15th) so WoW is misleading mid-cycle; MoM cycle + 28d-avg are the primary signals._",
         "",
     ]
+    # Surface that the trend is full-days-only and today's partial day was
+    # excluded (else the reader assumes "7d" ends today). (user 2026-06-17.)
+    anchor = gc.get("anchor_last_complete_day")
+    partial = gc.get("partial_day") or {}
+    if anchor and partial.get("date"):
+        psf = partial.get("pageviews_so_far")
+        cutoff = (partial.get("cutoff_utc") or "")[:16].replace("T", " ")
+        lines.insert(
+            0,
+            f"- _Full days only: 7d window ends **{anchor}** (last complete day). "
+            f"Today {partial['date']} excluded — partial, "
+            f"{_humanize(psf) if psf is not None else '?'} pageviews so far "
+            f"through {cutoff} UTC._",
+        )
     if not pv:
         lines.insert(0, "- ⚠️ _Export CSV unavailable — pageview total falls back "
                         "to /stats/total, which counts ad/affiliate event beacons "
