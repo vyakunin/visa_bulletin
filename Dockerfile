@@ -52,8 +52,13 @@ RUN groupadd -r visabulletin && useradd -r -g visabulletin visabulletin
 
 # Install runtime dependencies
 # libpq5: PostgreSQL client library required by psycopg2-binary at runtime
+# libgomp1: OpenMP runtime (libgomp.so.1) required by LightGBM — the GBM expert
+#   the dispatch uses for 6m/12m-horizon predictions (forward multi-horizon
+#   serving in refresh_bulletin). Without it those horizons fail with
+#   "libgomp.so.1: cannot open shared object file".
 RUN apt-get update && apt-get install -y \
     libpq5 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
