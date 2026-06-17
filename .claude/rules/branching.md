@@ -18,6 +18,22 @@ Three independent operations — never conflate them:
 - **Data refresh**: weekly job that ingests new salary/bulletin data, run against the staging DB.
 - **Promotion (staging → prod)**: either (a) deploying the staging-tested image tag to the prod stack, or (b) atomically swapping the postgres-data volumes (for DB-level promotion after a refresh).
 
+## Which release path — rendering vs data-population
+
+Before promoting, classify the change. **Any "yes" → Path 2 (data-refresh graduation), not a Path 1 image swap:**
+
+- Schema migration, data-format change, index drop/rebuild, or heavyweight reprocessing?
+- **Changes HOW DATA IS POPULATED** — the ingest pipeline, clustering, stats/`updated_at` population, anything under `lib/ingest/`, `scripts/salary/`, `scripts/cron/` that writes or derives data?
+
+All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-tag swap: `staging` image → `prod` image, no DB touch).
+
+- **`no schema migration` ≠ Path 1.** A data-population code change is Path 2 *even with no migration* and *even though the new code sits inert in the prod image until a refresh runs it* — validating it requires running the refresh against real data on the off-prod staging stack and checking the derived data + downstream effects, then graduating the DATA via the cutover. A quick Path 1 swap skips that and leaves the next refresh running unvalidated pipeline code at prod scale.
+- **A mixed batch is Path 2.** If even one commit in the promote set touches data-population, the whole promotion is Path 2 — or split the batch and ship only the pure-rendering commits via Path 1.
+
+## Staging runs OFF the prod box — always
+
+The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
+
 ## Workflows (Summary)
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**

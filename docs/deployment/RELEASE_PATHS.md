@@ -1,8 +1,16 @@
 # Release paths — visa_bulletin
 
-Two release paths, chosen by **what the change touches**. The deciding question:
-*does this change run heavyweight processing, alter the DB schema/format, or
-disrupt indexes?* No → Path 1. Yes → Path 2.
+Two release paths, chosen by **what the change touches**. ANY "yes" → Path 2:
+*does it run heavyweight processing, alter the DB schema/format, disrupt indexes,
+or **change how data is populated** (ingest pipeline, clustering, stats/`updated_at`
+logic — anything that writes or derives data)?* All "no" (pure
+rendering/view/template/SEO/config) → Path 1.
+
+> **No schema migration ≠ Path 1.** A data-population change is Path 2 even with no
+> migration and even though its code is inert in the prod image until a refresh
+> runs it — validating it means running the refresh against real data on the
+> off-prod staging stack first. A mixed batch (one data-population commit) is Path 2,
+> or split it and ship only the pure-rendering commits via Path 1.
 
 > This repo is public, so it describes the process in terms of **roles**
 > (`prod server`, `staging server`, `data-pipeline / dev env`) — never concrete
