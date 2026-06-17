@@ -33,7 +33,7 @@ BASE="https://vyakunin.goatcounter.com/api/v0"
 curl -sS -H "Authorization: Bearer $GC_TOKEN" \
   "$BASE/stats/total?start=2026-05-08&end=2026-05-14" | python3 -m json.tool
 
-# Top 20 paths
+# Top 20 paths — QUICK PEEK ONLY (see warning below)
 curl -sS -H "Authorization: Bearer $GC_TOKEN" \
   "$BASE/stats/hits?start=2026-05-08&end=2026-05-14&limit=20" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(h["count"], h["path"]) for h in d["hits"]]'
@@ -47,7 +47,27 @@ curl -sS -H "Authorization: Bearer $GC_TOKEN" \
   "$BASE/stats/toprefs?start=2026-04-15&end=2026-05-14&limit=15"
 ```
 
-For anything beyond the top-100 paths, use the export endpoint — see `docs/deployment/goatcounter.md`.
+> **🚨 `/stats/hits` is capped at 100 paths server-side, regardless of `limit`.**
+> On visa-bulletin.us that drops ~1,000+ long-tail paths (every individual
+> `/employer/<slug>/` and `/job-title/<slug>/` profile) — ~11% of weekly
+> pageviews. It is a **quick eyeball of the head only.** NEVER use it to compute
+> section/path SHARES, totals, or any A/B conclusion, and never publish a top-100
+> number with a "93% coverage, conclusions unaffected" caveat — that's the exact
+> hand-wave `~/.claude/rules/complete_data_queries.md` forbids. The profile long
+> tail IS the thing a breakdown is usually about, so truncating it is not ±1pt.
+>
+> **For ANY breakdown / share / total / conclusion, use full coverage:**
+> ```bash
+> uv run scripts/gc_section_shares.py                 # full-coverage section shares (this_7d)
+> uv run scripts/gc_section_shares.py --window last_28d
+> uv run scripts/gc_section_shares.py --start 2026-06-01 --end 2026-06-16 --paths
+> ```
+> It pulls the full `/api/v0/export` CSV (every hit, 100% coverage), reuses the
+> daily_checkup MCP's filtering + surface buckets, and prints the exact pageviews
+> a top-100 query would have dropped. For a **known** path set (e.g. affiliate
+> SubIds) the chunked-`include_paths` path in
+> `visa_bulletin_platform/monetization/affiliate_epv_reconcile.py` is the other
+> full-coverage tool. Export endpoint mechanics: `docs/deployment/goatcounter.md`.
 
 ### nginx — count human (non-bot) requests on homeserver
 ```bash

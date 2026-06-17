@@ -956,6 +956,22 @@ bazel run //scripts:check_debug_mode
 
 ---
 
+## Analytics
+
+### GoatCounter full-coverage section shares
+
+**`scripts/gc_section_shares.py`** — full-coverage GoatCounter section/path traffic shares for visa-bulletin.us.
+
+**Purpose:** the canonical way to get a traffic breakdown WITHOUT the `/stats/hits` top-100 cap (which silently drops ~1,000+ long-tail paths — every `/employer/<slug>/` and `/job-title/<slug>/` profile — ~11% of weekly pageviews). Reuses the daily_checkup MCP's full `/api/v0/export` pull + filtering + surface buckets (single source of truth), and prints the exact pageviews a top-100 query would have dropped. Use this for ANY share/total/breakdown/A-B conclusion per `~/.claude/rules/complete_data_queries.md`; the capped `?limit=` query in `.claude/rules/analytics.md` is a head-only eyeball.
+
+**Usage:**
+```bash
+uv run scripts/gc_section_shares.py                          # this_7d (default)
+uv run scripts/gc_section_shares.py --window last_28d        # this_7d|prev_7d|cycle_7d|last_28d
+uv run scripts/gc_section_shares.py --start 2026-06-01 --end 2026-06-16 --paths
+```
+Exit 2 if the export is unavailable (does NOT fall back to top-100). For a **known** path set (affiliate SubIds), use the chunked-`include_paths` path in `visa_bulletin_platform/monetization/affiliate_epv_reconcile.py` instead.
+
 ## Development Utilities
 
 ### File Inspection
