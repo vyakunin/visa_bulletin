@@ -4,8 +4,9 @@ Gathers production-health, traffic, and security signals from:
   1. The homeserver (one SSH round-trip): vb_* container health, host
      resources, bulletin-refresh cron freshness, GDrive backup cron freshness,
      Postgres data-freshness signals (newest bulletin + last successful
-     IngestRun), nginx access-log summary (status mix, top 5xx paths, top
-     scraper IPs), and probes for known scanner paths (/wp-admin, /.env etc.).
+     IngestRun), nginx access-log summary (status mix, top 500 app-exception
+     paths + folded gateway-5xx total, top scraper IPs), and probes for known
+     scanner paths (/wp-admin, /.env etc.).
   2. GoatCounter API: total pageviews/visitors week-over-week, top paths
      bucketed by surface (job titles, employers, predictions, blog, search,
      SEO landings, homepage, other), top movers.
@@ -102,6 +103,11 @@ NGINX_5XX_RED_PCT = 2.0
 # overall volume.
 PATH_5XX_YELLOW = 30
 PATH_5XX_RED = 100
+# Gateway 5xx (502/503/504) are worker-recycle / deploy blips, not code bugs —
+# a handful/day at ~0.001s is normal. Only fold-flag as yellow when BOTH the
+# absolute count clears this AND it's a meaningful % of traffic (NGINX_5XX_YELLOW_PCT).
+# Mirrors alert_5xx_spike.sh Rule 2 (gateway burst ≥20 & rate ≥2%).
+GW_5XX_BURST = 50
 # A single real client IP hitting more than this in 24h is a scraper / abuse
 # candidate. Now meaningful since 2026-05-14 (real_ip_module rewrites
 # $remote_addr from CF-Connecting-IP).
@@ -318,7 +324,14 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
     if (status == "429") rate_limit_429++
     path = $7
     sub(/\?.*$/, "", path)
-    if (substr(status,1,1)=="5") top_5xx_path[path]++
+    # Split per-path 5xx by class: 500 = app exception (real bug, path-specific —
+    # e.g. the 2026-06-10 EmptyResultSet regression on /salaries/). 502/503/504 =
+    # gateway/worker-recycle/deploy blips: NOT path-specific (upstream briefly
+    # unreachable affects every path), fire at ~0.001s, and must NEVER be flagged
+    # as a code regression. Track 500 per-path; gateway codes are summed in
+    # by_5xx_status and folded into one total at render. See analytics.md
+    # 500-vs-502 doctrine (already applied to alert_5xx_spike.sh 2026-06-14).
+    if (status=="500") top_500_path[path]++
     if (substr(status,1,1)=="4") top_4xx_path[path]++
     is_scanner = (path ~ /(wp-admin|wp-login|wp-content|wp-includes|wordpress|phpmyadmin|administrator|xmlrpc\.php|\.env|\.git|\.aws|\.ssh|actuator|hudson|jenkins|owa\/auth)/)
     if (is_scanner) scanner_path[path]++
@@ -389,11 +402,11 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
     # Top-K via selection sort: O(n*K). The earlier bubble sort was O(n*n)
     # and blew past 60s on ip_hits (~30k unique client IPs/day after CF
     # real_ip rewrite). Selection-sort top-10 stays sub-second even at 100k.
-    n=0; for (p in top_5xx_path) {{ paths[n]=p; counts[n]=top_5xx_path[p]; n++ }}
+    n=0; for (p in top_500_path) {{ paths[n]=p; counts[n]=top_500_path[p]; n++ }}
     for (i=0;i<n && i<10;i++) {{
       mi=i; for (j=i+1;j<n;j++) if (counts[j]>counts[mi]) mi=j
       if (mi!=i) {{ t=counts[i];counts[i]=counts[mi];counts[mi]=t;t=paths[i];paths[i]=paths[mi];paths[mi]=t }}
-      print "5xx_path=" paths[i] "|" counts[i]
+      print "500_path=" paths[i] "|" counts[i]
     }}
     n=0; delete paths; delete counts
     for (p in top_4xx_path) {{ paths[n]=p; counts[n]=top_4xx_path[p]; n++ }}
@@ -578,7 +591,7 @@ def _parse_nginx(text: str) -> dict:
         "unique_ips_human_page_24h": 0,
         "by_class": {},
         "5xx_status": {},
-        "top_5xx_paths": [],
+        "top_500_paths": [],  # app exceptions only (502/503/504 folded via 5xx_status)
         "top_4xx_paths": [],
         "scanner_paths": [],
         "top_ips": [],
@@ -613,10 +626,10 @@ def _parse_nginx(text: str) -> dict:
                 out["5xx_status"][code] = int(cnt)
             except ValueError:
                 pass
-        elif key == "5xx_path":
+        elif key == "500_path":
             path, _, cnt = val.partition("|")
             try:
-                out["top_5xx_paths"].append((path, int(cnt)))
+                out["top_500_paths"].append((path, int(cnt)))
             except ValueError:
                 pass
         elif key == "4xx_path":
@@ -713,15 +726,48 @@ def _bucket_path(p: str) -> str:
     return "other"
 
 
+# A real visa-bulletin.us export is ~9 MB / hundreds of thousands of hit rows.
+# A truncated/empty/error-body "download" (200 status but garbage) must NEVER
+# replace the last good pull — that's the one we fall back to on rate-limit.
+# Require a plausible floor of data-rows before trusting a fresh download.
+GC_EXPORT_MIN_VALID_ROWS = 1000
+
+
+def _gc_export_looks_valid(raw: bytes) -> bool:
+    """True iff `raw` is a plausible untruncated GC export CSV.
+
+    Guards the cache-overwrite: GoatCounter can return a 200 with an empty
+    or partial body, and clobbering the cached good pull with it would leave
+    nothing to fall back to on the next rate-limited run. Checks: non-empty,
+    decompresses if gzip, has the `Path` header (with the known `2` prefix
+    quirk tolerated), and carries at least GC_EXPORT_MIN_VALID_ROWS rows.
+    """
+    if not raw:
+        return False
+    try:
+        if raw[:2] == b"\x1f\x8b":  # gzip magic
+            raw = gzip.decompress(raw)
+    except (OSError, EOFError):
+        return False
+    text = raw.decode("utf-8", errors="replace")
+    if text.startswith("2Path,"):
+        text = text[1:]
+    if not text.startswith("Path,"):
+        return False
+    # newline count ≈ row count; cheap and avoids a full CSV parse here.
+    return text.count("\n") >= GC_EXPORT_MIN_VALID_ROWS
+
+
 async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
     """Run /api/v0/export round-trip and return the path to the cached CSV.
 
     GoatCounter caps `/stats/hits` at 100 paths, missing ~43% of the long
     tail on visa-bulletin.us. /export gives the full per-hit CSV but is
     1/hour rate-limited per token; we cache for GC_EXPORT_CACHE_TTL_S so
-    daily-checkup + ad-hoc invocations share one export. Falls back to a
-    stale cache on rate-limit; returns None only if no cache exists and the
-    fresh fetch failed.
+    daily-checkup + ad-hoc invocations share one export. Falls back to the
+    last good pull (validated, atomically written — see below) on rate-limit
+    / fetch failure / a garbage download; returns None only if no cache
+    exists at all and the fresh fetch failed.
     """
     GC_EXPORT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = GC_EXPORT_CACHE_DIR / "gc_export.csv"
@@ -786,8 +832,21 @@ async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
         logger.warning("gc export download failed: %s", e)
         return csv_path if csv_path.exists() else None
 
-    csv_path.write_bytes(dl.content)
-    logger.info("gc export downloaded: %d bytes", len(dl.content))
+    if not _gc_export_looks_valid(dl.content):
+        # 200 but truncated/empty/error body — keep the last good pull rather
+        # than clobbering it (it's our rate-limit fallback). (user 2026-06-17.)
+        logger.warning(
+            "gc export download invalid (%d bytes); keeping last good pull",
+            len(dl.content),
+        )
+        return csv_path if csv_path.exists() else None
+
+    # Atomic replace: write to a temp sibling then rename, so a crash/partial
+    # write mid-download can't corrupt the cached good pull.
+    tmp_path = csv_path.with_suffix(".csv.tmp")
+    tmp_path.write_bytes(dl.content)
+    tmp_path.replace(csv_path)
+    logger.info("gc export downloaded: %d bytes (validated)", len(dl.content))
     return csv_path
 
 
@@ -833,7 +892,19 @@ def _aggregate_csv_path_counts(
             continue
         if (row.get("FirstVisit") or "0") != "1":
             continue
+        # Events (ad-view / ad-fill / aff-view beacons) are NOT pageviews —
+        # GoatCounter records them as paths, but counting them inflates the
+        # totals + dumps them into the "other" surface. Exclude so per-surface
+        # sums and the headline pageview total are real pages only.
+        # (user 2026-06-17: long-tail accuracy.)
+        if (row.get("Event") or "0") not in ("0", ""):
+            continue
         path = (row.get("Path") or "").split("?", 1)[0]
+        # Canonicalize the trailing slash so direct-hit / redirect variants
+        # (`/employment-based/india` vs `/employment-based/india/`) merge into
+        # one path instead of splitting the long tail. All SURFACE_PATTERNS /
+        # main-entry regexes are slash-tolerant, so this only affects keying.
+        path = path.rstrip("/") or "/"
         for name, start, end in windows:
             if start <= d <= end:
                 out[name][path] += 1
@@ -874,26 +945,20 @@ async def _gather_goatcounter() -> dict:
                                      start=cycle_start.isoformat(), end=cycle_end.isoformat())
         totals_last28 = await _gc_get(client, "/stats/total",
                                       start=last28_start.isoformat(), end=last28_end.isoformat())
-        hits_this = await _gc_get(client, "/stats/hits", limit=100,
-                                  start=this_start.isoformat(), end=this_end.isoformat())
-        hits_cycle = await _gc_get(client, "/stats/hits", limit=100,
-                                   start=cycle_start.isoformat(), end=cycle_end.isoformat())
-        # Long-tail accuracy: full per-hit CSV via /export. Independent of the
-        # top-100 cap on /stats/hits. Rate-limit-tolerant via 6h cache.
+        # Long-tail accuracy: the full per-hit CSV via /export is the ONLY
+        # analytical source for per-path / per-surface / pageview-total numbers.
+        # The /stats/hits endpoint is capped at 100 paths and is NEVER used as a
+        # fallback (user 2026-06-17: "never, ever use top 100 ... we care a lot
+        # about long tail"). If the export is unavailable, per-page data is
+        # reported as unavailable rather than silently truncated.
         csv_path = await _gc_export_full_csv(client)
 
-    def _bucket_hits(payload: dict) -> tuple[dict[str, int], dict[str, int]]:
-        by_surface: dict[str, int] = defaultdict(int)
-        by_path: dict[str, int] = {}
-        for h in payload.get("hits", []) or []:
-            path = h.get("path") or ""
-            count = h.get("count") or 0
-            by_surface[_bucket_path(path)] += count
-            by_path[path] = count
-        return dict(by_surface), by_path
-
-    surf_this, paths_this = _bucket_hits(hits_this)
-    surf_cycle, paths_cycle = _bucket_hits(hits_cycle)
+    # No top-100 fallback: per-path / per-surface come solely from the export
+    # CSV. These stay empty so the CSV-absent path reports "unavailable".
+    surf_this: dict[str, int] = {}
+    surf_cycle: dict[str, int] = {}
+    paths_this: dict[str, int] = {}
+    paths_cycle: dict[str, int] = {}
 
     # CSV-derived path counts across all 4 windows (used for both main-entry
     # breakdown and full-coverage per-surface counts). Available iff the
@@ -911,6 +976,16 @@ async def _gather_goatcounter() -> dict:
             ("last_28d", last28_start, last28_end),
         ]
         path_counts_by_window = _aggregate_csv_path_counts(csv_path, windows)
+
+    # Pageview totals derived from the (event-excluded, untruncated) CSV —
+    # authoritative and consistent with the per-surface sums. /stats/total
+    # counts ad/affiliate event beacons as hits, so it is used only as a
+    # labelled fallback when the export is unavailable.
+    pageviews_by_window: dict[str, int] | None = None
+    if path_counts_by_window is not None:
+        pageviews_by_window = {
+            w: sum(c.values()) for w, c in path_counts_by_window.items()
+        }
 
     # Per-surface deltas. Prefer CSV path_counts (100% coverage, all 4
     # windows). Fall back to top-100 hit counts when CSV unavailable.
@@ -964,11 +1039,10 @@ async def _gather_goatcounter() -> dict:
         "surfaces": surface_deltas,
         "surfaces_source": "csv_full" if csv_source else "top100_hits",
         "top_movers": movers,
-        "top_paths_this_week_truncated": hits_this.get("more", False),
-        "top100_coverage_this_pct": (
-            (sum(paths_this.values()) / (totals_this.get("total") or 1)) * 100
-            if totals_this.get("total") else None
-        ),
+        "pageviews": pageviews_by_window,
+        "totals_source": "csv_pageviews" if pageviews_by_window else "stats_total_events_incl",
+        "top_paths_this_week_truncated": False,
+        "top100_coverage_this_pct": None,
         "main_entry": main_entry,
         "csv_status": csv_status,
         "csv_age_s": csv_age_s,
@@ -1239,9 +1313,11 @@ async def _call_gw_tools(calls: list[tuple[str, dict]]) -> list[str]:
 # Queries we run against Gmail. Each tuple is (label, query, importance_if_hit,
 # importance_if_empty).
 GMAIL_QUERIES: list[tuple[str, str, int, int]] = [
-    # F5Bot: Reddit mentions of our target keywords. Hits = community signal,
-    # not a problem — daily-checkup workflow expects you to triage these.
-    ("f5bot", "from:admin@f5bot.com newer_than:1d", 4, 1),
+    # NOTE: F5Bot / Reddit-mention triage moved to visa_bulletin_PLATFORM
+    # (marketing is owned there; F5Bot emails real-time-dispatch to the platform
+    # bot via gmail_dispatcher). Intentionally NOT scanned here (user 2026-06-17:
+    # "route to vb platform, they don't belong here"). The `-from:admin@f5bot.com`
+    # exclusion below keeps F5Bot out of project_mentions too.
     # Uptime monitors. Per POST_MIGRATION_TRACKER #15, monitoring isn't yet
     # set up — but search anyway so it lights up the moment one is wired.
     ("uptime",
@@ -1562,19 +1638,34 @@ def _section_nginx(nx: dict) -> tuple[dict, str]:
             status = "yellow"
         klass_summary = ", ".join(f"{k}={_humanize(v)}" for k, v in sorted(by.items()))
         lines.append(f"- Status mix: {klass_summary} — **{pct_5xx:.2f}% 5xx**")
-    if nx.get("top_5xx_paths"):
-        lines.append("- Top 5xx paths:")
-        for p, c in nx["top_5xx_paths"][:5]:
-            # A localized 5xx spike on one path is an app regression — escalate
-            # on the absolute count, independent of the total-% threshold.
+    # App exceptions (500) are the real signal — surface per-path and escalate on
+    # absolute count even when they're a small slice of total traffic (the
+    # EmptyResultSet case). Gateway 5xx (502/503/504) are worker-recycle / deploy
+    # blips, NOT path-specific code bugs — fold into one total and only escalate on
+    # a sustained burst (mirrors alert_5xx_spike.sh Rule 2: ≥ GW_5XX_BURST and a
+    # meaningful % of traffic). Never label gateway blips a "code regression".
+    if nx.get("top_500_paths"):
+        lines.append("- Top 500 (app exception) paths:")
+        for p, c in nx["top_500_paths"][:5]:
             mark = ""
             if c >= PATH_5XX_RED:
                 status = "red"
-                mark = " ⚠️ app-level 5xx spike (likely a code regression)"
+                mark = " ⚠️ app-level 500 spike (likely a code regression)"
             elif c >= PATH_5XX_YELLOW and status != "red":
                 status = "yellow"
                 mark = " ⚠️"
             lines.append(f"  - `{p}` — {c}{mark}")
+    gw_5xx = sum(v for k, v in nx.get("5xx_status", {}).items() if k in ("502", "503", "504"))
+    if gw_5xx:
+        gw_pct = (gw_5xx / total * 100) if total else 0
+        burst = gw_5xx >= GW_5XX_BURST and gw_pct >= NGINX_5XX_YELLOW_PCT
+        if burst and status != "red":
+            status = "yellow"
+        note = (
+            " ⚠️ sustained — check for an upstream/deploy issue"
+            if burst else " (worker-recycle / deploy blips, expected)"
+        )
+        lines.append(f"- Gateway 5xx (502/503/504): {gw_5xx} ({gw_pct:.2f}%){note}")
     if nx.get("top_4xx_paths"):
         lines.append("- Top 4xx paths:")
         for p, c in nx["top_4xx_paths"][:5]:
@@ -1618,10 +1709,20 @@ def _section_nginx(nx: dict) -> tuple[dict, str]:
 def _section_goatcounter(gc: dict) -> tuple[dict, str]:
     """Surface pageview deltas vs a cycle-aware baseline + per-surface breakdown."""
     status = "green"
-    pv_this = gc["totals_this_week"].get("total") or 0
-    pv_prev = gc["totals_prev_week"].get("total") or 0
-    pv_cycle = gc["totals_cycle_ago"].get("total") or 0
-    pv_28 = (gc.get("totals_last_28d") or {}).get("total") or 0
+    # Prefer the untruncated, event-excluded CSV pageview totals. /stats/total
+    # counts ad/affiliate event beacons as hits (inflated), so use it only as a
+    # labelled fallback when the export was unavailable.
+    pv = gc.get("pageviews") or {}
+    if pv:
+        pv_this = pv.get("this_7d") or 0
+        pv_prev = pv.get("prev_7d") or 0
+        pv_cycle = pv.get("cycle_7d") or 0
+        pv_28 = pv.get("last_28d") or 0
+    else:
+        pv_this = gc["totals_this_week"].get("total") or 0
+        pv_prev = gc["totals_prev_week"].get("total") or 0
+        pv_cycle = gc["totals_cycle_ago"].get("total") or 0
+        pv_28 = (gc.get("totals_last_28d") or {}).get("total") or 0
     pv_28_wk = pv_28 / 4 if pv_28 else 0
     # Primary signal: vs 4 weeks ago (one bulletin cycle, same day-of-week phase).
     delta_cycle = ((pv_this - pv_cycle) / pv_cycle * 100) if pv_cycle else None
@@ -1646,6 +1747,10 @@ def _section_goatcounter(gc: dict) -> tuple[dict, str]:
         "_Note: bulletin publishes monthly (~8th–15th) so WoW is misleading mid-cycle; MoM cycle + 28d-avg are the primary signals._",
         "",
     ]
+    if not pv:
+        lines.insert(0, "- ⚠️ _Export CSV unavailable — pageview total falls back "
+                        "to /stats/total, which counts ad/affiliate event beacons "
+                        "as hits (inflated). Per-page data unavailable this run._")
 
     # Combined main-entry line (user request 2026-05-27): home + EB + FS
     # dashboards are one funnel. We additionally break out the IND-EB-vs-
@@ -2066,7 +2171,6 @@ def _section_gmail(gmail: dict) -> tuple[dict | None, str]:
     status = "green"
     sections: list[str] = []
     label_titles = {
-        "f5bot": "F5Bot — Reddit mentions of \"visa bulletin\" / \"green card priority date\"",
         "uptime": "Uptime-monitor alerts",
         "project_mentions": "Other project mail (feedback, GSC, build, etc.)",
     }
@@ -2084,8 +2188,6 @@ def _section_gmail(gmail: dict) -> tuple[dict | None, str]:
         # Uptime hits are an actual alert → escalate status.
         if label == "uptime":
             status = "red"
-        elif label == "f5bot" and status == "green":
-            status = "yellow"  # not urgent, but triage today
         sections.append(f"- **{title}** — {len(ids)} message(s):")
         for mid in ids[:5]:
             meta = metas.get(mid) or "(metadata unavailable)"
@@ -2100,7 +2202,8 @@ def _section_gmail(gmail: dict) -> tuple[dict | None, str]:
         return (None, "green")
     importance = max_importance_if_hit if any_hits else 1
     body = (
-        "_Daily Reddit-watch + uptime + project mentions (per POST_MIGRATION_TRACKER P1 \"Recurring: daily Reddit-watch via F5Bot\")._\n\n"
+        "_Uptime alerts + project mentions. (F5Bot / Reddit-mention triage lives "
+        "in visa_bulletin_platform now, not here.)_\n\n"
         + "\n".join(sections)
     )
     return ({"title": "Gmail signals (24h)", "body": body, "importance": importance}, status)
@@ -2292,8 +2395,15 @@ async def daily_checkup(since: str | None = None) -> str:
     else:
         bits.append("All systems normal")
     if gc_data:
-        pv = gc_data["totals_this_week"].get("total") or 0
-        pv_cycle = gc_data["totals_cycle_ago"].get("total") or 0
+        # Use the untruncated, event-excluded CSV pageview totals — NOT
+        # /stats/total (which counts ad/affiliate event beacons as hits).
+        pv_map = gc_data.get("pageviews") or {}
+        if pv_map:
+            pv = pv_map.get("this_7d") or 0
+            pv_cycle = pv_map.get("cycle_7d") or 0
+        else:
+            pv = gc_data["totals_this_week"].get("total") or 0
+            pv_cycle = gc_data["totals_cycle_ago"].get("total") or 0
         if pv_cycle:
             delta = (pv - pv_cycle) / pv_cycle * 100
             bits.append(f"7d pageviews {_humanize(pv)} ({'+' if delta >= 0 else ''}{delta:.0f}% MoM cycle)")

@@ -65,16 +65,38 @@ The `mcp/daily_checkup_server.py` runs every morning and produces a structured r
 | Watchdog | Covers | Blind to | Channel |
 |---|---|---|---|
 | **UptimeRobot** (external) | `visa-bulletin.us/` reachable / 200 | anything path-specific — it only pings `/`, so a 500 on `/salaries/?employer=X` is invisible | emails → `gmail_dispatcher` `uptimerobot-down` rule → visa_bulletin bot |
-| **5xx-spike watchdog** (homeserver cron, every 15 min) | per-path 5xx burst (≥10/window) + overall 5xx rate spike (≥2% & ≥20) on the live origin | sub-15-min blips below threshold; non-5xx regressions (wrong content, slow-but-200) | `alert_5xx_spike.sh` → visa_bulletin bot directly (`alert.env`) |
+| **5xx-spike watchdog** (homeserver cron, every 15 min) | per-path **500s** (app bug, ≥10/window) + gateway **502/503/504** burst (≥20 & rate ≥2%) on the live origin | sub-15-min blips below threshold; non-5xx regressions (wrong content, slow-but-200) | `alert_5xx_spike.sh` → **notify_chat sink** → visa_bulletin relay (agent reacts); Telegram fallback |
 
 The 5xx watchdog exists because UptimeRobot's `/`-only check missed the
 2026-06-10 `/salaries/` EmptyResultSet 500 regression entirely (it was 0.53% of
 total traffic; `/` stayed 200 throughout). Script:
 `deployment/homeserver/scripts/alert_5xx_spike.sh` (deployed to
 `/opt/stack/visa_bulletin/scripts/`), cron in `deployment/homeserver/crontab.sample`,
-thresholds env-overridable, 60-min per-path cooldown so a sustained outage
+thresholds env-overridable, 60-min per-key cooldown so a sustained outage
 alerts once/hour not every tick. The daily_checkup MCP's per-path 5xx RED
 (≥100/24h) is the slower digest-level backstop for the same class.
+
+**500 vs 502 split (2026-06-14):** a 500 is a Django app exception (real bug,
+has a traceback); a 502/503/504 is an nginx↔upstream gateway failure — almost
+always the ~10-15s deploy blip when `vb_web` restarts. Counting them together
+produced two false "app exception on a query shape" alarms in one session on
+pure deploy-blip 502s. **Rule 1** now fires on per-path **500s only** (the
+high-signal app-bug case); **Rule 2** fires on a sustained **gateway 5xx** burst
+with a *correctly-labelled* "vb_web unreachable/restarting" message, so a real
+outage still pages but a deploy blip is never mislabelled as a code bug.
+
+**Delivery (2026-06-14):** alerts now go through the shared `notify_chat` sink on
+the minipc (`agent_infra/scripts/notify_chat.py`, `POST /notify` on
+`192.168.1.230:8771`, bearer-auth via `/opt/stack/_shared/notify_chat.env`), which
+XADDs a synthetic owner message onto the `listen_chat:visa_bulletin` relay stream —
+so the **agent actually reacts** (investigate + act). The old path was a raw
+`curl …/sendMessage` bot self-post, which (being from the bot) never appeared in
+the bot's getUpdates and so triggered **no** listener — a passive post only,
+despite the script's comment claiming "listener auto-spawns." If the sink is
+unreachable the watchdog falls back to the old Telegram bot post so an alert is
+never dropped. First consumer of the unified alert bus (see
+`agent_infra/scripts/README.md` § notify_chat); other watchdogs should deliver via
+the same sink instead of hand-rolling `curl sendMessage`.
 
 **Active setup (free-tier UptimeRobot):** Gmail-polling dispatcher at
 `~/cursor_projects/personal_projects/gmail_dispatcher/server.py`, launchd job

@@ -78,6 +78,22 @@ digest (after the headline, before the project findings).
 **Filter gotcha:** `Status`/`Project` are `select`-typed — use `{"select":{...}}`,
 not `{"status":{...}}` (per `notion_followups.md`).
 
+**ALWAYS pass `filter_properties` — the bucketed list only needs 4 fields.**
+Without it the query returns full page objects (~5.5k chars each; Notes' rich_text
+annotations alone are ~2.6k/ticket) — 14 tickets ≈ 19k tokens of context for a
+list that renders only Title/Status/Due/Subtag. With it, ~4x smaller. Pass the
+property *value IDs* exactly as they appear in the schema (percent-encoded —
+verified accepted by the MCP 2026-06-13):
+```
+filter_properties: ["title", "er%40O", "e%7BlA", "Ev%3D%5D"]
+                     Title    Status    Due       Subtag
+```
+**Notes on demand only.** Notes (`skQK`) is the bloat AND is rendered only for the
+0–2 urgent (🔴 past-due / 🟡 due-today) tickets. Do NOT add it to
+`filter_properties`. Instead, for each urgent ticket, fetch its Notes alone via
+`mcp__notion__API-retrieve-a-page-property(page_id=<id>, property_id="skQK")`. A
+quiet day (no urgent tickets) then loads zero Notes.
+
 ### Step 3 — compose the digest
 
 Telegram-mobile format. One screen = one user-readable summary. Style:
