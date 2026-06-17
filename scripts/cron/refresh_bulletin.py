@@ -236,6 +236,23 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
         except Exception:
             logger.exception("Failed to publish predictions for %s", month_str)
 
+    # Forward multi-horizon predictions: serve genuine 3/6/12-month-ahead calls
+    # from the current knowledge frontier so we can later SHOW and be SCORED on
+    # "what we predicted N months ago" (real accountability, not a backtest).
+    # Horizon H targets latest_bulletin_month + H; get_knowledge_date_for_target
+    # resolves the knowledge date to the latest bulletin, yielding horizon == H.
+    # actual_date fills in when that month's bulletin lands on a future ingest.
+    if bulletins:
+        latest_first = bulletins[0].replace(day=1)
+        for h in (3, 6, 12):
+            fwd_target = latest_first + relativedelta(months=h)
+            fwd_str = fwd_target.strftime("%Y-%m")
+            try:
+                _run_publish([fwd_target], ["final_action"], horizon_months=h)
+                logger.info("Published %dm-ahead predictions for %s", h, fwd_str)
+            except Exception:
+                logger.exception("Failed %dm-ahead publish for %s", h, fwd_str)
+
 
 def _generate_blog_posts_for_latest_bulletins(n_bulletins: int) -> None:
     """Generate analysis blog posts for the N most recently ingested bulletins."""
