@@ -875,3 +875,16 @@ django_py_test(
         "//lib/business/vqs:expert_pool",
     ],
 )
+
+django_py_test(
+    name = "test_sitemap_lastmod",
+    size = "small",
+    srcs = ["test_sitemap_lastmod.py"],
+    deps = [
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:job_title",
+        "//models:salary",
+        "//webapp/views/seo:sitemaps",
+    ],
+)

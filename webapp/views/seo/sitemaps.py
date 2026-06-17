@@ -1,6 +1,7 @@
 """Robots, sitemap, llms.txt views."""
 
 import logging
+from datetime import date, datetime
 
 from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
@@ -80,15 +81,36 @@ def robots_view(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
-def _get_latest_bulletin_date() -> str | None:
-    """Return ISO date string of the latest bulletin publication, or None."""
+def _get_latest_bulletin_date() -> date | None:
+    """Return the latest bulletin publication date, or None.
+
+    NOTE: a bulletin's ``publication_date`` is the month it APPLIES to, so the
+    current bulletin is dated a month in the future (e.g. the July bulletin is
+    published mid-June). Never emit it raw as a sitemap ``lastmod`` — a future
+    date makes Google distrust the whole sitemap. Callers cap via
+    ``_lastmod_capped`` so it is never later than today.
+    """
     try:
         pub = Bulletin.objects.order_by("-publication_date").values_list(
             "publication_date", flat=True
         ).first()
-        return pub.isoformat() if pub else None
+        return pub or None
     except (OperationalError, ProgrammingError):
         return None
+
+
+def _lastmod_capped(value: date | datetime | None, today: date) -> str | None:
+    """ISO ``lastmod`` for a page, never later than ``today``.
+
+    Sitemap ``lastmod`` must be a real, trustworthy change date: never in the
+    future (Google discounts future lastmod and, seeing it across many URLs,
+    stops trusting the sitemap's lastmod entirely). Accepts a date or datetime
+    (e.g. ``cluster.updated_at``) and clamps to today.
+    """
+    if value is None:
+        return None
+    d = value.date() if isinstance(value, datetime) else value
+    return min(d, today).isoformat()
 
 
 def _url_entry(loc: str, lastmod: str | None = None, changefreq: str = "monthly", priority: str = "0.8") -> list[str]:
@@ -103,7 +125,10 @@ def _url_entry(loc: str, lastmod: str | None = None, changefreq: str = "monthly"
 def sitemap_view(request):
     """Generate XML sitemap."""
     base_url = request.build_absolute_uri("/")[:-1]
-    bulletin_lastmod = _get_latest_bulletin_date()
+    today = date.today()
+    # Static / category / state pages reflect the latest bulletin + pipeline
+    # refresh; cap at today so the future-dated bulletin month never leaks out.
+    bulletin_lastmod = _lastmod_capped(_get_latest_bulletin_date(), today)
 
     xml_parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -151,7 +176,14 @@ def sitemap_view(request):
         employer_clusters = []
 
     for cluster in employer_clusters:
-        xml_parts.extend(_url_entry(f"{base_url}/employer/{cluster.slug}/", lastmod=bulletin_lastmod))
+        # Per-page truthful lastmod = when this cluster's stats were last
+        # recomputed (updated_at), capped at today. Differentiated per page,
+        # never future — a real freshness signal once the ingest path bumps
+        # updated_at on each refresh (see Notion: sitemap-lastmod ticket).
+        xml_parts.extend(_url_entry(
+            f"{base_url}/employer/{cluster.slug}/",
+            lastmod=_lastmod_capped(cluster.updated_at, today),
+        ))
 
     # Job title profile pages (top 10,000 by filing count)
     try:
@@ -166,7 +198,10 @@ def sitemap_view(request):
         job_title_clusters = []
 
     for cluster in job_title_clusters:
-        xml_parts.extend(_url_entry(f"{base_url}/job-title/{cluster.slug}/", lastmod=bulletin_lastmod))
+        xml_parts.extend(_url_entry(
+            f"{base_url}/job-title/{cluster.slug}/",
+            lastmod=_lastmod_capped(cluster.updated_at, today),
+        ))
 
     # Blog posts — use post's own published_date as lastmod
     try:
@@ -180,7 +215,7 @@ def sitemap_view(request):
     for post in blog_posts:
         xml_parts.extend(_url_entry(
             f"{base_url}/analysis/{post['slug']}/",
-            lastmod=post["published_date"].isoformat(),
+            lastmod=_lastmod_capped(post["published_date"], today),
             changefreq="yearly",
             priority="0.6",
         ))
@@ -195,9 +230,11 @@ def sitemap_view(request):
         bulletin_dates = []
 
     for pub_date in bulletin_dates:
+        # The latest bulletin's publication_date is next month (future); cap so
+        # /predictions/<latest>/ never advertises a future lastmod.
         xml_parts.extend(_url_entry(
             f"{base_url}/predictions/{pub_date.year}-{pub_date.month}/",
-            lastmod=pub_date.isoformat(),
+            lastmod=_lastmod_capped(pub_date, today),
             changefreq="yearly",
             priority="0.5",
         ))
