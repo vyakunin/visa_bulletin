@@ -23,7 +23,11 @@ if not settings.configured:
 
 from lib.business.vqs.aggregator import ExpertAggregator
 from lib.business.vqs.calibration import compute_calibrated_interval
-from lib.business.vqs.data_cache import get_cutoff_at_date, is_current_at_date
+from lib.business.vqs.data_cache import (
+    get_cutoff_at_date,
+    is_current_at_date,
+    is_unavailable_at_date,
+)
 from lib.business.vqs.expert_pool import expert_oppenheim_pace
 from lib.business.vqs.gbm_expert import expert_gbm_gated, expert_gbm_movement_prob
 from lib.business.vqs.meta_params import VqsMetaParams
@@ -127,7 +131,14 @@ def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -
                 return b.publication_date - timedelta(days=1)
         except Exception:
             pass
-        return date.today()
+        # Target bulletin not yet published (genuine future forecast — e.g. the
+        # blog Future Outlook's next-month prediction): use the day before the
+        # target month. That is the canonical 1-month-ahead frontier: it includes
+        # the latest available bulletin and yields horizon_months == 1. Using
+        # date.today() instead would exclude the just-released bulletin (whose
+        # publication_date is the first of its effective month, in the future
+        # relative to today) and mislabel the horizon as 2.
+        return target_month.replace(day=1) - timedelta(days=1)
 
     # Multi-horizon: find the bulletin that was published ~horizon_months before target.
     earlier = target_month - relativedelta(months=horizon_months)
@@ -265,6 +276,28 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
                             action_type=action,
                             predicted_date=None,
                             model_name="persistence",
+                        )
+                        count += 1
+                        continue
+
+                    # Skip "Unavailable" series: the annual limit is exhausted, so
+                    # there is no cutoff to predict and the category almost always
+                    # stays Unavailable until the October fiscal-year reset. Without
+                    # this guard the solver persists the last pre-Unavailable cutoff
+                    # (e.g. India EB-2 showing a stale 2013 date labelled "Advancing").
+                    if is_unavailable_at_date(visa_class, country, action, knowledge_date):
+                        PredictedCutoff.objects.create(
+                            bulletin=pred_bulletin,
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            predicted_date=None,
+                            model_name="unavailable",
+                            explanation_markdown=(
+                                "Category is **Unavailable** — the annual limit has been "
+                                "reached; no cutoff date is expected until the fiscal-year "
+                                "reset in October."
+                            ),
                         )
                         count += 1
                         continue

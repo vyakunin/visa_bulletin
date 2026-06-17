@@ -65,6 +65,19 @@ PRIORITY_SERIES = [
     ("3rd", Country.ALL.value, "EB-3 ROW"),
 ]
 
+# Family-Sponsored movement analysis (no predictions — movement reporting only).
+# For each class we report the "All Chargeability" line plus any named country
+# that DIVERGES from it (Mexico/Philippines are routinely separate; India F4 too).
+# Countries that match the All-Areas date are folded into the All-Areas line to
+# avoid triplicate bullets (China/India usually track All for family categories).
+FAMILY_CLASSES = ["F1", "F2A", "F2B", "F3", "F4"]
+FAMILY_EXCEPTION_COUNTRIES = [
+    Country.MEXICO.value,
+    Country.PHILIPPINES.value,
+    Country.INDIA.value,
+    Country.CHINA.value,
+]
+
 
 def horizon_months_from_knowledge(target_month_first: date, knowledge_date: date) -> int:
     """Calendar months from knowledge date to target bulletin month (same as publish_predictions)."""
@@ -191,45 +204,96 @@ class BulletinNarrator:
 
         movements = {"family": [], "employment": []}
 
-        def get_cutoffs(b):
-            # cutoff_date for "C" rows is stored as the bulletin publication_date
-            # (see lib/parsing/bulletin/table_to_cutoff_data.py). Treat is_current=True
-            # as "no real cutoff" so consecutive Current months don't masquerade as a
-            # 30-day advance.
-            return {
-                f"{c.visa_class}_{c.country}": (None if c.is_current else c.cutoff_date)
-                for c in b.cutoff_dates.filter(action_type="final_action")
-            }
+        def get_states(b):
+            # Capture the full per-series state, not just the date. cutoff_date for
+            # "C" rows is stored as the bulletin publication_date (see
+            # lib/parsing/bulletin/table_to_cutoff_data.py); is_unavailable rows have
+            # a null cutoff_date. Collapsing both to None (the old behaviour) silently
+            # dropped the most important transition of all — a category becoming
+            # Unavailable (e.g. India EB-2, July 2026).
+            out = {}
+            for c in b.cutoff_dates.filter(action_type="final_action"):
+                key = f"{c.visa_class}_{c.country}"
+                if c.is_unavailable:
+                    out[key] = ("unavailable", None)
+                elif c.is_current:
+                    out[key] = ("current", None)
+                else:
+                    out[key] = ("date", c.cutoff_date)
+            return out
 
-        curr_map = get_cutoffs(current)
-        prev_map = get_cutoffs(previous)
+        curr_map = get_states(current)
+        prev_map = get_states(previous)
 
+        # Employment-Based: curated priority series.
         for visa_class, country_val, label in PRIORITY_SERIES:
             key = f"{visa_class}_{country_val}"
-            curr_date = curr_map.get(key)
-            prev_date = prev_map.get(key)
+            narrative = self._movement_narrative(label, curr_map.get(key), prev_map.get(key))
+            if narrative:
+                movements["employment"].append(narrative)
 
-            if curr_date and prev_date:
-                delta = (curr_date - prev_date).days
-                narrative = ""
-                if delta > 0:
-                    narrative = (
-                        f"<strong>{label}</strong> advanced by {delta} days "
-                        f"to {curr_date.strftime('%d %b %Y')}."
-                    )
-                elif delta < 0:
-                    narrative = (
-                        f"<strong>{label}</strong> retrogressed by {abs(delta)} days "
-                        f"to {curr_date.strftime('%d %b %Y')}."
-                    )
+        # Family-Sponsored: All-Areas line per class + diverging named countries.
+        for fc in FAMILY_CLASSES:
+            all_curr = curr_map.get(f"{fc}_{Country.ALL.value}")
+            all_prev = prev_map.get(f"{fc}_{Country.ALL.value}")
+            narrative = self._movement_narrative(f"{fc} (All Areas)", all_curr, all_prev)
+            if narrative:
+                movements["family"].append(narrative)
 
+            for ctry in FAMILY_EXCEPTION_COUNTRIES:
+                c_curr = curr_map.get(f"{fc}_{ctry}")
+                # Fold a country into the All-Areas line when it currently matches it.
+                if not c_curr or (all_curr is not None and c_curr == all_curr):
+                    continue
+                label = f"{fc} {COUNTRY_DISPLAY.get(ctry, ctry)}"
+                narrative = self._movement_narrative(label, c_curr, prev_map.get(f"{fc}_{ctry}"))
                 if narrative:
-                    if visa_class.startswith("F"):
-                        movements["family"].append(narrative)
-                    else:
-                        movements["employment"].append(narrative)
+                    movements["family"].append(narrative)
 
         return movements
+
+    def _movement_narrative(self, label: str, curr, prev) -> str:
+        """Render a one-line movement narrative for a series, or "" if no movement.
+
+        curr/prev are (status, date) tuples from _analyze_movements' get_states,
+        where status is "date" | "current" | "unavailable". Handles plain
+        advance/retrogression plus the Unavailable/Current state transitions that
+        the old date-only logic silently dropped.
+        """
+        if not curr or not prev:
+            return ""
+        curr_status, curr_date = curr
+        prev_status, prev_date = prev
+
+        if curr_status == "date" and prev_status == "date":
+            delta = (curr_date - prev_date).days
+            if delta > 0:
+                return (
+                    f"<strong>{label}</strong> advanced by {delta} days "
+                    f"to {curr_date.strftime('%d %b %Y')}."
+                )
+            if delta < 0:
+                return (
+                    f"<strong>{label}</strong> retrogressed by {abs(delta)} days "
+                    f"to {curr_date.strftime('%d %b %Y')}."
+                )
+            return ""
+        if curr_status == "unavailable" and prev_status != "unavailable":
+            was = f" (was {prev_date.strftime('%d %b %Y')})" if prev_date else ""
+            return f"<strong>{label}</strong> became <strong>Unavailable</strong>{was}."
+        if curr_status == "current" and prev_status != "current":
+            return f"<strong>{label}</strong> became <strong>Current</strong>."
+        if curr_status == "date" and prev_status == "unavailable":
+            return (
+                f"<strong>{label}</strong> reopened at "
+                f"{curr_date.strftime('%d %b %Y')} (was Unavailable)."
+            )
+        if curr_status == "date" and prev_status == "current":
+            return (
+                f"<strong>{label}</strong> set a cutoff of "
+                f"{curr_date.strftime('%d %b %Y')} (was Current)."
+            )
+        return ""
 
     def _analyze_surprises(
         self, current: Bulletin, prediction: PredictedBulletin | None
@@ -372,6 +436,15 @@ class BulletinNarrator:
                 "confidence": "high" if cutoff.confidence_high else "medium",
                 "explanation": cutoff.explanation_markdown or "",
             }
+
+            # Unavailable series: no cutoff to forecast. Mark it so the outlook
+            # renders an explicit "Unavailable" badge instead of a stale date.
+            if cutoff.model_name == "unavailable":
+                entry["unavailable"] = True
+                entry["regime_label"] = "Unavailable"
+                entry["regime_badge_class"] = "secondary"
+                series_data.append(entry)
+                continue
 
             # Parse regime and signals from explanation_markdown
             explanation = cutoff.explanation_markdown or ""
@@ -545,6 +618,8 @@ class BulletinNarrator:
                 "predicted_date": entry.get("predicted_date"),
                 "regime": entry.get("regime"),
             }
+            if entry.get("unavailable"):
+                outlook_item["unavailable"] = True
             rl = entry.get("regime_label")
             if rl and str(rl).lower() != "unknown":
                 outlook_item["regime_label"] = rl

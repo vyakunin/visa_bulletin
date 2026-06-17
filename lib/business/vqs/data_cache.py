@@ -100,26 +100,22 @@ def get_cutoff_at_date(
     return cutoffs[idx].cutoff_date
 
 
-def is_current_at_date(
+def _latest_full_entry_at_date(
     visa_class: str,
     country: int,
     action_type: str,
     as_of: date,
-) -> bool:
-    """Return True if the series was 'Current' (no meaningful cutoff) at as_of.
+):
+    """Latest VisaCutoffDate row (incl. null cutoff_date) with publication_date <= as_of, or None.
 
-    Checks the latest VisaCutoffDate row (including null cutoff_date entries)
-    with publication_date <= as_of. If that row has is_current=True, the series
-    had no backlog and predictions are meaningless.
-
-    Uses a separate cache (_CURRENT_CACHE) to avoid modifying the non-null
-    cutoff cache used by the rest of the solver.
+    Uses a separate cache (_CURRENT_CACHE) that loads ALL entries (including
+    null-cutoff rows for Current/Unavailable states), so it does not modify the
+    non-null cutoff cache used by the rest of the solver.
     """
     from models.visa_cutoff_date import VisaCutoffDate
 
     key = (visa_class, country, action_type)
     if key not in _CURRENT_CACHE:
-        # Load ALL entries (including null cutoff_date) for this series
         qs = (
             VisaCutoffDate.objects.filter(
                 visa_class=visa_class,
@@ -137,8 +133,39 @@ def is_current_at_date(
     entries = _CURRENT_CACHE.get(key, [])
     idx = _find_index_up_to(pub_dates, as_of)
     if idx < 0:
-        return False
-    return entries[idx].is_current
+        return None
+    return entries[idx]
+
+
+def is_current_at_date(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    as_of: date,
+) -> bool:
+    """Return True if the series was 'Current' (no meaningful cutoff) at as_of.
+
+    If the latest row with publication_date <= as_of has is_current=True, the
+    series had no backlog and predictions are meaningless.
+    """
+    entry = _latest_full_entry_at_date(visa_class, country, action_type, as_of)
+    return bool(entry and entry.is_current)
+
+
+def is_unavailable_at_date(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    as_of: date,
+) -> bool:
+    """Return True if the series was 'Unavailable' at as_of.
+
+    A category goes Unavailable when its annual numerical limit is exhausted; it
+    has no cutoff date and typically stays Unavailable until the October
+    fiscal-year reset. Predicting a hard cutoff for such a series is meaningless.
+    """
+    entry = _latest_full_entry_at_date(visa_class, country, action_type, as_of)
+    return bool(entry and entry.is_unavailable)
 
 
 def get_cutoffs_up_to(

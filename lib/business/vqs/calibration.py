@@ -23,9 +23,12 @@ from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Global cache: {(visa_class, country, horizon, regime) -> sorted list of signed errors}
-_error_distribution_cache: dict[tuple, list[int]] | None = None
-_cache_knowledge_date: date | None = None
+# Global cache: {action_type -> {(visa_class, country, horizon, regime): signed errors}}.
+# Keyed by action_type — filing and final_action have very different error
+# distributions, so they must NOT share a cache entry. Rebuilt when the
+# knowledge-date month advances.
+_error_distribution_cache: dict[str, dict[tuple, list[int]]] = {}
+_cache_knowledge_month: tuple[int, int] | None = None
 
 
 def _get_regime(visa_class: str, country: int, action_type: str, knowledge_date: date) -> str:
@@ -123,19 +126,19 @@ def _build_error_distributions(knowledge_date: date, action_type: str = "filing"
 
 
 def _get_error_distributions(knowledge_date: date, action_type: str = "filing") -> dict[tuple, list[int]]:
-    """Return error distributions, rebuilding if knowledge_date has advanced."""
-    global _error_distribution_cache, _cache_knowledge_date
+    """Return per-action_type error distributions, rebuilding when the month advances."""
+    global _error_distribution_cache, _cache_knowledge_month
 
-    # Rebuild if cache is stale (knowledge_date advanced by a month or more)
-    if (
-        _error_distribution_cache is None
-        or _cache_knowledge_date is None
-        or (knowledge_date.year, knowledge_date.month) != (_cache_knowledge_date.year, _cache_knowledge_date.month)
-    ):
-        _error_distribution_cache = _build_error_distributions(knowledge_date, action_type)
-        _cache_knowledge_date = knowledge_date
+    month = (knowledge_date.year, knowledge_date.month)
+    if _cache_knowledge_month != month:
+        # Knowledge-date month advanced — drop the whole per-action cache.
+        _error_distribution_cache = {}
+        _cache_knowledge_month = month
 
-    return _error_distribution_cache
+    if action_type not in _error_distribution_cache:
+        _error_distribution_cache[action_type] = _build_error_distributions(knowledge_date, action_type)
+
+    return _error_distribution_cache[action_type]
 
 
 def compute_calibrated_interval(

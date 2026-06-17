@@ -22,7 +22,6 @@ Cron (hourly, uses `. .env` not `source` for /bin/sh compatibility):
 import logging
 import os
 import runpy
-import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -207,11 +206,12 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
     - The following calendar month (``BulletinNarrator`` Future Outlook reads
       ``PredictedBulletin`` for ``bulletin_date + 1 month``).
     """
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY", os.getcwd())
-    binary = os.path.join(workspace, "bazel-bin", "scripts", "publish_predictions")
-    if not os.path.exists(binary):
-        logger.warning("publish_predictions binary not found at %s — skipping prediction publish", binary)
-        return
+    # Call the publisher in-process. The prod image has no Bazel build, so the
+    # old bazel-bin/scripts/publish_predictions binary never existed there and
+    # every homeserver ingest silently skipped prediction publishing — leaving
+    # the blog Future Outlook empty. Importing + calling the function directly
+    # works in both the Docker container and a Bazel dev environment.
+    from scripts.publish_predictions import publish_predictions as _run_publish
 
     bulletins = list(
         Bulletin.objects.order_by("-publication_date").values_list("publication_date", flat=True)[:n_bulletins]
@@ -231,16 +231,8 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
         month_str = target.strftime("%Y-%m")
         logger.info("Publishing predictions for target month %s", month_str)
         try:
-            result = subprocess.run(
-                [binary, "--month", month_str],
-                timeout=180,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                logger.warning("publish_predictions returned %d for %s: %s", result.returncode, month_str, result.stderr[:500])
-            else:
-                logger.info("Predictions published for %s", month_str)
+            _run_publish([target], ["final_action", "filing"], horizon_months=1)
+            logger.info("Predictions published for %s", month_str)
         except Exception:
             logger.exception("Failed to publish predictions for %s", month_str)
 

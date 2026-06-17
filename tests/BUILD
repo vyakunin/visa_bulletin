@@ -194,6 +194,14 @@ django_py_test(
     ],
 )
 
+py_test(
+    name = "test_calibration_cache",
+    srcs = ["test_calibration_cache.py"],
+    deps = [
+        "//lib/business/vqs:calibration",
+    ],
+)
+
 django_py_test(
     name = "test_prediction_category_landing",
     tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.

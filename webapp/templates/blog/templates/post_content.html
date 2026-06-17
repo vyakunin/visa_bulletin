@@ -207,6 +207,10 @@
                         <small class="text-muted">Next predicted cutoff:</small>
                         <strong>{{ s.predicted_date|date:"d M Y" }}</strong>
                     </p>
+                    {% elif s.unavailable %}
+                    <p class="card-text mb-1">
+                        <small class="text-muted">No cutoff — category is <strong>Unavailable</strong> until the October fiscal-year reset.</small>
+                    </p>
                     {% endif %}
                     {% if s.avg_pace is not None %}
                     <p class="card-text mb-1">
