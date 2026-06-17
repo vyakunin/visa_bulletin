@@ -1,0 +1,19 @@
+{% comment %}
+Graceful stub — renders NOTHING.
+
+The real support / "buy me a coffee" CTA lives in the private ops repo
+(visa_bulletin_platform/monetization/support_cta.html) and is served to
+production via a homeserver bind-mount that overlays this file at
+/app/webapp/templates/webapp/includes/support_cta.html.
+
+This stub exists so the plain `{% include "webapp/includes/support_cta.html" %}`
+tags (salary_search.html, dashboard.html) resolve on a stock image too — Django
+4.2.8's include tag has no `ignore missing` argument, so a missing partial 500s.
+With this stub, a stock image (no bind-mount — staging, the warm standby, local
+dev) renders nothing instead of erroring; prod renders the real CTA via the mount.
+
+Mirrors the affiliate_card.html / ad_slot.html stub pattern. The repo split that
+moved monetization out (5982a3d) stubbed affiliate_card but deleted this one
+outright; restored 2026-06-17 after the deletion 500'd every /salaries/ page on a
+stock (override-less) image.
+{% endcomment %}

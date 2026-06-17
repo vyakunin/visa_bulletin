@@ -1,0 +1,18 @@
+{% comment %}
+Graceful stub — renders NOTHING.
+
+The real ad slot (when ads are enabled) lives in the private ops repo
+(visa_bulletin_platform/monetization/ad_slot.html) and is served to production
+via a homeserver bind-mount that overlays this file at
+/app/webapp/templates/webapp/includes/ad_slot.html.
+
+This stub keeps a stock image (no bind-mount — staging, the warm standby, local
+dev) self-sufficient: any `{% include "webapp/includes/ad_slot.html" %}` resolves
+to nothing instead of 500-ing (Django 4.2.8's include has no `ignore missing`),
+while prod renders the real slot via the mount.
+
+Mirrors the affiliate_card.html / support_cta.html stub pattern. The repo split
+that moved monetization out (5982a3d) mounts this file in prod but left no
+in-repo stub; restored 2026-06-17 alongside support_cta so the prod compose's
+three override mounts all have self-sufficient repo stubs.
+{% endcomment %}
