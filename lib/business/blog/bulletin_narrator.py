@@ -65,6 +65,14 @@ PRIORITY_SERIES = [
     ("3rd", Country.ALL.value, "EB-3 ROW"),
 ]
 
+# (visa_class, country) keys for the series we publicly commit to predicting.
+# The accuracy "surprise" cards are gated to this set: non-priority series
+# (EB-4/EB-5, lumpy country/class combos) default to a persistence/no-move
+# forecast, so featuring them produces misleading systematic "+0d miss" cards on
+# categories we don't claim to predict — accuracy_metrics.py excludes them for
+# the same reason (its exclude_eb4 flag).
+PRIORITY_SERIES_KEYS = {(visa_class, country) for visa_class, country, _ in PRIORITY_SERIES}
+
 # Family-Sponsored movement analysis (no predictions — movement reporting only).
 # For each class we report the "All Chargeability" line plus any named country
 # that DIVERGES from it (Mexico/Philippines are routinely separate; India F4 too).
@@ -318,6 +326,10 @@ class BulletinNarrator:
         surprises = []
         for actual in current.cutoff_dates.filter(action_type="final_action"):
             if not actual.cutoff_date:
+                continue
+            # Only feature series we publicly commit to predicting; skip the
+            # non-priority lumpy series whose forecast is just persistence.
+            if (actual.visa_class, actual.country) not in PRIORITY_SERIES_KEYS:
                 continue
             key = f"{actual.visa_class}_{actual.country}_{actual.action_type}"
             pred_cutoff = pred_cutoff_map.get(key)

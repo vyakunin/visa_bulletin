@@ -191,6 +191,7 @@ django_py_test(
     srcs = ["test_bulletin_narrator.py"],
     deps = [
         "//lib/business/blog:blog",
+        "//models/enums:country",
     ],
 )
 

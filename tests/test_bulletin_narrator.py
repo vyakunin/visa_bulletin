@@ -144,5 +144,69 @@ class TestFamilyMovements(unittest.TestCase):
         self.assertEqual(BulletinNarrator()._analyze_movements(curr, prev)["family"], [])
 
 
+class _FakePredCutoff:
+    def __init__(self, visa_class, country, predicted_date):
+        self.visa_class = visa_class
+        self.country = country
+        self.action_type = "final_action"
+        self.predicted_date = predicted_date
+        self.expert_predictions = {}
+
+
+class _FakePrediction:
+    def __init__(self, rows):
+        self._rows = rows
+        self.cutoffs = self
+
+    def all(self):
+        return self._rows
+
+
+class _FakeCurrentBulletin:
+    def __init__(self, rows, publication_date):
+        self.cutoff_dates = _FakeQS(rows)
+        self.publication_date = publication_date
+
+
+class TestSurpriseCardsPriorityGate(unittest.TestCase):
+    """Accuracy 'surprise' cards only feature series we publicly commit to predicting.
+
+    Regression: EB-4 (and other non-priority lumpy series) default to a
+    persistence / no-move forecast, so their cards read as a systematic
+    '+0d predicted / Miss +62d / Underestimated advance' on a category we don't
+    claim to predict. accuracy_metrics.py already excludes EB-4 (exclude_eb4);
+    the blog narrator must apply the same scope (PRIORITY_SERIES_KEYS).
+    """
+
+    def _surprises(self):
+        from models.enums.country import Country
+
+        current = _FakeCurrentBulletin(
+            [
+                # Priority series with a real, large miss → must produce a card.
+                _FakeCutoff("2nd", Country.INDIA.value, cutoff_date=date(2024, 1, 1)),
+                # EB-4 China: persistence forecast missed by +62d → must be skipped.
+                _FakeCutoff("4th", Country.CHINA.value, cutoff_date=date(2022, 9, 15)),
+            ],
+            publication_date=date(2022, 9, 1),
+        )
+        prediction = _FakePrediction(
+            [
+                _FakePredCutoff("2nd", Country.INDIA.value, date(2022, 1, 1)),
+                _FakePredCutoff("4th", Country.CHINA.value, date(2022, 7, 15)),
+            ]
+        )
+        narrator = BulletinNarrator()
+        narrator._get_previous_bulletin = lambda _d: None  # no DB
+        return narrator._analyze_surprises(current, prediction)
+
+    def test_eb4_excluded_priority_kept(self):
+        surprises = self._surprises()
+        categories = {s["category"] for s in surprises}
+        self.assertIn("2nd", categories, "priority EB-2 India miss must produce a card")
+        self.assertNotIn("4th", categories, "EB-4 must NOT produce a surprise card")
+        self.assertEqual(len(surprises), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
