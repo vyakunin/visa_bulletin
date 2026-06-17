@@ -103,15 +103,18 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - Then the unified ticket block from Step 2.5 (only the non-empty buckets).
 - Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
   - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
-  - Then a per-surface breakdown — **one surface (property) per line, each row showing absolute 7d views, MoM%, and WoW%** (user request 2026-06-04). Data is in the MCP's `_build_surface_deltas` rows: `this_week` (absolute), `delta_pct` (MoM vs `cycle_ago`), `wow_pct` (vs `prev_week`). Use a column header so rows stay terse + phone-readable (≤50 chars/line, no wide tables). Example:
+  - Then a per-surface breakdown — **one surface per line, each row showing 7d views, share-of-total %, distinct page count, MoM%, and WoW%** (user request 2026-06-17: wants the full-coverage section-share table in every digest, with MoM/WoW). Data is in the MCP's `_build_surface_deltas` rows: `this_week` (absolute), `share_pct` (% of 7d total), `pages` (distinct paths in the bucket — the long-tail size), `delta_pct` (MoM vs `cycle_ago`), `wow_pct` (vs `prev_week`). Rows are already sorted by `this_week` desc — render in that order. Annotate the profile surfaces (`employer_profile`, `job_title_profile`) with `← tail` since their share is spread over hundreds of pages. Column header, terse, ≤50 chars/line, no wide tables:
     ```
-    7d views / MoM / WoW:
-    employer  1.2k / +306% / +12%
-    job-title  980 / +428% / +8%
-    salaries  1.5k / +268% / −3%
-    dashboard 2.1k / −31% / −5%
+    7d / share / pages / MoM / WoW:
+    dashboard  6.0k  57%  7p   −27%/+33%
+    fam-spons  2.0k  19%  7p   +7%/+17%
+    employer   773   7%  659p  −11%/−15% ← tail
+    job-title  471   5%  420p  −44%/−18% ← tail
+    salaries   425   4%  3p    +8%/−15%
+    blog       320   3%  7p    −59%/+30%
+    predict    220   2%  77p   +159%/−4%
     ```
-  - Show `n/a` for WoW when `wow_pct` is null (top-100 fallback path with no prev_7d). Round views (1.2k) + percentages to whole numbers.
+  - This is the SAME full-coverage data `scripts/gc_section_shares.py` prints (export CSV, 100% coverage). Round views (1.2k / 773) + percentages to whole numbers. Show `n/a` for share/pages/MoM/WoW when null — that means the MCP fell back to the top-100 `/stats/hits` path (export unavailable); flag it explicitly (`⚠️ top-100 only — long tail not counted this run`) rather than presenting truncated shares as real.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)

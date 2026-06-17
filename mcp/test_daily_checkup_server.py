@@ -88,3 +88,40 @@ def test_no_marker_falls_back_to_full_tail():
     tail = "2026-06-15 [ERROR] something broke\n"
     info = m._parse_log_age(_log(tail))
     assert len(info["tail_errors"]) == 1, info["tail_errors"]
+
+
+# ── Surface deltas: full-coverage share% + distinct page counts (2026-06-17) ──
+
+def test_surface_deltas_emit_share_and_pages_from_csv():
+    """CSV path → each row carries share_pct (sums ~100) + distinct page count.
+
+    Guards the digest's section-share table: the long-tail size (pages) and
+    share must come from full coverage, never a top-100 sum.
+    """
+    pcw = {
+        "this_7d": {
+            "/": 60, "/employment-based/india/": 40,   # dashboard: 100 over 2 pages
+            "/employer/a/": 5, "/employer/b/": 3, "/employer/c/": 2,  # 10 over 3
+        },
+        "prev_7d": {"/": 50, "/employer/a/": 10},
+        "cycle_7d": {"/": 80, "/employer/a/": 4},
+        "last_28d": {"/": 200, "/employer/a/": 20},
+    }
+    rows = {r["surface"]: r for r in m._build_surface_deltas(
+        path_counts_by_window=pcw, fallback_surf_this={}, fallback_surf_cycle={})}
+    assert rows["dashboard"]["this_week"] == 100
+    assert rows["dashboard"]["pages"] == 2
+    assert rows["employer_profile"]["this_week"] == 10
+    assert rows["employer_profile"]["pages"] == 3   # all three distinct slugs
+    # share_pct of all rows sums to ~100 (full coverage, no truncation)
+    assert abs(sum(r["share_pct"] for r in rows.values()) - 100.0) < 0.01
+    assert abs(rows["dashboard"]["share_pct"] - 100 / 110 * 100) < 0.01
+
+
+def test_surface_deltas_fallback_has_null_share_and_pages():
+    """top-100 fallback path → share/pages are None (never faked from a cap)."""
+    rows = m._build_surface_deltas(
+        path_counts_by_window=None,
+        fallback_surf_this={"dashboard": 100}, fallback_surf_cycle={"dashboard": 80})
+    assert rows[0]["share_pct"] is None
+    assert rows[0]["pages"] is None

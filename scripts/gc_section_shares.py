@@ -133,16 +133,24 @@ def main() -> int:
     cutoff = cutoff_ts.date() if cutoff_ts else date.today()
     anchor = cutoff - timedelta(days=1)  # last COMPLETE day (today is partial)
 
-    if args.start and args.end:
+    # Custom range → just that window (no MoM/WoW). Named window → also pull the
+    # MoM baseline (cycle_7d = same 7d one bulletin cycle / 28d ago) and WoW
+    # baseline (prev_7d) so the table carries the comparisons the digest shows.
+    custom = bool(args.start and args.end)
+    if custom:
         start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
         label = f"{start}..{end}"
+        windows = [("w", start, end)]
     else:
         start, end = _resolve_window(args.window, anchor)
         label = f"{args.window} {start}..{end}"
+        cyc_s, cyc_e = _resolve_window("cycle_7d", anchor) if args.window == "this_7d" \
+            else (start - timedelta(days=28), end - timedelta(days=28))
+        prev_s, prev_e = (start - timedelta(days=7), end - timedelta(days=7))
+        windows = [("w", start, end), ("cyc", cyc_s, cyc_e), ("prev", prev_s, prev_e)]
 
-    counts = collections.Counter(
-        _aggregate_csv_path_counts(csv_path, [("w", start, end)])["w"]
-    )
+    agg = _aggregate_csv_path_counts(csv_path, windows)
+    counts = collections.Counter(agg["w"])
     total = sum(counts.values())
     if total == 0:
         print(f"No pageviews in window {label} (export cutoff {cutoff}).")
@@ -154,14 +162,34 @@ def main() -> int:
         b = _bucket_path(path)
         surf[b] += cnt
         surf_pages[b].add(path)
+    surf_cyc = collections.Counter()
+    surf_prev = collections.Counter()
+    if not custom:
+        for path, cnt in agg["cyc"].items():
+            surf_cyc[_bucket_path(path)] += cnt
+        for path, cnt in agg["prev"].items():
+            surf_prev[_bucket_path(path)] += cnt
+
+    def _pct(cur: int, base: int) -> str:
+        if not base:
+            return "  n/a"
+        return f"{(cur - base) / base * 100:+4.0f}%"
 
     print(f"GoatCounter full-coverage section shares — {label}")
     print(f"(export cutoff {cutoff}; FirstVisit pageviews, bots+events excluded)")
-    print(f"100% coverage: {total} pageviews across {len(counts)} distinct paths\n")
-    print(f"  {'surface':22s} {'views':>7s} {'share':>6s}  pages   label")
+    print(f"100% coverage: {total} pageviews across {len(counts)} distinct paths")
+    if not custom:
+        print("MoM = vs same 7d one cycle (28d) ago; WoW = vs previous 7d")
+    cols = f"  {'surface':22s} {'views':>7s} {'share':>6s}  pages"
+    if not custom:
+        cols += "   MoM     WoW"
+    print(cols)
     for key, v in surf.most_common():
-        print(f"  {key:22s} {v:7d} {v / total * 100:5.1f}%  {len(surf_pages[key]):5d}   "
-              f"{SURFACE_LABELS.get(key, key)}")
+        line = (f"  {key:22s} {v:7d} {v / total * 100:5.1f}%  {len(surf_pages[key]):5d}")
+        if not custom:
+            line += f"  {_pct(v, surf_cyc[key])}  {_pct(v, surf_prev[key])}"
+        line += f"   {SURFACE_LABELS.get(key, key)}"
+        print(line)
 
     # Make the truncation cost explicit — what a top-100 query would have lost.
     top100 = sum(c for _, c in counts.most_common(100))

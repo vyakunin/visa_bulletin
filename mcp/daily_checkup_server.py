@@ -1146,15 +1146,26 @@ def _build_surface_deltas(
                 "delta_pct": delta_pct,
                 # WoW needs prev_7d, unavailable in the top-100 fallback path.
                 "wow_pct": None,
+                # share/pages need full coverage; never from a top-100 sum.
+                "share_pct": None,
+                "pages": None,
             })
         rows.sort(key=lambda r: -r["this_week"])
         return rows
 
     by_surface: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    # Distinct this_7d pages per surface — the long-tail size (how many separate
+    # /employer/<slug>/ etc. pages roll up into the bucket). Surfaced in the
+    # digest so a tiny per-page tail that nonetheless sums to a real share stays
+    # legible (user 2026-06-17 wanted the section table with page counts).
+    pages_this: dict[str, set[str]] = defaultdict(set)
     for win_name, path_counts in path_counts_by_window.items():
         for path, cnt in path_counts.items():
             surf = _bucket_path(path)
             by_surface[surf][win_name] += cnt
+            if win_name == "this_7d":
+                pages_this[surf].add(path)
+    total_this = sum(wm.get("this_7d", 0) for wm in by_surface.values())
     rows = []
     for surf, win_map in by_surface.items():
         cur = win_map.get("this_7d", 0)
@@ -1171,6 +1182,9 @@ def _build_surface_deltas(
             "last28_per_week": last28 / 4 if last28 else 0,
             "delta_pct": delta_pct,
             "wow_pct": wow_pct,
+            # Full-coverage extras (CSV path only — None in the fallback above).
+            "share_pct": (cur / total_this * 100) if total_this else None,
+            "pages": len(pages_this[surf]),
         })
     rows.sort(key=lambda r: -r["this_week"])
     return rows
