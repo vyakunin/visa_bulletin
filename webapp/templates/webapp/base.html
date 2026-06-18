@@ -608,31 +608,8 @@
             }
         }
 
-        /* Sticky donation bar */
-        .sticky-donation-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 1050;
-            background: linear-gradient(90deg, #fdf2f7 0%, #fef8fb 50%, #f7f0ff 100%);
-            border-top: 1px solid #f0d6e3;
-            box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
-        }
-        body.has-donation-bar {
-            padding-bottom: 62px;
-        }
-        @media (max-width: 576px) {
-            .sticky-donation-bar .container {
-                flex-direction: column;
-                align-items: flex-start !important;
-            }
-            .sticky-donation-bar .bar-text {
-                font-size: 0.85rem;
-            }
-        }
     </style>
-    
+
     {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -682,11 +659,6 @@
                 <li class="nav-item">
                     <a class="nav-link {% if request.path == '/contact/' %}active{% endif %}" href="{% url 'contact' %}">
                         <i class="bi bi-envelope"></i> Contact
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-navbar" target="_blank" rel="noopener" style="color: #db61a2;">
-                        <i class="bi bi-heart-fill"></i> Support
                     </a>
                 </li>
             </ul>
@@ -740,19 +712,6 @@
                         class="btn btn-secondary btn-sm">
                     <i class="bi bi-clipboard"></i> Copy Link
                 </button>
-                
-                <span class="text-white-50 mx-1 d-none d-sm-inline">|</span>
-                
-                <!-- Support -->
-                <a href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-footer" target="_blank" rel="noopener"
-                   class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
-                    <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
-                </a>
-                <small class="text-white-50 ms-1">
-                    <a href="https://github.com/sponsors/vyakunin" data-gc-event="ext-github-sponsors-footer" target="_blank" rel="noopener" class="footer-link">
-                        or GitHub Sponsors &rarr;
-                    </a>
-                </small>
             </div>
             
             <p class="mb-2">
@@ -955,52 +914,6 @@
     <script src="{% static 'js/sortable_tables.js' %}" defer></script>
     
     {% block extra_scripts %}{% endblock %}
-
-    {% if request.path == '/' or request.path|slice:":18" == '/employment-based/' or request.path|slice:":18" == '/family-sponsored/' %}
-    <div id="sticky-donation-bar" class="sticky-donation-bar" role="complementary" aria-label="Support the project">
-        <div class="container d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
-            <span class="bar-text" style="color: #444;">
-                <i class="bi bi-heart-fill" style="color: #db61a2;"></i>
-                <strong>$3 = about a week of server costs.</strong>
-                If this helped you track your dates, buy me a coffee.
-            </span>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-                <a href="https://buymeacoffee.com/vyakunin" data-gc-event="ext-buymeacoffee-sticky" target="_blank" rel="noopener"
-                   class="btn btn-sm" style="background-color: #FFDD00; border-color: #FFDD00; color: #000; font-weight: 600;">
-                    <i class="bi bi-cup-hot-fill"></i> Buy Me a Coffee
-                </a>
-                <small class="text-muted">
-                    <a href="https://github.com/sponsors/vyakunin" data-gc-event="ext-github-sponsors-sticky" target="_blank" rel="noopener">
-                        or GitHub Sponsors &rarr;
-                    </a>
-                </small>
-                <button onclick="dismissDonationBar()" class="btn btn-sm btn-link p-1" aria-label="Dismiss donation bar" style="color: #999; text-decoration: none;">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-        </div>
-    </div>
-    <script>
-        // localStorage so dismissal persists across tabs and reopened sessions
-        // (sessionStorage made the bar re-appear on every new tab — anti-conversion).
-        (function() {
-            try {
-                if (localStorage.getItem('donation-bar-dismissed')) {
-                    var bar = document.getElementById('sticky-donation-bar');
-                    if (bar) bar.style.display = 'none';
-                    return;
-                }
-            } catch (e) { /* localStorage blocked — show bar */ }
-            document.body.classList.add('has-donation-bar');
-        })();
-        function dismissDonationBar() {
-            var bar = document.getElementById('sticky-donation-bar');
-            if (bar) bar.style.display = 'none';
-            document.body.classList.remove('has-donation-bar');
-            try { localStorage.setItem('donation-bar-dismissed', '1'); } catch (e) {}
-        }
-    </script>
-    {% endif %}
 </body>
 </html>
 
