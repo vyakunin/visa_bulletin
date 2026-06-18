@@ -81,20 +81,23 @@ def robots_view(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
-def _get_latest_bulletin_date() -> date | None:
-    """Return the latest bulletin publication date, or None.
+def _get_latest_bulletin_fetched_at() -> datetime | None:
+    """Return the most-recent bulletin's real ingest time (``fetched_at``).
 
-    NOTE: a bulletin's ``publication_date`` is the month it APPLIES to, so the
-    current bulletin is dated a month in the future (e.g. the July bulletin is
-    published mid-June). Never emit it raw as a sitemap ``lastmod`` — a future
-    date makes Google distrust the whole sitemap. Callers cap via
-    ``_lastmod_capped`` so it is never later than today.
+    This is the dashboard/static/category/state ``lastmod`` source. We use
+    ``fetched_at`` (``auto_now_add`` — when the row was actually created, a
+    stable real timestamp) rather than ``publication_date`` (the future
+    applies-to month, e.g. the July bulletin published mid-June): capping
+    ``publication_date`` to today pins lastmod to *today, every day* until the
+    applies-to month arrives — daily drift Google discounts. ``fetched_at`` is
+    the truthful "when did this content last change" date. Ordered by
+    ``publication_date`` so we get the newest bulletin's fetch time.
     """
     try:
-        pub = Bulletin.objects.order_by("-publication_date").values_list(
-            "publication_date", flat=True
+        fetched = Bulletin.objects.order_by("-publication_date").values_list(
+            "fetched_at", flat=True
         ).first()
-        return pub or None
+        return fetched or None
     except (OperationalError, ProgrammingError):
         return None
 
@@ -127,8 +130,10 @@ def sitemap_view(request):
     base_url = request.build_absolute_uri("/")[:-1]
     today = date.today()
     # Static / category / state pages reflect the latest bulletin + pipeline
-    # refresh; cap at today so the future-dated bulletin month never leaks out.
-    bulletin_lastmod = _lastmod_capped(_get_latest_bulletin_date(), today)
+    # refresh. Use the bulletin's real ingest time (fetched_at), not its future
+    # applies-to month capped to today — the latter would re-advertise "today" on
+    # every crawl until the month arrives (drift Google discounts).
+    bulletin_lastmod = _lastmod_capped(_get_latest_bulletin_fetched_at(), today)
 
     xml_parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
