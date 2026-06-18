@@ -97,9 +97,29 @@ Profile templates (`job_title_profile.html`) override with page-specific title, 
 | Page | Schemas |
 |------|---------|
 | Dashboard | `Dataset` (built in Python by `_build_structured_data()` in `lib/business/bulletin/cutoff_data_aggregator.py`) |
+| Salaries landing (`/salaries/`, bare) | corpus `Dataset` (1.5M+ DOL salary records) via `webapp/views/seo/jsonld.py:build_dataset_jsonld` |
+| Salaries (employer-scoped) | per-employer `Dataset` (`search.py:_build_dataset_jsonld`) |
+| Employers directory (`/employers/`) | corpus `Dataset` (221K+ visa sponsors) via `build_dataset_jsonld` |
 | Job title profile | `Occupation` + `MonetaryAmountDistribution` (salary percentiles) + `BreadcrumbList` |
 | Employer profile | `Organization` + optional `AggregateRating` (only when `total_filings > 0`) + `BreadcrumbList` |
 | FAQ | `FAQPage` |
+
+**Dataset on the `/salaries/` + `/employers/` landings (added 2026-06-18, commit `5f74599`).**
+These landings rank for the dataset-intent head queries ("h1b salary database",
+"perm salary database", "green card salary database", sponsor lookups) but had no
+page-level structured data — the bare `/salaries/` landing explicitly emitted none.
+Each now carries a `schema.org/Dataset` describing the whole corpus, eligible for a
+Dataset rich result on exactly those queries. Shared builder + `<script>`-safe
+embedding live in `webapp/views/seo/jsonld.py`. Same change tightened both page
+`<title>`s to ≤60 chars (were truncating in SERP), keeping "Database" + the
+question hook front-loaded. CTR impact to be re-measured in GSC ~2 weeks out.
+
+> Note on the `/employers/` aggregate CTR (~0.075% on ~27k impr): most of those
+> impressions are structurally **wrong-intent** — the page surfaces at pos ~8–10 for
+> generic visa-bulletin queries ("boletin de visas", "bulletin visa uscis", "current
+> date for eb1 india") it inherits from the domain brand, which no title/meta can win.
+> The Dataset + title work targets the dataset-intent queries the page *should* own;
+> the wrong-intent drag is a relevance/position concern (the head-terms ticket).
 
 **`AggregateRating` on employer profiles**: uses visa approval rate (0–100) as `ratingValue` on a 0–100 scale. `ratingCount` is always `total_filings > 0` (guard added after Google Search Console warning). Worth monitoring in Search Console Rich Results report to confirm Google renders it.
 
