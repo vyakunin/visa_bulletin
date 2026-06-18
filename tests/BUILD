@@ -58,6 +58,17 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_seo_page_heading",
+    size = "small",
+    srcs = ["test_seo_page_heading.py"],
+    deps = [
+        "//lib/business/bulletin:cutoff_data_aggregator",
+        "//models/enums:country",
+        "//models/enums:visa_category",
+    ],
+)
+
+django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
     srcs = ["test_worksite_record_copy_bug.py"],

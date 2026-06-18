@@ -439,6 +439,7 @@ def dashboard_view(request, category=None, country=None):
         "action_type_display": action_type_display,
         # SEO
         "page_title": seo["page_title"],
+        "page_heading": seo["page_heading"],
         "page_description": seo["page_description"],
         "structured_data": json.dumps(seo["structured_data"]),
         "canonical_url": request.build_absolute_uri(request.path),

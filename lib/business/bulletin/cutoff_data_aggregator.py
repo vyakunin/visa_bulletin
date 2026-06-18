@@ -298,6 +298,32 @@ def _build_page_title(
     )
 
 
+def _build_page_heading(
+    category_display: str, country_display: str, category: str, country: str,
+    is_root: bool = False,
+) -> str:
+    """Visible <h1> for the dashboard — keyword-bearing, mirrors title intent.
+
+    The homepage previously shipped with NO <h1> at all (the first heading was
+    an <h2> "Filter Options"), leaving the strongest on-page relevance signal
+    empty on the page that ranks ~pos 8 for the head term "visa bulletin"
+    (GSC: ~660k impressions). The H1 leads with "Visa Bulletin" so the
+    on-page signal matches the head query; kept distinct from the <title>
+    (best practice) while covering the same intent.
+    """
+    bulletin_month = _latest_bulletin_month() or date.today()
+    bulletin_year = bulletin_month.year
+    bulletin_month_name = bulletin_month.strftime("%B")
+    if is_root:
+        return "U.S. Visa Bulletin: Priority Dates & Predictions"
+    if country == Country.ALL.value and category == VisaCategory.FAMILY_SPONSORED.value:
+        return f"Visa Bulletin Predictions {bulletin_year}: Family-Sponsored Priority Dates"
+    return (
+        f"{country_display} {category_display} Visa Bulletin — "
+        f"{bulletin_month_name} {bulletin_year} Priority Dates"
+    )
+
+
 def _build_page_description(category_display: str, country_display: str, is_root: bool = False) -> str:
     """Build page description for SEO."""
     if is_root:
@@ -363,6 +389,7 @@ def build_seo_metadata(category: str, country: str, request_uri: str, is_root: b
     country_display = _get_display_label(Country, country)
 
     page_title = _build_page_title(category_display, country_display, category, country, is_root=is_root)
+    page_heading = _build_page_heading(category_display, country_display, category, country, is_root=is_root)
     page_description = _build_page_description(category_display, country_display, is_root=is_root)
     structured_data = _build_structured_data(
         page_title, page_description, category_display, country_display, request_uri
@@ -370,6 +397,7 @@ def build_seo_metadata(category: str, country: str, request_uri: str, is_root: b
 
     return {
         "page_title": page_title,
+        "page_heading": page_heading,
         "page_description": page_description,
         "structured_data": structured_data,
         "category_display": category_display,
