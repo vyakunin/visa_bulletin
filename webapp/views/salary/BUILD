@@ -16,6 +16,7 @@ py_library(
         "//lib/utils:pagination",
         "//models:salary",
         "//webapp:forms",
+        "//webapp/views/seo:jsonld",
         requirement("Django"),
     ],
 )

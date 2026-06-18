@@ -140,13 +140,25 @@ class SalarySearchSEOTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.context["page_title"],
-            "H-1B & PERM Salary Database: What 1.5M+ DOL Filings Actually Pay "
-            "(by Employer + Role)",
+            "H-1B & PERM Salary Database — 1.5M+ Real DOL Filings",
         )
-        # Bare landing emits no intro paragraph and no Dataset JSON-LD —
-        # those are reserved for filter-scoped pages.
+        # Title must stay short enough to avoid SERP truncation (~60 chars).
+        self.assertLessEqual(len(response.context["page_title"]), 60)
+        # Bare landing still emits no intro paragraph.
         self.assertIsNone(response.context["page_intro"])
-        self.assertIsNone(response.context["structured_data"])
+
+    def test_bare_landing_emits_corpus_dataset_jsonld(self):
+        # Regression: the bare /salaries/ landing ranks for "h1b salary
+        # database" et al., so it must carry a corpus-level Dataset rich
+        # result (previously it emitted no structured data at all).
+        response = self.client.get(reverse("salary_search"))
+
+        payload = response.context["structured_data"]
+        self.assertIsNotNone(payload)
+        self.assertIn('"@type": "Dataset"', payload)
+        self.assertIn("Salary Database", payload)
+        # Embedded payload must be safe for <script> context (no raw < / >).
+        self.assertNotIn("</script>", payload)
 
     def test_dynamic_title_for_employer_slug(self):
         response = self.client.get(

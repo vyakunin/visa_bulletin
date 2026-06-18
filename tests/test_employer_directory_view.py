@@ -143,6 +143,17 @@ class EmployerDirectoryViewTest(TestCase):
         content = response.content.decode()
         self.assertIn('<link rel="canonical"', content)
 
+    def test_dataset_jsonld_present(self):
+        """Directory emits a corpus-level Dataset rich result + a short title."""
+        response = self.client.get(reverse("employer_directory"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.context["structured_data"]
+        self.assertIsNotNone(payload)
+        self.assertIn('"@type": "Dataset"', payload)
+        self.assertNotIn("</script>", payload)
+        # Title must stay short enough to avoid SERP truncation (~60 chars).
+        self.assertLessEqual(len(response.context["page_title"]), 60)
+
     def test_program_filter_ordering(self):
         """Program filter h1b/perm changes ordering (by total_lca_count or total_perm_count)."""
         response_all = self.client.get(reverse("employer_directory") + "?program=all")

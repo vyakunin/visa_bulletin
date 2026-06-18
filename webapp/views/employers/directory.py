@@ -17,6 +17,7 @@ from lib.utils.pagination import (
     encode_keyset_cursor,
 )
 from models.salary import Employer, EmployerCluster
+from webapp.views.seo.jsonld import build_dataset_jsonld
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -246,9 +247,26 @@ def employer_directory_view(request):
         "prev_cursor": prev_cursor,
         "has_next": has_next,
         "has_prev": has_prev,
-        "page_title": "Which Companies Sponsor H-1B Visas? Search 221K+ U.S. Employers (Free Database)",
+        # Title kept ≤60 chars so it doesn't truncate in SERP; keeps the
+        # question hook + the "Database" token that matches sponsor-lookup intent.
+        "page_title": "Which Companies Sponsor H-1B Visas? 221K+ Sponsor Database",
         "page_description": "Look up any U.S. employer to see their H-1B and green card filings, prevailing wages, top sponsored job titles, and whether they're actively hiring international talent.",
         "canonical_url": request.build_absolute_uri(request.path),
+        # Corpus-level Dataset rich-result markup (sponsor-lookup intent).
+        "structured_data": build_dataset_jsonld(
+            name="U.S. H-1B & Green Card Visa Sponsor Database",
+            description=(
+                "221K+ U.S. employers ranked by H-1B and PERM (green card) "
+                "sponsorship volume, with prevailing wages and top sponsored "
+                "job titles, from official U.S. Department of Labor disclosures."
+            ),
+            url=request.build_absolute_uri(request.path),
+            keywords=(
+                "H-1B sponsors, visa sponsorship companies, PERM employers, "
+                "green card sponsors, H-1B sponsor database, companies that "
+                "sponsor visas"
+            ),
+        ),
     }
 
     return render(request, "webapp/employer_directory.html", context)

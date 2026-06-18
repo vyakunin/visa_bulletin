@@ -17,6 +17,7 @@ py_library(
         "//lib/utils:pagination",
         "//models/enums:visa_program",
         "//models:salary",
+        "//webapp/views/seo:jsonld",
         requirement("Django"),
     ],
 )

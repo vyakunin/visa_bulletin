@@ -280,10 +280,16 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_search_view",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # QUARANTINE 2026-06-10: pre-existing failure (response.context is None
+    # under the pytest harness — the "test suite false-green" ticket). Deps
+    # below were completed 2026-06-18 so it imports cleanly; the remaining
+    # blocker is the harness not populating response.context.
+    tags = ["manual"],
     size = "small",
     srcs = ["test_salary_search_view.py"],
     deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
         "//models:salary",
         "//models:job_title",
         "//models/enums:visa_program",
@@ -704,13 +710,20 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_directory_view",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # QUARANTINE 2026-06-10: pre-existing failure (response.context is None
+    # under the pytest harness — the "test suite false-green" ticket). Deps
+    # below were completed 2026-06-18 so it imports cleanly; the remaining
+    # blocker is the harness not populating response.context.
+    tags = ["manual"],
     size = "small",
     srcs = ["test_employer_directory_view.py"],
     deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
         "//models:salary",
         "//models/enums:visa_program",
         "//webapp:urls",
+        "//webapp/views:views",
     ],
 )
 

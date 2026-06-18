@@ -1,7 +1,6 @@
 """Salary and worksite search views."""
 
 import hashlib
-import json
 from datetime import date as _date
 from typing import NamedTuple
 
@@ -35,6 +34,7 @@ from lib.utils.pagination import (
 )
 from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
+from webapp.views.seo.jsonld import build_dataset_jsonld, embed_jsonld
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
 
@@ -43,10 +43,9 @@ _PAGE_CAP_GONE_BODY = (
     "Use the filters at /salaries/ or /worksites/ to narrow your search."
 )
 
-_STATIC_PAGE_TITLE = (
-    "H-1B & PERM Salary Database: What 1.5M+ DOL Filings Actually Pay "
-    "(by Employer + Role)"
-)
+# Kept ≤60 chars so it doesn't truncate in SERP; "Salary Database" is
+# front-loaded — it's the dominant query ("h1b salary database", etc.).
+_STATIC_PAGE_TITLE = "H-1B & PERM Salary Database — 1.5M+ Real DOL Filings"
 _STATIC_PAGE_DESCRIPTION = (
     "Look up real H-1B and PERM wages from official DOL filings — by company, "
     "job title, and city. Compare offers, negotiate, or research filing "
@@ -88,24 +87,6 @@ def _format_money(amount) -> str | None:
         return f"${float(amount):,.0f}"
     except (TypeError, ValueError):
         return None
-
-
-def _embed_jsonld(payload: dict) -> str:
-    """Serialize a JSON-LD payload safely for embedding in a <script> tag.
-
-    Escapes the four characters that can break out of a <script> context
-    (<, >, &, and the U+2028/U+2029 line terminators) per the OWASP JSON-in-
-    HTML guidance. Without this, an employer name containing literal
-    '</script>' would terminate the surrounding tag.
-    """
-    raw = json.dumps(payload, ensure_ascii=False)
-    return (
-        raw.replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("&", "\\u0026")
-        .replace(" ", "\\u2028")
-        .replace(" ", "\\u2029")
-    )
 
 
 def _build_dataset_jsonld(
@@ -153,7 +134,7 @@ def _build_dataset_jsonld(
         "license": "https://www.usa.gov/government-works",
         "dateModified": _date.today().isoformat(),
     }
-    return _embed_jsonld(payload)
+    return embed_jsonld(payload)
 
 
 def _scope_clause(
@@ -251,12 +232,30 @@ def _build_salary_seo(
     keeps the static copy so the high-impression landing page is unchanged.
     """
     if not has_filters:
+        # Corpus-level Dataset on the bare landing — this is the page that
+        # ranks for "h1b salary database" / "perm salary database" / "green
+        # card salary database", so it carries a Dataset describing the whole
+        # 1.5M+ DOL salary corpus (eligible for a Dataset rich result).
         return _SalarySEO(
             page_title=_STATIC_PAGE_TITLE,
             page_description=_STATIC_PAGE_DESCRIPTION,
             page_heading=_STATIC_PAGE_HEADING,
             page_intro=None,
-            structured_data=None,
+            structured_data=build_dataset_jsonld(
+                name="H-1B & PERM (Green Card) Salary Database — U.S. DOL Filings",
+                description=(
+                    "1.5M+ H-1B and PERM (green card) salary records from "
+                    "official U.S. Department of Labor disclosure data, "
+                    "searchable by employer, job title, and state. Includes "
+                    "prevailing wages and offered wages."
+                ),
+                url=canonical_url,
+                keywords=(
+                    "H-1B salary database, PERM salary database, green card "
+                    "salary, prevailing wage, DOL disclosure data, "
+                    "H-1B visa salary"
+                ),
+            ),
         )
 
     employer_label = (

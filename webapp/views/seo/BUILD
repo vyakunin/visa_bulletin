@@ -8,6 +8,12 @@ py_library(
 )
 
 py_library(
+    name = "jsonld",
+    srcs = ["jsonld.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "sitemaps",
     srcs = ["sitemaps.py"],
     visibility = ["//visibility:public"],
