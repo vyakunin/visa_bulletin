@@ -404,6 +404,15 @@ def dashboard_view(request, category=None, country=None):
 
     latest_post = BlogPost.objects.filter(is_published=True).order_by("-published_date").first()
 
+    # Latest bulletin edition — a visible, head-term-relevant freshness signal near
+    # the H1 ("Latest edition: <Month Year> Visa Bulletin"). publication_date is the
+    # edition month (e.g. the July bulletin published mid-June), which is exactly the
+    # "current" framing users expect — not a today-capped "last updated" timestamp.
+    from models.bulletin import Bulletin
+
+    latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
+    current_bulletin_date = latest_bulletin.publication_date if latest_bulletin else None
+
     # For family-sponsored, pre-select all series; for employment-based, use the default subset.
     if category == VisaCategory.FAMILY_SPONSORED.value and chart_data:
         visible_classes = frozenset(t["label"] for t in chart_data["trace_info"])
@@ -429,6 +438,7 @@ def dashboard_view(request, category=None, country=None):
         "unified_rows": unified_rows,
         "show_vqs_column": category == VisaCategory.EMPLOYMENT_BASED.value,
         "latest_post": latest_post,
+        "current_bulletin_date": current_bulletin_date,
         # Filter options
         "visa_categories": VisaCategory.choices,
         "countries": Country.choices,
