@@ -2,9 +2,50 @@
 
 {% block container_class %}dashboard-container{% endblock %}
 
+{% block extra_head %}
+<!-- Homepage FAQ schema (answers are visible in the "About This Dashboard" section). -->
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+        {
+            "@type": "Question",
+            "name": "What is the U.S. Visa Bulletin?",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "The U.S. Visa Bulletin is a monthly publication from the U.S. Department of State that sets the priority-date cutoffs determining when green card applicants in each employment- and family-based category can move forward."
+            }
+        },
+        {
+            "@type": "Question",
+            "name": "What is a priority date?",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Your priority date is the date your immigration petition was filed. The Visa Bulletin publishes monthly cutoff dates that determine whose cases can move forward based on their priority dates."
+            }
+        },
+        {
+            "@type": "Question",
+            "name": "When is the Visa Bulletin updated?",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "The U.S. Department of State publishes a new Visa Bulletin each month. This page reflects the latest published bulletin and shows predicted movement for upcoming months."
+            }
+        }
+    ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <main>
     <h1 class="h4 mb-3">{{ page_heading|default:"U.S. Visa Bulletin: Priority Dates & Predictions" }}</h1>
+    <p class="text-muted mb-3" style="font-size: 0.95rem;">
+        Track the latest <strong>U.S. Visa Bulletin</strong> priority-date cutoffs and month-by-month
+        predictions for every employment- and family-based green card category. Updated each month from
+        the official U.S. Department of State bulletin.
+    </p>
     <div class="row">
         <div class="col-12">
             <!-- Filter Card -->
@@ -370,6 +411,14 @@
                     <h5 class="mb-0"><i class="bi bi-info-circle"></i> About This Dashboard</h5>
                 </div>
                 <div class="card-body">
+                    <h6>What is the U.S. Visa Bulletin?</h6>
+                    <p>
+                        The U.S. Visa Bulletin is a monthly publication from the U.S. Department of State that
+                        sets the priority-date cutoffs determining when green card applicants in each
+                        employment- and family-based category can move forward. This page tracks every
+                        category's cutoffs and predicts upcoming movement.
+                    </p>
+
                     <h6>What is a Priority Date?</h6>
                     <p>
                         The priority date is the date when your immigration petition was filed. The Visa Bulletin

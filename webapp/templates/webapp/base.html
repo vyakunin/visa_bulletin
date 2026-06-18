@@ -270,7 +270,16 @@
             font-family: Georgia, serif;
             font-weight: normal;
         }
-        
+
+        /* Clickable masthead → home (non-home pages). Inherits hero white text. */
+        .hero-home-link,
+        .hero-home-link:hover,
+        .hero-home-link:focus {
+            display: block;
+            color: inherit;
+            text-decoration: none;
+        }
+
         .filter-card {
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 2rem;
@@ -629,8 +638,10 @@
 <body>
     <div class="hero-section">
         <div class="container">
+            {% if request.path != '/' %}<a href="{% url 'dashboard' %}" class="hero-home-link" aria-label="U.S. Visa Bulletin — home">{% endif %}
             {% block hero_heading %}<h1 class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</h1>{% endblock %}
             <p class="lead">Priority dates, work visas, and labor market data</p>
+            {% if request.path != '/' %}</a>{% endif %}
         </div>
     </div>
     
@@ -640,7 +651,7 @@
             <ul class="nav nav-pills justify-content-center">
                 <li class="nav-item">
                     <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{% url 'dashboard' %}">
-                        <i class="bi bi-calendar-check"></i> Priority Dates
+                        <i class="bi bi-calendar-check"></i> Visa Bulletin
                     </a>
                 </li>
                 <li class="nav-item">
@@ -756,6 +767,8 @@
         <div class="text-center mb-3" style="color: #8FA3B8; font-size: 0.9rem;">
             <strong style="color: #B8CBE0;">Data Resources</strong>
             <br>
+            <a href="{% url 'dashboard' %}" class="footer-link">U.S. Visa Bulletin</a>
+            &nbsp;&middot;&nbsp;
             <a href="{% url 'employer_rankings' %}" class="footer-link">Top H-1B &amp; Green Card Sponsors</a>
             &nbsp;&middot;&nbsp;
             <a href="{% url 'employer_directory' %}" class="footer-link">Employer Directory</a>
