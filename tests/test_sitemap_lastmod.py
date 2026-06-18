@@ -92,3 +92,32 @@ class SitemapLastmodTest(TestCase):
             assert m, f"{path} missing from sitemap"
             assert m.group(1) == "2026-02-08", \
                 f"{path} lastmod {m.group(1)} != cluster updated_at 2026-02-08"
+
+    def test_dashboard_lastmod_is_bulletin_fetched_at_not_publication_date(self):
+        """Static/dashboard URLs use the bulletin's real ingest time (fetched_at),
+        not its future publication_date capped to today.
+
+        Regression (2026-06-18): the dashboard block used publication_date capped
+        to today, so it re-advertised *today* on every crawl until the future
+        applies-to month arrived — daily drift Google discounts. The fix uses
+        fetched_at (the stable real ingest timestamp). Here the bulletin is dated
+        next month but was fetched 10 days ago, so the dashboard lastmod must be
+        the fetch date, NOT today.
+        """
+        import re
+        fetch_dt = datetime.combine(date.today() - timedelta(days=10), datetime.min.time())
+        fetch_dt = fetch_dt.replace(hour=4, minute=0)
+        # auto_now_add stamps fetched_at=now on create; force a known past value
+        # (queryset.update bypasses auto_now_add) so we can assert it's the source.
+        Bulletin.objects.filter(publication_date=self.future).update(fetched_at=fetch_dt)
+        expected = fetch_dt.date().isoformat()
+
+        body = self.client.get(reverse("sitemap")).content.decode()
+        for path in ("/", "/salaries/", "/employment-based/"):
+            m = re.search(
+                rf"<loc>[^<]*{re.escape(path)}</loc>\s*<lastmod>([^<]+)</lastmod>", body)
+            assert m, f"{path} missing from sitemap"
+            assert m.group(1) == expected, (
+                f"{path} lastmod {m.group(1)} != bulletin fetched_at {expected} "
+                f"(today is {date.today().isoformat()} — a 'today' value means it "
+                f"is still keying off publication_date)")
