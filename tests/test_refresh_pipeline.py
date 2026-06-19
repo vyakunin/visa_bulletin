@@ -253,15 +253,23 @@ def test_zero_ingested_no_self_heal_when_few_records(tmp_path: Path) -> None:
     mock.run_psql_side_effects["FROM salary_record;"] = "500"
     mock.run_psql_return = "500"
 
-    result = run_pipeline(config, mock, resume=False)
-    assert result == 0
+    # With only 500 records the DB is genuinely unhealthy, so the smoke step (now the
+    # final pipeline step) legitimately rejects it. What this test verifies is the
+    # self-heal *decision*: post-processing is skipped (not re-run) before smoke.
+    with pytest.raises(RuntimeError, match="Record count too low"):
+        run_pipeline(config, mock, resume=False)
 
     run_bin_calls = [c[1][0] for c in mock.calls if c[0] == "run_bin"]
     assert "scripts/salary/backfill_job_title_links" not in run_bin_calls
 
 
 def test_self_heal_query_error_falls_through_to_skip(tmp_path: Path) -> None:
-    """If self-heal DB query returns unparseable result, treat as skip (don't crash)."""
+    """If the self-heal DB query returns an unparseable result, treat as skip (don't crash).
+
+    The self-heal check (pipeline.py) catches ValueError and skips post-processing.
+    The final smoke step independently re-queries the same unparseable cluster count
+    and (correctly) refuses to graduate an unreadable DB, so the run raises there.
+    """
     config = _make_config(tmp_path)
     mock = _make_happy_mock()
     mock.run_bin_side_effects["scripts/ingest/run_pipeline"] = (
@@ -275,10 +283,13 @@ def test_self_heal_query_error_falls_through_to_skip(tmp_path: Path) -> None:
     mock.run_psql_side_effects["canonical_cluster_id IS NOT NULL"] = "ERROR"
     mock.run_psql_return = "200000"
 
-    result = run_pipeline(config, mock, resume=False)
-    assert result == 0
+    # Self-heal swallows the ValueError and skips post-processing; the later smoke
+    # step hits the same unparseable cluster count and raises (won't graduate a
+    # DB it can't read). The skip decision is still observable in the calls below.
+    with pytest.raises(ValueError):
+        run_pipeline(config, mock, resume=False)
 
-    # ValueError handled gracefully; steps are skipped
+    # ValueError handled gracefully by self-heal; post-processing steps are skipped
     run_bin_calls = [c[1][0] for c in mock.calls if c[0] == "run_bin"]
     assert "scripts/salary/backfill_job_title_links" not in run_bin_calls
 

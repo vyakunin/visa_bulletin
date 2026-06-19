@@ -221,6 +221,12 @@ class MockRunner:
         self.run_psql_side_effects: dict[str, str | Any] = {}
         self.run_sudo_psql_return: subprocess.CompletedProcess[str] | None = None
         self.run_migrate_return: subprocess.CompletedProcess[str] | None = None
+        # Mirrors the production path: a binary's stdout is tee'd to a stage log
+        # (REFRESH_STAGE_LOG_PATH) and read back via read_stage_log_tail rather than
+        # captured in the CompletedProcess. We track the most recent run_bin stdout so
+        # read_stage_log_tail returns it — lets tests drive output parsing by setting
+        # run_bin_return.stdout / run_bin_side_effects stdout as before.
+        self._last_run_bin_stdout: str = ""
 
     def run_bin(
         self,
@@ -230,6 +236,13 @@ class MockRunner:
         **kwargs: Any,
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append(("run_bin", (rel_path, *args), {"cwd": cwd, **kwargs}))
+        result = self._run_bin_impl(rel_path, *args)
+        self._last_run_bin_stdout = result.stdout or ""
+        return result
+
+    def _run_bin_impl(
+        self, rel_path: str, *args: str
+    ) -> subprocess.CompletedProcess[str]:
         if rel_path in self.run_bin_side_effects:
             effect = self.run_bin_side_effects[rel_path]
             if callable(effect):
@@ -243,7 +256,7 @@ class MockRunner:
 
     def read_stage_log_tail(self, n: int = 200) -> str:
         self.calls.append(("read_stage_log_tail", (n,), {}))
-        return ""
+        return self._last_run_bin_stdout
 
     def run_psql(self, db_name: str, sql: str) -> str:
         self.calls.append(("run_psql", (db_name, sql), {}))
@@ -292,7 +305,9 @@ class MockRunner:
             if "job-title-autocomplete" in command:
                 stdout = '[{"title":"Software Engineer","slug":"software-engineer","total_filings":1000}]\n200'
             elif "company-autocomplete" in command:
-                stdout = '[{"name":"Google LLC","slug":"google-llc","total_filings":500}]\n200'
+                # The company-autocomplete API returns a "count" field (see
+                # webapp/views/employers/directory.py), not "total_filings".
+                stdout = '[{"name":"Google LLC","slug":"google-llc","count":500}]\n200'
             elif "job-titles" in command:
                 stdout = (
                     '<a href="/job-title/software-engineer/">Software Engineer</a>' * 15
@@ -300,6 +315,15 @@ class MockRunner:
                 )
             elif "employers" in command:
                 stdout = '<a href="/employer/google-llc/">Google LLC</a>' * 15 + "\n200"
+            elif "/predictions/" in command:
+                # Prediction detail (followed via -L) must contain Plotly chart data.
+                stdout = '<div id="chart"></div><script>Plotly.newPlot(...)</script>\n200'
+            elif "/analysis/" in command:
+                # Blog listing must contain /analysis/<slug>/ post links; the
+                # required-blog-post check just needs a 200.
+                stdout = (
+                    '<a href="/analysis/how-my-prediction-model-works/">post</a>\n200'
+                )
             else:
                 stdout = "OK\n200"
         return subprocess.CompletedProcess(

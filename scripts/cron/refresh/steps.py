@@ -227,7 +227,11 @@ def _get_stage_tail(
 ) -> str:
     """Get stage output tail: from stage log file (remote) or result.stdout/stderr (local)."""
     if hasattr(runner, "read_stage_log_tail"):
-        return (runner.read_stage_log_tail(n) or "").strip()
+        tail = (runner.read_stage_log_tail(n) or "").strip()
+        if tail:
+            return tail
+        # Fall back to the captured output when the stage log is empty/unavailable
+        # (e.g. LocalRunner with no REFRESH_STAGE_LOG_PATH set).
     out = (result.stdout or "").strip()
     err = (result.stderr or "").strip()
     return (out + "\n" + err).strip() if (out or err) else ""

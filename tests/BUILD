@@ -555,7 +555,6 @@ django_py_test(
 
 django_py_test(
     name = "test_data_source_utils",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_data_source_utils.py"],
     deps = [
@@ -797,7 +796,6 @@ django_py_test(
 
 django_py_test(
     name = "test_refresh_pipeline",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_refresh_pipeline.py"],
     deps = [
@@ -805,12 +803,13 @@ django_py_test(
         "//scripts/cron/refresh:config",
         "//scripts/cron/refresh:pipeline",
         "//scripts/cron/refresh:runner",
+        # steps.py lazily does `from . import services`; needed in runfiles.
+        "//scripts/cron/refresh:services",
     ],
 )
 
 django_py_test(
     name = "test_refresh_steps",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_refresh_steps.py"],
     deps = [
