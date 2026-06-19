@@ -5,6 +5,15 @@ Pure unit tests — no DB, no Django. Uses lightweight mock objects to populate
 the module-level caches directly.
 """
 
+import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
+import django
+
+# data_cache imports Django models at module level — load the app registry first
+# (no test DB needed; these are pure-logic tests on the module caches).
+django.setup()
+
 from datetime import date, timedelta
 from types import SimpleNamespace
 

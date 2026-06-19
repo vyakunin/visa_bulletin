@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import subprocess
 import time
 
 logger = logging.getLogger(__name__)
@@ -20,8 +22,6 @@ def _aws_region() -> str:
 
 def _get_static_ip_attached_to(static_ip_name: str, region: str) -> str | None:
     """Return the instance name the static IP is currently attached to, or None if detached."""
-    import json
-    import subprocess
 
     result = subprocess.run(
         ["aws", "lightsail", "get-static-ip", "--static-ip-name", static_ip_name, "--region", region],
@@ -46,7 +46,6 @@ def switch_traffic_static_ip(
     Idempotent: if the IP is already on instance_name_to_attach, returns True.
     Returns True on success, False on failure.
     """
-    import subprocess
 
     reg = region or _aws_region()
 
@@ -102,8 +101,6 @@ def verify_staging_ip_attached(
     Used for post-graduation verification.
     Returns True if correctly attached, False otherwise (logs warning on mismatch).
     """
-    import json
-    import subprocess
 
     reg = region or _aws_region()
     result = subprocess.run(
@@ -163,7 +160,6 @@ def attach_staging_static_ip_to_old_prod(
     Retries attach up to max_attach_retries on failure (transient AWS errors).
     Returns True on success.
     """
-    import subprocess
 
     reg = region or _aws_region()
     detach = subprocess.run(

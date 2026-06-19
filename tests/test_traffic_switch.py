@@ -91,7 +91,9 @@ def test_switch_traffic_static_ip_success() -> None:
         m_run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         result = switch_traffic_static_ip("VisaBulletin-ip", "VisaBulletinStaging")
     assert result is True
-    assert m_run.call_count == 2
-    assert "detach-static-ip" in m_run.call_args_list[0][0][0]
-    assert "attach-static-ip" in m_run.call_args_list[1][0][0]
-    assert "VisaBulletinStaging" in m_run.call_args_list[1][0][0]
+    # 3 calls: an idempotency pre-check (get-static-ip), then detach, then attach.
+    assert m_run.call_count == 3
+    assert "get-static-ip" in m_run.call_args_list[0][0][0]
+    assert "detach-static-ip" in m_run.call_args_list[1][0][0]
+    assert "attach-static-ip" in m_run.call_args_list[2][0][0]
+    assert "VisaBulletinStaging" in m_run.call_args_list[2][0][0]

@@ -55,7 +55,11 @@ class TestClassifyRegime:
         assert state.regime == Regime.RECOVERING
 
     def test_volatile_high_variance(self):
-        moves = [50, -40, 60, -50, 45, -35]
+        # VOLATILE needs coefficient-of-variation (vol/avg_abs) > VOLATILE_CV (2.0):
+        # one large magnitude spike among small moves. Pure sign-oscillation has
+        # cv≈1.0 and never reaches the VOLATILE branch. Most recent first; the
+        # older half is non-negative so the RECOVERING branch is not triggered.
+        moves = [200, -5, 0, 5, -3, 2]
         state = classify_regime(moves)
         assert state.regime == Regime.VOLATILE
 

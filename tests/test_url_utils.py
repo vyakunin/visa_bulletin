@@ -9,15 +9,16 @@ class TestNormalizeSourceUrl(unittest.TestCase):
     """Test normalize_source_url produces canonical form for dedup."""
 
     def test_http_becomes_https(self):
+        # Path is lowercased too (case-insensitive DOL/DOS paths — see docstring).
         self.assertEqual(
             normalize_source_url("http://www.dol.gov/agencies/eta/PERM_FY2024.xlsx"),
-            "https://www.dol.gov/agencies/eta/PERM_FY2024.xlsx",
+            "https://www.dol.gov/agencies/eta/perm_fy2024.xlsx",
         )
 
     def test_netloc_lowercase(self):
         self.assertEqual(
             normalize_source_url("https://WWW.DOL.GOV/agencies/eta/PERM_FY2024.xlsx"),
-            "https://www.dol.gov/agencies/eta/PERM_FY2024.xlsx",
+            "https://www.dol.gov/agencies/eta/perm_fy2024.xlsx",
         )
 
     def test_strips_query_and_fragment(self):

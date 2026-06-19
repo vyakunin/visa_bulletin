@@ -14,7 +14,7 @@ from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
 from lib.ingest.registry import PluginRegistry
 from models.ingest.data_source import DataSource
-from models.ingest.enums import DataDomain, IngestStatus, SourceType
+from models.ingest.enums import DataDomain, FormatVersion, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
 from models.salary import SalaryRecord, WorksiteRecord
 
@@ -34,15 +34,15 @@ class TestH1BSalaryDataSourcePlugin:
         """Test format version detection from filename"""
         plugin = H1BSalaryDataSourcePlugin()
 
-        # Test with fiscal year
+        # FY >= 2015 → MODERN format (get_format_version returns a FormatVersion enum).
         filepath = Path("LCA_Disclosure_Data_FY2024.xlsx")
         version = plugin.get_format_version(filepath)
-        assert version == "2024"
+        assert version == FormatVersion.MODERN
 
         # Test with quarter
         filepath = Path("LCA_Disclosure_Data_FY2024_Q4.xlsx")
         version = plugin.get_format_version(filepath)
-        assert "2024" in version
+        assert version == FormatVersion.MODERN
 
     @patch("lib.ingest.plugins.dol_lca.fetch_page")
     def test_discover_sources(self, mock_fetch):
@@ -63,7 +63,9 @@ class TestH1BSalaryDataSourcePlugin:
         assert all(s.domain == DataDomain.DOL.value for s in sources)
         assert all(s.source_type == SourceType.LCA.value for s in sources)
 
-    @patch("lib.ingest.plugins.dol_lca.download_file")
+    # download() is inherited from the base plugin, which does a local
+    # `from lib.utils.http_utils import download_file` — so patch it at the source.
+    @patch("lib.utils.http_utils.download_file")
     def test_download(self, mock_download):
         """Test file download"""
         plugin = H1BSalaryDataSourcePlugin()
