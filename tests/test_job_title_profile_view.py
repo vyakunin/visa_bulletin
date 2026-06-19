@@ -236,13 +236,20 @@ class TestJobTitleProfileView(TestCase):
         self.assertNotContains(response, "Salary by Experience Level")
 
     def test_default_view_aggregates_across_levels(self):
-        """Default view aggregates records across all experience levels."""
-        from lib.business.salary.job_title_stats import get_job_title_statistics
+        """Default view aggregates a cluster's records across all experience levels,
+        and stays scoped to that cluster (records in a different cluster that merely
+        share the normalized title are NOT counted).
 
+        The view uses cluster-level stats (normalized_title=None) so total_filings
+        matches JobTitleCluster — see webapp/views/job_titles/profile.py. So the
+        expected count is the 8 records in self.cluster (5 senior + 3 junior), NOT
+        the 2 in the separate `other_cluster` below.
+        """
         other_cluster = JobTitleCluster.objects.create(
             slug="software-engineer-test-alt",
             canonical_title="Software Engineer Test Alt",
         )
+        # Same normalized title, but a DIFFERENT canonical cluster — must be isolated.
         other_job_title = JobTitle.objects.create(
             title_normalized="software engineer test",
             experience_level="mid",
@@ -276,17 +283,11 @@ class TestJobTitleProfileView(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        if response.context:
-            stats = response.context["stats"]
-        else:
-            stats = get_job_title_statistics(
-                self.cluster,
-                years=5,
-                program_filter="all",
-                normalized_title="software engineer test",
-            )
-        # Count by normalized title (10 = 8 in self.cluster + 2 in other_cluster)
-        self.assertEqual(stats["basic"]["total_filings"], 10)
+        stats = response.context["stats"]
+        # 8 = 5 senior + 3 junior in self.cluster, aggregated across levels.
+        # The 2 records in other_cluster share the normalized title but belong to a
+        # different cluster, so they are correctly excluded from this profile.
+        self.assertEqual(stats["basic"]["total_filings"], 8)
 
     def test_redirect_for_title_variation(self):
         """Test that view redirects for title variations to canonical slug"""

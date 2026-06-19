@@ -74,3 +74,13 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if "test_" in item.nodeid:
             item.add_marker(pytest.mark.django_db)
+
+
+# NOTE: For targets that load this conftest, `pytest_plugins=["pytest_django"]`
+# (below) brings in pytest-django, whose session-scoped `django_test_environment`
+# fixture installs Django's template-render instrumentation
+# (`setup_test_environment()` → populates `response.context`/`response.templates`).
+# The pure Django view tests that do NOT depend on `:conftest_lib` get no
+# pytest-django, so `pytest_main.py`'s `_TemplateInstrumentationPlugin` installs
+# it for them — gated on `"pytest_django" not in sys.modules` so it never
+# double-calls setup for conftest targets. See pytest_main.py.

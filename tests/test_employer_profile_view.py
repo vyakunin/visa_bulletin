@@ -9,6 +9,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from models.enums.visa_program import CaseStatus, VisaProgram
+from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
 
 
@@ -37,13 +38,27 @@ class EmployerProfileViewTest(TestCase):
             canonical_cluster=self.cluster,
         )
 
+        # Clustered job titles — the profile view's top_titles derives from
+        # job_title_entity__canonical_cluster, so raw job_title strings alone
+        # produce no top titles. Wire JobTitleCluster + JobTitle for each title.
+        self.job_titles = {}
+        for raw_title in ("Software Engineer", "Data Scientist"):
+            cluster = JobTitleCluster.objects.create(canonical_title=raw_title)
+            self.job_titles[raw_title] = JobTitle.objects.create(
+                title=raw_title,
+                title_normalized=raw_title.lower(),
+                canonical_cluster=cluster,
+            )
+
         # Create test salary records
         for i in range(10):
+            raw_title = "Software Engineer" if i < 5 else "Data Scientist"
             SalaryRecord.objects.create(
                 case_number=f"TEST-{i}",
                 employer=self.employer,
                 employer_name="Test Company",
-                job_title="Software Engineer" if i < 5 else "Data Scientist",
+                job_title=raw_title,
+                job_title_entity=self.job_titles[raw_title],
                 wage_annual=100000 + (i * 10000),
                 visa_program=VisaProgram.H1B if i < 7 else VisaProgram.PERM,
                 case_status=CaseStatus.CERTIFIED if i < 8 else CaseStatus.DENIED,
