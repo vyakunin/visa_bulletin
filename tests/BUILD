@@ -356,7 +356,6 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_integration",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "medium",
     srcs = ["test_ingest_integration.py"],
     deps = [
@@ -587,12 +586,22 @@ django_py_test(
 
 django_py_test(
     name = "test_dol_transform_golden",
-    # QUARANTINE: runfiles data-load fixed 2026-06-20 (bazel_runfiles bzlmod
-    # import + RUNFILES_DIR fallback); now 440/610 golden cases differ on one
-    # field — the transform populates `case_submitted` where the golden YAML has
-    # None. Golden set is stale (pre-dates case_submitted extraction). Un-quarantine
-    # after regenerating it via scripts/salary/collect_dol_golden_test_data.py
-    # (needs the source DOL .xlsx files). See "test suite false-green" ticket.
+    # QUARANTINE: this is a HAND-ANNOTATED golden (expected_result is a human's
+    # "this is correct", not a transform snapshot), so it must NOT be blindly
+    # regenerated. Runfiles data-load was fixed 2026-06-20; the test now runs and
+    # shows 440/610 cases drift across 10 fields. Most are clean enrichment
+    # (None->value: decision_date, case_submitted, employment_start/end,
+    # employer_id, prevailing_wage_unit — date parsing now works) plus
+    # worksite_state full-name->2-letter (normalize_state_code). But TWO classes
+    # are product/data decisions the user must rule on before re-baselining:
+    #   (1) PERM job_title now emits the SOC occupational title (PW_Job_Title_9089)
+    #       instead of the employer's specific title (JOB_INFO_JOB_TITLE), e.g.
+    #       'Senior Business Analyst' -> 'Computer Systems Analysts' (36 cases).
+    #   (2) wage-unit correction: hourly rate mislabeled 'year' now annualized
+    #       (52.03/'year' -> 108222.4/'hour', 12 cases) — overlaps the open
+    #       wage-unit decision ticket 38462b8d (Due 06-26).
+    # Un-quarantine by deciding (1)+(2), then regenerating only after sign-off.
+    # See "test suite false-green" ticket.
     tags = ["manual"],
     size = "medium",
     srcs = ["test_dol_transform_golden.py"],
