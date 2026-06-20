@@ -409,11 +409,8 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_plugins",
-    # QUARANTINE: format_version + download_file patch-target staleness fixed
-    # 2026-06-19; the remaining test_download still fails because base
-    # DataSourcePlugin.download() was rewritten (workspace-dir write + hash
-    # compute) and needs a from-scratch mock. See "test suite false-green" ticket.
-    tags = ["manual"],
+    # Un-quarantined 2026-06-20: test_download was fixed in commit 04ea649 (the
+    # last remaining failure); the target now runs fully green.
     size = "small",
     srcs = ["test_ingest_plugins.py"],
     deps = [
@@ -444,7 +441,10 @@ django_py_test(
 
 django_py_test(
     name = "test_lca_plugin",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: 5 failures were a missing @pytest.mark.django_db
+    # on the DB-touching classes (TestLCATransformRouting/Parse/Validation); the
+    # 6th was a stale fixture (a year-less filename -> _fiscal_year=None) fixed by
+    # using an FY2024 filename. See umbrella "test suite false-green" ticket.
     size = "small",
     srcs = ["test_lca_plugin.py"],
     deps = [
@@ -496,7 +496,12 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_clustering",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: 3 failures were fixture unique-collisions
+    # (normalize_name collapses "Google Inc."/"Google" -> "google", etc.); 2 were
+    # stale matching assertions against a pre-rewrite 0.85 threshold (the impl has
+    # used a 0.95 similarity threshold since commit 2ffb1ec, favoring precision).
+    # Rewritten to the real contract + a precision-boundary non-match test. See
+    # umbrella "test suite false-green" ticket.
     size = "small",
     srcs = ["test_employer_clustering.py"],
     deps = [
