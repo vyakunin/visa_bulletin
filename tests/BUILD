@@ -512,25 +512,8 @@ django_py_test(
     ],
 )
 
-django_py_test(
-    name = "test_clustering_evaluator",
-    size = "small",
-    srcs = ["test_clustering_evaluator.py"],
-    deps = [
-        "//lib/business/salary:clustering_evaluator",
-        "//models:salary",
-    ],
-)
-
-django_py_test(
-    name = "test_clustering_metrics",
-    size = "small",
-    srcs = ["test_clustering_metrics.py"],
-    deps = [
-        "//lib/business/salary:clustering_evaluator",
-        "//models:salary",
-    ],
-)
+# test_clustering_evaluator + test_clustering_metrics + test_llm_validation_integration
+# removed 2026-06-20 with the Ollama LLM clustering-evaluator subsystem (Ollama retired).
 
 django_py_test(
     name = "test_clustering_regression",
