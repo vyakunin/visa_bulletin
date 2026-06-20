@@ -1,5 +1,14 @@
 # Clustering Benchmark Iteration Workflow
 
+> ⚠️ **PARTIALLY RETIRED (2026-06-20).** The automated benchmark tooling this doc
+> describes (`benchmark_clustering`, `benchmark_llm_verifier`, the Ollama
+> `llm_verifier` / `clustering_evaluator`) was deleted when Ollama was retired.
+> Live clustering is rule-based + fuzzy (`employer_clustering.py`) with no LLM step.
+> The labeled dataset (`data/clustering_examples.jsonl` via
+> `collect_clustering_examples`) and the tune→dry-run loop still apply; the
+> precision/recall benchmark would need an LLM-free rebuild. See
+> `.claude/rules/employer_clustering.md`.
+
 This document describes the iterative process for improving employer clustering through benchmarking and adjustment.
 
 ## Workflow Overview

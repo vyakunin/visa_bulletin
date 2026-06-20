@@ -4,7 +4,7 @@
 
 **ALWAYS collect employer clustering matching examples when running clustering or evaluation scripts.**
 
-Collect after running `cluster_existing_employers.py`, `evaluate_clustering_threshold.py`, reviewing `EmployerClusteringReview` pairs, periodically, and **before committing clustering changes** (use dry-run mode).
+Collect after running `cluster_existing_employers.py`, reviewing `EmployerClusteringReview` pairs, periodically, and **before committing clustering changes** (use dry-run mode).
 
 ```bash
 # Collect all available examples
@@ -20,18 +20,24 @@ bazel run //scripts/salary:cluster_existing_employers -- \
   --shuffle --shuffle-seed 42
 ```
 
-Output saves to `data/clustering_examples.jsonl` (JSON lines with pair data + ground truth). Use for benchmarking LLM verifiers (`benchmark_llm_verifier.py`), testing prompt improvements, measuring precision/recall.
+Output saves to `data/clustering_examples.jsonl` (JSON lines with pair data + ground truth). This is the labeled ground-truth dataset for measuring clustering precision/recall.
+
+> **Note (2026-06-20):** the Ollama LLM-verifier subsystem and the
+> `benchmark_clustering` / `benchmark_llm_verifier` / `evaluate_clustering_threshold`
+> scripts were removed when Ollama was retired. Live clustering is rule-based +
+> fuzzy (`employer_clustering.py`), with no LLM step. The automated precision/recall
+> benchmark below ran through those deleted tools; if you need it again, rebuild an
+> **LLM-free** benchmark over `data/clustering_examples.jsonl` (compare the
+> rule-based `match_employers()` output to the labeled pairs). The dataset,
+> dry-run tuning loop, metrics, and tuning guide below all still apply.
 
 ## Rule: Clustering Benchmark Iteration Workflow
 
 **ALWAYS follow iterative improvement when changing clustering logic. Repeat 2+ times per cycle:**
 
-1. **Benchmark** current performance:
-   ```bash
-   bazel run //scripts/salary:benchmark_clustering -- \
-     --mode production --examples-file $(pwd)/data/clustering_examples.jsonl \
-     --only-reviewed --limit 0
-   ```
+1. **Benchmark** current precision/recall against `data/clustering_examples.jsonl`
+   (the automated `benchmark_clustering` tool was removed with Ollama — rebuild an
+   LLM-free comparison of `match_employers()` vs the labeled pairs if needed).
 2. **Analyze**: Low Precision → too aggressive. Low Recall → too conservative. Review false positive/negative patterns.
 3. **Adjust** clustering logic in `lib/business/salary/employer_clustering.py` (thresholds in `should_auto_cluster()`, structural words in `_has_conflicting_structural_words()`, rules in `match_employers()`).
 4. **Dry-run** to test changes (use `--limit-employers 1000` for fast <1s iteration, `10000` for representative sample):

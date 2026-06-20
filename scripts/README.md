@@ -487,15 +487,12 @@ bazel run //scripts/salary:cluster_existing_employers -- --limit-employers 1000 
 
 ### Clustering Evaluation and Tuning
 
-**`scripts/salary/evaluate_clustering_threshold.py`** - Evaluate clustering threshold
-```bash
-bazel run //scripts/salary:evaluate_clustering_threshold
-```
-
-**`scripts/salary/benchmark_clustering.py`** - Benchmark clustering performance
-```bash
-bazel run //scripts/salary:benchmark_clustering -- --mode production --examples-file data/clustering_examples.jsonl
-```
+> The Ollama LLM-verifier clustering tools (`evaluate_clustering_threshold`,
+> `benchmark_clustering`, `evaluate_clustering_with_llm`, `benchmark_llm_verifier`,
+> `test_llm_prompts`) were removed 2026-06-20 when Ollama was retired. Live
+> clustering is rule-based + fuzzy; tune via `collect_clustering_examples` +
+> dry-run `cluster_existing_employers` against `data/clustering_examples.jsonl`
+> (see `.claude/rules/employer_clustering.md`).
 
 **`scripts/salary/iterative_clustering_tuning.py`** - Iterative tuning workflow
 ```bash
@@ -569,22 +566,12 @@ bazel run //scripts/salary:collect_dol_golden_test_data -- \
 - `tests/data/README.md` - Test data format documentation
 - `GOLDEN_TEST_SET_DOL_TRANSFORMS.md` - Complete implementation plan
 
-### LLM-Based Clustering
+### LLM-Based Clustering — REMOVED (2026-06-20)
 
-**`scripts/salary/evaluate_clustering_with_llm.py`** - Evaluate clustering using LLM
-```bash
-bazel run //scripts/salary:evaluate_clustering_with_llm
-```
-
-**`scripts/salary/benchmark_llm_verifier.py`** - Benchmark LLM verifier performance
-```bash
-bazel run //scripts/salary:benchmark_llm_verifier
-```
-
-**`scripts/salary/test_llm_prompts.py`** - Test LLM prompt variations
-```bash
-bazel run //scripts/salary:test_llm_prompts
-```
+The Ollama LLM clustering tools (`evaluate_clustering_with_llm`,
+`benchmark_llm_verifier`, `test_llm_prompts`, and the `llm_verifier` /
+`clustering_evaluator` libs) were deleted when Ollama was retired. Live clustering
+is rule-based + fuzzy with no LLM step (see `.claude/rules/employer_clustering.md`).
 
 ### Bucket Mismatch Handling
 

@@ -1,5 +1,10 @@
 # Bazel Cross-Platform Binary Patterns
 
+> Note (2026-06-20): the worked example below uses the Ollama binary, which was
+> **removed** from the repo when Ollama was retired (`tools/ollama` and the
+> `ollama_platform_*` `http_file` repos no longer exist). The **pattern** is still
+> correct — read it as illustrative; there's no live `//tools/ollama` target.
+
 For cross-platform binaries, declare platform-specific repositories in `MODULE.bazel` and use `select()` in BUILD files. Bazel lazily fetches only the platform needed.
 
 **Quick reference:**
