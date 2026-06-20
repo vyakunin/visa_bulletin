@@ -125,3 +125,62 @@ def test_surface_deltas_fallback_has_null_share_and_pages():
         fallback_surf_this={"dashboard": 100}, fallback_surf_cycle={"dashboard": 80})
     assert rows[0]["share_pct"] is None
     assert rows[0]["pages"] is None
+
+
+# ── DOL data freshness: weekly-refresh trigger signal (2026-06-20) ───────────
+
+def test_dol_tuples_parse_program_fy_quarter_and_skip_noise():
+    """LCA/PERM disclosure files parse to (program, fy, quarter); worksite /
+    appendix / pw files are excluded; DOL's misspelled 'dislclosure' is tolerated."""
+    # Realistic input: one URL per line (matches the psql `SELECT url` dump and
+    # the quote/slash-delimited HTML hrefs the regex is designed for).
+    base = "https://www.dol.gov/sites/dolgov/files/eta/oflc/pdfs/"
+    text = "\n".join(base + n for n in [
+        "lca_disclosure_data_fy2026_q1.xlsx",
+        "lca_dislclosure_data_fy2026_q2.xlsx",   # DOL's real misspelling
+        "perm_disclosure_data_fy2024.xlsx",      # annual → quarter 0
+        "perm_disclosure_data_fy2026_q2.xlsx",
+        "lca_worksites_fy2026_q2.xlsx",          # excluded
+        "pw_appendix_a_fy2026_q2.xlsx",          # excluded
+    ])
+    got = m._dol_disclosure_tuples(text)
+    assert ("H1B", 2026, 1) in got
+    assert ("H1B", 2026, 2) in got               # misspelled file still caught
+    assert ("PERM", 2024, 0) in got
+    assert ("PERM", 2026, 2) in got
+    assert not any("worksite" for t in got if False)  # noise excluded
+    assert all(t[2] in (0, 1, 2) for t in got)
+    # worksite/appendix never create H1B FY2026 beyond the disclosure ones
+    assert len([t for t in got if t[0] == "H1B" and t[1] == 2026]) == 2
+
+
+def test_dol_rank_annual_ranks_as_full_year():
+    """Annual (q=0) ranks as Q4 so it isn't treated as 'older' than a quarter."""
+    assert m._dol_rank(("PERM", 2025, 0)) == m._dol_rank(("PERM", 2025, 4))
+    assert m._dol_rank(("PERM", 2026, 1)) > m._dol_rank(("PERM", 2025, 0))
+
+
+def test_freshness_current_is_green():
+    """Upstream == prod → green, no action."""
+    up = {"H1B": ("H1B", 2026, 2), "PERM": ("PERM", 2026, 2)}
+    prod = "lca_dislclosure_data_fy2026_q2.xlsx\nperm_disclosure_data_fy2026_q2.xlsx\n"
+    sec, status = m._section_data_freshness(up, prod)
+    assert status == "green", status
+    assert "current" in sec["title"].lower()
+
+
+def test_freshness_new_upstream_is_yellow():
+    """DOL newer than prod → yellow with the trigger hint."""
+    up = {"H1B": ("H1B", 2026, 2), "PERM": ("PERM", 2026, 2)}
+    prod = "lca_dislclosure_data_fy2026_q1.xlsx\nperm_disclosure_data_fy2026_q1.xlsx\n"
+    sec, status = m._section_data_freshness(up, prod)
+    assert status == "yellow", status
+    assert "new file(s) available" in sec["title"]
+    assert "🆕" in sec["body"]
+
+
+def test_freshness_upstream_unreachable_is_green_informational():
+    """Transient DOL fetch failure must not escalate the digest."""
+    prod = "perm_disclosure_data_fy2026_q2.xlsx\n"
+    sec, status = m._section_data_freshness(None, prod)
+    assert status == "green", status

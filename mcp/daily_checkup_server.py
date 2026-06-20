@@ -307,6 +307,8 @@ printf '==SECTION:postgres==\n'
 {psql} "SELECT MAX(publication_date) FROM bulletin;" 2>&1
 {psql} "SELECT MAX(completed_at) FROM ingest_run WHERE status=3;" 2>&1
 {psql} "SELECT count(*), max(EXTRACT(EPOCH FROM (now()-state_change))) FROM pg_stat_activity WHERE datname='visa_bulletin';" 2>&1
+printf '==SECTION:dol_sources==\n'
+{psql} "SELECT url FROM ingest_data_source WHERE source_type IN ('lca','perm','perm_disclosure');" 2>&1
 printf '==SECTION:nginx==\n'
 # nginx logs go to stdout (access.log is a symlink to /dev/stdout in
 # nginx:alpine), so the file is not seekable — read via `docker logs`.
@@ -2330,6 +2332,109 @@ def _section_cloudflared(text: str) -> tuple[dict | None, str]:
 mcp = FastMCP("visa_bulletin_daily_checkup")
 
 
+# --- DOL data-freshness check (manual weekly-refresh trigger signal) ---
+# The weekly DOL salary refresh runs manually (see branching.md Path 2 + the
+# weekly-refresh ticket). This surfaces when DOL has published an LCA/PERM
+# disclosure file newer than prod has ingested, so the refresh can be triggered.
+DOL_PERFORMANCE_URL = "https://www.dol.gov/agencies/eta/foreign-labor/performance"
+
+
+def _dol_disclosure_tuples(text: str) -> set[tuple[str, int, int]]:
+    """Extract (program, fiscal_year, quarter) for LCA/PERM *disclosure* files.
+
+    Works on both the DOL HTML page and a newline list of ingested URLs. Excludes
+    worksite / appendix / prevailing-wage files (separate datasets). quarter=0 =
+    an annual (no-quarter) file. Tolerant of DOL's misspelled 'dislclosure' names.
+    """
+    out: set[tuple[str, int, int]] = set()
+    for fname in re.findall(r"([^\"'/>]*\.(?:xlsx|csv))", text, re.IGNORECASE):
+        f = fname.lower()
+        if "lca" not in f and "perm" not in f:
+            continue
+        if any(x in f for x in ("worksite", "appendix", "pw_", "prevailing")):
+            continue
+        fy = re.search(r"fy(\d{4})", f)
+        if not fy:
+            continue
+        q = re.search(r"q([1-4])", f)
+        program = "PERM" if "perm" in f else "H1B"
+        out.add((program, int(fy.group(1)), int(q.group(1)) if q else 0))
+    return out
+
+
+def _dol_rank(t: tuple[str, int, int]) -> int:
+    """Rank (fy, quarter) for 'latest' comparison; annual (q=0) == full year (Q4)."""
+    return t[1] * 10 + (t[2] if t[2] else 4)
+
+
+def _dol_label(t: tuple[str, int, int] | None) -> str:
+    if not t:
+        return "none"
+    return f"FY{t[1]}" + (f" Q{t[2]}" if t[2] else " (annual)")
+
+
+async def _gather_data_freshness() -> dict | None:
+    """Fetch the DOL performance page; return the latest disclosure file per
+    program as {'H1B': tuple|None, 'PERM': tuple|None}, or None on failure.
+
+    NOTE: DOL anti-bot 403s browser User-Agents but allows the default httpx UA —
+    do NOT set a browser User-Agent here.
+    """
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+        r = await client.get(DOL_PERFORMANCE_URL)
+        r.raise_for_status()
+        up = _dol_disclosure_tuples(r.text)
+    return {p: max([t for t in up if t[0] == p], key=_dol_rank, default=None) for p in ("H1B", "PERM")}
+
+
+def _section_data_freshness(upstream: dict | None, prod_dol_text: str) -> tuple[dict, str]:
+    """Compare upstream DOL disclosure availability vs prod's ingested sources.
+
+    yellow when DOL has published an LCA/PERM disclosure file newer than prod has
+    ingested (trigger the manual weekly refresh); green when current.
+    """
+    prod = _dol_disclosure_tuples(prod_dol_text or "")
+    prod_latest = {
+        p: max([t for t in prod if t[0] == p], key=_dol_rank, default=None)
+        for p in ("H1B", "PERM")
+    }
+
+    if upstream is None:
+        body = (
+            "Could not reach the DOL performance page (transient). Prod ingested: "
+            + ", ".join(f"{p} {_dol_label(prod_latest[p])}" for p in ("H1B", "PERM"))
+        )
+        return ({"title": "DOL data freshness", "body": body, "importance": 1}, "green")
+
+    lines: list[str] = []
+    new_count = 0
+    for prog, label in (("H1B", "H-1B (LCA)"), ("PERM", "PERM")):
+        up_t, pr_t = upstream.get(prog), prod_latest.get(prog)
+        if up_t and pr_t and _dol_rank(up_t) > _dol_rank(pr_t):
+            new_count += 1
+            lines.append(
+                f"- 🆕 **{label}**: DOL has {_dol_label(up_t)}, prod has {_dol_label(pr_t)}"
+            )
+        elif up_t and pr_t:
+            lines.append(f"- {label}: current ({_dol_label(pr_t)})")
+        else:
+            lines.append(f"- {label}: DOL {_dol_label(up_t)}, prod {_dol_label(pr_t)}")
+
+    if new_count:
+        body = (
+            "New DOL disclosure data is available — the manual weekly refresh can "
+            "be triggered (branching.md Path 2 / weekly-refresh ticket).\n"
+            + "\n".join(lines)
+        )
+        return (
+            {"title": f"DOL data freshness — {new_count} new file(s) available",
+             "body": body, "importance": 4},
+            "yellow",
+        )
+    body = "Prod is up to date with DOL disclosure data.\n" + "\n".join(lines)
+    return ({"title": "DOL data freshness — current", "body": body, "importance": 2}, "green")
+
+
 @mcp.tool()
 async def daily_checkup(since: str | None = None) -> str:
     """Return a JSON CheckupReport for visa_bulletin.
@@ -2389,8 +2494,16 @@ async def daily_checkup(since: str | None = None) -> str:
             errors.append(f"gsc: {type(e).__name__}: {e}")
             return None
 
-    gc_data, probe_data, gmail_data, gsc_data = await asyncio.gather(
-        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_gsc()
+    async def _safe_freshness():
+        try:
+            return await _gather_data_freshness()
+        except Exception as e:
+            logger.exception("data freshness gather failed")
+            errors.append(f"data_freshness: {type(e).__name__}: {e}")
+            return None
+
+    gc_data, probe_data, gmail_data, gsc_data, freshness_data = await asyncio.gather(
+        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_gsc(), _safe_freshness()
     )
 
     # Build sections from snapshot
@@ -2422,6 +2535,12 @@ async def daily_checkup(since: str | None = None) -> str:
         s, st = _section_postgres(_parse_postgres(snap.get("postgres", "")))
         if s:
             sections.append(s)
+        statuses.append(st)
+        # DOL data freshness — is a new LCA/PERM disclosure file available to
+        # trigger the manual weekly refresh? (upstream fetch from the gather +
+        # prod ingested sources from the snapshot.)
+        s, st = _section_data_freshness(freshness_data, snap.get("dol_sources", ""))
+        sections.append(s)
         statuses.append(st)
         # Nginx 24h (status mix + top 5xx/4xx paths + scanner probes + 429s + bot UAs)
         nx_parsed = _parse_nginx(snap.get("nginx", ""))
