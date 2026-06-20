@@ -2,6 +2,7 @@
 """Unit tests for scripts/cron/refresh orchestrate: run_orchestrate with --no-traffic-switch (mocked)."""
 
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,40 @@ from scripts.cron.refresh.config import get_env_value, load_config
 from scripts.cron.refresh.instance import InstanceInfo
 from scripts.cron.refresh.orchestrate import run_orchestrate
 from scripts.cron.refresh.runner import MockRunner
+
+
+@pytest.fixture(autouse=True)
+def _no_real_io():
+    """Hermetic guard: neutralize every real network/AWS/SSH seam in
+    run_orchestrate so no test can hang on real I/O.
+
+    run_orchestrate validates .env against live AWS, polls SSH+DB for up to 600s,
+    SSH's to start/stop remote services, runs a public-URL smoke test, and sleeps a
+    1800s safety interval by default. Tests that forget to mock one of these (or a
+    new code path that adds another) would block for minutes -> the bazel test
+    timeout (exit 124) that got this whole file quarantined on 2026-06-10.
+
+    Safe defaults below let the happy path fall through to the (always-mocked)
+    run_pipeline. Tests that ASSERT on a specific seam still patch it explicitly;
+    those nested patches override these defaults for the duration of the test.
+    """
+    safe_defaults = {
+        "scripts.cron.refresh.orchestrate.instance.validate_env_against_aws": None,
+        "scripts.cron.refresh.orchestrate.services.wait_ssh_and_db_ready": True,
+        "scripts.cron.refresh.orchestrate.services.start_remote_services": None,
+        "scripts.cron.refresh.orchestrate.services.stop_remote_services": None,
+        "scripts.cron.refresh.orchestrate.services.ensure_postgres_connections_clean": None,
+        "scripts.cron.refresh.orchestrate._wait_app_healthy_via_ssh": True,
+        "scripts.cron.refresh.orchestrate._smoke_test_public_url": True,
+        # _write_prod_safe_override shlex.quote()s values off the (mocked) remote
+        # runner -> shlex.quote(MagicMock) TypeError if a graduation test forgets
+        # to patch it. No test asserts on it, so a no-op default is safe.
+        "scripts.cron.refresh.orchestrate._write_prod_safe_override": None,
+    }
+    with ExitStack() as stack:
+        for target, return_value in safe_defaults.items():
+            stack.enter_context(patch(target, return_value=return_value))
+        yield
 
 
 def test_run_orchestrate_no_op_when_inactive() -> None:
@@ -405,23 +440,29 @@ def test_graduation_marks_new_prod_active_and_staging_inactive_consistent(tmp_pa
 
     assert result == 0
 
-    # New prod (remote): active = new prod, inactive = old prod, MY = new prod
+    # Static-IP-endpoint model (see orchestrate._update_local_env_swap_roles): the
+    # PROD static IP (active_info.ip) is reattached to the new prod INSTANCE, so the
+    # ACTIVE endpoint stays at the old-prod static IP and the new prod is reachable
+    # there; the INACTIVE (old prod, now staging) takes the staging static IP
+    # (inactive_info.ip). So ACTIVE_IP=old_prod_ip and INACTIVE_IP=new_prod_ip --
+    # the *names* swap, the *IP endpoints* stay put. (Was asserted inverted; the
+    # test never ran because the file hung.)
     remote_update_env_calls = [
         (args[0], args[1]) for (meth, args, _) in mock_remote.calls if meth == "update_env"
     ]
     assert remote_update_env_calls == [
         ("REFRESH_ACTIVE_INSTANCE_NAME", new_prod_name),
-        ("REFRESH_ACTIVE_INSTANCE_IP", new_prod_ip),
+        ("REFRESH_ACTIVE_INSTANCE_IP", old_prod_ip),
         ("REFRESH_INACTIVE_INSTANCE_NAME", old_prod_name),
-        ("REFRESH_INACTIVE_INSTANCE_IP", old_prod_ip),
+        ("REFRESH_INACTIVE_INSTANCE_IP", new_prod_ip),
         ("REFRESH_MY_INSTANCE_NAME", new_prod_name),
     ]
 
     # Staging (orchestrator host, local .env): active = new prod, inactive = old prod, MY = old prod
     assert get_env_value(config.env_file, "REFRESH_ACTIVE_INSTANCE_NAME") == new_prod_name
-    assert get_env_value(config.env_file, "REFRESH_ACTIVE_INSTANCE_IP") == new_prod_ip
+    assert get_env_value(config.env_file, "REFRESH_ACTIVE_INSTANCE_IP") == old_prod_ip
     assert get_env_value(config.env_file, "REFRESH_INACTIVE_INSTANCE_NAME") == old_prod_name
-    assert get_env_value(config.env_file, "REFRESH_INACTIVE_INSTANCE_IP") == old_prod_ip
+    assert get_env_value(config.env_file, "REFRESH_INACTIVE_INSTANCE_IP") == new_prod_ip
     assert get_env_value(config.env_file, "REFRESH_MY_INSTANCE_NAME") == old_prod_name
 
     # Consistent state: both agree on active/inactive; new prod thinks it's active, staging thinks it's inactive
@@ -614,9 +655,14 @@ def test_graduation_skips_attach_staging_ip_when_var_unset() -> None:
                 "REFRESH_STATIC_IP_NAME": "VisaBulletin-ip",
                 "REFRESH_SKIP_GIT_UPDATE": "1",
             },
-            remove=["REFRESH_STAGING_STATIC_IP_NAME", "REFRESH_SKIP_STAGING_IP_REASSIGN"],
         ),
     ):
+        # This case requires both vars ABSENT. patch.dict has no `remove=` kwarg
+        # (passing it sets a literal env value -> TypeError); pop them inside the
+        # block instead -- patch.dict snapshots os.environ on enter and restores
+        # it on exit, so these deletions are reverted after the test.
+        os.environ.pop("REFRESH_STAGING_STATIC_IP_NAME", None)
+        os.environ.pop("REFRESH_SKIP_STAGING_IP_REASSIGN", None)
         m_resolve.return_value = (active_info, inactive_info)
         m_is_active.return_value = True
         m_get_state.return_value = "running"

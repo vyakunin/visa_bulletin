@@ -879,7 +879,14 @@ django_py_test(
 
 django_py_test(
     name = "test_refresh_orchestrate",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: hangs/timeouts when actually run (real orchestration). See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: the hang was run_orchestrate hitting REAL I/O
+    # (validate_env_against_aws, wait_ssh_and_db_ready's 600s poll, SSH service
+    # calls, a 1800s safety sleep) in tests that didn't mock every seam. Added an
+    # autouse hermetic guard neutralizing all of them; the file now runs in ~1s.
+    # Un-hanging also exposed 3 latent graduation-test bugs (never executed before
+    # because the early hang killed the target): a shlex.quote(MagicMock), an
+    # inverted post-graduation IP expectation, and an invalid patch.dict(remove=).
+    # All fixed test-side (the orchestrator code is correct + self-consistent).
     size = "small",
     srcs = ["test_refresh_orchestrate.py"],
     deps = [
