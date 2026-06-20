@@ -1,5 +1,17 @@
 # Pipeline Runbook
 
+> ⚠️ **MOSTLY RETIRED (2026-06-20).** This runbook describes the **AWS/Lightsail
+> cross-instance blue/green graduation** orchestrator (`refresh_and_switch.py` +
+> `scripts/cron/refresh/{instance,traffic_switch,orchestrate}.py`), which was
+> **deleted** when Lightsail was retired (prod is now a self-hosted homeserver
+> behind a Cloudflare Tunnel). The sections about the orchestrator, traffic
+> switch, static-IP swap, post-swap graduation, and emergency rollback no longer
+> apply. **Current deploy + data-refresh:** `.claude/rules/deployment.md`,
+> `.claude/rules/branching.md`, `deployment/homeserver/`. Still valid + host-agnostic
+> below: the **Pipeline Steps** list, the **Job Title Coherence Smoke Test**, and the
+> bug-fix/process notes. The orchestrator-specific sections are retained only until
+> a homeserver staging-flip runbook replaces them (ticket 36662b8d).
+
 Operational guide for the refresh/flipover pipeline. Covers status checking, resuming from failures, common failure modes per step, and escalation.
 
 ## Quick Reference

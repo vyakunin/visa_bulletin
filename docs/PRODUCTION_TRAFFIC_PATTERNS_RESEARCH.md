@@ -164,7 +164,7 @@ Response time is added to access logs so slow requests can be analyzed.
 
 **Files:** `deployment/nginx/visa-bulletin-log-format.conf` defines log format `main_timed` with `$request_time`. `deployment/nginx/visa-bulletin-nginx.conf` uses `access_log ... main_timed`.
 
-**New instances:** `scripts/setup_new_instance.sh` copies the log-format file to `/etc/nginx/conf.d/`.
+**Deployment:** shipped via the `vb_nginx` container from `deployment/nginx/`.
 
 **Existing production (one-time):** Copy the log-format and bot rate-limit files into `http` context, update the site config to use `main_timed` and the new locations (with limit_req), then reload:
 
@@ -190,7 +190,7 @@ sudo nginx -t && sudo systemctl reload nginx
 - **`deployment/nginx/gptbot-rate-limit.conf`:** `map` sets zone key to `$binary_remote_addr` when User-Agent matches a known bot (GPTBot, Googlebot, Bingbot, DuckDuckBot, Slurp, Baiduspider, YandexBot, facebookexternalhit), else empty. Nginx docs: *"Requests with an empty key value are not accounted."* So only bot traffic is limited. `limit_req_zone $gptbot_key zone=gptbot:10m rate=6r/m` → 0.1 qps per IP for bots.
 - **`deployment/nginx/visa-bulletin-locations.conf`:** `location /` has `limit_req zone=gptbot burst=1 nodelay; limit_req_status 429;`. When over limit, bots get 429.
 
-**New instances:** `scripts/setup_new_instance.sh` copies `gptbot-rate-limit.conf` to `/etc/nginx/conf.d/`.
+**Deployment:** shipped via the `vb_nginx` container from `deployment/nginx/`.
 
 **Existing production:** Same one-time steps as [Response time logging](#response-time-logging) (copy both conf.d files and updated site/locations).
 

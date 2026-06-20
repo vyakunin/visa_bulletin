@@ -1,5 +1,16 @@
 # Branching Strategy and Deployment Workflow
 
+> ⚠️ **PARTIALLY RETIRED (2026-06-20).** The **branch model** (main → staging → prod)
+> is still current. But the **deployment mechanics** described below — AWS/Lightsail
+> blue/green **graduation**, static-IP **traffic switch**, instance start/stop — are
+> **retired**: that orchestrator (`refresh_and_switch.py` + `instance/traffic_switch/
+> orchestrate`) was deleted when prod moved to a self-hosted homeserver behind a
+> Cloudflare Tunnel. The **current, canonical** branch + deploy model is
+> `.claude/rules/branching.md` + `.claude/rules/deployment.md` (image-tag promotion:
+> `docker compose pull web && up -d web`) and `deployment/homeserver/`. Treat the
+> graduation/static-IP sections here as historical until this doc is rewritten to the
+> homeserver model (ticket 36662b8d).
+
 Canonical reference for how code moves from development to production. Covers branch strategy, separation of concerns (code deploy vs data refresh vs graduation), and operational procedures.
 
 For pipeline-specific operational details (step timeouts, failure modes, resuming), see [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md).

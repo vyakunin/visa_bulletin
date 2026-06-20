@@ -831,14 +831,18 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 
 ### Deployment Scripts
 
-**`scripts/deploy.sh`** - Deploy to a host (single stack; for zero-downtime deploy to inactive instance then switch traffic)
+> Note: the canonical deploy path is now the homeserver image-tag promotion in
+> `.claude/rules/deployment.md` (docker compose pull + up). The scripts below predate
+> the homeserver migration; `<ssh-key>` is whatever key reaches the target host.
+
+**`scripts/deploy.sh`** - Deploy to a host (single stack)
 ```bash
-./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin 1.2.3
+./scripts/deploy.sh <ssh-key> 1.2.3
 ```
 
 **`scripts/pre-deploy-check.sh`** - Pre-deployment validation checks
 ```bash
-./scripts/pre-deploy-check.sh ~/.ssh/lightsail_visa_bulletin
+./scripts/pre-deploy-check.sh <ssh-key>
 ```
 
 **`scripts/smoke_check_production.py`** - Production smoke check (status + content)
@@ -851,23 +855,13 @@ bazel run //scripts:smoke_check_production -- --base http://localhost:8000 --tim
 
 ### Instance Setup Scripts
 
-**`scripts/setup_new_instance.sh`** - **MASTER SETUP SCRIPT** for new Lightsail instances
-
-Sets up a complete production environment including:
-- System prerequisites (curl, nginx, python3, etc.)
-- Swap configuration (2GB, swappiness=60)
-- Docker and docker-compose
-- PostgreSQL with bulk operation optimizations
-- Blue-green databases
-- Monitoring tools (sysstat, atop, **scripts/health_check.sh** — logs CPU/MEM/SWAP/LOAD to `/var/log/health_check.log` every 5 min via root cron `*/5 * * * *`)
-- Bazel memory limits
-
-```bash
-# On new Lightsail instance:
-git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
-cd /opt/visa_bulletin
-./scripts/setup_new_instance.sh
-```
+> **AWS/Lightsail deployment is RETIRED** (2026-06-20). Production is a self-hosted
+> homeserver behind a Cloudflare Tunnel. The cross-instance blue/green orchestrator
+> (`refresh_and_switch.py` / `scripts/cron/refresh/{instance,traffic_switch,orchestrate}.py`)
+> and the Lightsail bootstrap (`setup_new_instance.sh`) were deleted. Current deploy +
+> data-refresh procedure: `.claude/rules/deployment.md`, `.claude/rules/branching.md`,
+> and `deployment/homeserver/`. The local data-refresh pipeline below is host-agnostic
+> and still used.
 
 **`scripts/setup_postgresql_production.sh`** - PostgreSQL-only setup (standalone)
 ```bash
@@ -885,30 +879,6 @@ cd /opt/visa_bulletin
 ./scripts/cron/refresh_data.sh --resume  # Resume from last checkpoint
 ```
 
-**`scripts/cron/refresh_and_switch.py`** - **Orchestrator** (cross-instance): run from **prod** to start staging, run the same pipeline on staging via SSH, smoke test, then (optional) switch traffic. For **first validation** (no IP flip): use **`--no-traffic-switch`**. Requires env: `REFRESH_ACTIVE_*`, `REFRESH_INACTIVE_*`, `REFRESH_SSH_*`, etc. See REFRESH_DATA_PYTHON_REFACTOR.md (First run).
-
-**Before starting:** Check running processes on the **inactive** host: `ssh -i ... ubuntu@<inactive_ip> 'ps aux | grep run_pipeline | grep -v grep'`. If any old `discover-and-ingest` processes exist (from previous runs), kill them first so staging isn't overloaded and SSH doesn't lag. See deployment rule "Check Running Processes on Inactive Host Before Starting Pipeline".
-```bash
-bazel run //scripts/cron:refresh_and_switch_py -- --no-traffic-switch   # First run: refresh on staging, no IP flip
-bazel run //scripts/cron:refresh_and_switch_py                          # Full cycle with traffic switch
-bazel run //scripts/cron:refresh_and_switch_py -- --resume              # Resume pipeline on inactive
-bazel run //scripts/cron:refresh_and_switch_py -- --from-step traffic_switch   # Skip pipeline; do switch, update new prod .env, safety, stop old
-```
-
-After traffic switch the orchestrator sets up HTTPS on the new prod (certbot --nginx). To skip: set `REFRESH_SKIP_HTTPS_SETUP=1`. Domains: `REFRESH_HTTPS_DOMAINS` (default `visa-bulletin.us,www.visa-bulletin.us`). Then it re-assigns the staging static IP to the old prod (so old prod becomes inactive with a stable IP for the next cycle). **Required:** `REFRESH_STAGING_STATIC_IP_NAME` in `.env` on the orchestrator host (get from `aws lightsail get-static-ips --region us-east-1`). If unset, the step is skipped and an error is logged. To skip intentionally: set `REFRESH_SKIP_STAGING_IP_REASSIGN=1`.
-
-**Ingest timeout:** The ingest step uses a 12h SSH timeout (`INGEST_SSH_TIMEOUT_SEC` in `steps.py`) so full LCA/PERM ingest can complete. Other steps use `REFRESH_SSH_TIMEOUT` (default 4h).
-
-**Monitoring (high-level + stage logs):** Always monitor **both** so you have visibility into what’s happening inside long-running steps (e.g. ingest).
-- **Orchestrator (prod):** `ssh prod_2Gb_vm "tail -f /tmp/orchestrate.log"`
-- **Stage log / ingest visibility (inactive host):** From prod, `ssh -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@<inactive_ip> "tail -f /tmp/refresh_stage.log"`. This shows live ingest progress (runs, sources, transform, validation). One-shot check from your machine (use `ConnectTimeout=60` if staging is under load): `ssh prod_2Gb_vm "ssh -o ConnectTimeout=60 -i /home/ubuntu/.ssh/lightsail_visa_bulletin ubuntu@54.196.241.197 'tail -80 /tmp/refresh_stage.log'"`.
-
-**Why we don't capture stdout:** Remote `run_bin` does **not** capture the command's stdout/stderr on the orchestrator side. Output goes only to the stage log file on the inactive host (`tee`). When a step finishes, we SSH once to read `tail -n N` of that file for the orchestrator log and errors. That avoids buffering hours of output on prod and keeps the SSH pipe from blocking or lagging.
-
-**Staging load and SSH lag:** If nested SSH from prod to staging times out or is slow, staging is likely overloaded. We've seen **multiple** `run_pipeline discover-and-ingest` processes on staging (old runs from previous orchestrator attempts or manual runs). Each ingest uses heavy CPU and memory; several at once cause high load and slow SSH. **Fix:** On staging, run `ps aux | grep run_pipeline` and kill any **old** ingest PIDs (leave only the one started by the current orchestrator run). Use `ConnectTimeout=60` (or higher) when SSHing to staging from prod so the connection has time to establish under load.
-
-When a step finishes, the pipeline logs the last ~80 lines (from the stage log file) to the orchestrator log.
-
 ### Development Setup Scripts
 
 **`scripts/setup_dev_environment.sh`** - Set up development environment
@@ -924,16 +894,6 @@ When a step finishes, the pipeline logs the last ~80 lines (from the stage log f
 **`scripts/setup_postgresql_local.sh`** - Set up local PostgreSQL
 ```bash
 ./scripts/setup_postgresql_local.sh
-```
-
-**`scripts/setup_lightsail_ssh.sh`** - Set up SSH access to Lightsail
-```bash
-./scripts/setup_lightsail_ssh.sh
-```
-
-**`scripts/add_ssh_key_to_lightsail.sh`** - Add SSH key to Lightsail
-```bash
-./scripts/add_ssh_key_to_lightsail.sh
 ```
 
 **`scripts/setup_cron.sh`** - Set up cron jobs
@@ -1207,8 +1167,6 @@ tail -f /tmp/clustering.log
 ## Temporary/One-Off Scripts
 
 Temporary debugging scripts should be placed in `scripts/oneoff/` and logged to `logs/throwaway_calls.log` using `log_context()`.
-
-**Recovery one-off:** `attach_staging_ip_to_old_prod` — if graduation did not re-attach the staging static IP to the old prod (staging unreachable), run: `bazel run //scripts/oneoff:attach_staging_ip_to_old_prod -- VisaBulletin2GB`. See `.cursor/rules/deployment.mdc` (staging unreachable).
 
 See `.cursor/rules/general_logging.mdc` for details on script usage logging.
 

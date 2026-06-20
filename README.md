@@ -345,34 +345,16 @@ Old standalone scripts may still exist in `scripts/bulletin/` and `scripts/salar
 - ✅ `bazel run //:runserver` for development
 - ✅ Hermetic builds with caching
 
-**Production (AWS Lightsail 2GB):**
-- ✅ Docker + Gunicorn
-- ✅ PostgreSQL (single DB per instance; instance rotation)
-- ✅ Pre-built Bazel binaries (reduced memory)
-- ✅ Nginx reverse proxy with SSL
+**Production (self-hosted homeserver behind a Cloudflare Tunnel):**
+- ✅ Docker Compose stack (Postgres, Redis, Django+gunicorn, nginx, cloudflared)
+- ✅ Image-tag promotion (`docker compose pull web && up -d web`)
+- ✅ Nginx reverse proxy; TLS terminates at the Cloudflare edge
 
-### New Instance Setup
+> AWS/Lightsail (the prior host, with a blue/green instance-rotation orchestrator)
+> was retired 2026-06-20. The deploy procedure now lives in
+> `.claude/rules/deployment.md` + `.claude/rules/branching.md` and `deployment/homeserver/`.
 
-```bash
-# Clone and run automated setup
-git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
-cd /opt/visa_bulletin
-./scripts/setup_new_instance.sh
-```
-
-The setup script configures:
-- Swap (2GB, swappiness=60)
-- Docker and PostgreSQL
-- Memory limits for Bazel and PostgreSQL
-- Monitoring tools (sysstat, atop)
-
-### Zero-Downtime Deployment
-
-```bash
-./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
-```
-
-**Full deployment guide:** See [deployment/README.md](deployment/README.md) and [docs/deployment/NEW_INSTANCE_SETUP.md](docs/deployment/NEW_INSTANCE_SETUP.md)
+**Full deployment guide:** See `.claude/rules/deployment.md` and `deployment/homeserver/`.
 
 ## Quick Start
 
