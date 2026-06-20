@@ -339,7 +339,13 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_import",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: all 11 failures were one BUILD dep-gap, not a
+    # logic regression. db_importer._get_or_create_employer does a runtime
+    # `from lib.business.salary.employer_clustering import assign_to_cluster`
+    # (local import to avoid a lib-level cycle); without the dep in runfiles every
+    # row errored before validation ran, so even the rejection tests failed. The 3
+    # salary_search view tests also needed webapp views+urls (like
+    # test_salary_real_data). Added all three deps.
     size = "small",
     srcs = ["test_salary_import.py"],
     data = [
@@ -347,9 +353,14 @@ django_py_test(
     ],
     deps = [
         ":conftest_lib",
+        "//lib/business/salary:employer_clustering",
         "//lib/parsing/salary:db_importer",
+        "//lib/parsing/salary:wage_unit_correction",
+        "//lib/utils:data_source_utils",
         "//models:salary",
         "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
         requirement("pytest-django"),
     ],
 )
