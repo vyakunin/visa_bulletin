@@ -14,16 +14,6 @@ py_binary(
 )
 
 py_binary(
-    name = "refresh_and_switch_py",
-    srcs = ["refresh_and_switch.py"],
-    main = "refresh_and_switch.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//scripts/cron/refresh:refresh",
-    ],
-)
-
-py_binary(
     name = "refresh_bulletin",
     srcs = ["refresh_bulletin.py"],
     main = "refresh_bulletin.py",

@@ -2,13 +2,6 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_binary(
-    name = "attach_staging_ip_to_old_prod",
-    srcs = ["attach_staging_ip_to_old_prod.py"],
-    main = "attach_staging_ip_to_old_prod.py",
-    deps = ["//scripts/cron/refresh:traffic_switch"],
-)
-
-py_binary(
     name = "create_uscis_blog_post",
     srcs = ["create_uscis_blog_post.py"],
     main = "create_uscis_blog_post.py",
