@@ -175,47 +175,86 @@ class TestOrphanedEmployerDetection(TestCase):
 class TestWageUnitCorrectionEdgeCases(TestCase):
     """Test edge cases for wage unit correction"""
 
-    def test_high_hourly_rate_detection(self):
-        """Test that unrealistic hourly rates are detected"""
-        # $600/hour should trigger correction (threshold is $500)
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("600"),
-            wage_unit=WageUnit.HOUR,
-            wage_annual=Decimal("1248000"),  # $600 * 2080 hours
-        )
-        self.assertTrue(should_correct, "Hourly rate > $500 should trigger correction")
+    # NOTE (2026-06-20, ticket 38462b8d): should_correct_wage_unit was redesigned
+    # to key off the single data-driven range [MIN_ANNUAL, MAX_ANNUAL] instead of
+    # arbitrary per-unit magic thresholds ($500/hr, $50K/mo, $20K/wk). It now only
+    # flips a sub-annual unit to YEAR when the implied annual leaves the range AND
+    # wage_from is itself plausible as an annual figure. Unrealistic rates whose
+    # wage_from is NOT plausible-as-annual are no longer "corrected" — instead
+    # their implied annual exceeds MAX_ANNUAL and validate_wage_annual rejects the
+    # row. The tests below assert that current (intended) contract.
 
-    def test_high_monthly_rate_detection(self):
-        """Test that unrealistic monthly rates are detected"""
-        # $60K/month should trigger correction (threshold is $50K)
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("60000"),
-            wage_unit=WageUnit.MONTH,
-            wage_annual=Decimal("720000"),
+    def test_high_hourly_rate_rejected_by_validation(self):
+        """Unrealistic hourly rate is filtered by validation, not unit-correction.
+
+        $600/hr is not plausible as an annual figure ($600 < MIN_ANNUAL), so the
+        unit is NOT flipped to YEAR. Its implied annual ($1.248M) exceeds
+        MAX_ANNUAL, so validate_wage_annual rejects the row.
+        """
+        self.assertFalse(
+            should_correct_wage_unit(Decimal("600"), WageUnit.HOUR),
+            "$600/hr is not plausible as annual, so unit is not flipped",
         )
-        self.assertTrue(should_correct, "Monthly rate > $50K should trigger correction")
+        annual = calculate_annual_wage(Decimal("600"), WageUnit.HOUR)
+        self.assertEqual(float(annual), 600 * HOURS_PER_YEAR)
+        is_valid, reason = validate_wage_annual(annual)
+        self.assertFalse(is_valid, "Implied annual above MAX should fail validation")
+        self.assertIn("exceeds", (reason or "").lower())
+
+    def test_high_monthly_within_range_is_kept(self):
+        """A high-but-in-range monthly rate is kept, not clobbered.
+
+        $60K/month = $720K/yr is within [MIN_ANNUAL, MAX_ANNUAL] — a legitimate
+        executive salary. The old code force-flipped it to YEAR on a $50K/mo magic
+        threshold (a false positive); the redesign correctly leaves it alone.
+        """
+        self.assertFalse(
+            should_correct_wage_unit(Decimal("60000"), WageUnit.MONTH),
+            "$720K/yr is within range and must not be corrected",
+        )
+        annual = calculate_annual_wage(Decimal("60000"), WageUnit.MONTH)
+        is_valid, _ = validate_wage_annual(annual)
+        self.assertTrue(is_valid, "$720K/yr is a valid annual wage")
+
+    def test_high_monthly_down_corrected_when_plausible_as_annual(self):
+        """Down-correction still fires when wage_from is plausible as annual.
+
+        $90K/month implies $1.08M/yr (> MAX_ANNUAL), but $90K is itself a plausible
+        annual salary, so the unit is corrected MONTH -> YEAR.
+        """
+        self.assertTrue(
+            should_correct_wage_unit(Decimal("90000"), WageUnit.MONTH),
+            "$90K/mo implies out-of-range annual but $90K is plausible as YEAR",
+        )
+        self.assertEqual(
+            correct_wage_unit(Decimal("90000"), WageUnit.MONTH, row_num=0),
+            WageUnit.YEAR,
+        )
 
     def test_high_weekly_rate_detection(self):
-        """Test that unrealistic weekly rates are detected"""
-        # $25K/week should trigger correction (threshold is $20K)
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("25000"),
-            wage_unit=WageUnit.WEEK,
-            wage_annual=Decimal("1300000"),
-        )
-        self.assertTrue(should_correct, "Weekly rate > $20K should trigger correction")
+        """Unrealistic weekly rate whose value is plausible as annual -> YEAR.
 
-    def test_implied_hourly_rate_check(self):
-        """Test that implied hourly rate is checked even if wage_from is reasonable"""
-        # wage_from is $100/hour (reasonable), but wage_annual implies $600/hour
-        # This catches cases where wage_from and wage_annual don't match
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("100"),
-            wage_unit=WageUnit.HOUR,
-            wage_annual=Decimal("1248000"),  # Implies $600/hour
-        )
+        $25K/week implies $1.3M/yr (> MAX_ANNUAL); $25K is plausible as an annual
+        figure, so the unit is corrected WEEK -> YEAR.
+        """
         self.assertTrue(
-            should_correct, "Implied hourly rate > $500 should trigger correction"
+            should_correct_wage_unit(Decimal("25000"), WageUnit.WEEK),
+            "$25K/wk implies out-of-range annual but $25K is plausible as YEAR",
+        )
+
+    def test_wage_annual_param_is_ignored(self):
+        """The wage_annual argument is ignored; correction derives from wage_from.
+
+        $100/hr implies a reasonable $208K/yr (in range), so the unit is not
+        flipped — regardless of a bogus wage_annual passed in. (The redesign
+        dropped the old wage_from/wage_annual cross-check; wage_annual is a derived
+        value, not a trusted input.)
+        """
+        self.assertFalse(
+            should_correct_wage_unit(
+                Decimal("100"), WageUnit.HOUR, wage_annual=Decimal("1248000")
+            ),
+            "wage_annual is ignored; $100/hr implies in-range annual",
         )
 
     def test_legitimate_high_salary_not_corrected(self):
@@ -242,26 +281,22 @@ class TestWageUnitCorrectionEdgeCases(TestCase):
             should_correct, "Legitimate hourly rate < $500 should not be corrected"
         )
 
-    def test_boundary_case_at_threshold(self):
-        """Test behavior at threshold boundaries"""
-        # Exactly at threshold ($500/hour) - should trigger (>= threshold)
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("500"),
-            wage_unit=WageUnit.HOUR,
-            wage_annual=Decimal("1040000"),
-        )
-        self.assertTrue(
-            should_correct, "Exactly at threshold should trigger correction"
-        )
+    def test_boundary_at_min_annual(self):
+        """Boundary is the data-driven MIN_ANNUAL, not a $500/hr magic number.
 
-        # Just below threshold ($499/hour) - should not trigger
-        should_correct = should_correct_wage_unit(
-            wage_from=Decimal("499"),
-            wage_unit=WageUnit.HOUR,
-            wage_annual=Decimal("1037920"),
+        A YEAR unit with wage_from at/above MIN_ANNUAL is a valid annual and kept;
+        just below MIN_ANNUAL it is re-interpreted to a sub-annual unit so the row
+        is preserved rather than dropped.
+        """
+        self.assertEqual(
+            correct_wage_unit(Decimal(str(MIN_ANNUAL)), WageUnit.YEAR, row_num=0),
+            WageUnit.YEAR,
+            "wage_from == MIN_ANNUAL is a valid annual; keep YEAR",
         )
-        self.assertFalse(
-            should_correct, "Just below threshold should not trigger correction"
+        self.assertNotEqual(
+            correct_wage_unit(Decimal(str(MIN_ANNUAL - 1)), WageUnit.YEAR, row_num=0),
+            WageUnit.YEAR,
+            "below MIN_ANNUAL, YEAR is re-interpreted to a sub-annual unit",
         )
 
     def test_low_annual_treated_as_hourly(self):
@@ -327,8 +362,13 @@ class TestValidationIntegration(TestCase):
         self.assertFalse(is_valid, "High wage record should fail validation")
         self.assertIn("exceeds", reason.lower() if reason else "")
 
-    def test_low_wage_record_validation(self):
-        """Test that low wage records are detected"""
+    def test_low_but_above_min_wage_passes_validation(self):
+        """A low-but-above-MIN annual wage is valid (real part-time / low-COL wage).
+
+        $15K/yr is above the data-driven MIN_ANNUAL ($5000). The old code rejected
+        it on a higher arbitrary minimum (a false positive that dropped legitimate
+        low wages); the redesigned validation correctly accepts it.
+        """
         record = SalaryRecord.objects.create(
             case_number="LOW-001",
             employer=self.employer,
@@ -342,11 +382,14 @@ class TestValidationIntegration(TestCase):
             case_status=CaseStatus.CERTIFIED,
             fiscal_year=2024,
         )
+        is_valid, _ = validate_wage_annual(record.wage_annual)
+        self.assertTrue(is_valid, "$15K/yr is above MIN_ANNUAL and should be valid")
 
-        # Should fail validation (rejected at import)
-        is_valid, reason = validate_wage_annual(record.wage_annual)
-        self.assertFalse(is_valid, "Low wage record should fail validation")
-        self.assertIn("below", reason.lower() if reason else "")
+    def test_below_min_wage_rejected(self):
+        """An annual wage below MIN_ANNUAL is rejected as a likely data error."""
+        is_valid, reason = validate_wage_annual(Decimal(str(MIN_ANNUAL - 1)))
+        self.assertFalse(is_valid, "Wage below MIN_ANNUAL should fail validation")
+        self.assertIn("below", (reason or "").lower())
 
     def test_invalid_state_code_validation(self):
         """Test that invalid state codes are detected"""

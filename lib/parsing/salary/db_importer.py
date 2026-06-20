@@ -56,7 +56,18 @@ LCA_COLUMN_MAPPINGS = {
         "WAGE_RATE_OF_PAY_TO_1",
         # Note: WAGE_RATE_OF_PAY (singular) may contain ranges - handled in _parse_wage_info
     ],
-    "wage_unit": ["WAGE_UNIT_OF_PAY", "LCA_CASE_WAGE_RATE_UNIT", "WAGE_UNIT_OF_PAY_1"],
+    "wage_unit": [
+        "WAGE_UNIT_OF_PAY",
+        "LCA_CASE_WAGE_RATE_UNIT",
+        "WAGE_UNIT_OF_PAY_1",
+        # Last-resort fallback for old LCA files (e.g. FY2009) that carry NO
+        # offered-wage-unit column at all — the prevailing-wage unit is the only
+        # unit signal on the row and equals the offered-wage unit in practice.
+        # Reading it here makes the transform use the real unit instead of the
+        # magnitude-based should_correct_wage_unit heuristic guessing HOUR.
+        "PW_UNIT_1",
+        "PW_UNIT_2",
+    ],
     "prevailing_wage": ["PREVAILING_WAGE", "PW_WAGE_LEVEL", "PREVAILING_WAGE_1"],
     "prevailing_wage_unit": ["PW_UNIT_OF_PAY", "PW_UNIT_OF_PAY_1"],
     "case_submitted": [
@@ -97,11 +108,18 @@ PERM_COLUMN_MAPPINGS = {
     "employer_city": ["EMPLOYER_CITY", "Employer_City", "EMP_CITY"],
     "employer_state": ["EMPLOYER_STATE", "Employer_State", "EMP_STATE"],
     "job_title": [
+        # Prefer the employer's actual job-opportunity title over the
+        # prevailing-wage / SOC occupational bucket. PW_Job_Title_9089 is the
+        # standardized SOC occupation name DOL maps the role into for the wage
+        # floor (e.g. "Computer Systems Analysts"), NOT the employer's specific
+        # title (e.g. "Senior Business Analyst"). For salary search the specific
+        # title is what users look for; the SOC bucket stays available in
+        # soc_title / soc_code below.
         "JOB_TITLE",
+        "JOB_INFO_JOB_TITLE",
         "PW_JOB_TITLE_9089",
         "PW_Job_Title_9089",
         "PW_JOB_TITLE",
-        "JOB_INFO_JOB_TITLE",
     ],
     "soc_code": ["PW_SOC_CODE", "PW_SOC_Code", "SOC_CODE", "PWD_SOC_CODE"],
     "soc_title": ["PW_SOC_TITLE", "SOC_TITLE", "PWD_SOC_TITLE"],

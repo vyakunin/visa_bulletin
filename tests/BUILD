@@ -466,7 +466,11 @@ django_py_test(
 
 django_py_test(
     name = "test_validation",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: the 5 failing wage-unit assertions were stale
+    # (asserted old arbitrary $500/hr,$50K/mo thresholds + a higher min). The
+    # should_correct_wage_unit redesign to a single data-driven [MIN_ANNUAL,
+    # MAX_ANNUAL] range was intentional (ticket 38462b8d); tests rewritten to the
+    # new contract.
     size = "small",
     srcs = ["test_validation.py"],
     deps = [
@@ -588,20 +592,25 @@ django_py_test(
     name = "test_dol_transform_golden",
     # QUARANTINE: this is a HAND-ANNOTATED golden (expected_result is a human's
     # "this is correct", not a transform snapshot), so it must NOT be blindly
-    # regenerated. Runfiles data-load was fixed 2026-06-20; the test now runs and
-    # shows 440/610 cases drift across 10 fields. Most are clean enrichment
+    # regenerated. Runfiles data-load was fixed 2026-06-20; the test runs and
+    # shows ~440/610 cases drift across 10 fields. Most are clean enrichment
     # (None->value: decision_date, case_submitted, employment_start/end,
     # employer_id, prevailing_wage_unit — date parsing now works) plus
-    # worksite_state full-name->2-letter (normalize_state_code). But TWO classes
-    # are product/data decisions the user must rule on before re-baselining:
-    #   (1) PERM job_title now emits the SOC occupational title (PW_Job_Title_9089)
-    #       instead of the employer's specific title (JOB_INFO_JOB_TITLE), e.g.
-    #       'Senior Business Analyst' -> 'Computer Systems Analysts' (36 cases).
-    #   (2) wage-unit correction: hourly rate mislabeled 'year' now annualized
-    #       (52.03/'year' -> 108222.4/'hour', 12 cases) — overlaps the open
-    #       wage-unit decision ticket 38462b8d (Due 06-26).
-    # Un-quarantine by deciding (1)+(2), then regenerating only after sign-off.
-    # See "test suite false-green" ticket.
+    # worksite_state full-name->2-letter (normalize_state_code).
+    #
+    # The TWO product/data decisions are now RESOLVED (2026-06-20):
+    #   (1) PERM job_title: FIXED in code — db_importer now prefers the employer's
+    #       JOB_INFO_JOB_TITLE over the SOC bucket PW_Job_Title_9089, which MATCHES
+    #       the golden's annotation, so those ~36 cases now agree with the golden.
+    #   (2) wage-unit (ticket 38462b8d): the ~7 wage_unit/wage_annual drifts are
+    #       golden HAND-ANNOTATION ERRORS — the source states an hourly unit and
+    #       the transform correctly annualizes (e.g. 52.03 HR -> hour/108222.4).
+    #       The golden is wrong; the transform is right. (lca_363:214 also drove
+    #       the LCA wage_unit PW_UNIT_1/2 fallback so it reads the real unit.)
+    # Remaining un-quarantine blocker: the broad enrichment drift (dates/state/
+    # employer_id/prevailing_wage_unit on ~430 cases) is correct transform output
+    # but needs a full per-class verification before regenerating the golden as the
+    # new baseline. See "test suite false-green" ticket.
     tags = ["manual"],
     size = "medium",
     srcs = ["test_dol_transform_golden.py"],
