@@ -63,11 +63,20 @@ class TestH1BSalaryDataSourcePlugin:
         assert all(s.domain == DataDomain.DOL.value for s in sources)
         assert all(s.source_type == SourceType.LCA.value for s in sources)
 
-    # download() is inherited from the base plugin, which does a local
-    # `from lib.utils.http_utils import download_file` — so patch it at the source.
+    # download() is inherited from the base plugin. base.download() builds its own
+    # dest_path under get_workspace_dir()/data/..., calls download_file(url, dest_path)
+    # (return value is ignored), then compute_file_hash(dest_path) — so the mock must
+    # materialize dest_path or the hash step raises FileNotFoundError. Both helpers are
+    # imported locally inside download() from lib.utils.http_utils, so patch them there.
+    # A tmp workspace keeps dest_path out of the read-only runfiles tree and guarantees
+    # it doesn't pre-exist between runs (else the file-exists early-return path skips the
+    # download_file call entirely).
+    @patch("lib.utils.http_utils.get_workspace_dir")
     @patch("lib.utils.http_utils.download_file")
-    def test_download(self, mock_download):
-        """Test file download"""
+    def test_download(self, mock_download, mock_workspace, tmp_path):
+        """download() materializes the file, hashes it, persists metadata, returns dest_path."""
+        mock_workspace.return_value = tmp_path
+
         plugin = H1BSalaryDataSourcePlugin()
 
         source = DataSource.objects.create(
@@ -78,13 +87,24 @@ class TestH1BSalaryDataSourcePlugin:
 
         run = IngestRun.objects.create(source=source, status=IngestStatus.PENDING)
 
-        mock_dest = Path("/tmp/test.xlsx")
-        mock_download.return_value = mock_dest
+        def fake_download(url, dest_path):
+            Path(dest_path).write_bytes(b"test-content")
+
+        mock_download.side_effect = fake_download
 
         result = plugin.download(source, run)
 
-        assert result == mock_dest
         mock_download.assert_called_once()
+        called_url, called_dest = mock_download.call_args[0]
+        assert called_url == source.url
+        # download() returns the dest_path it built, not download_file's return value.
+        assert result == Path(called_dest)
+        assert result.exists()
+
+        # Metadata persisted from the real hash of the materialized file.
+        source.refresh_from_db()
+        assert source.content_hash
+        assert source.local_file_path == str(result)
 
     def test_parse_excel_streaming(self, tmp_path):
         """Test Excel parsing with openpyxl streaming"""
