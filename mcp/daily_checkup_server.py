@@ -267,7 +267,10 @@ def _gather_homeserver_snapshot() -> dict[str, str]:
     # rely on exact form. `set +e` so a single failing command doesn't kill
     # the whole snapshot — we want partial data.
     prod_bul_log = f"{PROD_STACK}/logs/cron/bulletin_refresh.log"
-    prod_bak_log = f"{PROD_STACK}/logs/cron/backup.log"
+    # Off-box backup migrated to the shared backup_blob.sh cron (2026-06): it
+    # writes to /opt/stack/_shared/logs/, NOT the legacy {stack}/logs/cron/backup.log
+    # (which froze at 2026-06-17 and produced a daily false "backup FAILING" RED).
+    prod_bak_log = "/opt/stack/_shared/logs/backup_visa_bulletin.log"
 
     # Postgres signals — run inside vb_postgres so we don't need a libpq on
     # the host. We surface (a) newest published bulletin (data freshness),
@@ -1631,7 +1634,7 @@ def _section_bulletin_refresh(info: dict) -> tuple[dict, str]:
 def _section_backup(info: dict) -> tuple[dict | None, str]:
     if not info.get("present"):
         return ({"title": "GDrive backup log MISSING",
-                 "body": "Expected `/opt/stack/visa_bulletin/logs/cron/backup.log`. Daily backup may not be running.",
+                 "body": "Expected `/opt/stack/_shared/logs/backup_visa_bulletin.log`. Daily backup may not be running.",
                  "importance": 5}, "red")
     age_hr = info["age_min"] / 60
     status = "green"
