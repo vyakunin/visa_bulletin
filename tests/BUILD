@@ -374,7 +374,6 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_real_data",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_salary_real_data.py"],
     deps = [
@@ -455,7 +454,7 @@ django_py_test(
     name = "test_ingest_versioning",
     size = "small",
     srcs = ["test_ingest_versioning.py"],
-    tags = ["exclusive", "manual"],  # QUARANTINE 2026-06-10: pre-existing failure exposed by the false-green fix. See Notion "test suite false-green" ticket.
+    tags = ["exclusive"],
     deps = [
         ":conftest_lib",
         "//lib/ingest:versioning",
@@ -588,7 +587,13 @@ django_py_test(
 
 django_py_test(
     name = "test_dol_transform_golden",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # QUARANTINE: runfiles data-load fixed 2026-06-20 (bazel_runfiles bzlmod
+    # import + RUNFILES_DIR fallback); now 440/610 golden cases differ on one
+    # field — the transform populates `case_submitted` where the golden YAML has
+    # None. Golden set is stale (pre-dates case_submitted extraction). Un-quarantine
+    # after regenerating it via scripts/salary/collect_dol_golden_test_data.py
+    # (needs the source DOL .xlsx files). See "test suite false-green" ticket.
+    tags = ["manual"],
     size = "medium",
     srcs = ["test_dol_transform_golden.py"],
     data = [

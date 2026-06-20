@@ -97,7 +97,7 @@ class TestIngestPipelineIntegration:
         ws.append(["CASE001", "Test Company", "Software Engineer", "150000", "Year"])
         ws.append(["CASE002", "Test Company", "Data Scientist", "140000", "Year"])
 
-        test_file = tmp_path / "test_lca.xlsx"
+        test_file = tmp_path / "test_lca_FY2024.xlsx"
         wb.save(test_file)
 
         # Create data source
@@ -164,7 +164,7 @@ class TestIngestPipelineIntegration:
         for i in range(50):
             ws.append([f"CASE{i:03d}", "Test Company", "Engineer", "100000", "Year"])
 
-        test_file = tmp_path / "test_lca_large.xlsx"
+        test_file = tmp_path / "test_lca_large_FY2024.xlsx"
         wb.save(test_file)
 
         source = DataSource.objects.create(
