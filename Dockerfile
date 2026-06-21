@@ -102,5 +102,9 @@ HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=3 \
 # Reduced timeout to 60s to fail faster and prevent memory buildup
 # max-requests recycles workers to prevent memory leaks
 # access-logformat: %(L)s = response time in decimal seconds (for slow-request analysis)
-CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"]
+# --preload: import the app in the master and fork workers from it. Eliminates the
+# per-worker import race (numpy/Django booting concurrently in N workers caused
+# transient boot 500s) and shares the imported code pages copy-on-write, cutting
+# resident memory per worker (OOM amplification fix).
+CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --preload --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"]
 
