@@ -58,6 +58,8 @@ Targets:
 import logging
 from datetime import date, timedelta
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 _MIN_TRAINING_SAMPLES = 36
@@ -755,8 +757,6 @@ def _get_or_train_model(knowledge_date: date, action_type: str = "filing") -> ob
         return None
 
     x, y = data
-    import numpy as np
-
     x_arr = np.array(x, dtype=np.float32)
     y_arr = np.array(y, dtype=np.float32)
 
@@ -799,8 +799,6 @@ def _get_or_train_model_horizon(
         return None
 
     x, y = data
-    import numpy as np
-
     x_arr = np.array(x, dtype=np.float32)
     y_arr = np.array(y, dtype=np.float32)
 
@@ -841,8 +839,6 @@ def _get_or_train_classifier(
         return None
 
     x, y = data
-    import numpy as np
-
     x_arr = np.array(x, dtype=np.float32)
     y_arr = np.array(y, dtype=np.float32)
 
@@ -892,8 +888,6 @@ def _get_or_train_quantile(
         return None
 
     x, y = data
-    import numpy as np
-
     x_arr = np.array(x, dtype=np.float32)
     y_arr = np.array(y, dtype=np.float32)
 
@@ -961,8 +955,6 @@ def expert_gbm(
     current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
     if not current_cutoff:
         return None
-
-    import numpy as np
     x = np.array([feats], dtype=np.float32)
     predicted_move = float(model.predict(x)[0])
     predicted_move = max(-90.0, min(365.0, predicted_move))
@@ -998,8 +990,6 @@ def expert_gbm_direct(
     current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
     if not current_cutoff:
         return None
-
-    import numpy as np
     x = np.array([feats_h], dtype=np.float32)
     predicted_move = float(model.predict(x)[0])
     predicted_move = max(-180.0, min(horizon * 365.0, predicted_move))
@@ -1021,8 +1011,6 @@ def _iterated_gbm(
     model = _get_or_train_model(knowledge_date, action_type)
     if model is None:
         return None
-
-    import numpy as np
     x = np.array([base_feats], dtype=np.float32)
     total_move = 0
     for _ in range(horizon):
@@ -1054,8 +1042,6 @@ def expert_gbm_movement_prob(
     model = _get_or_train_classifier(knowledge_date, horizon, movement_threshold, action_type)
     if model is None:
         return 0.5
-
-    import numpy as np
     x = np.array([feats_h], dtype=np.float32)
     probs = model.predict_proba(x)[0]
     # probs[1] = P(class=1) = P(|move| > threshold)
@@ -1119,8 +1105,6 @@ def expert_gbm_quantile(
     current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
     if not current_cutoff:
         return None
-
-    import numpy as np
     x = np.array([x_feats], dtype=np.float32)
     predicted_move = float(model.predict(x)[0])
     return current_cutoff + timedelta(days=int(predicted_move))

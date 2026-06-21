@@ -7,6 +7,10 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("Django"),
+        # apps.py:ready() eagerly imports numpy so gunicorn --preload loads it once
+        # in the master (CoW-shared to workers), avoiding the per-request numpy
+        # first-import thread race in the GBM VQS expert.
+        requirement("numpy"),
     ],
 )
 
