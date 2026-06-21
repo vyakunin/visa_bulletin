@@ -18,7 +18,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 
 | Section | Count | Filter criteria | `lastmod` |
 |---------|-------|----------------|-----------|
-| Static pages | 7 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/about/`, `/contact/` | Latest bulletin date |
+| Static pages | 8 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/when-is-the-next-visa-bulletin/`, `/about/`, `/contact/` | Latest bulletin date |
 | Category/country landings | ~12 | `/employment-based/`, `/family-sponsored/` × countries | Latest bulletin date |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
 | Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
@@ -103,6 +103,7 @@ Profile templates (`job_title_profile.html`) override with page-specific title, 
 | Job title profile | `Occupation` + `MonetaryAmountDistribution` (salary percentiles) + `BreadcrumbList` |
 | Employer profile | `Organization` + optional `AggregateRating` (only when `total_filings > 0`) + `BreadcrumbList` |
 | FAQ | `FAQPage` |
+| Next-bulletin (`/when-is-the-next-visa-bulletin/`) | `FAQPage` (projected release date, cadence, official source) — projection in `lib/business/bulletin/release_schedule.py` from recent `Bulletin.fetched_at` |
 
 **Dataset on the `/salaries/` + `/employers/` landings (added 2026-06-18, commit `5f74599`).**
 These landings rank for the dataset-intent head queries ("h1b salary database",
