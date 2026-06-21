@@ -11,6 +11,16 @@ py_library(
 )
 
 py_library(
+    name = "release_schedule",
+    srcs = ["release_schedule.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:bulletin",
+        requirement("python-dateutil"),
+    ],
+)
+
+py_library(
     name = "chart_builder",
     srcs = ["chart_builder.py"],
     visibility = ["//visibility:public"],

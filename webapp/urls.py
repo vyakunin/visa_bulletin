@@ -31,6 +31,7 @@ from webapp.views.static.pages import (
     contact_view,
     faq_view,
     health_view,
+    next_bulletin_view,
     spanish_landing_view,
 )
 
@@ -62,6 +63,7 @@ urlpatterns = [
     path("health/", health_view, name="health"),
     # Static pages
     path("faq/", faq_view, name="faq"),
+    path("when-is-the-next-visa-bulletin/", next_bulletin_view, name="next_bulletin"),
     path("about/", about_view, name="about"),
     path("contact/", contact_view, name="contact"),
     # Spanish landing — single-page explainer for "boletín de visas" search demand

@@ -226,6 +226,19 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_next_bulletin",
+    srcs = ["test_next_bulletin.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/bulletin:release_schedule",
+        "//models:bulletin",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)
+
+django_py_test(
     name = "test_webapp_ui",
     size = "small",
     srcs = ["test_webapp_ui.py"],
