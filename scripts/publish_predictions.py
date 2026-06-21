@@ -37,6 +37,7 @@ from lib.business.vqs.solver import (
 )
 from models.bulletin import Bulletin
 from models.enums.country import Country
+from models.enums.family_preference import FamilyPreference
 from models.raw_facts import RawFactsLedger
 from models.visa_cutoff_date import VisaCutoffDate
 from models.vqs import PredictedBulletin, PredictedCutoff
@@ -96,6 +97,12 @@ _MOVEMENT_PROB_SERIES = frozenset([
     (Country.CHINA.value, "2nd"),
     (Country.CHINA.value, "3rd"),
 ])
+
+# Employment-based preference classes (the EB regime/GBM/Pace dispatch above is
+# tuned for these). Family-sponsored classes (F1..F4) are stored separately via
+# the physics solver — see the FS branch in publish_predictions.
+_EB_CLASSES = ["1st", "2nd", "3rd", "4th", "5th"]
+_FS_CLASSES = [f.value for f in FamilyPreference]
 
 logger = logging.getLogger(__name__)
 
@@ -226,13 +233,20 @@ def generate_explanation(metadata: dict | None, confidence: str) -> str:
     return " ".join(parts) if parts else f"Physics-based prediction (Confidence: {confidence})"
 
 
-def publish_predictions(target_months: list[date], action_types: list[str], horizon_months: int = 1):
+def publish_predictions(
+    target_months: list[date],
+    action_types: list[str],
+    horizon_months: int = 1,
+    fs_only: bool = False,
+):
     load_facts()
     aggregator = ExpertAggregator()  # Loads weights from history
     meta = VqsMetaParams.defaults()
 
     countries = [c.value for c in Country]
-    visa_classes = ["1st", "2nd", "3rd", "4th", "5th"]
+    # fs_only recomputes ONLY family-sponsored series, leaving existing EB rows
+    # untouched (surgical backfill). Default covers both.
+    visa_classes = _FS_CLASSES if fs_only else (_EB_CLASSES + _FS_CLASSES)
 
     for target_month in target_months:
         target_month = target_month.replace(day=1)
@@ -249,8 +263,9 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
             prediction_date=knowledge_date,
         )
         if not created:
-            # Re-running for the same (target, knowledge_date): clear and recompute.
-            pred_bulletin.cutoffs.all().delete()
+            # Re-running for the same (target, knowledge_date): clear and recompute
+            # only the classes this run computes (so an fs_only run never deletes EB rows).
+            pred_bulletin.cutoffs.filter(visa_class__in=visa_classes).delete()
 
         # Filter facts manually
         current_facts = [f for f in FACTS if f.publication_date <= knowledge_date]
@@ -285,7 +300,9 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
                     # stays Unavailable until the October fiscal-year reset. Without
                     # this guard the solver persists the last pre-Unavailable cutoff
                     # (e.g. India EB-2 showing a stale 2013 date labelled "Advancing").
-                    if is_unavailable_at_date(visa_class, country, action, knowledge_date):
+                    if visa_class in _EB_CLASSES and is_unavailable_at_date(
+                        visa_class, country, action, knowledge_date
+                    ):
                         PredictedCutoff.objects.create(
                             bulletin=pred_bulletin,
                             visa_class=visa_class,
@@ -311,7 +328,41 @@ def publish_predictions(target_months: list[date], action_types: list[str], hori
                     model_name = "vqs_ensemble"
                     dispatch_key = (country, visa_class)
 
-                    if (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
+                    if visa_class in _FS_CLASSES:
+                        # Family-sponsored: the EB regime/GBM/Pace dispatch above is
+                        # EB-tuned, so mirror the live page path exactly
+                        # (get_all_predictions_for_month -> predict_next_bulletin_and_maturity).
+                        # This stores the SAME prediction the FS pages compute live today —
+                        # pure caching, no change to the displayed cutoff dates.
+                        #
+                        # Use the trajectory cell for target_month (what the live page reads
+                        # via _extract_prediction_from_solver), NOT outcome.predicted_cutoff:
+                        # predicted_cutoff is the apply_post_step value, while results[i] carry
+                        # the persistence-blended trajectory the page actually displays. At the
+                        # 1m horizon these are different transforms of the same raw cutoff.
+                        outcome = predict_next_bulletin_and_maturity(
+                            knowledge_date=knowledge_date,
+                            visa_class=visa_class,
+                            country=country,
+                            action_type=action,
+                            facts=current_facts,
+                            meta=meta,
+                            aggregator=aggregator,
+                        )
+                        cutoff = next(
+                            (
+                                r.cutoff_date
+                                for r in outcome.results
+                                if r.month.year == target_month.year
+                                and r.month.month == target_month.month
+                            ),
+                            None,
+                        )
+                        m_meta = outcome.metadata
+                        confidence = outcome.confidence
+                        if isinstance(m_meta, dict):
+                            model_name = m_meta.get("model") or "vqs_ensemble"
+                    elif (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
                         dispatch_key == _INDIA_EB1 and horizon_m < 6
                     ) or horizon_m == 1:
                         # RS: China EB-1 at 1m/3m/6m; India EB-1 at 1m/3m; ALL series at 1m.
@@ -503,6 +554,13 @@ def main():
         help="Prediction horizon in months (1 = day-before-publication, 6 = made 6 months earlier). "
              "Use --horizon 6 to backfill 6m-ahead predictions. Default: 1.",
     )
+    parser.add_argument(
+        "--fs-only",
+        action="store_true",
+        help="Recompute ONLY family-sponsored (F1..F4) predictions, leaving existing "
+             "employment-based rows untouched. Used to backfill FS stored predictions "
+             "so FS /predictions/ pages stop running the live solver.",
+    )
     args = parser.parse_args()
 
     targets = []
@@ -529,7 +587,7 @@ def main():
         next_month = today + relativedelta(months=1)
         targets.append(date(next_month.year, next_month.month, 1))
 
-    publish_predictions(targets, actions, horizon_months=args.horizon)
+    publish_predictions(targets, actions, horizon_months=args.horizon, fs_only=args.fs_only)
 
 
 if __name__ == "__main__":
