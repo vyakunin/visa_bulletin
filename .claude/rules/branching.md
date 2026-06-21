@@ -34,6 +34,24 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 
 The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
 
+## 🚨 Heavyweight data tasks: compute OFF-PROD on staging, graduate via cutover — NEVER mutate the serving prod box directly
+
+**A heavyweight data task NEVER runs its heavy compute/mutation on the live prod box. The heavy work runs OFF-PROD on the staging stack (against a prod data copy); the verified DATA is then graduated via the Path-2 `cutover.sh --data` cutover, during which the STAGING stack SERVES prod traffic while the homeserver resyncs FROM staging.** Prod must never be simultaneously *heavy-mutating* AND *sole-serving*.
+
+**What counts as heavyweight (this rule applies):** employer **re-clustering** (`cluster_existing_employers`), job-title re-clustering, the weekly **salary/bulletin data refresh** (millions of rows), any **mass UPDATE/DELETE/reprocess**, **schema migrations** on large tables, and **index drop/rebuild**. Rule of thumb: if it rewrites/derives a large fraction of a big table or runs minutes-to-hours, it is heavyweight → off-prod + cutover.
+
+**The flow (do NOT shortcut to a direct prod run):**
+1. Run the heavy job on the **staging stack** (minipc), against staging's prod-copy DB. Validate the result (counts, before/after diffs, 0 orphaned FKs, spot-check sample rows). Measure runtime.
+2. Graduate the verified DATA with `cutover.sh --data <sha>` (RELEASE_PATHS.md Option A): the staging stack serves `visa-bulletin.us` from its already-graduated DB while the homeserver resyncs from it. **Zero vb compute on prod**, zero vb downtime.
+3. Ship any code the job depends on in the prod image so the cron/future runs use it.
+4. Verify the prod end-state from a fresh read (profile pages, counts) — `verify_end_state`.
+
+**Forbidden:** a direct `nice`'d heavy mutation against the live prod DB "because it's only ~5 min", or any heavy job whose sole-serving prod box also bears the compute/I/O. Even a read-heavy `pg_dump` of live prod is avoided where possible (see the release-protocol note below).
+
+**Index drop/rebuild (answering "do we still do this?"):** the **clustering** job does NOT drop indexes — its repair re-run only re-points the merged-away clusters' members (a small, bounded write set), so it runs fine with indexes live (validated: full staging re-cluster, 302k employers, 81 merges, 4.6 min, indexes on). Index drop/rebuild is reserved for **from-scratch mass population** (the millions-row salary refresh, `deployment.md` "Weekly DB Refresh Pattern") where mass writes against live indexes are the bottleneck — and that, too, runs off-prod on staging per this rule. Any `CREATE INDEX`/`ALTER` on a large table that DOES run near prod uses `CONCURRENTLY` (`deployment.md`).
+
+Origin: 2026-06-21 — the employer-clustering split-cluster fix was validated on staging (off-prod) and its prod graduation was (correctly) held as a Path-2 cutover, not a direct prod re-cluster. Vladimir: "this is an example of a heavyweight task that requires serving on staging while clustering on prod — make it very clear in rules."
+
 ## Workflows (Summary)
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**
