@@ -377,6 +377,7 @@ py_binary(
         "//models:visa_cutoff_date",
         "//models:raw_facts",
         "//models/enums:country",
+        "//models/enums:family_preference",
         requirement("Django"),
         requirement("python-dateutil"),
     ],
