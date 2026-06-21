@@ -239,6 +239,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_cluster_merge",
+    size = "small",
+    srcs = ["test_cluster_merge.py"],
+    deps = [
+        "//lib/utils:db_utils",
+        "//models:salary",
+    ],
+)
+
+django_py_test(
     name = "test_webapp_ui",
     size = "small",
     srcs = ["test_webapp_ui.py"],

@@ -496,18 +496,29 @@ def _process_employer_pair(
             # for existing clusters via assign_to_cluster (which loads all employers).
             # Instead, reuse existing cluster or queue for batch creation.
 
-            # Get or queue cluster for emp1
-            if not emp1.canonical_cluster:
-                # Queue cluster creation (will be batch created)
+            # Merge-aware assignment (transitive closure). Same-cluster pairs are
+            # already filtered out above, so here the two employers are in 0, 1, or
+            # 2 DIFFERENT clusters. Never reassign an already-clustered employer
+            # (that orphaned its old cluster-mates — the split-cluster bug); instead
+            # the unclustered side joins, or two existing clusters are unioned.
+            ca = emp1.canonical_cluster
+            cb = emp2.canonical_cluster
+            if ca and cb:
+                # Both already clustered, different clusters -> union (merged in batch
+                # via resolve_cluster_merges so all members of both end up together).
+                batched_updates.union_clusters(ca, cb)
+            elif ca:
+                emp2.canonical_cluster = ca
+                batched_updates.add_employer_update(emp2)
+            elif cb:
+                emp1.canonical_cluster = cb
+                batched_updates.add_employer_update(emp1)
+            else:
                 cluster = batched_updates.get_or_queue_cluster(emp1.name)
                 emp1.canonical_cluster = cluster
                 batched_updates.add_employer_update(emp1)
-            else:
-                cluster = emp1.canonical_cluster
-
-            # Assign emp2 to same cluster
-            emp2.canonical_cluster = cluster
-            batched_updates.add_employer_update(emp2)
+                emp2.canonical_cluster = cluster
+                batched_updates.add_employer_update(emp2)
 
         auto_cluster_logger.log(
             f"Auto-clustered: {emp1.name} <-> {emp2.name} ({confidence:.3f})"
@@ -731,6 +742,9 @@ def _process_same_normalized_name_matches(
 
     # Final bulk operations for phase 1
     batched_updates.flush_all(employer_fields=["canonical_cluster"])
+    merged = batched_updates.resolve_cluster_merges()
+    if merged:
+        logger.info(f"Phase 1: merged {merged:,} clusters into survivors (transitive closure)")
 
     phase1_summary = progress.get_summary()
     progress.close()  # Close progress bar
@@ -957,6 +971,9 @@ def _process_cross_normalized_name_matches(
 
     # Final bulk operations for phase 2
     batched_updates.flush_all(employer_fields=["canonical_cluster"])
+    merged = batched_updates.resolve_cluster_merges()
+    if merged:
+        logger.info(f"Phase 2: merged {merged:,} clusters into survivors (transitive closure)")
 
     candidate_summary = candidate_progress.get_summary()
     candidate_progress.close()  # Close progress bar

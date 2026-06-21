@@ -6,7 +6,7 @@ from typing import TypeVar
 from django.db import models, transaction
 
 from lib.business.salary.cluster_utils import normalize_canonical_name
-from models.salary import EmployerCluster
+from models.salary import Employer, EmployerCluster
 
 ModelType = TypeVar("ModelType", bound=models.Model)
 
@@ -243,6 +243,14 @@ class BatchedUpdates:
         self._employer_update_ids: set = (
             set()
         )  # Set of employer.pk values in current batch
+
+        # Union-find over SAVED cluster ids for transitive-closure merges. When two
+        # already-clustered employers match, their clusters are unioned here (near-O(1),
+        # no DB) and resolved once in resolve_cluster_merges(): all members of each
+        # non-survivor cluster are re-pointed to the survivor (lowest id) and the empty
+        # losers deleted. Prevents the split-cluster corruption where reassigning one
+        # employer orphaned its old cluster-mates (A~B, B~C must land in ONE cluster).
+        self._cluster_parent: dict[int, int] = {}
 
         # Pre-load existing slugs into cache (single query at startup)
         # Prevents N+1 slug loading in flush_clusters() - was reloading ALL slugs per flush
@@ -494,6 +502,67 @@ class BatchedUpdates:
         self.flush_clusters()
         self.flush_employer_updates(employer_fields)
         self.flush_review_entries()
+
+    def _find_cluster_root(self, cid: int) -> int:
+        """Union-find root of a cluster id, with path compression."""
+        root = cid
+        while root in self._cluster_parent:
+            root = self._cluster_parent[root]
+        # Path-compress
+        while cid != root:
+            self._cluster_parent[cid], cid = root, self._cluster_parent[cid]
+        return root
+
+    def union_clusters(self, cluster_a, cluster_b) -> None:
+        """Record that two existing clusters belong together (merge at resolve time).
+
+        The lower cluster id is kept as the survivor so the oldest cluster (and its
+        slug/name) wins. Both clusters must be saved; if either is still queued, flush
+        creations first so it has an id.
+        """
+        if self.dry_run:
+            return
+        if cluster_a.pk is None or cluster_b.pk is None:
+            self.flush_clusters()
+        a, b = self._find_cluster_root(cluster_a.pk), self._find_cluster_root(cluster_b.pk)
+        if a == b:
+            return
+        survivor, loser = (a, b) if a < b else (b, a)
+        self._cluster_parent[loser] = survivor
+
+    def resolve_cluster_merges(self, employer_fields: list[str] | None = None) -> int:
+        """Apply all queued cluster merges: re-point loser members to survivors, delete losers.
+
+        Returns the number of clusters merged away. Idempotent-safe: clears the
+        union-find afterward. Must run after the phase's employer assignments are
+        flushed (it flushes first).
+        """
+        if self.dry_run or not self._cluster_parent:
+            return 0
+        self.flush_all(employer_fields=employer_fields or ["canonical_cluster"])
+
+        from collections import defaultdict
+
+        survivor_to_losers: dict[int, list[int]] = defaultdict(list)
+        for cid in list(self._cluster_parent):
+            root = self._find_cluster_root(cid)
+            if cid != root:
+                survivor_to_losers[root].append(cid)
+
+        merged = 0
+        for survivor, losers in survivor_to_losers.items():
+            # Re-point every employer in the loser clusters to the survivor, then
+            # delete the now-empty losers. Both are indexed bulk ops.
+            Employer.objects.filter(canonical_cluster_id__in=losers).update(
+                canonical_cluster_id=survivor
+            )
+            EmployerCluster.objects.filter(id__in=losers).delete()
+            merged += len(losers)
+
+        # Caches may reference deleted clusters — drop them so later lookups reload.
+        self._cluster_cache.clear()
+        self._cluster_parent.clear()
+        return merged
 
 
 def process_in_batches(
