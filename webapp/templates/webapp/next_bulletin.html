@@ -1,0 +1,135 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block extra_head %}
+{% if schedule %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "When does the next Visa Bulletin come out?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin is expected to be released around {{ schedule.next_release_estimate|date:'F j, Y' }}. The U.S. Department of State publishes each Visa Bulletin in the middle of the prior month — recently between the {{ schedule.next_release_window.0|date:'jS' }} and the {{ schedule.next_release_window.1|date:'jS' }} — for the month that follows. The most recent bulletin ({{ schedule.latest_governing_month|date:'F Y' }}) was released on {{ schedule.latest_released_on|date:'F j, Y' }}."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How often is the Visa Bulletin published?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The Visa Bulletin is published monthly by the U.S. Department of State at travel.state.gov. Each edition governs one calendar month and is posted roughly two weeks before that month begins."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where is the official Visa Bulletin published?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The official Visa Bulletin is published on the U.S. Department of State website at travel.state.gov. This page tracks those releases and projects the next one from recent release-date history."
+      }
+    }
+  ]
+}
+</script>
+{% endif %}
+{% endblock %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-calendar-event"></i> Visa Bulletin Release Schedule</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-9 offset-lg-1">
+    <h1 class="mb-3">When does the next Visa Bulletin come out?</h1>
+
+    {% if schedule %}
+    <div class="card border-primary mb-4">
+      <div class="card-body text-center">
+        <div class="text-muted text-uppercase small mb-1">Next expected release</div>
+        <div class="display-6 fw-bold mb-1">{{ schedule.next_release_estimate|date:"l, F j, Y" }}</div>
+        <div class="text-muted mb-3">
+          for the <strong>{{ schedule.next_governing_month|date:"F Y" }}</strong> Visa Bulletin
+          (typically the {{ schedule.next_release_window.0|date:"jS" }}&ndash;{{ schedule.next_release_window.1|date:"jS" }})
+        </div>
+        <div id="vb-countdown"
+             data-release="{{ schedule.next_release_estimate|date:'Y-m-d' }}"
+             class="fs-4 fw-semibold text-primary"
+             aria-live="polite"></div>
+      </div>
+    </div>
+
+    <p class="lead">
+      The U.S. Department of State publishes the Visa Bulletin <strong>monthly</strong>,
+      in the middle of each month, for the <em>following</em> month. The most recent
+      edition &mdash; the <strong>{{ schedule.latest_governing_month|date:"F Y" }}</strong>
+      bulletin &mdash; was released on <strong>{{ schedule.latest_released_on|date:"F j, Y" }}</strong>.
+    </p>
+
+    <h2 class="h5 mt-4">Recent release dates</h2>
+    <p class="text-muted small">
+      Observed release dates (when each edition was first posted), newest first.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead>
+          <tr><th scope="col">Bulletin (governs)</th><th scope="col">Released on</th><th scope="col" class="text-end">Days before the month</th></tr>
+        </thead>
+        <tbody>
+          {% for r in schedule.recent_history %}
+          <tr>
+            <td>{{ r.governing_month|date:"F Y" }}</td>
+            <td>{{ r.released_on|date:"D, M j, Y" }}</td>
+            <td class="text-end">{{ r.lead_days }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small">
+      Projection is derived from the {{ schedule.recent_history|length }} most recent releases
+      (median release day: the {{ schedule.typical_release_dom }}{{ schedule.typical_release_dom|ordinal|slice:"-2:" }} of the month).
+      It is an estimate, not an official date &mdash; the State Department does not pre-announce release dates.
+    </p>
+    {% else %}
+    <p class="lead">
+      The U.S. Department of State publishes the Visa Bulletin <strong>monthly</strong>,
+      in the middle of each month, for the following month. We don't yet have enough
+      recent release history to project an exact date.
+    </p>
+    {% endif %}
+
+    <h2 class="h5 mt-4">Once it's out, what moved?</h2>
+    <p>
+      When the next bulletin posts, this site ingests it automatically. See where the
+      cutoff dates are heading before it lands:
+    </p>
+    <ul>
+      <li><a href="{% url 'prediction_category_landing' category='employment_based' %}">Employment-based (EB) predictions &rarr;</a></li>
+      <li><a href="{% url 'prediction_category_landing' category='family_sponsored' %}">Family-sponsored (FS) predictions &rarr;</a></li>
+      <li><a href="{% url 'dashboard' %}">Latest Visa Bulletin dashboard &rarr;</a></li>
+      <li><a href="{% url 'faq' %}">Visa Bulletin FAQ &rarr;</a></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function () {
+  var el = document.getElementById("vb-countdown");
+  if (!el) return;
+  var target = new Date(el.getAttribute("data-release") + "T12:00:00");
+  function tick() {
+    var now = new Date();
+    var ms = target - now;
+    if (ms <= 0) { el.textContent = "Expected any day now — check back shortly."; return; }
+    var days = Math.floor(ms / 86400000);
+    var hours = Math.floor((ms % 86400000) / 3600000);
+    el.textContent = "~" + days + (days === 1 ? " day " : " days ") + hours + "h until the expected release";
+  }
+  tick();
+  setInterval(tick, 60000);
+})();
+</script>
+{% endblock %}

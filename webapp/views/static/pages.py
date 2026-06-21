@@ -1,10 +1,13 @@
 """Static informational pages."""
 
 import time
+from datetime import date
 
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.test import Client
+
+from lib.business.bulletin.release_schedule import get_release_schedule
 
 # Top-level pages the health check must fetch; each must return 200, <1s, non-empty content
 HEALTH_CHECK_PATHS = ("/", "/salaries/", "/job-titles/", "/employers/")
@@ -64,6 +67,30 @@ def faq_view(request):
         {
             "page_title": "Frequently Asked Questions - U.S. Immigration Data",
             "page_description": "Common questions about priority dates, PERM processing, Final Action vs Filing Dates, and how the Visa Bulletin tracker works.",
+        },
+    )
+
+
+def next_bulletin_view(request):
+    """"When does the next Visa Bulletin come out?" — projected release date + countdown.
+
+    Estimates the next release from recent live-ingested bulletins (their
+    ``fetched_at`` ≈ actual State Dept release date); see
+    ``lib.business.bulletin.release_schedule``.
+    """
+    schedule = get_release_schedule(today=date.today())
+    return render(
+        request,
+        "webapp/next_bulletin.html",
+        {
+            "page_title": "When Does the Next Visa Bulletin Come Out? (2026 Release Schedule)",
+            "page_description": (
+                "The next U.S. Visa Bulletin is released in the middle of each month "
+                "for the following month. See the projected next release date, a live "
+                "countdown, and the recent release-date history."
+            ),
+            "canonical_url": request.build_absolute_uri("/when-is-the-next-visa-bulletin/"),
+            "schedule": schedule,
         },
     )
 

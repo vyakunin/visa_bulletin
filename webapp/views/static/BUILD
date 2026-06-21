@@ -12,6 +12,7 @@ py_library(
     srcs = ["pages.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:release_schedule",
         requirement("Django"),
     ],
 )
