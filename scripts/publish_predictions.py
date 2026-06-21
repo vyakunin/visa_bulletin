@@ -490,6 +490,13 @@ def main():
     parser.add_argument("--month", type=str, help="Target month YYYY-MM")
     parser.add_argument("--backfill-start-year", type=int, help="Backfill from year")
     parser.add_argument(
+        "--backfill-end-year",
+        type=int,
+        help="Inclusive last year to backfill (default: 2 months past today). Use with "
+             "--backfill-start-year to fill a bounded historical gap without re-deleting "
+             "and recomputing already-published months.",
+    )
+    parser.add_argument(
         "--horizon",
         type=int,
         default=1,
@@ -505,8 +512,11 @@ def main():
         targets.append(date.fromisoformat(f"{args.month}-01"))
     elif args.backfill_start_year:
         start = date(args.backfill_start_year, 1, 1)
-        today = date.today()
-        end = date(today.year, today.month, 1) + relativedelta(months=2)
+        if args.backfill_end_year:
+            end = date(args.backfill_end_year, 12, 1)
+        else:
+            today = date.today()
+            end = date(today.year, today.month, 1) + relativedelta(months=2)
 
         curr = start
         while curr <= end:

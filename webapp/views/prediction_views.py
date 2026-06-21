@@ -5,6 +5,7 @@ from datetime import date
 
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.cache import cache_page
 
 from lib.business.vqs.prediction_loader import (
     PredictionResult,
@@ -74,6 +75,13 @@ def _add_months(sourcedate: date, months: int) -> date:
     return date(y, mon, day)
 
 
+# A successfully-rendered backtest page always has a published actual bulletin
+# for the month (the view 404s otherwise), so its predictions-vs-actual content
+# is immutable — caching is safe. Defense-in-depth against crawl storms hitting
+# the historical archive; the stored-prediction backfill (publish_predictions
+# --backfill-start-year) is the primary fix for the per-request VQS solver cost.
+# 1h TTL keeps the most-recent month fresh if its predictions get regenerated.
+@cache_page(60 * 60)
 def prediction_detail(
     request: HttpRequest, year: int, month: int, category: str = "employment_based"
 ) -> HttpResponse:
