@@ -284,15 +284,21 @@ def main() -> None:
     ingested = ingest_sources(pending_ids)
 
     if ingested > 0:
-        logger.info("Ingested %d bulletin(s). Clearing caches...", ingested)
+        # Publish predictions + posts FIRST, then clear caches — so the first
+        # request after the clear repopulates from complete, current data. Clearing
+        # before publishing would let a request (or @cache_page on the new month's
+        # prediction page) cache a half-published render and pin it until the next
+        # clear.
+        logger.info("Ingested %d bulletin(s). Publishing predictions + posts...", ingested)
+        _publish_predictions_for_latest_bulletin(ingested)
+        _generate_blog_posts_for_latest_bulletins(ingested)
+
+        logger.info("Clearing caches...")
         try:
             cache.clear()
             logger.info("Django cache cleared. New bulletin data is live.")
         except Exception:
             logger.warning("Cache clear failed (non-fatal, Redis may be unavailable)", exc_info=True)
-
-        _publish_predictions_for_latest_bulletin(ingested)
-        _generate_blog_posts_for_latest_bulletins(ingested)
     else:
         logger.warning("No bulletins were successfully ingested.")
         sys.exit(1)
