@@ -1778,3 +1778,50 @@ The per-series summary tables from both runs are numerically identical to the la
 4. **India EB-2 dispatch revisit** after re-tuning: If GBM Gated margin grows to ≥10d, switch India EB-2 6m from Pace to GBM Gated.
 
 5. **India EB-2 new signal exploration** (HIGH EFFORT, MEDIUM INFO GAIN): India EB-2 6m = 204d (14d from 190d target). Possible signals: USCIS processing time data (monthly case completions from USCIS website), EB-1→EB-2 overflow estimation from I-140 approval rates. Focus on India EB-2 rather than India EB-3 (71d gap, likely structural).
+
+## 21. Retrogression-History Lookahead Fix (June 2026)
+
+### Motivation
+Audit finding (P0): `get_retrogression_months_from_history` (solver.py) read the
+typical October FY-boundary retrogression from the *full* `VisaCutoffDate` table
+with no knowledge-date bound. In backtests this leaked future Sept/Oct
+transitions into past predictions (an information leak that optimistically biased
+backtest MAE/spaghetti at fiscal-year boundaries). Targets epistemic-hygiene of
+the backtest itself, not a Section 0 accuracy metric.
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| Bound retrogression history by knowledge_date | `lib/business/vqs/solver.py` | Added required `knowledge_date` param to `get_retrogression_months_from_history`; query now filters `bulletin__publication_date__lte=knowledge_date`. Caller in `predict_next_bulletin_and_maturity` threads its `knowledge_date` through. |
+| Regenerated backtest viz | `webapp/templates/spaghetti.html` | Re-run reflects the leak-free physics-engine numbers. |
+
+### Results (Facts)
+Backtest: `evaluate_model --horizons 1,3,6`, window 2016-01-01..2026-03-01, run
+against the production DB (26,182 cutoffs / 11,566 facts) before vs after the fix.
+Composite = weighted avg of per-horizon MAE (days), lower is better.
+
+| Model | Composite (baseline, leak) | Composite (fix) | Δ |
+|-------|---------------------------|-----------------|---|
+| Dashboard (production predictor) | 155.1 | 155.1 | 0.0 |
+| VQS Ensemble | 139.0 | 137.4 | −1.6 |
+| Hybrid | 127.9 | 127.7 | ~+0.1 |
+| Regime-Switched | 134.6 | 134.6 | 0.0 |
+| Pace | 130.6 | 130.6 | 0.0 |
+
+Largest single per-series shift: India EB-1 VQS Ensemble 3m 170.9 → 164.6 (−6.3);
+China EB-3 VQS Ensemble/Hybrid 3m 116.0 → 116.6 (+0.6). The production "Dashboard"
+model is byte-identical baseline vs fix across every series/horizon (production
+predictions use `knowledge_date = now`, so the new `<=` filter is a no-op there).
+VQS Ensemble "beats persistence" went 2/5 → 3/6 series. Unit tests
+(`test_vqs_regime`, `test_solver_regime_display`, `test_vqs_metrics`,
+`test_prediction_category_landing`, `test_bulletin_narrator`) all pass.
+
+### Current Status
+Enabled (no flag — correctness fix). Production serving unaffected.
+
+### Pending Planning Review
+Awaiting planning session to interpret why removing the leak slightly *lowered*
+VQS Ensemble MAE (hypothesis: the full-history median was a worse early-year
+estimate than the per-knowledge-date value / fallback constant) and whether the
+FY-boundary fallback constants in `_RETROGRESSING_SERIES` warrant re-tuning now
+that early-year backtests no longer see future retrogression.
