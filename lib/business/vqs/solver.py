@@ -322,6 +322,7 @@ MIN_RETROGRESSION_TRANSITIONS = 3
 def get_retrogression_months_from_history(
     visa_class: str,
     country: int,
+    knowledge_date: date,
     action_type: str = "final_action",
 ) -> int | None:
     """
@@ -330,6 +331,10 @@ def get_retrogression_months_from_history(
     For each year, compares cutoff in September bulletin vs October bulletin.
     If October cutoff is earlier (retrogression), computes months backward.
     Returns median of those values, or None if fewer than MIN_RETROGRESSION_TRANSITIONS.
+
+    Only bulletins published on or before ``knowledge_date`` are considered, so
+    backtests never see retrogression that hadn't happened yet at prediction
+    time (a FY-boundary lookahead that optimistically biased backtest MAE).
     """
     from models.visa_cutoff_date import VisaCutoffDate
 
@@ -340,6 +345,7 @@ def get_retrogression_months_from_history(
             country=country,
             action_type=action_type,
             bulletin__publication_date__month__in=(9, 10),
+            bulletin__publication_date__lte=knowledge_date,
             cutoff_date__isnull=False,
         )
         .select_related("bulletin")
@@ -925,7 +931,9 @@ def predict_next_bulletin_and_maturity(
         supply_fn = _scaled_supply
 
     # Retrogression months from history
-    retro = get_retrogression_months_from_history(visa_class, country, action_type)
+    retro = get_retrogression_months_from_history(
+        visa_class, country, knowledge_date, action_type
+    )
     if retro is None:
         retro = _RETROGRESSING_SERIES.get((visa_class, country), 0)
 
