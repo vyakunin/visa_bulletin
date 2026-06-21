@@ -1,4 +1,5 @@
 import calendar
+import functools
 import logging
 import re
 from datetime import date
@@ -75,13 +76,42 @@ def _add_months(sourcedate: date, months: int) -> date:
     return date(y, mon, day)
 
 
-# A successfully-rendered backtest page always has a published actual bulletin
-# for the month (the view 404s otherwise), so its predictions-vs-actual content
-# is immutable — caching is safe. Defense-in-depth against crawl storms hitting
-# the historical archive; the stored-prediction backfill (publish_predictions
-# --backfill-start-year) is the primary fix for the per-request VQS solver cost.
-# 1h TTL keeps the most-recent month fresh if its predictions get regenerated.
-@cache_page(60 * 60)
+def _cache_historical_predictions_only(timeout: int):
+    """Cache prediction_detail ONLY for months strictly older than the latest
+    published bulletin.
+
+    A historical month's page is immutable: both its stored predictions and its
+    actual cutoffs are fixed once published, so caching protects the large
+    archive against crawl storms. The LATEST month is NOT immutable — the hourly
+    refresh (refresh_bulletin.py) re-publishes its predictions and attaches the
+    just-arrived actuals — so caching it could pin a stale/incomplete render for
+    up to `timeout`. It renders fast anyway (stored predictions, no live solver),
+    so we always serve it fresh. Adds one indexed bulletin lookup per request.
+    """
+    cached_view = None
+
+    def decorator(view_func):
+        nonlocal cached_view
+        cached_view = cache_page(timeout)(view_func)
+
+        @functools.wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            target = date(int(kwargs["year"]), int(kwargs["month"]), 1)
+            latest = (
+                Bulletin.objects.order_by("-publication_date")
+                .values_list("publication_date", flat=True)
+                .first()
+            )
+            if latest and target < latest:
+                return cached_view(request, *args, **kwargs)
+            return view_func(request, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@_cache_historical_predictions_only(60 * 60)
 def prediction_detail(
     request: HttpRequest, year: int, month: int, category: str = "employment_based"
 ) -> HttpResponse:
