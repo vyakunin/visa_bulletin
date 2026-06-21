@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     memswap_limit: 512m
-    command: sh -c "python3 manage.py migrate --noinput && gunicorn --workers $${WEB_CONCURRENCY:-3} --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 1000 --max-requests-jitter 100 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"
+    command: sh -c "python3 manage.py migrate --noinput && gunicorn --preload --workers $${WEB_CONCURRENCY:-3} --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 1000 --max-requests-jitter 100 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"]
       interval: 10s
