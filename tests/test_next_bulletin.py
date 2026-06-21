@@ -1,6 +1,6 @@
 """Tests for the "When does the next Visa Bulletin come out?" page + release projection."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from tests.django_setup import setup_django_for_tests
 
@@ -8,7 +8,10 @@ setup_django_for_tests()
 
 from django.test import TestCase
 
-from lib.business.bulletin.release_schedule import get_release_schedule, recent_live_releases
+from lib.business.bulletin.release_schedule import (
+    get_release_schedule,
+    recent_live_releases,
+)
 from models.bulletin import Bulletin
 
 
@@ -23,7 +26,7 @@ def _make(governing: date, released: datetime) -> None:
 
 
 def _dt(y: int, m: int, d: int) -> datetime:
-    return datetime(y, m, d, 14, 0, tzinfo=timezone.utc)
+    return datetime(y, m, d, 14, 0, tzinfo=UTC)
 
 
 class TestReleaseSchedule(TestCase):
