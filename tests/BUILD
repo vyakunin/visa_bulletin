@@ -248,6 +248,15 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_clustering_job_integration",
+    srcs = ["test_clustering_job_integration.py"],
+    deps = [
+        "//models:salary",
+        "//scripts/salary:cluster_existing_employers_lib",
+    ],
+)
+
+django_py_test(
     name = "test_webapp_ui",
     size = "small",
     srcs = ["test_webapp_ui.py"],
