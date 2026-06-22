@@ -2,6 +2,19 @@
 
 **Before claiming "we don't have X analytics data", verify against this list.** This rule exists because agents have repeatedly said "no analytics installed" when GoatCounter has been in production for a long time.
 
+## 🚨 Rule: Daily checkup digest — show ALL raw numbers, every day (never percentages alone)
+
+**Every traffic / SEO / perf line in the visa_bulletin daily checkup digest MUST carry its raw absolute numbers, not just a delta or percentage.** A "−54% MoM" with no counts hides the magnitude and is unactionable — the user wants the actual numbers every single day. Hard rule, no exceptions.
+
+- **Show the raw values the percentage is computed from.** `employer profiles 25.8k impr vs 56.7k prior (−54%)` — NOT `employer profiles −54%`. Give both endpoints + the delta.
+- **Applies to every metric:** pageviews (this period AND the comparison period), GSC clicks / impressions / CTR / position (raw, both periods), per-surface slow-tail counts (the actual `>1s / >3s / >10s` counts AND the total request count they're out of), 5xx (count AND total + rate), cluster / row counts, etc.
+- **Percentages are an addition, never a replacement.** If you cite a % or "MoM", the raw before→after numbers go on the same line or the line directly above.
+- **Don't summarize away the long tail.** "programmatic pages down" must name the raw impressions per surface, not collapse to one adjective.
+
+The MCP report already carries these numbers; the failure mode is the *digest composition* dropping them for tidy percentages. Don't. Lead with the answer, then show the receipts.
+
+Origin: 2026-06-22 — a digest reported "employer profiles −54% impr, job-title −67%" with no raw counts. Vladimir: *"i want to see all raw numbers every day, don't hide them."*
+
 ## What's Installed
 
 | Source | What it answers | Auth / location |
