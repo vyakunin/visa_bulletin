@@ -33,6 +33,14 @@ class TestDashboardBasic(unittest.TestCase):
         # TODO: Add full database integration tests when test infrastructure is ready
         self.assertTrue(True)
 
+    def test_priority_date_inbound_links_block_present(self):
+        """The EB country dashboard links out to the per-EB priority-date landing
+        pages (SEO internal-link mesh). Guards the template block + view context key.
+        """
+        src = _DASHBOARD_TEMPLATE.read_text()
+        self.assertIn("priority_date_links", src)
+        self.assertIn("link.url", src)
+
     def test_chart_doubleclick_reset_enabled(self):
         """Regression: the dashboard chart's double-tap/double-click reset must stay
         enabled. 'doubleClick': false disabled it entirely (nothing emitted the

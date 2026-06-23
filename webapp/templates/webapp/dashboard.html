@@ -52,6 +52,13 @@
         predictions for every employment- and family-based green card category. Updated each month from
         the official U.S. Department of State bulletin.
     </p>
+    {% if priority_date_links %}
+    <p class="mb-3" style="font-size: 0.95rem;">
+        <i class="bi bi-bookmark-star"></i>
+        {{ country_display }} priority date by category:
+        {% for link in priority_date_links %}<a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
     <div class="row">
         <div class="col-12">
             <!-- Filter Card -->

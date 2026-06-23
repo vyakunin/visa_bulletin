@@ -18,6 +18,12 @@ from models.blog import BlogPost
 from models.enums.action_type import ActionType
 from models.enums.country import Country
 from models.enums.visa_category import VisaCategory
+from webapp.views.bulletin.priority_date_landing import (
+    _COUNTRIES as _PRIORITY_DATE_COUNTRY_SLUGS,
+)
+from webapp.views.bulletin.priority_date_landing import (
+    _EB_CLASSES as _PRIORITY_DATE_EB_CLASSES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +429,17 @@ def dashboard_view(request, category=None, country=None):
     country_slug = Country.slug_for_value(country) or "all"
     category_slug = category_slugs.get(category, "employment-based")
 
+    # Inbound links to the per-EB-class priority-date landing pages for this
+    # country (SEO internal-link mesh; reuses the landing view's canonical slug
+    # sets so it tracks any added EB class / country automatically). Only the EB
+    # categories + the four countries that have landing pages.
+    priority_date_links = []
+    if category == VisaCategory.EMPLOYMENT_BASED.value and country_slug in _PRIORITY_DATE_COUNTRY_SLUGS:
+        priority_date_links = [
+            {"label": short, "url": f"/priority-date/{eb_slug}/{country_slug}/"}
+            for eb_slug, (short, _full) in _PRIORITY_DATE_EB_CLASSES.items()
+        ]
+
     context = {
         # Filter state
         "category": category,
@@ -437,6 +454,7 @@ def dashboard_view(request, category=None, country=None):
         "vqs_predictions": vqs_predictions,
         "unified_rows": unified_rows,
         "show_vqs_column": category == VisaCategory.EMPLOYMENT_BASED.value,
+        "priority_date_links": priority_date_links,
         "latest_post": latest_post,
         "current_bulletin_date": current_bulletin_date,
         # Filter options
