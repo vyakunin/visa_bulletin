@@ -85,16 +85,31 @@ def next_bulletin_view(request):
 
     schedule = get_release_schedule(today=date.today())
     upcoming = upcoming_forecast_month()
+    # Month-specific title/description so the page matches the highest-volume
+    # variant of the timing query ("visa bulletin <month> <year> when will it come
+    # out") — the generic homepage was consolidating that intent (GSC, 2026-06).
+    # Rolls forward each month with the governing bulletin (like the forecast page).
+    gov_label = schedule.next_governing_month.strftime("%B %Y") if schedule else None
+    if gov_label:
+        page_title = f"When Will the {gov_label} Visa Bulletin Come Out? Expected Release Date"
+        page_description = (
+            f"The {gov_label} U.S. Visa Bulletin is expected to be released around "
+            f"{schedule.next_release_estimate.strftime('%B %-d, %Y')}. See the projected "
+            f"release date, a live countdown, and the recent release-date history."
+        )
+    else:
+        page_title = "When Does the Next Visa Bulletin Come Out? (Release Schedule)"
+        page_description = (
+            "The next U.S. Visa Bulletin is released in the middle of each month "
+            "for the following month. See the projected next release date, a live "
+            "countdown, and the recent release-date history."
+        )
     return render(
         request,
         "webapp/next_bulletin.html",
         {
-            "page_title": "When Does the Next Visa Bulletin Come Out? (2026 Release Schedule)",
-            "page_description": (
-                "The next U.S. Visa Bulletin is released in the middle of each month "
-                "for the following month. See the projected next release date, a live "
-                "countdown, and the recent release-date history."
-            ),
+            "page_title": page_title,
+            "page_description": page_description,
             "canonical_url": request.build_absolute_uri("/when-is-the-next-visa-bulletin/"),
             "schedule": schedule,
             "forecast_url": forecast_url_for(upcoming) if upcoming else None,

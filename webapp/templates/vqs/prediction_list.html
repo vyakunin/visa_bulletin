@@ -19,6 +19,7 @@
         <strong>Forecast for the upcoming {{ forecast_month_label }} Visa Bulletin</strong> —
         see our model's predicted Final Action &amp; Filing dates before the official release.
         <a href="{{ forecast_url }}" class="alert-link">View the {{ forecast_month_label }} forecast &rarr;</a>
+        <a href="{% url 'next_bulletin' %}" class="alert-link d-block mt-1">When will the {{ forecast_month_label }} Visa Bulletin come out? &rarr;</a>
     </div>
     {% endif %}
 

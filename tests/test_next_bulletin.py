@@ -83,3 +83,26 @@ class TestNextBulletinView(TestCase):
         self.assertIn("August 2025", html)
         self.assertIn('"@type": "FAQPage"', html)
         self.assertIn("when-is-the-next-visa-bulletin", html)  # canonical
+
+    def test_month_specific_targeting(self):
+        """Title/H2/FAQ name the governing month so the page matches
+        "visa bulletin <month> <year> when will it come out" (the highest-volume
+        timing variant the generic homepage was consolidating). Regression for
+        the 0-impressions diagnosis, 2026-06-23."""
+        html = self.client.get("/when-is-the-next-visa-bulletin/").content.decode()
+        # Month-specific <title> (rolls forward with the governing month).
+        self.assertIn("When Will the August 2025 Visa Bulletin Come Out", html)
+        # Visible month-specific H2 (backs the FAQ answer per Google's policy).
+        self.assertIn("When will the August 2025 Visa Bulletin come out?", html)
+        # Month-keyed FAQ question in the JSON-LD.
+        self.assertIn("When will the August 2025 Visa Bulletin be released?", html)
+
+    def test_internal_links_point_to_timing_page(self):
+        """High-authority surfaces link to the dedicated timing page with timing
+        anchor text, so Google prefers it over the homepage for the cluster
+        (the consolidation fix, 2026-06-23)."""
+        home = self.client.get("/").content.decode()
+        self.assertIn("/when-is-the-next-visa-bulletin/", home)
+        self.assertIn("When does the next Visa Bulletin come out?", home)
+        archive = self.client.get("/predictions/").content.decode()
+        self.assertIn("/when-is-the-next-visa-bulletin/", archive)

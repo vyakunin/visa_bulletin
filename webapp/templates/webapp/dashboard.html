@@ -47,6 +47,11 @@
         <strong>{{ current_bulletin_date|date:"F Y" }}</strong> Visa Bulletin
     </p>
     {% endif %}
+    <p class="text-muted mb-2" style="font-size: 0.9rem;">
+        <i class="bi bi-calendar-event"></i>
+        <a href="{% url 'next_bulletin' %}">When does the next Visa Bulletin come out?</a>
+        &mdash; projected release date &amp; live countdown.
+    </p>
     <p class="text-muted mb-3" style="font-size: 0.95rem;">
         Track the latest <strong>U.S. Visa Bulletin</strong> priority-date cutoffs and month-by-month
         predictions for every employment- and family-based green card category. Updated each month from
