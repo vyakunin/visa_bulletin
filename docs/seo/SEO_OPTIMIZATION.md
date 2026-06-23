@@ -117,6 +117,30 @@ exactly that gap (the not-yet-published month).
   GSC measurement. Possible v2: emit +2/+3 month pages, embed the per-series
   chart, surface confidence intervals.
 
+## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
+
+The dedicated release-schedule page targets the **"when will the {month} {year}
+visa bulletin come out / be released"** cluster (~1,100+ impr/mo, GSC). It was
+**indexed but getting 0 impressions** — the homepage had consolidated the timing
+intent and ranked the cluster at pos ~10; the better-targeted page never
+surfaced. Schema was NOT the gap (it already had FAQPage). Two real levers
+applied (2026-06-23):
+
+- **Month-specificity** — `<title>` + an H2 + a month-keyed FAQ question now name
+  the governing month (`When Will the {Month Year} Visa Bulletin Come Out?`),
+  rolling forward each month like the forecast page, to match the high-volume
+  month-specific variant. H1 stays generic ("When does the next Visa Bulletin
+  come out?") so the generic query is still covered. View:
+  `webapp/views/static/pages.py:next_bulletin_view`.
+- **Internal-link consolidation** — contextual timing-anchor links now point to
+  the page from high-authority surfaces (homepage body, the per-month forecast
+  page CTA, the prediction archive forecast alert), not just the site-wide
+  nav/footer — so Google prefers the dedicated page over the homepage for the
+  cluster. Previously only `base.html` + `faq.html` linked it.
+- Test: `tests/test_next_bulletin.py` (month-specific title/H2/FAQ + inbound-link
+  mesh). **Status (2026-06-23):** shipped to `main`, suite green. Pending staging
+  deploy + GSC measurement of the homepage→dedicated-page shift over ~2-3 wks.
+
 ## AI Crawler Support (`/llms.txt`)
 
 `/llms.txt` is served by `llms_txt_view` in `webapp/views/seo/sitemaps.py`. It follows the [llmstxt.org](https://llmstxt.org) convention for telling AI crawlers (ChatGPT, Perplexity, Claude, etc.) what data this site contains and how to cite it.

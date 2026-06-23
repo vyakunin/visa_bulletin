@@ -18,6 +18,14 @@
     },
     {
       "@type": "Question",
+      "name": "When will the {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin be released?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin is expected to be released around {{ schedule.next_release_estimate|date:'F j, Y' }}, based on recent State Department release-date history (typically the {{ schedule.next_release_window.0|date:'jS' }}–{{ schedule.next_release_window.1|date:'jS' }} of the prior month)."
+      }
+    },
+    {
+      "@type": "Question",
       "name": "How often is the Visa Bulletin published?",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -60,6 +68,15 @@
              aria-live="polite"></div>
       </div>
     </div>
+
+    <h2 class="h4 mt-4" id="when-this-month">When will the {{ schedule.next_governing_month|date:"F Y" }} Visa Bulletin come out?</h2>
+    <p class="lead">
+      The <strong>{{ schedule.next_governing_month|date:"F Y" }}</strong> Visa Bulletin is expected to be
+      released around <strong>{{ schedule.next_release_estimate|date:"l, F j, Y" }}</strong> &mdash;
+      typically the {{ schedule.next_release_window.0|date:"jS" }}&ndash;{{ schedule.next_release_window.1|date:"jS" }}
+      of {{ schedule.next_release_estimate|date:"F" }}. The U.S. Department of State posts each edition in
+      the middle of the prior month, for the month that follows.
+    </p>
 
     <p class="lead">
       The U.S. Department of State publishes the Visa Bulletin <strong>monthly</strong>,
