@@ -22,6 +22,7 @@ py_library(
         "//webapp/views:prediction_views",
         "//webapp/views:blog_views",
         "//webapp/views/bulletin:dashboard",
+        "//webapp/views/bulletin:priority_date_landing",
         "//webapp/views/bulletin:vqs_api",
         "//webapp/views/employers:directory",
         "//webapp/views/employers:profile",

@@ -957,3 +957,20 @@ django_py_test(
         "//webapp/views/seo:sitemaps",
     ],
 )
+
+django_py_test(
+    name = "test_priority_date_landing",
+    size = "small",
+    srcs = ["test_priority_date_landing.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)

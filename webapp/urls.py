@@ -5,6 +5,7 @@ from django.views.generic import RedirectView
 
 from webapp.views.blog_views import blog_detail, blog_list
 from webapp.views.bulletin.dashboard import dashboard_view
+from webapp.views.bulletin.priority_date_landing import priority_date_landing_view
 from webapp.views.bulletin.vqs_api import VQSPredictView
 from webapp.views.employers.directory import (
     company_autocomplete_view,
@@ -119,6 +120,12 @@ urlpatterns = [
         dashboard_view,
         {"category": "employment_based"},
         name="employment_based_country",
+    ),
+    # Priority-date landing pages (per EB class x per country, SEO)
+    path(
+        "priority-date/<slug:eb_class>/<slug:country>/",
+        priority_date_landing_view,
+        name="priority_date_landing",
     ),
     # Family Sponsored
     path(
