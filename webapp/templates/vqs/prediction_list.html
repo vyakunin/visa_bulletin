@@ -13,6 +13,15 @@
         <a href="{% url 'dashboard' %}">View the live U.S. Visa Bulletin tracker &amp; predictions &rarr;</a>
     </p>
 
+    {% if forecast_url %}
+    <div class="alert alert-primary">
+        <i class="bi bi-graph-up-arrow"></i>
+        <strong>Forecast for the upcoming {{ forecast_month_label }} Visa Bulletin</strong> —
+        see our model's predicted Final Action &amp; Filing dates before the official release.
+        <a href="{{ forecast_url }}" class="alert-link">View the {{ forecast_month_label }} forecast &rarr;</a>
+    </div>
+    {% endif %}
+
     <div class="card">
         <div class="card-header">
             Historical accuracy by bulletin month

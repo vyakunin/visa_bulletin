@@ -1,0 +1,26 @@
+{# Forecast grid: rows = visa class, columns = country (in country_headers order). #}
+<div class="table-responsive mb-2">
+  <table class="table table-sm table-bordered align-middle">
+    <thead>
+      <tr>
+        <th>Category</th>
+        {% for h in country_headers %}<th>{{ h }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in grid %}
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        {% for fc in row.cells %}
+        <td>
+          {{ fc.display }}
+          {% if fc.movement %}
+          <span class="small text-{% if fc.movement_type == 'positive' %}success{% elif fc.movement_type == 'negative' %}danger{% else %}muted{% endif %}">{{ fc.movement }}</span>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

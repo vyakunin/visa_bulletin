@@ -28,6 +28,7 @@ py_library(
         "//models/enums:country",
         "//models/enums:family_preference",
         "//models/enums:visa_category",
+        "//webapp/views/bulletin:prediction_month_forecast",
     ],
 )
 

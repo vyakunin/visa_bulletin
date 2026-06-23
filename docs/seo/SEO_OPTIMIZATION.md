@@ -25,8 +25,9 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 | Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
 | Prediction archive | all bulletin months | One URL per `Bulletin` month | Per-bulletin `publication_date` |
+| Month forecast | 1 (rolling) | The upcoming bulletin month (`latest + 1`) | Latest bulletin `fetched_at` |
 
-All static/profile URLs use `changefreq: monthly`, `priority: 0.8`. Blog posts use `changefreq: yearly`, `priority: 0.6`. Prediction pages use `changefreq: yearly`, `priority: 0.5`.
+All static/profile URLs use `changefreq: monthly`, `priority: 0.8`. Blog posts use `changefreq: yearly`, `priority: 0.6`. Prediction archive pages use `changefreq: yearly`, `priority: 0.5`. The month-forecast page uses `changefreq: weekly`, `priority: 0.7` (refreshes as the forecast updates).
 
 **Search engine ping**: The refresh pipeline pings Google and Bing after clearing the sitemap cache (`step_ping_search_engines` in `scripts/cron/refresh/steps.py`). Non-fatal on failure.
 
@@ -51,6 +52,41 @@ full per-country dashboard + salary data + sibling pages (internal-link mesh).
   Pending: staging deploy + real-data render verify, internal links FROM the
   main dashboards, then GSC measurement. Possible v2: embed the prediction,
   add EB-4/EB-5 + ALL, expand country set.
+
+## Per-month forecast landing pages (`/predictions/<month>-<year>/`)
+
+Evergreen forecast page for the **upcoming** bulletin month, targeting the
+recurring high-intent query "visa bulletin {month} {year} predictions" (the
+predictions cluster we already rank top-3 for, per `visa_bulletin_platform/docs/SEO.md`).
+e.g. `/predictions/october-2026/`. Distinct from the prediction *archive*
+(`/predictions/<category>/<year>-<month>/`), which is the backtest accuracy view
+and 404s for any month without a published bulletin — the forecast page covers
+exactly that gap (the not-yet-published month).
+
+- View: `webapp/views/bulletin/prediction_month_forecast.py`. URL: a tight
+  `re_path` (`^predictions/(?P<slug>[a-z]+-20\d{2})/$`) registered **before**
+  `predictions/<str:category>/` so it never shadows the category/legacy routes.
+- Renders the model's predicted Final Action / Filing cutoffs across all EB + FS
+  categories × countries, headline cards for the oversubscribed India/China EB-2/3
+  series (with movement-probability badges), an FAQ (FAQPage schema), and links
+  into the live dashboards + per-country priority-date pages + methodology.
+- **Deliberately cheap to render** — NEVER calls the live VQS solver (the 23s path
+  removed from FS pages in `4524f04`). Reads only **stored** `PredictedCutoff`
+  rows, which the hourly refresh publishes for `latest_bulletin_month + 1`
+  (`_publish_predictions_for_latest_bulletin`). `@cache_page_skip_bots`; the cron's
+  `cache.clear()` on each new ingest keeps it fresh.
+- Once the target month's actual bulletin lands → **301 → the accuracy archive**
+  (no duplicate page for the same month). A future month with no stored forecast,
+  or an invalid month slug → 404 (no thin page, no solver).
+- Sitemap emits ONE rolling URL (`upcoming_forecast_month()`), auto-advancing as
+  bulletins land. Inbound links FROM `/predictions/` (archive) and
+  `/when-is-the-next-visa-bulletin/`.
+- Test: `tests/test_prediction_month_forecast.py`.
+- **Status (2026-06-23):** core shipped to `main` + sitemap + inbound links, suite
+  green. Pending: staging deploy + real-data render verify, prod graduation
+  (Path-1 image swap — pure rendering), CF edge purge + GSC sitemap submit, then
+  GSC measurement. Possible v2: emit +2/+3 month pages, embed the per-series
+  chart, surface confidence intervals.
 
 ## AI Crawler Support (`/llms.txt`)
 

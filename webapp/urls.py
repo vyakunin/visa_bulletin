@@ -1,10 +1,13 @@
 """URL configuration for webapp"""
 
-from django.urls import path
+from django.urls import path, re_path
 from django.views.generic import RedirectView
 
 from webapp.views.blog_views import blog_detail, blog_list
 from webapp.views.bulletin.dashboard import dashboard_view
+from webapp.views.bulletin.prediction_month_forecast import (
+    prediction_month_forecast_view,
+)
 from webapp.views.bulletin.priority_date_landing import priority_date_landing_view
 from webapp.views.bulletin.vqs_api import VQSPredictView
 from webapp.views.employers.directory import (
@@ -43,6 +46,16 @@ urlpatterns = [
     path("metric-report/", metric_report_view, name="metric_report"),
     path("", dashboard_view, name="dashboard"),
     path("predictions/", prediction_list, name="prediction_list"),
+    # Evergreen per-month FORECAST landing (e.g. /predictions/october-2026/).
+    # Tight pattern (monthname-20YY) so it never shadows the category/legacy
+    # routes below; MUST precede predictions/<str:category>/ which would
+    # otherwise capture the slug. Renders only future months from stored
+    # predictions; published months 301 to the accuracy archive.
+    re_path(
+        r"^predictions/(?P<slug>[a-z]+-20\d{2})/$",
+        prediction_month_forecast_view,
+        name="prediction_month_forecast",
+    ),
     path(
         "predictions/<str:category>/<int:year>-<int:month>/",
         prediction_detail,

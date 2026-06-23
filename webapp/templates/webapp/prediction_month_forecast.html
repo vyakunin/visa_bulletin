@@ -1,0 +1,80 @@
+{% extends "webapp/base.html" %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-graph-up-arrow"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}</h1>
+    <p class="text-muted mb-4">
+      The Bulletin Forecast Model's projection for the upcoming <strong>{{ month_label }}</strong>
+      U.S. Visa Bulletin, based on the latest ({{ current_label }}) edition.
+      These are model predictions — the State Department's official numbers are published mid-month.
+    </p>
+
+    {% if cards %}
+    <div class="row g-3 mb-4">
+      {% for card in cards %}
+      <div class="col-md-6 col-lg-3">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="fw-semibold mb-1">{{ card.label }}</div>
+            <div class="text-muted text-uppercase small">Predicted Final Action</div>
+            <div class="fs-5 fw-bold">{{ card.final.display }}</div>
+            {% if card.final.movement %}
+            <div class="small mb-2">
+              <span class="text-{% if card.final.movement_type == 'positive' %}success{% elif card.final.movement_type == 'negative' %}danger{% else %}muted{% endif %}">{{ card.final.movement }}</span>
+              <span class="text-muted">vs current</span>
+            </div>
+            {% endif %}
+            {% if card.final.movement_prob_label %}
+            <span class="badge bg-{{ card.final.movement_prob_color }}">{{ card.final.movement_prob_label }} · {{ card.final.movement_prob }}%</span>
+            {% endif %}
+            <div class="text-muted small mt-2">Filing: {{ card.filing.display }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2 class="h4 mt-4 mb-2">Employment-based Final Action forecast</h2>
+    <p class="text-muted small mb-2">Predicted Final Action Date by category and country for the {{ month_label }} bulletin. Movement is vs the current ({{ current_label }}) cutoff.</p>
+    {% include "webapp/_forecast_grid.html" with grid=eb_grid %}
+
+    <h2 class="h4 mt-4 mb-2">Family-sponsored Final Action forecast</h2>
+    {% include "webapp/_forecast_grid.html" with grid=fs_grid %}
+
+    <div class="alert alert-light border mt-4">
+      <strong>How this forecast is made.</strong> An ensemble of statistical models reads the
+      State Department's historical movement, per-country limits, and fiscal-year dynamics to
+      project each category's next cutoff{% if knowledge_date %} (knowledge cutoff: {{ knowledge_date|date:"M j, Y" }}){% endif %}.
+      <a href="/analysis/how-my-prediction-model-works/">Read the full methodology &rarr;</a>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <a href="/employment-based/" class="btn btn-primary"><i class="bi bi-graph-up-arrow"></i> Live employment-based tracker</a>
+      <a href="/family-sponsored/" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Family-sponsored tracker</a>
+      <a href="/predictions/" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Prediction accuracy archive</a>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    {% for item in faq %}
+    <div class="mb-3">
+      <div class="fw-semibold">{{ item.q }}</div>
+      <div class="text-muted">{{ item.a }}</div>
+    </div>
+    {% endfor %}
+
+    <h2 class="h4 mt-4 mb-3">Per-country priority dates</h2>
+    <p class="mb-1">
+      <a href="/priority-date/eb2/india/">EB-2 India</a> ·
+      <a href="/priority-date/eb3/india/">EB-3 India</a> ·
+      <a href="/priority-date/eb2/china/">EB-2 China</a> ·
+      <a href="/priority-date/eb3/china/">EB-3 China</a> ·
+      <a href="/employment-based/india/">India dashboard</a> ·
+      <a href="/employment-based/china/">China dashboard</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

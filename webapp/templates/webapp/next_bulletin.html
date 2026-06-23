@@ -107,6 +107,9 @@
       cutoff dates are heading before it lands:
     </p>
     <ul>
+      {% if forecast_url %}
+      <li><a href="{{ forecast_url }}"><strong>{{ forecast_month_label }} Visa Bulletin forecast</strong> — our predicted cutoffs for the next edition &rarr;</a></li>
+      {% endif %}
       <li><a href="{% url 'prediction_category_landing' category='employment_based' %}">Employment-based (EB) predictions &rarr;</a></li>
       <li><a href="{% url 'prediction_category_landing' category='family_sponsored' %}">Family-sponsored (FS) predictions &rarr;</a></li>
       <li><a href="{% url 'dashboard' %}">Latest Visa Bulletin dashboard &rarr;</a></li>
