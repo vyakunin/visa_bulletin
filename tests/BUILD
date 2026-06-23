@@ -621,28 +621,13 @@ django_py_test(
 
 django_py_test(
     name = "test_dol_transform_golden",
-    # QUARANTINE: this is a HAND-ANNOTATED golden (expected_result is a human's
-    # "this is correct", not a transform snapshot), so it must NOT be blindly
-    # regenerated. Runfiles data-load was fixed 2026-06-20; the test runs and
-    # shows ~440/610 cases drift across 10 fields. Most are clean enrichment
-    # (None->value: decision_date, case_submitted, employment_start/end,
-    # employer_id, prevailing_wage_unit — date parsing now works) plus
-    # worksite_state full-name->2-letter (normalize_state_code).
-    #
-    # The TWO product/data decisions are now RESOLVED (2026-06-20):
-    #   (1) PERM job_title: FIXED in code — db_importer now prefers the employer's
-    #       JOB_INFO_JOB_TITLE over the SOC bucket PW_Job_Title_9089, which MATCHES
-    #       the golden's annotation, so those ~36 cases now agree with the golden.
-    #   (2) wage-unit (ticket 38462b8d): the ~7 wage_unit/wage_annual drifts are
-    #       golden HAND-ANNOTATION ERRORS — the source states an hourly unit and
-    #       the transform correctly annualizes (e.g. 52.03 HR -> hour/108222.4).
-    #       The golden is wrong; the transform is right. (lca_363:214 also drove
-    #       the LCA wage_unit PW_UNIT_1/2 fallback so it reads the real unit.)
-    # Remaining un-quarantine blocker: the broad enrichment drift (dates/state/
-    # employer_id/prevailing_wage_unit on ~430 cases) is correct transform output
-    # but needs a full per-class verification before regenerating the golden as the
-    # new baseline. See "test suite false-green" ticket.
-    tags = ["manual"],
+    # Golden rebaselined 2026-06-23 from verified transform output (440 annotated
+    # non-error cases) after categorizing every drift: 3204 None->value enrichment
+    # (dates/employer_id/prevailing_wage_unit), worksite_state full-name->2-letter
+    # (normalize_state_code), the resolved PERM/H1B employer-title preference, and
+    # the wage-unit annualization fix — ZERO field losses. Regenerate with
+    # //scripts/oneoff:regen_dol_golden (it ABORTS if any annotated case now
+    # transforms to None — a real regression vs benign drift).
     size = "medium",
     srcs = ["test_dol_transform_golden.py"],
     data = [
