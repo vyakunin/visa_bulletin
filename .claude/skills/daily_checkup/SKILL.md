@@ -21,6 +21,10 @@ is the daily signal the user opens the chat for.
 visa_bulletin **relay session**: the relay delivers your reply, so **emit the digest
 as your reply text** (`🤖 `-prefixed) — do NOT curl the Bot API in relay mode (Step 4's
 curl is the legacy `--headless` fallback only).
+**Reply = the digest only.** First char must be `🤖 ` (the traffic-KPI line); never
+preface it with plumbing narration ("Composing the digest", "Relay mode — I emit it as
+my reply", "the relay delivers to the <X> bot", naming the bot/chat) — that internal
+kitchen leaks into the chat. Reason about delivery silently; output only the digest.
 
 The gather side is the same `daily_checkup_server.py` under
 `~/cursor_projects/visa_bulletin/mcp/`. If a fresh enough reports JSON (≤30 min
