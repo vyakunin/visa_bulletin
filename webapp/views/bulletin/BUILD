@@ -53,6 +53,19 @@ py_library(
 )
 
 py_library(
+    name = "priority_date_rollup",
+    srcs = ["priority_date_rollup.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":priority_date_landing",
+        "//models:bulletin",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        requirement("Django"),
+    ],
+)
+
+py_library(
     name = "prediction_month_forecast",
     srcs = ["prediction_month_forecast.py"],
     visibility = ["//visibility:public"],

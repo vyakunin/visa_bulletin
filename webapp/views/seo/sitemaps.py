@@ -169,6 +169,23 @@ def sitemap_view(request):
                 priority="0.7",
             ))
 
+    # Priority-date HUB + per-EB-class rollups — country-agnostic "ebN priority
+    # date" demand the per-country pages miss. Mirrors the slug sets in
+    # webapp/views/bulletin/priority_date_rollup.py.
+    xml_parts.extend(_url_entry(
+        f"{base_url}/priority-date/",
+        lastmod=bulletin_lastmod,
+        changefreq="weekly",
+        priority="0.7",
+    ))
+    for eb_slug in ("eb1", "eb2", "eb3"):
+        xml_parts.extend(_url_entry(
+            f"{base_url}/priority-date/{eb_slug}/",
+            lastmod=bulletin_lastmod,
+            changefreq="weekly",
+            priority="0.7",
+        ))
+
     # Evergreen per-month FORECAST page for the upcoming bulletin (latest + 1).
     # One rolling URL — it auto-advances when a new bulletin lands (and the old
     # month's URL 301s to the accuracy archive). Targets "visa bulletin {month}

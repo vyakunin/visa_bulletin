@@ -9,6 +9,10 @@ from webapp.views.bulletin.prediction_month_forecast import (
     prediction_month_forecast_view,
 )
 from webapp.views.bulletin.priority_date_landing import priority_date_landing_view
+from webapp.views.bulletin.priority_date_rollup import (
+    priority_date_eb_rollup_view,
+    priority_date_hub_view,
+)
 from webapp.views.bulletin.vqs_api import VQSPredictView
 from webapp.views.employers.directory import (
     company_autocomplete_view,
@@ -133,6 +137,14 @@ urlpatterns = [
         dashboard_view,
         {"category": "employment_based"},
         name="employment_based_country",
+    ),
+    # Priority-date HUB + per-EB-class ROLLUP (country-agnostic "ebN priority date").
+    # Distinct segment counts from the landing route below, so no shadowing.
+    path("priority-date/", priority_date_hub_view, name="priority_date_hub"),
+    path(
+        "priority-date/<slug:eb_class>/",
+        priority_date_eb_rollup_view,
+        name="priority_date_eb_rollup",
     ),
     # Priority-date landing pages (per EB class x per country, SEO)
     path(

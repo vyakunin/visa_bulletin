@@ -1,0 +1,57 @@
+{% extends "webapp/base.html" %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-calendar-check"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}</h1>
+    <p class="text-muted mb-4">{{ eb_full }} · based on the {{ bulletin_month }} U.S. Visa Bulletin.</p>
+
+    <div class="table-responsive mb-4">
+      <table class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Country of chargeability</th>
+            <th>Final Action Date</th>
+            <th>Dates for Filing</th>
+            <th>This month</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><a href="{{ r.url }}">{{ r.country }}</a></td>
+            <td class="fw-semibold">{{ r.final_status.display }}</td>
+            <td>{{ r.filing_status.display }}</td>
+            <td>
+              {% if r.trend.direction == "advanced" %}<span class="text-success">{{ r.trend.text }}</span>
+              {% elif r.trend.direction == "retrogressed" %}<span class="text-danger">{{ r.trend.text }}</span>
+              {% else %}<span class="text-muted">{{ r.trend.text }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-4">Final Action Dates determine when the green card can be issued; Dates for Filing determine when you may submit the application. Click a country for its full {{ eb_short }} history, chart, and predictions.</p>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <a href="/employment-based/" class="btn btn-primary"><i class="bi bi-graph-up-arrow"></i> Full dashboard + predictions</a>
+      <a href="/priority-date/" class="btn btn-outline-secondary">All priority dates</a>
+      <a href="/salaries/" class="btn btn-outline-secondary"><i class="bi bi-cash-stack"></i> {{ eb_short }} salary data</a>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    {% for item in faq %}
+    <div class="mb-3">
+      <div class="fw-semibold">{{ item.q }}</div>
+      <div class="text-muted">{{ item.a }}</div>
+    </div>
+    {% endfor %}
+
+    <h2 class="h4 mt-4 mb-3">Other priority dates</h2>
+    <p>{% for s in sibling_classes %}<a href="{{ s.url }}">{{ s.label }} priority dates</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+  </div>
+</div>
+{% endblock %}

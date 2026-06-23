@@ -21,6 +21,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 | Static pages | 8 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/when-is-the-next-visa-bulletin/`, `/about/`, `/contact/` | Latest bulletin date |
 | Category/country landings | ~12 | `/employment-based/`, `/family-sponsored/` × countries | Latest bulletin date |
 | Priority-date landings | 12 | `/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
+| Priority-date hub + rollups | 4 | `/priority-date/` + `/priority-date/{eb1,eb2,eb3}/` (country-agnostic) | Latest bulletin `fetched_at` |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
 | Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
@@ -52,6 +53,34 @@ full per-country dashboard + salary data + sibling pages (internal-link mesh).
   Pending: staging deploy + real-data render verify, internal links FROM the
   main dashboards, then GSC measurement. Possible v2: embed the prediction,
   add EB-4/EB-5 + ALL, expand country set.
+
+## Priority-date HUB + per-EB-class rollups (`/priority-date/` + `/priority-date/<eb_class>/`)
+
+Country-AGNOSTIC priority-date pages sitting above the per-country landings.
+**Why (GSC, 2026-06):** the generic query "eb2 priority date" (no country) pulled
+~1.4k impr/month at pos ~5 onto the `/salaries/` and `/employers/` list pages,
+which answer it terribly (**0% CTR**) — nothing on the site targeted the
+no-country query. Combined, those two list pages carried ~10k impr/month of
+priority-date-intent queries at ~0% CTR (the real cause of their <0.5% aggregate
+CTR — on their OWN intent they're healthy: `/salaries/` salary queries ≈ 3.55%).
+
+- **Hub** `/priority-date/`: index of all EB classes × countries; targets
+  "priority date" / "visa bulletin priority date". Gives `/salaries/` +
+  `/employers/` a clean link target to steer priority-date intent away.
+- **Rollup** `/priority-date/<eb_class>/` (eb1/eb2/eb3): ONE EB class across all
+  five chargeability areas (India/China/Mexico/Philippines/All-Others) in one
+  table; targets the generic "ebN priority date".
+- View: `webapp/views/bulletin/priority_date_rollup.py` (reuses the landing
+  page's cheap helpers — no live VQS solver). FAQPage schema on both. Unknown EB
+  class or no cutoff data → 404 (no thin page). Distinct URL segment counts from
+  the per-country landing route, so no shadowing.
+- Cross-links added FROM `/salaries/` + `/employers/` → the hub (intent steering
+  + reassignment signal + no dead-end).
+- Test: `tests/test_priority_date_rollup.py`.
+- **Status (2026-06-23):** shipped to `main` + sitemap, suite green. Pending:
+  staging deploy + real-data render verify, then GSC measurement of whether the
+  generic PD queries reassign off `/salaries/`+`/employers/` onto these pages
+  (the CTR-recovery thesis).
 
 ## Per-month forecast landing pages (`/predictions/<month>-<year>/`)
 
