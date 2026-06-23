@@ -34,6 +34,20 @@ def _cutoff(bulletin, action_type, country, cutoff_date):
     )
 
 
+def _cutoff_unavailable(bulletin, action_type, country):
+    VisaCutoffDate.objects.create(
+        bulletin=bulletin,
+        visa_category="employment_based",
+        visa_class="2nd",
+        action_type=action_type,
+        country=country,
+        cutoff_value="U",
+        cutoff_date=None,
+        is_current=False,
+        is_unavailable=True,
+    )
+
+
 class TestPriorityDateLanding(TestCase):
     def setUp(self):
         # Two bulletins so the trend (last two Final Action cutoffs) is computable.
@@ -66,6 +80,25 @@ class TestPriorityDateLanding(TestCase):
         # Jan -> Feb 2013 is an advance; the page should say so.
         body = self.client.get("/priority-date/eb2/india/").content.decode()
         self.assertIn("advanced", body)
+
+    def test_history_chart_present(self):
+        # The single priority-date-over-time graph is inlined as a Plotly payload.
+        body = self.client.get("/priority-date/eb2/india/").content.decode()
+        self.assertIn('id="pd-history-chart"', body)
+        self.assertIn('"connectgaps"', body)  # only appears in the chart JSON payload
+
+    def test_unavailable_status_and_why_faq(self):
+        # Latest bulletin: EB-2 India Final Action goes Unavailable (had a date the
+        # month before). The page must say "Unavailable", explain WHY (not the old
+        # vague "moved to/from Current or Unavailable" copy), and keep Filing usable.
+        b3 = Bulletin.objects.create(publication_date=date(2026, 8, 1))
+        _cutoff_unavailable(b3, ActionType.FINAL_ACTION.value, Country.INDIA.value)
+        _cutoff(b3, ActionType.FILING.value, Country.INDIA.value, date(2015, 1, 15))
+        body = self.client.get("/priority-date/eb2/india/").content.decode()
+        self.assertIn("Unavailable", body)
+        self.assertIn("moved to Unavailable this month", body)  # new precise trend copy
+        self.assertIn("annual per-country limit", body)  # the Why-Unavailable FAQ
+        self.assertNotIn("moved to/from Current or Unavailable", body)  # old vague copy gone
 
     def test_unknown_class_404(self):
         self.assertEqual(self.client.get("/priority-date/eb9/india/").status_code, 404)
