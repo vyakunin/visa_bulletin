@@ -34,11 +34,21 @@ _OVERSUBSCRIBED_EB23_COUNTRIES = {Country.INDIA.value, Country.CHINA.value}
 
 def prediction_list(request: HttpRequest) -> HttpResponse:
     """List all bulletin months available for prediction browsing."""
+    from webapp.views.bulletin.prediction_month_forecast import (
+        forecast_url_for,
+        upcoming_forecast_month,
+    )
+
     months = (
         Bulletin.objects.order_by("-publication_date")
         .values_list("publication_date", flat=True)
     )
-    context = {"months": list(months)}
+    upcoming = upcoming_forecast_month()
+    context = {
+        "months": list(months),
+        "forecast_url": forecast_url_for(upcoming) if upcoming else None,
+        "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
+    }
     return render(request, "vqs/prediction_list.html", context)
 
 

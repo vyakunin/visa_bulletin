@@ -78,7 +78,13 @@ def next_bulletin_view(request):
     ``fetched_at`` ≈ actual State Dept release date); see
     ``lib.business.bulletin.release_schedule``.
     """
+    from webapp.views.bulletin.prediction_month_forecast import (
+        forecast_url_for,
+        upcoming_forecast_month,
+    )
+
     schedule = get_release_schedule(today=date.today())
+    upcoming = upcoming_forecast_month()
     return render(
         request,
         "webapp/next_bulletin.html",
@@ -91,6 +97,8 @@ def next_bulletin_view(request):
             ),
             "canonical_url": request.build_absolute_uri("/when-is-the-next-visa-bulletin/"),
             "schedule": schedule,
+            "forecast_url": forecast_url_for(upcoming) if upcoming else None,
+            "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
         },
     )
 

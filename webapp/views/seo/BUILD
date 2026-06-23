@@ -25,6 +25,7 @@ py_library(
         "//models/enums:country",
         "//models:job_title",
         "//models:salary",
+        "//webapp/views/bulletin:prediction_month_forecast",
         requirement("Django"),
     ],
 )

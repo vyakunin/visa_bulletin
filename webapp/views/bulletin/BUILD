@@ -51,3 +51,19 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "prediction_month_forecast",
+    srcs = ["prediction_month_forecast.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:country",
+        "//models/enums:family_preference",
+        requirement("Django"),
+        requirement("python-dateutil"),
+    ],
+)

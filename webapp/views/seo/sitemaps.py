@@ -169,6 +169,28 @@ def sitemap_view(request):
                 priority="0.7",
             ))
 
+    # Evergreen per-month FORECAST page for the upcoming bulletin (latest + 1).
+    # One rolling URL — it auto-advances when a new bulletin lands (and the old
+    # month's URL 301s to the accuracy archive). Targets "visa bulletin {month}
+    # {year} predictions" (the cluster we rank top-3 for). Mirrors
+    # webapp/views/bulletin/prediction_month_forecast.py.
+    try:
+        from webapp.views.bulletin.prediction_month_forecast import (
+            forecast_url_for,
+            upcoming_forecast_month,
+        )
+
+        upcoming = upcoming_forecast_month()
+    except (OperationalError, ProgrammingError):
+        upcoming = None
+    if upcoming is not None:
+        xml_parts.extend(_url_entry(
+            f"{base_url}{forecast_url_for(upcoming)}",
+            lastmod=bulletin_lastmod,
+            changefreq="weekly",
+            priority="0.7",
+        ))
+
     # Per-state salary landing pages (one per US state + DC).
     # Iterate the canonical US_STATES list so new entries appear automatically.
     for code, _name in US_STATES:
