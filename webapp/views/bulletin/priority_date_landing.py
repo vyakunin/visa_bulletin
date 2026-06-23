@@ -46,6 +46,9 @@ _COUNTRIES = {
     "mexico": Country.MEXICO,
 }
 
+# How many trailing bulletin months to plot on the history graph (~5 years).
+_CHART_MONTHS = 60
+
 
 def _fmt_date(d: date | None) -> str | None:
     return d.strftime("%B %-d, %Y") if d else None
@@ -99,23 +102,41 @@ def _series(country_value: int, action_type: str, full_label: str) -> dict | Non
     return None
 
 
-def _trend(series: dict | None) -> dict:
-    """Month-over-month movement of the Final Action cutoff (last two bulletins)."""
-    if not series:
-        return {"direction": "na", "text": "No recent data."}
-    cutoffs = series["cutoff_dates"]
-    if len(cutoffs) < 2:
-        return {"direction": "na", "text": "Not enough history for a trend."}
-    cur, prev = cutoffs[-1], cutoffs[-2]
-    if cur is None or prev is None:
-        return {"direction": "na", "text": "Cutoff moved to/from Current or Unavailable."}
-    if cur > prev:
-        days = (cur - prev).days
-        return {"direction": "advanced", "text": f"advanced {days} days month-over-month"}
-    if cur < prev:
-        days = (prev - cur).days
-        return {"direction": "retrogressed", "text": f"retrogressed {days} days month-over-month"}
-    return {"direction": "unchanged", "text": "unchanged from the prior month"}
+def _trend(final_status: dict, series: dict | None) -> dict:
+    """Month-over-month movement of the Final Action cutoff — Current/Unavailable aware.
+
+    The aggregated series collapses both "Current" and "Unavailable" to None, so the
+    headline status (which DOES distinguish them) drives the wording; the prior
+    bulletin's cutoff comes from the series. `text` is a verb phrase with no leading
+    capital and no trailing period — the template wraps it in a sentence. The full
+    "why" for the Unavailable case lives in the FAQ, not here, to avoid repetition.
+    """
+    status = final_status["status"]  # "date" | "current" | "unavailable" | "unknown"
+    cutoffs = series["cutoff_dates"] if series else []
+    cur = cutoffs[-1] if cutoffs else None
+    prev = cutoffs[-2] if len(cutoffs) >= 2 else None
+
+    if status == "unavailable":
+        moved = prev is not None  # had a real date last month
+        return {
+            "direction": "retrogressed",
+            "text": "moved to Unavailable this month" if moved else "is currently Unavailable",
+        }
+    if status == "current":
+        moved = prev is not None
+        return {
+            "direction": "advanced",
+            "text": "became Current this month (no backlog)" if moved else "is currently Current (no backlog)",
+        }
+    if status == "date" and cur is not None:
+        if prev is None:
+            return {"direction": "advanced", "text": "reopened to a cutoff date this month"}
+        if cur > prev:
+            return {"direction": "advanced", "text": f"advanced {(cur - prev).days} days month-over-month"}
+        if cur < prev:
+            return {"direction": "retrogressed", "text": f"retrogressed {(prev - cur).days} days month-over-month"}
+        return {"direction": "unchanged", "text": "was unchanged from the prior month"}
+    return {"direction": "na", "text": "has no recent movement to report"}
 
 
 def _recent_history(series: dict | None, n: int = 6) -> list[dict]:
@@ -134,9 +155,67 @@ def _recent_history(series: dict | None, n: int = 6) -> list[dict]:
     return rows
 
 
+def _chart_json(final_series: dict | None, filing_series: dict | None) -> str | None:
+    """Single Plotly line graph of the priority-date cutoff over time.
+
+    Cheap — built entirely from the already-aggregated arrays (no extra query),
+    so the page stays fast/cacheable. Final Action is the primary line; Dates for
+    Filing is a secondary dashed line. Gaps (Current/Unavailable months → None)
+    are NOT bridged. Returns a JSON string, or None when nothing is plottable.
+    """
+
+    def _trace(series: dict | None, name: str, color: str, dash: str) -> dict | None:
+        if not series:
+            return None
+        pairs = list(zip(series["dates"], series["cutoff_dates"]))[-_CHART_MONTHS:]
+        xs: list[str] = []
+        ys: list[str | None] = []
+        has_point = False
+        for month, cutoff in pairs:
+            xs.append(month.isoformat())
+            if cutoff is not None:
+                ys.append(cutoff.isoformat())
+                has_point = True
+            else:
+                ys.append(None)
+        if not has_point:
+            return None
+        return {
+            "type": "scatter",
+            "mode": "lines+markers",
+            "name": name,
+            "x": xs,
+            "y": ys,
+            "connectgaps": False,
+            "line": {"color": color, "dash": dash, "width": 2},
+            "marker": {"size": 5},
+            "hovertemplate": f"{name}: %{{y|%b %-d, %Y}}<br>%{{x|%b %Y}} bulletin<extra></extra>",
+        }
+
+    traces = [
+        t
+        for t in (
+            _trace(final_series, "Final Action", "#0d6efd", "solid"),
+            _trace(filing_series, "Dates for Filing", "#6c757d", "dot"),
+        )
+        if t
+    ]
+    if not traces:
+        return None
+    layout = {
+        "margin": {"t": 10, "r": 10, "b": 40, "l": 62},
+        "height": 340,
+        "xaxis": {"title": "Visa Bulletin month", "type": "date"},
+        "yaxis": {"title": "Priority date (cutoff)", "type": "date"},
+        "legend": {"orientation": "h", "y": -0.25},
+        "hovermode": "x unified",
+    }
+    return json.dumps({"data": traces, "layout": layout})
+
+
 def _faq(eb_short: str, country_display: str, final_status: dict, trend: dict) -> list[dict]:
     cur = final_status["display"]
-    return [
+    faq = [
         {
             "q": f"What is the {eb_short} {country_display} priority date right now?",
             "a": (
@@ -163,6 +242,25 @@ def _faq(eb_short: str, country_display: str, final_status: dict, trend: dict) -
             ),
         },
     ]
+    # When the category is closed, answer the obvious "why?" directly (and feed a
+    # FAQPage rich result for the high-intent "why is eb2 india unavailable" query).
+    if final_status["status"] == "unavailable":
+        faq.insert(
+            1,
+            {
+                "q": f"Why is {eb_short} {country_display} Unavailable?",
+                "a": (
+                    f'"Unavailable" (U) means the {eb_short} category has used up its '
+                    f"green-card numbers for {country_display} this fiscal year: demand "
+                    "reached the annual per-country limit, so the State Department stops "
+                    "issuing Final Action dates until the new fiscal year begins on "
+                    "October 1. It usually reopens to a cutoff date in the October Visa "
+                    "Bulletin. You can still file under the Dates for Filing chart while "
+                    "Final Action is Unavailable."
+                ),
+            },
+        )
+    return faq
 
 
 def priority_date_landing_view(request, eb_class: str, country: str):
@@ -182,8 +280,9 @@ def priority_date_landing_view(request, eb_class: str, country: str):
 
     final_status = _latest_status(ctry.value, ActionType.FINAL_ACTION.value, eb_full)
     filing_status = _latest_status(ctry.value, ActionType.FILING.value, eb_full)
-    trend = _trend(final_series)
+    trend = _trend(final_status, final_series)
     history = _recent_history(final_series)
+    chart_json = _chart_json(final_series, filing_series)
 
     latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
     bulletin_month = latest_bulletin.publication_date.strftime("%B %Y") if latest_bulletin else ""
@@ -239,6 +338,7 @@ def priority_date_landing_view(request, eb_class: str, country: str):
         "filing_status": filing_status,
         "trend": trend,
         "history": history,
+        "chart_json": chart_json,
         "faq": faq,
         "dashboard_url": f"/employment-based/{country.lower()}/",
         "sibling_classes": sibling_classes,

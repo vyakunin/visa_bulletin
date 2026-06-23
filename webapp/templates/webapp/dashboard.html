@@ -698,7 +698,11 @@
         'displayModeBar': true,
         'displaylogo': false,
         'responsive': true,
-        'doubleClick': false,  // Disable default double-click reset
+        // Double-tap / double-click autorange-resets; the plotly_relayout handler
+        // below catches the autorange event and re-applies our smart range (which
+        // excludes the flat priority-date line). 'false' here disabled reset entirely
+        // — nothing emitted the autorange event, so double-tap did nothing.
+        'doubleClick': 'autosize',
         'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d'],
         'toImageButtonOptions': {
             'format': 'png',

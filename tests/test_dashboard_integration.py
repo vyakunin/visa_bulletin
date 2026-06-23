@@ -11,9 +11,18 @@ setup_django_for_tests()
 
 import unittest
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from unittest.mock import Mock
 
 from webapp.views.seo.sitemaps import robots_view, sitemap_view
+
+_DASHBOARD_TEMPLATE = (
+    Path(__file__).resolve().parent.parent
+    / "webapp"
+    / "templates"
+    / "webapp"
+    / "dashboard.html"
+)
 
 
 class TestDashboardBasic(unittest.TestCase):
@@ -23,6 +32,16 @@ class TestDashboardBasic(unittest.TestCase):
         """Placeholder - full integration tests require Django test runner setup"""
         # TODO: Add full database integration tests when test infrastructure is ready
         self.assertTrue(True)
+
+    def test_chart_doubleclick_reset_enabled(self):
+        """Regression: the dashboard chart's double-tap/double-click reset must stay
+        enabled. 'doubleClick': false disabled it entirely (nothing emitted the
+        autorange event the plotly_relayout handler relies on), so double-tap did
+        nothing. It must trigger autorange so the handler re-applies the smart range.
+        """
+        src = _DASHBOARD_TEMPLATE.read_text()
+        self.assertIn("'doubleClick': 'autosize'", src)
+        self.assertNotIn("'doubleClick': false", src)
 
 
 class TestRobotsTxtView(unittest.TestCase):
