@@ -38,6 +38,14 @@ from webapp.views.seo.jsonld import build_dataset_jsonld, embed_jsonld
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
 
+# A free-text keyword search (?q=<text>) is an unbounded URL space — every
+# distinct query is a new page. We noindex those so Google doesn't burn crawl
+# budget on infinite low-value permutations, but keep `follow` so link equity
+# still flows to the canonical employer/job-title/state slug pages linked in
+# the results. Bare /salaries/, slug pages, and curated filter combos (employer
+# / state / program, no q) stay indexable.
+_NOINDEX_FOLLOW = "noindex, follow"
+
 _PAGE_CAP_GONE_BODY = (
     "This page is beyond the listing depth cap (page=100). "
     "Use the filters at /salaries/ or /worksites/ to narrow your search."
@@ -771,6 +779,9 @@ def salary_search_view(request):
         "page_intro": seo.page_intro,
         "structured_data": seo.structured_data,
         "canonical_url": canonical_url,
+        # Crawl-budget hygiene: noindex the free-text ?q= keyword space (see
+        # _NOINDEX_FOLLOW). Filtered-but-no-q pages stay indexable.
+        "meta_robots": _NOINDEX_FOLLOW if query.strip() else None,
         # Autocomplete URLs (shared component used for both Job Title and Employer)
         "company_autocomplete_url": request.build_absolute_uri(
             reverse("company_autocomplete")
@@ -946,6 +957,9 @@ def worksite_search_view(request):
         "page_title": "Worksite Location Data | U.S. Immigration Data",
         "page_description": "Search worksite location data from DOL Worksites disclosure files. Find job locations by city, state, and role.",
         "canonical_url": request.build_absolute_uri(reverse("worksite_search")),
+        # Crawl-budget hygiene: noindex the free-text ?q= keyword space (the
+        # same unbounded-URL problem as /salaries/?q=).
+        "meta_robots": _NOINDEX_FOLLOW if query.strip() else None,
     }
 
     return render(request, "webapp/worksite_search.html", context)

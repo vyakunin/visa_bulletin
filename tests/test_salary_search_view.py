@@ -292,3 +292,78 @@ class SalarySearchPageCapTest(TestCase):
     def test_worksite_page_100_still_renders(self):
         response = self.client.get(reverse("worksite_search"), {"page": "100"})
         self.assertEqual(response.status_code, 200)
+
+
+class SalarySearchNoindexTest(TestCase):
+    """Crawl-budget hygiene: the free-text ?q= keyword space is unbounded
+    (every distinct query = a new URL), so those pages emit
+    `<meta name="robots" content="noindex, follow">`. Bare landings, curated
+    filter combos (employer/state/program, no q), and slug pages stay
+    indexable (no robots meta = default index, follow).
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        self.cluster = EmployerCluster.objects.create(
+            canonical_name="Noindex Test Co",
+            slug="noindex-test-co",
+            search_record_count=1,
+            search_avg_salary=120000,
+            search_min_salary=120000,
+            search_max_salary=120000,
+        )
+
+    def _robots_meta_present(self, response) -> bool:
+        return (
+            b'<meta name="robots" content="noindex, follow">'
+            in response.content
+        )
+
+    def test_freetext_q_search_is_noindex(self):
+        response = self.client.get(reverse("salary_search"), {"q": "Engineer"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_robots"], "noindex, follow")
+        self.assertTrue(self._robots_meta_present(response))
+
+    def test_bare_landing_stays_indexable(self):
+        response = self.client.get(reverse("salary_search"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["meta_robots"])
+        self.assertFalse(self._robots_meta_present(response))
+
+    def test_curated_filter_without_q_stays_indexable(self):
+        # An employer-slug or state filter (no free-text q) is a bounded,
+        # curated page the dynamic-SEO design wants indexed.
+        for params in (
+            {"state": "CA"},
+            {"employer_slug": "noindex-test-co", "employer": "Noindex Test Co"},
+            {"program": "h1b"},
+        ):
+            with self.subTest(params=params):
+                response = self.client.get(reverse("salary_search"), params)
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.context["meta_robots"])
+                self.assertFalse(self._robots_meta_present(response))
+
+    def test_employer_plus_q_is_noindex(self):
+        # Any request carrying ?q= is noindex, even alongside a curated filter.
+        response = self.client.get(
+            reverse("salary_search"),
+            {"employer_slug": "noindex-test-co", "q": "Engineer"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_robots"], "noindex, follow")
+        self.assertTrue(self._robots_meta_present(response))
+
+    def test_worksite_freetext_q_search_is_noindex(self):
+        response = self.client.get(reverse("worksite_search"), {"q": "Engineer"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["meta_robots"], "noindex, follow")
+        self.assertTrue(self._robots_meta_present(response))
+
+    def test_worksite_bare_landing_stays_indexable(self):
+        response = self.client.get(reverse("worksite_search"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["meta_robots"])
+        self.assertFalse(self._robots_meta_present(response))

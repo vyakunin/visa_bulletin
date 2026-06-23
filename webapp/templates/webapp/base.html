@@ -27,6 +27,16 @@
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}">
     {% endif %}
+    {% comment %}
+    Crawl-budget hygiene: unbounded query-string spaces (e.g. the free-text
+    /salaries/?q=<keyword> faceted search) set meta_robots="noindex, follow"
+    so Google doesn't index infinite low-value permutations, while still
+    following links from them to the canonical slug pages. Bare landings and
+    curated filter/slug pages leave meta_robots unset (default index, follow).
+    {% endcomment %}
+    {% if meta_robots %}
+    <meta name="robots" content="{{ meta_robots }}">
+    {% endif %}
 
     {% comment %}
     hreflang annotations: only declared on pages that have an actual

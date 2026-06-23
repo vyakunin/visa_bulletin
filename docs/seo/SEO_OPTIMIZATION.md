@@ -82,6 +82,13 @@ Content includes:
 | `<meta author>` | "U.S. Immigration Data" |
 | `<meta theme-color>` | `#003366` |
 | `<link rel="canonical">` | `canonical_url` context var (rendered only if set) |
+| `<meta robots>` | `meta_robots` context var (rendered only if set; default = no tag = `index, follow`) |
+
+## Crawl-budget hygiene — noindex the free-text search space
+
+The free-text keyword search `/salaries/?q=<keyword>` (and `/worksites/?q=<keyword>`) is an **unbounded URL space** — every distinct query string is a new page. Left indexable, Google burns crawl budget on infinite low-value permutations. Both search views set `meta_robots = "noindex, follow"` whenever a non-empty `q` param is present (`webapp/views/salary/search.py`, constant `_NOINDEX_FOLLOW`), and `base.html` renders `<meta name="robots" content="noindex, follow">` from it. `follow` keeps link equity flowing from results to the canonical employer/job-title/state slug pages.
+
+Stays indexable (no robots tag): the bare `/salaries/` landing, slug pages (`/salaries/employer/<slug>/`, `/salaries/role/<slug>/`, `/salaries/by-state/<slug>/`), and curated filter combos without a free-text `q` (employer-slug / state / program) — the dynamic-SEO design intentionally ranks those. Regression test: `tests/test_salary_search_view.py::SalarySearchNoindexTest`.
 
 ## Canonical URLs
 
