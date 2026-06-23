@@ -35,3 +35,18 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "priority_date_landing",
+    srcs = ["priority_date_landing.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/business/bulletin:cutoff_data_aggregator",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//models/enums:employment_preference",
+        requirement("Django"),
+    ],
+)

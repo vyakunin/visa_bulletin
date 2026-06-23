@@ -20,6 +20,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 |---------|-------|----------------|-----------|
 | Static pages | 8 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/when-is-the-next-visa-bulletin/`, `/about/`, `/contact/` | Latest bulletin date |
 | Category/country landings | ~12 | `/employment-based/`, `/family-sponsored/` × countries | Latest bulletin date |
+| Priority-date landings | 12 | `/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
 | Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
@@ -28,6 +29,28 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 All static/profile URLs use `changefreq: monthly`, `priority: 0.8`. Blog posts use `changefreq: yearly`, `priority: 0.6`. Prediction pages use `changefreq: yearly`, `priority: 0.5`.
 
 **Search engine ping**: The refresh pipeline pings Google and Bing after clearing the sitemap cache (`step_ping_search_engines` in `scripts/cron/refresh/steps.py`). Non-fatal on failure.
+
+## Priority-date landing pages (`/priority-date/<eb_class>/<country>/`)
+
+Per-EB-class × per-country focused landing pages targeting high-intent queries
+("eb2 india priority date", "eb3 china priority date" — real GSC demand at pos
+~7-8). EB-1/2/3 × India/China/Philippines/Mexico (12 pages). Each shows the
+current Final Action + Dates-for-Filing cutoffs, the latest month-over-month
+movement, a 6-month history table, an FAQ (FAQPage schema), and links into the
+full per-country dashboard + salary data + sibling pages (internal-link mesh).
+
+- View: `webapp/views/bulletin/priority_date_landing.py` (reuses the normalized
+  `get_aggregated_visa_class_data` series; headline status from the latest
+  bulletin row so C/U vs a date is accurate).
+- **Deliberately cheap to render** — no live VQS solver (predictions are linked,
+  not embedded), so the page stays fast + cacheable and avoids the per-country
+  dashboard's filter-combo query cost.
+- Unknown class/country or a combo with no cutoff data → 404 (no thin pages).
+- Test: `tests/test_priority_date_landing.py`.
+- **Status (2026-06-23):** core shipped to `main` + sitemap, suite green.
+  Pending: staging deploy + real-data render verify, internal links FROM the
+  main dashboards, then GSC measurement. Possible v2: embed the prediction,
+  add EB-4/EB-5 + ALL, expand country set.
 
 ## AI Crawler Support (`/llms.txt`)
 

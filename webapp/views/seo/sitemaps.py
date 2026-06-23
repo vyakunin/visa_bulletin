@@ -158,6 +158,17 @@ def sitemap_view(request):
             if slug:
                 xml_parts.extend(_url_entry(f"{base_url}/{cat_slug}/{slug}/", lastmod=bulletin_lastmod))
 
+    # Priority-date landing pages: EB-1/2/3 x India/China/Philippines/Mexico.
+    # Mirrors the slug sets in webapp/views/bulletin/priority_date_landing.py.
+    for eb_slug in ("eb1", "eb2", "eb3"):
+        for ctry_slug in ("india", "china", "philippines", "mexico"):
+            xml_parts.extend(_url_entry(
+                f"{base_url}/priority-date/{eb_slug}/{ctry_slug}/",
+                lastmod=bulletin_lastmod,
+                changefreq="weekly",
+                priority="0.7",
+            ))
+
     # Per-state salary landing pages (one per US state + DC).
     # Iterate the canonical US_STATES list so new entries appear automatically.
     for code, _name in US_STATES:
