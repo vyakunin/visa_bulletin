@@ -34,6 +34,17 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 
 The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
 
+## Keep staging and prod in PARITY — mirror every direct-prod change to staging immediately
+
+Staging is only a trustworthy release-candidate (and `promote.sh` diff-gate) if it differs from prod **only by the change under test**. Any change made directly to the **prod** stack's *runtime config* — monetization `overrides/*.html`, `.env`, compose volumes/services, an `ALLOWED_HOSTS` edit, a hotfix applied straight to prod — MUST be mirrored to the **staging** stack in the **same task**. Otherwise divergence silently accumulates and pollutes the next diff-gate with phantom deltas, eroding trust in the gate.
+
+- **Runtime config is NOT carried by the image.** `promote.sh` swaps the web image; it does **not** sync `overrides/`, `.env`, or compose between stacks. Those are per-stack and drift unless you sync them by hand.
+- **Source of truth = live prod behavior.** When you change prod runtime config, copy the same files/values into `hosting/staging/`, restart the staging web, and flush staging Redis. When a `monetization/` override is deployed to prod, deploy it to staging too.
+- **Mirror immediately, same task** — "sync staging later" means the next diff-gate is noisy and someone re-explains a known divergence.
+- **Verify parity:** `diff` the staging vs prod override/`.env` files (or curl both and diff the rendered HTML) and confirm they match except the intended delta.
+
+Origin: 2026-06-23 — staging's monetization overrides were stale (support-CTA card removed from prod 6/18, affiliate updated 6/20, neither mirrored), so the priority-date `promote.sh` diff-gate flagged a phantom "Buy-Me-a-Coffee card on staging." Vladimir: *"tighten the rules to prevent divergences: even on direct prod deploys we should immediately follow with staging updates."*
+
 ## 🚨 Heavyweight data tasks: compute OFF-PROD on staging, graduate via cutover — NEVER mutate the serving prod box directly
 
 **A heavyweight data task NEVER runs its heavy compute/mutation on the live prod box. The heavy work runs OFF-PROD on the staging stack (against a prod data copy); the verified DATA is then graduated via the Path-2 `cutover.sh --data` cutover, during which the STAGING stack SERVES prod traffic while the homeserver resyncs FROM staging.** Prod must never be simultaneously *heavy-mutating* AND *sole-serving*.
