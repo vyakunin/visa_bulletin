@@ -976,6 +976,23 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_priority_date_rollup",
+    size = "small",
+    srcs = ["test_priority_date_rollup.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_prediction_month_forecast",
     size = "small",
     srcs = ["test_prediction_month_forecast.py"],
