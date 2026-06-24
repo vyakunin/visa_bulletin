@@ -191,6 +191,39 @@ working page. Same posture as the role page being a new URL rather than re-angli
   48 state pages in the prod sitemap, CF purged, GSC re-submitted, suite 74 green.
   GSC measurement pending.
 
+## Per-(employer × role) H-1B salary pages (`/h1b-salary/<employer>/<role>/`)
+
+The third pSEO pillar from LCA data, answering the (employer × role) query the
+employer-wide and role-wide profiles don't: **"{role} salary at {employer}" /
+"does {employer} sponsor H-1B for {role}" / "{employer} {role} H-1B salary"**.
+The `/employer/<slug>/` profile is employer-wide (all roles) and `/job-title/
+<slug>/` is role-wide (all employers); neither is the specific (employer × role)
+salary answer — so this is a new page, not a duplicate.
+
+- **Content:** salary distribution (p10–p90), median + p25–p75 + wage range, an
+  H-1B-filings-by-year trend, top worksite states, and the non-duplicative insight
+  — how the pair's median compares to the role's **market-wide** median (X%
+  above/below). FAQPage schema, self-canonical, outbound links to the employer,
+  role, and role-sponsor pages.
+- **View:** `webapp/views/salary/h1b_salary_pair.py`. Cheap single-pair indexed
+  aggregates (`visa_program`, `wage_annual`, employer/job-title FKs); no live
+  solver, no full scan. `@cache_page_skip_bots`.
+- **No thin pages:** a pair 404s unless **≥10 H-1B filings** (≈506 qualifying pairs
+  on current data). Gate shared (`lib/business/salary/h1b_salary_pair.py`) between
+  the view 404-gate and the cached sitemap emit-set (capped 5k) so the sitemap
+  never lists a 404.
+- **Internal-link mesh (gated, never a 404):** the h1b-sponsors role page links
+  each qualifying employer's wage cell to its pair page; the `/job-title/` profile
+  links each top-employer's median cell to the pair page. Plus the sitemap.
+- **Test:** `tests/test_h1b_salary_pair_landing.py` (qualifying renders distribution
+  + market-comparison + FAQPage + self-canonical + outbound mesh; thin/sub-
+  threshold/PERM/unknown 404; gate + sitemap emit qualifying only; role-page
+  wage-cell mesh gated).
+- **Status (2026-06-24):** **LIVE on prod** via the first zero-downtime code
+  cutover (`hosting/cutover.sh --code 1090314`; vb never 502'd), `prod d940644`,
+  506 pages in the prod sitemap, CF purged, GSC re-submitted, suite 75 green. GSC
+  measurement pending.
+
 ## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
 
 The dedicated release-schedule page targets the **"when will the {month} {year}
