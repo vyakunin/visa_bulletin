@@ -71,6 +71,15 @@ class TestPriorityDateLanding(TestCase):
         body = self.client.get("/priority-date/eb2/india/").content.decode()
         self.assertIn('"@type": "FAQPage"', body)
         self.assertIn("priority date right now", body)  # an FAQ question rendered
+        # FAQ questions render as real <h3> headings (featured-snippet / PAA harvest).
+        self.assertIn('<h3 class="h6 fw-semibold mb-1">', body)
+
+    def test_lead_answer_snippet_paragraph(self):
+        # Featured-snippet bait: a concise direct answer in a .lead paragraph,
+        # naming both the Final Action and Dates-for-Filing cutoffs.
+        body = self.client.get("/priority-date/eb2/india/").content.decode()
+        self.assertIn('class="lead"', body)
+        self.assertIn("the EB-2 Final Action Date for India is February 1, 2013", body)
 
     def test_canonical_is_self(self):
         body = self.client.get("/priority-date/eb2/india/").content.decode()

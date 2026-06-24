@@ -60,6 +60,10 @@ class TestSpanishPriorityDateLanding(TestCase):
         body = self.client.get("/es/priority-date/eb2/india/").content.decode()
         self.assertIn('"@type": "FAQPage"', body)
         self.assertIn("¿Cuál es la fecha de prioridad", body)
+        # Featured-snippet parity with EN: lead paragraph + FAQ as <h3> headings.
+        self.assertIn('class="lead"', body)
+        self.assertIn("la Fecha de Acción Final de EB-2 para India es", body)
+        self.assertIn('<h3 class="h6 fw-semibold mb-1">', body)
 
     def test_canonical_is_self(self):
         body = self.client.get("/es/priority-date/eb2/india/").content.decode()

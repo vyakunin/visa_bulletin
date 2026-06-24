@@ -60,6 +60,11 @@ class TestPriorityDateRollup(TestCase):
         self.assertIn('href="/priority-date/eb3/"', body)
         self.assertIn('"@type": "FAQPage"', body)
         self.assertIn('rel="canonical" href="http://testserver/priority-date/"', body)
+        # Featured-snippet harvest: definitional lead paragraph + FAQ questions as
+        # real <h3> headings (snippet/PAA bait for "green card priority date").
+        self.assertIn('class="lead"', body)
+        self.assertIn("A green card priority date is your place in line", body)
+        self.assertIn('<h3 class="h6 fw-semibold mb-1">', body)
 
     def test_rollup_renders_with_country_table(self):
         resp = self.client.get("/priority-date/eb2/")
@@ -75,6 +80,10 @@ class TestPriorityDateRollup(TestCase):
         # Internal mesh: links to per-country landing pages + sibling rollups.
         self.assertIn('href="/priority-date/eb2/india/"', body)
         self.assertIn('href="/priority-date/eb1/"', body)
+        # Featured-snippet harvest: lead paragraph directly answers "eb2 priority date".
+        self.assertIn('class="lead"', body)
+        self.assertIn("The EB-2 priority date is the U.S. Visa Bulletin cutoff", body)
+        self.assertIn('<h3 class="h6 fw-semibold mb-1">', body)
 
     def test_unknown_eb_class_404(self):
         self.assertEqual(self.client.get("/priority-date/notaclass/").status_code, 404)

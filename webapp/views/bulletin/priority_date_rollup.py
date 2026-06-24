@@ -112,6 +112,36 @@ def _rollup_faq(eb_short: str, rows: list[dict], bulletin_month: str) -> list[di
     ]
 
 
+# Static definitional lead answer for the hub — the "snippet bait" Google lifts
+# for a paragraph featured snippet on the generic "priority date" / "green card
+# priority date" queries (~2k impr/mo, pos ~4-7). Kept to ~55 words: a paragraph
+# snippet truncates past ~50, and the first definitional sentence is what wins.
+_HUB_LEAD = (
+    "A green card priority date is your place in line for an immigrant visa — the "
+    "date your I-140 petition (or PERM labor certification) was filed. You become "
+    "eligible for the green card once your priority date is earlier than the cutoff "
+    "for your category (EB-1, EB-2, or EB-3) and country of chargeability in the "
+    "monthly U.S. Visa Bulletin."
+)
+
+
+def _rollup_lead_answer(eb_short: str, rows: list[dict], bulletin_month: str) -> str:
+    """Concise direct answer for the generic "<ebN> priority date" query.
+
+    Rendered as the page's lead paragraph (directly under the H1) to win a
+    paragraph featured snippet — pos ~3.5 for "eb2 priority date" makes the
+    snippet box realistically winnable. Data-driven from the same row statuses
+    the table shows, so it never claims a cutoff the bulletin doesn't have.
+    """
+    status_list = ", ".join(f"{r['country']} {r['final_status']['display']}" for r in rows)
+    return (
+        f"The {eb_short} priority date is the U.S. Visa Bulletin cutoff that determines "
+        f"when a green card in the {eb_short} category can be issued, and it differs by "
+        f"country of chargeability. As of the {bulletin_month} Visa Bulletin, the "
+        f"{eb_short} Final Action Dates are {status_list}."
+    )
+
+
 def _hub_faq(bulletin_month: str) -> list[dict]:
     return [
         {
@@ -201,6 +231,7 @@ def priority_date_eb_rollup_view(request, eb_class: str):
         "eb_short": eb_short,
         "eb_full": eb_full,
         "bulletin_month": bulletin_month,
+        "lead_answer": _rollup_lead_answer(eb_short, rows, bulletin_month),
         "rows": rows,
         "faq": faq,
         "sibling_classes": sibling_classes,
@@ -247,6 +278,7 @@ def priority_date_hub_view(request):
         "hreflang_es": request.build_absolute_uri("/es/priority-date/"),
         "structured_data": json.dumps(_faq_schema(faq)),
         "bulletin_month": bulletin_month,
+        "lead_answer": _HUB_LEAD,
         "classes": classes,
         "faq": faq,
     }

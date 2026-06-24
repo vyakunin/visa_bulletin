@@ -20,7 +20,8 @@
     </nav>
 
     <h1 class="mb-2">{{ page_heading }}</h1>
-    <p class="text-muted mb-4">Según el Boletín de Visas de EE.UU. de {{ bulletin_month }}.</p>
+    <p class="text-muted mb-2">Según el Boletín de Visas de EE.UU. de {{ bulletin_month }}.</p>
+    <p class="lead mb-4">{{ lead_answer }}</p>
 
     <div class="row g-3 mb-4">
       <div class="col-md-6">
@@ -109,8 +110,8 @@
     <h2 class="h4 mt-4 mb-3">Preguntas frecuentes</h2>
     {% for item in faq %}
     <div class="mb-3">
-      <div class="fw-semibold">{{ item.q }}</div>
-      <div class="text-muted">{{ item.a }}</div>
+      <h3 class="h6 fw-semibold mb-1">{{ item.q }}</h3>
+      <p class="text-muted mb-0">{{ item.a }}</p>
     </div>
     {% endfor %}
 

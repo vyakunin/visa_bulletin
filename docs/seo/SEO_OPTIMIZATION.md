@@ -55,6 +55,35 @@ full per-country dashboard + salary data + sibling pages (internal-link mesh).
   main dashboards, then GSC measurement. Possible v2: embed the prediction,
   add EB-4/EB-5 + ALL, expand country set.
 
+### Featured-snippet harvest (priority-date hub / rollups / landings)
+
+The priority-date **hub** (`/priority-date/`), per-EB-class **rollups**
+(`/priority-date/<eb>/`), and per-country **landings** (`/priority-date/<eb>/<country>/`)
+— plus the Spanish landings — are optimized for position-0 (paragraph featured
+snippet) capture on the priority-date question cluster, where they already rank
+in striking distance: "eb2 priority date" pos ~3.5, "green card priority date"
+pos ~4.2, "eb3 priority date" pos ~4.6, "priority date" pos ~6.6,
+"eb2 priority date india" pos ~7.5.
+
+- **Lead-answer paragraph** directly under the H1 (a `.lead` `<p>`, ~50 words)
+  that *directly answers the head query* — the snippet bait Google lifts:
+  - Hub: a definitional answer for "what is a (green card) priority date".
+  - Rollup: data-driven from the country rows (`_rollup_lead_answer`), so it
+    never claims a cutoff the bulletin doesn't show.
+  - Landing: names the current Final Action + Dates-for-Filing cutoffs
+    (`_lead_answer` / `_lead_answer_es`).
+- **FAQ questions render as real `<h3>` headings** (were `<div class="fw-semibold">`)
+  with the answer as a `<p>` immediately below — improves paragraph- and
+  People-Also-Ask snippet harvest and heading hierarchy/a11y. FAQPage JSON-LD
+  unchanged (already present).
+- Views: `priority_date_rollup.py` (`_HUB_LEAD`, `_rollup_lead_answer`),
+  `priority_date_landing.py` (`_lead_answer`, `_lead_answer_es`). Tests assert
+  the lead paragraph + `<h3>` in `test_priority_date_rollup.py`,
+  `test_priority_date_landing.py`, `test_spanish_cluster.py`.
+- **Status (2026-06-25):** code on `main`, suite green. Pending: staging diff +
+  prod promote (Path-1) + CF purge + GSC resubmit, then GSC-measure
+  position-0 / CTR uplift on the priority-date cluster over ~2-3 wks.
+
 ## Spanish (/es/) cluster
 
 Spanish-language sibling pages converting real Spanish search demand ("boletín de
