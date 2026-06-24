@@ -149,14 +149,47 @@ a new page, not a thin duplicate.
 - **Test:** `tests/test_h1b_sponsors_landing.py` (qualifying renders + FAQPage +
   self-canonical; thin role 404; PERM-heavy role 404 = H-1B-only; sitemap lists
   qualifying only).
-- **Status (2026-06-24):** core shipped to `main` + sitemap + inbound link, suite
-  green. Pending: staging deploy + real-data render verify, prod graduation
-  (Path 1 — pure rendering), CF purge + GSC sitemap submit, then GSC measurement.
-  **Follow-ups (v2):** (a) the state variant — re-angle `/salaries/by-state/` for
-  "highest-paying H-1B employers in {state}" (wage-ranked, H-1B-filtered); (b)
-  denormalize per-cluster H-1B filing/sponsor counts onto `JobTitleCluster` in the
-  stats refresh, which lets the sitemap drop the heavy cached aggregate and
-  enables a related-role sponsor-page cross-link mesh.
+- **Status (2026-06-24):** **LIVE on prod** (`prod 19fb476`, img `staging-718bc17`),
+  189 pages in the prod sitemap, CF purged, GSC re-submitted, suite green. GSC
+  measurement pending (days→weeks to index).
+  **Follow-up (v2):** denormalize per-cluster H-1B filing/sponsor counts onto
+  `JobTitleCluster` in the stats refresh, which lets the sitemap drop the heavy
+  cached aggregate and enables a related-role sponsor-page cross-link mesh.
+
+## Top-H-1B-sponsors-per-state pages (`/h1b-sponsors/in/<state-code>/`)
+
+The state variant of the H-1B-sponsors pillar, answering the distinct query the
+existing pages don't: **"top H-1B sponsors in {state}" / "which companies sponsor
+H-1B in {state}" / "highest-paying H-1B employers in {state}"**. A **NEW
+dedicated URL**, deliberately NOT a re-angle of the live `/salaries/by-state/`
+page — that page's state-overview intent (ranks employers by filing volume across
+H-1B *and* PERM) is left untouched, so there is **zero de-rank risk** to a
+working page. Same posture as the role page being a new URL rather than re-angling
+`/job-title/`.
+
+- **Content:** headline stats (H-1B filings in-state, # sponsoring employers,
+  median H-1B wage + p25–p75); **two** ranked tables — (1) **top sponsors by H-1B
+  filing volume** (the robust "which companies sponsor H-1B in {state}" answer),
+  (2) **highest-paying H-1B employers** ranked by mean wage with a **≥5-filing
+  floor** so a single outlier filing can't top the chart (the "highest-paying"
+  query, answered without noise); a top-H-1B-roles block; an FAQ (FAQPage schema).
+- **View:** `webapp/views/salary/h1b_sponsors.py:h1b_sponsors_state_view`. Cheap
+  single-state indexed aggregates (`visa_program`, `wage_annual`, `worksite_state`,
+  FKs); no live solver, no full scan. `@cache_page_skip_bots`.
+- **No thin pages:** a state 404s unless **≥50 H-1B filings AND ≥8 distinct
+  sponsors**, the same shared gate (`lib/business/salary/h1b_sponsors.py`) as the
+  cached sitemap emit-set — and the sitemap set is intersected with the canonical
+  `US_STATES` list, so it NEVER emits an invalid or 404 URL (48 of 51 qualify).
+- **Internal-link mesh (both directions):** inbound from each `/salaries/by-state/`
+  page (a gated CTA) + the sitemap; the role page's top-states block links to the
+  state page (gated); the state page's top-roles block links to the role page
+  (gated, falling back to the `/job-title/` profile for non-qualifying roles).
+- **Test:** `tests/test_h1b_sponsors_state_landing.py` (qualifying renders both
+  tables + FAQPage + self-canonical; thin/PERM-heavy/unknown 404; pay floor
+  honored; sitemap lists qualifying states only; by-state CTA gated).
+- **Status (2026-06-24):** **LIVE on prod** (`prod 19fb476`, img `staging-0e739bd`),
+  48 state pages in the prod sitemap, CF purged, GSC re-submitted, suite 74 green.
+  GSC measurement pending.
 
 ## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
 
