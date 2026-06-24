@@ -19,6 +19,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//django_config:cache_utils",
+        "//lib/business/salary:h1b_salary_pair",
         "//lib/business/salary:h1b_sponsors",
         "//lib/utils:location_utils",
         "//models:blog",

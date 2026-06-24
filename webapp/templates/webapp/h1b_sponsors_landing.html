@@ -52,7 +52,7 @@
             <td class="text-muted">{{ row.rank }}</td>
             <td><a href="/employer/{{ row.slug }}/">{{ row.name }}</a></td>
             <td class="text-end">{{ row.filings|intcomma }}</td>
-            <td class="text-end">{{ row.avg_salary|default:"—" }}</td>
+            <td class="text-end">{% if row.pair_url %}<a href="{{ row.pair_url }}">{{ row.avg_salary|default:"—" }}</a>{% else %}{{ row.avg_salary|default:"—" }}{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
