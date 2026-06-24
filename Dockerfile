@@ -86,6 +86,14 @@ RUN mkdir -p saved_pages logs static && \
         -exec sh -c 'touch "$1/__init__.py"' _ {} \; && \
     chown -R visabulletin:visabulletin /app
 
+# Pin matplotlib's config/cache dir to a writable path. Unset, matplotlib falls
+# back to $HOME/.config/matplotlib (non-writable for the non-root user) and
+# REBUILDS its font cache on every process start — seconds of cold-import cost
+# that landed inside the first request on each gunicorn worker. A stable dir
+# lets the cache persist for the container's life (built once in the --preload
+# master, inherited by forks).
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
 # Switch to non-root user
 USER visabulletin
 
@@ -93,7 +101,9 @@ USER visabulletin
 EXPOSE 8000
 
 # Health check (Python-based; curl not guaranteed in slim image)
-HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=3 \
+# start-period covers boot: migrate + gunicorn --preload import + VQS warmup
+# (~13s loading matplotlib/LightGBM in the master) before workers bind.
+HEALTHCHECK --interval=10s --timeout=10s --start-period=60s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"
 
 # Default command: run migrations then start server with gunicorn
@@ -106,5 +116,7 @@ HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=3 \
 # per-worker import race (numpy/Django booting concurrently in N workers caused
 # transient boot 500s) and shares the imported code pages copy-on-write, cutting
 # resident memory per worker (OOM amplification fix).
-CMD ["sh", "-c", "python3 manage.py migrate --noinput && gunicorn --preload --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"]
+# VQS_WARM=1 is scoped to the gunicorn process only (NOT the sibling `migrate`),
+# so apps.ready() warms the VQS ML stack once in the --preload master.
+CMD ["sh", "-c", "python3 manage.py migrate --noinput && VQS_WARM=1 gunicorn --preload --workers 2 --threads 2 --bind 0.0.0.0:8000 --timeout 60 --max-requests 500 --max-requests-jitter 50 --access-logformat '%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s %(L)s' django_config.wsgi:application"]
 
