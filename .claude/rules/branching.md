@@ -4,6 +4,24 @@
 
 **Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md`.
 
+## 🚨 Rule: ALL releases go through `visa_bulletin_platform/hosting/` — never hand-roll a deploy
+
+**Every deploy / promotion / cutover / graduation / runtime-config change uses the committed release code in the private ops repo `~/cursor_projects/visa_bulletin_platform/hosting/`. Do NOT hand-roll a `docker compose` invocation, a one-off deploy script, or an ad-hoc image swap — and NEVER edit files directly on the server (`deployment.md`).** This is strict, no exceptions short of the platform script itself being broken (then fix the script, don't bypass it).
+
+Canonical release surfaces (the ONLY paths to prod):
+
+| Operation | Use | Never instead |
+|---|---|---|
+| Promote staging→prod (Path 1 image swap) | `hosting/promote.sh --prod` | a manual `docker compose pull web && up -d` on the box |
+| Data-refresh / heavyweight graduation (Path 2) | `hosting/cutover.sh --data` / `hosting/graduate.sh` | a direct heavy mutation on the serving prod box |
+| Runtime config (compose, `.env`, monetization `overrides/`) | edit the per-stack file under `hosting/{homeserver,staging,standby}/` then deploy it; **mirror to staging same task** (parity rule below) | `sed`/`vi` on `/opt/stack/...` on the server |
+| Edge cache purge | `hosting/scripts/cf_cache_purge.py` | manual CF dashboard clicks |
+| Release-path decision (Path 1 vs Path 2) | `hosting/RELEASE_PATHS.md` | guessing |
+
+**Two-repo split for a code change that needs runtime config:** the *code* (e.g. `webapp/`, `Dockerfile`) lands in THIS public repo and ships as a CI-built image; the *runtime config* (compose `command:`/env, volumes, `overrides/`) lands in `visa_bulletin_platform/hosting/` because **the image does not carry per-stack runtime config** (`promote.sh` swaps the image only). A change touching both is not done until BOTH repos are committed AND the hosting-side config is deployed to the stack. Build new release tooling (e.g. a future `blue_green_deploy.sh`) **inside `hosting/`**, never in this public repo's `tools/`.
+
+Origin: 2026-06-24 — the EB-dashboard worker-warmup fix needed `VQS_WARM=1` on the gunicorn command, which lives in the `hosting/{homeserver,staging,standby}/docker-compose.yml` runtime composes (the Dockerfile CMD is overridden in prod). Vladimir: *"Make sure you use vb platform rules/code for releases, have a strict rule about that."*
+
 ## Three Branches
 
 - **`main`** — Development. Can be messy, broken, WIP. Nothing deploys from `main`.
