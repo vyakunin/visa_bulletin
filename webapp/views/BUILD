@@ -17,6 +17,7 @@ py_library(
         "//webapp/views/salary:search",
         "//webapp/views/seo:sitemaps",
         "//webapp/views/static:pages",
+        "//webapp/views/static:spanish",
     ],
 )
 

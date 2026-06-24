@@ -243,6 +243,8 @@ def priority_date_hub_view(request):
         "page_description": page_description,
         "canonical_url": canonical_url,
         "og_url": canonical_url,
+        "hreflang_en": canonical_url,
+        "hreflang_es": request.build_absolute_uri("/es/priority-date/"),
         "structured_data": json.dumps(_faq_schema(faq)),
         "bulletin_month": bulletin_month,
         "classes": classes,

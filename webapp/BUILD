@@ -36,6 +36,7 @@ py_library(
         "//webapp/views/salary:h1b_sponsors",
         "//webapp/views/salary:search",
         "//webapp/views/static:pages",
+        "//webapp/views/static:spanish",
         requirement("Django"),
     ],
 )

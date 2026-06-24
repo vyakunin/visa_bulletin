@@ -48,6 +48,8 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
         "months": list(months),
         "forecast_url": forecast_url_for(upcoming) if upcoming else None,
         "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
+        "hreflang_en": request.build_absolute_uri("/predictions/"),
+        "hreflang_es": request.build_absolute_uri("/es/predictions/"),
     }
     return render(request, "vqs/prediction_list.html", context)
 

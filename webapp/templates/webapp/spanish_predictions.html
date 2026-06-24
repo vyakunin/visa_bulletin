@@ -1,0 +1,78 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block hreflang %}
+<link rel="alternate" hreflang="es" href="{{ hreflang_es }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang_en }}">
+{% endblock %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-graph-up-arrow"></i> Predicciones</div>{% endblock %}
+
+{% block content %}
+<div class="row" lang="es">
+  <div class="col-lg-9 offset-lg-1">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/es/">Boletín de Visas</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Predicciones</li>
+      </ol>
+    </nav>
+
+    <h1 class="mb-3">Predicciones del Boletín de Visas</h1>
+    <p class="lead">
+      Este sitio publica predicciones mensuales de fechas de prioridad con el modelo
+      <strong>Bulletin Forecast</strong>. Esta página explica en español cómo funciona el
+      modelo y dónde ver su precisión; las tablas de predicciones en vivo están en inglés.
+    </p>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <a href="/predictions/employment_based/" class="btn btn-primary btn-lg">
+        <i class="bi bi-graph-up-arrow"></i> Ver predicciones (basadas en empleo, inglés) &rarr;
+      </a>
+      <a href="/predictions/" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-clock-history"></i> Archivo de precisión &rarr;
+      </a>
+    </div>
+
+    <h2 class="mt-4">¿Cómo funciona el modelo?</h2>
+    <p>El modelo Bulletin Forecast trabaja en dos etapas:</p>
+    <ul>
+      <li><strong>Próximo mes:</strong> clasifica el estado de cada serie de visas — si las
+        fechas vienen avanzando, estancadas o retrocediendo — y elige la estrategia más
+        precisa para ese estado. Cuando una serie está estancada o retrocediendo, predice sin
+        cambios (la conjetura históricamente más segura). Cuando avanza activamente, aplica
+        patrones estacionales históricos para ese mes del calendario.</li>
+      <li><strong>Horizonte de 6 a 12 meses:</strong> toma el control un modelo de machine
+        learning (gradient boosting) entrenado con más de una década de historial del boletín,
+        datos de demanda I-140 y ciclos del año fiscal (octubre–septiembre). Esto captura
+        patrones estructurales — como el reinicio típico de octubre y el desbordamiento entre
+        series bajo INA §202 — que la extrapolación simple no ve.</li>
+    </ul>
+
+    <h2 class="mt-4">¿Qué tan preciso es?</h2>
+    <p>
+      El modelo se evalúa retroactivamente contra los boletines publicados. Para las series
+      clave de India/China EB-2 y EB-3 en horizontes de 6 meses, logra errores absolutos
+      medios de 155 a 264 días — mejor que simplemente asumir que no habrá cambios (~280 días).
+      El modelo es deliberadamente conservador: subestima los saltos grandes para reducir
+      falsas alarmas. La inmigración también depende de decisiones de política y picos de
+      demanda impredecibles que ningún modelo puede anticipar. Por eso publicamos el
+      <a href="/predictions/">archivo de precisión</a>: revisa cuán cerca estuvieron las
+      predicciones pasadas antes de confiar en las proyecciones.
+    </p>
+
+    <h2 class="mt-4">¿Qué son las fechas de prioridad?</h2>
+    <p>
+      Tu fecha de prioridad es la fecha en que se abrió tu caso (la PERM o I-140 en casos de
+      empleo; la I-130 en casos familiares). Se vuelve <em>actual</em> cuando los cortes del
+      boletín avanzan más allá de tu fecha. Consulta tu categoría y país en las
+      <a href="/es/priority-date/">páginas de fechas de prioridad</a>, o lee la
+      <a href="/es/">guía completa del Boletín de Visas en español</a>.
+    </p>
+
+    <p class="text-muted small mt-4"><a href="/predictions/">English predictions archive →</a></p>
+  </div>
+</div>
+{% endblock %}

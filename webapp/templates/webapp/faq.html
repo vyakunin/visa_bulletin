@@ -2,6 +2,12 @@
 
 {% block title %}Frequently Asked Questions - U.S. Immigration Data{% endblock %}
 
+{% block hreflang %}
+<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
+<link rel="alternate" hreflang="es" href="{{ hreflang_es }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang_en }}">
+{% endblock %}
+
 {% block hero_heading %}<div class="display-4"><i class="bi bi-graph-up-arrow"></i> U.S. Immigration Data</div>{% endblock %}
 
 {% block extra_head %}

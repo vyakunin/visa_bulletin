@@ -67,6 +67,8 @@ def faq_view(request):
         {
             "page_title": "Frequently Asked Questions - U.S. Immigration Data",
             "page_description": "Common questions about priority dates, PERM processing, Final Action vs Filing Dates, and how the Visa Bulletin tracker works.",
+            "hreflang_en": request.build_absolute_uri("/faq/"),
+            "hreflang_es": request.build_absolute_uri("/es/faq/"),
         },
     )
 

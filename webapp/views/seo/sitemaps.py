@@ -146,7 +146,7 @@ def sitemap_view(request):
     ]
 
     # Static pages — all reflect data that changes on each pipeline refresh
-    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/contact/", "/es/"):
+    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/contact/", "/es/", "/es/faq/", "/es/predictions/", "/es/priority-date/"):
         xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=bulletin_lastmod))
 
     # Category landing pages (updated when new bulletin arrives)
@@ -172,6 +172,14 @@ def sitemap_view(request):
                 lastmod=bulletin_lastmod,
                 changefreq="weekly",
                 priority="0.7",
+            ))
+            # Spanish sibling (/es/...) — same slug sets, mirrors
+            # spanish_priority_date_landing_view's 404 gate.
+            xml_parts.extend(_url_entry(
+                f"{base_url}/es/priority-date/{eb_slug}/{ctry_slug}/",
+                lastmod=bulletin_lastmod,
+                changefreq="weekly",
+                priority="0.6",
             ))
 
     # Priority-date HUB + per-EB-class rollups — country-agnostic "ebN priority
