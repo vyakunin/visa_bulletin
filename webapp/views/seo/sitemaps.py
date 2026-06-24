@@ -9,7 +9,10 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
-from lib.business.salary.h1b_sponsors import qualifying_slugs
+from lib.business.salary.h1b_sponsors import (
+    qualifying_slugs,
+    qualifying_state_codes,
+)
 from lib.utils.location_utils import US_STATES
 from models.blog import BlogPost
 from models.bulletin import Bulletin
@@ -275,6 +278,24 @@ def sitemap_view(request):
             changefreq="monthly",
             priority="0.6",
         ))
+
+    # Top-H-1B-sponsors-per-STATE pages. Cached qualifying-state set (shared with
+    # the view's 404-gate) intersected with the canonical US_STATES list so we
+    # only ever emit valid, qualifying URLs (never a 404).
+    try:
+        qual_states = set(qualifying_state_codes())
+    except (OperationalError, ProgrammingError):
+        logger.error("Failed to load H-1B sponsor states for sitemap", exc_info=True)
+        qual_states = set()
+
+    for code, _name in US_STATES:
+        if code in qual_states:
+            xml_parts.extend(_url_entry(
+                f"{base_url}/h1b-sponsors/in/{code.lower()}/",
+                lastmod=bulletin_lastmod,
+                changefreq="monthly",
+                priority="0.6",
+            ))
 
     # Blog posts — use post's own published_date as lastmod
     try:

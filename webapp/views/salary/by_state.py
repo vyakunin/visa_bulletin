@@ -16,6 +16,7 @@ from lib.business.salary.common_stats import (
     calculate_program_breakdown,
     calculate_salary_percentiles,
 )
+from lib.business.salary.h1b_sponsors import qualifying_state_codes
 from lib.utils.location_utils import US_STATES
 from models.salary import SalaryRecord
 
@@ -99,6 +100,11 @@ def salary_by_state_view(request, state: str):
         reverse("salary_by_state", kwargs={"state": state_slug})
     )
 
+    # Inbound link to the dedicated "Top H-1B sponsors in {state}" leaderboard,
+    # only when that page qualifies (shared cached gate) so we never link to a
+    # 404. Cross-mesh between the state-overview and the H-1B-sponsor page.
+    show_h1b_sponsors_cta = state_code in set(qualifying_state_codes())
+
     median_salary = percentiles.get("p50") if percentiles else None
     # Fall back to mean when median isn't available (no rows).
     median_or_avg = median_salary if median_salary else agg["avg_salary"]
@@ -128,6 +134,8 @@ def salary_by_state_view(request, state: str):
         "program_breakdown": program_breakdown,
         "top_employers": top_employers,
         "top_job_titles": top_job_titles,
+        "show_h1b_sponsors_cta": show_h1b_sponsors_cta,
+        "h1b_sponsors_url": f"/h1b-sponsors/in/{state_slug}/",
         # SEO
         "page_title": (
             f"Salaries in {state_name} — H-1B & PERM filings | "

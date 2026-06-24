@@ -23,10 +23,18 @@ from django.shortcuts import render
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.salary.common_stats import calculate_salary_percentiles
 from lib.business.salary.h1b_sponsors import (
+    MIN_EMPLOYER_FILINGS_FOR_PAY,
     _h1b_role_base,
+    _h1b_state_base,
+    highest_paying_in_state,
+    qualifying_slugs,
+    qualifying_state_codes,
     role_h1b_stats,
     role_qualifies,
+    state_h1b_stats,
+    top_roles_in_state,
     top_sponsors_for_cluster,
+    top_sponsors_in_state,
     top_states_for_cluster,
 )
 from lib.utils.location_utils import US_STATES
@@ -34,6 +42,10 @@ from models.job_title import JobTitleCluster
 
 # 2-letter code -> display name, for the top-states block.
 _STATE_NAMES = {code: name for code, name in US_STATES}
+# Lowercase 2-letter code -> (canonical code, display name), for resolving the
+# state URL segment. Built from the canonical US_STATES list so a new state is
+# picked up automatically.
+_STATE_BY_LOWER = {code.lower(): (code, name) for code, name in US_STATES}
 
 
 def _money(value) -> str | None:
@@ -131,11 +143,20 @@ def h1b_sponsors_landing_view(request, slug: str):
         }
         for i, r in enumerate(top_rows)
     ]
+    # Link each state to its own "Top H-1B sponsors in {state}" page when that
+    # page qualifies — cross-mesh between the role and state leaderboards,
+    # gated so we never link to a 404.
+    qual_states = set(qualifying_state_codes())
     state_rows = [
         {
             "code": s["worksite_state"],
             "name": _STATE_NAMES.get(s["worksite_state"], s["worksite_state"]),
             "filings": s["filings"],
+            "sponsors_url": (
+                f"/h1b-sponsors/in/{s['worksite_state'].lower()}/"
+                if s["worksite_state"] in qual_states
+                else None
+            ),
         }
         for s in top_states
     ]
@@ -189,3 +210,179 @@ def h1b_sponsors_landing_view(request, slug: str):
         "profile_url": f"/job-title/{slug}/",
     }
     return render(request, "webapp/h1b_sponsors_landing.html", context)
+
+
+def _resolve_state_or_404(state_slug: str) -> tuple[str, str]:
+    """Return (canonical 2-letter code, display name) or raise Http404."""
+    normalized = (state_slug or "").strip().lower()
+    if normalized not in _STATE_BY_LOWER:
+        raise Http404(f"Unknown state: {state_slug}")
+    return _STATE_BY_LOWER[normalized]
+
+
+def _state_faq(state_name: str, filings: int, sponsors: int,
+               top_rows: list[dict], paying_rows: list[dict],
+               median: str | None, p25: str | None, p75: str | None,
+               fy: int | None) -> list[dict]:
+    top_names = [r["employer__canonical_cluster__canonical_name"] for r in top_rows[:3]]
+    top_names_str = ", ".join(top_names) if top_names else "a range of employers"
+    pay_names = [r["employer__canonical_cluster__canonical_name"] for r in paying_rows[:3]]
+    pay_names_str = ", ".join(pay_names) if pay_names else "a range of employers"
+    fy_str = f"FY{fy}" if fy else "recent fiscal years"
+
+    pay_a = (
+        f"The median certified H-1B wage in {state_name} is {median}."
+        if median else
+        f"H-1B wages in {state_name} vary by employer and role."
+    )
+    if p25 and p75:
+        pay_a += f" The middle 50% of offers fall between {p25} and {p75}."
+
+    return [
+        {
+            "q": f"Which companies sponsor H-1B visas in {state_name}?",
+            "a": (
+                f"{sponsors:,} employers filed certified H-1B labor condition "
+                f"applications with a worksite in {state_name} ({fy_str}). The top "
+                f"sponsors by filing volume include {top_names_str}. The full "
+                f"ranked list is below."
+            ),
+        },
+        {
+            "q": f"Who are the highest-paying H-1B employers in {state_name}?",
+            "a": (
+                f"Ranked by mean certified H-1B wage (among employers with at "
+                f"least {MIN_EMPLOYER_FILINGS_FOR_PAY} filings in the state), the "
+                f"top payers include {pay_names_str}. {pay_a}"
+            ),
+        },
+        {
+            "q": f"What do H-1B jobs pay in {state_name}?",
+            "a": pay_a,
+        },
+        {
+            "q": "How is this ranking calculated?",
+            "a": (
+                f"Employers are ranked by the number of certified H-1B Labor "
+                f"Condition Applications (LCAs) they filed for worksites in "
+                f"{state_name}, sourced from U.S. Department of Labor public "
+                f"disclosure data. This page reflects {filings:,} H-1B filings in "
+                f"the state."
+            ),
+        },
+    ]
+
+
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+def h1b_sponsors_state_view(request, state: str):
+    """Render the per-state 'Top H-1B sponsors in {state}' leaderboard page."""
+    state_code, state_name = _resolve_state_or_404(state)
+    state_slug = state_code.lower()
+
+    # Cheap 404-gate, shared with the sitemap: no thin/duplicate pages.
+    filings, sponsors = state_h1b_stats(state_code)
+    if not role_qualifies(filings, sponsors):
+        raise Http404("Not enough H-1B data for this state")
+
+    top_rows = top_sponsors_in_state(state_code)
+    paying_rows = highest_paying_in_state(state_code)
+    role_rows = top_roles_in_state(state_code)
+
+    base_qs = _h1b_state_base(state_code)
+    percentiles = calculate_salary_percentiles(base_qs)
+    fy = base_qs.aggregate(fy=Max("fiscal_year"))["fy"]
+
+    median = _money(percentiles.get("p50") if percentiles else None)
+    p25 = _money(percentiles.get("p25") if percentiles else None)
+    p75 = _money(percentiles.get("p75") if percentiles else None)
+
+    sponsor_rows = [
+        {
+            "rank": i + 1,
+            "name": r["employer__canonical_cluster__canonical_name"],
+            "slug": r["employer__canonical_cluster__slug"],
+            "filings": r["filings"],
+            "avg_salary": _money(r["avg_salary"]),
+        }
+        for i, r in enumerate(top_rows)
+    ]
+    paying_table = [
+        {
+            "rank": i + 1,
+            "name": r["employer__canonical_cluster__canonical_name"],
+            "slug": r["employer__canonical_cluster__slug"],
+            "filings": r["filings"],
+            "avg_salary": _money(r["avg_salary"]),
+        }
+        for i, r in enumerate(paying_rows)
+    ]
+    # Cross-mesh: link top roles to their own /h1b-sponsors/<role>/ leaderboard
+    # when it qualifies, else to the job-title profile (never a 404).
+    qual_roles = set(qualifying_slugs())
+    role_table = [
+        {
+            "title": r["job_title_entity__canonical_cluster__canonical_title"],
+            "slug": r["job_title_entity__canonical_cluster__slug"],
+            "filings": r["filings"],
+            "url": (
+                f"/h1b-sponsors/{r['job_title_entity__canonical_cluster__slug']}/"
+                if r["job_title_entity__canonical_cluster__slug"] in qual_roles
+                else f"/job-title/{r['job_title_entity__canonical_cluster__slug']}/"
+            ),
+        }
+        for r in role_rows
+    ]
+
+    fy_str = f"FY{fy}" if fy else None
+    page_heading = f"Top H-1B Sponsors in {state_name}"
+    # <title> ≤60 chars: append the FY suffix only when it still fits.
+    title_with_fy = f"{page_heading} ({fy_str})" if fy_str else page_heading
+    page_title = title_with_fy if len(title_with_fy) <= 60 else page_heading
+
+    median_clause = f" Median H-1B wage {median}." if median else ""
+    page_description = (
+        f"The {sponsors:,} companies that sponsor H-1B visas in {state_name}, "
+        f"ranked by filing volume and pay from U.S. DOL data ({filings:,} "
+        f"filings).{median_clause}"
+    )[:155]
+
+    canonical_url = request.build_absolute_uri(request.path)
+    faq = _state_faq(state_name, filings, sponsors, top_rows, paying_rows,
+                     median, p25, p75, fy)
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": item["q"],
+                "acceptedAnswer": {"@type": "Answer", "text": item["a"]},
+            }
+            for item in faq
+        ],
+    }
+
+    context = {
+        "page_title": page_title,
+        "page_heading": page_heading,
+        "page_description": page_description,
+        "canonical_url": canonical_url,
+        "og_url": canonical_url,
+        "structured_data": json.dumps(structured_data),
+        "state_name": state_name,
+        "state_code": state_code,
+        "state_slug": state_slug,
+        "fy_str": fy_str,
+        "total_filings": filings,
+        "total_sponsors": sponsors,
+        "median_salary": median,
+        "p25_salary": p25,
+        "p75_salary": p75,
+        "sponsor_rows": sponsor_rows,
+        "paying_rows": paying_table,
+        "role_rows": role_table,
+        "min_pay_filings": MIN_EMPLOYER_FILINGS_FOR_PAY,
+        "faq": faq,
+        "by_state_url": f"/salaries/by-state/{state_slug}/",
+    }
+    return render(request, "webapp/h1b_sponsors_state_landing.html", context)

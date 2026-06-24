@@ -8,9 +8,9 @@
   <div class="col-lg-9 offset-lg-1">
     <h1 class="mb-2">{{ page_heading }}</h1>
     <p class="text-muted mb-4">
-      {{ total_sponsors|intcomma }} companies filed certified H-1B applications for
-      <strong>{{ title }}</strong> roles{% if fy_str %} ({{ fy_str }}){% endif %},
-      ranked by filing volume from U.S. Department of Labor disclosure data.
+      {{ total_sponsors|intcomma }} companies filed certified H-1B applications with a
+      worksite in <strong>{{ state_name }}</strong>{% if fy_str %} ({{ fy_str }}){% endif %},
+      ranked by filing volume and pay from U.S. Department of Labor disclosure data.
     </p>
 
     <div class="row g-3 mb-4">
@@ -18,7 +18,7 @@
         <div class="card h-100"><div class="card-body text-center">
           <div class="text-muted text-uppercase small mb-1">H-1B filings</div>
           <div class="display-6 fw-bold mb-1">{{ total_filings|intcomma }}</div>
-          <div class="text-muted small">for this role</div>
+          <div class="text-muted small">in {{ state_name }}</div>
         </div></div>
       </div>
       <div class="col-md-4">
@@ -37,7 +37,7 @@
       </div>
     </div>
 
-    <h2 class="h4 mt-4 mb-3">Top H-1B sponsors for {{ title }}</h2>
+    <h2 class="h4 mt-4 mb-3">Top H-1B sponsors in {{ state_name }}</h2>
     <div class="table-responsive">
       <table class="table table-sm table-striped align-middle">
         <thead><tr>
@@ -59,23 +59,51 @@
       </table>
     </div>
 
+    {% if paying_rows %}
+    <h2 class="h4 mt-4 mb-3">Highest-paying H-1B employers in {{ state_name }}</h2>
+    <p class="text-muted small mb-2">
+      Ranked by mean certified H-1B wage, among employers with at least
+      {{ min_pay_filings }} filings in {{ state_name }}.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead><tr>
+          <th style="width:3rem">#</th>
+          <th>Employer</th>
+          <th class="text-end">Avg. wage</th>
+          <th class="text-end">H-1B filings</th>
+        </tr></thead>
+        <tbody>
+          {% for row in paying_rows %}
+          <tr>
+            <td class="text-muted">{{ row.rank }}</td>
+            <td><a href="/employer/{{ row.slug }}/">{{ row.name }}</a></td>
+            <td class="text-end">{{ row.avg_salary|default:"—" }}</td>
+            <td class="text-end">{{ row.filings|intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
     <div class="d-flex flex-wrap gap-2 my-4">
-      <a href="{{ profile_url }}" class="btn btn-primary">
-        <i class="bi bi-graph-up-arrow"></i> Full {{ title }} salary profile
+      <a href="{{ by_state_url }}" class="btn btn-primary">
+        <i class="bi bi-graph-up-arrow"></i> Full {{ state_name }} salary profile
       </a>
-      <a href="/salaries/?q={{ title|urlencode }}" class="btn btn-outline-secondary">
-        <i class="bi bi-search"></i> Search {{ title }} salary records
+      <a href="/salaries/?state={{ state_code }}" class="btn btn-outline-secondary">
+        <i class="bi bi-search"></i> Search {{ state_name }} salary records
       </a>
     </div>
 
-    {% if state_rows %}
-    <h2 class="h4 mt-4 mb-3">Where H-1B {{ title }} jobs are filed</h2>
+    {% if role_rows %}
+    <h2 class="h4 mt-4 mb-3">Top H-1B roles in {{ state_name }}</h2>
     <div class="table-responsive">
       <table class="table table-sm table-striped">
-        <thead><tr><th>State</th><th class="text-end">H-1B filings</th></tr></thead>
+        <thead><tr><th>Role</th><th class="text-end">H-1B filings</th></tr></thead>
         <tbody>
-          {% for s in state_rows %}
-          <tr><td>{% if s.sponsors_url %}<a href="{{ s.sponsors_url }}">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}</td><td class="text-end">{{ s.filings|intcomma }}</td></tr>
+          {% for r in role_rows %}
+          <tr><td><a href="{{ r.url }}">{{ r.title }}</a></td><td class="text-end">{{ r.filings|intcomma }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -92,8 +120,8 @@
 
     <p class="text-muted small mt-4">
       Counts are certified H-1B Labor Condition Applications (LCAs) from public
-      U.S. Department of Labor disclosure data. Wages shown are the offered
-      annual wage on the filing, not a guarantee of pay.
+      U.S. Department of Labor disclosure data, by worksite state. Wages shown are
+      the offered annual wage on the filing, not a guarantee of pay.
     </p>
   </div>
 </div>
