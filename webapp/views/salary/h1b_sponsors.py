@@ -22,6 +22,7 @@ from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.salary.common_stats import calculate_salary_percentiles
+from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
     MIN_EMPLOYER_FILINGS_FOR_PAY,
     _h1b_role_base,
@@ -132,7 +133,10 @@ def h1b_sponsors_landing_view(request, slug: str):
     p25 = _money(percentiles.get("p25") if percentiles else None)
     p75 = _money(percentiles.get("p75") if percentiles else None)
 
-    # Ranked rows for the template: rank, employer, filings, mean wage.
+    # Ranked rows for the template: rank, employer, filings, mean wage. Each
+    # employer links to the dedicated "{role} salary at {employer}" page when that
+    # pair qualifies (gated against the shared cached set, so never a 404).
+    qual_pairs = set(qualifying_pairs())
     sponsor_rows = [
         {
             "rank": i + 1,
@@ -140,6 +144,11 @@ def h1b_sponsors_landing_view(request, slug: str):
             "slug": r["employer__canonical_cluster__slug"],
             "filings": r["filings"],
             "avg_salary": _money(r["avg_salary"]),
+            "pair_url": (
+                f"/h1b-salary/{r['employer__canonical_cluster__slug']}/{slug}/"
+                if (r["employer__canonical_cluster__slug"], slug) in qual_pairs
+                else None
+            ),
         }
         for i, r in enumerate(top_rows)
     ]

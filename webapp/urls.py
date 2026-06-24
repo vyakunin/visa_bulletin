@@ -33,6 +33,7 @@ from webapp.views.prediction_views import (
     spaghetti_view,
 )
 from webapp.views.salary.by_state import salary_by_state_view
+from webapp.views.salary.h1b_salary_pair import h1b_salary_pair_view
 from webapp.views.salary.h1b_sponsors import (
     h1b_sponsors_landing_view,
     h1b_sponsors_state_view,
@@ -144,6 +145,14 @@ urlpatterns = [
         "h1b-sponsors/<slug:slug>/",
         h1b_sponsors_landing_view,
         name="h1b_sponsors_landing",
+    ),
+    # Per-(employer × role) H-1B salary page (SEO: "{role} salary at {employer}" /
+    # "does {employer} sponsor H-1B for {role}"). Pairs without a substantive
+    # salary distribution 404; gate shared with the sitemap.
+    path(
+        "h1b-salary/<slug:employer>/<slug:role>/",
+        h1b_salary_pair_view,
+        name="h1b_salary_pair",
     ),
     # SEO-friendly landing pages
     # Employment Based

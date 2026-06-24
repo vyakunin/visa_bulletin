@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
     qualifying_slugs,
     qualifying_state_codes,
@@ -296,6 +297,23 @@ def sitemap_view(request):
                 changefreq="monthly",
                 priority="0.6",
             ))
+
+    # Per-(employer × role) H-1B salary pages. Cached qualifying-pair set (shared
+    # with the view's 404-gate) so we never list a page that 404s. lastmod =
+    # latest ingest (the underlying DOL data's real change date).
+    try:
+        sponsor_pairs = qualifying_pairs()
+    except (OperationalError, ProgrammingError):
+        logger.error("Failed to load H-1B salary pairs for sitemap", exc_info=True)
+        sponsor_pairs = []
+
+    for emp_slug, role_slug in sponsor_pairs:
+        xml_parts.extend(_url_entry(
+            f"{base_url}/h1b-salary/{emp_slug}/{role_slug}/",
+            lastmod=bulletin_lastmod,
+            changefreq="monthly",
+            priority="0.5",
+        ))
 
     # Blog posts — use post's own published_date as lastmod
     try:

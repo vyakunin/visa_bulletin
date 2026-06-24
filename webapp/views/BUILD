@@ -12,6 +12,7 @@ py_library(
         "//webapp/views/job_titles:directory",
         "//webapp/views/job_titles:profile",
         "//webapp/views/salary:by_state",
+        "//webapp/views/salary:h1b_salary_pair",
         "//webapp/views/salary:h1b_sponsors",
         "//webapp/views/salary:search",
         "//webapp/views/seo:sitemaps",

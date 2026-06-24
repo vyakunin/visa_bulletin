@@ -10,6 +10,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import role_h1b_stats, role_qualifies
 from lib.business.salary.job_title_chart_builder import build_job_title_profile_charts
 from lib.business.salary.job_title_stats import (
@@ -152,6 +153,18 @@ def job_title_profile_view(request, slug: str):
         limit=20,
         normalized_title=None,
     )
+
+    # Cross-mesh: link each top employer to the dedicated "{role} salary at
+    # {employer}" page when that pair qualifies (shared cached gate, never a 404).
+    if cluster.slug:
+        qual_pairs = set(qualifying_pairs())
+        for e in stats.get("top_employers", []):
+            es = e.get("employer__canonical_cluster__slug")
+            e["pair_url"] = (
+                f"/h1b-salary/{es}/{cluster.slug}/"
+                if es and (es, cluster.slug) in qual_pairs
+                else None
+            )
 
     # Build chart data
     chart_data = build_job_title_profile_charts(stats, cluster.canonical_title)

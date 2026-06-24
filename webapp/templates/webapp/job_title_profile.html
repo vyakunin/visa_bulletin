@@ -229,7 +229,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">{{ employer.count|intcomma }}</td>
-                                    <td class="text-end">${{ employer.median_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{% if employer.pair_url %}<a href="{{ employer.pair_url }}">${{ employer.median_salary|floatformat:0|intcomma }}</a>{% else %}${{ employer.median_salary|floatformat:0|intcomma }}{% endif %}</td>
                                     <td class="text-end text-muted">
                                         ${{ employer.min_salary|floatformat:0|intcomma }} - ${{ employer.max_salary|floatformat:0|intcomma }}
                                     </td>
