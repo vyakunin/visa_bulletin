@@ -976,6 +976,22 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_h1b_sponsors_landing",
+    size = "small",
+    srcs = ["test_h1b_sponsors_landing.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:job_title",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_priority_date_rollup",
     size = "small",
     srcs = ["test_priority_date_rollup.py"],

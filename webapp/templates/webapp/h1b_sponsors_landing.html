@@ -1,0 +1,100 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-buildings"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-9 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}</h1>
+    <p class="text-muted mb-4">
+      {{ total_sponsors|intcomma }} companies filed certified H-1B applications for
+      <strong>{{ title }}</strong> roles{% if fy_str %} ({{ fy_str }}){% endif %},
+      ranked by filing volume from U.S. Department of Labor disclosure data.
+    </p>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">H-1B filings</div>
+          <div class="display-6 fw-bold mb-1">{{ total_filings|intcomma }}</div>
+          <div class="text-muted small">for this role</div>
+        </div></div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">Sponsoring employers</div>
+          <div class="display-6 fw-bold mb-1">{{ total_sponsors|intcomma }}</div>
+          <div class="text-muted small">distinct companies</div>
+        </div></div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-primary h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">Median H-1B wage</div>
+          <div class="display-6 fw-bold mb-1">{{ median_salary|default:"—" }}</div>
+          <div class="text-muted small">{% if p25_salary and p75_salary %}{{ p25_salary }}–{{ p75_salary }} middle 50%{% else %}across filings{% endif %}</div>
+        </div></div>
+      </div>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">Top H-1B sponsors for {{ title }}</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead><tr>
+          <th style="width:3rem">#</th>
+          <th>Employer</th>
+          <th class="text-end">H-1B filings</th>
+          <th class="text-end">Avg. wage</th>
+        </tr></thead>
+        <tbody>
+          {% for row in sponsor_rows %}
+          <tr>
+            <td class="text-muted">{{ row.rank }}</td>
+            <td><a href="/employer/{{ row.slug }}/">{{ row.name }}</a></td>
+            <td class="text-end">{{ row.filings|intcomma }}</td>
+            <td class="text-end">{{ row.avg_salary|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 my-4">
+      <a href="{{ profile_url }}" class="btn btn-primary">
+        <i class="bi bi-graph-up-arrow"></i> Full {{ title }} salary profile
+      </a>
+      <a href="/salaries/?q={{ title|urlencode }}" class="btn btn-outline-secondary">
+        <i class="bi bi-search"></i> Search {{ title }} salary records
+      </a>
+    </div>
+
+    {% if state_rows %}
+    <h2 class="h4 mt-4 mb-3">Where H-1B {{ title }} jobs are filed</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>State</th><th class="text-end">H-1B filings</th></tr></thead>
+        <tbody>
+          {% for s in state_rows %}
+          <tr><td>{{ s.name }}</td><td class="text-end">{{ s.filings|intcomma }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    {% for item in faq %}
+    <div class="mb-3">
+      <div class="fw-semibold">{{ item.q }}</div>
+      <div class="text-muted">{{ item.a }}</div>
+    </div>
+    {% endfor %}
+
+    <p class="text-muted small mt-4">
+      Counts are certified H-1B Labor Condition Applications (LCAs) from public
+      U.S. Department of Labor disclosure data. Wages shown are the offered
+      annual wage on the filing, not a guarantee of pay.
+    </p>
+  </div>
+</div>
+{% endblock %}

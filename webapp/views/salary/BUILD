@@ -33,3 +33,17 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "h1b_sponsors",
+    srcs = ["h1b_sponsors.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//lib/business/salary:common_stats",
+        "//lib/business/salary:h1b_sponsors",
+        "//lib/utils:location_utils",
+        "//models:job_title",
+        requirement("Django"),
+    ],
+)
