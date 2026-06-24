@@ -1,0 +1,56 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block hreflang %}
+<link rel="alternate" hreflang="es" href="{{ hreflang_es }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang_en }}">
+{% endblock %}
+
+{% block hero_heading %}<div class="display-4"><i class="bi bi-question-circle"></i> Boletín de Visas</div>{% endblock %}
+
+{% block content %}
+<div class="row" lang="es">
+  <div class="col-lg-10 offset-lg-1">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/es/">Boletín de Visas</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Preguntas frecuentes</li>
+      </ol>
+    </nav>
+
+    <h1 class="mb-4"><i class="bi bi-question-circle"></i> Preguntas frecuentes</h1>
+
+    <div class="accordion" id="faqAccordion">
+      {% for item in faq %}
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="heading{{ forloop.counter }}">
+          <button class="accordion-button{% if not forloop.first %} collapsed{% endif %}" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}"
+                  aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}"
+                  aria-controls="collapse{{ forloop.counter }}">
+            {{ item.q }}
+          </button>
+        </h2>
+        <div id="collapse{{ forloop.counter }}"
+             class="accordion-collapse collapse{% if forloop.first %} show{% endif %}"
+             aria-labelledby="heading{{ forloop.counter }}" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">{{ item.a }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="mt-4">
+      <p class="text-muted">
+        <i class="bi bi-envelope"></i> ¿Más preguntas? Escríbeme a
+        <a href="mailto:vyakunin@gmail.com">vyakunin@gmail.com</a>
+      </p>
+      <p class="text-muted small">
+        <a href="/faq/">English FAQ →</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

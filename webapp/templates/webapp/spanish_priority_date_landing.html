@@ -1,54 +1,62 @@
 {% extends "webapp/base.html" %}
 
 {% block hreflang %}
-<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
 <link rel="alternate" hreflang="es" href="{{ hreflang_es }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
 <link rel="alternate" hreflang="x-default" href="{{ hreflang_en }}">
 {% endblock %}
 
 {% block hero_heading %}<div class="display-5"><i class="bi bi-calendar-check"></i> {{ page_heading }}</div>{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row" lang="es">
   <div class="col-lg-9 offset-lg-1">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/es/">Boletín de Visas</a></li>
+        <li class="breadcrumb-item"><a href="/es/priority-date/">Fechas de prioridad</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ eb_short }} {{ country_display }}</li>
+      </ol>
+    </nav>
+
     <h1 class="mb-2">{{ page_heading }}</h1>
-    <p class="text-muted mb-4">Based on the {{ bulletin_month }} U.S. Visa Bulletin.</p>
+    <p class="text-muted mb-4">Según el Boletín de Visas de EE.UU. de {{ bulletin_month }}.</p>
 
     <div class="row g-3 mb-4">
       <div class="col-md-6">
         <div class="card border-primary h-100">
           <div class="card-body text-center">
-            <div class="text-muted text-uppercase small mb-1">Final Action Date</div>
-            <div class="display-6 fw-bold mb-1">{{ final_status.display }}</div>
-            <div class="text-muted small">When the green card can be issued</div>
+            <div class="text-muted text-uppercase small mb-1">Fecha de Acción Final</div>
+            <div class="display-6 fw-bold mb-1">{{ final_display }}</div>
+            <div class="text-muted small">Cuándo se puede emitir la green card</div>
           </div>
         </div>
       </div>
       <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body text-center">
-            <div class="text-muted text-uppercase small mb-1">Dates for Filing</div>
-            <div class="display-6 fw-bold mb-1">{{ filing_status.display }}</div>
-            <div class="text-muted small">When you may submit the application</div>
+            <div class="text-muted text-uppercase small mb-1">Fechas de Presentación</div>
+            <div class="display-6 fw-bold mb-1">{{ filing_display }}</div>
+            <div class="text-muted small">Cuándo puedes presentar la solicitud</div>
           </div>
         </div>
       </div>
     </div>
 
     <p class="fs-5 mb-4">
-      The <strong>{{ eb_short }}</strong> Final Action Date for <strong>{{ country_display }}</strong>
+      La Fecha de Acción Final de <strong>{{ eb_short }}</strong> para <strong>{{ country_display }}</strong>
       {% if trend.direction == "advanced" %}<span class="text-success">{{ trend.text }}</span>
       {% elif trend.direction == "retrogressed" %}<span class="text-danger">{{ trend.text }}</span>
       {% else %}{{ trend.text }}{% endif %}.
     </p>
 
     {% if chart_json %}
-    <h2 class="h4 mt-2 mb-2">{{ eb_short }} {{ country_display }} priority date over time</h2>
-    <p class="text-muted small mb-2">Final Action and Dates for Filing cutoffs by Visa Bulletin month. Gaps are months the category was Current or Unavailable. Double-tap (or double-click) the chart to reset the zoom.</p>
+    <h2 class="h4 mt-2 mb-2">Fecha de prioridad {{ eb_short }} {{ country_display }} a lo largo del tiempo</h2>
+    <p class="text-muted small mb-2">Cortes de Acción Final y Fechas de Presentación por mes del Boletín de Visas. Los espacios en blanco son meses en que la categoría estuvo Actual o No disponible. Doble toque (o doble clic) para restablecer el zoom.</p>
     <div id="pd-history-chart" class="mb-4" style="min-height:340px;">
       <div class="chart-loading text-center text-muted py-5">
-        <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading chart…</span></div>
-        <div class="mt-2">Loading chart…</div>
+        <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Cargando gráfico…</span></div>
+        <div class="mt-2">Cargando gráfico…</div>
       </div>
     </div>
     <script>
@@ -58,8 +66,6 @@
           var el = document.getElementById('pd-history-chart');
           if (!el || typeof Plotly === 'undefined') return;
           el.innerHTML = '';
-          // Plotly's default doubleClick ('reset+autosize') handles double-tap/double-click
-          // reset natively here (unlike the dashboard chart, which overrides it).
           Plotly.newPlot('pd-history-chart', payload.data, payload.layout,
             { responsive: true, displayModeBar: false }).then(function () {
               Plotly.Plots.resize('pd-history-chart');
@@ -73,20 +79,24 @@
     </script>
     {% endif %}
 
+    <div class="alert alert-info py-2 mb-4">
+      <small><strong>Nota:</strong> el panel interactivo y los datos de salarios están en inglés. La interfaz es visual (fechas, categorías, países) y se puede navegar sin conocimientos avanzados del idioma.</small>
+    </div>
+
     <div class="d-flex flex-wrap gap-2 mb-4">
       <a href="{{ dashboard_url }}" class="btn btn-primary">
-        <i class="bi bi-graph-up-arrow"></i> Full {{ country_display }} dashboard + predictions
+        <i class="bi bi-graph-up-arrow"></i> Panel completo de {{ country_display }} + predicciones (inglés)
       </a>
       <a href="/salaries/" class="btn btn-outline-secondary">
-        <i class="bi bi-cash-stack"></i> {{ eb_short }} salary data
+        <i class="bi bi-cash-stack"></i> Datos de salarios {{ eb_short }} (inglés)
       </a>
     </div>
 
     {% if history %}
-    <h2 class="h4 mt-4 mb-3">Recent {{ eb_short }} {{ country_display }} Final Action history</h2>
+    <h2 class="h4 mt-4 mb-3">Historial reciente de Acción Final ({{ eb_short }} {{ country_display }})</h2>
     <div class="table-responsive">
       <table class="table table-sm table-striped">
-        <thead><tr><th>Visa Bulletin</th><th>Final Action Date</th></tr></thead>
+        <thead><tr><th>Boletín de Visas</th><th>Fecha de Acción Final</th></tr></thead>
         <tbody>
           {% for row in history %}
           <tr><td>{{ row.month }}</td><td>{{ row.cutoff }}</td></tr>
@@ -96,7 +106,7 @@
     </div>
     {% endif %}
 
-    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    <h2 class="h4 mt-4 mb-3">Preguntas frecuentes</h2>
     {% for item in faq %}
     <div class="mb-3">
       <div class="fw-semibold">{{ item.q }}</div>
@@ -104,11 +114,11 @@
     </div>
     {% endfor %}
 
-    <h2 class="h4 mt-4 mb-3">Other priority dates</h2>
+    <h2 class="h4 mt-4 mb-3">Otras fechas de prioridad</h2>
     <p class="mb-1"><strong>{{ country_display }}:</strong>
       {% for s in sibling_classes %}<a href="{{ s.url }}">{{ s.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
     </p>
-    <p><strong>{{ eb_short }} other countries:</strong>
+    <p><strong>{{ eb_short }} otros países:</strong>
       {% for s in sibling_countries %}<a href="{{ s.url }}">{{ s.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
     </p>
   </div>

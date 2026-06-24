@@ -976,6 +976,23 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_spanish_cluster",
+    size = "small",
+    srcs = ["test_spanish_cluster.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_h1b_sponsors_landing",
     size = "small",
     srcs = ["test_h1b_sponsors_landing.py"],

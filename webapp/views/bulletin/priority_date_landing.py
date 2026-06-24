@@ -155,13 +155,23 @@ def _recent_history(series: dict | None, n: int = 6) -> list[dict]:
     return rows
 
 
-def _chart_json(final_series: dict | None, filing_series: dict | None) -> str | None:
+def _chart_json(
+    final_series: dict | None,
+    filing_series: dict | None,
+    final_label: str = "Final Action",
+    filing_label: str = "Dates for Filing",
+    x_title: str = "Visa Bulletin month",
+    y_title: str = "Priority date (cutoff)",
+) -> str | None:
     """Single Plotly line graph of the priority-date cutoff over time.
 
     Cheap — built entirely from the already-aggregated arrays (no extra query),
     so the page stays fast/cacheable. Final Action is the primary line; Dates for
     Filing is a secondary dashed line. Gaps (Current/Unavailable months → None)
     are NOT bridged. Returns a JSON string, or None when nothing is plottable.
+
+    ``final_label``/``filing_label`` localize the legend/hover trace names (the
+    English defaults keep the EN page output byte-identical).
     """
 
     def _trace(series: dict | None, name: str, color: str, dash: str) -> dict | None:
@@ -195,8 +205,8 @@ def _chart_json(final_series: dict | None, filing_series: dict | None) -> str | 
     traces = [
         t
         for t in (
-            _trace(final_series, "Final Action", "#0d6efd", "solid"),
-            _trace(filing_series, "Dates for Filing", "#6c757d", "dot"),
+            _trace(final_series, final_label, "#0d6efd", "solid"),
+            _trace(filing_series, filing_label, "#6c757d", "dot"),
         )
         if t
     ]
@@ -205,8 +215,8 @@ def _chart_json(final_series: dict | None, filing_series: dict | None) -> str | 
     layout = {
         "margin": {"t": 10, "r": 10, "b": 40, "l": 62},
         "height": 340,
-        "xaxis": {"title": "Visa Bulletin month", "type": "date"},
-        "yaxis": {"title": "Priority date (cutoff)", "type": "date"},
+        "xaxis": {"title": x_title, "type": "date"},
+        "yaxis": {"title": y_title, "type": "date"},
         "legend": {"orientation": "h", "y": -0.25},
         "hovermode": "x unified",
     }
@@ -322,12 +332,16 @@ def priority_date_landing_view(request, eb_class: str, country: str):
         if slug != country.lower()
     ]
 
+    # Bidirectional hreflang: this EN page <-> its Spanish counterpart.
+    es_path = f"/es/priority-date/{eb_class.lower()}/{country.lower()}/"
     context = {
         "page_title": page_title,
         "page_heading": page_heading,
         "page_description": page_description,
         "canonical_url": canonical_url,
         "og_url": canonical_url,
+        "hreflang_en": canonical_url,
+        "hreflang_es": request.build_absolute_uri(es_path),
         "structured_data": json.dumps(structured_data),
         "eb_short": eb_short,
         "eb_full": eb_full,
@@ -345,3 +359,234 @@ def priority_date_landing_view(request, eb_class: str, country: str):
         "sibling_countries": sibling_countries,
     }
     return render(request, "webapp/priority_date_landing.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Spanish (/es/) siblings. Reuse the language-agnostic data helpers above
+# (_latest_status / _series / _chart_json) and localize only the rendered text,
+# so the data logic lives in one place and the EN pages stay byte-identical.
+# ---------------------------------------------------------------------------
+
+# Spanish country labels (the EN _COUNTRIES map keys are the URL slugs).
+_ES_COUNTRY = {
+    "india": "India",
+    "china": "China",
+    "philippines": "Filipinas",
+    "mexico": "México",
+}
+
+_ES_MONTHS = {
+    1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+    7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre",
+    12: "diciembre",
+}
+_ES_MONTHS_ABBR = {
+    1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
+    7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
+}
+
+
+def _fmt_date_es(d: date | None) -> str | None:
+    return f"{d.day} de {_ES_MONTHS[d.month]} de {d.year}" if d else None
+
+
+def _status_display_es(status: dict) -> str:
+    """Spanish display string for a _latest_status() result."""
+    s = status["status"]
+    if s == "current":
+        return "Actual (sin retraso)"
+    if s == "unavailable":
+        return "No disponible"
+    if s == "date" and status["date_iso"]:
+        return _fmt_date_es(date.fromisoformat(status["date_iso"]))
+    return "Sin datos"
+
+
+def _trend_es(final_status: dict, series: dict | None) -> dict:
+    """Spanish month-over-month movement copy. Mirrors _trend()'s structure."""
+    status = final_status["status"]
+    cutoffs = series["cutoff_dates"] if series else []
+    cur = cutoffs[-1] if cutoffs else None
+    prev = cutoffs[-2] if len(cutoffs) >= 2 else None
+
+    if status == "unavailable":
+        moved = prev is not None
+        return {
+            "direction": "retrogressed",
+            "text": "pasó a No disponible este mes" if moved else "está actualmente No disponible",
+        }
+    if status == "current":
+        moved = prev is not None
+        return {
+            "direction": "advanced",
+            "text": "pasó a Actual este mes (sin retraso)" if moved else "está actualmente Actual (sin retraso)",
+        }
+    if status == "date" and cur is not None:
+        if prev is None:
+            return {"direction": "advanced", "text": "reabrió con una fecha de corte este mes"}
+        if cur > prev:
+            return {"direction": "advanced", "text": f"avanzó {(cur - prev).days} días respecto al mes anterior"}
+        if cur < prev:
+            return {"direction": "retrogressed", "text": f"retrocedió {(prev - cur).days} días respecto al mes anterior"}
+        return {"direction": "unchanged", "text": "se mantuvo sin cambios respecto al mes anterior"}
+    return {"direction": "na", "text": "no tiene movimiento reciente que reportar"}
+
+
+def _recent_history_es(series: dict | None, n: int = 6) -> list[dict]:
+    """Last n (bulletin month, cutoff) points in Spanish, newest first."""
+    if not series:
+        return []
+    pairs = list(zip(series["dates"], series["cutoff_dates"]))[-n:]
+    rows = []
+    for bulletin_month, cutoff in reversed(pairs):
+        rows.append(
+            {
+                "month": f"{_ES_MONTHS_ABBR[bulletin_month.month]} {bulletin_month.year}",
+                "cutoff": _fmt_date_es(cutoff) or "Actual/No disponible",
+            }
+        )
+    return rows
+
+
+def _faq_es(eb_short: str, country_es: str, final_display_es: str, trend_es: dict, is_unavailable: bool) -> list[dict]:
+    faq = [
+        {
+            "q": f"¿Cuál es la fecha de prioridad {eb_short} para {country_es} ahora mismo?",
+            "a": (
+                f"Según el último Boletín de Visas de EE.UU., la Fecha de Acción Final "
+                f"de {eb_short} para {country_es} es {final_display_es}. Las Fechas de "
+                f"Acción Final determinan cuándo se puede emitir efectivamente la green card."
+            ),
+        },
+        {
+            "q": f"¿Se movió el corte de {eb_short} {country_es} este mes?",
+            "a": (
+                f"La Fecha de Acción Final de {eb_short} {country_es} {trend_es['text']}. "
+                f"El movimiento varía cada mes según la demanda y los límites por país."
+            ),
+        },
+        {
+            "q": "¿Cuál es la diferencia entre Acción Final y Fechas de Presentación?",
+            "a": (
+                "Las Fechas de Acción Final rigen cuándo USCIS o el consulado pueden "
+                "aprobar la green card. Las Fechas de Presentación rigen cuándo puedes "
+                "presentar la solicitud (Formulario I-485 / DS-260). Las fechas de "
+                "presentación suelen ir por delante de las de acción final."
+            ),
+        },
+    ]
+    if is_unavailable:
+        faq.insert(
+            1,
+            {
+                "q": f"¿Por qué {eb_short} {country_es} está No disponible?",
+                "a": (
+                    f'"No disponible" (U) significa que la categoría {eb_short} agotó sus '
+                    f"números de green card para {country_es} este año fiscal: la demanda "
+                    "alcanzó el límite anual por país, por lo que el Departamento de Estado "
+                    "deja de emitir fechas de acción final hasta que comienza el nuevo año "
+                    "fiscal el 1 de octubre. Normalmente vuelve a abrir con una fecha de "
+                    "corte en el Boletín de octubre. Puedes seguir presentando bajo el cuadro "
+                    "de Fechas de Presentación mientras Acción Final está No disponible."
+                ),
+            },
+        )
+    return faq
+
+
+def spanish_priority_date_landing_view(request, eb_class: str, country: str):
+    """Spanish per-EB-class x per-country priority-date landing page (/es/...).
+
+    Same data + 404 gate as the English view, Spanish chrome/copy. Targets
+    Spanish high-intent demand ("fecha de prioridad eb2 india", "eb3 china
+    fecha de prioridad").
+    """
+    eb = _EB_CLASSES.get((eb_class or "").lower())
+    ctry = _COUNTRIES.get((country or "").lower())
+    if eb is None or ctry is None:
+        raise Http404("Unknown priority-date landing page")
+
+    eb_short, eb_full = eb
+    country_es = _ES_COUNTRY[country.lower()]
+
+    final_series = _series(ctry.value, ActionType.FINAL_ACTION.value, eb_full)
+    filing_series = _series(ctry.value, ActionType.FILING.value, eb_full)
+    if final_series is None and filing_series is None:
+        raise Http404("No data for this category/country")
+
+    final_status = _latest_status(ctry.value, ActionType.FINAL_ACTION.value, eb_full)
+    filing_status = _latest_status(ctry.value, ActionType.FILING.value, eb_full)
+    final_display_es = _status_display_es(final_status)
+    filing_display_es = _status_display_es(filing_status)
+    trend = _trend_es(final_status, final_series)
+    history = _recent_history_es(final_series)
+    chart_json = _chart_json(
+        final_series, filing_series,
+        final_label="Acción Final", filing_label="Fechas de Presentación",
+        x_title="Mes del Boletín de Visas", y_title="Fecha de prioridad (corte)",
+    )
+
+    latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
+    bulletin_month_es = (
+        f"{_ES_MONTHS[latest_bulletin.publication_date.month]} de {latest_bulletin.publication_date.year}"
+        if latest_bulletin else ""
+    )
+
+    page_title = f"Fecha de Prioridad {eb_short} {country_es} — Corte Actual y Tendencia"
+    page_heading = f"Fecha de Prioridad {eb_short} {country_es}"
+    page_description = (
+        f"Fecha de Acción Final actual de {eb_short} para {country_es}: "
+        f"{final_display_es} (Boletín de Visas de {bulletin_month_es}). "
+        f"Consulta las Fechas de Presentación, el movimiento más reciente y el historial."
+    )
+    en_path = f"/priority-date/{eb_class.lower()}/{country.lower()}/"
+    canonical_url = request.build_absolute_uri(request.path)
+    faq = _faq_es(eb_short, country_es, final_display_es, trend, final_status["status"] == "unavailable")
+
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": item["q"],
+                "acceptedAnswer": {"@type": "Answer", "text": item["a"]},
+            }
+            for item in faq
+        ],
+    }
+
+    sibling_classes = [
+        {"label": short, "url": f"/es/priority-date/{slug}/{country.lower()}/"}
+        for slug, (short, _full) in _EB_CLASSES.items()
+        if slug != eb_class.lower()
+    ]
+    sibling_countries = [
+        {"label": _ES_COUNTRY[slug], "url": f"/es/priority-date/{eb_class.lower()}/{slug}/"}
+        for slug in _COUNTRIES
+        if slug != country.lower()
+    ]
+
+    context = {
+        "page_title": page_title,
+        "page_heading": page_heading,
+        "page_description": page_description,
+        "canonical_url": canonical_url,
+        "og_url": canonical_url,
+        "hreflang_es": canonical_url,
+        "hreflang_en": request.build_absolute_uri(en_path),
+        "structured_data": json.dumps(structured_data),
+        "eb_short": eb_short,
+        "country_display": country_es,
+        "bulletin_month": bulletin_month_es,
+        "final_display": final_display_es,
+        "filing_display": filing_display_es,
+        "trend": trend,
+        "history": history,
+        "chart_json": chart_json,
+        "faq": faq,
+        "dashboard_url": f"/employment-based/{country.lower()}/",
+        "sibling_classes": sibling_classes,
+        "sibling_countries": sibling_countries,
+    }
+    return render(request, "webapp/spanish_priority_date_landing.html", context)

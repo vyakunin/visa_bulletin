@@ -18,9 +18,10 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 
 | Section | Count | Filter criteria | `lastmod` |
 |---------|-------|----------------|-----------|
-| Static pages | 8 | `/`, `/salaries/`, `/employers/`, `/job-titles/`, `/faq/`, `/when-is-the-next-visa-bulletin/`, `/about/`, `/contact/` | Latest bulletin date |
+| Static pages | 12 | the 8 English + `/es/`, `/es/faq/`, `/es/predictions/`, `/es/priority-date/` (Spanish cluster) | Latest bulletin date |
 | Category/country landings | ~12 | `/employment-based/`, `/family-sponsored/` × countries | Latest bulletin date |
 | Priority-date landings | 12 | `/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
+| Priority-date landings (Spanish) | 12 | `/es/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Priority-date hub + rollups | 4 | `/priority-date/` + `/priority-date/{eb1,eb2,eb3}/` (country-agnostic) | Latest bulletin `fetched_at` |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
 | Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
@@ -53,6 +54,38 @@ full per-country dashboard + salary data + sibling pages (internal-link mesh).
   Pending: staging deploy + real-data render verify, internal links FROM the
   main dashboards, then GSC measurement. Possible v2: embed the prediction,
   add EB-4/EB-5 + ALL, expand country set.
+
+## Spanish (/es/) cluster
+
+Spanish-language sibling pages converting real Spanish search demand ("boletín de
+visas", "fecha de prioridad eb2 india", "predicciones boletín de visas",
+"preguntas frecuentes boletín de visas"). Static-sibling pattern (hardcoded
+Spanish copy, no Django i18n middleware) — the live data widgets (dashboard,
+salaries, prediction archive) stay English and the Spanish pages link into them
+with a note that the visual interface (dates/categories/countries) is navigable
+without advanced English.
+
+- **`/es/`** — landing explainer (pre-existing; now links the cluster).
+- **`/es/priority-date/<eb>/<country>/`** (12) — Spanish mirror of the English
+  per-EB×country landings. Reuses the EN data path (`_latest_status` / `_series` /
+  `_chart_json` in `priority_date_landing.py`); only the rendered chrome/copy is
+  localized (`spanish_priority_date_landing_view` + Spanish `_trend_es` / `_faq_es`
+  / date formatting). FAQPage JSON-LD. Same 404 gate as EN (no thin pages).
+- **`/es/priority-date/`** — Spanish hub indexing the 12 landings.
+- **`/es/faq/`** — Spanish FAQ (8 Q&A) with FAQPage JSON-LD.
+- **`/es/predictions/`** — Spanish explainer of the Bulletin Forecast model,
+  linking to the English prediction archive.
+- **Views:** `webapp/views/static/spanish.py` (hub/faq/predictions) +
+  `spanish_priority_date_landing_view` in `priority_date_landing.py`.
+- **hreflang:** bidirectional `es`↔`en` declared on every pair (ES landing↔EN
+  landing, ES FAQ↔EN FAQ `/faq/`, ES hub↔EN hub `/priority-date/`, ES
+  predictions↔EN `/predictions/`); `x-default` → English. The base template only
+  emits hreflang on `/`; each page template overrides the `hreflang` block.
+- **Sitemap:** all `/es/` URLs emitted (4 static + 12 landings) with truthful
+  `lastmod`. Test: `tests/test_spanish_cluster.py`.
+- **Status (2026-06-24):** shipped to `main`, suite green. Pending: staging
+  deploy + real-data render verify, GSC measurement after indexing. Possible v2:
+  Spanish per-country dashboard data, expand to other high-demand Spanish queries.
 
 ## Priority-date HUB + per-EB-class rollups (`/priority-date/` + `/priority-date/<eb_class>/`)
 

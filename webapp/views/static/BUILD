@@ -17,3 +17,13 @@ py_library(
         requirement("Django"),
     ],
 )
+
+py_library(
+    name = "spanish",
+    srcs = ["spanish.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//webapp/views/bulletin:priority_date_landing",
+        requirement("Django"),
+    ],
+)

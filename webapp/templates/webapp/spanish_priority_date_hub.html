@@ -1,0 +1,56 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block hreflang %}
+<link rel="alternate" hreflang="es" href="{{ hreflang_es }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang_en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang_en }}">
+{% endblock %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-calendar-check"></i> Fechas de Prioridad</div>{% endblock %}
+
+{% block content %}
+<div class="row" lang="es">
+  <div class="col-lg-9 offset-lg-1">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/es/">Boletín de Visas</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Fechas de prioridad</li>
+      </ol>
+    </nav>
+
+    <h1 class="mb-3">Fechas de prioridad por categoría y país</h1>
+    <p class="lead">
+      Elige tu categoría basada en empleo y tu país de cargo para ver el corte actual
+      de Acción Final, las Fechas de Presentación, el movimiento más reciente y el
+      historial — basado en el último Boletín de Visas de EE.UU.
+    </p>
+
+    {% for group in groups %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <h2 class="h5 card-title">{{ group.eb_short }}</h2>
+        <div class="d-flex flex-wrap gap-2">
+          {% for c in group.countries %}
+          <a href="{{ c.url }}" class="btn btn-outline-primary btn-sm">{{ group.eb_short }} {{ c.label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="alert alert-info py-2 mt-3">
+      <small><strong>Nota:</strong> el panel interactivo completo y las predicciones están en
+        inglés. La interfaz es visual (fechas, categorías, países) y se puede navegar sin
+        conocimientos avanzados del idioma.</small>
+    </div>
+
+    <p class="mt-3">
+      <a href="/es/predictions/" class="me-3">Predicciones del Boletín de Visas →</a>
+      <a href="/es/">Guía del Boletín de Visas (español) →</a>
+    </p>
+    <p class="text-muted small"><a href="/priority-date/">English priority-date hub →</a></p>
+  </div>
+</div>
+{% endblock %}

@@ -8,7 +8,10 @@ from webapp.views.bulletin.dashboard import dashboard_view
 from webapp.views.bulletin.prediction_month_forecast import (
     prediction_month_forecast_view,
 )
-from webapp.views.bulletin.priority_date_landing import priority_date_landing_view
+from webapp.views.bulletin.priority_date_landing import (
+    priority_date_landing_view,
+    spanish_priority_date_landing_view,
+)
 from webapp.views.bulletin.priority_date_rollup import (
     priority_date_eb_rollup_view,
     priority_date_hub_view,
@@ -46,6 +49,11 @@ from webapp.views.static.pages import (
     health_view,
     next_bulletin_view,
     spanish_landing_view,
+)
+from webapp.views.static.spanish import (
+    spanish_faq_view,
+    spanish_predictions_view,
+    spanish_priority_date_hub_view,
 )
 
 urlpatterns = [
@@ -89,8 +97,16 @@ urlpatterns = [
     path("when-is-the-next-visa-bulletin/", next_bulletin_view, name="next_bulletin"),
     path("about/", about_view, name="about"),
     path("contact/", contact_view, name="contact"),
-    # Spanish landing — single-page explainer for "boletín de visas" search demand
+    # Spanish (/es/) cluster — converts "boletín de visas" search demand.
     path("es/", spanish_landing_view, name="spanish_landing"),
+    path("es/faq/", spanish_faq_view, name="spanish_faq"),
+    path("es/predictions/", spanish_predictions_view, name="spanish_predictions"),
+    path("es/priority-date/", spanish_priority_date_hub_view, name="spanish_priority_date_hub"),
+    path(
+        "es/priority-date/<slug:eb_class>/<slug:country>/",
+        spanish_priority_date_landing_view,
+        name="spanish_priority_date_landing",
+    ),
     # Salary Database
     path("salaries/", salary_search_view, name="salary_search"),
     # Deep salary URLs — role/employer redirects to canonical profile pages,
