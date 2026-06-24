@@ -90,6 +90,16 @@ py_library(
 )
 
 py_library(
+    name = "h1b_sponsors",
+    srcs = ["h1b_sponsors.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "job_title_chart_builder",
     srcs = ["job_title_chart_builder.py"],
     deps = [

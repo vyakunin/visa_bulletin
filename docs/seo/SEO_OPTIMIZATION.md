@@ -117,6 +117,47 @@ exactly that gap (the not-yet-published month).
   GSC measurement. Possible v2: emit +2/+3 month pages, embed the per-series
   chart, surface confidence intervals.
 
+## Top-H-1B-sponsors-per-role pages (`/h1b-sponsors/<job-title-slug>/`)
+
+Dedicated ranked leaderboard answering the high-intent query the existing pages
+don't: **"top H-1B sponsors for {role}" / "which companies sponsor H-1B for
+{role}" / "companies that sponsor H-1B for {title}"**. The `/job-title/<slug>/`
+profile is salary-stats-first and `/salaries/by-state/<code>/` is state-first;
+neither is a clean ranked "companies that sponsor H-1B for X" answer — so this is
+a new page, not a thin duplicate.
+
+- **Content:** headline stats (H-1B filings, # sponsoring employers, median
+  H-1B wage + p25–p75); a ranked top-25 employer table (employer → `/employer/`
+  link, H-1B filing count, mean wage); a top-states block; an FAQ (FAQPage
+  schema). Ranked by certified H-1B LCA filing count from DOL data.
+- **View:** `webapp/views/salary/h1b_sponsors.py`. **Deliberately cheap** — a
+  handful of indexed, single-cluster aggregates (`visa_program`, `wage_annual`,
+  `job_title_entity`/`employer` FKs); no live VQS solver, no full scan.
+  `@cache_page_skip_bots`.
+- **No thin pages:** a role 404s unless it has **≥50 H-1B filings AND ≥8 distinct
+  sponsoring employers**. This gate is shared (`lib/business/salary/h1b_sponsors.py`)
+  with the sitemap emit-set, so the sitemap NEVER lists a page that 404s.
+- **Sitemap:** emits the qualifying slug set (cached 24h via the shared helper —
+  the gate is a GROUP BY over the H-1B corpus, too heavy per bot fetch; the
+  refresh pipeline's `cache.clear()` refreshes it). `changefreq monthly`,
+  `priority 0.6`, lastmod = latest bulletin `fetched_at`. Capped to the top 5,000
+  roles by H-1B volume.
+- **Internal-link mesh:** inbound from each role's `/job-title/<slug>/` profile
+  (a CTA in the "Top Employers" card, rendered only when the role qualifies so we
+  never link to a 404) + the sitemap; outbound to the profile, salary search, and
+  each `/employer/<slug>/`.
+- **Test:** `tests/test_h1b_sponsors_landing.py` (qualifying renders + FAQPage +
+  self-canonical; thin role 404; PERM-heavy role 404 = H-1B-only; sitemap lists
+  qualifying only).
+- **Status (2026-06-24):** core shipped to `main` + sitemap + inbound link, suite
+  green. Pending: staging deploy + real-data render verify, prod graduation
+  (Path 1 — pure rendering), CF purge + GSC sitemap submit, then GSC measurement.
+  **Follow-ups (v2):** (a) the state variant — re-angle `/salaries/by-state/` for
+  "highest-paying H-1B employers in {state}" (wage-ranked, H-1B-filtered); (b)
+  denormalize per-cluster H-1B filing/sponsor counts onto `JobTitleCluster` in the
+  stats refresh, which lets the sitemap drop the heavy cached aggregate and
+  enables a related-role sponsor-page cross-link mesh.
+
 ## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
 
 The dedicated release-schedule page targets the **"when will the {month} {year}

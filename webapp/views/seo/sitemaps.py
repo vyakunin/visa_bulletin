@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.salary.h1b_sponsors import qualifying_slugs
 from lib.utils.location_utils import US_STATES
 from models.blog import BlogPost
 from models.bulletin import Bulletin
@@ -256,6 +257,23 @@ def sitemap_view(request):
         xml_parts.extend(_url_entry(
             f"{base_url}/job-title/{cluster.slug}/",
             lastmod=_lastmod_capped(cluster.updated_at, today),
+        ))
+
+    # Top-H-1B-sponsors-per-role pages. Cached qualifying-slug set (shared with
+    # the view's 404-gate) so we never list a page that 404s. lastmod = latest
+    # ingest (the underlying DOL data's real change date).
+    try:
+        sponsor_slugs = qualifying_slugs()
+    except (OperationalError, ProgrammingError):
+        logger.error("Failed to load H-1B sponsor slugs for sitemap", exc_info=True)
+        sponsor_slugs = []
+
+    for sponsor_slug in sponsor_slugs:
+        xml_parts.extend(_url_entry(
+            f"{base_url}/h1b-sponsors/{sponsor_slug}/",
+            lastmod=bulletin_lastmod,
+            changefreq="monthly",
+            priority="0.6",
         ))
 
     # Blog posts — use post's own published_date as lastmod
