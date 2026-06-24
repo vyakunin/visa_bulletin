@@ -74,7 +74,10 @@
     {% endif %}
 
     <div class="d-flex flex-wrap gap-2 mb-4">
-      <a href="{{ dashboard_url }}" class="btn btn-primary">
+      <a href="/priority-date-calculator/" class="btn btn-primary">
+        <i class="bi bi-calculator"></i> Is my {{ eb_short }} priority date current?
+      </a>
+      <a href="{{ dashboard_url }}" class="btn btn-outline-secondary">
         <i class="bi bi-graph-up-arrow"></i> Full {{ country_display }} dashboard + predictions
       </a>
       <a href="/salaries/" class="btn btn-outline-secondary">

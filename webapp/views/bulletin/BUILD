@@ -66,6 +66,22 @@ py_library(
 )
 
 py_library(
+    name = "priority_date_calculator",
+    srcs = ["priority_date_calculator.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//models/enums:employment_preference",
+        "//models/enums:family_preference",
+        "//models/enums:visa_category",
+        requirement("Django"),
+    ],
+)
+
+py_library(
     name = "prediction_month_forecast",
     srcs = ["prediction_month_forecast.py"],
     visibility = ["//visibility:public"],

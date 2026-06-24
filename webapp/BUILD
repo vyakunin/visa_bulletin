@@ -23,6 +23,7 @@ py_library(
         "//webapp/views:blog_views",
         "//webapp/views/bulletin:dashboard",
         "//webapp/views/bulletin:prediction_month_forecast",
+        "//webapp/views/bulletin:priority_date_calculator",
         "//webapp/views/bulletin:priority_date_landing",
         "//webapp/views/bulletin:priority_date_rollup",
         "//webapp/views/bulletin:vqs_api",

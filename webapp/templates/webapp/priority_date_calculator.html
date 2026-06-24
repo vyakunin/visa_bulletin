@@ -1,0 +1,156 @@
+{% extends "webapp/base.html" %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-calculator"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-9 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}</h1>
+    <p class="text-muted mb-4">
+      Enter your priority date, pick your green-card category and country of chargeability,
+      and see whether your date is current in the {{ bulletin_month }} U.S. Visa Bulletin —
+      for both Final Action and Dates for Filing.
+    </p>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <form id="pd-calc" onsubmit="return false;">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label for="pd-category" class="form-label fw-semibold">Green-card category</label>
+              <select id="pd-category" class="form-select">
+                {% regroup categories by group as cat_groups %}
+                {% for grp in cat_groups %}
+                <optgroup label="{{ grp.grouper }}">
+                  {% for c in grp.list %}<option value="{{ c.key }}">{{ c.long }}</option>{% endfor %}
+                </optgroup>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="pd-country" class="form-label fw-semibold">Country of chargeability</label>
+              <select id="pd-country" class="form-select">
+                {% for ct in countries %}<option value="{{ ct.value }}">{{ ct.label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label for="pd-date" class="form-label fw-semibold">Your priority date</label>
+              <input type="date" id="pd-date" class="form-control" max="2035-12-31">
+            </div>
+          </div>
+        </form>
+        <div id="pd-result" class="mt-4" aria-live="polite"></div>
+        <div id="pd-links" class="mt-3 d-flex flex-wrap gap-2"></div>
+        <p class="text-muted small mb-0 mt-3">
+          Cutoffs from the {{ bulletin_month }} Visa Bulletin. Your priority date is on your
+          I-140/I-130 approval notice (Form I-797). This tool is informational, not legal advice.
+        </p>
+      </div>
+    </div>
+
+    <h2 class="h4 mb-3">How the priority date calculator works</h2>
+    <p>
+      The U.S. State Department publishes a Visa Bulletin each month with two sets of cutoff dates
+      per category and country. Your <strong>priority date</strong> is your place in line. You are
+      <strong>current</strong> when your priority date is earlier than the cutoff:
+    </p>
+    <ul>
+      <li><strong>Final Action Dates</strong> — when USCIS or the consulate can actually approve and issue the green card.</li>
+      <li><strong>Dates for Filing</strong> — when you may submit the application (Form I-485 or DS-260). These are usually ahead of Final Action, so you can often file before approval.</li>
+      <li>A category shown as <strong>Current (C)</strong> has no backlog; <strong>Unavailable (U)</strong> means its numbers for the fiscal year are used up (it typically reopens around October 1).</li>
+    </ul>
+
+    <div class="d-flex flex-wrap gap-2 my-4">
+      <a href="/priority-date/" class="btn btn-outline-primary"><i class="bi bi-calendar-check"></i> All priority dates by category &amp; country</a>
+      <a href="/predictions/" class="btn btn-outline-primary"><i class="bi bi-graph-up-arrow"></i> When will my date become current? (predictions)</a>
+      <a href="/employment-based/" class="btn btn-outline-secondary"><i class="bi bi-table"></i> Full Visa Bulletin dashboard</a>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    {% for item in faq %}
+    <div class="mb-3">
+      <div class="fw-semibold">{{ item.q }}</div>
+      <div class="text-muted">{{ item.a }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script id="pd-calc-config" type="application/json">{{ calc_config_json|safe }}</script>
+<script>
+(function () {
+  var CFG = JSON.parse(document.getElementById("pd-calc-config").textContent);
+  var MATRIX = CFG.matrix, MONTH = CFG.month;
+  var catEl = document.getElementById("pd-category");
+  var ctryEl = document.getElementById("pd-country");
+  var dateEl = document.getElementById("pd-date");
+  var out = document.getElementById("pd-result");
+  var linksEl = document.getElementById("pd-links");
+
+  var MONTHS = ["January","February","March","April","May","June","July",
+                "August","September","October","November","December"];
+
+  function fmtPd(iso) {
+    var p = iso.split("-");
+    return MONTHS[parseInt(p[1], 10) - 1] + " " + parseInt(p[2], 10) + ", " + p[0];
+  }
+
+  function fmtGap(fromIso, toIso) {
+    var a = new Date(fromIso + "T00:00:00Z"), b = new Date(toIso + "T00:00:00Z");
+    var months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+    if (b.getUTCDate() < a.getUTCDate()) months -= 1;
+    if (months < 1) return "less than a month";
+    var y = Math.floor(months / 12), m = months % 12, parts = [];
+    if (y) parts.push(y + (y === 1 ? " year" : " years"));
+    if (m) parts.push(m + (m === 1 ? " month" : " months"));
+    return "about " + parts.join(", ");
+  }
+
+  function verdict(cell, pd, actionVerb) {
+    if (!cell) return { cls: "secondary", text: "Not published for this category and country in the " + MONTH + " bulletin." };
+    if (cell.status === "current") return { cls: "success", text: "Current (C) — no backlog. A green-card number is available now; you can " + actionVerb + "." };
+    if (cell.status === "unavailable") return { cls: "danger", text: "Unavailable (U) — this category has used its green-card numbers for the fiscal year. It typically reopens around October 1." };
+    if (cell.status === "date") {
+      if (!pd) return { cls: "secondary", text: "Cutoff: " + cell.display + ". Enter your priority date above to check if you are current." };
+      if (pd < cell.iso) return { cls: "success", text: "Current — your priority date (" + fmtPd(pd) + ") is before the cutoff (" + cell.display + "). You can " + actionVerb + "." };
+      if (pd === cell.iso) return { cls: "warning", text: "At the cutoff — your priority date matches the cutoff (" + cell.display + ")." };
+      return { cls: "warning", text: "Not yet current — your priority date (" + fmtPd(pd) + ") is " + fmtGap(cell.iso, pd) + " behind the cutoff (" + cell.display + ")." };
+    }
+    return { cls: "secondary", text: "No data for this combination." };
+  }
+
+  function row(title, v) {
+    return '<div class="alert alert-' + v.cls + ' py-2 mb-2"><span class="fw-semibold">' + title + ':</span> ' + v.text + "</div>";
+  }
+
+  function render() {
+    var cat = catEl.value, ctry = ctryEl.value, pd = dateEl.value || null;
+    var combo = (MATRIX[cat] || {})[ctry];
+    var isEmployment = cat.charAt(0) === "e";
+    if (!combo) {
+      out.innerHTML = '<div class="alert alert-secondary mb-0">We don’t have this category for the selected country in the ' + MONTH +
+        ' Visa Bulletin. See the <a href="/' + (isEmployment ? "employment-based" : "family-sponsored") + '/">full bulletin</a>.</div>';
+    } else {
+      var finalVerb = "be issued a green card", filingVerb = "file your application (Form I-485 / DS-260)";
+      out.innerHTML =
+        row("Final Action (green card can be issued)", verdict(combo.final, pd, finalVerb)) +
+        row("Dates for Filing (you can file)", verdict(combo.filing, pd, filingVerb));
+    }
+    // Deep links for the chosen combo.
+    var links = [];
+    var slug = CFG.landingCountrySlug[ctry];
+    if (isEmployment && CFG.landingEb.indexOf(cat) !== -1 && slug) {
+      links.push('<a class="btn btn-sm btn-outline-primary" href="/priority-date/' + cat + "/" + slug + '/">See the ' +
+        cat.toUpperCase() + " " + ctryEl.options[ctryEl.selectedIndex].text + " trend &amp; history</a>");
+    }
+    links.push('<a class="btn btn-sm btn-outline-primary" href="/predictions/">Forecast: when will it become current?</a>');
+    linksEl.innerHTML = links.join("");
+  }
+
+  catEl.addEventListener("change", render);
+  ctryEl.addEventListener("change", render);
+  dateEl.addEventListener("input", render);
+  render();
+})();
+</script>
+{% endblock %}
