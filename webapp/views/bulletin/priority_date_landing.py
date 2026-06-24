@@ -273,6 +273,17 @@ def _faq(eb_short: str, country_display: str, final_status: dict, trend: dict) -
     return faq
 
 
+def _lead_answer(eb_short: str, country_display: str, final_status: dict, filing_status: dict, bulletin_month: str) -> str:
+    """Concise direct answer for "<ebN> priority date <country>" (real GSC demand,
+    pos ~7-8). Rendered as the lead paragraph under the H1 = paragraph-snippet bait."""
+    return (
+        f"As of the {bulletin_month} U.S. Visa Bulletin, the {eb_short} Final Action Date "
+        f"for {country_display} is {final_status['display']} and the Dates for Filing cutoff "
+        f"is {filing_status['display']}. Your {eb_short} priority date must be earlier than "
+        f"the Final Action Date before USCIS can issue the green card."
+    )
+
+
 def priority_date_landing_view(request, eb_class: str, country: str):
     """Render the per-EB-class x per-country priority-date landing page."""
     eb = _EB_CLASSES.get((eb_class or "").lower())
@@ -348,6 +359,7 @@ def priority_date_landing_view(request, eb_class: str, country: str):
         "country_display": country_display,
         "country_slug": country.lower(),
         "bulletin_month": bulletin_month,
+        "lead_answer": _lead_answer(eb_short, country_display, final_status, filing_status, bulletin_month),
         "final_status": final_status,
         "filing_status": filing_status,
         "trend": trend,
@@ -494,6 +506,16 @@ def _faq_es(eb_short: str, country_es: str, final_display_es: str, trend_es: dic
     return faq
 
 
+def _lead_answer_es(eb_short: str, country_es: str, final_display_es: str, filing_display_es: str, bulletin_month_es: str) -> str:
+    """Spanish lead-paragraph direct answer — mirror of _lead_answer()."""
+    return (
+        f"Según el Boletín de Visas de EE.UU. de {bulletin_month_es}, la Fecha de Acción Final "
+        f"de {eb_short} para {country_es} es {final_display_es} y la Fecha de Presentación es "
+        f"{filing_display_es}. Tu fecha de prioridad {eb_short} debe ser anterior a la Fecha de "
+        f"Acción Final para que USCIS pueda emitir la green card."
+    )
+
+
 def spanish_priority_date_landing_view(request, eb_class: str, country: str):
     """Spanish per-EB-class x per-country priority-date landing page (/es/...).
 
@@ -579,6 +601,7 @@ def spanish_priority_date_landing_view(request, eb_class: str, country: str):
         "eb_short": eb_short,
         "country_display": country_es,
         "bulletin_month": bulletin_month_es,
+        "lead_answer": _lead_answer_es(eb_short, country_es, final_display_es, filing_display_es, bulletin_month_es),
         "final_display": final_display_es,
         "filing_display": filing_display_es,
         "trend": trend,
