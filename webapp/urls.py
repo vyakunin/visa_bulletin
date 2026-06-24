@@ -8,6 +8,9 @@ from webapp.views.bulletin.dashboard import dashboard_view
 from webapp.views.bulletin.prediction_month_forecast import (
     prediction_month_forecast_view,
 )
+from webapp.views.bulletin.priority_date_calculator import (
+    priority_date_calculator_view,
+)
 from webapp.views.bulletin.priority_date_landing import (
     priority_date_landing_view,
     spanish_priority_date_landing_view,
@@ -183,6 +186,13 @@ urlpatterns = [
         dashboard_view,
         {"category": "employment_based"},
         name="employment_based_country",
+    ),
+    # Interactive priority-date calculator ("priority date calculator" cluster).
+    # Distinct path from "priority-date/..." so the slug routes below don't shadow it.
+    path(
+        "priority-date-calculator/",
+        priority_date_calculator_view,
+        name="priority_date_calculator",
     ),
     # Priority-date HUB + per-EB-class ROLLUP (country-agnostic "ebN priority date").
     # Distinct segment counts from the landing route below, so no shadowing.

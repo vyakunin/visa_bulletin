@@ -191,6 +191,14 @@ def sitemap_view(request):
         changefreq="weekly",
         priority="0.7",
     ))
+    # Interactive priority-date calculator (evergreen tool page). Mirrors the
+    # route in webapp/urls.py / webapp/views/bulletin/priority_date_calculator.py.
+    xml_parts.extend(_url_entry(
+        f"{base_url}/priority-date-calculator/",
+        lastmod=bulletin_lastmod,
+        changefreq="weekly",
+        priority="0.7",
+    ))
     for eb_slug in ("eb1", "eb2", "eb3"):
         xml_parts.extend(_url_entry(
             f"{base_url}/priority-date/{eb_slug}/",
