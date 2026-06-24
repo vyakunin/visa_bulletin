@@ -33,7 +33,10 @@ from webapp.views.prediction_views import (
     spaghetti_view,
 )
 from webapp.views.salary.by_state import salary_by_state_view
-from webapp.views.salary.h1b_sponsors import h1b_sponsors_landing_view
+from webapp.views.salary.h1b_sponsors import (
+    h1b_sponsors_landing_view,
+    h1b_sponsors_state_view,
+)
 from webapp.views.salary.search import salary_search_view, worksite_search_view
 from webapp.views.static.pages import (
     about_view,
@@ -125,6 +128,16 @@ urlpatterns = [
     # Job Title Pages (using cluster slug)
     path("job-titles/", job_title_directory_view, name="job_title_directory"),
     path("job-title/<slug:slug>/", job_title_profile_view, name="job_title_profile"),
+    # Top-H-1B-sponsors-per-STATE ranked leaderboard (SEO: "companies that
+    # sponsor H-1B in {state}" / "highest-paying H-1B employers in {state}").
+    # The "in/" segment is two URL segments, so it never collides with the
+    # single-segment per-role route below. States without a substantive
+    # leaderboard 404. Listed first for readability.
+    path(
+        "h1b-sponsors/in/<slug:state>/",
+        h1b_sponsors_state_view,
+        name="h1b_sponsors_state",
+    ),
     # Top-H-1B-sponsors-per-role ranked leaderboard (SEO: "companies that
     # sponsor H-1B for {role}"). Roles without a substantive leaderboard 404.
     path(

@@ -28,6 +28,7 @@ py_library(
     deps = [
         "//django_config:cache_utils",
         "//lib/business/salary:common_stats",
+        "//lib/business/salary:h1b_sponsors",
         "//lib/utils:location_utils",
         "//models:salary",
         requirement("Django"),

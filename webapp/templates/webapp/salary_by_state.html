@@ -159,6 +159,16 @@
                 </div>
                 {% endif %}
 
+                {% if show_h1b_sponsors_cta %}
+                <!-- Cross-link to the dedicated H-1B sponsor leaderboard -->
+                <p class="mb-4">
+                    <a class="btn btn-outline-primary"
+                       href="{{ h1b_sponsors_url }}">
+                        <i class="bi bi-buildings"></i> Top H-1B sponsors in {{ state_name }} &rarr;
+                    </a>
+                </p>
+                {% endif %}
+
                 <!-- Top employers in this state -->
                 <div class="card mb-4">
                     <div class="card-header">
