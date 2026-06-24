@@ -12,7 +12,7 @@ Canonical release surfaces (the ONLY paths to prod):
 
 | Operation | Use | Never instead |
 |---|---|---|
-| Promote staging→prod (Path 1 image swap) | `hosting/promote.sh --prod` | a manual `docker compose pull web && up -d` on the box |
+| Promote staging→prod (Path 1, code-only) | **`hosting/cutover.sh --code <sha>`** — zero-downtime (gates on staging, then swaps while the minipc serves prod; vb never 502s) | `promote.sh --prod` or a bare `docker compose pull web && up -d` on the box — both 502 prod ~10–15 s. Disruptive fallback ONLY when the cutover is unavailable (and then `promote.sh <sha> --prod --accept-502`). |
 | Data-refresh / heavyweight graduation (Path 2) | `hosting/cutover.sh --data` / `hosting/graduate.sh` | a direct heavy mutation on the serving prod box |
 | Runtime config (compose, `.env`, monetization `overrides/`) | edit the per-stack file under `hosting/{homeserver,staging,standby}/` then deploy it; **mirror to staging same task** (parity rule below) | `sed`/`vi` on `/opt/stack/...` on the server |
 | Edge cache purge | `hosting/scripts/cf_cache_purge.py` | manual CF dashboard clicks |
@@ -52,6 +52,17 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 
 The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
 
+## Promote via the ZERO-DOWNTIME cutover — never the 502 web-swap by default
+
+A code-only promotion to prod **defaults to `hosting/cutover.sh --code <sha>`**, which gates on staging (it calls `promote.sh <sha>` internally) and then swaps the homeserver image *while the minipc serves prod traffic* — so **vb never 502s**. Do NOT routinely promote with `promote.sh --prod` or a bare `docker compose pull web && docker compose up -d web`: those recreate the live `web` container in place, 502-ing prod for ~10–15 s on every release. Disturbing prod is not the cost of a routine deploy; the no-downtime path is BUILT — use it.
+
+- **The cutover's only blast cost is bubba's ~30–60 s blip** (shared homeserver tunnel) — and policy (2026-06-22, `RELEASE_PATHS.md`) already ACCEPTS that as collateral: it does not gate or window a VB release. So there is no "low-traffic window" excuse to fall back to the 502 swap.
+- **`promote.sh --prod` is a fallback only when the cutover is genuinely unavailable** (minipc below the RAM floor for the standby restore, standby stack down). It now refuses to run without an explicit `--accept-502` flag, precisely so the disruptive swap can't be taken by habit.
+- **Hotfix exception:** a true prod-down emergency (sustained 5xx, broken parser pre-publication) MAY take the fast disruptive swap — but say so; "it was just quicker" is not an emergency.
+- **Verify:** zero vb 502s during the swap is the end-state (`promote.sh --prod` would show the ~10–15 s window; the cutover shows none). `cutover.sh --code <sha> --dry` prints the plan + preflight first.
+
+Origin: 2026-06-24 — vb promotions kept disturbing prod with the `promote.sh --prod` / `docker compose up -d web` web-swap (~10–15 s 502s) even though the zero-downtime `cutover.sh --code` was built and is the documented no-downtime path. Vladimir: *"vb promotion keeps disturbing prod, ignoring no-downtime process. Tighten its rules to defer here for promotion."* → flipped the default to the cutover here + in `RELEASE_PATHS.md`, and guarded `promote.sh --prod` behind `--accept-502`.
+
 ## Keep staging and prod in PARITY — mirror every direct-prod change to staging immediately
 
 Staging is only a trustworthy release-candidate (and `promote.sh` diff-gate) if it differs from prod **only by the change under test**. Any change made directly to the **prod** stack's *runtime config* — monetization `overrides/*.html`, `.env`, compose volumes/services, an `ALLOWED_HOSTS` edit, a hotfix applied straight to prod — MUST be mirrored to the **staging** stack in the **same task**. Otherwise divergence silently accumulates and pollutes the next diff-gate with phantom deltas, eroding trust in the gate.
@@ -90,7 +101,7 @@ Origin: 2026-06-21 — the employer-clustering split-cluster fix was validated o
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**
 
-**Promotion:** verify staging → fast-forward `prod` from `staging` → on the production server `cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web`.
+**Promotion:** verify staging → **`hosting/cutover.sh --code <sha>`** (zero-downtime; gates staging then swaps with vb never 502ing) → fast-forward `prod` from `staging`. Never the in-place `docker compose up -d web` on prod by default — that 502s (see "Promote via the ZERO-DOWNTIME cutover" above).
 
 **Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod stack → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
@@ -131,7 +142,7 @@ git push origin prod
 - **Tags mark releases.** `v1.X.Y` on `staging` before promotion, then on `prod` after fast-forward.
 - **Code deploy ≠ data refresh.** Code deploy = `docker compose pull web && docker compose up -d web` (~30 s). Data refresh = weekly pipeline run on the staging DB followed by atomic flip (~30 min total).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.claude/rules/deployment.md`. Never `docker-compose up/down` without knowing what's actually serving — `vb_web`, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared` are the current prod containers.
-- **Promotion is image-tag-based.** Production runs as a single Compose stack; promotion happens via image-tag bump in `docker compose up -d` or postgres-data volume swap.
+- **Promotion is image-tag-based, run via the zero-downtime cutover.** Production runs as a single Compose stack; a code promotion bumps the image tag — but **default to `hosting/cutover.sh --code <sha>`** so the swap happens with the minipc serving prod (no 502s), not a bare in-place `docker compose up -d web`. Data promotion = postgres-data volume swap via `cutover.sh --data`.
 
 ## Code Deployment (Quick Reference)
 
@@ -143,8 +154,14 @@ cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push
 
 # Deploy to staging stack first (on the staging server):
 cd /opt/stack/visa_bulletin_staging && IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web
-# Smoke-test https://staging.visa-bulletin.us/, then promote:
+# Smoke-test https://staging.visa-bulletin.us/, then promote ZERO-DOWNTIME (default):
+cd ~/cursor_projects/visa_bulletin_platform/hosting && ./cutover.sh --code <sha>
+# ^ gates staging, then swaps the homeserver image while the minipc serves prod — vb never 502s.
+#   (preview: ./cutover.sh --code <sha> --dry)
+# Then fast-forward the prod branch to keep the mirror honest:
 cd ~/cursor_projects/visa_bulletin_prod && git merge --ff-only staging && git push origin prod
-# On the production server:
-cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web
+#
+# DISRUPTIVE FALLBACK only if the cutover is unavailable (minipc RAM floor / standby down) —
+# ~10-15s prod 502s; must pass --accept-502:
+#   cd ~/cursor_projects/visa_bulletin_platform/hosting && ./promote.sh <sha> --prod --accept-502
 ```

@@ -22,7 +22,15 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on th
 
 ## Production Deploy Process
 
-**Code deploy is `docker compose pull web && docker compose up -d web`. It has
+> **Routine promotions default to the ZERO-DOWNTIME cutover, not this in-place swap.**
+> The private ops repo's `hosting/cutover.sh --code <sha>` swaps the prod image while a
+> second stack serves prod traffic, so vb never 502s (see `branching.md` § "Promote via
+> the ZERO-DOWNTIME cutover"). The in-place `docker compose up -d web` below is the
+> **mechanics that sits under it** and the **disruptive fallback** (used only when the
+> cutover is unavailable, or a true prod-down hotfix). The low-traffic-window rule below
+> applies to that fallback's 502 window — the cutover has no such window.
+
+**The in-place code deploy is `docker compose pull web && docker compose up -d web`. It has
 ~10-15s of customer-facing 502s** while the old container stops and the new
 one boots (migrate + collectstatic + gunicorn). CF-cached pages keep serving
 from the edge during the window; uncached/POST requests fail.
