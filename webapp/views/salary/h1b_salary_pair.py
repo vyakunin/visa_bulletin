@@ -156,7 +156,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
 
     canonical_url = request.build_absolute_uri(request.path)
     faq = _faq(emp_name, role_title, filings, median, p25, p75, fy,
-               vs_role + f" the market median" if vs_role else None)
+               vs_role + " the market median" if vs_role else None)
     structured_data = {
         "@context": "https://schema.org",
         "@type": "FAQPage",
