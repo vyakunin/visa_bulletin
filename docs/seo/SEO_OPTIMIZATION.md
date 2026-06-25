@@ -244,6 +244,25 @@ applied (2026-06-23):
   mesh). **Status (2026-06-23):** shipped to `main`, suite green. Pending staging
   deploy + GSC measurement of the homepage→dedicated-page shift over ~2-3 wks.
 
+## Off-page: head-term backlinks (Lever 4)
+
+The "visa bulletin" head term sits at pos ~8.6 (157k impr/mo) with on-page Levers
+1–3 shipped; the residual gap is domain authority (inbound links). Lever 4 = earn
+links to a link-worthy asset. **Chosen asset: the salary DB** (`/salaries/`) — a
+concrete, factual, citeable free reference (1.5M+ DOL wage records, Dataset JSON-LD).
+
+- **Page shaped for citation (2026-06-25):** added a "Cite or link to this database"
+  block to the About-This-Data card on `salary_search.html` — canonical URL +
+  suggested plain-text reference, so a link is the obvious thing to do. Also softened
+  the "How to Use" copy off PERM-as-GC-sponsorship framing (`perm_messaging.md`).
+- **Outreach:** drafts (email to immigration blogs / free-tools roundups / comp-data
+  writers + a forum-thread post) live in
+  `visa_bulletin_platform/marketing/drafts/BACKLINK_OUTREACH_SALARY_DB_2026-06-25.md`.
+  Every send is Tier-3 (held for per-target approval). The Reddit account is a poor
+  vector here (low karma, banned/removed in the key subs), so vectors are email +
+  forum, not Reddit.
+- Slow burn — backlinks accrue over weeks/months. Ticket: 38362b8d.
+
 ## AI Crawler Support (`/llms.txt`)
 
 `/llms.txt` is served by `llms_txt_view` in `webapp/views/seo/sitemaps.py`. It follows the [llmstxt.org](https://llmstxt.org) convention for telling AI crawlers (ChatGPT, Perplexity, Claude, etc.) what data this site contains and how to cite it.
