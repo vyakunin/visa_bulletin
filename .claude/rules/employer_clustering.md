@@ -1,5 +1,7 @@
 # Employer Clustering Rules
 
+> **Clustering is a derived layer — touching its inputs obligates a re-cluster.** Any change to a clustering input (`salary_record.employer_name` / employer FK via reingest, rename, or merge) leaves `Employer` clusters stale until `cluster_existing_employers` is re-run. Assess + re-cluster in the same workstream; never ship the input change alone assuming the cluster layer self-heals. If employer names are ever mutated **in place** (not appended), check whether the linker skips already-linked rows before relying on a re-cluster to heal it. Canonical statement of the input→pipeline dependency (incl. the job-title twin + the in-place-mutation gotcha): `job_title_coherence.md` § "Touching a clustering INPUT obligates re-running the dependent clustering pipeline".
+
 ## Rule: Collect Employer Clustering Examples
 
 **ALWAYS collect employer clustering matching examples when running clustering or evaluation scripts.**
