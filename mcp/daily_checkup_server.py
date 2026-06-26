@@ -69,13 +69,6 @@ STAGING_BASE_URL = "https://staging.visa-bulletin.us"
 GOATCOUNTER_BASE = "https://vyakunin.goatcounter.com/api/v0"
 GOATCOUNTER_TOKEN_PATH = Path.home() / "tokens" / "goatcounter.token"
 
-GSC_SITE_URL = "sc-domain:visa-bulletin.us"
-# GSC `final` data lags ~2 days, so we shift the comparison window back 3 days
-# so both halves of the cycle-aware delta are fully settled. "This week" =
-# today-9d..today-3d; "cycle ago" = today-37d..today-31d (one bulletin cycle
-# back, same day-of-week phase).
-GSC_LAG_DAYS = 3
-
 # Thresholds
 DISK_YELLOW_PCT = 70  # small SSD; want headroom for Postgres growth.
 DISK_RED_PCT = 85
@@ -1195,188 +1188,6 @@ def _build_surface_deltas(
     return rows
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Google Search Console (sub-MCP: gsc)
-# ─────────────────────────────────────────────────────────────────────────────
-
-async def _call_gsc_tools(calls: list[tuple[str, dict]]) -> list[str]:
-    """Run multiple gsc tool calls over one session; raw text payloads."""
-    return await call_mcp_tools("gsc", calls, timeout=SUB_MCP_TIMEOUT, parse=False)
-
-
-def _gsc_totals(rows: list[dict]) -> dict:
-    """Aggregate GSC rows (any dimension) into totals."""
-    clicks = sum((r.get("clicks") or 0) for r in rows)
-    impr = sum((r.get("impressions") or 0) for r in rows)
-    ctr = (clicks / impr) if impr else 0.0
-    # Average position is impression-weighted.
-    pos_num = sum((r.get("position") or 0) * (r.get("impressions") or 0) for r in rows)
-    avg_pos = (pos_num / impr) if impr else 0.0
-    return {"clicks": clicks, "impressions": impr, "ctr": ctr, "avg_position": avg_pos}
-
-
-async def _gather_gsc() -> dict:
-    """Pull GSC search analytics for this 7d vs same 7d window 4 weeks ago."""
-    today = date.today()
-    this_end = today - timedelta(days=GSC_LAG_DAYS)
-    this_start = this_end - timedelta(days=6)
-    cycle_end = today - timedelta(days=GSC_LAG_DAYS + 28)
-    cycle_start = cycle_end - timedelta(days=6)
-
-    common = {"site_url": GSC_SITE_URL, "search_type": "web", "data_state": "final"}
-    calls = [
-        # Totals + per-day for this week
-        ("gsc_query_search_analytics", {
-            **common, "start_date": this_start.isoformat(), "end_date": this_end.isoformat(),
-            "dimensions": ["date"], "row_limit": 100,
-        }),
-        # Totals for cycle-ago window
-        ("gsc_query_search_analytics", {
-            **common, "start_date": cycle_start.isoformat(), "end_date": cycle_end.isoformat(),
-            "dimensions": ["date"], "row_limit": 100,
-        }),
-        # Top queries this week
-        ("gsc_query_search_analytics", {
-            **common, "start_date": this_start.isoformat(), "end_date": this_end.isoformat(),
-            "dimensions": ["query"], "row_limit": 25,
-        }),
-        # ALL pages this week — needed for accurate per-surface breakdown.
-        # /job-title/<slug>/ and /employer/<slug>/ have thousands of pages
-        # each; a small row_limit silently zeros out their click counts.
-        # 25000 is the GSC API cap; visa-bulletin.us has ~10-15k indexed
-        # pages so this captures everything.
-        ("gsc_query_search_analytics", {
-            **common, "start_date": this_start.isoformat(), "end_date": this_end.isoformat(),
-            "dimensions": ["page"], "row_limit": 25000,
-        }),
-        # ALL pages cycle-ago (for symmetric per-surface deltas + movers)
-        ("gsc_query_search_analytics", {
-            **common, "start_date": cycle_start.isoformat(), "end_date": cycle_end.isoformat(),
-            "dimensions": ["page"], "row_limit": 25000,
-        }),
-    ]
-    raw_results = await _call_gsc_tools(calls)
-
-    def _rows(raw: str) -> list[dict]:
-        try:
-            return (json.loads(raw) or {}).get("rows", []) or []
-        except json.JSONDecodeError:
-            return []
-
-    rows_this_byday = _rows(raw_results[0])
-    rows_cycle_byday = _rows(raw_results[1])
-    rows_queries = _rows(raw_results[2])
-    rows_pages_this = _rows(raw_results[3])
-    rows_pages_cycle = _rows(raw_results[4])
-
-    totals_this = _gsc_totals(rows_this_byday)
-    totals_cycle = _gsc_totals(rows_cycle_byday)
-
-    # Top queries by clicks
-    top_queries = sorted(
-        ({"q": (r.get("keys") or [""])[0], **r} for r in rows_queries),
-        key=lambda r: -(r.get("clicks") or 0),
-    )[:10]
-
-    # Page movers: same page in both windows, delta on clicks
-    pages_this_by_url = {(r.get("keys") or [""])[0]: r for r in rows_pages_this}
-    pages_cycle_by_url = {(r.get("keys") or [""])[0]: r for r in rows_pages_cycle}
-    movers = []
-    for url in set(pages_this_by_url) | set(pages_cycle_by_url):
-        cur = pages_this_by_url.get(url, {})
-        cyc = pages_cycle_by_url.get(url, {})
-        c_now = cur.get("clicks") or 0
-        c_cyc = cyc.get("clicks") or 0
-        i_now = cur.get("impressions") or 0
-        i_cyc = cyc.get("impressions") or 0
-        if (c_now + c_cyc) < 5:
-            continue
-        delta_clicks = c_now - c_cyc
-        movers.append({
-            "url": url, "clicks_this": c_now, "clicks_cycle": c_cyc,
-            "impressions_this": i_now, "impressions_cycle": i_cyc,
-            "delta_clicks": delta_clicks,
-        })
-    movers.sort(key=lambda r: -abs(r["delta_clicks"]))
-    movers = movers[:8]
-
-    # Per-property (surface) breakdown: same TOP_PROPERTY_SURFACES bucket the
-    # GoatCounter / nginx sections already use. Strips the domain prefix from
-    # the GSC URL before bucketing because _bucket_path expects a site-relative
-    # path. Gives per-surface clicks / impressions / CTR / avg-position with
-    # MoM delta — see feedback request 2026-05-18 "more detailed per property
-    # analysis in check up".
-    def _strip_domain(url: str) -> str:
-        for prefix in ("https://www.visa-bulletin.us", "https://visa-bulletin.us",
-                        "http://www.visa-bulletin.us", "http://visa-bulletin.us"):
-            if url.startswith(prefix):
-                return url[len(prefix):] or "/"
-        return url
-
-    def _agg_by_surface(rows: list[dict]) -> dict[str, dict]:
-        # Weighted aggregation: clicks/impressions sum; position weighted by impressions
-        agg: dict[str, dict] = defaultdict(lambda: {
-            "clicks": 0, "impressions": 0, "pos_weight_num": 0.0, "pos_weight_den": 0,
-        })
-        for r in rows:
-            url = (r.get("keys") or [""])[0]
-            path = _strip_domain(url)
-            surface = _bucket_path(path)
-            clicks = r.get("clicks") or 0
-            impr = r.get("impressions") or 0
-            pos = r.get("position") or 0.0
-            agg[surface]["clicks"] += clicks
-            agg[surface]["impressions"] += impr
-            agg[surface]["pos_weight_num"] += pos * impr
-            agg[surface]["pos_weight_den"] += impr
-        out: dict[str, dict] = {}
-        for surface, d in agg.items():
-            impr = d["impressions"]
-            clicks = d["clicks"]
-            avg_pos = d["pos_weight_num"] / d["pos_weight_den"] if d["pos_weight_den"] else 0.0
-            ctr = (clicks / impr) if impr else 0.0
-            out[surface] = {
-                "clicks": clicks,
-                "impressions": impr,
-                "ctr": ctr,
-                "avg_position": avg_pos,
-            }
-        return out
-
-    surface_this = _agg_by_surface(rows_pages_this)
-    surface_cycle = _agg_by_surface(rows_pages_cycle)
-    all_surfaces = set(surface_this) | set(surface_cycle)
-    surface_breakdown = []
-    for s in all_surfaces:
-        cur = surface_this.get(s, {"clicks": 0, "impressions": 0, "ctr": 0, "avg_position": 0})
-        cyc = surface_cycle.get(s, {"clicks": 0, "impressions": 0, "ctr": 0, "avg_position": 0})
-        if cur["clicks"] + cyc["clicks"] < 2:
-            continue
-        surface_breakdown.append({
-            "surface": s,
-            "clicks_this": cur["clicks"],
-            "clicks_cycle": cyc["clicks"],
-            "impressions_this": cur["impressions"],
-            "impressions_cycle": cyc["impressions"],
-            "ctr_this": cur["ctr"],
-            "ctr_cycle": cyc["ctr"],
-            "pos_this": cur["avg_position"],
-            "pos_cycle": cyc["avg_position"],
-            "delta_clicks": cur["clicks"] - cyc["clicks"],
-        })
-    # Sort by absolute current clicks (most-trafficked surfaces first); ties
-    # broken by delta magnitude so flat surfaces sink below mover.
-    surface_breakdown.sort(key=lambda r: (-r["clicks_this"], -abs(r["delta_clicks"])))
-
-    return {
-        "this_window": [this_start.isoformat(), this_end.isoformat()],
-        "cycle_window": [cycle_start.isoformat(), cycle_end.isoformat()],
-        "totals_this": totals_this,
-        "totals_cycle": totals_cycle,
-        "top_queries": top_queries,
-        "top_movers": movers,
-        "surface_breakdown": surface_breakdown,
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1974,27 +1785,22 @@ TOP_PROPERTY_SURFACES = [
 
 
 def _section_top_properties(
-    nx: dict, gc: dict | None, gsc: dict | None
+    nx: dict, gc: dict | None
 ) -> tuple[dict | None, str]:
-    """Per-surface joined view: popularity (GC, all 4 windows) + SEO (GSC
-    clicks/impr/CTR/pos) + performance (origin nginx 24h).
+    """Per-surface joined view: popularity (GC, all 4 windows) + performance
+    (origin nginx 24h). One row per surface, multi-line so phone-readable.
 
-    One row per surface, multi-line so phone-readable. Replaces the older
-    split "Top properties" + GoatCounter "By surface" + GSC "Per-property
-    breakdown" lists (user request 2026-05-27 — consolidate so MoM/WoW/28d
-    + Google sit alongside performance per route).
+    (SEO/GSC per-surface column retired 2026-06-26 — GSC reporting moved to the
+    visa_bulletin_platform digest; marketing is owned by the platform overlay,
+    see daily_checkup.md.)
     """
     lat: dict = nx.get("surface_latency") or {}
     gc_by_surface: dict[str, dict] = {}
     if gc:
         for s in gc.get("surfaces") or []:
             gc_by_surface[s["surface"]] = s
-    gsc_by_surface: dict[str, dict] = {}
-    if gsc:
-        for sb in gsc.get("surface_breakdown") or []:
-            gsc_by_surface[sb["surface"]] = sb
 
-    if not lat and not gc_by_surface and not gsc_by_surface:
+    if not lat and not gc_by_surface:
         return (None, "green")
 
     status = "green"
@@ -2032,15 +1838,13 @@ def _section_top_properties(
         else "GC 7d/MoM = top-100 paths from /stats/hits (long tail not visible until next CSV export lands). "
     )
     lines = [
-        f"_{source_blurb}GSC = clicks/impr/CTR/pos 7d vs 4w ago (final data, ~2d lag). "
-        f"Perf = origin nginx 24h, real pages (incl. bots)._",
+        f"_{source_blurb}Perf = origin nginx 24h, real pages (incl. bots)._",
         "",
     ]
     for surf in ordered_surfaces:
         block = _format_property_block(
             surf=surf,
             gc_row=gc_by_surface.get(surf),
-            gsc_row=gsc_by_surface.get(surf),
             lat_row=lat.get(surf),
         )
         lines.extend(block)
@@ -2068,7 +1872,6 @@ def _format_property_block(
     *,
     surf: str,
     gc_row: dict | None,
-    gsc_row: dict | None,
     lat_row: dict | None,
 ) -> list[str]:
     """Multi-line block for one property in the per-property dashboard.
@@ -2076,7 +1879,6 @@ def _format_property_block(
     Layout per surface:
       - **<label>**
           GC: <7d> · MoM · WoW · 28d-avg
-          GSC: <clicks> clicks · <impr> impr · CTR <x%> · pos <p>
           Perf: mean Xms over N hits 24h (n1>1s · n3>3s · n10>10s)
     Each sub-line is omitted (replaced with a one-word marker) when the
     source has no data — better to see the gap than to hide it.
@@ -2105,29 +1907,6 @@ def _format_property_block(
     else:
         lines.append("  GC: no data")
 
-    # GSC — clicks + impressions + CTR + position with cycle delta
-    if gsc_row:
-        cl_t = gsc_row.get("clicks_this", 0)
-        cl_c = gsc_row.get("clicks_cycle", 0)
-        im_t = gsc_row.get("impressions_this", 0)
-        im_c = gsc_row.get("impressions_cycle", 0)
-        ctr_t = (gsc_row.get("ctr_this", 0) or 0) * 100
-        pos_t = gsc_row.get("pos_this", 0) or 0
-        pos_c = gsc_row.get("pos_cycle", 0) or 0
-        delta_cl_pct = ((cl_t - cl_c) / cl_c * 100) if cl_c else None
-        pos_delta = (pos_t - pos_c) if (pos_t and pos_c) else None
-        pos_bit = f"pos **{pos_t:.1f}**"
-        if pos_delta is not None:
-            sign = "+" if pos_delta >= 0 else ""
-            pos_bit += f" ({sign}{pos_delta:.1f})"
-        lines.append(
-            f"  GSC: **{cl_t}** clicks vs {cl_c} {_fmt_pct_signed(delta_cl_pct, 'MoM')} · "
-            f"{_humanize(im_t)} impr (vs {_humanize(im_c)}) · "
-            f"CTR **{ctr_t:.1f}%** · {pos_bit}"
-        )
-    else:
-        lines.append("  GSC: no data (no clicks/impressions this week)")
-
     # Performance — mean latency + slow-tail
     if lat_row:
         mean_ms = int(lat_row["mean_ms"])
@@ -2151,93 +1930,6 @@ def _format_property_block(
     return lines
 
 
-# GSC traffic-drop thresholds (cycle-aware, on clicks).
-GSC_CLICKS_DROP_YELLOW_PCT = -30
-GSC_CLICKS_DROP_RED_PCT = -60
-
-
-def _section_gsc(gsc: dict) -> tuple[dict | None, str]:
-    """Render GSC clicks/impressions/CTR/position vs same window 4 weeks ago."""
-    if not gsc:
-        return (None, "green")
-    tt = gsc["totals_this"]
-    tc = gsc["totals_cycle"]
-    clicks_this = tt["clicks"]
-    clicks_cyc = tc["clicks"]
-    impr_this = tt["impressions"]
-    impr_cyc = tc["impressions"]
-    pos_this = tt["avg_position"]
-    pos_cyc = tc["avg_position"]
-    ctr_this = tt["ctr"] * 100
-    ctr_cyc = tc["ctr"] * 100
-
-    status = "green"
-    delta_clicks_pct = ((clicks_this - clicks_cyc) / clicks_cyc * 100) if clicks_cyc else None
-    if delta_clicks_pct is not None and delta_clicks_pct <= GSC_CLICKS_DROP_RED_PCT:
-        status = "red"
-    elif delta_clicks_pct is not None and delta_clicks_pct <= GSC_CLICKS_DROP_YELLOW_PCT:
-        status = "yellow"
-    # Position climbing significantly (worse rank) is also a yellow flag.
-    if pos_cyc and pos_this - pos_cyc >= 3.0 and status == "green":
-        status = "yellow"
-
-    def _fmt_pct(d: float | None) -> str:
-        if d is None:
-            return "(no baseline)"
-        sign = "+" if d >= 0 else ""
-        return f"{sign}{d:.0f}%"
-
-    def _fmt_delta(cur: float, prev: float, unit: str = "") -> str:
-        d = cur - prev
-        sign = "+" if d >= 0 else ""
-        return f"{sign}{d:.2f}{unit}"
-
-    this_window = gsc["this_window"]
-    cycle_window = gsc["cycle_window"]
-    lines = [
-        f"_Windows (GSC `final` data, ~2d lag): this={this_window[0]}..{this_window[1]}, "
-        f"4w ago={cycle_window[0]}..{cycle_window[1]}._",
-        "",
-        f"- Clicks: **{_humanize(clicks_this)}** vs {_humanize(clicks_cyc)} "
-        f"({_fmt_pct(delta_clicks_pct)} MoM cycle)",
-        f"- Impressions: **{_humanize(impr_this)}** vs {_humanize(impr_cyc)} "
-        f"({_fmt_pct(((impr_this - impr_cyc) / impr_cyc * 100) if impr_cyc else None)} MoM)",
-        f"- CTR: **{ctr_this:.2f}%** vs {ctr_cyc:.2f}% ({_fmt_delta(ctr_this, ctr_cyc, 'pp')})",
-        f"- Avg position: **{pos_this:.1f}** vs {pos_cyc:.1f} "
-        f"({_fmt_delta(pos_this, pos_cyc)} — lower is better)",
-    ]
-    if gsc.get("top_queries"):
-        lines.append("")
-        lines.append("**Top queries this week (by clicks):**")
-        for q in gsc["top_queries"][:8]:
-            lines.append(
-                f"- `{q['q'][:60]}` — {q.get('clicks',0)} clicks / "
-                f"{_humanize(q.get('impressions',0))} impr, "
-                f"pos {q.get('position',0):.1f}, CTR {(q.get('ctr',0)*100):.1f}%"
-            )
-    if gsc.get("top_movers"):
-        lines.append("")
-        lines.append("**Top page movers (Δ clicks vs 4 weeks ago):**")
-        for m in gsc["top_movers"][:6]:
-            sign = "+" if m["delta_clicks"] >= 0 else ""
-            # Strip the domain prefix for readability if present
-            url = m["url"]
-            for prefix in ("https://visa-bulletin.us", "https://www.visa-bulletin.us"):
-                if url.startswith(prefix):
-                    url = url[len(prefix):] or "/"
-                    break
-            lines.append(
-                f"- `{url[:70]}`: {m['clicks_this']} vs {m['clicks_cycle']} clicks "
-                f"({sign}{m['delta_clicks']})"
-            )
-    # Per-surface GSC breakdown moved to "Per-property dashboard" section.
-    importance = {"red": 5, "yellow": 4, "green": 3}[status]
-    title = "SEO (Google Search Console, 7d vs 4 weeks ago)"
-    if status == "red":
-        title += " — CRITICAL drop"
-    elif status == "yellow":
-        title += " — regression"
-    return ({"title": title, "body": "\n".join(lines), "importance": importance}, status)
 
 
 def _section_probes(probes: list[dict]) -> tuple[dict | None, str]:
@@ -2486,14 +2178,6 @@ async def daily_checkup(since: str | None = None) -> str:
             errors.append(f"gmail: {type(e).__name__}: {e}")
             return None
 
-    async def _safe_gsc():
-        try:
-            return await _gather_gsc()
-        except Exception as e:
-            logger.exception("gsc gather failed")
-            errors.append(f"gsc: {type(e).__name__}: {e}")
-            return None
-
     async def _safe_freshness():
         try:
             return await _gather_data_freshness()
@@ -2502,8 +2186,8 @@ async def daily_checkup(since: str | None = None) -> str:
             errors.append(f"data_freshness: {type(e).__name__}: {e}")
             return None
 
-    gc_data, probe_data, gmail_data, gsc_data, freshness_data = await asyncio.gather(
-        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_gsc(), _safe_freshness()
+    gc_data, probe_data, gmail_data, freshness_data = await asyncio.gather(
+        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_freshness()
     )
 
     # Build sections from snapshot
@@ -2560,10 +2244,10 @@ async def daily_checkup(since: str | None = None) -> str:
         sections.append(s)
         statuses.append(st)
 
-    # Per-property dashboard: GC volume + GSC clicks/impr/CTR/pos + nginx
-    # latency, one block per route. Needs at least one of the three.
+    # Per-property dashboard: GC volume + nginx latency, one block per route.
+    # Needs at least one of the two. (GSC/SEO moved to the platform digest.)
     if snap is not None:
-        s, st = _section_top_properties(nx_parsed, gc_data, gsc_data)
+        s, st = _section_top_properties(nx_parsed, gc_data)
         if s:
             sections.append(s)
             statuses.append(st)
@@ -2578,13 +2262,6 @@ async def daily_checkup(since: str | None = None) -> str:
     # Gmail signals
     if gmail_data is not None:
         s, st = _section_gmail(gmail_data)
-        if s:
-            sections.append(s)
-        statuses.append(st)
-
-    # GSC SEO signals
-    if gsc_data is not None:
-        s, st = _section_gsc(gsc_data)
         if s:
             sections.append(s)
         statuses.append(st)

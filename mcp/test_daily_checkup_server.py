@@ -34,21 +34,21 @@ def _lat(n10=0, n3=0, count=300):
 def test_predictions_routine_slow_tail_not_red():
     """14 >10s on predictions (routine heavy Plotly) stays green — not RED."""
     nx = {"surface_latency": {"predictions": _lat(n10=14)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "green", status
 
 
 def test_predictions_genuine_spike_is_yellow_not_red():
     """A real explosion on predictions warns (yellow) but never escalates RED."""
     nx = {"surface_latency": {"predictions": _lat(n10=m.PERF_HEAVY_SPIKE_N10 + 5)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "yellow", status
 
 
 def test_transactional_surface_slow_tail_still_red():
     """>10s on a transactional surface (salaries) IS a regression → still RED."""
     nx = {"surface_latency": {"salaries": _lat(n10=m.PERF_RED_N10)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "red", status
 
 
