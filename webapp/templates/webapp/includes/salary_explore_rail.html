@@ -1,8 +1,10 @@
 {% load humanize %}
-{# Onward-navigation rail for /salaries/. Breaks the dead-end (64% bounce):
-   result pages otherwise end at pagination, and the bare landing offers no
-   scannable next step. Renders on every salary search view (filtered or not).
-   Data: explore_links from get_salary_explore_links() (cached). #}
+{% comment %}
+Onward-navigation rail for /salaries/. Breaks the dead-end (64% bounce):
+result pages otherwise end at pagination, and the bare landing offers no
+scannable next step. Renders on every salary search view (filtered or not).
+Data: explore_links from get_salary_explore_links() (cached).
+{% endcomment %}
 <div class="card mt-4" id="explore-more">
     <div class="card-header">
         <h5 class="mb-0"><i class="bi bi-compass"></i> Explore the salary database</h5>

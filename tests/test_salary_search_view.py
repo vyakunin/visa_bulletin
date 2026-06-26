@@ -419,6 +419,10 @@ class SalaryExploreRailTest(TestCase):
         self.assertIn(reverse("employer_directory"), html)
         self.assertIn(reverse("priority_date_hub"), html)
         self.assertIn("explore_links", response.context)
+        # The include's developer comment must NOT leak into rendered HTML
+        # (regression: a multi-line {# #} is not a comment in Django and dumps
+        # its body as visible page text — use {% comment %}).
+        self.assertNotIn("scannable next step", html)
 
     def test_rail_on_bare_landing(self):
         self._assert_rail_present(self.client.get(reverse("salary_search")))
