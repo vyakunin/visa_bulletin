@@ -286,6 +286,48 @@ salary answer — so this is a new page, not a duplicate.
   506 pages in the prod sitemap, CF purged, GSC re-submitted, suite 75 green. GSC
   measurement pending.
 
+## {occupation} salary landing pages (`/h1b-salary/<occupation>/` + `/h1b-salary/` hub)
+
+Head-term salary pages keyed off the clean **DOL SOC occupation code**, capturing
+the **"{occupation} h1b salary" / "{occupation} salary"** demand that drives the
+/salaries on-site search (Software Engineer, Data Scientist, Financial Analyst …).
+The existing `/job-title/<slug>/` cluster pages only rank for ultra-long-tail
+niche titles because clustering mangles the head terms —
+`/job-title/software-engineer/` 301s to a garbage canonical
+(`sr-member-of-the-technical-staff-software-engineer`), so the head terms had **no
+clean landing page**. This page type fixes that with a curated occupation→SOC
+registry, independent of clustering.
+
+- **Why SOC, not soc_title:** `soc_code` is the clean DOL classification;
+  `soc_title` in the data is employer-typed garbage (often the code itself or a
+  random title). A curated registry maps colloquial head terms → SOC-6 prefixes
+  (validated against the dominant real `job_title` per code on prod).
+- **Content:** percentiles (p10–p90), median + p25–p75 range, top sponsoring
+  employers (linked), top worksite states, real job-title cross-links (to
+  `/job-title/` pages), H-1B-vs-PERM split, query-targeted `<title>`
+  ("{Occupation} H-1B & PERM Salary {year}: Median $X (N filings)"). FAQPage +
+  Occupation JSON-LD, self-canonical.
+- **Registry/view:** `lib/business/salary/soc_occupations.py` (41 curated
+  occupations, alias→canonical 301s), `lib/business/salary/occupation_stats.py`
+  (reuses `common_stats`; `$12k` wage floor keeps low-wage PERM occupations like
+  cook/truck-driver), `webapp/views/salary/occupation.py`.
+- **No thin pages:** an occupation 404s unless **≥100 filings**; gate shared with
+  the cached sitemap emit-set so the sitemap never lists a 404. All 41 registry
+  occupations currently qualify.
+- **Internal-link mesh:** "Salary by occupation" hub button added to the
+  `/salaries` explore rail (renders on every salary search view); hub
+  cross-links every page; pages link back to `/job-title/` + `/salaries`. Also
+  in the sitemap + `/llms.txt`.
+- **Test:** `tests/test_occupation_salary.py` (qualifying renders title/median/
+  percentiles/FAQPage/Occupation/self-canonical + employer mesh; thin 404; alias
+  301; SOC-scoping; unknown 404; hub + sitemap emit qualifying only).
+- **Status (2026-06-26):** **LIVE on prod** via zero-downtime code cutover
+  (`hosting/cutover.sh --code 50b9961`; vb never 502'd), `prod 0a071d1`, 41
+  occupation pages + hub in the prod sitemap, CF purged, GSC re-submitted (0
+  errors, 14,436 URLs), suite 78 green. Validated against prod data (SWE 460k
+  filings/$111k median, attorney $180k, truck-driver $42k). GSC measurement
+  pending (~days–weeks to index).
+
 ## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
 
 The dedicated release-schedule page targets the **"when will the {month} {year}
@@ -374,10 +416,12 @@ directories, sponsor ranking, priority-date hub), and H-1B/PERM quick filters.
 Link sets come from `get_salary_explore_links()`
 (`lib/business/salary/market_overview.py`, cached — top clusters off precomputed
 counts, cheap on every render). This both breaks the UX dead-end and strengthens
-the internal-link mesh into the employer/job-title pSEO pages. Regression tests:
-`tests/test_salary_search_view.py::SalaryExploreRailTest`. Follow-up (open ticket):
-`{job title}` pSEO landing pages from on-site search demand; measure the GA4
-bounce delta.
+the internal-link mesh into the employer/job-title pSEO pages (and now the
+`{occupation}` salary pages — the rail's "Salary by occupation" button). Regression
+tests: `tests/test_salary_search_view.py::SalaryExploreRailTest`. Follow-up: the
+`{occupation}` pSEO landing pages from on-site search demand **shipped 2026-06-26**
+(see the `/h1b-salary/<occupation>/` section above); still open: measure the GA4
+`/salaries` bounce delta (~1–2 wks) + the `/employer/*` meta-description CTR tweak.
 
 ## Crawl-budget hygiene — noindex the free-text search space
 
