@@ -15,7 +15,8 @@ from lib.business.salary.common_stats import (
     calculate_yoy_growth,
     calculate_yoy_trends,
 )
-from models.salary import SalaryRecord
+from models.job_title import JobTitleCluster
+from models.salary import EmployerCluster, SalaryRecord
 
 
 def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> dict:
@@ -93,3 +94,41 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
 
     cache.set(cache_key, stats)
     return stats
+
+
+def get_salary_explore_links(
+    job_titles_limit: int = 12, employers_limit: int = 8
+) -> dict:
+    """Onward-navigation link sets for the /salaries/ "explore more" rail.
+
+    Queried straight off the cluster tables (precomputed counts, indexed
+    order-by) so it is cheap to render on EVERY salary search render —
+    including filtered result pages, which carry no market_overview. This
+    breaks the dead-end: result pages otherwise end at pagination with no
+    onward path. Cached so it costs one query per cache cycle, not per request.
+    """
+    cache_key = f"salary_explore_links:{job_titles_limit}:{employers_limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    top_job_titles = list(
+        JobTitleCluster.objects.exclude(slug__isnull=True)
+        .exclude(slug="")
+        .filter(total_filings__gt=0)
+        .order_by("-total_filings")
+        .values("slug", "canonical_title", "total_filings")[:job_titles_limit]
+    )
+    top_employers = list(
+        EmployerCluster.objects.exclude(slug__isnull=True)
+        .exclude(slug="")
+        .exclude(slug="unknown")
+        .exclude(canonical_name="Unknown")
+        .filter(search_record_count__gt=0)
+        .order_by("-search_record_count")
+        .values("slug", "canonical_name", "search_record_count")[:employers_limit]
+    )
+
+    links = {"top_job_titles": top_job_titles, "top_employers": top_employers}
+    cache.set(cache_key, links)
+    return links

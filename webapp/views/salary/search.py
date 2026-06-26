@@ -17,7 +17,10 @@ from lib.business.salary.common_chart_builder import (
     build_geographic_median_chart,
     build_salary_trend_chart,
 )
-from lib.business.salary.market_overview import get_market_overview_stats
+from lib.business.salary.market_overview import (
+    get_market_overview_stats,
+    get_salary_explore_links,
+)
 from lib.utils.filter_utils import (
     apply_filing_year_filter,
     apply_fiscal_year_filter,
@@ -759,6 +762,9 @@ def salary_search_view(request):
         "market_stats": market_stats,
         "market_chart_data": market_chart_data,
         "state_links": state_links,
+        # Onward-navigation rail (breaks the dead-end on result pages, which
+        # otherwise end at pagination). Cheap + cached; rendered on every view.
+        "explore_links": get_salary_explore_links(),
         # Pagination
         "page": pagination["page"],
         "total_pages": pagination["total_pages"],

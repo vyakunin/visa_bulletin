@@ -365,3 +365,84 @@ class SalarySearchNoindexTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["meta_robots"])
         self.assertFalse(self._robots_meta_present(response))
+
+
+class SalaryExploreRailTest(TestCase):
+    """The onward-navigation rail must appear on every /salaries/ render so
+    result pages (and the bare landing) don't dead-end (64% bounce regression).
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+
+        self.employer_cluster = EmployerCluster.objects.create(
+            canonical_name="Rail Sponsor Inc",
+            slug="rail-sponsor-inc",
+            search_record_count=500,
+        )
+        employer = Employer.objects.create(
+            name="Rail Sponsor Inc",
+            name_normalized="rail sponsor inc",
+            canonical_cluster=self.employer_cluster,
+        )
+        self.job_cluster = JobTitleCluster.objects.create(
+            canonical_title="Rail Engineer",
+            slug="rail-engineer",
+            total_filings=300,
+        )
+        job_title = JobTitle.objects.create(
+            title="Rail Engineer",
+            title_normalized="rail engineer",
+            canonical_cluster=self.job_cluster,
+        )
+        SalaryRecord.objects.create(
+            case_number="RAIL-TEST-1",
+            employer=employer,
+            employer_name="Rail Sponsor Inc",
+            job_title="Rail Engineer",
+            job_title_entity=job_title,
+            wage_annual=150000,
+            visa_program=VisaProgram.H1B,
+            case_status=CaseStatus.CERTIFIED,
+            fiscal_year=2024,
+            worksite_state="CA",
+            is_worksite=False,
+        )
+
+    def _assert_rail_present(self, response):
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        # The rail container + its onward links.
+        self.assertIn('id="explore-more"', html)
+        self.assertIn(reverse("job_title_directory"), html)
+        self.assertIn(reverse("employer_directory"), html)
+        self.assertIn(reverse("priority_date_hub"), html)
+        self.assertIn("explore_links", response.context)
+
+    def test_rail_on_bare_landing(self):
+        self._assert_rail_present(self.client.get(reverse("salary_search")))
+
+    def test_rail_on_filtered_results(self):
+        # The real dead-end: a result page that otherwise ends at pagination.
+        self._assert_rail_present(
+            self.client.get(reverse("salary_search"), {"q": "Rail"})
+        )
+
+    def test_rail_on_zero_results(self):
+        # Even a no-match search must offer an onward path, not a hard stop.
+        self._assert_rail_present(
+            self.client.get(
+                reverse("salary_search"), {"q": "ZZZNONEXISTENTROLE999"}
+            )
+        )
+
+    def test_rail_links_to_profile_pages(self):
+        response = self.client.get(reverse("salary_search"))
+        html = response.content.decode()
+        self.assertIn(
+            reverse("job_title_profile", kwargs={"slug": "rail-engineer"}), html
+        )
+        self.assertIn(
+            reverse("employer_profile", kwargs={"slug": "rail-sponsor-inc"}), html
+        )

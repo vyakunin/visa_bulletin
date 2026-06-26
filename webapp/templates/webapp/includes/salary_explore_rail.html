@@ -1,0 +1,41 @@
+{% load humanize %}
+{# Onward-navigation rail for /salaries/. Breaks the dead-end (64% bounce):
+   result pages otherwise end at pagination, and the bare landing offers no
+   scannable next step. Renders on every salary search view (filtered or not).
+   Data: explore_links from get_salary_explore_links() (cached). #}
+<div class="card mt-4" id="explore-more">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-compass"></i> Explore the salary database</h5>
+    </div>
+    <div class="card-body">
+        {% if explore_links.top_job_titles %}
+        <h6 class="text-muted text-uppercase small mb-2">Popular roles</h6>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            {% for t in explore_links.top_job_titles %}
+            <a class="badge rounded-pill text-bg-light border text-decoration-none py-2 px-3"
+               href="{% url 'job_title_profile' slug=t.slug %}">{{ t.canonical_title }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if explore_links.top_employers %}
+        <h6 class="text-muted text-uppercase small mb-2">Top sponsors</h6>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            {% for e in explore_links.top_employers %}
+            <a class="badge rounded-pill text-bg-light border text-decoration-none py-2 px-3"
+               href="{% url 'employer_profile' slug=e.slug %}">{{ e.canonical_name }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <h6 class="text-muted text-uppercase small mb-2">Browse</h6>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'job_title_directory' %}">All job titles</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'employer_directory' %}">All employers</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'employer_rankings' %}">Top sponsors ranking</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'priority_date_hub' %}">Green card priority dates</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'salary_search' %}?program=h1b">H-1B salaries only</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'salary_search' %}?program=perm">Green card (PERM) salaries</a>
+        </div>
+    </div>
+</div>
