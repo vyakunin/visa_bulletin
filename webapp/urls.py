@@ -40,6 +40,10 @@ from webapp.views.prediction_views import (
 )
 from webapp.views.salary.by_state import salary_by_state_view
 from webapp.views.salary.h1b_salary_pair import h1b_salary_pair_view
+from webapp.views.salary.occupation import (
+    occupation_index_view,
+    occupation_salary_view,
+)
 from webapp.views.salary.h1b_sponsors import (
     h1b_sponsors_landing_view,
     h1b_sponsors_state_view,
@@ -164,6 +168,16 @@ urlpatterns = [
         "h1b-sponsors/<slug:slug>/",
         h1b_sponsors_landing_view,
         name="h1b_sponsors_landing",
+    ),
+    # {occupation} salary landing pages (SEO: "software engineer h1b salary",
+    # "data scientist salary"). Keyed off the clean DOL SOC code, not the mangled
+    # job-title clusters. Index hub + per-occupation page; aliases 301 to canonical.
+    # Listed BEFORE the 2-segment pair pattern (distinct arity, no overlap).
+    path("h1b-salary/", occupation_index_view, name="occupation_index"),
+    path(
+        "h1b-salary/<slug:slug>/",
+        occupation_salary_view,
+        name="occupation_salary",
     ),
     # Per-(employer × role) H-1B salary page (SEO: "{role} salary at {employer}" /
     # "does {employer} sponsor H-1B for {role}"). Pairs without a substantive

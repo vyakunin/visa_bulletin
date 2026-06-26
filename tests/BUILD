@@ -1026,6 +1026,21 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_occupation_salary",
+    size = "small",
+    srcs = ["test_occupation_salary.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_h1b_sponsors_state_landing",
     size = "small",
     srcs = ["test_h1b_sponsors_state_landing.py"],

@@ -21,6 +21,7 @@ py_library(
         "//django_config:cache_utils",
         "//lib/business/salary:h1b_salary_pair",
         "//lib/business/salary:h1b_sponsors",
+        "//lib/business/salary:occupation_stats",
         "//lib/utils:location_utils",
         "//models:blog",
         "//models:bulletin",
