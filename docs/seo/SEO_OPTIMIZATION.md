@@ -361,6 +361,24 @@ Content includes:
 | `<link rel="canonical">` | `canonical_url` context var (rendered only if set) |
 | `<meta robots>` | `meta_robots` context var (rendered only if set; default = no tag = `index, follow`) |
 
+## /salaries onward-navigation rail — dead-end break
+
+`/salaries/` is the highest-traffic non-home page but had the worst behavior
+(64% bounce / 36% engaged): result pages ended at pagination with no onward
+path, and the landing offered no scannable next step. The **"Explore the salary
+database" rail** (`webapp/templates/webapp/includes/salary_explore_rail.html`)
+now renders on **every** salary search render — bare landing, filtered results,
+and zero-result searches — carrying: popular-role chips → `/job-title/<slug>/`,
+top-sponsor chips → `/employer/<slug>/`, browse hubs (job-title + employer
+directories, sponsor ranking, priority-date hub), and H-1B/PERM quick filters.
+Link sets come from `get_salary_explore_links()`
+(`lib/business/salary/market_overview.py`, cached — top clusters off precomputed
+counts, cheap on every render). This both breaks the UX dead-end and strengthens
+the internal-link mesh into the employer/job-title pSEO pages. Regression tests:
+`tests/test_salary_search_view.py::SalaryExploreRailTest`. Follow-up (open ticket):
+`{job title}` pSEO landing pages from on-site search demand; measure the GA4
+bounce delta.
+
 ## Crawl-budget hygiene — noindex the free-text search space
 
 The free-text keyword search `/salaries/?q=<keyword>` (and `/worksites/?q=<keyword>`) is an **unbounded URL space** — every distinct query string is a new page. Left indexable, Google burns crawl budget on infinite low-value permutations. Both search views set `meta_robots = "noindex, follow"` whenever a non-empty `q` param is present (`webapp/views/salary/search.py`, constant `_NOINDEX_FOLLOW`), and `base.html` renders `<meta name="robots" content="noindex, follow">` from it. `follow` keeps link equity flowing from results to the canonical employer/job-title/state slug pages.
