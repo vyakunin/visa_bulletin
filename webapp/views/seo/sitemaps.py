@@ -14,6 +14,7 @@ from lib.business.salary.h1b_sponsors import (
     qualifying_slugs,
     qualifying_state_codes,
 )
+from lib.business.salary.occupation_stats import qualifying_occupation_slugs
 from lib.utils.location_utils import US_STATES
 from models.blog import BlogPost
 from models.bulletin import Bulletin
@@ -41,6 +42,7 @@ def llms_txt_view(request):
 ## Salary Database (H-1B & PERM)
 
 - [Salary Search]({base}/salaries/): Search 1M+ H-1B and PERM salary records from DOL disclosure files (2020–present). Filterable by job title, employer, location, and visa program.
+- [Salary by Occupation]({base}/h1b-salary/): Median H-1B/PERM salary by occupation (Software Engineer, Data Scientist, Financial Analyst, …), keyed off the DOL SOC code, with percentiles, top sponsors, and states.
 - [Worksite Search]({base}/worksites/): DOL worksite location data by city, state, and occupation
 - [Employer Rankings]({base}/employers/rankings/): Top H-1B/PERM visa sponsors ranked by filing volume
 
@@ -329,6 +331,28 @@ def sitemap_view(request):
             lastmod=bulletin_lastmod,
             changefreq="monthly",
             priority="0.5",
+        ))
+
+    # {occupation} salary pages (hub + per-occupation). Cached qualifying-slug set
+    # (shared with the view's 404-gate) so we never list a thin page that 404s.
+    xml_parts.extend(_url_entry(
+        f"{base_url}/h1b-salary/",
+        lastmod=bulletin_lastmod,
+        changefreq="weekly",
+        priority="0.6",
+    ))
+    try:
+        occupation_slugs = qualifying_occupation_slugs()
+    except (OperationalError, ProgrammingError):
+        logger.error("Failed to load occupation slugs for sitemap", exc_info=True)
+        occupation_slugs = []
+
+    for occ_slug in occupation_slugs:
+        xml_parts.extend(_url_entry(
+            f"{base_url}/h1b-salary/{occ_slug}/",
+            lastmod=bulletin_lastmod,
+            changefreq="monthly",
+            priority="0.6",
         ))
 
     # Blog posts — use post's own published_date as lastmod

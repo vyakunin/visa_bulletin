@@ -22,6 +22,20 @@ py_library(
 )
 
 py_library(
+    name = "occupation",
+    srcs = ["occupation.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//lib/business/salary:market_overview",
+        "//lib/business/salary:occupation_stats",
+        "//lib/business/salary:soc_occupations",
+        "//lib/utils:location_utils",
+        requirement("Django"),
+    ],
+)
+
+py_library(
     name = "by_state",
     srcs = ["by_state.py"],
     visibility = ["//visibility:public"],

@@ -2,6 +2,7 @@
 # Following rule: One Bazel target per file
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 # All .py files in this dir. If __init__.py is added, no_init_check fails the build.
 filegroup(
@@ -133,6 +134,27 @@ py_library(
     deps = [
         ":common_stats",
         "//models:salary",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "soc_occupations",
+    srcs = ["soc_occupations.py"],
+    deps = [
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "occupation_stats",
+    srcs = ["occupation_stats.py"],
+    deps = [
+        ":common_stats",
+        ":soc_occupations",
+        "//models:salary",
+        requirement("Django"),
     ],
     visibility = ["//visibility:public"],
 )

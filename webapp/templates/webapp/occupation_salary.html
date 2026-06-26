@@ -1,0 +1,153 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ seo.title }}{% endblock %}
+
+{% block extra_head %}
+<script type="application/ld+json">{{ jsonld|safe }}</script>
+{% endblock %}
+
+{% block hero_heading %}<div class="display-5"><i class="bi bi-cash-stack"></i> {{ occ.display }} Salary</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{% url 'salary_search' %}">Salary database</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'occupation_index' %}">By occupation</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ occ.display }}</li>
+      </ol>
+    </nav>
+
+    <h1 class="mb-2">{{ occ.display }} H-1B &amp; PERM Salary</h1>
+    <p class="text-muted mb-4">
+      {{ occ.blurb }} Based on {{ stats.total_filings|intcomma }} certified H-1B and
+      PERM filings from U.S. Department of Labor disclosure data, the median
+      sponsored salary for a {{ occ.display }} is
+      <strong>${{ stats.percentiles.p50|floatformat:0|intcomma }}</strong> per year.
+    </p>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card border-primary h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">Median salary</div>
+          <div class="display-6 fw-bold mb-1">${{ stats.percentiles.p50|floatformat:0|intcomma }}</div>
+          <div class="text-muted small">per year</div>
+        </div></div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">Total filings</div>
+          <div class="display-6 fw-bold mb-1">{{ stats.total_filings|intcomma }}</div>
+          <div class="text-muted small">{{ stats.recent_filings|intcomma }} in last 5 years</div>
+        </div></div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100"><div class="card-body text-center">
+          <div class="text-muted text-uppercase small mb-1">Typical range (25th–75th)</div>
+          <div class="h3 fw-bold mb-1 mt-2">${{ stats.percentiles.p25|floatformat:0|intcomma }}–${{ stats.percentiles.p75|floatformat:0|intcomma }}</div>
+          <div class="text-muted small">middle 50% of offers</div>
+        </div></div>
+      </div>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">{{ occ.display }} salary percentiles</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle" style="max-width:32rem">
+        <thead><tr><th>Percentile</th><th class="text-end">Annual salary</th></tr></thead>
+        <tbody>
+          <tr><td>10th (entry)</td><td class="text-end">${{ stats.percentiles.p10|floatformat:0|intcomma }}</td></tr>
+          <tr><td>25th</td><td class="text-end">${{ stats.percentiles.p25|floatformat:0|intcomma }}</td></tr>
+          <tr class="table-primary"><td><strong>50th (median)</strong></td><td class="text-end"><strong>${{ stats.percentiles.p50|floatformat:0|intcomma }}</strong></td></tr>
+          <tr><td>75th</td><td class="text-end">${{ stats.percentiles.p75|floatformat:0|intcomma }}</td></tr>
+          <tr><td>90th (senior)</td><td class="text-end">${{ stats.percentiles.p90|floatformat:0|intcomma }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {% if stats.program.h1b_count and stats.program.perm_count %}
+    <p class="text-muted">
+      Of {{ stats.program.total|intcomma }} filings,
+      {{ stats.program.h1b_count|intcomma }} are H-1B (temporary work visa) and
+      {{ stats.program.perm_count|intcomma }} are PERM (green-card labor certification,
+      {{ stats.program.perm_ratio|floatformat:0 }}% of the total).
+    </p>
+    {% endif %}
+
+    {% if stats.top_employers %}
+    <h2 class="h4 mt-4 mb-3">Top employers sponsoring {{ occ.display }}s</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead><tr>
+          <th style="width:3rem">#</th><th>Employer</th>
+          <th class="text-end">Filings</th><th class="text-end">Avg. salary</th>
+        </tr></thead>
+        <tbody>
+          {% for e in stats.top_employers %}
+          <tr>
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td><a href="/employer/{{ e.employer__canonical_cluster__slug }}/">{{ e.employer__canonical_cluster__canonical_name }}</a></td>
+            <td class="text-end">{{ e.filings|intcomma }}</td>
+            <td class="text-end">${{ e.avg_salary|floatformat:0|intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if stats.top_states %}
+    <h2 class="h4 mt-4 mb-3">Where {{ occ.display }} jobs are sponsored</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle" style="max-width:36rem">
+        <thead><tr><th>State</th><th class="text-end">Filings</th><th class="text-end">Avg. salary</th></tr></thead>
+        <tbody>
+          {% for s in stats.top_states %}
+          <tr><td>{{ s.state_name }}</td><td class="text-end">{{ s.filings|intcomma }}</td><td class="text-end">${{ s.avg_salary|floatformat:0|intcomma }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if stats.top_titles %}
+    <h2 class="h4 mt-4 mb-3">Common {{ occ.display }} job titles</h2>
+    <p class="text-muted small">Specific titles employers file under this occupation. Click through for a per-title salary profile.</p>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% for t in stats.top_titles %}
+      <a class="badge rounded-pill text-bg-light border text-decoration-none py-2 px-3"
+         href="/job-title/{{ t.job_title_entity__canonical_cluster__slug }}/">{{ t.job_title_entity__canonical_cluster__canonical_title }}
+        <span class="text-muted">· ${{ t.avg_salary|floatformat:0|intcomma }}</span></a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 my-4">
+      <a href="/salaries/?q={{ occ.display|urlencode }}" class="btn btn-primary">
+        <i class="bi bi-search"></i> Search {{ occ.display }} salary records
+      </a>
+      <a href="{% url 'occupation_index' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-grid"></i> All occupations
+      </a>
+    </div>
+
+    <h2 class="h4 mt-4 mb-3">Frequently asked questions</h2>
+    {% for item in faq %}
+    <div class="mb-3">
+      <div class="fw-semibold">{{ item.q }}</div>
+      <div class="text-muted">{{ item.a }}</div>
+    </div>
+    {% endfor %}
+
+    {% include "webapp/includes/salary_explore_rail.html" %}
+
+    <p class="text-muted small mt-4">
+      Salaries are the certified offered annual wage on public U.S. Department of
+      Labor H-1B (LCA) and PERM disclosure filings, not a guarantee of pay.
+      Occupation is the DOL-assigned Standard Occupational Classification (SOC) code.
+    </p>
+  </div>
+</div>
+{% endblock %}
