@@ -12,13 +12,9 @@ bazel run //:runserver
 ```
 
 **For Production Deployment:**
-```bash
-# Deploy latest version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
-
-# Deploy specific version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
-```
+Releases run from the VB platform repo, not this one — zero-downtime
+`visa_bulletin_platform/hosting/cutover.sh --code <sha>`. See
+`.claude/rules/branching.md`. (The old `./scripts/deploy.sh` was deleted 2026-06-27.)
 
 **For Releases:**
 ```bash
@@ -71,7 +67,7 @@ Prod:   docker pull → docker-compose up
 1. **Dockerfile** - Now uses gunicorn instead of dev server
 2. **docker-compose.yml** - Pulls from GHCR instead of building locally
 3. **docker-compose.dev.yml** - New file for local development
-4. **scripts/deploy.sh** - Deploy to host (single stack; instance-rotation for zero-downtime)
+4. **Release tooling** - lives in `visa_bulletin_platform/hosting/` (`cutover.sh`), not this repo
 5. **.github/workflows/** - New CI/CD workflows
 
 ## Documentation
@@ -92,13 +88,8 @@ bazel test //tests:...
 ```
 
 ### Deployment
-```bash
-# Deploy latest
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
-
-# Deploy specific version
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
-```
+Releases run from `visa_bulletin_platform/hosting/` (zero-downtime `cutover.sh --code <sha>`),
+not from this repo. See `.claude/rules/branching.md` + `.claude/rules/deployment.md`.
 
 ### On Production
 ```bash

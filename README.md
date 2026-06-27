@@ -385,24 +385,17 @@ This project uses **different tooling** for local development vs production depl
 - ✅ Reproducible test environment
 - 💻 **Why**: Bazel's toolchain (~500MB) and build cache provide excellent DX
 
-**Production (AWS Lightsail $5/month):**
-- ✅ **Raw Python** with venv
-- ✅ Gunicorn as WSGI server
-- ✅ Direct `python` commands
-- ✅ Minimal resource footprint
-- 🚀 **Why**: Fits 1GB RAM constraint; Bazel requires ~1-2GB RAM for builds
+**Production (self-hosted, Docker + Cloudflare Tunnel):**
+- ✅ Single Docker Compose stack (`vb_web` gunicorn, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared`)
+- ✅ Image-tag releases built by GitHub Actions, promoted zero-downtime
+- ✅ No public port forwards — traffic enters via Cloudflare Tunnel
+- 🚀 **Why**: migrated off AWS Lightsail on 2026-05-08; the image carries baked-in app code, so prod needs no Bazel
 
-**Quick Deploy:**
-```bash
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
-```
-
-**Full deployment guide:** See [deployment/README.md](deployment/README.md) for:
-- AWS Lightsail setup ($5/month)
-- Nginx reverse proxy
-- SSL/HTTPS with Let's Encrypt
-- Systemd service management
-- Daily cron job for data refresh
+**Releases are NOT run from this repo.** Production deploys / promotions go through the
+VB platform repo `visa_bulletin_platform/hosting/` (zero-downtime `cutover.sh --code <sha>`),
+never a hand-rolled script here. The canonical release + branching flow lives in
+[`.claude/rules/branching.md`](.claude/rules/branching.md) and
+[`.claude/rules/deployment.md`](.claude/rules/deployment.md).
 
 ## Project Structure
 

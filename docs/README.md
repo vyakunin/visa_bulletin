@@ -70,7 +70,7 @@ Documentation for deployment, infrastructure, and operations.
 - **ROLLOUT_FLOW.md** - Complete rollout process for new deployments
 - Concrete production-server setup (hosts, hardware, provisioning) lives in the private ops repo, not in this public repository.
 
-**Related Code:** `deployment/`, `scripts/deploy.sh`
+**Related Code:** `deployment/`; release tooling lives in `visa_bulletin_platform/hosting/` (see `.claude/rules/branching.md`).
 
 ---
 

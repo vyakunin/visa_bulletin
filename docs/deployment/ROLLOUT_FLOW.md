@@ -69,4 +69,4 @@ aws lightsail attach-static-ip --static-ip-name <prod-ip> --instance-name <old-p
 
 - **Never scp files to servers.** All changes through git branches.
 - **Code deploy and data refresh are separate.** See [BRANCHING_AND_DEPLOYMENT.md](../BRANCHING_AND_DEPLOYMENT.md).
-- **`scripts/deploy.sh` is outdated.** Use git pull + container restart.
+- **Releases go through `visa_bulletin_platform/hosting/`** (zero-downtime `cutover.sh`), never a hand-rolled script in this repo. See `.claude/rules/branching.md`. (The old `scripts/deploy.sh` was deleted 2026-06-27.)

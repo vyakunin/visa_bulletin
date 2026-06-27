@@ -818,14 +818,14 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate
 
 ### Deployment Scripts
 
-> Note: the canonical deploy path is now the homeserver image-tag promotion in
-> `.claude/rules/deployment.md` (docker compose pull + up). The scripts below predate
+> Note: the canonical release path is the VB platform `visa_bulletin_platform/hosting/`
+> tooling — zero-downtime `cutover.sh --code <sha>` (prod) — documented in
+> `.claude/rules/branching.md` + `.claude/rules/deployment.md`. The scripts below predate
 > the homeserver migration; `<ssh-key>` is whatever key reaches the target host.
 
-**`scripts/deploy.sh`** - Deploy to a host (single stack)
-```bash
-./scripts/deploy.sh <ssh-key> 1.2.3
-```
+> The old `scripts/deploy.sh` (Lightsail SSH + `git reset --hard`) was **deleted 2026-06-27**.
+> Production deploys/promotions now run from `visa_bulletin_platform/hosting/` (zero-downtime
+> `cutover.sh`), not from this repo — see `.claude/rules/branching.md`.
 
 **`scripts/pre-deploy-check.sh`** - Pre-deployment validation checks
 ```bash

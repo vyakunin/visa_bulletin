@@ -610,45 +610,17 @@ ssh staging_2Gb_vm "ls -la /opt/visa_bulletin/deployment/docker-compose.override
 
 **Important**: removing the volume mount on prod means the Docker container serves what's baked into the image. If the image is stale (built from old `main`), you'll need to rebuild it from the `prod` branch first (Step 5 sets up the GitHub Actions trigger for this). Sequence: push `prod` branch -> GitHub Actions builds image -> pull image on prod -> restart.
 
-### Step 7: Deprecate `scripts/deploy.sh`
+### Step 7: ~~Deprecate `scripts/deploy.sh`~~ — DONE (deleted 2026-06-27)
 
-The current `deploy.sh` is outdated (pulls from `main`, assumes Docker-first workflow). The code deployment procedure is now: git pull the correct branch + restart container.
+`scripts/deploy.sh` (and the Lightsail `deploy-production.yml` GHA workflow) were
+**deleted 2026-06-27**. Releases no longer run from this repo at all — they go through
+the VB platform repo `visa_bulletin_platform/hosting/` (zero-downtime
+`cutover.sh --code <sha>`). Canonical flow: `.claude/rules/branching.md` +
+`.claude/rules/deployment.md`.
 
-Options:
-- **Option A**: Delete `deploy.sh` and its BUILD target. Code deployment is documented in this file and in `.cursor/rules/branching.mdc`.
-- **Option B**: Rewrite as a thin wrapper around the git pull + restart workflow, taking branch and instance as params.
-- **Option C**: Leave as-is with a deprecation notice. Remove later.
-
-If rewriting (Option B), the script would look like:
-
-```bash
-#!/bin/bash
-# Deploy a branch to an instance. Code-only, no data refresh.
-# Usage: ./scripts/deploy.sh <instance-alias> [branch]
-#   instance-alias: prod_2Gb_vm or staging_2Gb_vm
-#   branch: defaults to matching environment (prod_2Gb_vm -> prod, staging_2Gb_vm -> staging)
-
-set -e
-INSTANCE="${1:?Usage: deploy.sh <instance-alias> [branch]}"
-# Auto-detect branch from instance name
-if [ -z "$2" ]; then
-  case "$INSTANCE" in
-    *prod*) BRANCH="prod" ;;
-    *staging*) BRANCH="staging" ;;
-    *) echo "Cannot auto-detect branch for $INSTANCE. Provide branch as second arg."; exit 1 ;;
-  esac
-else
-  BRANCH="$2"
-fi
-
-echo "Deploying branch '$BRANCH' to $INSTANCE..."
-ssh "$INSTANCE" "cd /opt/visa_bulletin && git fetch origin $BRANCH && git checkout $BRANCH && git reset --hard origin/$BRANCH"
-echo "Restarting web container..."
-ssh "$INSTANCE" "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
-echo "Verifying..."
-ssh "$INSTANCE" "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml ps"
-echo "Done."
-```
+> NOTE: the rest of this doc is a 2026-02-19 Lightsail/Cursor-era transition worklog
+> (`prod_2Gb_vm`, `/opt/visa_bulletin`, blue-green containers, `.cursor/rules/`). It is
+> **historical** — current branching/deploy state lives in `.claude/rules/branching.md`.
 
 ### Step 8: Verify the transition
 
@@ -681,7 +653,7 @@ git show main:.github/workflows/docker-build-push.yml | grep -A3 'branches:'
 - [x] Staging server tracking `staging` branch
 - [x] GitHub Actions triggers updated (staging/prod, not main)
 - [x] Volume mount hack removed from production server (none existed; staging override rewritten without volume mount)
-- [x] `deploy.sh` rewritten (Option B: thin git pull + restart wrapper)
+- [x] `deploy.sh` deleted 2026-06-27 (releases moved to `visa_bulletin_platform/hosting/`)
 - [x] Both servers verified healthy after changes
 - [x] Team (future agents) can discover the workflow via `.cursor/rules/branching.mdc`
 

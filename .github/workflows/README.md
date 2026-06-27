@@ -47,80 +47,25 @@ git push origin v1.2.3
 
 **GitHub Actions Minutes Used**: ~10-15 minutes per build
 
-### 2. deploy-production.yml
+### 2. Deploys are NOT a GitHub Actions workflow
 
-**Purpose**: Optional manual deploy of Docker image to Lightsail (e.g. from GitHub UI). Production deploys are normally done **locally** via `./scripts/deploy.sh` so repo secrets are not required.
+There is no deploy workflow in this repo. The old `deploy-production.yml` (manual
+`workflow_dispatch` that SSHed to AWS Lightsail and ran `scripts/deploy.sh`) was
+**deleted 2026-06-27** along with `scripts/deploy.sh` — both were Lightsail-era and dead.
 
-**Triggers**:
-- Manual workflow dispatch only (click "Run workflow" in GitHub Actions). Not triggered by pushes or builds.
-
-**What it does**:
-1. Sets up SSH to Lightsail
-2. Runs `deploy.sh` script on server which:
-   - Pulls latest configs from git
-   - Pulls new Docker image from GHCR
-   - Updates Nginx configs
-   - Handles SSL certificates
-   - Restarts Docker services
-   - Verifies deployment
-3. Tests site is accessible (HTTP 200 check)
-4. Cleans up SSH keys
-
-**Required Secrets**:
-- `LIGHTSAIL_SSH_KEY`: SSH private key for server access
-- `LIGHTSAIL_IP`: IP address or hostname of server
-
-**Manual Trigger (Web Interface)**:
-1. Go to GitHub → Actions → Deploy to Production
-2. Click "Run workflow"
-3. Enter version tag (e.g., `v1.2.3` or `latest`)
-4. Click "Run workflow"
-
-**Manual Trigger (Command Line)**:
-```bash
-# Install GitHub CLI (one-time)
-brew install gh  # macOS
-# See https://cli.github.com for other platforms
-
-# Authenticate (one-time)
-gh auth login
-
-# Trigger deployment
-gh workflow run deploy-production.yml -f version=v1.2.3
-
-# Check status
-gh run list --workflow=deploy-production.yml
-
-# Watch in real-time
-gh run watch
-```
-
-**Build Time**: ~2-3 minutes
+Production now runs on the self-hosted homeserver, and **releases go through the VB
+platform repo** `visa_bulletin_platform/hosting/`: zero-downtime
+`cutover.sh --code <sha>` (code) / `cutover.sh --data` (DB-level). GitHub Actions'
+only job is **building + publishing the image** (docker-build-push.yml above); promotion
+to prod happens from `hosting/`, off-CI. Canonical flow: `.claude/rules/branching.md`
++ `.claude/rules/deployment.md`.
 
 ## Setting Up Secrets
 
-### 1. LIGHTSAIL_SSH_KEY
-
-```bash
-# On your local machine
-cat ~/Downloads/VisaBulletin.pem
-# Copy the entire contents
-```
-
-Then:
-1. Go to GitHub repository → Settings → Secrets and variables → Actions
-2. Click "New repository secret"
-3. Name: `LIGHTSAIL_SSH_KEY`
-4. Value: Paste the entire private key
-5. Click "Add secret"
-
-### 2. LIGHTSAIL_IP
-
-1. Go to GitHub repository → Settings → Secrets and variables → Actions
-2. Click "New repository secret"
-3. Name: `LIGHTSAIL_IP`
-4. Value: `3.227.71.176` (or your server's IP)
-5. Click "Add secret"
+The build workflow needs no manual secrets — it uses the auto-provided `GITHUB_TOKEN`
+(`packages: write`) to push to GHCR. The old `LIGHTSAIL_SSH_KEY` / `LIGHTSAIL_IP`
+secrets were only for the deleted deploy workflow and are no longer used; remove them
+from repo settings if still present.
 
 ## Usage Examples
 
@@ -139,27 +84,21 @@ git push origin v1.2.3
 # GitHub Actions will automatically:
 # 1. Build Docker image
 # 2. Push to GHCR with tags: v1.2.3, v1.2, v1, latest
-
-# Then manually deploy:
-# Go to GitHub → Actions → Deploy to Production → Run workflow
-# Enter version: v1.2.3
 ```
 
-### Deploy Latest to Production
+### Deploy / Promote / Rollback to Production
+
+Promotion to prod is NOT a GitHub Actions step — it runs from the VB platform repo
+`visa_bulletin_platform/hosting/` (zero-downtime; gates on staging first):
 
 ```bash
-# No code changes, just want to redeploy
-
-# Go to GitHub → Actions → Deploy to Production → Run workflow
-# Enter version: latest
+# Promote a built image SHA to prod (code-only), zero-downtime:
+cd ~/cursor_projects/visa_bulletin_platform/hosting && ./cutover.sh --code <sha>
+# Roll back: cutover/promote the previous good <sha> the same way.
 ```
 
-### Rollback to Previous Version
-
-```bash
-# Go to GitHub → Actions → Deploy to Production → Run workflow
-# Enter version: v1.2.2  # Previous stable version
-```
+Full branching + Path-1-vs-Path-2 + rollback flow: `.claude/rules/branching.md`
++ `.claude/rules/deployment.md`.
 
 ## Monitoring Workflows
 
@@ -200,9 +139,8 @@ These are granted automatically via `GITHUB_TOKEN`.
 - Private repos: 2,000 minutes/month
 
 **Current usage**:
-- Build workflow: ~10 minutes per run
-- Deploy workflow: ~3 minutes per run
-- Typical monthly usage: ~50 minutes (5 builds + 5 deploys)
+- Build workflow: ~10 minutes per run (the only workflow that consumes minutes; deploys run off-CI from `hosting/`)
+- Typical monthly usage: ~50 minutes
 
 **Verdict**: Well within free tier limits
 
@@ -234,26 +172,14 @@ These are granted automatically via `GITHUB_TOKEN`.
 - Out of memory: GitHub runners have 7GB (should be sufficient)
 - Image push failed: Check package permissions
 
-### Deploy Fails
+### Deploy / Promotion Fails
 
-**Check logs**:
-1. Go to Actions → deploy-production workflow
-2. Click failed run
-3. Expand steps to see where it failed
-
-**Common issues**:
-- SSH connection failed: Check LIGHTSAIL_SSH_KEY secret
-- Docker pull failed: Check image exists in GHCR
-- Service start failed: Check server logs
-
-### Manual Deploy Instead
-
-If GitHub Actions deploy fails, you can always deploy manually:
-
-```bash
-# From local machine
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem v1.2.3
-```
+Promotion runs from `visa_bulletin_platform/hosting/` (not CI). Diagnose with
+`cutover.sh --code <sha> --dry` (prints the plan + preflight) and the
+homeserver-side checks in `.claude/rules/deployment.md` (perf baseline, smoke,
+rollback triggers). Common issues: image SHA not yet published to GHCR; minipc
+below the standby RAM floor (cutover falls back to the disruptive swap); staging
+diff-gate flags a phantom delta (mirror runtime config per the parity rule).
 
 ## Future Enhancements
 
