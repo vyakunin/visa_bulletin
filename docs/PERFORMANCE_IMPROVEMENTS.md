@@ -1,5 +1,14 @@
 # Performance Improvements
 
+> ⚠️ **Lightsail-era snapshot — HISTORICAL host baseline.** The measurements and
+> host-sizing recommendations below were taken on the retired AWS Lightsail
+> instance (2 GB RAM / 60 GB SSD). Prod migrated off Lightsail 2026-05-08 to a
+> self-hosted homeserver behind a Cloudflare Tunnel, so treat any host-sizing
+> advice (e.g. "upgrade to the Lightsail 4 GB plan", "Lightsail Managed DB") as
+> historical. The query-level / app-level findings (timeouts, indexing, zombie
+> queries) remain instructive; for current topology + deploy see
+> `.claude/rules/deployment.md` + `.claude/rules/branching.md`.
+
 Captures the production performance issues surfaced during the
 2026-04-29 outage investigation, and the fixes proposed / shipped in
 response. This doc reflects current state — issues that have been

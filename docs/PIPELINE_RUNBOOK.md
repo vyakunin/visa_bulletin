@@ -7,7 +7,9 @@
 > behind a Cloudflare Tunnel). The sections about the orchestrator, traffic
 > switch, static-IP swap, post-swap graduation, and emergency rollback no longer
 > apply. **Current deploy + data-refresh:** `.claude/rules/deployment.md`,
-> `.claude/rules/branching.md`, `deployment/homeserver/`. Still valid + host-agnostic
+> `.claude/rules/branching.md`, and the private VB platform repo
+> `~/cursor_projects/visa_bulletin_platform/hosting/` (zero-downtime
+> `cutover.sh --code <sha>` / `cutover.sh --data`). Still valid + host-agnostic
 > below: the **Pipeline Steps** list, the **Job Title Coherence Smoke Test**, and the
 > bug-fix/process notes. The orchestrator-specific sections are retained only until
 > a homeserver staging-flip runbook replaces them (ticket 36662b8d).

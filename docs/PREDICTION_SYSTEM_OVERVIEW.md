@@ -155,48 +155,45 @@ Movement probability badge (1m only, GBM-based): shown on prediction detail page
 - No automated path to transfer predictions between environments.
 - Supporting data (`RawFactsLedger`) IS ingested during the pipeline (I-140, I-485, DOS, PERM).
 
-### 4.2 Initial Transfer: pg_dump (One-Time)
+> **⚠️ Deploy mechanics updated for the homeserver topology (post-2026-05-08).**
+> The old AWS path (local `pg_dump` → `scp` to a Lightsail VM → load, then an
+> "IP flip" graduation) is **retired**. **Never scp to servers** — code goes
+> through git; data goes through the hosting flow (`.claude/rules/deployment.md`).
+> Predictions are now generated/published **on the staging stack** and the verified
+> DATA is graduated to prod via the zero-downtime postgres-data volume swap
+> `cutover.sh --data` (in `~/cursor_projects/visa_bulletin_platform/hosting/`) —
+> there is no IP flip anymore.
 
-For the first deployment, transfer existing prediction data via table dump:
+### 4.2 Generate predictions on the staging stack
+
+Run `publish_predictions` inside the staging web container (against staging's
+prod-copy DB), which writes `PredictedBulletin` + `PredictedCutoff` from
+`RawFactsLedger` + `VisaCutoffDate` (both populated by the refresh pipeline):
 
 ```bash
-# Step 1: Dump from local
-pg_dump -U visa_bulletin -d visa_bulletin \
-  --table=models_predictedbulletin \
-  --table=models_predictedcutoff \
-  --data-only --no-owner --no-privileges \
-  -f /tmp/predictions_dump.sql
-
-# Step 2: Transfer to staging
-scp /tmp/predictions_dump.sql staging_2Gb_vm:/tmp/
-
-# Step 3: Ensure migrations are applied on staging
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && set -a && source .env && set +a && \
-  DB_HOST=localhost bazel run //:migrate && bazel shutdown"
-
-# Step 4: Load prediction data
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && \
-  psql -U visa_bulletin_user -d visa_bulletin -f /tmp/predictions_dump.sql"
+docker exec -w /app vb_stg_web python3 -m scripts.publish_predictions --month YYYY-MM
 ```
 
-Also transfer `RawFactsLedger` if staging doesn't have it yet:
+Verify the rows on the staging DB before graduation:
 
 ```bash
-pg_dump -U visa_bulletin -d visa_bulletin \
-  --table=models_rawfactsledger \
-  --data-only --no-owner --no-privileges \
-  -f /tmp/raw_facts_dump.sql
+ssh homeserver "docker exec vb_stg_postgres psql -U visa_bulletin_user visa_bulletin \
+  -c 'SELECT COUNT(*) FROM models_predictedcutoff'"
 ```
 
 ### 4.3 Ongoing: Add publish_predictions to Pipeline
 
-After the initial transfer, add `publish_predictions` as a post-processing step in the refresh pipeline so new months' predictions are generated automatically on staging:
+Add `publish_predictions` as a post-processing step in the refresh pipeline so new
+months' predictions are generated automatically on staging during the off-prod
+refresh:
 
 1. Add `publish_predictions` binary to `scripts/cron/build_all.sh` REQUIRED_BINARIES.
 2. Add a step in `scripts/cron/refresh/pipeline.py` after the ingest/post-processing stages.
 3. The script reads from `RawFactsLedger` + `VisaCutoffDate` (both populated by the pipeline) and writes `PredictedBulletin` + `PredictedCutoff`.
 
-After graduation (IP flip), the predictions are on prod automatically.
+The predictions land on prod when the verified staging DB is graduated via
+`cutover.sh --data` (the postgres-data volume swap) — see
+`.claude/rules/deployment.md` "Weekly DB Refresh Pattern".
 
 ### 4.4 Static Assets (Spaghetti, Metric Report)
 

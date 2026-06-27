@@ -657,7 +657,7 @@ py_test(
 **Database:**
 - Switch from SQLite to PostgreSQL for full-text search
 - 3M records requires proper indexing
-- Consider AWS RDS or self-hosted on Lightsail
+- Consider managed Postgres (AWS RDS / DigitalOcean) or scaling the self-hosted homeserver Postgres
 
 **Storage:**
 - Raw DOL files: ~500MB

@@ -27,17 +27,18 @@ bazel run //scripts/salary:validate_data -- --update-golden
 bazel run //scripts/salary:validate_data -- --test-homepage-queries
 ```
 
-### Production Validation
+### Production / Staging Validation
+
+> The old AWS validation box (`backup_0_5Gb_vm` Lightsail VM under `/opt/visa_bulletin`,
+> with on-box Bazel) is **retired**. Prod/staging now run the baked image in Docker
+> on the homeserver — run `validate_data` inside a container, not via on-box Bazel.
 
 ```bash
-# SSH to production
-ssh backup_0_5Gb_vm
+# Validate the off-prod STAGING DB (preferred — doesn't touch the serving prod box):
+ssh homeserver "docker exec -w /app vb_stg_web python3 -m scripts.salary.validate_data"
 
-# Navigate to project
-cd /opt/visa_bulletin
-
-# Run validation (uses production database)
-bazel run //scripts/salary:validate_data
+# Validate live PROD (read-only checks against the serving DB):
+ssh homeserver "docker exec -w /app vb_web python3 -m scripts.salary.validate_data"
 ```
 
 ## Validation Scripts
@@ -206,34 +207,29 @@ bazel run //scripts/salary:validate_data -- --check-homepage-queries
 bazel run //scripts/salary:validate_data
 ```
 
-### Production Database
+### Production / Staging Database
 
-#### Step 1: Connect to Production
+#### Step 1: Reach the right container on the homeserver
+
+> The retired AWS box (`backup_0_5Gb_vm` under `/opt/visa_bulletin`) is gone. The
+> DB env vars are already baked into each container's `.env`, so no manual export is
+> needed — just run inside the container. Prefer the off-prod staging DB
+> (`vb_stg_*`); validate live prod (`vb_*`) read-only only.
 
 ```bash
-# SSH to production server
-ssh backup_0_5Gb_vm
-
-# Navigate to project
-cd /opt/visa_bulletin
-
-# Ensure environment variables are set
-export DB_ENGINE=postgresql  # or sqlite3
-export DB_NAME=visa_bulletin
-export DB_USER=visa_bulletin_user
-export DB_PASSWORD=<password>
-export DB_HOST=localhost
-export DB_PORT=5432
+# Staging (off-prod) container:  vb_stg_web   (DB: vb_stg_postgres)
+# Production container:          vb_web       (DB: vb_postgres)
+ssh homeserver "docker ps --format '{{.Names}} {{.Status}}' | grep vb_"
 ```
 
 #### Step 2: Run Validation
 
 ```bash
-# Full validation
-bazel run //scripts/salary:validate_data
+# Full validation (off-prod staging shown; swap vb_stg_web → vb_web for prod):
+ssh homeserver "docker exec -w /app vb_stg_web python3 -m scripts.salary.validate_data"
 
 # Generate report
-bazel run //scripts/salary:validate_data -- --json-report /tmp/validation_report.json
+ssh homeserver "docker exec -w /app vb_stg_web python3 -m scripts.salary.validate_data --json-report /tmp/validation_report.json"
 ```
 
 #### Step 3: Review Results

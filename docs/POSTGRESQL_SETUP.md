@@ -210,7 +210,7 @@ brew services list | grep postgresql
 
 ## Production vs Local Differences
 
-| Aspect | Local (macOS) | Production (Lightsail) |
+| Aspect | Local (macOS) | Production (homeserver) |
 |--------|--------------|------------------------|
 | **Version** | PostgreSQL 15 | PostgreSQL 14 |
 | **Data Location** | `/opt/homebrew/var/postgresql@15` | `/var/lib/postgresql/14/main` |

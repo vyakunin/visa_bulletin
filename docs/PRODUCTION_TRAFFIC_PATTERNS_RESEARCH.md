@@ -1,5 +1,14 @@
 # Production Traffic Patterns Research
 
+> ⚠️ **Lightsail-era snapshot (Feb 2026) — HISTORICAL.** This is a one-time
+> research snapshot sourced from the retired AWS Lightsail host (`prod_2Gb_vm`,
+> `/var/log/nginx`, the old blue/green compose). All of that is retired (prod
+> migrated off Lightsail 2026-05-08 to a self-hosted homeserver behind a
+> Cloudflare Tunnel). The numbers + commands below reflect that dead setup and
+> are kept only as a dated snapshot. For **current** analytics + topology (the
+> `vb_nginx` docker-logs path, GoatCounter, and the homeserver setup) see
+> `.claude/rules/analytics.md`.
+
 **Source:** Nginx access logs on prod_2Gb_vm (44.209.204.255)  
 **Log path:** `/var/log/nginx/access.log`  
 **Analysis date:** 2026-02-03  

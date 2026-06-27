@@ -2,7 +2,7 @@
 
 > Concrete hosting topology (hosts, IPs, hardware, the staging/standby/cutover mechanics, backup wiring, DR) lives in the private ops repo, not in this public repository. Public docs use abstract roles (production / staging / data-pipeline server). The 3-branch model below is host-agnostic.
 
-**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md`.
+**This rule is canonical** for the branch + release model. `docs/BRANCHING_AND_DEPLOYMENT.md` is a human-readable narrative overview that defers to this rule + `deployment.md` + the release tooling in `visa_bulletin_platform/hosting/`.
 
 ## 🚨 Rule: ALL releases go through `visa_bulletin_platform/hosting/` — never hand-roll a deploy
 
