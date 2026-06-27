@@ -263,17 +263,16 @@ Cross-reference unexplained HTML diffs against this list. If the diff is in `web
 
 **Why this rule exists:** 2026-05-27 — after a cherry-pick chain to staging, smoke tests passed but a manual diff against prod surfaced (1) a 9-line "Scope of accuracy claims" paragraph missing from staging's methodology BlogPost (DB drift), (2) substantively different EB prediction values + confidence intervals (data drift in `PredictedCutoff`), and (3) `<link rel="canonical" href="http://localhost:8000/">` on staging's homepage cache (Docker healthcheck populating cache with no Host header). None of those would have failed a 200-status smoke test. The diff caught all three in ~5 minutes.
 
-### Optional: zero-downtime via blue/green (NOT YET BUILT)
+### Zero-downtime promotion — BUILT, in the VB platform repo (default path)
 
-Notion follow-up ticket exists for building a reusable
-`tools/blue_green_deploy.sh` script that uses the existing dual-stack
-(`visa_bulletin` + `visa_bulletin_staging` compose projects sharing
-`vb_public`). High-level dance: repoint staging container's DB to prod
-postgres → CF Tunnel ingress swap (prod hostnames → `vb_stg_nginx`) →
-recreate `vb_web` with no traffic on it → swap CF ingress back → revert
-staging DB. Per-deploy overhead ~30-60s, customer downtime 0s. Build it
-when deploy frequency or off-peak constraints justify the orchestration
-cost.
+The zero-downtime promotion this section once speculated about **is built** and is now the
+**default** for routine prod promotions: `visa_bulletin_platform/hosting/cutover.sh --code <sha>`
+(code) / `--data` (DB-level). It gates on staging then swaps the homeserver image while a second
+stack serves prod traffic, so vb never 502s. See `branching.md` §"Promote via the ZERO-DOWNTIME
+cutover" for the policy and `hosting/RELEASE_PATHS.md` for the engine. Do NOT build a parallel
+`tools/blue_green_deploy.sh` in this public repo — all release tooling lives in `hosting/`
+(`branching.md` §"Two-repo split"). The in-place `docker compose up -d web` below is only the
+under-the-hood mechanics + the `--accept-502` disruptive fallback.
 
 **Building images** still happens via the GitHub Actions workflow on push to `staging`/`prod` branches — see "Docker Image Strategy" below. Nothing about the build/registry side changed; only the runtime moved.
 
@@ -298,7 +297,7 @@ Images built by GitHub Actions on pushes to `staging`/`prod` branches or version
 
 **Image contains:** Python runtime, system deps (libpq5), pip packages, gunicorn, baked-in app code.
 
-**Prod and staging both run baked-in image code** (no `../:/app` volume mount). To deploy code changes: push to branch → wait for CI → `docker pull` + `docker-compose up -d web` on the server.
+**Prod and staging both run baked-in image code** (no `../:/app` volume mount). To deploy code changes: push to branch → wait for CI to publish the image → swap the image tag on the target stack. **For prod that swap is the zero-downtime `hosting/cutover.sh --code <sha>`** (`branching.md`); the bare `docker pull` + `docker-compose up -d web` on the server is the staging path / disruptive prod fallback only.
 
 **⚠️ CRITICAL:** `docker restart` does NOT update the image. To deploy a new image you MUST recreate the container via `docker-compose up -d` with the correct `IMAGE_TAG`. Verify: `docker inspect <name> --format '{{.Config.Image}}'`.
 

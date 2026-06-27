@@ -28,13 +28,22 @@ Origin: 2026-06-24 — the EB-dashboard worker-warmup fix needed `VQS_WARM=1` on
 - **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to the staging stack. Data refreshes run here.
 - **`prod`** — **Mirror of production. NEVER update unless the change is actually deployed to production.** Updated only in two cases: (1) promotion — fast-forward to match `staging` after staging is verified, (2) critical hotfix — fix deployed directly. The branch must always reflect exactly what's running.
 
+### Branch divergence is EXPECTED — judge parity by CONTENT, never by commit count
+
+`git rev-list --count` between these branches is a **misleading signal** and must NOT be treated as drift to "fix":
+
+- **`staging`/`prod` legitimately trail `main` by tens of commits** — `main` is dev and carries unreleased WIP. "staging is N commits behind main" is the model working, not a problem. **NEVER "reconcile" by merging/resetting `main` → `staging`** — that dumps unvalidated WIP into the release candidate and breaks the whole 3-branch separation.
+- **Promotion is by CHERRY-PICK (and image-SHA), which rewrites the commit hash.** So the *same* change lands under a *different* SHA on each branch, and the three branches diverge in commit count and SHA even when their working trees are **byte-identical**. A large `main…staging` / `staging…prod` count is almost always this artifact, not real divergence.
+- **The only parity that matters: (a) working-tree CONTENT and (b) the deployed image tag.** Verify content parity with `git diff --stat <a> <b>` (empty = identical) or `git show <branch> --format= | git patch-id` (same patch-id on each tip = same change, cherry-picked). Verify deployed state against the live prod image tag, not the `prod` branch SHA — prod runs the promoted `staging-<sha>` image; the `prod` branch is a content-mirror for reference, not the source of the running SHA.
+- **Do NOT force-push/reset `staging` or `prod` to "tidy lineage."** History rewrites on shared release branches are Tier 3 (`automation_safety.md`) and can desync the branch↔deployed-image mapping. If the branches are content-equal at the tip and serving correctly, there is nothing to reconcile — leave them.
+
 ## Separation of Concerns
 
 Three independent operations — never conflate them:
 
-- **Code deployment**: `docker compose pull web && docker compose up -d web` on the server against the stack you're deploying to. No data refresh.
-- **Data refresh**: weekly job that ingests new salary/bulletin data, run against the staging DB.
-- **Promotion (staging → prod)**: either (a) deploying the staging-tested image tag to the prod stack, or (b) atomically swapping the postgres-data volumes (for DB-level promotion after a refresh).
+- **Code deployment**: image-tag swap on the target stack. To **staging**, that's `IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web` on the staging stack. To **prod**, it's the zero-downtime `hosting/cutover.sh --code <sha>` (NOT a bare in-place `docker compose up -d web`, which 502s prod — see "Promote via the ZERO-DOWNTIME cutover"). No data refresh.
+- **Data refresh**: weekly job that ingests new salary/bulletin data, run against the staging DB (off-prod), then graduated via `hosting/cutover.sh --data`.
+- **Promotion (staging → prod)**: code → `hosting/cutover.sh --code <sha>`; data/DB-level → `hosting/cutover.sh --data` (postgres-data volume swap after a verified refresh). Always via the VB platform `hosting/` tooling, never hand-rolled.
 
 ## Which release path — rendering vs data-population
 
@@ -140,7 +149,7 @@ git push origin prod
 - **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (fast-forward from staging after staging is verified) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch.
 - **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree. All features go through staging first.
 - **Tags mark releases.** `v1.X.Y` on `staging` before promotion, then on `prod` after fast-forward.
-- **Code deploy ≠ data refresh.** Code deploy = `docker compose pull web && docker compose up -d web` (~30 s). Data refresh = weekly pipeline run on the staging DB followed by atomic flip (~30 min total).
+- **Code deploy ≠ data refresh.** Code deploy to **prod** = `hosting/cutover.sh --code <sha>` (zero-downtime; the in-place `docker compose up -d web` is the disruptive fallback only — see Promotion line below). Data refresh = weekly pipeline run on the staging DB followed by atomic flip via `cutover.sh --data` (~30 min total).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.claude/rules/deployment.md`. Never `docker-compose up/down` without knowing what's actually serving — `vb_web`, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared` are the current prod containers.
 - **Promotion is image-tag-based, run via the zero-downtime cutover.** Production runs as a single Compose stack; a code promotion bumps the image tag — but **default to `hosting/cutover.sh --code <sha>`** so the swap happens with the minipc serving prod (no 502s), not a bare in-place `docker compose up -d web`. Data promotion = postgres-data volume swap via `cutover.sh --data`.
 
