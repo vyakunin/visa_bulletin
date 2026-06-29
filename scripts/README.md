@@ -840,6 +840,21 @@ bazel run //scripts:smoke_check_production -- --base https://visa-bulletin.us --
 bazel run //scripts:smoke_check_production -- --base http://localhost:8000 --timeout 15
 ```
 
+**`scripts/staging_prod_diff.sh`** - staging↔prod parity diff-gate
+The committed form of the inline diff-gate documented in `.claude/rules/deployment.md`
+("Diff staging vs prod HTML for top properties before graduation"). Curls a known set of
+top URLs on both stacks, rewrites the staging hostname → prod, strips cosmetic noise
+(rotating Cloudflare email tokens, GoatCounter), and prints the *filtered* diffline count
+per URL. Run it as the last gate **before** `git merge --ff-only staging` on the prod
+branch; inspect every URL with non-zero difflines and classify it per the table in
+`deployment.md`. Exit 1 if any URL differs (a human still classifies the diffs).
+```bash
+./scripts/staging_prod_diff.sh                 # summary table
+./scripts/staging_prod_diff.sh --show          # + dump filtered diffs for URLs that differ
+./scripts/staging_prod_diff.sh --show /         # one specific path
+PROD_BASE=... STAGING_BASE=... PRED_MONTH=2026-7 ./scripts/staging_prod_diff.sh
+```
+
 ### Instance Setup Scripts
 
 > **AWS/Lightsail deployment is RETIRED** (2026-06-20). Production is a self-hosted

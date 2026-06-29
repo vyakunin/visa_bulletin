@@ -196,48 +196,20 @@ regenerated; caught only when the user screenshotted staging.
 - The methodology blog post `/analysis/how-my-prediction-model-works/` — narrator output + manual edits, easy to drift between DBs
 - The latest monthly blog post (whichever `/analysis/visa-bulletin-analysis-<latest-month>/` is freshest)
 
-**Helper (bash, zsh-safe array syntax):**
+**Helper — the committed script `scripts/staging_prod_diff.sh`** (run from the repo root; documented in `scripts/README.md` § Deployment):
 
 ```bash
-bash -c '
-mkdir -p /tmp/vb_diff && rm -f /tmp/vb_diff/*
-URLS=(
-  "/"
-  "/employment-based/india/"
-  "/predictions/employment_based/2026-6/"
-  "/predictions/family_sponsored/2026-6/"
-  "/predictions/2024-1/"
-  "/predictions/2020-1/"
-  "/predictions/2005-1/"
-  "/analysis/how-my-prediction-model-works/"
-)
-for u in "${URLS[@]}"; do
-  slug=$(echo "$u" | tr "/" "_" | sed "s/^_//; s/_$//")
-  [ -z "$slug" ] && slug=root
-  curl -s "https://visa-bulletin.us$u"    > "/tmp/vb_diff/prod_$slug.html"
-  curl -s "https://staging.visa-bulletin.us$u" \
-    | sed "s|staging\.visa-bulletin\.us|visa-bulletin.us|g" \
-    > "/tmp/vb_diff/stg_$slug.html"
-  d=$(diff "/tmp/vb_diff/prod_$slug.html" "/tmp/vb_diff/stg_$slug.html" | wc -l | tr -d " ")
-  ps=$(wc -c < "/tmp/vb_diff/prod_$slug.html" | tr -d " ")
-  ss=$(wc -c < "/tmp/vb_diff/stg_$slug.html" | tr -d " ")
-  printf "%-50s prod=%sb stg=%sb difflines=%s\n" "$u" "$ps" "$ss" "$d"
-done
-'
+./scripts/staging_prod_diff.sh                 # summary table (filtered difflines per URL)
+./scripts/staging_prod_diff.sh --show          # + dump the filtered diff for URLs that differ
+./scripts/staging_prod_diff.sh --show /         # one specific path
+PROD_BASE=... STAGING_BASE=... PRED_MONTH=2026-7 ./scripts/staging_prod_diff.sh   # env overrides
 ```
 
-The `sed` rewrite of `staging.visa-bulletin.us → visa-bulletin.us` is **load-bearing** — without it every canonical_url, og:url, og:image, twitter:url, and schema.org Dataset URL shows as a diff and drowns out real signal.
+It curls the URL set above on both stacks, saves artifacts to `/tmp/vb_diff/{prod,stg}_<slug>.html`, and prints the **filtered** diffline count per URL (exit 1 if any URL differs). `PRED_MONTH` defaults to the current year-month.
 
-**Then inspect the diffs and classify each block:**
+The script's `sed` rewrite of `staging.visa-bulletin.us → visa-bulletin.us` is **load-bearing** — without it every canonical_url, og:url, og:image, twitter:url, and schema.org Dataset URL shows as a diff and drowns out real signal. Its `grep -vE` filter strips known-cosmetic noise: the rotating Cloudflare email-obfuscation tokens (`data-cfemail=...`) which differ on every request, and any GoatCounter / `data-gc-event` content that's been merged to staging but not yet on prod (which IS the deploy you're about to do — those diffs are *expected*).
 
-```bash
-# For each URL with non-zero difflines:
-diff /tmp/vb_diff/prod_<slug>.html /tmp/vb_diff/stg_<slug>.html \
-  | grep -vE '(goatcounter|data-cfemail|cdn-cgi/l/email-protection|window\.goatcounter|data-gc-event|Strip query strings|Outbound-link|Trigger via|action_type=)' \
-  | head -80
-```
-
-The `grep -vE` filter strips known-cosmetic noise: the rotating Cloudflare email-obfuscation tokens (`data-cfemail=...`) which differ on every request, and any GoatCounter / `data-gc-event` content that's been merged to staging but not yet on prod (which IS the deploy you're about to do — those diffs are *expected*).
+**Then inspect each URL with non-zero difflines and classify the block** (`--show` dumps the filtered diff; or hand-run `diff /tmp/vb_diff/prod_<slug>.html /tmp/vb_diff/stg_<slug>.html | grep -vE '(goatcounter|data-cfemail|cdn-cgi/l/email-protection|window\.goatcounter|data-gc-event)' | head -80`):
 
 **Classify what's left:**
 
