@@ -122,6 +122,23 @@ class EmployerProfileViewTest(TestCase):
         # Check median salary (should be around 145000)
         self.assertIsNotNone(stats["basic"]["median_salary"])
 
+    def test_meta_description_is_intent_rich(self):
+        """The meta description leads with the numbers an '<employer> h1b/salary'
+        searcher wants (filings + median salary), to lift CTR on the pos 6-8
+        employer-name rankings. Regression for the /salaries CTR lever — locks the
+        new format and that the old generic/misleading framing is gone."""
+        url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})
+        desc = self.client.get(url).context["page_description"]
+        # Leads with the company name, then real volume + salary + differentiator.
+        self.assertTrue(desc.startswith("Test Company LLC:"), desc)
+        self.assertIn("10 H-1B & PERM filings", desc)
+        self.assertIn("salary", desc)
+        self.assertIn("$", desc)
+        self.assertIn("certified DOL wage data", desc)
+        # Old generic, non-differentiating framing must be gone.
+        self.assertNotIn("visa sponsorship statistics", desc)
+        self.assertNotIn("approval rate", desc)
+
     def test_program_filter_h1b(self):
         """Test that program filter (H-1B) works correctly"""
         url = reverse("employer_profile", kwargs={"slug": "test-company-llc"})

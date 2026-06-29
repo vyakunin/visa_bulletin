@@ -331,6 +331,23 @@ def _get_or_compute_page_payload(
     return (stats, chart_data, False)
 
 
+def _employer_salary_phrase(stats: dict, avg_salary) -> str:
+    """SERP-snippet salary phrase for the meta description: real p50 median +
+    p10–p90 range (the basic ``median_salary`` stat is an Avg, so prefer the true
+    percentile median); falls back to the average, then to a generic phrase when
+    no salary data exists."""
+    pct = stats.get("salary_percentiles") or {}
+    p50, p10, p90 = pct.get("p50") or 0, pct.get("p10") or 0, pct.get("p90") or 0
+    if p50:
+        phrase = f"${p50:,.0f} median salary"
+        if p10 and p90:
+            phrase += f" (${p10:,.0f}–${p90:,.0f})"
+        return phrase
+    if avg_salary is not None:
+        return f"${avg_salary:,.0f} average salary"
+    return "certified DOL wage data"
+
+
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def employer_profile_view(request, slug):
     """
@@ -361,20 +378,22 @@ def employer_profile_view(request, slug):
         cluster, records, slug, cache_key, params
     )
 
-    # Build SEO metadata
+    # Build SEO metadata. The meta description leads with the numbers an
+    # "<employer> h1b / salary / sponsorship" searcher actually wants — real
+    # median + range + filing volume — to lift CTR on the pos 6-8 employer-name
+    # rankings (GSC-validated as independent organic rankings, NOT sitelinks;
+    # Notion /salaries ticket). Use the true p50 median (the basic
+    # "median_salary" stat is computed via Avg); fall back to the average only
+    # if percentiles are unavailable. The old description led with a generic
+    # "visa sponsorship statistics:" label + the ~99% LCA certification
+    # ("approval") rate, which is non-differentiating and slightly misleading.
     median_salary = stats["basic"].get("median_salary")
-    if median_salary is None:
-        median_salary_label = "N/A"
-    else:
-        median_salary_label = f"${median_salary:,.0f}"
-
     seo = {
         "title": f"{cluster.canonical_name} H-1B & PERM Sponsorship Data | Visa Bulletin",
         "description": (
-            f"{cluster.canonical_name} visa sponsorship statistics: "
-            f"{stats['basic']['total_filings']} filings, "
-            f"{stats['approval_rate']:.1f}% approval rate, "
-            f"{median_salary_label} median salary."
+            f"{cluster.canonical_name}: {stats['basic']['total_filings']:,} "
+            f"H-1B & PERM filings, {_employer_salary_phrase(stats, median_salary)}. "
+            f"Free certified DOL wage data by job title, year & state."
         ),
         "canonical_url": request.build_absolute_uri(request.path),
     }
