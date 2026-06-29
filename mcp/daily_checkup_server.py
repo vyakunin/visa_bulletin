@@ -172,6 +172,21 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("salaries", re.compile(r"^/salaries/?")),
     ("worksites", re.compile(r"^/worksites/")),
     ("seo_landing_fam", re.compile(r"^/family-sponsored/?")),
+    # Spanish (/es/) cluster — check BEFORE the EN landing buckets so `/es/faq/`,
+    # `/es/priority-date/<eb>/<country>/` etc. land here, not in static_pages/
+    # priority_date. All `/es/*` routes roll into one Spanish-SEO surface.
+    ("spanish", re.compile(r"^/es/?")),
+    # Priority-date feature family (launched 2026-06-23 pSEO): hub
+    # `/priority-date/`, per-EB rollup `/priority-date/<eb>/`, per-(eb×country)
+    # landing `/priority-date/<eb>/<country>/`, AND the `/priority-date-calculator/`
+    # tool — `^/priority-date` catches all four.
+    ("priority_date", re.compile(r"^/priority-date")),
+    # {occupation} H-1B-salary pSEO (`/h1b-salary/`, `/h1b-salary/<occ>/`,
+    # `/h1b-salary/<employer>/<role>/`).
+    ("occupation_salary", re.compile(r"^/h1b-salary")),
+    # Top-H-1B-sponsors leaderboards (`/h1b-sponsors/in/<state>/`,
+    # `/h1b-sponsors/<role>/`).
+    ("h1b_sponsors", re.compile(r"^/h1b-sponsors/")),
     ("static_pages", re.compile(r"^/(faq|about|contact)/?$")),
     ("api", re.compile(r"^/api/")),
     ("static_meta", re.compile(r"^/(robots\.txt|sitemap\.xml|favicon)")),
@@ -220,6 +235,10 @@ SURFACE_LABELS: dict[str, str] = {
     "salaries":            "Salaries `/salaries/<...>/`",
     "worksites":           "Worksites `/worksites/<...>/`",
     "seo_landing_fam":     "Family-sponsored visa SEO landings `/family-sponsored/<country>/`",
+    "spanish":             "Spanish cluster `/es/<...>` (landing, FAQ, predictions, priority-date)",
+    "priority_date":       "Priority-date pSEO `/priority-date/<eb>/<country>/` + hub/rollup/calculator",
+    "occupation_salary":   "{occupation} H-1B-salary pSEO `/h1b-salary/<...>`",
+    "h1b_sponsors":        "Top-H-1B-sponsors leaderboards `/h1b-sponsors/<state|role>/`",
     "static_pages":        "Static pages `/faq`, `/about`, `/contact`",
     "api":                 "API `/api/<...>`",
     "static_meta":         "Static meta (robots/sitemap/favicon)",
@@ -1777,6 +1796,10 @@ TOP_PROPERTY_SURFACES = [
     "job_title_profile",
     "job_title_directory",
     "seo_landing_fam",
+    "priority_date",
+    "occupation_salary",
+    "h1b_sponsors",
+    "spanish",
     "blog",
     "worksites",
     "donation_click",

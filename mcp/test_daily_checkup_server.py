@@ -127,6 +127,34 @@ def test_surface_deltas_fallback_has_null_share_and_pages():
     assert rows[0]["pages"] is None
 
 
+# ── Surface taxonomy: newly-launched pSEO families get their own bucket ──────
+# Regression for 2026-06-29: priority-date / h1b-salary / h1b-sponsors / es
+# pSEO pages were all silently falling into `other`. Each must classify into a
+# dedicated surface so the per-surface block in the digest shows them.
+
+def test_new_pseo_surfaces_have_dedicated_buckets():
+    cases = {
+        "/priority-date/": "priority_date",
+        "/priority-date/eb2/": "priority_date",
+        "/priority-date/eb2/india/": "priority_date",
+        "/priority-date-calculator/": "priority_date",
+        "/h1b-salary/": "occupation_salary",
+        "/h1b-salary/software-engineer/": "occupation_salary",
+        "/h1b-salary/google-llc/software-engineer/": "occupation_salary",
+        "/h1b-sponsors/in/california/": "h1b_sponsors",
+        "/h1b-sponsors/data-scientist/": "h1b_sponsors",
+        "/es/": "spanish",
+        "/es/faq/": "spanish",                       # NOT static_pages
+        "/es/priority-date/eb3/mexico/": "spanish",  # NOT priority_date
+    }
+    for path, expected in cases.items():
+        assert m._bucket_path(path) == expected, f"{path} -> {m._bucket_path(path)} (want {expected})"
+    # every dedicated bucket is also a rendered top-property (not dropped)
+    for surf in {"priority_date", "occupation_salary", "h1b_sponsors", "spanish"}:
+        assert surf in m.TOP_PROPERTY_SURFACES
+        assert surf in m.SURFACE_LABELS
+
+
 # ── DOL data freshness: weekly-refresh trigger signal (2026-06-20) ───────────
 
 def test_dol_tuples_parse_program_fy_quarter_and_skip_noise():
