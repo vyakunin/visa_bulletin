@@ -778,6 +778,18 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_single_h1",
+    size = "small",
+    srcs = ["test_single_h1.py"],
+    deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)
+
+django_py_test(
     name = "test_no_init_in_code_dirs",
     size = "small",
     srcs = ["test_no_init_in_code_dirs.py"],
@@ -1100,3 +1112,4 @@ django_py_test(
         "//models/ingest:enums",
     ],
 )
+
