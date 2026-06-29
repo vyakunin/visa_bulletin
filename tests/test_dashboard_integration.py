@@ -58,7 +58,7 @@ class TestDashboardBasic(unittest.TestCase):
         asserts each label-map slug is a real Country URL slug so the generated
         /<category>/<slug>/ URLs resolve.
         """
-        from models.enums.country import Country, _VALUE_TO_SLUG
+        from models.enums.country import _VALUE_TO_SLUG, Country
         from webapp.views.bulletin.dashboard import _DASHBOARD_COUNTRY_LABELS
 
         # Every slug the view's nav_slugs lists (EB + the FS-only extra) must be keyed.
