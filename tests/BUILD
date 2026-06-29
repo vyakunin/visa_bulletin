@@ -1107,3 +1107,15 @@ django_py_test(
         requirement("pytest-django"),
     ],
 )
+
+django_py_test(
+    name = "test_i129_plugin",
+    size = "small",
+    srcs = ["test_i129_plugin.py"],
+    deps = [
+        "//lib/ingest/plugins:uscis_i129",
+        "//models:i129",
+        "//models/enums:visa_program",
+        "//models/ingest:enums",
+    ],
+)

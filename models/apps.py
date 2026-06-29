@@ -13,6 +13,7 @@ class ModelsConfig(AppConfig):
         # Then import other models (these may reference ingest models)
         from .blog import BlogPost  # noqa: F401
         from .bulletin import Bulletin  # noqa: F401
+        from .i129 import I129Petition  # noqa: F401
         from .ingest.data_source import DataSource  # noqa: F401
         from .ingest.ingest_run import IngestRun  # noqa: F401
         from .ingest.ingest_version import IngestVersion  # noqa: F401

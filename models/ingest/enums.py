@@ -43,6 +43,9 @@ class SourceType(models.TextChoices):
     ISSUANCE = "issuance", "DOS Monthly Issuance"
     PERM_DISCLOSURE = "perm_disclosure", "PERM Disclosure (Supply)"
 
+    # USCIS I-129 H-1B petition data (Bloomberg FOIA snapshot, FY2021-FY2024)
+    I129 = "i129", "USCIS I-129 H-1B Petition"
+
 
 class IngestStatus(models.IntegerChoices):
     """

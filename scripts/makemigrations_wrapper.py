@@ -53,6 +53,7 @@ for app_config in apps.get_app_configs():
 # makemigrations runs BEFORE AppConfig.ready(), so models must be imported here
 from models.blog import BlogPost
 from models.bulletin import Bulletin
+from models.i129 import I129Petition  # noqa: F401  (registered for makemigrations)
 from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion

@@ -27,6 +27,22 @@ py_library(
 )
 
 py_library(
+    name = "uscis_i129",
+    srcs = ["uscis_i129.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:base",
+        "//models/ingest:ingest_run",
+        "//models/ingest:enums",
+        "//models:i129",
+        "//models/enums:visa_program",
+        "//lib/utils:http_utils",
+        requirement("Django"),
+        requirement("requests"),
+    ],
+)
+
+py_library(
     name = "dol_perm",
     srcs = ["dol_perm.py"],
     visibility = ["//visibility:public"],
@@ -89,6 +105,7 @@ py_library(
         ":dol_perm",
         ":visa_bulletin",
         ":uscis",
+        ":uscis_i129",
         ":dos",
         ":dol_perm_supply",
     ],
