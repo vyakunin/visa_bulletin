@@ -64,6 +64,13 @@
         {% for link in priority_date_links %}<a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
     </p>
     {% endif %}
+    {% if country_dashboard_links %}
+    <nav class="mb-3" aria-label="Priority dates by country" style="font-size: 0.95rem;">
+        <i class="bi bi-globe-americas"></i>
+        {{ category_display }} priority dates by country:
+        {% for link in country_dashboard_links %}{% if link.active %}<strong>{{ link.label }}</strong>{% else %}<a href="{{ link.url }}">{{ link.label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </nav>
+    {% endif %}
     <div class="row">
         <div class="col-12">
             <!-- Filter Card -->
