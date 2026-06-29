@@ -82,6 +82,39 @@ hourly annualized ×2080) vs the LCA-posted `wage_annual` vs annualized `prevail
 Verified-join recipe lives in the spike scratchpad (`analysis2.sql` / `analysis3.sql`);
 prod staging tables dropped after the run.
 
+## Other government-published sources (verified 2026-06-29)
+
+The I-129 record-level data is NOT routinely published — Bloomberg's is a one-time FOIA
+release. But two adjacent sources ARE government-direct, and one is *live*:
+
+- **USCIS H-1B Employer Data Hub** (CSV, **FY2009 → FY2026 Q2**, updated quarterly):
+  first-decision **approval/denial counts per employer × FY × NAICS × city/state/ZIP**,
+  initial vs continuing. **No wages, no beneficiary demographics, no LCA join key.**
+  → Source the **approval-rate feature (FIRST_DECISION)** from THIS, not Bloomberg — it's
+  live, gov-direct, back to FY2009, and carries no FOIA/aggregation caveat. Bloomberg is
+  needed only for **actual pay + demographics**, which the Data Hub lacks.
+  `uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub`
+- **USCIS "Characteristics of H-1B Specialty Occupation Workers"** (annual PDF, FY24
+  latest): aggregate tables — median/25th/75th compensation by occupation, country of
+  birth, sex, education, age. PDF-only, pre-aggregated, **not joinable** → corroboration /
+  a context citation, not ingestible microdata.
+- USCIS H-1B **registration statistics** (annual report) — aggregate lottery counts only.
+- **DOL** publishes LCA (what we ingest) + PERM — **not I-129**.
+
+### Beneficiary de-identification in the Bloomberg release (verified 2026-06-29)
+
+Every per-beneficiary linking key is **100% FOIA-redacted** (exemptions b3/b6/b7c):
+`bcn` (beneficiary confirmation #), full `ben_date_of_birth`, and `RECEIPT_NUMBER` are
+**0 populated** across all 350,103 single-reg + 408,891 multi-reg FY2024 rows. The
+beneficiary survives only as `country_of_birth` + `ben_year_of_birth` (age) + `gender` —
+**no name, no DOB, no passport, no synthetic ID.** Named entities are only the
+**employer** (company) and the **agent** (attorney). Consequence for the multi-reg story:
+USCIS pre-computes `ben_multi_reg_ind=1` (the entire `multi_reg` file = the multi-
+registered set), so we can publish the multi-reg **rate** by year/employer/country, but
+**cannot reconstruct individual "one person → N shell-company" chains** — the linking key
+is withheld. Multi-reg gaming is an **aggregate** story, not named/linked individuals.
+(This also means "publish aggregates only" is partly enforced by the data itself.)
+
 ## What it unlocks (value vs every free competitor)
 
 Every free H-1B salary site (h1bdata.info, h1bgrader, our own `/salaries/`) shows the
