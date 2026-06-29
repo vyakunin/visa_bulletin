@@ -1801,10 +1801,17 @@ TOP_PROPERTY_SURFACES = [
     "h1b_sponsors",
     "spanish",
     "blog",
-    "worksites",
-    "donation_click",
     "static_pages",
 ]
+# NOT rendered in the per-property block (removed 2026-06-29, user request):
+#   - worksites: live `/worksites/` route but ~0 traffic (6 hits/6mo) — a dead
+#     row. Still classified by SURFACE_PATTERNS so it never pollutes `other`.
+#   - donation_click: the CSV aggregator filters OUT events (Event!=0), and the
+#     ext-* donation clicks ARE events, so this bucket is structurally always
+#     empty on the CSV path → a permanent "no data" row. The donation buttons
+#     still exist on prod; monetization reporting lives in the platform digest.
+#     Pattern kept for the top-100 `/stats/hits` fallback (where ext-* appear as
+#     pseudo-paths and must stay out of `other`).
 
 
 def _section_top_properties(

@@ -155,6 +155,17 @@ def test_new_pseo_surfaces_have_dedicated_buckets():
         assert surf in m.SURFACE_LABELS
 
 
+def test_dead_surfaces_not_rendered():
+    """worksites (~0 traffic) + donation_click (events filtered → always empty)
+    must NOT render as 'no data' rows. Still classified (pattern kept) so they
+    don't pollute `other`. Regression for 2026-06-29 user request."""
+    for surf in ("worksites", "donation_click"):
+        assert surf not in m.TOP_PROPERTY_SURFACES, f"{surf} must not render"
+    # but still classifiable (no `other` pollution)
+    assert m._bucket_path("/worksites/foo") == "worksites"
+    assert m._bucket_path("ext-buy-me-a-coffee") == "donation_click"
+
+
 # ── DOL data freshness: weekly-refresh trigger signal (2026-06-20) ───────────
 
 def test_dol_tuples_parse_program_fy_quarter_and_skip_noise():
