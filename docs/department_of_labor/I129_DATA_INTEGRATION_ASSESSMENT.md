@@ -56,6 +56,32 @@ Sampled 1,996 FY2024 selected-petition case numbers (normalized) against prod:
 full universe lives in `worksite_record`). ~2% miss ≈ LCA filed in a different FY than
 the lottery year, or not in our ingested set. Join is production-viable.
 
+### Wage delta — COMPUTED 2026-06-29 (the headline number)
+
+Full FY2024 join (not a sample): 62,383 distinct petition cases → **60,001 (96.2%)**
+matched to **certified** `worksite_record` rows; per-case actual pay (`BEN_COMP_PAID`,
+hourly annualized ×2080) vs the LCA-posted `wage_annual` vs annualized `prevailing_wage`.
+
+| | actual paid | LCA-posted | prevailing floor |
+|---|---|---|---|
+| **median** | $99,720 | $96,000 | $87,194 |
+| **mean** | $124,653 | $104,368 | — |
+
+- **Actual vs LCA-posted:** 71.8% pay actual ≈ posted (±1%); **26.3% pay *above* the
+  posted LCA wage** (16.2% >10% above); only 1.9% below. **Median ratio = 1.000** — the
+  median worker is paid exactly the LCA position wage — but the **mean is +$20,285
+  (+19.4%)**, so the gap lives entirely in the upper quartile (equity-aside cash base).
+- **Actual vs prevailing floor:** 21.1% at/below the floor, 41.1% within 5%, 51.4%
+  within 10%; median actual is 9.3% above the floor. The floor-clustering story persists
+  at the individual-pay level, not just the LCA-posted level.
+- **This is the direct answer to Borjas's open LCA-vs-actual question** (NBER w34793):
+  for the median, actual = posted; in the mean, actual runs ~19% higher. No free
+  competitor surfaces this. Caveat for any published comparison: base wage ≠ total comp
+  (no equity/bonus), so cross-employer "who pays more" claims are unsupported.
+
+Verified-join recipe lives in the spike scratchpad (`analysis2.sql` / `analysis3.sql`);
+prod staging tables dropped after the run.
+
 ## What it unlocks (value vs every free competitor)
 
 Every free H-1B salary site (h1bdata.info, h1bgrader, our own `/salaries/`) shows the
@@ -87,7 +113,10 @@ pay** or beneficiary demographics. The I-129 data adds:
 ## Integration plan (phased)
 
 - **Phase 0 — spike (DONE 2026-06-29):** downloaded FY2024, confirmed fields, verified
-  98% join. This doc.
+  96–98% join, **computed the actual-vs-posted-vs-prevailing wage delta** (see "Wage
+  delta — COMPUTED" above). This doc. Build tracked in Notion (Project=visa_bulletin):
+  the **Phase-1 ingest GATE** ticket + 3 lever tickets (Lever 1 page enrichment, Lever 2
+  pSEO demographic clusters, Lever 3 link-bait data stories).
 - **Phase 1 — ingest:** new `I129Petition` model (normalized `case_number`, annualized
   `comp_paid_annual`, `wage_amt`/`unit`, demographics, dates, flags). Ingest plugin reads
   the zipped CSVs (mirror `dol_lca.py` shape). FK / join to `worksite_record` on
