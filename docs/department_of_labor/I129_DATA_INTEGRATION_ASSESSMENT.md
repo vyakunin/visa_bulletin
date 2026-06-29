@@ -1,6 +1,7 @@
 # I-129 Petition Data — Integration Assessment
 
-**Date:** 2026-06-29 · **Status:** assessment / proposal (no code yet)
+**Date:** 2026-06-29 · **Status:** assessment done; **Phase-1 ingest CODE built**
+(model + plugin + migrations + tests green) — data load pending (heavyweight Path-2).
 **Spike verified against live prod + the real dataset.**
 
 ## TL;DR
@@ -150,10 +151,19 @@ pay** or beneficiary demographics. The I-129 data adds:
   delta — COMPUTED" above). This doc. Build tracked in Notion (Project=visa_bulletin):
   the **Phase-1 ingest GATE** ticket + 3 lever tickets (Lever 1 page enrichment, Lever 2
   pSEO demographic clusters, Lever 3 link-bait data stories).
-- **Phase 1 — ingest:** new `I129Petition` model (normalized `case_number`, annualized
-  `comp_paid_annual`, `wage_amt`/`unit`, demographics, dates, flags). Ingest plugin reads
-  the zipped CSVs (mirror `dol_lca.py` shape). FK / join to `worksite_record` on
-  normalized case number. Attribution block in the model + page footer.
+- **Phase 1 — ingest CODE DONE (2026-06-29):** `models/i129.py` `I129Petition` model
+  (normalized `dol_eta_case_number` — **non-unique**: a single LCA covers multiple
+  beneficiaries, ~1.7k shared case numbers in FY2024 alone, so uniqueness would drop
+  co-beneficiaries — annualized `comp_paid_annual`/`pay_annual`, `wage_amt`/`unit`,
+  demographics, dates, H-1B-dependent/willful-violator flags) + ingest plugin
+  `lib/ingest/plugins/uscis_i129.py` (downloads + concatenates the split zips, extracts
+  the CSV, streams it, keeps only rows with a real DOL ETA case number = the joinable
+  petition set). Migrations `0050`/`0051`, registered in `run_pipeline`, unit tests green
+  (`tests/test_i129_plugin.py`). Joins to `worksite_record.case_number`.
+  **REMAINING: the data load is a heavyweight Path-2 task** — run the ingest OFF-PROD on
+  staging (`bazel run //scripts/ingest:run_pipeline -- discover --domain uscis` then
+  `run --domain uscis`), validate counts + the ~96% worksite join, then graduate the DATA
+  via `cutover.sh --data` (per `branching.md`). Not a direct-prod run.
 - **Phase 2 — "What H-1B workers are actually paid":** an aggregate analytical page —
   actual-pay vs LCA-offered vs prevailing, sliced by occupation / metro / employer /
   country / education. **Aggregates only**, small-n suppression.

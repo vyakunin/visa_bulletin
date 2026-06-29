@@ -15,6 +15,18 @@ py_library(
 )
 
 py_library(
+    name = "i129",
+    srcs = ["i129.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/enums:visa_program",
+        "//models/ingest:ingest_version",
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+py_library(
     name = "bulletin",
     srcs = ["bulletin.py"],
     visibility = ["//visibility:public"],

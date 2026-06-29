@@ -19,6 +19,7 @@ py_binary(
         "//models:visa_cutoff_date",
         "//models:raw_facts",
         "//models:salary",
+        "//models:i129",
         "//models/ingest:ingest",
         "//models/enums:visa_program",
         "//models:vqs",
