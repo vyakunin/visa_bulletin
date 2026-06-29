@@ -41,6 +41,19 @@ DEFAULT_VISIBLE_VISA_CLASSES = frozenset({
     "EB-3: Skilled Workers, Professionals",
 })
 
+# Short, readable nav labels for the crawlable sibling-country dashboard links
+# (keyed by the URL slug from models.enums.country._VALUE_TO_SLUG). Kept terse for
+# the inline nav row rather than reusing the verbose enum choice labels
+# (e.g. "China (mainland born)").
+_DASHBOARD_COUNTRY_LABELS = {
+    "india": "India",
+    "china": "China",
+    "mexico": "Mexico",
+    "philippines": "Philippines",
+    "all": "All Other Countries",
+    "el_salvador_guatemala_honduras": "El Salvador, Guatemala & Honduras",
+}
+
 
 def _get_vqs_predictions(category: str, country: int, action_type: str, submission_date: date | None = None) -> dict:
     """Fetch VQS predictions for employment-based visa classes. Returns {visa_class_label: prediction_dict}.
@@ -440,6 +453,30 @@ def dashboard_view(request, category=None, country=None):
             for eb_slug, (short, _full) in _PRIORITY_DATE_EB_CLASSES.items()
         ]
 
+    # Crawlable internal links to the sibling per-country dashboards for this
+    # category. The high-intent country pages (e.g. /employment-based/india/)
+    # were previously reachable only through the JS country <select>, which
+    # search engines don't follow — leaving the core-audience pages internally
+    # under-linked (India EB ranked GSC pos ~36). These <a> links flow link
+    # equity from every (high-traffic) dashboard render and give a data-dense
+    # page a clear next-step nav, cutting bounce. Notion 38b62b8d.
+    country_dashboard_links = []
+    if category in (
+        VisaCategory.EMPLOYMENT_BASED.value,
+        VisaCategory.FAMILY_SPONSORED.value,
+    ):
+        nav_slugs = ["india", "china", "mexico", "philippines", "all"]
+        if category == VisaCategory.FAMILY_SPONSORED.value:
+            nav_slugs.append("el_salvador_guatemala_honduras")
+        country_dashboard_links = [
+            {
+                "label": _DASHBOARD_COUNTRY_LABELS[slug],
+                "url": f"/{category_slug}/{slug}/",
+                "active": slug == country_slug,
+            }
+            for slug in nav_slugs
+        ]
+
     context = {
         # Filter state
         "category": category,
@@ -455,6 +492,7 @@ def dashboard_view(request, category=None, country=None):
         "unified_rows": unified_rows,
         "show_vqs_column": category == VisaCategory.EMPLOYMENT_BASED.value,
         "priority_date_links": priority_date_links,
+        "country_dashboard_links": country_dashboard_links,
         "latest_post": latest_post,
         "current_bulletin_date": current_bulletin_date,
         # Filter options

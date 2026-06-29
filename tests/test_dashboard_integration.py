@@ -41,6 +41,40 @@ class TestDashboardBasic(unittest.TestCase):
         self.assertIn("priority_date_links", src)
         self.assertIn("link.url", src)
 
+    def test_country_dashboard_links_block_present(self):
+        """The dashboard renders crawlable <a> links to the sibling per-country
+        dashboards (India/China/Mexico/Philippines/All) so search engines reach the
+        high-intent country pages, which were previously only behind the JS country
+        <select>. Guards the template block + view context key. Notion 38b62b8d.
+        """
+        src = _DASHBOARD_TEMPLATE.read_text()
+        self.assertIn("country_dashboard_links", src)
+        self.assertIn("link.active", src)
+
+    def test_country_dashboard_label_map_covers_every_nav_slug(self):
+        """Regression: `_DASHBOARD_COUNTRY_LABELS` must define a label for every slug
+        the view feeds into the country-dashboard nav. A missing entry NameErrors /
+        KeyErrors on every EB & FS dashboard render (the core-audience pages). Also
+        asserts each label-map slug is a real Country URL slug so the generated
+        /<category>/<slug>/ URLs resolve.
+        """
+        from models.enums.country import Country, _VALUE_TO_SLUG
+        from webapp.views.bulletin.dashboard import _DASHBOARD_COUNTRY_LABELS
+
+        # Every slug the view's nav_slugs lists (EB + the FS-only extra) must be keyed.
+        nav_slugs = {"india", "china", "mexico", "philippines", "all",
+                     "el_salvador_guatemala_honduras"}
+        missing = nav_slugs - set(_DASHBOARD_COUNTRY_LABELS)
+        self.assertFalse(missing, f"label map missing nav slugs: {missing}")
+
+        # Every label-map slug is a real country slug (so the URL resolves).
+        valid_slugs = set(_VALUE_TO_SLUG.values())
+        bogus = set(_DASHBOARD_COUNTRY_LABELS) - valid_slugs
+        self.assertFalse(bogus, f"label map has non-country slugs: {bogus}")
+        # And each resolves back to a valid Country value.
+        for slug in _DASHBOARD_COUNTRY_LABELS:
+            self.assertIsNotNone(Country.from_string(slug))
+
     def test_chart_doubleclick_reset_enabled(self):
         """Regression: the dashboard chart's double-tap/double-click reset must stay
         enabled. 'doubleClick': false disabled it entirely (nothing emitted the
