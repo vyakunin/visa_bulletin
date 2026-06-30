@@ -12,7 +12,7 @@ setup_django_for_tests()
 
 import pytest
 
-from lib.ingest.plugins.uscis_i129 import I129PetitionPlugin
+from lib.ingest.plugins.uscis_i129 import I129PetitionPlugin, _canonical_url
 from models.enums.visa_program import WageUnit
 from models.i129 import (
     FirstDecision,
@@ -184,6 +184,32 @@ class TestTransform:
         row["ben_multi_reg_ind"] = "1"
         result = I129PetitionPlugin().transform(row)
         assert result.ben_multi_reg_ind is True
+
+
+class TestCanonicalUrl:
+    """DataSource URLs are lowercased on registration, but GitHub raw paths are
+    case-sensitive (regression: lowercased path 404s on every FY file)."""
+
+    def test_lowercased_url_rebuilt_to_case_sensitive_github_path(self):
+        stored = (
+            "https://github.com/bloomberggraphics/2024-h1b-immigration-data/"
+            "raw/main/trk_13139_fy2021.zip"
+        )
+        assert _canonical_url(stored) == (
+            "https://github.com/BloombergGraphics/2024-h1b-immigration-data/"
+            "raw/main/TRK_13139_FY2021.zip"
+        )
+
+    def test_lowercased_multipart_first_part_rebuilt(self):
+        stored = (
+            "https://github.com/bloomberggraphics/2024-h1b-immigration-data/"
+            "raw/main/trk_13139_fy2023.zip.001"
+        )
+        assert _canonical_url(stored).endswith("TRK_13139_FY2023.zip.001")
+
+    def test_unknown_url_passed_through(self):
+        other = "https://example.com/some_other_file.zip"
+        assert _canonical_url(other) == other
 
 
 if __name__ == "__main__":

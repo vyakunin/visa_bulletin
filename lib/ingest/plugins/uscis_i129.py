@@ -59,6 +59,19 @@ _FY_FILES: dict[int, list[str]] = {
     ],
 }
 
+# DataSource URLs are case-normalized (lowercased) on ingest-registration, but
+# GitHub raw paths are case-SENSITIVE — a lowercased path 404s. The plugin owns the
+# canonical filename casing in _FY_FILES, so map a stored URL back to it before fetch.
+_CANONICAL_PARTS = {part.lower(): part for parts in _FY_FILES.values() for part in parts}
+
+
+def _canonical_url(url: str) -> str:
+    """Rebuild the case-sensitive GitHub raw URL from a (possibly lowercased) stored URL."""
+    name = Path(urlparse(url).path).name
+    part = _CANONICAL_PARTS.get(name.lower())
+    return _REPO_RAW + part if part else url
+
+
 _REDACTION_MARKER = "(B)("
 
 
@@ -169,7 +182,8 @@ class I129PetitionPlugin(DataSourcePlugin):
         data_dir = get_workspace_dir() / "data" / self.data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = Path(urlparse(source.url).path).name
+        url = _canonical_url(source.url)
+        filename = Path(urlparse(url).path).name
         if filename.endswith(".zip.001"):
             base, multipart = filename[: -len(".zip.001")], True
         elif filename.endswith(".zip"):
@@ -185,10 +199,10 @@ class I129PetitionPlugin(DataSourcePlugin):
 
         zip_path = data_dir / f"{base}.zip"
         if multipart:
-            self._download_multipart(source.url, zip_path, data_dir, base, run)
+            self._download_multipart(url, zip_path, data_dir, base, run)
         else:
-            logger.info("[Run %s] Downloading I-129 file: %s", run.id, source.url)
-            download_file(source.url, zip_path)
+            logger.info("[Run %s] Downloading I-129 file: %s", run.id, url)
+            download_file(url, zip_path)
 
         logger.info("[Run %s] Extracting CSV from %s", run.id, zip_path.name)
         with zipfile.ZipFile(zip_path) as zf:
