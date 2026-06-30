@@ -4,6 +4,20 @@
 (model + plugin + migrations + tests green) — data load pending (heavyweight Path-2).
 **Spike verified against live prod + the real dataset.**
 
+**Update 2026-06-30 — Phase-1 data load VALIDATED ON STAGING (off-prod).** Ran the
+full Bloomberg FY21–24 ingest into the minipc staging DB: **372,841 `I129Petition`
+rows** (FY21 99,610 / FY22 89,535 / FY23 91,832 / FY24 91,864). **Worksite_record
+join rate 97.7% / 99.7% / 99.6% / 99.5%** by FY (the doc's 96.2% below was the
+certified-only subset). FY2024 wage delta reproduces: mean actual **$126,194** vs
+LCA-posted **$101,593** = **+$24,601 (+24%)**, median actual $98,000 ≈ LCA $95,000
+(same Borjas gap — median≈, mean ~20%+ above). Two ingest bugs fixed en route
+(commits b7593b2, bed3bc8): GitHub-raw URL case canonicalization (discover
+lowercases → 404), and uscis must use the `bulk_create` load path (the COPY
+preflight assumes the SalaryRecord wage schema). **REMAINING: graduate the DATA to
+prod via `cutover.sh --data` — needs a fresh prod→staging reseed first + a prod-SHA
+image build; `cutover.sh --data` is flagged "not yet live-run", so dry-run + surface
+before firing.**
+
 ## TL;DR
 
 Bloomberg published the FOIA-obtained USCIS **I-129 petition + H-1B registration**
