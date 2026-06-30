@@ -282,8 +282,10 @@ def run_pipeline(
         )
         sys.exit(1)
 
-    # VisaCutoffDate has no case_number; COPY path doesn't support ignore_conflicts, so use bulk_create for visa_bulletin
-    use_copy = domain != DataDomain.VISA_BULLETIN.value
+    # VisaCutoffDate (visa_bulletin) and I129Petition (uscis) lack the SalaryRecord
+    # wage schema (wage_from/wage_to) the COPY path preflight-validates, and have no
+    # case_number for COPY upsert — use the bulk_create path (ignore_conflicts) for both.
+    use_copy = domain not in (DataDomain.VISA_BULLETIN.value, DataDomain.USCIS.value)
     orchestrator = PipelineOrchestrator(
         batch_size=10000,
         adaptive_batch=True,
