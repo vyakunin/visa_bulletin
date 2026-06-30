@@ -144,6 +144,24 @@ def contact_view(request):
     )
 
 
+def privacy_view(request):
+    """Privacy Policy page.
+
+    Required by ad networks (AdSense, Mediavine) and by GDPR/CCPA — discloses the
+    analytics (GoatCounter, GA4) and advertising (AdSense + DART) cookies, the
+    affiliate/FTC disclosure, and the contact address.
+    """
+    return render(
+        request,
+        "webapp/privacy.html",
+        {
+            "page_title": "Privacy Policy - U.S. Immigration Data",
+            "page_description": "How visa-bulletin.us handles your data: analytics (GoatCounter, GA4), advertising cookies (Google AdSense, DART), affiliate disclosure, and your privacy choices.",
+            "canonical_url": request.build_absolute_uri("/privacy/"),
+        },
+    )
+
+
 def spanish_landing_view(request):
     """Spanish-language landing page.
 

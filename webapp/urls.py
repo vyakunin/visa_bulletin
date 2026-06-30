@@ -55,6 +55,7 @@ from webapp.views.static.pages import (
     faq_view,
     health_view,
     next_bulletin_view,
+    privacy_view,
     spanish_landing_view,
 )
 from webapp.views.static.spanish import (
@@ -104,6 +105,7 @@ urlpatterns = [
     path("when-is-the-next-visa-bulletin/", next_bulletin_view, name="next_bulletin"),
     path("about/", about_view, name="about"),
     path("contact/", contact_view, name="contact"),
+    path("privacy/", privacy_view, name="privacy"),
     # Spanish (/es/) cluster — converts "boletín de visas" search demand.
     path("es/", spanish_landing_view, name="spanish_landing"),
     path("es/faq/", spanish_faq_view, name="spanish_faq"),

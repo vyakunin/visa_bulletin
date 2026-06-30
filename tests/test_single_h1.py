@@ -41,6 +41,14 @@ class SingleH1Test(TestCase):
         content = self.client.get(reverse("contact")).content.decode()
         self.assertEqual(self._h1_count(content), 1, "contact page must have exactly one <h1>")
 
+    def test_privacy_returns_200_with_one_h1(self):
+        """Privacy Policy page must render (required by AdSense/Mediavine) with one <h1>."""
+        response = self.client.get(reverse("privacy"))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn("Privacy Policy", content)
+        self.assertEqual(self._h1_count(content), 1, "privacy page must have exactly one <h1>")
+
     def test_dashboard_root_has_exactly_one_h1(self):
         """The dashboard (the page this lever targets) previously had two H1s
         (brand masthead + page_heading). Now exactly one."""
