@@ -1119,3 +1119,18 @@ django_py_test(
         "//models/ingest:enums",
     ],
 )
+
+django_py_test(
+    name = "test_i129_pay_comparison",
+    size = "small",
+    srcs = ["test_i129_pay_comparison.py"],
+    deps = [
+        "//lib/business/i129:pay_comparison",
+        "//lib/business/salary:soc_occupations",
+        "//models:i129",
+        "//models:salary",
+        "//models/enums:case_status",
+        "//models/enums:visa_program",
+        requirement("pytest-django"),
+    ],
+)

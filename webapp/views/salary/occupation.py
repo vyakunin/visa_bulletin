@@ -18,6 +18,7 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.i129.pay_comparison import get_soc_pay_comparison
 from lib.business.salary.market_overview import get_salary_explore_links
 from lib.business.salary.occupation_stats import (
     get_occupation_stats,
@@ -163,10 +164,16 @@ def occupation_salary_view(request, slug: str):
     )[:160]
     canonical = request.build_absolute_uri(request.path)
 
+    # Actual-pay (I-129) vs LCA-posted vs prevailing comparison — the unique
+    # differentiator no free competitor shows. None when the matched cell is too
+    # thin to publish (the template hides the section entirely).
+    pay_comparison = get_soc_pay_comparison(occ)
+
     faq = _build_faq(occ, stats)
     context = {
         "occ": occ,
         "stats": stats,
+        "pay_comparison": pay_comparison,
         "faq": faq,
         "jsonld": _build_jsonld(occ, stats, faq, canonical),
         "explore_links": get_salary_explore_links(),

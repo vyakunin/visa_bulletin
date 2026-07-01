@@ -1,0 +1,111 @@
+"""Tests for the I-129 actual-pay vs LCA-posted vs prevailing comparison.
+
+Locks: the join (i129.dol_eta_case_number = worksite_record.case_number) scoped
+by an occupation's SOC-6 set produces correct medians/means and above/at/below
+distribution; small-n cells are suppressed (None); non-matching SOC, denied
+LCAs, and null-pay petitions are excluded from the aggregate.
+"""
+
+from decimal import Decimal
+
+from tests.django_setup import setup_django_for_tests
+
+setup_django_for_tests()
+
+from django.test import TestCase
+
+from lib.business.i129.pay_comparison import MIN_COMPARISON_N, get_soc_pay_comparison
+from lib.business.salary.soc_occupations import Occupation
+from models.enums.case_status import CaseStatus
+from models.enums.visa_program import VisaProgram
+from models.i129 import I129Petition
+from models.salary import WorksiteRecord
+
+_OCC = Occupation(slug="test-dev", display="Test Developer", soc6=("15-1252",))
+
+
+def _pair(
+    case: str,
+    *,
+    soc="15-1252.00",
+    actual,
+    lca,
+    prevailing=90000,
+    case_status=CaseStatus.CERTIFIED,
+    pay_null=False,
+):
+    """One matched worksite (LCA) + i129 (petition) row sharing a case number."""
+    WorksiteRecord.objects.create(
+        case_number=case,
+        visa_program=VisaProgram.H1B,
+        case_status=case_status,
+        soc_code=soc,
+        job_title="Software Developer",
+        wage_annual=Decimal(str(lca)),
+        prevailing_wage=Decimal(str(prevailing)),
+        worksite_state="CA",
+        fiscal_year=2024,
+    )
+    I129Petition.objects.create(
+        dol_eta_case_number=case,
+        fiscal_year=2024,
+        job_title="Software Developer",
+        pay_annual=None if pay_null else Decimal(str(actual)),
+    )
+
+
+class TestI129PayComparison(TestCase):
+    def test_matched_cell_computes_three_way(self):
+        # 60 matched pairs, all paid 10% above the posted LCA wage.
+        for i in range(60):
+            _pair(f"CASE-{i}", actual=110000, lca=100000, prevailing=90000)
+
+        cmp = get_soc_pay_comparison(_OCC)
+        assert cmp is not None
+        assert cmp.n == 60
+        assert cmp.median_actual == 110000
+        assert cmp.median_lca == 100000
+        assert cmp.median_prevailing == 90000
+        assert cmp.median_actual_vs_lca_pct == 10.0
+        assert cmp.median_actual_vs_prevailing_pct == round((110000 / 90000 - 1) * 100, 1)
+        # Every worker is >1% above posted.
+        assert cmp.pct_above_lca == 100.0
+        assert cmp.pct_at_lca == 0.0
+        assert cmp.pct_below_lca == 0.0
+
+    def test_above_at_below_distribution(self):
+        # 25 above, 25 at (exactly equal), 10 below → 60 total.
+        for i in range(25):
+            _pair(f"A-{i}", actual=120000, lca=100000)
+        for i in range(25):
+            _pair(f"E-{i}", actual=100000, lca=100000)
+        for i in range(10):
+            _pair(f"B-{i}", actual=80000, lca=100000)
+
+        cmp = get_soc_pay_comparison(_OCC)
+        assert cmp is not None and cmp.n == 60
+        assert cmp.pct_above_lca == round(100 * 25 / 60, 1)
+        assert cmp.pct_at_lca == round(100 * 25 / 60, 1)
+        assert cmp.pct_below_lca == round(100 * 10 / 60, 1)
+
+    def test_small_n_suppressed(self):
+        for i in range(MIN_COMPARISON_N - 1):
+            _pair(f"THIN-{i}", actual=110000, lca=100000)
+        assert get_soc_pay_comparison(_OCC) is None
+
+    def test_excludes_nonmatching_soc_denied_and_null_pay(self):
+        # 55 valid matched pairs for the target SOC.
+        for i in range(55):
+            _pair(f"OK-{i}", actual=110000, lca=100000)
+        # Noise that must NOT be counted:
+        for i in range(20):  # different SOC
+            _pair(f"OTHER-{i}", soc="15-2031.00", actual=200000, lca=100000)
+        for i in range(20):  # denied LCA
+            _pair(f"DENIED-{i}", actual=200000, lca=100000, case_status=CaseStatus.DENIED)
+        for i in range(20):  # null actual pay
+            _pair(f"NULLPAY-{i}", actual=0, lca=100000, pay_null=True)
+
+        cmp = get_soc_pay_comparison(_OCC)
+        assert cmp is not None
+        assert cmp.n == 55  # only the clean matched-target-SOC pairs
+        assert cmp.median_actual == 110000

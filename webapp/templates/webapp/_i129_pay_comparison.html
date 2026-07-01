@@ -1,0 +1,64 @@
+{% load humanize %}
+{% comment %}
+  Actual-pay (I-129) vs LCA-posted vs prevailing three-way comparison.
+  Expects `pay_comparison` (lib.business.i129.pay_comparison.PayComparison) and
+  `comparison_label` (human subject, e.g. the occupation or employer name) in
+  context. Renders nothing when pay_comparison is falsy (thin cell suppressed).
+  Attribution "sourced from USCIS, obtained by Bloomberg" is REQUIRED here.
+{% endcomment %}
+{% if pay_comparison %}
+<h2 class="h4 mt-5 mb-2">What {{ comparison_label }} are <em>actually paid</em></h2>
+<p class="text-muted mb-3">
+  Every other salary site shows the <strong>LCA-posted wage</strong> — the wage for
+  the <em>position</em>. Using USCIS I-129 petition data, we can compare that against
+  the <strong>actual pay</strong> the sponsored worker received, and the
+  <strong>prevailing-wage floor</strong>, across
+  {{ pay_comparison.n|intcomma }} matched {{ comparison_label }} petitions.
+</p>
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card border-success h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">Actual pay (median)</div>
+      <div class="display-6 fw-bold mb-1">${{ pay_comparison.median_actual|intcomma }}</div>
+      <div class="text-muted small">what workers were actually paid</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">LCA-posted wage (median)</div>
+      <div class="display-6 fw-bold mb-1">${{ pay_comparison.median_lca|intcomma }}</div>
+      <div class="text-muted small">the wage offered on the LCA</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">Prevailing floor (median)</div>
+      <div class="display-6 fw-bold mb-1">
+        {% if pay_comparison.median_prevailing %}${{ pay_comparison.median_prevailing|intcomma }}{% else %}—{% endif %}
+      </div>
+      <div class="text-muted small">legal minimum for the role</div>
+    </div></div>
+  </div>
+</div>
+<p class="mb-2">
+  The median worker is paid
+  {% if pay_comparison.median_actual_vs_lca_pct > 0.5 %}
+    <strong>{{ pay_comparison.median_actual_vs_lca_pct }}% above</strong>
+  {% elif pay_comparison.median_actual_vs_lca_pct < -0.5 %}
+    <strong>{{ pay_comparison.median_actual_vs_lca_pct }}% below</strong>
+  {% else %}
+    <strong>essentially at</strong>
+  {% endif %}
+  the posted LCA wage, but the <strong>mean</strong> actual pay runs
+  <strong>{{ pay_comparison.mean_actual_vs_lca_pct }}% above</strong> the mean posted
+  wage — so the upside is concentrated in the top earners.
+  {{ pay_comparison.pct_above_lca }}% are paid above their posted wage,
+  {{ pay_comparison.pct_at_lca }}% at it, and {{ pay_comparison.pct_below_lca }}% below.
+</p>
+<p class="text-muted small mb-4">
+  Actual-pay data covers {{ pay_comparison.fy_coverage }} cap-subject H-1B lottery
+  petitions matched to certified LCAs (aggregates only). Base wage excludes equity
+  and bonuses, so it is not total compensation. Source: I-129 petition data sourced
+  from USCIS, obtained by Bloomberg.
+</p>
+{% endif %}
