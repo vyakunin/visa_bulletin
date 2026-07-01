@@ -36,6 +36,17 @@ Origin: 2026-06-24 — the EB-dashboard worker-warmup fix needed `VQS_WARM=1` on
 - **Promotion is by CHERRY-PICK (and image-SHA), which rewrites the commit hash.** So the *same* change lands under a *different* SHA on each branch, and the three branches diverge in commit count and SHA even when their working trees are **byte-identical**. A large `main…staging` / `staging…prod` count is almost always this artifact, not real divergence.
 - **The only parity that matters: (a) working-tree CONTENT and (b) the deployed image tag.** Verify content parity with `git diff --stat <a> <b>` (empty = identical) or `git show <branch> --format= | git patch-id` (same patch-id on each tip = same change, cherry-picked). Verify deployed state against the live prod image tag, not the `prod` branch SHA — prod runs the promoted `staging-<sha>` image; the `prod` branch is a content-mirror for reference, not the source of the running SHA.
 - **Do NOT force-push/reset `staging` or `prod` to "tidy lineage."** History rewrites on shared release branches are Tier 3 (`automation_safety.md`) and can desync the branch↔deployed-image mapping. If the branches are content-equal at the tip and serving correctly, there is nothing to reconcile — leave them.
+- **BUT after every rollout, CATCH THE `prod` MIRROR UP TO THE DEPLOYED SHA — same task, don't defer.** The mirror's whole job is to reflect what's live; a rollout that leaves `prod` behind (missing the just-released files) makes it lie. So the promotion is not done until `prod` reflects the deployed image's SHA:
+  - **Preferred:** `git merge --ff-only staging` on the `prod` worktree (clean lineage → fast-forwards).
+  - **When ff FAILS due to divergent cherry-pick lineage** (the common case here), it is a genuine **content-stale** mirror, NOT "tidying lineage" — the carve-out above does not apply. Reconcile by a **careful force-reset to the deployed SHA**, only after you have PROVEN both: (a) the deployed image tag = the SHA you're resetting to (`ssh homeserver "docker inspect vb_web --format '{{.Config.Image}}'"` → `staging-<sha>`); (b) the divergence is benign — every `staging..prod` commit is a **hash-twin** of a `staging`-only commit (equal `git patch-id`), so nothing unique is discarded, and `git diff --stat origin/prod origin/staging` shows only the release's files. Then:
+    ```bash
+    cd ~/cursor_projects/visa_bulletin_prod
+    git reset --hard <deployed-sha>          # = staging tip
+    git push --force-with-lease=prod:<old-prod-sha> origin prod   # lease-guard; NEVER bare --force
+    ```
+    Re-verify: `git diff --stat origin/prod origin/staging` empty AND `origin/prod` == the deployed `staging-<sha>`. This force-push is Tier 3 but the "catch up the mirror after rollout" mandate authorizes it once (a)+(b) hold — don't confirmation-fish (`drive_dont_defer.md`); if either proof fails, STOP and surface it.
+
+Origin: 2026-07-01 — after the i129/privacy rollout, `prod` couldn't ff (20 hash-twin cherry-pick commits) and sat content-stale (missing the release's 18 files) while prod ran `staging-7797a89`. I flagged the needed force-push but framed it as a question. Vladimir: *"Tighten rule to always catch up staging to prod after roll out and (carefully) do now."* Reconciled by force-reset to the deployed SHA after proving (a) deployed image = `staging-7797a89` and (b) all 20 prod-only commits are patch-id twins.
 
 ## Separation of Concerns
 
@@ -110,7 +121,7 @@ Origin: 2026-06-21 — the employer-clustering split-cluster fix was validated o
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**
 
-**Promotion:** verify staging → **`hosting/cutover.sh --code <sha>`** (zero-downtime; gates staging then swaps with vb never 502ing) → fast-forward `prod` from `staging`. Never the in-place `docker compose up -d web` on prod by default — that 502s (see "Promote via the ZERO-DOWNTIME cutover" above).
+**Promotion:** verify staging → **`hosting/cutover.sh --code <sha>`** (zero-downtime; gates staging then swaps with vb never 502ing) → **catch the `prod` mirror up to the deployed SHA, same task** (ff-only if lineage is clean, else careful force-reset to the deployed SHA per "Branch divergence is EXPECTED" — never leave `prod` behind after a rollout). Never the in-place `docker compose up -d web` on prod by default — that 502s (see "Promote via the ZERO-DOWNTIME cutover" above).
 
 **Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod stack → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
@@ -146,7 +157,7 @@ git push origin prod
 
 - **Never scp files to servers.** All changes through git branches.
 - **Never check out staging/prod in the main workspace.** Use worktrees.
-- **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (fast-forward from staging after staging is verified) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch.
+- **`prod` branch = exact mirror of production — catch it up to the deployed SHA on EVERY rollout, same task.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (catch up from staging after staging is verified + deployed — ff-only when lineage is clean, else careful force-reset to the deployed `staging-<sha>` per "Branch divergence is EXPECTED") or critical hotfixes (crashes/5xx deployed directly to prod). Leaving `prod` behind a rollout makes the mirror lie; if the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch — and conversely, code that IS running must be reflected on `prod`.
 - **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree. All features go through staging first.
 - **Tags mark releases.** `v1.X.Y` on `staging` before promotion, then on `prod` after fast-forward.
 - **Code deploy ≠ data refresh.** Code deploy to **prod** = `hosting/cutover.sh --code <sha>` (zero-downtime; the in-place `docker compose up -d web` is the disruptive fallback only — see Promotion line below). Data refresh = weekly pipeline run on the staging DB followed by atomic flip via `cutover.sh --data` (~30 min total).
