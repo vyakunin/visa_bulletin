@@ -11,7 +11,9 @@ Gathers production-health, traffic, and security signals from:
      bucketed by surface (job titles, employers, predictions, blog, search,
      SEO landings, homepage, other), top movers.
   3. External HTTP probes: visa-bulletin.us + key sub-pages return 200 and
-     still ship the GoatCounter beacon.
+     still ship the GoatCounter beacon. A Cloudflare Managed Challenge
+     (`cf-mitigated: challenge`, e.g. on /salaries/ since 2026-06-28) is
+     availability-positive, not a probe failure — see _is_cf_challenge.
 
 Returns a CheckupReport JSON per the contract at
   ~/.cursor/shared_rules/daily_checkup.mdc
@@ -1336,10 +1338,35 @@ PROBE_TARGETS: list[tuple[str, str, list[str]]] = [
 ]
 
 
+def _is_cf_challenge(r: httpx.Response) -> bool:
+    """True if the response is a Cloudflare Managed Challenge interstitial.
+
+    A managed challenge (e.g. applied to /salaries/ on 2026-06-28) answers with
+    HTTP 403/503 + `cf-mitigated: challenge` and a JS interstitial. A headless
+    probe cannot solve it, but a real browser passes it invisibly — so a
+    challenge means CF is up and gating, NOT that the origin is down. We must
+    NOT treat it as a failed probe. Detect via the authoritative response
+    header, with the challenge-platform body marker as a fallback.
+    """
+    if r.headers.get("cf-mitigated", "").strip().lower() == "challenge":
+        return True
+    if r.status_code in (403, 503) and "challenge-platform" in r.text:
+        return True
+    return False
+
+
 async def _probe_one(client: httpx.AsyncClient, label: str, path: str, must_contain: list[str]) -> dict:
     url = f"{PROD_BASE_URL}{path}"
     try:
         r = await client.get(url, timeout=PROBE_TIMEOUT, follow_redirects=True)
+        if _is_cf_challenge(r):
+            # CF is serving + gating this surface — availability-positive, never
+            # a failure. Skip body_check (markers live behind the challenge).
+            return {
+                "label": label, "url": url, "status": r.status_code,
+                "size": len(r.content), "body_check": {},
+                "challenged": True, "ok": True,
+            }
         body_check = {s: (s in r.text) for s in must_contain}
         return {
             "label": label, "url": url, "status": r.status_code,
@@ -1965,6 +1992,14 @@ def _format_property_block(
 def _section_probes(probes: list[dict]) -> tuple[dict | None, str]:
     failed = [p for p in probes if not p.get("ok")]
     if not failed:
+        challenged = [p for p in probes if p.get("challenged")]
+        if challenged:
+            # Informational only — a CF Managed Challenge is expected + healthy.
+            names = ", ".join(p["label"] for p in challenged)
+            return ({"title": "Probes OK (CF challenge on: " + names + ")",
+                     "body": ("Behind Cloudflare Managed Challenge (expected — "
+                              "real browsers pass invisibly). Not a failure."),
+                     "importance": 1}, "green")
         return (None, "green")
     lines = []
     for p in failed:
