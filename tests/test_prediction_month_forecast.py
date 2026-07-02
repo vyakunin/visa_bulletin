@@ -47,6 +47,7 @@ def _predict(
     confidence_low=None,
     confidence_high=None,
     movement_probability=None,
+    expert_predictions=None,
 ):
     PredictedCutoff.objects.create(
         bulletin=pred_bulletin,
@@ -58,6 +59,7 @@ def _predict(
         confidence_low=confidence_low,
         confidence_high=confidence_high,
         movement_probability=movement_probability,
+        expert_predictions=expert_predictions or {},
     )
 
 
@@ -84,10 +86,24 @@ class TestPredictionMonthForecast(TestCase):
 
         # EB-2 China (a modeled series + headline card): Unavailable — hit the FY
         # annual limit, so predicted_date is None and model_name == "unavailable".
+        # Carries the October-reset metadata the publish path attaches: structural
+        # "resets Oct 1" + pre-Unavailable reference + downside caveat.
         _actual(self.latest, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", date(2020, 1, 1))
         _predict(
             self.pb, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", None,
             model_name="unavailable",
+            expert_predictions={
+                "october_reset": {
+                    "is_unavailable": True,
+                    "reset_year": 2026,
+                    "stays_u_through": "September",
+                    "pre_u_cutoff": "2013-09-01",
+                    "reset_reference": "2013-09-01",
+                    "n_precedents": 50,
+                    "method": "anchor",
+                    "diagnostics": {"p10_delta_days": -1247, "p90_delta_days": 307},
+                }
+            },
         )
 
         # EB-2 Other Countries (NOT a modeled series): a persistence baseline with
@@ -116,6 +132,20 @@ class TestPredictionMonthForecast(TestCase):
         body = self.client.get("/predictions/july-2026/").content.decode()
         self.assertIn("Unavailable", body)
         self.assertIn("fiscal-year annual limit", body)
+
+    def test_unavailable_shows_october_reset_framing(self):
+        # The October-reset / U-transition model: an Unavailable series states the
+        # structural reset date (Oct 1), gives the pre-Unavailable cutoff as a
+        # labelled reference, and honestly caveats that the reset target is uncertain
+        # (no false-precise date). Regression guard for tickets-1 model work.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("October 1, 2026", body)      # structural reset date
+        self.assertIn("September 2013", body)        # pre-Unavailable reference
+        self.assertIn("rough guess", body)           # honest uncertainty caveat
+        # Downside precedent named (p10 < -120 -> the 2012 example branch).
+        self.assertIn("2012", body)
+        # It must NOT publish a fabricated precise reset cutoff as the prediction.
+        self.assertNotIn("Predicted reset date", body)
 
     def test_baseline_series_marked_modeled_series_not(self):
         # A non-China/India series is a persistence baseline -> "baseline" marker;

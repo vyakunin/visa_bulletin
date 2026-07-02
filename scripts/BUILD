@@ -374,6 +374,7 @@ py_binary(
         "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:meta_params",
         "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:october_reset",
         "//models:vqs",
         "//models:bulletin",
         "//models:visa_cutoff_date",

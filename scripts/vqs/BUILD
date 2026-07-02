@@ -204,6 +204,25 @@ py_binary(
 )
 
 py_binary(
+    name = "backtest_october_reset",
+    srcs = ["backtest_october_reset.py"],
+    main = "backtest_october_reset.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//lib/business/vqs:october_reset",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "backtest_experts",
     srcs = ["backtest_experts.py"],
     main = "backtest_experts.py",

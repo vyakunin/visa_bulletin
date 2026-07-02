@@ -31,6 +31,11 @@ from lib.business.vqs.data_cache import (
 from lib.business.vqs.expert_pool import expert_oppenheim_pace
 from lib.business.vqs.gbm_expert import expert_gbm_gated, expert_gbm_movement_prob
 from lib.business.vqs.meta_params import VqsMetaParams
+from lib.business.vqs.october_reset import (
+    describe_reset,
+    estimate_october_reset,
+    find_reset_events,
+)
 from lib.business.vqs.solver import (
     predict_next_bulletin_and_maturity,
     predict_regime_switched,
@@ -103,6 +108,20 @@ _MOVEMENT_PROB_SERIES = frozenset([
 # the physics solver — see the FS branch in publish_predictions.
 _EB_CLASSES = ["1st", "2nd", "3rd", "4th", "5th"]
 _FS_CLASSES = [f.value for f in FamilyPreference]
+
+_EB_LABEL = {"1st": "EB-1", "2nd": "EB-2", "3rd": "EB-3", "4th": "EB-4", "5th": "EB-5"}
+
+# Cache of historical U->October-reset events per action_type (enumerated from the
+# full cutoff history; independent of knowledge_date). Populated lazily so the
+# Unavailable branch doesn't re-scan the DB for every series.
+_RESET_EVENTS: dict[str, list] = {}
+
+
+def _reset_events(action_type: str) -> list:
+    if action_type not in _RESET_EVENTS:
+        _RESET_EVENTS[action_type] = find_reset_events(action_type)
+    return _RESET_EVENTS[action_type]
+
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +322,31 @@ def publish_predictions(
                     if visa_class in _EB_CLASSES and is_unavailable_at_date(
                         visa_class, country, action, knowledge_date
                     ):
+                        # October-reset / U-transition model: the prediction stays
+                        # a null-cutoff "unavailable" row (so it is excluded from
+                        # accuracy scoring and shows the Unavailable badge), but we
+                        # attach the structural reset framing + a pre-Unavailable
+                        # reference date so the forecast page can explain WHEN a date
+                        # returns (Oct 1, structural) and honestly caveat WHERE
+                        # (uncertain). See lib/business/vqs/october_reset.py.
+                        series_label = (
+                            f"{_EB_LABEL.get(visa_class, visa_class)} "
+                            f"{Country(country).label.split(' (')[0]}"
+                        )
+                        est = estimate_october_reset(
+                            visa_class, country, action, knowledge_date,
+                            all_events=_reset_events(action),
+                        )
+                        if est.is_unavailable and est.reset_year:
+                            explanation = describe_reset(est, series_label)
+                            reset_meta = {"october_reset": est.to_dict()}
+                        else:
+                            explanation = (
+                                "Category is **Unavailable** — the annual limit has been "
+                                "reached; no cutoff date is expected until the fiscal-year "
+                                "reset in October."
+                            )
+                            reset_meta = {}
                         PredictedCutoff.objects.create(
                             bulletin=pred_bulletin,
                             visa_class=visa_class,
@@ -310,11 +354,8 @@ def publish_predictions(
                             action_type=action,
                             predicted_date=None,
                             model_name="unavailable",
-                            explanation_markdown=(
-                                "Category is **Unavailable** — the annual limit has been "
-                                "reached; no cutoff date is expected until the fiscal-year "
-                                "reset in October."
-                            ),
+                            explanation_markdown=explanation,
+                            expert_predictions=reset_meta,
                         )
                         count += 1
                         continue

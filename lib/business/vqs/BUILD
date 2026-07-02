@@ -95,6 +95,17 @@ py_library(
 )
 
 py_library(
+    name = "october_reset",
+    srcs = ["october_reset.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+    ],
+)
+
+py_library(
     name = "expert_pool",
     srcs = ["expert_pool.py"],
     visibility = ["//visibility:public"],

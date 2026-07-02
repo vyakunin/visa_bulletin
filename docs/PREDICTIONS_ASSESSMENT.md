@@ -1825,3 +1825,72 @@ VQS Ensemble MAE (hypothesis: the full-history median was a worse early-year
 estimate than the per-knowledge-date value / fallback constant) and whether the
 FY-boundary fallback constants in `_RETROGRESSING_SERIES` warrant re-tuning now
 that early-year backtests no longer see future retrogression.
+
+---
+
+## 22. October-Reset / U-Transition Model (July 2026)
+
+### Motivation
+When an EB category exhausts its fiscal-year annual limit it goes **Unavailable
+(U)** and stays U until the October reset. The largest live case: **EB-2 India
+final action went Unavailable in the July 2026 bulletin.** The forecast page
+(`/predictions/<month>/`) previously short-circuited such a series to a bare
+"Unavailable" with a single canned line and **no answer to the two questions the
+user actually has**: *when does a date come back* and *roughly where*. This is the
+promo-critical page for the Aug-VB Reddit push to r/EB2. Product value, not a
+Section 0 accuracy metric — the series is excluded from MAE scoring (null cutoff).
+
+### Design (what shipped) — and why NOT a fitted point model
+This is the third attempt in this doc at FY-boundary behavior; the first two (§8
+conditional NN model; §9 regime-switched) established the governing lesson: **a
+conditional point model fit on the ~2-3 per-series U→reset precedents is noisy and
+regresses** (§8 India EB-2 +46.6d on an 8-point NN). So the reset estimate is
+deliberately **structural, not fitted**:
+
+| Piece | Approach | Confidence |
+|-------|----------|------------|
+| *When* a date returns | Deterministic: stays U through September, resets **October 1** (INA §203(b) annual caps + the October reset — design-principle-#2 policy structure) | High |
+| *Where* it resets to | **Anchor on the pre-Unavailable cutoff** (the neutral "resumes where it left off" persistence anchor); present as a labelled *reference*, not a prediction | Low — caveated |
+| Reset magnitude | **Not asserted as a precise date.** A plain-language historical-range caveat replaces a false-precise CI | — |
+
+Code: `lib/business/vqs/october_reset.py` (`estimate_october_reset`,
+`describe_reset`, `find_reset_events`). Wired into the Unavailable branch of
+`scripts/publish_predictions.py` (writes the structural explainer +
+`expert_predictions["october_reset"]`; the row stays `predicted_date=None,
+model_name="unavailable"` so accuracy scoring still excludes it). Rendered on the
+forecast card + a prominent "Why is X Unavailable?" alert
+(`webapp/templates/webapp/prediction_month_forecast.html`).
+
+### Backtest (why we publish no precise reset date)
+`scripts/vqs/backtest_october_reset.py` — leave-one-out, walk-forward over **50
+historical end-of-FY U→reset events** (EB-1..5 × ROW/China/India/Mexico/Philippines,
+2005-2025). Enumerated directly from `is_unavailable` rows (the dormant §8
+`fy_transition_model` trains from 2017 and sees *none* of these precedents).
+
+| Estimator | MAE (all 50) | MAE (excl. FY2007 mass-U) |
+|-----------|--------------|---------------------------|
+| **anchor** (reset = pre-U cutoff) | **403.5d** | **261.8d** |
+| anchor + LOO-median-delta shift | 414.7d | 301.3d |
+
+- **The pure anchor beats the fitted shift at both windows** — adding a learned
+  adjustment makes it *worse* (the §8 lesson, replicated). → publish the anchor,
+  never a fitted shift (`apply_median_shift=False` in production).
+- **A calibrated 80% CI is not achievable**: empirical-percentile band coverage is
+  **25-37%** (vs 75-85% target). The reset is genuinely regime-dependent (the 2007
+  numbers-fiasco recovery vs a normal annual exhaustion vs the 2025 EB-4 run-out),
+  and median |reset move| is 92-273d. → **we present the pre-U reference + a
+  qualitative historical range, and deliberately publish no CI or precise reset
+  date.** Anchoring a wrong precise date would erode exactly the credibility the
+  §5/6 presentation fixes protect.
+- EB-2 India ground truth (the two same-series precedents disagree, illustrating
+  the irreducible uncertainty): **2006** reset ≈ flat (2003-01 → 2003-01);
+  **2012** retrogressed ~3 years (pre-U 2007-08 → reset 2004-09).
+
+### Current Status
+Live design decision: **structural statement + honest uncertainty, no fitted
+reset date.** Ships with the forecast-page render + unit tests
+(`tests/test_october_reset.py`, `tests/test_prediction_month_forecast.py::
+test_unavailable_shows_october_reset_framing`). The methodology/blog surface still
+describes the ensemble; the U-explainer is a forecast-page feature, not a scored
+model. Iteration runner for all VQS backtests against the staging (prod-copy) DB:
+`scripts/vqs/run_in_stg.sh -m scripts.vqs.<script>`.

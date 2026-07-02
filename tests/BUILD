@@ -1114,6 +1114,20 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_october_reset",
+    size = "medium",
+    srcs = ["test_october_reset.py"],
+    deps = [
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:october_reset",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_i129_plugin",
     size = "small",
     srcs = ["test_i129_plugin.py"],
