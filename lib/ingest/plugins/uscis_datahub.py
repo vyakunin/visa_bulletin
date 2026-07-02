@@ -21,13 +21,19 @@ step itself is out of band. Linking to employer clusters is a separate backfill
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlparse
 
 from lib.ingest.base import DataSourcePlugin, SourceInfo, ValidationResult
+from lib.utils.http_utils import get_workspace_dir
 from models.ingest.enums import DataDomain, FormatVersion, SourceType
 from models.ingest.ingest_run import IngestRun
 from models.uscis_employer import UscisEmployerApproval
 
 logger = logging.getLogger(__name__)
+
+# Per-year files live here (download is out of band — placed by hand / a fetch
+# script). Both discover_sources and download() resolve against this one dir.
+_DATA_SUBDIR = "sources/uscis_datahub"
 
 # Header names (whitespace-stripped) → the row keys we read.
 _COL_FISCAL_YEAR = "Fiscal Year"
@@ -72,12 +78,15 @@ class UscisEmployerDataHubPlugin(DataSourcePlugin):
 
     domain = DataDomain.USCIS
     source_type = SourceType.H1B_EMPLOYER_HUB
-    data_dir = "uscis/employer_datahub"
+    data_dir = _DATA_SUBDIR
+
+    def _base_path(self) -> Path:
+        return get_workspace_dir() / "data" / _DATA_SUBDIR
 
     def discover_sources(self) -> list[SourceInfo]:
         """Discover per-year files in data/sources/uscis_datahub/ (download is out of band)."""
         sources: list[SourceInfo] = []
-        base_path = Path("data/sources/uscis_datahub")
+        base_path = self._base_path()
         if not base_path.exists():
             return sources
         for filepath in sorted(base_path.glob("*.csv")):
@@ -93,6 +102,24 @@ class UscisEmployerDataHubPlugin(DataSourcePlugin):
                 )
             )
         return sources
+
+    def download(self, source, run: IngestRun) -> Path:
+        """Resolve the local per-year file for ``source`` (no HTTP — files are local).
+
+        The discover→register step normalizes the ``file://`` URL to a lowercased
+        ``https:///…`` form, so match the basename CASE-INSENSITIVELY against the
+        files in the data dir (``Employer_Information_2024.csv`` vs the lowercased
+        URL). Same lowercased-path issue the I-129 plugin handles.
+        """
+        want = Path(urlparse(source.url).path).name.lower()
+        base_path = self._base_path()
+        for candidate in base_path.glob("*.csv"):
+            if candidate.name.lower() == want:
+                logger.info("[Run %s] USCIS Data Hub file: %s", run.id, candidate)
+                return candidate
+        raise FileNotFoundError(
+            f"USCIS Data Hub file for {source.url} not found in {base_path}"
+        )
 
     def get_format_version(self, filepath: Path) -> str:
         return FormatVersion.MODERN

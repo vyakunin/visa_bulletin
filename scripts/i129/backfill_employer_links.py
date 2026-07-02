@@ -25,12 +25,32 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 from django_config.logging_config import setup_logging
-from lib.business.i129.employer_linker import link_i129_employers
+from lib.business.i129.employer_linker import (
+    link_i129_employers,
+    link_uscis_employers,
+)
 
 setup_logging(debug=False)
 import logging
 
 logger = logging.getLogger(__name__)
+
+_LINKERS = {"i129": link_i129_employers, "uscis": link_uscis_employers}
+
+
+def _run(target: str, dry_run: bool) -> None:
+    stats = _LINKERS[target](dry_run=dry_run)
+    logger.info(
+        "%s: %d/%d distinct names matched (%.1f%%); %d/%d rows (%.1f%%).%s",
+        target,
+        stats.matched_names,
+        stats.distinct_names,
+        stats.name_match_pct,
+        stats.matched_rows,
+        stats.total_rows,
+        stats.row_match_pct,
+        " [DRY RUN — no rows written]" if dry_run else "",
+    )
 
 
 def main() -> None:
@@ -40,25 +60,22 @@ def main() -> None:
         action="store_true",
         help="Compute + report match rates without writing.",
     )
+    parser.add_argument(
+        "--target",
+        choices=["i129", "uscis", "both"],
+        default="i129",
+        help="Which table's employer_name to link (default: i129). 'uscis' = "
+        "the USCIS Data Hub approval rows; run it after each Data Hub ingest.",
+    )
     args = parser.parse_args()
 
     logger.info("=" * 80)
-    logger.info("I-129 employer_name → cluster backfill%s", " [DRY RUN]" if args.dry_run else "")
+    logger.info("employer_name → cluster backfill (%s)%s", args.target, " [DRY RUN]" if args.dry_run else "")
     logger.info("=" * 80)
 
-    stats = link_i129_employers(dry_run=args.dry_run)
-
-    logger.info(
-        "Result: %d/%d distinct names matched (%.1f%%); %d/%d petition rows (%.1f%%).",
-        stats.matched_names,
-        stats.distinct_names,
-        stats.name_match_pct,
-        stats.matched_rows,
-        stats.total_rows,
-        stats.row_match_pct,
-    )
-    if args.dry_run:
-        logger.info("DRY RUN — no rows written.")
+    targets = ["i129", "uscis"] if args.target == "both" else [args.target]
+    for target in targets:
+        _run(target, args.dry_run)
 
 
 if __name__ == "__main__":

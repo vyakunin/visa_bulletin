@@ -118,6 +118,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/ingest:base",
+        "//lib/utils:http_utils",
         "//models/ingest:enums",
         "//models/ingest:ingest_run",
         "//models:uscis_employer",

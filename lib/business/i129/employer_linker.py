@@ -111,6 +111,10 @@ def _apply_mapping(name_to_cluster: dict[str, int], table: str) -> int:
     items = list(name_to_cluster.items())
     tmp = "_emp_cluster_map"
     with connection.cursor() as cursor:
+        # Disable the app's 45s statement_timeout for this intentional bulk write
+        # (the UPDATE...FROM over ~373k rows exceeds it). SET LOCAL scopes it to the
+        # surrounding transaction.atomic() only. Without this the backfill rolls back.
+        cursor.execute("SET LOCAL statement_timeout = 0;")
         cursor.execute(
             f"CREATE TEMP TABLE {tmp} "
             "(employer_name varchar(255) PRIMARY KEY, cluster_id bigint) "
