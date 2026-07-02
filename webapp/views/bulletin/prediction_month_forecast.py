@@ -92,6 +92,10 @@ class _Forecast:
     is_baseline: bool = False          # no dedicated model — no-change fallback
     ci_low: date | None = None         # calibrated 80% CI lower bound
     ci_high: date | None = None        # calibrated 80% CI upper bound
+    # October-reset / U-transition framing (Unavailable series only)
+    reset_year: int | None = None            # calendar year the Oct 1 reset happens
+    reset_pre_u_label: str | None = None     # pre-Unavailable cutoff, e.g. "September 2013"
+    reset_uncertain: bool = False            # history shows meaningful downside on reset
 
 
 def _fmt(d: date | None) -> str:
@@ -163,9 +167,21 @@ def _forecast_from_row(
         )
     # Null prediction: model_name distinguishes Unavailable from Current/no-backlog.
     if (row.model_name or "") == "unavailable":
+        reset = (row.expert_predictions or {}).get("october_reset") or {}
+        pre_u_label = None
+        pre_u_iso = reset.get("pre_u_cutoff")
+        if pre_u_iso:
+            try:
+                pre_u_label = date.fromisoformat(pre_u_iso).strftime("%B %Y")
+            except (ValueError, TypeError):
+                pre_u_label = None
+        p10 = (reset.get("diagnostics") or {}).get("p10_delta_days")
         return _Forecast(
             display="Unavailable", predicted_date=None, movement=None, movement_type="na",
             is_unavailable=True, is_baseline=baseline,
+            reset_year=reset.get("reset_year"),
+            reset_pre_u_label=pre_u_label,
+            reset_uncertain=(p10 is not None and p10 < -120),
         )
     return _Forecast(display="Current", predicted_date=None, movement=None, movement_type="na", is_baseline=baseline)
 
