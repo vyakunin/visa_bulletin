@@ -1,8 +1,25 @@
 # I-129 Petition Data — Integration Assessment
 
-**Date:** 2026-06-29 · **Status:** assessment done; **Phase-1 ingest CODE built**
-(model + plugin + migrations + tests green) — data load pending (heavyweight Path-2).
+**Date:** 2026-06-29 · **Status:** **LIVE ON PROD (2026-07-02).** Both data halves
+graduated + verified: I-129 pay-comparison (372,841 rows) and the USCIS Data Hub
+approval-rate (355,969 rows / 205,127 linked). Employer + role pages render the
+sections on prod.
 **Spike verified against live prod + the real dataset.**
+
+**Update 2026-07-02 (later) — USCIS Data Hub approval data GRADUATED TO PROD.**
+Ran the FY2019–2024 Data Hub ingest off-prod on the minipc staging stack (after a
+fresh prod→staging reseed): **355,969 `UscisEmployerApproval` rows**, linker
+`--target uscis` matched **205,127/355,969 rows (57.6%)** — lower than i129's ~85% due
+to the long tiny-employer tail, but all high-volume employers match. Spot-check diff
+(staging vs prod, google-llc) showed the ONLY delta = the new approval-rate section
+(98.4% initial, 9,905 petitions FY19–24); broad top-URL diff gate byte-identical.
+Graduated via `cutover.sh --data 1dd2f9a` (same image → data-only, no code change) —
+**first live `--data` cutover.** The cutover process was killed mid-run (after the DB
+resync completed, before the connector cut-back); the cut-back (homeserver web+redis
+flush → restart `shared_cloudflared` → drop staging prod-connector → smoke → resume
+ingest) was completed by hand and the end-state verified (google/microsoft/amazon
+render the section, homeserver sole prod connector, bubba back, ingest resumed, CF
+edge purged). See "Robustness follow-up" below.
 
 **Update 2026-06-30 — Phase-1 data load VALIDATED ON STAGING (off-prod).** Ran the
 full Bloomberg FY21–24 ingest into the minipc staging DB: **372,841 `I129Petition`
@@ -13,10 +30,8 @@ LCA-posted **$101,593** = **+$24,601 (+24%)**, median actual $98,000 ≈ LCA $95
 (same Borjas gap — median≈, mean ~20%+ above). Two ingest bugs fixed en route
 (commits b7593b2, bed3bc8): GitHub-raw URL case canonicalization (discover
 lowercases → 404), and uscis must use the `bulk_create` load path (the COPY
-preflight assumes the SalaryRecord wage schema). **REMAINING: graduate the DATA to
-prod via `cutover.sh --data` — needs a fresh prod→staging reseed first + a prod-SHA
-image build; `cutover.sh --data` is flagged "not yet live-run", so dry-run + surface
-before firing.**
+preflight assumes the SalaryRecord wage schema). **DONE — i129 data live on prod
+(372,841 rows), graduated via the reseed→ingest→`cutover.sh --data` path.**
 
 **Update 2026-07-02 — Lever 1 employer-side built.** (a) The actual-pay comparison
 now renders on **`/employer/<slug>/`** too, scoped by a new
@@ -30,10 +45,24 @@ built**: `UscisEmployerApproval` model (migration 0054) + `uscis_datahub` plugin
 (parses the real UTF-16 / TAB / leading-line-number-column files) + `SourceType
 .H1B_EMPLOYER_HUB`, registered in `run_pipeline`. Data is fetchable from the GitHub
 mirror `JohnBroberg/H1B_Hub` (`data/Employer_Information_<YYYY>.csv`) — the uscis.gov
-download is Akamai-anti-bot-walled (403 to non-browser clients). REMAINING for the
-approval half: run the FY ingest (off-prod) + link + build the `/employer/` approval-rate
-section. All code build + suite green; tests cover the pay-comparison scoping, the
-linker, and the Data Hub parse.
+download is Akamai-anti-bot-walled (403 to non-browser clients). **DONE 2026-07-02:
+FY2019–24 ingest + `--target uscis` link + the `/employer/` approval-rate section are
+all live on prod** (see the 2026-07-02 update at top). All code build + suite green;
+tests cover the pay-comparison scoping, the linker, and the Data Hub parse.
+
+## Robustness follow-up (2026-07-02 first live `--data` cutover)
+
+`cutover.sh --data` completed the DB resync (homeserver DB fully consistent) but its
+process was killed before the connector cut-back — so `shared_cloudflared` was left
+stopped and the staging prod-connector left up (prod stayed served by the minipc; no
+vb outage, but bubba stayed down and ingest stayed paused until the manual cut-back).
+The EXIT-trap recovery did NOT fire (SIGKILL skips traps). Cause: the cutover was
+launched as a `setsid` child while a separate background monitor loop was polling it;
+killing the monitor appears to have taken the cutover with it. **Fix for next time:**
+run `cutover.sh` as a blocking foreground call (or a hardened nohup/disown that can't
+be reaped by a monitor's process-group kill), and never share a process group between
+the cutover and its watcher. Consider a `cutover.sh --resume` that detects "resync
+done, cut-back pending" and finishes steps 5–7 idempotently.
 
 ## TL;DR
 
