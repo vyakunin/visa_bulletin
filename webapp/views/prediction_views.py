@@ -155,17 +155,26 @@ def prediction_detail(
     last_actual_bulletin = Bulletin.objects.filter(
         publication_date=last_actual_month
     ).first()
+    # Track the Current/Unavailable state alongside the raw cutoff_date. A
+    # Current ("C") cutoff is stored as the bulletin-month DATE (a sentinel, not
+    # a real cutoff), so differencing it month-over-month fabricates a spurious
+    # "↑ 1m" advance. An Unavailable ("U") cutoff is stored as NULL. Both must be
+    # kept out of the numeric movement/error math below.
     last_actual_cutoffs: dict[str, date] = {}
+    last_actual_flags: dict[str, tuple[bool, bool]] = {}
     if last_actual_bulletin:
         for cutoff in VisaCutoffDate.objects.filter(bulletin=last_actual_bulletin):
             key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
             last_actual_cutoffs[key] = cutoff.cutoff_date
+            last_actual_flags[key] = (cutoff.is_current, cutoff.is_unavailable)
 
     # Current month's actual cutoffs
     current_actual_cutoffs: dict[str, date] = {}
+    current_actual_flags: dict[str, tuple[bool, bool]] = {}
     for cutoff in VisaCutoffDate.objects.filter(bulletin=actual_bulletin):
         key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
         current_actual_cutoffs[key] = cutoff.cutoff_date
+        current_actual_flags[key] = (cutoff.is_current, cutoff.is_unavailable)
 
     if category == VisaCategory.FAMILY_SPONSORED.value:
         classes = [f[0] for f in FamilyPreference.choices]
@@ -218,7 +227,17 @@ def prediction_detail(
         if pred_result.predicted_date:
             key = f"{vc}_{cval}_{atype}"
             last_actual_date = last_actual_cutoffs.get(key)
-            pred_obj = _make_prediction_display(pred_result, last_actual_date, visa_class=vc, country=cval)
+            last_is_current, last_is_unavailable = last_actual_flags.get(
+                key, (False, False)
+            )
+            pred_obj = _make_prediction_display(
+                pred_result,
+                last_actual_date,
+                visa_class=vc,
+                country=cval,
+                last_actual_is_current=last_is_current,
+                last_actual_is_unavailable=last_is_unavailable,
+            )
             cell["predicted"] = pred_obj
 
     # Populate actuals + compute prediction error
@@ -228,15 +247,40 @@ def prediction_detail(
                 key = f"{vc}_{c.value}_{atype}"
                 if key in current_actual_cutoffs:
                     d = current_actual_cutoffs[key]
+                    cur_is_current, cur_is_unavailable = current_actual_flags.get(
+                        key, (False, False)
+                    )
                     cell = matrix[vc][c.value][atype]
                     cell["actual_date"] = d
-                    cell["formatted_actual"] = (
-                        d.strftime("%d %b %Y") if d else None
-                    )
+                    if cur_is_current:
+                        # Render "Current", never the bulletin-month sentinel date.
+                        cell["formatted_actual"] = "Current"
+                        cell["actual_is_current"] = True
+                    elif cur_is_unavailable:
+                        cell["formatted_actual"] = "Unavailable"
+                        cell["actual_is_unavailable"] = True
+                    else:
+                        cell["formatted_actual"] = (
+                            d.strftime("%d %b %Y") if d else None
+                        )
                     # Compute error vs prediction and actual movement vs previous
                     last_d = last_actual_cutoffs.get(key)
+                    last_is_current, last_is_unavailable = last_actual_flags.get(
+                        key, (False, False)
+                    )
                     pred_obj = cell.get("predicted")
-                    if d and pred_obj and pred_obj.predicted_date:
+                    # Only score error against a REAL actual date. A Current
+                    # actual stores the bulletin-month sentinel and an Unavailable
+                    # actual is NULL, so neither is a real cutoff to compare to.
+                    cur_is_real = (
+                        bool(d) and not cur_is_current and not cur_is_unavailable
+                    )
+                    last_is_real = (
+                        bool(last_d)
+                        and not last_is_current
+                        and not last_is_unavailable
+                    )
+                    if cur_is_real and pred_obj and pred_obj.predicted_date:
                         err = (pred_obj.predicted_date - d).days
                         if err == 0:
                             cell["error_text"] = "exact"
@@ -250,7 +294,12 @@ def prediction_detail(
                         else:
                             cell["error_text"] = f"{'+'if err>0 else ''}{err}d"
                             cell["error_type"] = "danger"
-                    if d and last_d:
+                    # Actual movement vs previous month. Difference two REAL dates
+                    # only — never fabricate a numeric delta from a Current/
+                    # Unavailable sentinel (the "↑ 1m" artifact). Current->Current
+                    # shows NO movement; a real date becoming Current shows a
+                    # non-numeric marker.
+                    if cur_is_real and last_is_real:
                         actual_delta = (d - last_d).days
                         if actual_delta == 0:
                             cell["actual_move"] = "0"
@@ -267,6 +316,11 @@ def prediction_detail(
                         else:
                             cell["actual_move"] = f"↓ {abs(actual_delta)}d"
                             cell["actual_move_type"] = "negative"
+                    elif cur_is_current and last_is_real:
+                        # Category just became Current — a genuine event, but there
+                        # is no meaningful day-count, so show a plain marker.
+                        cell["actual_move"] = "→ Current"
+                        cell["actual_move_type"] = "neutral"
 
     # Convert to template rows
     table_rows = []
@@ -370,6 +424,8 @@ def _make_prediction_display(
     last_actual_date: date | None,
     visa_class: str = "",
     country: int = 0,
+    last_actual_is_current: bool = False,
+    last_actual_is_unavailable: bool = False,
 ) -> _PredDisplay:
     obj = _PredDisplay()
     obj.predicted_date = pred.predicted_date
@@ -377,10 +433,21 @@ def _make_prediction_display(
         pred.predicted_date.strftime("%d %b %Y") if pred.predicted_date else None
     )
     obj.model_name = pred.model_name
-    if last_actual_date:
+
+    # The previous-month actual is only a real anchor to diff against when it was
+    # a real date. Current stores the bulletin-month sentinel and Unavailable
+    # NULL, so differencing them fabricates a spurious movement delta.
+    last_is_real = (
+        bool(last_actual_date)
+        and not last_actual_is_current
+        and not last_actual_is_unavailable
+    )
+    if last_actual_is_current:
+        obj.prev_actual_fmt = "Current"
+    elif last_is_real:
         obj.prev_actual_fmt = last_actual_date.strftime("%d %b %Y")
 
-    if last_actual_date and pred.predicted_date:
+    if last_is_real and pred.predicted_date:
         delta = (pred.predicted_date - last_actual_date).days
         if delta == 0:
             obj.movement_delta = "0"

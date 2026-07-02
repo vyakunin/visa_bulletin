@@ -36,14 +36,28 @@ def _actual(bulletin, action_type, country, visa_class, cutoff_date):
     )
 
 
-def _predict(pred_bulletin, action_type, country, visa_class, predicted_date):
+def _predict(
+    pred_bulletin,
+    action_type,
+    country,
+    visa_class,
+    predicted_date,
+    *,
+    model_name="regime_switched",
+    confidence_low=None,
+    confidence_high=None,
+    movement_probability=None,
+):
     PredictedCutoff.objects.create(
         bulletin=pred_bulletin,
         visa_class=visa_class,
         country=country,
         action_type=action_type,
         predicted_date=predicted_date,
-        model_name="regime_switched",
+        model_name=model_name,
+        confidence_low=confidence_low,
+        confidence_high=confidence_high,
+        movement_probability=movement_probability,
     )
 
 
@@ -59,8 +73,30 @@ class TestPredictionMonthForecast(TestCase):
             target_bulletin_month=date(2026, 7, 1),
             prediction_date=date(2026, 6, 15),
         )
-        _predict(self.pb, ActionType.FINAL_ACTION.value, Country.INDIA.value, "2nd", date(2020, 3, 1))
+        # EB-2 India (a modeled series + headline card): a real advance, plus a
+        # calibrated CI and a movement probability so the card renders both.
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.INDIA.value, "2nd", date(2020, 3, 1),
+            confidence_low=date(2020, 2, 1), confidence_high=date(2020, 5, 1),
+            movement_probability=0.15,
+        )
         _predict(self.pb, ActionType.FILING.value, Country.INDIA.value, "2nd", date(2020, 8, 1))
+
+        # EB-2 China (a modeled series + headline card): Unavailable — hit the FY
+        # annual limit, so predicted_date is None and model_name == "unavailable".
+        _actual(self.latest, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", date(2020, 1, 1))
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", None,
+            model_name="unavailable",
+        )
+
+        # EB-2 Other Countries (NOT a modeled series): a persistence baseline with
+        # a real predicted date, so the grid tags it with the "baseline" marker.
+        _actual(self.latest, ActionType.FINAL_ACTION.value, Country.ALL.value, "2nd", date(2024, 1, 1))
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.ALL.value, "2nd", date(2024, 1, 1),
+            model_name="persistence",
+        )
 
     def test_future_month_renders(self):
         resp = self.client.get("/predictions/july-2026/")
@@ -73,6 +109,41 @@ class TestPredictionMonthForecast(TestCase):
         # 2020-01-01 -> 2020-03-01 is a +2-month advance vs the current bulletin.
         body = self.client.get("/predictions/july-2026/").content.decode()
         self.assertIn("+2m", body)
+
+    def test_unavailable_gets_fy_limit_explainer(self):
+        # A category that hit the FY annual limit renders "Unavailable" + an
+        # explainer, not a bare word that looks like a broken page.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("Unavailable", body)
+        self.assertIn("fiscal-year annual limit", body)
+
+    def test_baseline_series_marked_modeled_series_not(self):
+        # A non-China/India series is a persistence baseline -> "baseline" marker;
+        # the modeled EB-2 India card/cell must not carry it.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("no-change baseline", body)  # legend + marker tooltip
+
+    def test_calibrated_ci_rendered_on_card(self):
+        # The stored 80% confidence interval is shown, not hidden.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("80% range", body)
+        self.assertIn("May 1, 2020", body)  # confidence_high of EB-2 India
+
+    def test_movement_prob_badge_has_explainer(self):
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("probability of a more-than-50-day", body)
+
+    def test_knowledge_date_not_future_dated(self):
+        # The confusing future-looking "knowledge cutoff: <day>" is gone; the
+        # source edition framing is used instead.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn("knowledge cutoff", body)
+        self.assertIn("based on data through", body)
+
+    def test_backtest_window_copy_is_2016_not_2020(self):
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("since 2016", body)
+        self.assertNotIn("since 2020", body)
 
     def test_faqpage_schema_present(self):
         body = self.client.get("/predictions/july-2026/").content.decode()

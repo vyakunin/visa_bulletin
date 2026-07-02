@@ -66,6 +66,17 @@ _MONTH_NAMES = [
 _MONTH_SLUG_TO_NUM = {name: i + 1 for i, name in enumerate(_MONTH_NAMES)}
 
 
+# The six modeled series: EB-1/2/3 for China + India. Everything else falls back
+# to a no-change "baseline" (methodology term) and is flagged so the UI can say so.
+_MODELED_CLASSES = {"1st", "2nd", "3rd"}
+_MODELED_COUNTRIES = {Country.CHINA.value, Country.INDIA.value}
+
+
+def _is_baseline(visa_class: str, country: int) -> bool:
+    """True for any series without a dedicated model (shown as a no-change baseline)."""
+    return not (visa_class in _MODELED_CLASSES and country in _MODELED_COUNTRIES)
+
+
 @dataclass
 class _Forecast:
     """Predicted cutoff for one (visa_class, country, action_type) series."""
@@ -77,6 +88,10 @@ class _Forecast:
     movement_prob: int | None = None   # 0-100, oversubscribed 1m series only
     movement_prob_label: str | None = None
     movement_prob_color: str | None = None
+    is_unavailable: bool = False       # category hit its FY annual limit
+    is_baseline: bool = False          # no dedicated model — no-change fallback
+    ci_low: date | None = None         # calibrated 80% CI lower bound
+    ci_high: date | None = None        # calibrated 80% CI upper bound
 
 
 def _fmt(d: date | None) -> str:
@@ -120,10 +135,16 @@ def _prob_badge(p: float | None) -> tuple[int | None, str | None, str | None]:
     return pct, "Movement likely", "danger"
 
 
-def _forecast_from_row(row: PredictedCutoff | None, current: VisaCutoffDate | None) -> _Forecast:
+def _forecast_from_row(
+    row: PredictedCutoff | None,
+    current: VisaCutoffDate | None,
+    visa_class: str = "",
+    country: int = 0,
+) -> _Forecast:
     """Build a display forecast from a stored prediction + the current actual baseline."""
+    baseline = _is_baseline(visa_class, country)
     if row is None:
-        return _Forecast(display="—", predicted_date=None, movement=None, movement_type="na")
+        return _Forecast(display="—", predicted_date=None, movement=None, movement_type="na", is_baseline=baseline)
     if row.predicted_date is not None:
         cur_date = current.cutoff_date if current and not current.is_unavailable else None
         move, mtype = _movement(row.predicted_date, cur_date)
@@ -136,11 +157,17 @@ def _forecast_from_row(row: PredictedCutoff | None, current: VisaCutoffDate | No
             movement_prob=pct,
             movement_prob_label=plabel,
             movement_prob_color=pcolor,
+            is_baseline=baseline,
+            ci_low=row.confidence_low,
+            ci_high=row.confidence_high,
         )
     # Null prediction: model_name distinguishes Unavailable from Current/no-backlog.
     if (row.model_name or "") == "unavailable":
-        return _Forecast(display="Unavailable", predicted_date=None, movement=None, movement_type="na")
-    return _Forecast(display="Current", predicted_date=None, movement=None, movement_type="na")
+        return _Forecast(
+            display="Unavailable", predicted_date=None, movement=None, movement_type="na",
+            is_unavailable=True, is_baseline=baseline,
+        )
+    return _Forecast(display="Current", predicted_date=None, movement=None, movement_type="na", is_baseline=baseline)
 
 
 def _load_current_actuals(bulletin: Bulletin) -> dict[tuple[str, int, str], VisaCutoffDate]:
@@ -176,7 +203,9 @@ def _build_grid(
     rows = []
     for vc, short in class_map.items():
         cells = [
-            _forecast_from_row(stored.get((vc, c.value, _FINAL)), actuals.get((vc, c.value, _FINAL)))
+            _forecast_from_row(
+                stored.get((vc, c.value, _FINAL)), actuals.get((vc, c.value, _FINAL)), vc, c.value
+            )
             for c in _COUNTRIES
         ]
         rows.append({"label": short, "cells": cells})
@@ -189,8 +218,12 @@ def _headline_cards(
 ) -> list[dict]:
     cards = []
     for vc, country in _HEADLINE_SERIES:
-        fa = _forecast_from_row(stored.get((vc, country.value, _FINAL)), actuals.get((vc, country.value, _FINAL)))
-        filing = _forecast_from_row(stored.get((vc, country.value, _FILING)), actuals.get((vc, country.value, _FILING)))
+        fa = _forecast_from_row(
+            stored.get((vc, country.value, _FINAL)), actuals.get((vc, country.value, _FINAL)), vc, country.value
+        )
+        filing = _forecast_from_row(
+            stored.get((vc, country.value, _FILING)), actuals.get((vc, country.value, _FILING)), vc, country.value
+        )
         cards.append(
             {
                 "label": f"{_EB_CLASSES[vc]} {Country(country.value).label.split(' (')[0]}",
@@ -236,7 +269,7 @@ def _faq(month_label: str, cards: list[dict]) -> list[dict]:
             {
                 "q": "How accurate are these Visa Bulletin predictions?",
                 "a": (
-                    "The model is backtested against every published bulletin since 2020. "
+                    "The model is backtested against every published bulletin since 2016. "
                     "Accuracy varies by category — stable, advancing series are the most "
                     "predictable, while demand- and policy-driven movements (and "
                     "retrogressions) are inherently hard to call. See the methodology and "
