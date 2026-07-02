@@ -46,6 +46,9 @@ class SourceType(models.TextChoices):
     # USCIS I-129 H-1B petition data (Bloomberg FOIA snapshot, FY2021-FY2024)
     I129 = "i129", "USCIS I-129 H-1B Petition"
 
+    # USCIS H-1B Employer Data Hub — per-employer approval/denial counts (live, FY2009+)
+    H1B_EMPLOYER_HUB = "h1b_employer_hub", "USCIS H-1B Employer Data Hub"
+
 
 class IngestStatus(models.IntegerChoices):
     """

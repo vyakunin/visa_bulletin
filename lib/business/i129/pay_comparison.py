@@ -149,3 +149,20 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
     if not like_params:
         return None
     return _run_comparison("w.soc_code LIKE ANY(%s)", [like_params])
+
+
+def get_employer_pay_comparison(cluster) -> PayComparison | None:
+    """Three-way pay comparison for one employer cluster.
+
+    Scopes the matched-triple to petitions whose ``employer_cluster_id`` resolves to
+    ``cluster`` (populated by lib/business/i129/employer_linker.py), joined to their
+    certified LCA for the posted + prevailing wages. ``cluster`` is any object with an
+    ``id`` (an ``EmployerCluster``). Returns None when fewer than ``MIN_COMPARISON_N``
+    petitions match (thin cell suppressed → the view hides the section). Uses the
+    ``employer_cluster_id`` index (migration 0053), so it's cheap inside the
+    already-page-cached employer view.
+    """
+    cluster_id = getattr(cluster, "id", None)
+    if cluster_id is None:
+        return None
+    return _run_comparison("i.employer_cluster_id = %s", [cluster_id])

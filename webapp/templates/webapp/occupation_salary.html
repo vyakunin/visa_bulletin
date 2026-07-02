@@ -67,7 +67,7 @@
       </table>
     </div>
 
-    {% include "webapp/_i129_pay_comparison.html" with comparison_label=occ.display|add:"s" %}
+    {% include "webapp/_i129_pay_comparison.html" with comparison_label=occ.display|add:"s" petitions_label=occ.display|add:"s" %}
 
     {% if stats.program.h1b_count and stats.program.perm_count %}
     <p class="text-muted">

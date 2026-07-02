@@ -28,5 +28,6 @@ class ModelsConfig(AppConfig):
         )
         from .raw_facts import RawFactsLedger  # noqa: F401
         from .salary import Employer, SalaryRecord, WorksiteRecord  # noqa: F401
+        from .uscis_employer import UscisEmployerApproval  # noqa: F401
         from .visa_cutoff_date import VisaCutoffDate  # noqa: F401
         from .vqs import PredictedBulletin, PredictedCutoff  # noqa: F401

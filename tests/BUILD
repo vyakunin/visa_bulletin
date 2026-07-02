@@ -1126,6 +1126,17 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_uscis_datahub_plugin",
+    size = "small",
+    srcs = ["test_uscis_datahub_plugin.py"],
+    deps = [
+        "//lib/ingest/plugins:uscis_datahub",
+        "//models:uscis_employer",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_i129_pay_comparison",
     size = "small",
     srcs = ["test_i129_pay_comparison.py"],
@@ -1136,6 +1147,18 @@ django_py_test(
         "//models:salary",
         "//models/enums:case_status",
         "//models/enums:visa_program",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_i129_employer_linker",
+    size = "small",
+    srcs = ["test_i129_employer_linker.py"],
+    deps = [
+        "//lib/business/i129:employer_linker",
+        "//models:i129",
+        "//models:salary",
         requirement("pytest-django"),
     ],
 )

@@ -19,7 +19,20 @@ py_library(
     srcs = ["i129.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":salary",  # EmployerCluster FK target (imported for FK registration)
         "//models/enums:visa_program",
+        "//models/ingest:ingest_version",
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+py_library(
+    name = "uscis_employer",
+    srcs = ["uscis_employer.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":salary",  # EmployerCluster FK target (imported for FK registration)
         "//models/ingest:ingest_version",
         requirement("Django"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter

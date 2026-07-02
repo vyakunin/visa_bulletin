@@ -19,6 +19,9 @@ from django.db import models
 
 from .enums.visa_program import WageUnit
 from .ingest.ingest_version import IngestVersion  # noqa: F401  (FK registration)
+from .salary import (
+    EmployerCluster,  # noqa: F401  (FK registration for employer_cluster)
+)
 
 # I-129 BASIS_FOR_CLASSIFICATION codes (Part 2, Q2 of Form I-129). Stored raw (one
 # char) on the row; this map is for display. See the dataset data dictionary.
@@ -164,6 +167,17 @@ class I129Petition(models.Model):
     # --- Employer ----------------------------------------------------------------
     employer_name = models.CharField(max_length=255, blank=True, db_index=True)
     i129_employer_name = models.CharField(max_length=255, blank=True)
+    employer_cluster = models.ForeignKey(
+        "models.EmployerCluster",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        related_name="i129_petitions",
+        help_text="Resolved LCA employer cluster (populated by the employer_name→cluster "
+        "linker, lib/business/i129/employer_linker.py). Lets the employer profile page "
+        "scope the actual-pay comparison. NULL when no LCA cluster matched the name.",
+    )
     fein = models.CharField(
         max_length=20, blank=True, db_index=True, help_text="Employer tax id (FEIN)"
     )

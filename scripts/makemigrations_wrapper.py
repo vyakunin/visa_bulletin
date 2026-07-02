@@ -60,6 +60,9 @@ from models.ingest.ingest_version import IngestVersion
 from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 from models.raw_facts import RawFactsLedger
 from models.salary import Employer, SalaryRecord
+from models.uscis_employer import (
+    UscisEmployerApproval,  # noqa: F401  (for makemigrations)
+)
 from models.visa_cutoff_date import VisaCutoffDate
 from models.vqs import PredictedBulletin, PredictedCutoff
 

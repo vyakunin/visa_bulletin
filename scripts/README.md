@@ -258,6 +258,19 @@ bazel run //scripts/ingest:inspect_unknown_source_rows -- --mode employer
 bazel run //scripts/ingest:rollback -- --run-id 123
 ```
 
+**`scripts/i129/backfill_employer_links.py`** - Link I-129 petitions to LCA employer clusters
+
+Maps each `i129_petition.employer_name` to an `EmployerCluster` by NORMALIZED name
+(exact match yields ~0 rows — the USCIS and LCA spellings differ), so the employer
+profile page can scope the actual-pay vs LCA-posted comparison. Heavyweight write on
+the full petition table — run OFF-PROD on staging and graduate the data. Re-run after
+every I-129 refresh. Same linker (`lib/business/i129/employer_linker.py`) is reused for
+the USCIS Employer Data Hub approval rows.
+```bash
+bazel run //scripts/i129:backfill_employer_links -- --dry-run   # report match rates only
+bazel run //scripts/i129:backfill_employer_links                # apply
+```
+
 **`scripts/ingest/ingest_and_cluster.sh`** - Shell script for ingest + clustering workflow
 ```bash
 ./scripts/ingest/ingest_and_cluster.sh

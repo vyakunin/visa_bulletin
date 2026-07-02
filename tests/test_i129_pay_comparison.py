@@ -14,12 +14,16 @@ setup_django_for_tests()
 
 from django.test import TestCase
 
-from lib.business.i129.pay_comparison import MIN_COMPARISON_N, get_soc_pay_comparison
+from lib.business.i129.pay_comparison import (
+    MIN_COMPARISON_N,
+    get_employer_pay_comparison,
+    get_soc_pay_comparison,
+)
 from lib.business.salary.soc_occupations import Occupation
 from models.enums.case_status import CaseStatus
 from models.enums.visa_program import VisaProgram
 from models.i129 import I129Petition
-from models.salary import WorksiteRecord
+from models.salary import EmployerCluster, WorksiteRecord
 
 _OCC = Occupation(slug="test-dev", display="Test Developer", soc6=("15-1252",))
 
@@ -33,6 +37,7 @@ def _pair(
     prevailing=90000,
     case_status=CaseStatus.CERTIFIED,
     pay_null=False,
+    employer_cluster=None,
 ):
     """One matched worksite (LCA) + i129 (petition) row sharing a case number."""
     WorksiteRecord.objects.create(
@@ -51,6 +56,7 @@ def _pair(
         fiscal_year=2024,
         job_title="Software Developer",
         pay_annual=None if pay_null else Decimal(str(actual)),
+        employer_cluster=employer_cluster,
     )
 
 
@@ -109,3 +115,32 @@ class TestI129PayComparison(TestCase):
         assert cmp is not None
         assert cmp.n == 55  # only the clean matched-target-SOC pairs
         assert cmp.median_actual == 110000
+
+
+class TestI129EmployerPayComparison(TestCase):
+    def test_scopes_to_the_employer_cluster(self):
+        cluster_a = EmployerCluster.objects.create(canonical_name="Acme", slug="acme")
+        cluster_b = EmployerCluster.objects.create(canonical_name="Other", slug="other")
+        # 55 matched pairs for cluster A, all paid 20% above posted.
+        for i in range(55):
+            _pair(f"A-{i}", actual=120000, lca=100000, employer_cluster=cluster_a)
+        # Noise: another cluster + unlinked petitions must NOT be counted for A.
+        for i in range(30):
+            _pair(f"B-{i}", actual=200000, lca=100000, employer_cluster=cluster_b)
+        for i in range(30):
+            _pair(f"U-{i}", actual=200000, lca=100000, employer_cluster=None)
+
+        cmp = get_employer_pay_comparison(cluster_a)
+        assert cmp is not None
+        assert cmp.n == 55
+        assert cmp.median_actual == 120000
+        assert cmp.median_actual_vs_lca_pct == 20.0
+
+    def test_thin_employer_suppressed(self):
+        cluster = EmployerCluster.objects.create(canonical_name="Tiny", slug="tiny")
+        for i in range(MIN_COMPARISON_N - 1):
+            _pair(f"T-{i}", actual=110000, lca=100000, employer_cluster=cluster)
+        assert get_employer_pay_comparison(cluster) is None
+
+    def test_none_cluster_returns_none(self):
+        assert get_employer_pay_comparison(None) is None

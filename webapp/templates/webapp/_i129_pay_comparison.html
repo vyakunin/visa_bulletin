@@ -2,8 +2,10 @@
 {% comment %}
   Actual-pay (I-129) vs LCA-posted vs prevailing three-way comparison.
   Expects `pay_comparison` (lib.business.i129.pay_comparison.PayComparison) and
-  `comparison_label` (human subject, e.g. the occupation or employer name) in
-  context. Renders nothing when pay_comparison is falsy (thin cell suppressed).
+  `comparison_label` (human subject for the heading, e.g. "software engineers" or
+  "Google LLC workers"). Optional `petitions_label` qualifies the count line
+  ("matched <petitions_label> petitions"); omit it for a bare "matched petitions".
+  Renders nothing when pay_comparison is falsy (thin cell suppressed).
   Attribution "sourced from USCIS, obtained by Bloomberg" is REQUIRED here.
 {% endcomment %}
 {% if pay_comparison %}
@@ -13,7 +15,7 @@
   the <em>position</em>. Using USCIS I-129 petition data, we can compare that against
   the <strong>actual pay</strong> the sponsored worker received, and the
   <strong>prevailing-wage floor</strong>, across
-  {{ pay_comparison.n|intcomma }} matched {{ comparison_label }} petitions.
+  {{ pay_comparison.n|intcomma }} matched {% if petitions_label %}{{ petitions_label }} {% endif %}petitions.
 </p>
 <div class="row g-3 mb-3">
   <div class="col-md-4">

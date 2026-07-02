@@ -18,6 +18,23 @@ prod via `cutover.sh --data` — needs a fresh prod→staging reseed first + a p
 image build; `cutover.sh --data` is flagged "not yet live-run", so dry-run + surface
 before firing.**
 
+**Update 2026-07-02 — Lever 1 employer-side built.** (a) The actual-pay comparison
+now renders on **`/employer/<slug>/`** too, scoped by a new
+`I129Petition.employer_cluster` FK (migration 0053) that
+`lib/business/i129/employer_linker.py` backfills — mapping `employer_name` →
+`EmployerCluster` by NORMALIZED name (exact match ≈ 0 rows: USCIS "Infosys Limited"
+vs LCA "INFOSYS TECHNOLOGIES LIMITED" both normalize to `infosy`), highest-LCA-volume
+cluster winning ties. Backfill = `scripts/i129/backfill_employer_links.py` (heavyweight
+Path-2 → run off-prod on staging). (b) The **approval-rate half's ingest foundation is
+built**: `UscisEmployerApproval` model (migration 0054) + `uscis_datahub` plugin
+(parses the real UTF-16 / TAB / leading-line-number-column files) + `SourceType
+.H1B_EMPLOYER_HUB`, registered in `run_pipeline`. Data is fetchable from the GitHub
+mirror `JohnBroberg/H1B_Hub` (`data/Employer_Information_<YYYY>.csv`) — the uscis.gov
+download is Akamai-anti-bot-walled (403 to non-browser clients). REMAINING for the
+approval half: run the FY ingest (off-prod) + link + build the `/employer/` approval-rate
+section. All code build + suite green; tests cover the pay-comparison scoping, the
+linker, and the Data Hub parse.
+
 ## TL;DR
 
 Bloomberg published the FOIA-obtained USCIS **I-129 petition + H-1B registration**
