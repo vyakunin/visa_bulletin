@@ -45,6 +45,7 @@ from django_config.logging_config import setup_logging
 from lib.ingest.orchestrator import PipelineOrchestrator
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
+from lib.ingest.plugins.uscis_datahub import UscisEmployerDataHubPlugin
 from lib.ingest.plugins.uscis_i129 import I129PetitionPlugin
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin
 from lib.ingest.registry import PluginRegistry
@@ -69,6 +70,7 @@ def register_plugins():
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(VisaBulletinPlugin())
     PluginRegistry.register(I129PetitionPlugin())
+    PluginRegistry.register(UscisEmployerDataHubPlugin())
 
 
 def discover_sources(domain: str | None = None):
@@ -169,6 +171,7 @@ def run_pipeline(
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(VisaBulletinPlugin())
     PluginRegistry.register(I129PetitionPlugin())
+    PluginRegistry.register(UscisEmployerDataHubPlugin())
 
     if source_id:
         source = DataSource.objects.get(id=source_id)
@@ -646,6 +649,7 @@ def resume_run(run_id: int):
     PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
     PluginRegistry.register(VisaBulletinPlugin())
     PluginRegistry.register(I129PetitionPlugin())
+    PluginRegistry.register(UscisEmployerDataHubPlugin())
 
     run = IngestRun.objects.get(id=run_id)
     if run.status == IngestStatus.COMPLETED:

@@ -29,3 +29,14 @@ py_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "employer_linker",
+    srcs = ["employer_linker.py"],
+    deps = [
+        "//models:i129",
+        "//models:salary",
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)

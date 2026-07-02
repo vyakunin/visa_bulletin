@@ -106,8 +106,22 @@ py_library(
         ":visa_bulletin",
         ":uscis",
         ":uscis_i129",
+        ":uscis_datahub",
         ":dos",
         ":dol_perm_supply",
+    ],
+)
+
+py_library(
+    name = "uscis_datahub",
+    srcs = ["uscis_datahub.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/ingest:base",
+        "//models/ingest:enums",
+        "//models/ingest:ingest_run",
+        "//models:uscis_employer",
+        requirement("Django"),
     ],
 )
 

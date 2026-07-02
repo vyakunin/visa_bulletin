@@ -292,7 +292,10 @@
                 </div>
             </div>
             {% endif %}
-            
+
+            <!-- Actual pay (I-129) vs LCA-posted vs prevailing — the unique differentiator -->
+            {% include "webapp/_i129_pay_comparison.html" with comparison_label=cluster.canonical_name|add:" workers" %}
+
             <!-- Geographic Distribution -->
             {% if chart_data.state_filings or chart_data.state_median_salary %}
             <div class="row mb-4">

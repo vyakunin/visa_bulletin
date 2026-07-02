@@ -12,6 +12,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.i129.pay_comparison import get_employer_pay_comparison
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
     calculate_filing_pace,
@@ -379,10 +380,17 @@ def employer_profile_view(request, slug):
         "canonical_url": request.build_absolute_uri(request.path),
     }
 
+    # Actual-pay (I-129) vs LCA-posted vs prevailing for this employer — the unique
+    # differentiator no free competitor shows. None when the matched cell is too thin
+    # to publish (template hides the section). Scoped via the employer_cluster_id the
+    # linker backfilled; cheap inside the page-cached view (indexed by migration 0053).
+    pay_comparison = get_employer_pay_comparison(cluster)
+
     context = {
         "cluster": cluster,
         "stats": stats,
         "chart_data": chart_data,
+        "pay_comparison": pay_comparison,
         "seo": seo,
         "page_title": seo["title"],
         "page_description": seo["description"],

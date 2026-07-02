@@ -4,6 +4,37 @@
 (model + plugin + migrations + tests green) — data load pending (heavyweight Path-2).
 **Spike verified against live prod + the real dataset.**
 
+**Update 2026-06-30 — Phase-1 data load VALIDATED ON STAGING (off-prod).** Ran the
+full Bloomberg FY21–24 ingest into the minipc staging DB: **372,841 `I129Petition`
+rows** (FY21 99,610 / FY22 89,535 / FY23 91,832 / FY24 91,864). **Worksite_record
+join rate 97.7% / 99.7% / 99.6% / 99.5%** by FY (the doc's 96.2% below was the
+certified-only subset). FY2024 wage delta reproduces: mean actual **$126,194** vs
+LCA-posted **$101,593** = **+$24,601 (+24%)**, median actual $98,000 ≈ LCA $95,000
+(same Borjas gap — median≈, mean ~20%+ above). Two ingest bugs fixed en route
+(commits b7593b2, bed3bc8): GitHub-raw URL case canonicalization (discover
+lowercases → 404), and uscis must use the `bulk_create` load path (the COPY
+preflight assumes the SalaryRecord wage schema). **REMAINING: graduate the DATA to
+prod via `cutover.sh --data` — needs a fresh prod→staging reseed first + a prod-SHA
+image build; `cutover.sh --data` is flagged "not yet live-run", so dry-run + surface
+before firing.**
+
+**Update 2026-07-02 — Lever 1 employer-side built.** (a) The actual-pay comparison
+now renders on **`/employer/<slug>/`** too, scoped by a new
+`I129Petition.employer_cluster` FK (migration 0053) that
+`lib/business/i129/employer_linker.py` backfills — mapping `employer_name` →
+`EmployerCluster` by NORMALIZED name (exact match ≈ 0 rows: USCIS "Infosys Limited"
+vs LCA "INFOSYS TECHNOLOGIES LIMITED" both normalize to `infosy`), highest-LCA-volume
+cluster winning ties. Backfill = `scripts/i129/backfill_employer_links.py` (heavyweight
+Path-2 → run off-prod on staging). (b) The **approval-rate half's ingest foundation is
+built**: `UscisEmployerApproval` model (migration 0054) + `uscis_datahub` plugin
+(parses the real UTF-16 / TAB / leading-line-number-column files) + `SourceType
+.H1B_EMPLOYER_HUB`, registered in `run_pipeline`. Data is fetchable from the GitHub
+mirror `JohnBroberg/H1B_Hub` (`data/Employer_Information_<YYYY>.csv`) — the uscis.gov
+download is Akamai-anti-bot-walled (403 to non-browser clients). REMAINING for the
+approval half: run the FY ingest (off-prod) + link + build the `/employer/` approval-rate
+section. All code build + suite green; tests cover the pay-comparison scoping, the
+linker, and the Data Hub parse.
+
 ## TL;DR
 
 Bloomberg published the FOIA-obtained USCIS **I-129 petition + H-1B registration**
