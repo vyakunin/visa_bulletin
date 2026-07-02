@@ -1159,6 +1159,19 @@ django_py_test(
         "//lib/business/i129:employer_linker",
         "//models:i129",
         "//models:salary",
+        "//models:uscis_employer",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_i129_approval_stats",
+    size = "small",
+    srcs = ["test_i129_approval_stats.py"],
+    deps = [
+        "//lib/business/i129:approval_stats",
+        "//models:salary",
+        "//models:uscis_employer",
         requirement("pytest-django"),
     ],
 )

@@ -29,6 +29,7 @@ from django.db.models import Count
 
 from models.i129 import I129Petition
 from models.salary import Employer
+from models.uscis_employer import UscisEmployerApproval
 
 logger = logging.getLogger(__name__)
 
@@ -100,14 +101,18 @@ def resolve_clusters_for_names(names: list[str]) -> dict[str, int]:
     return resolved
 
 
-def _apply_mapping(name_to_cluster: dict[str, int]) -> int:
-    """Bulk-assign ``employer_cluster_id`` via a temp mapping table. Returns rows updated."""
+def _apply_mapping(name_to_cluster: dict[str, int], table: str) -> int:
+    """Bulk-assign ``employer_cluster_id`` on ``table`` via a temp mapping table.
+
+    ``table`` is a trusted internal constant (never user input). Returns rows updated.
+    """
     if not name_to_cluster:
         return 0
     items = list(name_to_cluster.items())
+    tmp = "_emp_cluster_map"
     with connection.cursor() as cursor:
         cursor.execute(
-            "CREATE TEMP TABLE _i129_emp_map "
+            f"CREATE TEMP TABLE {tmp} "
             "(employer_name varchar(255) PRIMARY KEY, cluster_id bigint) "
             "ON COMMIT DROP;"
         )
@@ -119,28 +124,27 @@ def _apply_mapping(name_to_cluster: dict[str, int]) -> int:
             for name, cid in chunk:
                 params.extend((name, cid))
             cursor.execute(
-                f"INSERT INTO _i129_emp_map (employer_name, cluster_id) VALUES {values_sql} "
+                f"INSERT INTO {tmp} (employer_name, cluster_id) VALUES {values_sql} "
                 "ON CONFLICT (employer_name) DO NOTHING;",
                 params,
             )
         cursor.execute(
-            "UPDATE i129_petition i SET employer_cluster_id = m.cluster_id "
-            "FROM _i129_emp_map m "
-            "WHERE i.employer_name = m.employer_name "
-            "AND i.employer_cluster_id IS DISTINCT FROM m.cluster_id;"
+            f"UPDATE {table} t SET employer_cluster_id = m.cluster_id "
+            f"FROM {tmp} m "
+            "WHERE t.employer_name = m.employer_name "
+            "AND t.employer_cluster_id IS DISTINCT FROM m.cluster_id;"
         )
         return cursor.rowcount
 
 
-def link_i129_employers(*, dry_run: bool = False) -> LinkStats:
-    """Resolve every distinct I-129 ``employer_name`` to a cluster and backfill the FK.
+def _link_by_employer_name(model, table: str, *, dry_run: bool) -> LinkStats:
+    """Resolve each distinct ``employer_name`` on ``model`` to a cluster + backfill the FK.
 
-    Heavyweight write on the full petition table — run off-prod on staging and
-    graduate the data (branching.md). ``dry_run`` computes and reports the match
-    rates without writing.
+    Shared by the I-129 petition and USCIS Data Hub linkers — both carry a raw
+    ``employer_name`` and an ``employer_cluster`` FK, matched the same normalized way.
     """
     name_counts = dict(
-        I129Petition.objects.exclude(employer_name="")
+        model.objects.exclude(employer_name="")
         .values("employer_name")
         .annotate(n=Count("id"))
         .values_list("employer_name", "n")
@@ -159,7 +163,8 @@ def link_i129_employers(*, dry_run: bool = False) -> LinkStats:
         total_rows=total_rows,
     )
     logger.info(
-        "i129 employer linker%s: %d/%d names matched (%.1f%%), %d/%d rows (%.1f%%)",
+        "%s employer linker%s: %d/%d names matched (%.1f%%), %d/%d rows (%.1f%%)",
+        table,
         " [dry-run]" if dry_run else "",
         matched_names,
         distinct_names,
@@ -170,6 +175,28 @@ def link_i129_employers(*, dry_run: bool = False) -> LinkStats:
     )
     if not dry_run:
         with transaction.atomic():
-            updated = _apply_mapping(resolved)
-        logger.info("i129 employer linker: %d petition rows updated", updated)
+            updated = _apply_mapping(resolved, table)
+        logger.info("%s employer linker: %d rows updated", table, updated)
     return stats
+
+
+def link_i129_employers(*, dry_run: bool = False) -> LinkStats:
+    """Resolve every distinct I-129 ``employer_name`` to a cluster and backfill the FK.
+
+    Heavyweight write on the full petition table — run off-prod on staging and
+    graduate the data (branching.md). ``dry_run`` computes and reports the match
+    rates without writing.
+    """
+    return _link_by_employer_name(I129Petition, "i129_petition", dry_run=dry_run)
+
+
+def link_uscis_employers(*, dry_run: bool = False) -> LinkStats:
+    """Resolve every distinct USCIS Data Hub ``employer_name`` to a cluster + backfill.
+
+    Same normalized-name match as the I-129 linker (the Data Hub carries no LCA join
+    key either). Run after each Data Hub ingest; off-prod + graduate like the I-129
+    backfill.
+    """
+    return _link_by_employer_name(
+        UscisEmployerApproval, "uscis_employer_approval", dry_run=dry_run
+    )

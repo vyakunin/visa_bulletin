@@ -1,0 +1,45 @@
+{% load humanize %}
+{% comment %}
+  USCIS I-129 H-1B petition approval rate for an employer, from the USCIS H-1B
+  Employer Data Hub. Expects `approval_stats` (lib.business.i129.approval_stats
+  .ApprovalStats) and `employer_label` (the employer name) in context. Renders
+  nothing when approval_stats is falsy (thin cell suppressed).
+{% endcomment %}
+{% if approval_stats %}
+<h2 class="h4 mt-5 mb-2">{{ employer_label }}'s H-1B petition approval rate</h2>
+<p class="text-muted mb-3">
+  Not the LCA certification rate every site quotes (the Department of Labor certifies
+  ~99% of LCAs) — this is the <strong>USCIS first-decision approval rate</strong> on the
+  actual H-1B petitions, where denials are real. Across
+  {{ approval_stats.initial_decisions|intcomma }} new (initial) petitions,
+  {{ approval_stats.fy_coverage }}.
+</p>
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card border-success h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">Initial approval rate</div>
+      <div class="display-6 fw-bold mb-1">{{ approval_stats.initial_approval_rate }}%</div>
+      <div class="text-muted small">new petitions ({{ approval_stats.fy_coverage }})</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">Initial approvals</div>
+      <div class="display-6 fw-bold mb-1">{{ approval_stats.initial_approvals|intcomma }}</div>
+      <div class="text-muted small">of {{ approval_stats.initial_decisions|intcomma }} decided</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100"><div class="card-body text-center">
+      <div class="text-muted text-uppercase small mb-1">Overall approval rate</div>
+      <div class="display-6 fw-bold mb-1">{{ approval_stats.overall_approval_rate }}%</div>
+      <div class="text-muted small">incl. continuing (renewals)</div>
+    </div></div>
+  </div>
+</div>
+<p class="text-muted small mb-4">
+  Continuing (renewal) petitions approve at near-100% for almost every employer, so the
+  <strong>initial</strong> rate is the meaningful signal. Counts cover
+  {{ approval_stats.fy_coverage }}. Source: USCIS H-1B Employer Data Hub.
+</p>
+{% endif %}
