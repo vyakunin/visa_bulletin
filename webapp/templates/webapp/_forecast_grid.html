@@ -1,5 +1,5 @@
 {# Forecast grid: rows = visa class, columns = country (in country_headers order). #}
-<div class="table-responsive mb-2">
+<div class="table-responsive mb-1">
   <table class="table table-sm table-bordered align-middle">
     <thead>
       <tr>
@@ -12,10 +12,17 @@
       <tr>
         <th scope="row">{{ row.label }}</th>
         {% for fc in row.cells %}
-        <td>
+        <td{% if fc.ci_low and fc.ci_high %} title="80% range: {{ fc.ci_low|date:'M j, Y' }} – {{ fc.ci_high|date:'M j, Y' }}"{% endif %}>
+          {% if fc.is_unavailable %}
+          <span title="This category hit its fiscal-year annual limit; new visa numbers become available October 1.">Unavailable <i class="bi bi-info-circle text-muted small"></i></span>
+          {% else %}
           {{ fc.display }}
+          {% endif %}
           {% if fc.movement %}
           <span class="small text-{% if fc.movement_type == 'positive' %}success{% elif fc.movement_type == 'negative' %}danger{% else %}muted{% endif %}">{{ fc.movement }}</span>
+          {% endif %}
+          {% if fc.is_baseline and fc.predicted_date %}
+          <sup class="text-muted small" title="No dedicated model for this series — shown as a no-change baseline.">baseline</sup>
           {% endif %}
         </td>
         {% endfor %}
@@ -24,3 +31,4 @@
     </tbody>
   </table>
 </div>
+<p class="text-muted small mb-3"><sup>baseline</sup> = no dedicated model for this series — shown as a no-change baseline. Ranges (hover a cell) show the model's calibrated 80% confidence interval.</p>

@@ -203,6 +203,7 @@ def compute_bulletin_accuracy(
     from lib.business.vqs.data_cache import (
         get_all_bulletins,
         get_cutoff_at_date,
+        is_current_at_date,
     )
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
     from models.raw_facts import RawFactsLedger
@@ -285,11 +286,19 @@ def compute_bulletin_accuracy(
             current_facts = list(
                 RawFactsLedger.objects.filter(publication_date__lte=knowledge_date)
             )
-        cutoffs = VisaCutoffDate.objects.filter(
-            bulletin__publication_date=t,
-            visa_category=visa_category,
-            visa_class__in=target_classes,
-        ).exclude(cutoff_date__isnull=True)
+        # Exclude Unavailable (NULL cutoff) AND Current rows. A Current cutoff is
+        # stored as the bulletin-month sentinel date, not a real cutoff, so
+        # scoring it fabricates a spurious error / "↑ 1m" move. Mirrors the
+        # existing Unavailable exclusion.
+        cutoffs = (
+            VisaCutoffDate.objects.filter(
+                bulletin__publication_date=t,
+                visa_category=visa_category,
+                visa_class__in=target_classes,
+            )
+            .exclude(cutoff_date__isnull=True)
+            .exclude(is_current=True)
+        )
 
         # Filter by action_type if specified
         if action_type:
@@ -341,7 +350,15 @@ def compute_bulletin_accuracy(
 
             error_days = None
             if pred_cutoff is not None and actual is not None:
-                error_days = abs((pred_cutoff - actual).days)
+                # A Current (no-backlog) actual is the bulletin-month sentinel,
+                # not a real cutoff. For horizon 1 the row is already excluded
+                # above; for longer horizons the actual comes from
+                # get_cutoff_at_date and may land on a Current sentinel, so guard.
+                actual_as_of = t if horizon == 1 else future_pub_est
+                if not is_current_at_date(
+                    row.visa_class, row.country, row.action_type, actual_as_of
+                ):
+                    error_days = abs((pred_cutoff - actual).days)
 
             # Online Learning Update with multi-horizon actuals
             if aggregator and actual is not None:
@@ -759,7 +776,11 @@ def compute_multi_horizon_accuracy(
     3. For each horizon h in horizons: extract prediction at step h-1,
        look up actual cutoff at B + h months, record error.
     """
-    from lib.business.vqs.data_cache import get_all_bulletins, get_cutoff_at_date
+    from lib.business.vqs.data_cache import (
+        get_all_bulletins,
+        get_cutoff_at_date,
+        is_current_at_date,
+    )
     from lib.business.vqs.solver import predict_next_bulletin_and_maturity
     from models.raw_facts import RawFactsLedger
     from models.visa_cutoff_date import VisaCutoffDate
@@ -807,11 +828,17 @@ def compute_multi_horizon_accuracy(
                 RawFactsLedger.objects.filter(publication_date__lte=knowledge_date)
             )
 
-        cutoffs = VisaCutoffDate.objects.filter(
-            bulletin__publication_date=pub_date,
-            visa_category=visa_category,
-            visa_class__in=target_classes,
-        ).exclude(cutoff_date__isnull=True)
+        # Exclude Unavailable (NULL cutoff) AND Current base rows (bulletin-month
+        # sentinel, not a real cutoff) — mirrors the Unavailable exclusion.
+        cutoffs = (
+            VisaCutoffDate.objects.filter(
+                bulletin__publication_date=pub_date,
+                visa_category=visa_category,
+                visa_class__in=target_classes,
+            )
+            .exclude(cutoff_date__isnull=True)
+            .exclude(is_current=True)
+        )
 
         if action_type:
             cutoffs = cutoffs.filter(action_type=action_type)
@@ -851,7 +878,13 @@ def compute_multi_horizon_accuracy(
 
                     error = None
                     direction_correct = None
-                    if pred is not None and actual is not None:
+                    # Skip Current (no-backlog) actuals: the stored cutoff is the
+                    # bulletin-month sentinel, so differencing it fabricates a
+                    # spurious error / movement.
+                    actual_is_current = is_current_at_date(
+                        row.visa_class, row.country, row.action_type, target_month
+                    )
+                    if pred is not None and actual is not None and not actual_is_current:
                         error = abs((pred - actual).days)
                         if current_cutoff is not None:
                             pred_move = (pred - current_cutoff).days
@@ -914,7 +947,13 @@ def compute_multi_horizon_accuracy(
 
                 error = None
                 direction_correct = None
-                if pred is not None and actual is not None:
+                # Skip Current (no-backlog) actuals: the stored cutoff is the
+                # bulletin-month sentinel, so differencing it fabricates a
+                # spurious error / movement.
+                actual_is_current = is_current_at_date(
+                    row.visa_class, row.country, row.action_type, target_pub
+                )
+                if pred is not None and actual is not None and not actual_is_current:
                     error = abs((pred - actual).days)
 
                     if current_cutoff is not None:

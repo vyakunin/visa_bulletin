@@ -16,9 +16,8 @@ Run: `uv run pytest test_daily_checkup_server.py` from this dir.
 
 import time
 
-import httpx
-
 import daily_checkup_server as m
+import httpx
 
 # ── Perf section: heavy-render surface must not false-alarm ──────────────────
 

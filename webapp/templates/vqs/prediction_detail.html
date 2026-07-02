@@ -108,12 +108,12 @@
                     <td class="align-middle small text-muted bg-light text-center py-1 border-bottom-thick" style="font-size:0.65rem;">real</td>
                     {% for cell in row.countries %}
                     <td class="align-middle text-center py-1 border-bottom-thick">{% with c=cell.final_action %}{% if c.formatted_actual %}<div class="actual-cell">
-                        <span class="actual-date">{{ c.formatted_actual }}</span>
+                        {% if c.actual_is_current %}<span class="info-badge bg-success text-white" title="Current — no backlog, all priority dates authorized" data-bs-toggle="tooltip">Current</span>{% elif c.actual_is_unavailable %}<span class="info-badge bg-secondary text-white" title="Unavailable — no numbers issued this month" data-bs-toggle="tooltip">Unavailable</span>{% else %}<span class="actual-date">{{ c.formatted_actual }}</span>{% endif %}
                         {% if c.actual_move %}<span class="move {% if c.actual_move_type == 'positive' %}pos{% elif c.actual_move_type == 'negative' %}neg{% else %}neu{% endif %}">{{ c.actual_move }}</span>{% endif %}
                         {% if c.error_text %}<span class="err-badge {{ c.error_type }}" title="Prediction error (pred − actual)" data-bs-toggle="tooltip">{{ c.error_text }}</span>{% endif %}
                     </div>{% else %}-{% endif %}{% endwith %}</td>
                     <td class="align-middle text-center bg-light bg-opacity-10 py-1 border-bottom-thick">{% with c=cell.filing %}{% if c.formatted_actual %}<div class="actual-cell">
-                        <span class="actual-date">{{ c.formatted_actual }}</span>
+                        {% if c.actual_is_current %}<span class="info-badge bg-success text-white" title="Current — no backlog, all priority dates authorized" data-bs-toggle="tooltip">Current</span>{% elif c.actual_is_unavailable %}<span class="info-badge bg-secondary text-white" title="Unavailable — no numbers issued this month" data-bs-toggle="tooltip">Unavailable</span>{% else %}<span class="actual-date">{{ c.formatted_actual }}</span>{% endif %}
                         {% if c.actual_move %}<span class="move {% if c.actual_move_type == 'positive' %}pos{% elif c.actual_move_type == 'negative' %}neg{% else %}neu{% endif %}">{{ c.actual_move }}</span>{% endif %}
                         {% if c.error_text %}<span class="err-badge {{ c.error_type }}" title="Prediction error (pred − actual)" data-bs-toggle="tooltip">{{ c.error_text }}</span>{% endif %}
                     </div>{% else %}-{% endif %}{% endwith %}</td>

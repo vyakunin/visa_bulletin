@@ -37,7 +37,7 @@ def llms_txt_view(request):
 
 - [Employment-Based Dashboard]({base}/employment-based/): Current EB-1, EB-2, EB-3, EB-4, EB-5 priority dates by country (All, China, India, Mexico, Philippines), with 1–3 month model predictions
 - [Family-Sponsored Dashboard]({base}/family-sponsored/): Current F1–F4 family preference priority dates with predictions
-- [Predictions Archive]({base}/predictions/): Historical prediction accuracy by bulletin month, backtested since 2020
+- [Predictions Archive]({base}/predictions/): Historical prediction accuracy by bulletin month, backtested since 2016
 
 ## Salary Database (H-1B & PERM)
 
