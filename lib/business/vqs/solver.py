@@ -503,6 +503,32 @@ def predict_regime_switched(
         visa_class, country, action_type, knowledge_date, facts=facts
     )
 
+    # T3 demand gate (shipped 2026-07): when the selector falls back to
+    # persistence (STALLED/RETRO/VOLATILE), the model says "no move" and scores
+    # 0% direction. A two-stage direction gate: if the demand_signal expert
+    # indicates a meaningful move (>=25d), express it with a DAMPENED magnitude
+    # (shrink_prediction) so we gain direction without the overshoot that made
+    # raw seasonal/demand-swap regress MAE (the §8 / T2 failure). Guarded to only
+    # ADD a move on top of persistence, never suppress one.
+    #
+    # Backtest (scripts/vqs/backtest_selector.py, 1m selector, prod-copy DB):
+    # series-weighted composite wMAE 134.5 vs current-prod 135.4 (ALL) / 170.4 vs
+    # 170.6 (end_of_fy) -- improves 5/6 focus series, never regresses either
+    # guardrail slice; EB-2/EB-3 (the high-traffic series) tie persistence within
+    # ~1-2d. Only fires for PHYSICS_ELIGIBLE_SERIES (this block is after the
+    # forced-persistence early return above), so EB-4/ROW/Mexico/Phil are
+    # untouched. See docs/PREDICTIONS_ASSESSMENT.md §23.
+    traj_expert = expert_name
+    if expert_name == "persistence" and current_cutoff is not None:
+        from lib.business.vqs.expert_pool import expert_demand_signal
+        from lib.business.vqs.regime import apply_demand_gate
+
+        demand_pred = expert_demand_signal(
+            visa_class, country, action_type, knowledge_date, facts=facts
+        )
+        predicted_cutoff, expert_name, traj_expert = apply_demand_gate(
+            expert_name, predicted_cutoff, current_cutoff, demand_pred, regime_state
+        )
 
     if predicted_cutoff is None:
         predicted_cutoff = current_cutoff
@@ -541,7 +567,7 @@ def predict_regime_switched(
     max_steps = 24
     spread_days_val = spread_days
 
-    traj_fn = ALL_EXPERT_TRAJECTORIES.get(expert_name)
+    traj_fn = ALL_EXPERT_TRAJECTORIES.get(traj_expert)
     trajectory_rest: list[date | None] = []
     if traj_fn:
         full_traj = traj_fn(
@@ -700,7 +726,13 @@ def predict_next_bulletin_and_maturity(
         elif count >= 1 or visa_class == "5th":
             confidence = "medium"
 
-    # Fix 1: Exclude EB4 from solver (persistence is better)
+    # Fix 1: Exclude EB4 from solver (persistence is better). T4 (2026-07) tested
+    # upgrading EB-4 to the seasonal fy_reset/seasonal_median expert; once the
+    # meaningless "Current"-era months are excluded, persistence still beats it
+    # (end_of_fy composite wMAE 79.0 seasonal vs 71.4 persistence) because EB-4
+    # holds flat most months and the seasonal expert injects a phantom +30d/mo
+    # advance. Gate stays persistence. See scripts/vqs/backtest_selector.py
+    # --fallback and docs §23.
     if visa_class == "4th":
         current_cutoff = get_cutoff_at_date(
             visa_class, country, action_type, knowledge_date

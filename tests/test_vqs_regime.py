@@ -4,10 +4,14 @@ Pure unit tests - no DB, no Django. Tests regime classification,
 shift detection, parameter recommendations, and FY-phase-aware detection.
 """
 
+from datetime import date, timedelta
+
 from lib.business.vqs.regime import (
+    DEMAND_GATE_MIN_MOVE,
     FYPhase,
     Regime,
     RegimeState,
+    apply_demand_gate,
     classify_regime,
     classify_regime_fy_aware,
     detect_regime_shift,
@@ -278,3 +282,81 @@ class TestFYAwareCaps:
         state = RegimeState(Regime.ADVANCING, 0.8, 20.0, 5.0, FYPhase.NORMAL)
         assert fy_aware_cap_forward_days(state, base_cap=45) == 45
         assert fy_aware_cap_back_days(state, base_cap=60) == 60
+
+
+class TestApplyDemandGate:
+    """T3 demand gate (solver.predict_regime_switched). Pure logic — the gate
+    turns a persistence fallback into a DAMPENED directional move when the
+    demand_signal expert implies one, without ever suppressing a move.
+    Locks the shipped behaviour + the §8/T2 lesson (dampen, don't swap raw)."""
+
+    STALLED = RegimeState(Regime.STALLED, 0.8, 1.0, 2.0, FYPhase.NORMAL)
+    CUR = date(2015, 6, 1)
+
+    def _persist(self):
+        # persistence prediction == current cutoff (no move)
+        return self.CUR
+
+    def test_fires_forward_dampens_and_relabels(self):
+        # demand implies a big +180d move; gate expresses a SHRUNK forward move.
+        demand_pred = self.CUR + timedelta(days=180)
+        pred, expert, traj = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, demand_pred, self.STALLED
+        )
+        assert expert == "demand_gate"
+        assert traj == "persistence"  # keep persistence trajectory for steps 1+
+        move = (pred - self.CUR).days
+        assert move > 0                      # correct direction
+        assert move < 180                    # dampened (never raw)
+        assert pred != self._persist()       # it ADDED a move (not a no-op)
+
+    def test_fires_backward_preserves_direction(self):
+        demand_pred = self.CUR - timedelta(days=120)
+        pred, expert, traj = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, demand_pred, self.STALLED
+        )
+        assert expert == "demand_gate"
+        move = (pred - self.CUR).days
+        assert move < 0 and move > -120      # retro direction, dampened
+
+    def test_noop_when_expert_not_persistence(self):
+        # selector already picked an active expert (ADVANCING → demand_signal);
+        # the gate must not touch it.
+        demand_pred = self.CUR + timedelta(days=180)
+        active_pred = self.CUR + timedelta(days=90)
+        pred, expert, traj = apply_demand_gate(
+            "demand_signal", active_pred, self.CUR, demand_pred, self.STALLED
+        )
+        assert (pred, expert, traj) == (active_pred, "demand_signal", "demand_signal")
+
+    def test_noop_below_gate_threshold(self):
+        # demand move under the gate minimum → stays flat persistence.
+        demand_pred = self.CUR + timedelta(days=DEMAND_GATE_MIN_MOVE - 1)
+        pred, expert, traj = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, demand_pred, self.STALLED
+        )
+        assert (pred, expert, traj) == (self._persist(), "persistence", "persistence")
+
+    def test_noop_when_demand_none(self):
+        pred, expert, traj = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, None, self.STALLED
+        )
+        assert (pred, expert, traj) == (self._persist(), "persistence", "persistence")
+
+    def test_noop_when_current_none(self):
+        pred, expert, traj = apply_demand_gate(
+            "persistence", None, None, self.CUR + timedelta(days=180), self.STALLED
+        )
+        assert expert == "persistence" and traj == "persistence"
+
+    def test_advancing_regime_dampens_less_than_stalled(self):
+        # shrink_prediction is regime-modulated: ADVANCING keeps more of the move.
+        advancing = RegimeState(Regime.ADVANCING, 0.9, 40.0, 5.0, FYPhase.NORMAL)
+        demand_pred = self.CUR + timedelta(days=180)
+        pred_stall, _, _ = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, demand_pred, self.STALLED
+        )
+        pred_adv, _, _ = apply_demand_gate(
+            "persistence", self._persist(), self.CUR, demand_pred, advancing
+        )
+        assert (pred_adv - self.CUR).days > (pred_stall - self.CUR).days
