@@ -1894,3 +1894,83 @@ test_unavailable_shows_october_reset_framing`). The methodology/blog surface sti
 describes the ensemble; the U-explainer is a forecast-page feature, not a scored
 model. Iteration runner for all VQS backtests against the staging (prod-copy) DB:
 `scripts/vqs/run_in_stg.sh -m scripts.vqs.<script>`.
+
+---
+
+## 23. 1-Month Selector Season-Conditioning + Demand Gate (July 2026)
+
+Follow-on to §22, exploring whether the **1-month** production model (the
+regime-switched selector `predict_regime_switched` → `_select_expert_for_regime`,
+NOT the Hedge ensemble — see the dispatch note in §11/README) can beat persistence
+by conditioning on the fiscal-year season and/or expressing a demand-side direction
+signal. Evaluated with a new fast harness `scripts/vqs/backtest_selector.py`, which
+scores the *selection decision* at the expert level against the staging (prod-copy)
+DB in seconds — excluding the meaningless "Current"-era months prod already
+suppresses, stratified by FY phase and move magnitude. Guardrail metric:
+**series-weighted composite wMAE must not rise vs current prod.**
+
+### T2 — season-condition the selector (REJECTED)
+
+Swap the selector's persistence fallback for a seasonal expert during quiet
+END_OF_FY (Jul–Sep) months: `fy_seasonal` (→ `seasonal_median`), `fy_fyreset`
+(→ `fy_reset`), `fy_demand` (→ `demand_signal`). All three **regressed** the
+guardrail on both the 6 focus series and the fallback series:
+
+| composite wMAE | prod | persistence | fy_seasonal | fy_fyreset | fy_demand |
+|---|---|---|---|---|---|
+| focus, ALL | 135.4 | 131.7 | 136.0 | 136.0 | 135.9 |
+| focus, end_of_fy | 170.6 | 171.4 | 172.8 | 172.8 | 172.7 |
+| fallback, end_of_fy | 72.9 | 71.4 | 79.0 | 79.0 | 77.8 |
+
+Same failure mode as the §8 FY-boundary experiment: during a *quiet* regime the
+seasonal expert injects a phantom ~+30d/mo advance that overshoots (EB series hold
+flat most months). Not shipped. The policies remain in `backtest_selector.py` as
+documented negative-result baselines.
+
+### T3 — demand gate on the persistence fallback (SHIPPED)
+
+Instead of *swapping* the expert, *gate* a dampened direction onto it: when the
+selector falls back to persistence (STALLED/RETRO/VOLATILE) but `demand_signal`
+implies a move ≥25d, express a **shrunk** directional move (`regime.shrink_prediction`,
+regime-modulated) rather than the raw seasonal delta that made T2/§8 regress. Only
+ADDS a move; never suppresses one. Pure logic in `regime.apply_demand_gate`
+(unit-tested, `tests/test_vqs_regime.py::TestApplyDemandGate`); wired into
+`predict_regime_switched` *after* the forced-persistence early return, so it only
+touches the 6 PHYSICS_ELIGIBLE_SERIES (India/China EB-1/2/3) — EB-4/ROW/Mexico/Phil
+are untouched.
+
+Authoritative backtest (true `solver` path, series-weighted composite wMAE):
+
+| composite wMAE | solver (T3) | prod (live) | persistence |
+|---|---|---|---|
+| ALL | **134.5** | 135.4 | 131.7 |
+| end_of_fy | **170.4** | 170.6 | 171.4 |
+
+Per-series (ALL) T3 beats current prod on 5/6 focus series and ties India EB-2;
+never regresses either guardrail slice; on EB-2/EB-3 (the high-traffic "when does
+my date move" series) it ties persistence within ~1-2d while adding direction
+signal (dir% 16-31% where persistence is structurally 0%). It does **not** beat raw
+persistence on the composite (134.5 vs 131.7) — but neither does the live selector
+(135.4); T3 narrows that gap and makes the served 1m forecast more informative. The
+India EB-1 gap to persistence (222 vs 211) is the RS selector's deliberate trade to
+catch EB-1 FY-boundary jumps (its reason to exist, §9), concentrated in a low-volume
+series. `model_name` stays `"regime_switched"` in the DB (publish_predictions:414),
+so `demand_gate` lives only in explainability metadata — no display/badge change.
+
+### T4 — upgrade EB-4 off forced-persistence (REJECTED)
+
+Tested routing EB-4 (India/China/ROW) through the seasonal `fy_reset`/`seasonal_median`
+expert instead of the forced-persistence early return. Once the "Current"-era months
+are excluded, persistence still wins (fallback end_of_fy composite wMAE 79.0 seasonal
+vs 71.4 persistence): EB-4 holds flat most months and the seasonal expert overshoots.
+EB-4 stays on persistence (`solver.py` "Fix 1"). Validate with
+`scripts/vqs/backtest_selector.py --fallback`.
+
+### Net
+
+Shipped: **T3 demand gate** (modest, safe improvement to the live 1m selector).
+Rejected with evidence: **T2** (season-swap) and **T4** (EB-4 seasonal) — both
+re-confirm the §8 lesson that injecting an unconditional seasonal move during quiet
+regimes overshoots. The honest 1m posture is unchanged: persistence is a very strong
+1m baseline; the regime-switched selector + demand gate matches it on the important
+series while adding a dampened direction signal and catching EB-1 FY jumps.

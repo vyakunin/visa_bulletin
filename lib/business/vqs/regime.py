@@ -11,6 +11,7 @@ The caller fetches moves via get_last_N_moves() and passes them here.
 
 import enum
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 
 class Regime(enum.Enum):
@@ -194,6 +195,53 @@ def shrink_prediction(delta_days: int, regime: RegimeState) -> int:
         base = int(25 * small_f) + int(55 * med_f)
         extra = int((abs_delta - 80) * large_f)
         return sign * (base + extra)
+
+
+DEMAND_GATE_MIN_MOVE = 25  # demand_signal must imply >= this to fire the gate
+
+
+def apply_demand_gate(
+    expert_name: str,
+    predicted_cutoff: date | None,
+    current_cutoff: date | None,
+    demand_pred: date | None,
+    regime: RegimeState,
+    *,
+    gate_min: int = DEMAND_GATE_MIN_MOVE,
+) -> tuple[date | None, str, str]:
+    """Two-stage direction gate on a persistence fallback (T3, shipped 2026-07).
+
+    When the regime selector falls back to ``persistence`` (STALLED / RETRO /
+    VOLATILE) it predicts "no move" and scores 0% direction. If the
+    ``demand_signal`` expert implies a meaningful move (>= ``gate_min`` days),
+    replace the flat persistence date with a DAMPENED directional move
+    (``shrink_prediction``) so we gain direction without the overshoot that made
+    a raw seasonal/demand swap regress MAE (the §8 / T2 failure mode). The gate
+    only ever ADDS a move on top of persistence; it never suppresses one.
+
+    Pure: the caller fetches ``demand_pred`` (DB-backed) and passes it in.
+
+    Returns ``(predicted_cutoff, expert_name, traj_expert)``:
+      * fired  -> (persistence-date + shrunk move, "demand_gate", "persistence")
+      * no-op  -> (predicted_cutoff, expert_name, expert_name)  [unchanged]
+
+    ``traj_expert`` is the expert whose multi-step trajectory the caller should
+    use; when the gate fires it stays ``persistence`` (the gate is a one-step
+    nudge on top of persistence), so multi-step / maturity callers don't get a
+    truncated forecast from an expert with no registered trajectory.
+    """
+    if (
+        expert_name != "persistence"
+        or predicted_cutoff is None
+        or current_cutoff is None
+        or demand_pred is None
+    ):
+        return predicted_cutoff, expert_name, expert_name
+    demand_move = (demand_pred - current_cutoff).days
+    if abs(demand_move) < gate_min:
+        return predicted_cutoff, expert_name, expert_name
+    shrunk = shrink_prediction(demand_move, regime)
+    return current_cutoff + timedelta(days=int(shrunk)), "demand_gate", "persistence"
 
 
 def regime_learning_rate(regime: RegimeState, base_lr: float = 0.5) -> float:

@@ -223,6 +223,31 @@ py_binary(
 )
 
 py_binary(
+    name = "backtest_selector",
+    srcs = ["backtest_selector.py"],
+    main = "backtest_selector.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:expert_pool",
+        "//lib/business/vqs:metric_config",
+        "//lib/business/vqs:prediction_loader",
+        "//lib/business/vqs:regime",
+        "//lib/business/vqs:seasonal_predictor",
+        "//lib/business/vqs:solver",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "backtest_experts",
     srcs = ["backtest_experts.py"],
     main = "backtest_experts.py",
