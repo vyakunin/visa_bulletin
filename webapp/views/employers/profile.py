@@ -12,6 +12,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.i129.approval_stats import get_employer_approval_stats
 from lib.business.i129.pay_comparison import get_employer_pay_comparison
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
@@ -385,12 +386,16 @@ def employer_profile_view(request, slug):
     # to publish (template hides the section). Scoped via the employer_cluster_id the
     # linker backfilled; cheap inside the page-cached view (indexed by migration 0053).
     pay_comparison = get_employer_pay_comparison(cluster)
+    # USCIS I-129 petition approval rate (Data Hub) — the meaningful signal vs the
+    # ~99% LCA cert rate. None when too thin (template hides the section).
+    approval_stats = get_employer_approval_stats(cluster)
 
     context = {
         "cluster": cluster,
         "stats": stats,
         "chart_data": chart_data,
         "pay_comparison": pay_comparison,
+        "approval_stats": approval_stats,
         "seo": seo,
         "page_title": seo["title"],
         "page_description": seo["description"],

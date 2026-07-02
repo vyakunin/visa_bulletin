@@ -16,10 +16,12 @@ from django.test import TestCase
 
 from lib.business.i129.employer_linker import (
     link_i129_employers,
+    link_uscis_employers,
     resolve_clusters_for_names,
 )
 from models.i129 import I129Petition
 from models.salary import Employer, EmployerCluster
+from models.uscis_employer import UscisEmployerApproval
 
 
 def _cluster(name, slug):
@@ -123,3 +125,26 @@ class TestEmployerLinker(TestCase):
         stats = link_i129_employers(dry_run=True)
         assert stats.matched_rows == 1
         assert I129Petition.objects.filter(employer_cluster__isnull=False).count() == 0
+
+    def test_uscis_linker_backfills_same_way(self):
+        gcluster = _cluster("Google", "google")
+        _employer("Google LLC", gcluster, lca=4000)
+        UscisEmployerApproval.objects.create(
+            fiscal_year=2024, employer_name="Google LLC", initial_approval=10
+        )
+        UscisEmployerApproval.objects.create(
+            fiscal_year=2024, employer_name="Nonexistent Co", initial_approval=1
+        )
+
+        stats = link_uscis_employers(dry_run=False)
+        assert stats.matched_names == 1
+        assert stats.matched_rows == 1
+        assert (
+            UscisEmployerApproval.objects.filter(employer_cluster=gcluster).count() == 1
+        )
+        assert (
+            UscisEmployerApproval.objects.filter(
+                employer_name="Nonexistent Co", employer_cluster__isnull=True
+            ).count()
+            == 1
+        )

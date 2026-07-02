@@ -36,6 +36,17 @@ py_library(
     deps = [
         "//models:i129",
         "//models:salary",
+        "//models:uscis_employer",
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "approval_stats",
+    srcs = ["approval_stats.py"],
+    deps = [
+        "//models:uscis_employer",
         requirement("Django"),
     ],
     visibility = ["//visibility:public"],
