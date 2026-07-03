@@ -374,6 +374,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_fenced_page_and_aggregate",
+    srcs = ["test_fenced_page_and_aggregate.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//lib/utils:filter_utils",
+    ],
+)
+
+django_py_test(
     name = "test_salary_import",
     tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",

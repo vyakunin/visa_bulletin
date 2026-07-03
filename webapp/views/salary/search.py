@@ -27,6 +27,7 @@ from lib.utils.filter_utils import (
     apply_text_search_filter,
     apply_visa_program_filter,
     fenced_aggregate,
+    fenced_page_and_aggregate,
     fenced_page_ids,
 )
 from lib.utils.location_utils import US_STATES
@@ -358,6 +359,12 @@ def _build_salary_seo(
 _MAX_CLUSTER_IDS = 2000
 
 
+def _count_stats_cache_key(cache_scope: str, filter_parts: list[str]) -> str:
+    """Cache key for a filter combination's (count, stats) aggregate."""
+    fingerprint = hashlib.md5("|".join(filter_parts).encode()).hexdigest()
+    return f"{cache_scope}.{fingerprint}"
+
+
 def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
     """Cache (count, stats) for a filtered queryset.
 
@@ -365,8 +372,7 @@ def _cached_count_and_stats(records, cache_scope: str, filter_parts: list[str]):
     two (count + avg/min/max with the same WHERE clause). Cached under a
     fingerprint of the filter parts so identical searches don't re-aggregate.
     """
-    fingerprint = hashlib.md5("|".join(filter_parts).encode()).hexdigest()
-    key = f"{cache_scope}.{fingerprint}"
+    key = _count_stats_cache_key(cache_scope, filter_parts)
     cached = cache.get(key)
     if cached is not None:
         return cached["count"], cached["stats"]
@@ -649,6 +655,9 @@ def salary_search_view(request):
         and not fiscal_year_filter
         and not filing_year_filter
     )
+    # page_ids stays None when the ordered page still needs resolving below;
+    # the cold has_filters branch fills it from the same scan as the aggregate.
+    page_ids = None
     if only_slug_filter:
         total_results = matched_cluster.search_record_count
         stats = {
@@ -657,8 +666,7 @@ def salary_search_view(request):
             "max_salary": matched_cluster.search_max_salary,
         }
     elif has_filters:
-        total_results, stats = _cached_count_and_stats(
-            records,
+        cache_key = _count_stats_cache_key(
             "salary_search",
             [
                 query,
@@ -672,6 +680,33 @@ def salary_search_view(request):
                 str(filing_year_filter or ""),
             ],
         )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            total_results, stats = cached["count"], cached["stats"]
+        else:
+            # Cold search: resolve the aggregate AND the ordered page from ONE
+            # fenced scan of the match set (fenced_page_and_aggregate) instead
+            # of scanning it twice (fenced_aggregate + fenced_page_ids) — the
+            # ?q= double-scan residual from the 2026-06-21 504 swarm.
+            raw_offset = (page - 1) * per_page
+            page_ids, agg = fenced_page_and_aggregate(
+                records,
+                ("-wage_annual", "-fiscal_year"),
+                raw_offset,
+                per_page,
+                "wage_annual",
+            )
+            total_results = agg.count
+            stats = {
+                "avg_salary": agg.avg,
+                "min_salary": agg.min,
+                "max_salary": agg.max,
+            }
+            cache.set(cache_key, {"count": total_results, "stats": stats})
+            if not page_ids and total_results:
+                # Requested page lies beyond the last page; pagination clamps
+                # the page number below — re-resolve just the page then.
+                page_ids = None
     else:
         stats = _NO_STATS
         total_results = cache.get("salary_non_worksite_count")
@@ -707,10 +742,12 @@ def salary_search_view(request):
     # Resolve the ordered page of ids behind an OFFSET-0 fence (avoids
     # LIMIT-pessimization on rare terms and the full dimension-table hash-joins
     # on common terms — see fenced_page_ids), then fetch only those rows with
-    # the profile-link joins (nested-loop by pkey, sub-ms).
-    page_ids = fenced_page_ids(
-        records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
-    )
+    # the profile-link joins (nested-loop by pkey, sub-ms). Cold filtered
+    # searches already resolved the page together with the aggregate above.
+    if page_ids is None:
+        page_ids = fenced_page_ids(
+            records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
+        )
     row_by_id = {
         row.id: row
         for row in SalaryRecord.objects.filter(pk__in=page_ids)

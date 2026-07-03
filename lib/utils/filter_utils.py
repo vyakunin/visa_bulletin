@@ -196,6 +196,99 @@ def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
     return FencedAggregate(count=count or 0, avg=avg, min=min_, max=max_)
 
 
+def fenced_page_and_aggregate(
+    queryset,
+    order_fields: tuple[str, ...],
+    offset: int,
+    limit: int,
+    agg_field: str,
+) -> tuple[list, FencedAggregate]:
+    """One ordered page of primary keys AND the count/avg/min/max aggregate over
+    the same filtered set, in a SINGLE scan of the underlying table.
+
+    :func:`fenced_page_ids` and :func:`fenced_aggregate` each materialize the
+    full filtered match set independently, so a cold search request pays the
+    expensive part (the trigram Bitmap Heap Scan over salary_record — 55k-391k
+    matched rows for common terms like ENGINEERS) TWICE. That double-scan is
+    the ``/salaries/?q=`` slow-tail residual from the 2026-06-21 504 swarm.
+
+    Fix: materialize the fenced match set once in a CTE (``AS MATERIALIZED``,
+    PG12+) and derive both the top-N page and the aggregate from that
+    tuplestore. The heap is scanned once; the two derivations are cheap passes
+    over the already-materialized rows.
+
+    The requested ``offset`` is used as-is. If it lies beyond the end of the
+    result set the page comes back empty while the aggregate is still correct —
+    callers that clamp the page number to the last page (the list views) should
+    re-resolve just the page via :func:`fenced_page_ids` in that (rare) case.
+
+    Args:
+        queryset: the filtered queryset (``select_related``/``only``/ordering
+            are ignored — only its WHERE clause is used).
+        order_fields: model field names; a ``-`` prefix means DESC.
+        offset: page slice start (rows to skip).
+        limit: page size.
+        agg_field: model field name to compute avg/min/max over.
+
+    Returns:
+        (list of primary keys in order, :class:`FencedAggregate`).
+    """
+    model = queryset.model
+    pk_col = model._meta.pk.column
+    agg_col = model._meta.get_field(agg_field).column
+    order_cols = {
+        f: model._meta.get_field(f.lstrip("-")).column for f in order_fields
+    }
+
+    # Project pk + ordering + aggregate columns (deduped); drop ORM ordering
+    # and any joins — same shape as fenced_page_ids/fenced_aggregate.
+    field_names = [model._meta.pk.name]
+    for f in order_fields:
+        name = model._meta.get_field(f.lstrip("-")).name
+        if name not in field_names:
+            field_names.append(name)
+    if agg_field not in field_names:
+        field_names.append(agg_field)
+    inner = queryset.order_by().values_list(*field_names)
+    compiler = inner.query.get_compiler(using=inner.db)
+    try:
+        inner_sql, inner_params = compiler.as_sql()
+    except EmptyResultSet:
+        # Provably-empty WHERE (the employer free-text ``records.none()`` path).
+        return [], FencedAggregate(count=0, avg=None, min=None, max=None)
+
+    order_sql = ", ".join(
+        f'"{order_cols[f]}" {"DESC" if f.startswith("-") else "ASC"}'
+        for f in order_fields
+    )
+    # _fenced: the OFFSET-0 fence (see fenced_page_ids) + AS MATERIALIZED so
+    # the match set is computed ONCE and both consumers read the tuplestore.
+    # _page: top-N over the tuplestore (its inner ORDER BY/LIMIT keeps the
+    # top-N heapsort; row_number() OVER () just records arrival order so the
+    # final join can be re-ordered). _agg: always exactly one row, so the
+    # cross join tags every page row with the aggregate (and yields a single
+    # NULL-pk row when the page is empty).
+    sql = (
+        f"WITH _fenced AS MATERIALIZED ({inner_sql} OFFSET 0), "
+        f"_page AS MATERIALIZED ("
+        f'SELECT "{pk_col}", row_number() OVER () AS _rn FROM ('
+        f'SELECT "{pk_col}" FROM _fenced ORDER BY {order_sql} '
+        f"LIMIT %s OFFSET %s) _p), "
+        f"_agg AS (SELECT count(*) AS _n, avg(\"{agg_col}\") AS _avg, "
+        f'min("{agg_col}") AS _min, max("{agg_col}") AS _max FROM _fenced) '
+        f'SELECT _agg._n, _agg._avg, _agg._min, _agg._max, _page."{pk_col}" '
+        f"FROM _agg LEFT JOIN _page ON TRUE ORDER BY _page._rn"
+    )
+    with connections[inner.db].cursor() as cursor:
+        cursor.execute(sql, list(inner_params) + [limit, offset])
+        rows = cursor.fetchall()
+    if not rows:  # cannot happen (_agg always has one row), but stay safe
+        return [], FencedAggregate(count=0, avg=None, min=None, max=None)
+    count, avg, min_, max_ = rows[0][:4]
+    page_ids = [row[4] for row in rows if row[4] is not None]
+    return page_ids, FencedAggregate(count=count or 0, avg=avg, min=min_, max=max_)
+
+
 def apply_visa_program_filter(
     queryset, program_filter: str, program_field: str = "visa_program"
 ):
