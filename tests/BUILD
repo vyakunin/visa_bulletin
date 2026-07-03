@@ -370,6 +370,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_fenced_page_and_aggregate",
+    srcs = ["test_fenced_page_and_aggregate.py"],
+    deps = [
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//lib/utils:filter_utils",
+    ],
+)
+
+django_py_test(
     name = "test_salary_import",
     # Un-quarantined 2026-06-20: all 11 failures were one BUILD dep-gap, not a
     # logic regression. db_importer._get_or_create_employer does a runtime
