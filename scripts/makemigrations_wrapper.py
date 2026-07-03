@@ -10,6 +10,7 @@ migrations to the actual workspace.
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 
 # Get workspace directory from Bazel
@@ -49,14 +50,21 @@ for app_config in apps.get_app_configs():
             logger.debug(f"Existing migration files: {[f.name for f in existing]}")
 
 # Check if models are loaded
-# IMPORTANT: Import ALL models so makemigrations can detect them
-# makemigrations runs BEFORE AppConfig.ready(), so models must be imported here
+# IMPORTANT: Import ALL models so makemigrations can detect them. This list is
+# a belt-and-suspenders backstop: ModelsConfig.ready() registers everything as
+# long as models/apps.py is in the runfiles (the //models:apps dep) — a model
+# missing from BOTH is invisible to the autodetector, which then proposes a
+# phantom DeleteModel (the 0050/IngestRejectionStats drift, fixed 2026-07-04).
 from models.blog import BlogPost
 from models.bulletin import Bulletin
 from models.i129 import I129Petition  # noqa: F401  (registered for makemigrations)
 from models.ingest.data_source import DataSource
 from models.ingest.ingest_run import IngestRun
 from models.ingest.ingest_version import IngestVersion
+from models.ingest.rejection_stats import (  # noqa: F401  (for makemigrations)
+    IngestRejectionStats,
+    RejectionReason,
+)
 from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
 from models.raw_facts import RawFactsLedger
 from models.salary import Employer, SalaryRecord
@@ -82,10 +90,14 @@ logger.debug(f"SalaryRecord model: {SalaryRecord}")
 logger.debug(f"VisaCutoffDate model: {VisaCutoffDate}")
 
 # Log script execution
-script_logger.log_call(args={}, context="Creating Django migrations for models app")
+extra_args = sys.argv[1:]  # e.g. --check / --dry-run via `bazel run //:makemigrations -- --check`
+script_logger.log_call(
+    args={"argv": extra_args}, context="Creating Django migrations for models app"
+)
 
-# Run makemigrations with verbosity 2
-call_command("makemigrations", "models", verbosity=2)
+# Run makemigrations with verbosity 2, passing through any CLI flags so
+# `--check --dry-run` actually checks instead of silently writing files.
+call_command("makemigrations", "models", *extra_args, verbosity=2)
 
 # Copy migration files from sandbox to workspace
 # Django creates migrations in the app's migrations directory

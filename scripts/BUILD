@@ -15,6 +15,10 @@ py_binary(
         "//django_config:urls",
         "//webapp:apps",
         "//webapp:urls",
+        # models/apps.py must be in runfiles or ModelsConfig.ready() never
+        # runs in the sandbox — any model missing from the wrapper's explicit
+        # import list is then invisible to the autodetector (phantom-0050).
+        "//models:apps",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:raw_facts",
