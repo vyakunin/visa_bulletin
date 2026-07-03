@@ -2,6 +2,26 @@
 
 Site: `https://visa-bulletin.us`
 
+## GSC/GA4 posture (measured 2026-07-04)
+
+- **Profile-surface impressions halved since ~06-19/26** (June-24 Google spam
+  update targeting scaled-content abuse = prime suspect): `/job-title/` 2,936 →
+  1,536 impr/day, `/employer/` 3,360 → 1,533 impr/day (06-12..25 avg vs
+  06-26..07-01), positions stable (~8 / ~6.5-7) — while site-wide fell only
+  −16% (31.8k → 26.8k impr/day ex bulletin-spike). Diagnosis ticket open
+  (re-check 07-11); quality-gates any new pSEO cluster (I-129 Lever 2).
+- **`/salaries` bounce improved** after the 06-26 onward-nav rail + occupation
+  pSEO: 65.1% → 57.0% (engaged 34.9% → 43.0%, avg 87.8s → 158.5s; N=193 sess,
+  06-27..07-03 vs 05-29..06-25). Confirm on bigger N ~07-14.
+- **`/employment-based/india`**: pos 36.6 (06-26 diagnosis) → 21.1 (06-21..27) →
+  17.8 (06-28..07-04); the 07-03 lever ship (H1 dedupe + H2s + link-mesh) is
+  too fresh to attribute — final re-measure 07-10.
+- Employer meta-desc CTR lever live since 07-03 (snippet re-crawl pending);
+  surface CTR series: 1.48% (06-12..25) → 1.66% (06-28..07-03), both pre-fix
+  serving. Named-page re-measure ~07-14.
+- Sitemap-freshness lever: measured, no isolated lift extractable (the profile
+  decline swamps it); correct hygiene, stays as-is. Ticket closed 07-04.
+
 ## Sitemap & robots.txt
 
 Both generated dynamically by `webapp/views/seo/sitemaps.py`.
