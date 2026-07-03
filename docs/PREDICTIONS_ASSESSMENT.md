@@ -1895,6 +1895,12 @@ describes the ensemble; the U-explainer is a forecast-page feature, not a scored
 model. Iteration runner for all VQS backtests against the staging (prod-copy) DB:
 `scripts/vqs/run_in_stg.sh -m scripts.vqs.<script>`.
 
+**GRADUATED TO PROD 2026-07-03** (image `staging-7683bf2`, zero-downtime
+`cutover.sh --code`; §23 T3 rode the same image). Live at
+`/predictions/august-2026/` — EB-2 India final-action renders the "Why is EB-2
+India Unavailable?" alert + Oct-1 structural reset framing. Predictions
+regenerated on prod post-cutover so live data == committed-code output.
+
 ---
 
 ## 23. 1-Month Selector Season-Conditioning + Demand Gate (July 2026)
