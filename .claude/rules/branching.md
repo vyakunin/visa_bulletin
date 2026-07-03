@@ -68,6 +68,20 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 - **`no schema migration` ≠ Path 1.** A data-population code change is Path 2 *even with no migration* and *even though the new code sits inert in the prod image until a refresh runs it* — validating it requires running the refresh against real data on the off-prod staging stack and checking the derived data + downstream effects, then graduating the DATA via the cutover. A quick Path 1 swap skips that and leaves the next refresh running unvalidated pipeline code at prod scale.
 - **A mixed batch is Path 2.** If even one commit in the promote set touches data-population, the whole promotion is Path 2 — or split the batch and ship only the pure-rendering commits via Path 1.
 
+## 🚨 Promote the WHOLE staged tree by default — don't ship one change and PARK the rest
+
+**A staging→prod promotion promotes the ENTIRE staged tree (every commit in `git log prod..staging`), not just the change you came to ship.** The default is: everything sitting on staging goes to prod. Cherry-picking / force-pushing `staging` down to a subset to ship one change **while leaving the rest parked on staging is the anti-pattern** — a parked RC then sits release-ready-but-unshipped across sessions, the morning digest re-flags it "never promoted," and the next release either forgets it or has to untangle it from a fresh change.
+
+**Before every promotion, enumerate `git log --oneline origin/prod..origin/staging` and account for EVERY commit:** each one either ships in this promotion, or you have a *stated, real* reason it's held (see the narrow exceptions below). "I only care about commit X right now" is **not** a reason to park the others — promote them too. This is the action-side twin of `~/.claude/rules/notion_followups.md` §"reconcile EVERY ticket the batch carries" (that rule is the ticket side; this is the code side).
+
+**Splitting the tree is the EXCEPTION, allowed only when:**
+- A subset is **genuinely not ready** (broken, unvalidated, explicitly held by its workstream) — then ship the ready part, and leave a **note/ticket** on the held part with the unblock condition, don't silently park it.
+- A subset needs a **different release path** (a Path-1 pure-rendering change batched with a Path-2 data-population change): ship each via its correct path — Path-1 subset via `cutover --code`, Path-2 subset via its data graduation — but ship **both**, in the same workstream. Don't ship the easy Path-1 half and abandon the Path-2 half on staging.
+
+Even when you split, **the goal is that staging returns to parity with prod** (no unshipped tail) by the end of the work, not that one change is live and a pile of others linger. If you force-push `staging` to a subset to isolate a Path-1 ship, **restore staging to the full tree and promote the remainder** as the immediate next step — don't leave the superset parked.
+
+Origin: 2026-07-03 — an SEO Path-1 ship was isolated by force-pushing staging to an SEO-only tree, which correctly avoided riding a parked Path-2 predictions RC on a code cutover — but the predictions RC was then left parked on staging (`git log prod..staging` still carried 3 unshipped predictions commits). Vladimir: *"Promote the remainder of staged. Update rules to go for all staged changes by default."*
+
 ## Staging runs OFF the prod box — always
 
 The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
