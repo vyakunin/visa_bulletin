@@ -33,8 +33,9 @@ Origin: 2026-06-25 — the `reingest-perm-titles` backfill mutated 393k PERM `jo
 1. **cluster_job_titles** – clusters raw job titles into `JobTitle` / `JobTitleCluster`
 2. **update_job_title_cluster_stats** – sets `total_filings`, `avg_salary`, and **canonical_title** per cluster
 3. **populate_job_title_slugs** – backfills `slug` for clusters that have none (slug derived from `canonical_title`)
+4. **After any RE-cluster: `populate_job_title_slugs --refresh-all --min-filings 100 --skip-collisions`** – a re-cluster changes `canonical_title` on existing clusters, leaving their slugs stale (the 06-25 re-cluster left 513/1,265 indexable clusters on requisition-ID / typo'd URLs, incl. the 117k-filing Software Engineer cluster on `software-engineer-161559609`). The scoped refresh reclaims the clean derived slug where free (biggest-first, never renames INTO a counter-suffixed slug, multi-pass); old slugs 301 via the `slug_redirects` ladder. Indexable scope only — renaming noindexed thin pages is pure churn. Then flush Redis + CF purge + resubmit the sitemap (`seo_publish.md`).
 
-**Scripts:** `scripts/cron/refresh_data.sh` runs them in this order. Do not reorder or skip.
+**Scripts:** `scripts/cron/refresh_data.sh` runs 1–3 in this order. Do not reorder or skip.
 
 ## Rule: Representative Title Selection
 
