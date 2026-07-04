@@ -29,6 +29,7 @@ py_library(
         "//lib/business/salary:h1b_sponsors",
         "//lib/business/salary:job_title_chart_builder",
         "//lib/business/salary:job_title_stats",
+        "//lib/business/salary:similar_titles",
         "//lib/business/salary:slug_redirects",
         "//models:job_title",
         requirement("Django"),

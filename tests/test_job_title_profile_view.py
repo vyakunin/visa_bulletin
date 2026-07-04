@@ -930,7 +930,9 @@ class TestJobTitleDataCoherence(TestCase):
             slug="software-developer-e2e",
             defaults={
                 "canonical_title": "Software Developer",
-                "total_filings": 80,
+                # >= INDEXABLE_MIN_FILINGS: similar suggestions come from the
+                # indexable universe only (thin pages are never recommended).
+                "total_filings": 150,
                 "avg_salary": Decimal("110000.00"),
             },
         )
@@ -938,7 +940,7 @@ class TestJobTitleDataCoherence(TestCase):
         cluster_se.total_filings = 100
         cluster_se.save()
         cluster_sd.canonical_title = "Software Developer"
-        cluster_sd.total_filings = 80
+        cluster_sd.total_filings = 150
         cluster_sd.save()
         client = Client()
         response = client.get(
@@ -1277,8 +1279,9 @@ class TestSimilarClustersCaching(TestCase):
             slug="software-engineer-cache-test",
             total_filings=300,
         )
-        # Three siblings that share the first word "Software" — should appear
-        # in the similar list, ordered by total_filings desc.
+        # Siblings sharing the "software" content token. The 90-filing tester
+        # is below INDEXABLE_MIN_FILINGS and must be EXCLUDED — suggestions
+        # come from the indexable universe only.
         for slug, title, filings in [
             ("software-developer-cache", "Software Developer", 250),
             ("software-architect-cache", "Software Architect", 180),
@@ -1319,9 +1322,10 @@ class TestSimilarClustersCaching(TestCase):
             [
                 "software-developer-cache",
                 "software-architect-cache",
-                "software-tester-cache",
             ],
         )
+        # Sub-indexable (90 < INDEXABLE_MIN_FILINGS): never recommended.
+        self.assertNotIn("software-tester-cache", slugs)
 
     def test_empty_canonical_title_returns_empty_list(self):
         from webapp.views.job_titles.profile import _get_similar_clusters

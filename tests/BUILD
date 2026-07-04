@@ -996,6 +996,20 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_similar_titles",
+    size = "medium",
+    srcs = ["test_similar_titles.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/salary:job_title_stats",
+        "//lib/business/salary:similar_titles",
+        "//models:job_title",
+        "//webapp/views/job_titles:profile",
+    ],
+)
+
+django_py_test(
     name = "test_populate_job_title_slugs_refresh",
     size = "medium",
     srcs = ["test_populate_job_title_slugs_refresh.py"],

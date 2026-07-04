@@ -36,7 +36,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('click', function(e) {
         var a = e.target.closest('a[href]');
         if (a) {
-            var target = classifyHref(a.getAttribute('href'));
+            var target = a.getAttribute('data-gc-target') ||
+                classifyHref(a.getAttribute('href'));
             if (target) track(target, (a.textContent || '').trim());
             return;
         }
