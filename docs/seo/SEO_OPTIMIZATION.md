@@ -32,9 +32,24 @@ Site: `https://visa-bulletin.us`
   145s; `/salaries` 600 / 81.3% / 193s (rail working); `/employer/*` 1,368 /
   68.4% / 125s; `/job-title/*` 416 / 59.1% / 100s — job-title profiles are the
   weakest engagement surface, consistent with the spam-update thin-pSEO
-  suspicion. Not in the daily checkup (GoatCounter/nginx/GSC carry no dwell);
-  measured ad-hoc from GA4 property 539743892. Next look alongside the 07-11
-  profile-decline re-measure.
+  suspicion. **In the daily checkup since 2026-07-04** (`mcp/daily_checkup_server.py`
+  `_section_ga4_engagement`: this-7d vs prior-7d per surface, yellow on ≥10pt
+  WoW drop at N≥50). GA4 property 539743892.
+- **Profile-engagement dig (2026-07-04, GA4 organic landings).** Why job-title
+  interactions are low/falling: (a) **trend is real and coincides with the
+  06-25 PERM re-cluster + 404 wave** — weekly engaged rate 61.5% (W23, 143
+  sess) → 62.9% (140) → 64.2% (123) → 56.3% (80) → 46.5% (43, partial wk);
+  employer only drifts 72.8% → 65.4% over the same 5 wks. (b) **Mobile is the
+  weak half**: job-title mobile 213 sess / 49.8% engaged / 73s vs desktop 199 /
+  70.4% / 131s (28d) — table-heavy profile layout on phones. (c) **Shallow
+  consumption**: only ~45% of job-title / ~43% of employer page users fire the
+  90%-scroll event; 1.5–2.2 pageviews/session. (d) **Thin-page composition**:
+  hyper-specific 1–3-filing titles land a searcher on a page with nothing to
+  do — the ≥100-filing gate argument. Telemetry limits: GA4 enhanced
+  measurement only (page_view / scroll@90% / outbound click / form) — NO
+  internal-link or element click events, no scroll granularity, no session
+  replay; on-page behavior beyond scroll+exit is invisible today (ticket
+  2026-07-04 to add profile-interaction events).
 
 ## Sitemap & robots.txt
 

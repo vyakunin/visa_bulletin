@@ -281,3 +281,43 @@ def test_freshness_upstream_unreachable_is_green_informational():
     prod = "perm_disclosure_data_fy2026_q2.xlsx\n"
     sec, status = m._section_data_freshness(None, prod)
     assert status == "green", status
+
+
+# --- GA4 engagement section --------------------------------------------------
+
+def _ga4_rows(*rows):
+    return [
+        {"landingPage": p, "sessions": str(s), "engagedSessions": str(e),
+         "userEngagementDuration": str(d)}
+        for p, s, e, d in rows
+    ]
+
+
+def test_ga4_bucket_aggregates_surfaces():
+    b = m._ga4_bucket(_ga4_rows(
+        ("/", 100, 80, 5000),
+        ("/job-title/head-chef", 30, 10, 300),
+        ("/job-title/orthoptist", 20, 10, 200),
+        ("/employer/google-llc", 50, 35, 900),
+    ))
+    assert b["site organic"]["sessions"] == 200          # everything
+    assert b["/job-title/*"] == {"sessions": 50, "engaged": 20, "eng_dur": 500.0}
+    assert b["/employer/*"]["engaged"] == 35
+
+
+def test_ga4_engagement_drop_flags_yellow():
+    """≥10pt WoW engagement drop on a watched surface with enough N → yellow."""
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 100, 45, 1000)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 100, 60, 1000)))
+    sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
+    assert status == "yellow", status
+    assert "−15pt" in sec["title"]
+
+
+def test_ga4_small_n_never_flags():
+    """Below GA4_MIN_SESSIONS the rate is noise — stays green."""
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 20, 2, 50)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 30, 25, 700)))
+    sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
+    assert status == "green", status
+    assert "20 sess" in sec["body"] and "30 sess" in sec["body"]

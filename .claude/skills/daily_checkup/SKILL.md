@@ -132,6 +132,7 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
        gsc: 139 clk · 21k impr · pos 7.0 ↑
     ```
   - GSC lags ~2d so its window is offset from GC's by `GSC_LAG_DAYS` — they won't tie out to the unit, that's expected; it's the direction (position arrow) that matters. Show `gsc: n/a` if the GSC gather errored (in `errors`). Only attach GSC to organic surfaces (profiles, salaries, blog, dashboard) — not to `api`/`static_meta`/`donation_click`.
+  - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP now returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the GSC lines, raw numbers both windows (never percentages alone). It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)

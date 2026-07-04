@@ -71,6 +71,25 @@ STAGING_BASE_URL = "https://staging.visa-bulletin.us"
 GOATCOUNTER_BASE = "https://vyakunin.goatcounter.com/api/v0"
 GOATCOUNTER_TOKEN_PATH = Path.home() / "tokens" / "goatcounter.token"
 
+# --- GA4 engagement ("long click" proxy) -----------------------------------
+# Google's dwell/long-click signal isn't directly observable; the closest proxy
+# is GA4 engaged sessions (>10s / 2+ pageviews / conversion) on organic-search
+# landings. Watch list mirrors the 2026-07 profile-decline diagnosis: the
+# /job-title/ + /employer/ pSEO surfaces are both the weakest-engagement AND
+# the impression-losing ones (user asked 2026-07-04 to monitor these daily).
+# Data via the shared `ga4` MCP (stdio, token ~/tokens/ga4_oauth_token.json).
+GA4_PROPERTY_ID = "539743892"  # visa-bulletin.us
+GA4_TIMEOUT = 45
+# (label, landingPage prefix); None = all organic landings (site-wide).
+GA4_SURFACES: list[tuple[str, str | None]] = [
+    ("site organic", None),
+    ("/job-title/*", "/job-title/"),
+    ("/employer/*", "/employer/"),
+    ("/salaries", "/salaries"),
+]
+GA4_ENGAGE_DROP_YELLOW_PT = 10.0  # WoW engagement-rate drop (points) → yellow
+GA4_MIN_SESSIONS = 50             # below this N the rate is noise; never flag
+
 # Thresholds
 DISK_YELLOW_PCT = 70  # small SSD; want headroom for Postgres growth.
 DISK_RED_PCT = 85
@@ -1218,6 +1237,95 @@ def _build_surface_deltas(
 _MSGID_RE = re.compile(r"Message ID:\s*([0-9a-f]+)", re.IGNORECASE)
 
 
+def _ga4_report_args(start: str, end: str) -> dict:
+    """runReport args: organic-search landings, engagement metrics, one window."""
+    return {
+        "property_id": GA4_PROPERTY_ID,
+        "start_date": start,
+        "end_date": end,
+        "dimensions": ["landingPage"],
+        "metrics": ["sessions", "engagedSessions", "userEngagementDuration"],
+        "dimension_filter": {"filter": {
+            "fieldName": "sessionDefaultChannelGroup",
+            "stringFilter": {"value": "Organic Search"},
+        }},
+        # Full coverage (complete_data_queries): every distinct landing page,
+        # aggregated into surface buckets client-side. ~2-3k/wk today.
+        "row_limit": 100000,
+    }
+
+
+def _ga4_bucket(rows: list[dict]) -> dict[str, dict]:
+    """Aggregate landing-page rows into the monitored surface buckets."""
+    out: dict[str, dict] = {
+        label: {"sessions": 0, "engaged": 0, "eng_dur": 0.0} for label, _ in GA4_SURFACES
+    }
+    for r in rows:
+        page = r.get("landingPage", "") or ""
+        sess = int(r.get("sessions") or 0)
+        eng = int(r.get("engagedSessions") or 0)
+        dur = float(r.get("userEngagementDuration") or 0)
+        for label, prefix in GA4_SURFACES:
+            if prefix is None or page.startswith(prefix):
+                b = out[label]
+                b["sessions"] += sess
+                b["engaged"] += eng
+                b["eng_dur"] += dur
+    return out
+
+
+async def _gather_ga4_engagement() -> dict:
+    """This-7d vs prior-7d organic engagement per surface, via the ga4 MCP."""
+    calls = [
+        ("ga4_run_report", _ga4_report_args("7daysAgo", "yesterday")),
+        ("ga4_run_report", _ga4_report_args("14daysAgo", "8daysAgo")),
+    ]
+    this_raw, prior_raw = await call_mcp_tools("ga4", calls, timeout=GA4_TIMEOUT)
+    return {
+        "this_7d": _ga4_bucket((this_raw or {}).get("rows") or []),
+        "prior_7d": _ga4_bucket((prior_raw or {}).get("rows") or []),
+    }
+
+
+def _ga4_rate_pct(b: dict) -> float:
+    return b["engaged"] / b["sessions"] * 100 if b["sessions"] else 0.0
+
+
+def _section_ga4_engagement(ga4: dict) -> tuple[dict, str]:
+    """Engagement per surface, raw numbers for BOTH windows (analytics rule)."""
+    cur, prev = ga4["this_7d"], ga4["prior_7d"]
+    status = "green"
+    flags: list[str] = []
+    lines: list[str] = []
+    for label, _ in GA4_SURFACES:
+        c, p = cur[label], prev[label]
+        c_dur = c["eng_dur"] / c["sessions"] if c["sessions"] else 0.0
+        p_dur = p["eng_dur"] / p["sessions"] if p["sessions"] else 0.0
+        lines.append(
+            f"- {label}: {c['sessions']} sess, {c['engaged']} engaged "
+            f"({_ga4_rate_pct(c):.0f}%), {c_dur:.0f}s engaged-time/sess | prior 7d: "
+            f"{p['sessions']} sess, {p['engaged']} engaged ({_ga4_rate_pct(p):.0f}%), {p_dur:.0f}s"
+        )
+        if c["sessions"] >= GA4_MIN_SESSIONS and p["sessions"] >= GA4_MIN_SESSIONS:
+            drop_pt = _ga4_rate_pct(p) - _ga4_rate_pct(c)
+            if drop_pt >= GA4_ENGAGE_DROP_YELLOW_PT:
+                status = "yellow"
+                flags.append(f"{label} engagement −{drop_pt:.0f}pt WoW")
+    title = "GA4 engagement — organic landings (long-click proxy)"
+    if flags:
+        title += ": " + "; ".join(flags)
+    lines.append(
+        "Engaged = >10s / 2+ pages / conversion. Watch list: /job-title/ + "
+        "/employer/ (weakest + impression-losing surfaces, 2026-07 diagnosis)."
+    )
+    section = {
+        "title": title,
+        "body": "\n".join(lines),
+        "importance": 3 if status == "yellow" else 2,
+    }
+    return section, status
+
+
 async def _call_gw_tools(calls: list[tuple[str, dict]]) -> list[str]:
     """Run multiple google_workspace tool calls over one session; raw text payloads."""
     return await call_mcp_tools("google_workspace", calls, timeout=SUB_MCP_TIMEOUT, parse=False)
@@ -2251,8 +2359,16 @@ async def daily_checkup(since: str | None = None) -> str:
             errors.append(f"data_freshness: {type(e).__name__}: {e}")
             return None
 
-    gc_data, probe_data, gmail_data, freshness_data = await asyncio.gather(
-        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_freshness()
+    async def _safe_ga4():
+        try:
+            return await _gather_ga4_engagement()
+        except Exception as e:
+            logger.exception("ga4 engagement gather failed")
+            errors.append(f"ga4_engagement: {type(e).__name__}: {e}")
+            return None
+
+    gc_data, probe_data, gmail_data, freshness_data, ga4_data = await asyncio.gather(
+        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_freshness(), _safe_ga4()
     )
 
     # Build sections from snapshot
@@ -2306,6 +2422,12 @@ async def daily_checkup(since: str | None = None) -> str:
     # detail lives in the Per-property dashboard below).
     if gc_data is not None:
         s, st = _section_goatcounter(gc_data)
+        sections.append(s)
+        statuses.append(st)
+
+    # GA4 engagement (long-click proxy) — organic landings per watched surface.
+    if ga4_data is not None:
+        s, st = _section_ga4_engagement(ga4_data)
         sections.append(s)
         statuses.append(st)
 
