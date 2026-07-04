@@ -1340,6 +1340,22 @@ py_binary(
 )
 
 py_library(
+    name = "populate_job_title_slugs_lib",
+    srcs = ["populate_job_title_slugs.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//models:job_title",
+        "//django_config:settings",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+)
+
+py_library(
     name = "update_job_title_cluster_stats_lib",
     srcs = ["update_job_title_cluster_stats.py"],
     visibility = ["//tests:__pkg__"],

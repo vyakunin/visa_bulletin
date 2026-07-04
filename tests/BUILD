@@ -996,6 +996,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_populate_job_title_slugs_refresh",
+    size = "medium",
+    srcs = ["test_populate_job_title_slugs_refresh.py"],
+    deps = [
+        "//models:job_title",
+        "//scripts/salary:populate_job_title_slugs_lib",
+    ],
+)
+
+django_py_test(
     name = "test_sitemap_lastmod",
     size = "small",
     srcs = ["test_sitemap_lastmod.py"],
