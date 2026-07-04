@@ -21,6 +21,20 @@ Site: `https://visa-bulletin.us`
   serving. Named-page re-measure ~07-14.
 - Sitemap-freshness lever: measured, no isolated lift extractable (the profile
   decline swamps it); correct hygiene, stays as-is. Ticket closed 07-04.
+- **Engagement / "long click" proxy (GA4; data starts ~06-01, no earlier
+  baseline).** Google's dwell signal isn't observable — closest proxies are GA4
+  engaged sessions (>10s / 2+ pages / conversion), engagement rate, avg session
+  duration. Organic-search weekly series: W23 2,698 sess / 74.9% engaged / 163s
+  → W24 4,544 / 69.0% / 138s → W25 4,826 / 70.0% / 134s → W26 2,906 / 70.2% /
+  138s → W27(partial) 2,125 / 71.8% / 142s — flat-to-slightly-up THROUGH the
+  profile-impression halving, i.e. no engagement collapse accompanies the
+  decline. Per-surface organic landings, 06-06..07-03: `/` 9,275 sess / 74.9% /
+  145s; `/salaries` 600 / 81.3% / 193s (rail working); `/employer/*` 1,368 /
+  68.4% / 125s; `/job-title/*` 416 / 59.1% / 100s — job-title profiles are the
+  weakest engagement surface, consistent with the spam-update thin-pSEO
+  suspicion. Not in the daily checkup (GoatCounter/nginx/GSC carry no dwell);
+  measured ad-hoc from GA4 property 539743892. Next look alongside the 07-11
+  profile-decline re-measure.
 
 ## Sitemap & robots.txt
 
