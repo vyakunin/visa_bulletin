@@ -14,9 +14,11 @@ from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import role_h1b_stats, role_qualifies
 from lib.business.salary.job_title_chart_builder import build_job_title_profile_charts
 from lib.business.salary.job_title_stats import (
+    INDEXABLE_MIN_FILINGS,
     get_job_title_statistics,
     get_related_job_titles,
 )
+from lib.business.salary.slug_redirects import resolve_job_title_slug
 from models.job_title import JobTitle, JobTitleCluster
 
 # Cache key version — bump to invalidate all similar-cluster cache entries
@@ -96,18 +98,11 @@ def job_title_profile_view(request, slug: str):
     try:
         cluster = JobTitleCluster.objects.get(slug=slug)
     except JobTitleCluster.DoesNotExist:
-        # 2. Try to find by title variation and redirect
-        slug_normalized = slug.replace("-", " ").lower()
-        job_titles = JobTitle.objects.filter(
-            title_normalized__icontains=slug_normalized
-        ).select_related("canonical_cluster")
-
-        if job_titles.exists():
-            canonical_cluster = job_titles.first().canonical_cluster
-            if canonical_cluster and canonical_cluster.slug:
-                return redirect(
-                    "job_title_profile", slug=canonical_cluster.slug, permanent=True
-                )
+        # 2. Stale slug (re-clustering churn): resolve to the current
+        # canonical slug via the indexed ladder in slug_redirects.
+        target = resolve_job_title_slug(slug)
+        if target and target != slug:
+            return redirect("job_title_profile", slug=target, permanent=True)
 
         # 3. Not found - raise 404
         raise Http404(f"Job title '{slug}' not found")
@@ -211,6 +206,12 @@ def job_title_profile_view(request, slug: str):
         "page_title": seo["title"],
         "page_description": seo["description"],
         "canonical_url": seo["canonical_url"],
+        # Thin-page gate: hyper-specific low-filing titles stay reachable
+        # (follow keeps link equity flowing) but are kept out of the index —
+        # they're the scaled-content-abuse suspect on this surface.
+        "meta_robots": (
+            "noindex, follow" if total_filings < INDEXABLE_MIN_FILINGS else None
+        ),
     }
 
     return render(request, "webapp/job_title_profile.html", context)

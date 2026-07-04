@@ -2,6 +2,95 @@
 
 Site: `https://visa-bulletin.us`
 
+## GSC/GA4 posture (measured 2026-07-04)
+
+- **Profile-surface impressions halved since ~06-19/26** (June-24 Google spam
+  update targeting scaled-content abuse = prime suspect): `/job-title/` 2,936 →
+  1,536 impr/day, `/employer/` 3,360 → 1,533 impr/day (06-12..25 avg vs
+  06-26..07-01), positions stable (~8 / ~6.5-7) — while site-wide fell only
+  −16% (31.8k → 26.8k impr/day ex bulletin-spike). Diagnosis ticket open
+  (re-check 07-11); quality-gates any new pSEO cluster (I-129 Lever 2).
+- **`/salaries` bounce improved** after the 06-26 onward-nav rail + occupation
+  pSEO: 65.1% → 57.0% (engaged 34.9% → 43.0%, avg 87.8s → 158.5s; N=193 sess,
+  06-27..07-03 vs 05-29..06-25). Confirm on bigger N ~07-14.
+- **`/employment-based/india`**: pos 36.6 (06-26 diagnosis) → 21.1 (06-21..27) →
+  17.8 (06-28..07-04); the 07-03 lever ship (H1 dedupe + H2s + link-mesh) is
+  too fresh to attribute — final re-measure 07-10.
+- Employer meta-desc CTR lever live since 07-03 (snippet re-crawl pending);
+  surface CTR series: 1.48% (06-12..25) → 1.66% (06-28..07-03), both pre-fix
+  serving. Named-page re-measure ~07-14.
+- Sitemap-freshness lever: measured, no isolated lift extractable (the profile
+  decline swamps it); correct hygiene, stays as-is. Ticket closed 07-04.
+- **Engagement / "long click" proxy (GA4; data starts ~06-01, no earlier
+  baseline).** Google's dwell signal isn't observable — closest proxies are GA4
+  engaged sessions (>10s / 2+ pages / conversion), engagement rate, avg session
+  duration. Organic-search weekly series: W23 2,698 sess / 74.9% engaged / 163s
+  → W24 4,544 / 69.0% / 138s → W25 4,826 / 70.0% / 134s → W26 2,906 / 70.2% /
+  138s → W27(partial) 2,125 / 71.8% / 142s — flat-to-slightly-up THROUGH the
+  profile-impression halving, i.e. no engagement collapse accompanies the
+  decline. Per-surface organic landings, 06-06..07-03: `/` 9,275 sess / 74.9% /
+  145s; `/salaries` 600 / 81.3% / 193s (rail working); `/employer/*` 1,368 /
+  68.4% / 125s; `/job-title/*` 416 / 59.1% / 100s — job-title profiles are the
+  weakest engagement surface, consistent with the spam-update thin-pSEO
+  suspicion. **In the daily checkup since 2026-07-04** (`mcp/daily_checkup_server.py`
+  `_section_ga4_engagement`: this-7d vs prior-7d per surface, yellow on ≥10pt
+  WoW drop at N≥50). GA4 property 539743892.
+- **Profile-engagement dig (2026-07-04, GA4 organic landings).** Why job-title
+  interactions are low/falling: (a) **trend is real and coincides with the
+  06-25 PERM re-cluster + 404 wave** — weekly engaged rate 61.5% (W23, 143
+  sess) → 62.9% (140) → 64.2% (123) → 56.3% (80) → 46.5% (43, partial wk);
+  employer only drifts 72.8% → 65.4% over the same 5 wks. (b) **Mobile is the
+  weak half**: job-title mobile 213 sess / 49.8% engaged / 73s vs desktop 199 /
+  70.4% / 131s (28d) — table-heavy profile layout on phones. (c) **Shallow
+  consumption**: only ~45% of job-title / ~43% of employer page users fire the
+  90%-scroll event; 1.5–2.2 pageviews/session. (d) **Thin-page composition**:
+  hyper-specific 1–3-filing titles land a searcher on a page with nothing to
+  do — the ≥100-filing gate argument. Telemetry limits: GA4 enhanced
+  measurement only (page_view / scroll@90% / outbound click / form) — NO
+  internal-link or element click events, no scroll granularity, no session
+  replay; on-page behavior beyond scroll+exit is invisible today (ticket
+  2026-07-04 to add profile-interaction events).
+
+## Profile-surface remediation (2026-07-04) — 404 wave, thin pages, mobile, telemetry
+
+Four fixes shipped together off the 2026-07-04 engagement dig:
+
+1. **Stale-slug 404 wave (~3.6k hits/day post 06-25 re-cluster) → 301s.** Two
+   classes: (a) slash-less URLs 404ed because `MIDDLEWARE` had no
+   `CommonMiddleware`, so `APPEND_SLASH` never ran (`/job-title/lawyers` 404
+   while `/job-title/lawyers/` 200) — fixed in `django_config/settings.py`;
+   (b) re-clustered slugs — `lib/business/salary/slug_redirects.py` resolves
+   them via an indexed ladder (suffix-strip of requisition/uniqueness tokens →
+   exact `title_normalized` / `name_normalized` matches through the same
+   normalizers that populate those columns → legacy substring scan last),
+   with the outcome (incl. no-match) cached 24h because bots bypass the page
+   cache. Both profile views 301 to the resolved canonical slug.
+2. **Thin-page gate on `/job-title/*`** — `INDEXABLE_MIN_FILINGS = 100`
+   (`lib/business/salary/job_title_stats.py`): profiles below it render with
+   `noindex, follow` and are excluded from the sitemap (was `>= 10`). Kills
+   the requisition-id 1–3-filing pages Google landed searchers on — the
+   scaled-content-abuse suspect for the June impression halving. Reversible
+   (lift the constant) if the 07-11 re-measure exonerates thin pages.
+3. **Mobile first-paint + tables** — Plotly was a **render-blocking `<head>`
+   script** on both profile templates (job-title even shipped the full
+   unversioned `plotly-latest`, ~3.5 MB); both now load
+   `plotly-basic-2.32.0.min.js` with `defer` (init already polls via
+   `ensurePlotlyLoaded`). Salary-Range / Min / Max table columns are hidden
+   below `md` (`d-none d-md-table-cell`) so profile tables fit a phone without
+   sideways scroll. Suspects behind mobile 49.8% engaged vs desktop 70.4%.
+4. **Profile-interaction telemetry** —
+   `webapp/templates/webapp/includes/profile_interaction_events.html`
+   (included with `surface="jt"` / `"emp"`): GoatCounter events
+   `ev/profile/<surface>/<target>` (+ GA4 `profile_interaction` when gtag is
+   present) for internal-nav clicks by target group (employer-link, role-link,
+   pair-link, sponsors-cta, salaries-link), table sorting, filter changes, and
+   search-box use. Closes the "what do non-engaging landers do" blind spot.
+
+Tests: `tests/test_profile_slug_redirects.py`. Measure: 404 rate in nginx +
+GSC not-found count should fall within days; GC Events tab + GA4
+`profile_interaction` populate as traffic lands; job-title engaged-rate WoW in
+the daily checkup (`_section_ga4_engagement`) is the outcome metric.
+
 ## Sitemap & robots.txt
 
 Both generated dynamically by `webapp/views/seo/sitemaps.py`.
@@ -24,7 +113,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 | Priority-date landings (Spanish) | 12 | `/es/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Priority-date hub + rollups | 4 | `/priority-date/` + `/priority-date/{eb1,eb2,eb3}/` (country-agnostic) | Latest bulletin `fetched_at` |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
-| Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
+| Job title profiles | ~1,265 | `JobTitleCluster` with slug, `total_filings >= INDEXABLE_MIN_FILINGS` (100 — the thin-page gate; was `>= 10` / ~5,200 until 2026-07-04) | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
 | Prediction archive | all bulletin months | One URL per `Bulletin` month | Per-bulletin `publication_date` |
 | Month forecast | 1 (rolling) | The upcoming bulletin month (`latest + 1`) | Latest bulletin `fetched_at` |
@@ -211,14 +300,122 @@ a new page, not a thin duplicate.
 - **Test:** `tests/test_h1b_sponsors_landing.py` (qualifying renders + FAQPage +
   self-canonical; thin role 404; PERM-heavy role 404 = H-1B-only; sitemap lists
   qualifying only).
-- **Status (2026-06-24):** core shipped to `main` + sitemap + inbound link, suite
-  green. Pending: staging deploy + real-data render verify, prod graduation
-  (Path 1 — pure rendering), CF purge + GSC sitemap submit, then GSC measurement.
-  **Follow-ups (v2):** (a) the state variant — re-angle `/salaries/by-state/` for
-  "highest-paying H-1B employers in {state}" (wage-ranked, H-1B-filtered); (b)
-  denormalize per-cluster H-1B filing/sponsor counts onto `JobTitleCluster` in the
-  stats refresh, which lets the sitemap drop the heavy cached aggregate and
-  enables a related-role sponsor-page cross-link mesh.
+- **Status (2026-06-24):** **LIVE on prod** (`prod 19fb476`, img `staging-718bc17`),
+  189 pages in the prod sitemap, CF purged, GSC re-submitted, suite green. GSC
+  measurement pending (days→weeks to index).
+  **Follow-up (v2):** denormalize per-cluster H-1B filing/sponsor counts onto
+  `JobTitleCluster` in the stats refresh, which lets the sitemap drop the heavy
+  cached aggregate and enables a related-role sponsor-page cross-link mesh.
+
+## Top-H-1B-sponsors-per-state pages (`/h1b-sponsors/in/<state-code>/`)
+
+The state variant of the H-1B-sponsors pillar, answering the distinct query the
+existing pages don't: **"top H-1B sponsors in {state}" / "which companies sponsor
+H-1B in {state}" / "highest-paying H-1B employers in {state}"**. A **NEW
+dedicated URL**, deliberately NOT a re-angle of the live `/salaries/by-state/`
+page — that page's state-overview intent (ranks employers by filing volume across
+H-1B *and* PERM) is left untouched, so there is **zero de-rank risk** to a
+working page. Same posture as the role page being a new URL rather than re-angling
+`/job-title/`.
+
+- **Content:** headline stats (H-1B filings in-state, # sponsoring employers,
+  median H-1B wage + p25–p75); **two** ranked tables — (1) **top sponsors by H-1B
+  filing volume** (the robust "which companies sponsor H-1B in {state}" answer),
+  (2) **highest-paying H-1B employers** ranked by mean wage with a **≥5-filing
+  floor** so a single outlier filing can't top the chart (the "highest-paying"
+  query, answered without noise); a top-H-1B-roles block; an FAQ (FAQPage schema).
+- **View:** `webapp/views/salary/h1b_sponsors.py:h1b_sponsors_state_view`. Cheap
+  single-state indexed aggregates (`visa_program`, `wage_annual`, `worksite_state`,
+  FKs); no live solver, no full scan. `@cache_page_skip_bots`.
+- **No thin pages:** a state 404s unless **≥50 H-1B filings AND ≥8 distinct
+  sponsors**, the same shared gate (`lib/business/salary/h1b_sponsors.py`) as the
+  cached sitemap emit-set — and the sitemap set is intersected with the canonical
+  `US_STATES` list, so it NEVER emits an invalid or 404 URL (48 of 51 qualify).
+- **Internal-link mesh (both directions):** inbound from each `/salaries/by-state/`
+  page (a gated CTA) + the sitemap; the role page's top-states block links to the
+  state page (gated); the state page's top-roles block links to the role page
+  (gated, falling back to the `/job-title/` profile for non-qualifying roles).
+- **Test:** `tests/test_h1b_sponsors_state_landing.py` (qualifying renders both
+  tables + FAQPage + self-canonical; thin/PERM-heavy/unknown 404; pay floor
+  honored; sitemap lists qualifying states only; by-state CTA gated).
+- **Status (2026-06-24):** **LIVE on prod** (`prod 19fb476`, img `staging-0e739bd`),
+  48 state pages in the prod sitemap, CF purged, GSC re-submitted, suite 74 green.
+  GSC measurement pending.
+
+## Per-(employer × role) H-1B salary pages (`/h1b-salary/<employer>/<role>/`)
+
+The third pSEO pillar from LCA data, answering the (employer × role) query the
+employer-wide and role-wide profiles don't: **"{role} salary at {employer}" /
+"does {employer} sponsor H-1B for {role}" / "{employer} {role} H-1B salary"**.
+The `/employer/<slug>/` profile is employer-wide (all roles) and `/job-title/
+<slug>/` is role-wide (all employers); neither is the specific (employer × role)
+salary answer — so this is a new page, not a duplicate.
+
+- **Content:** salary distribution (p10–p90), median + p25–p75 + wage range, an
+  H-1B-filings-by-year trend, top worksite states, and the non-duplicative insight
+  — how the pair's median compares to the role's **market-wide** median (X%
+  above/below). FAQPage schema, self-canonical, outbound links to the employer,
+  role, and role-sponsor pages.
+- **View:** `webapp/views/salary/h1b_salary_pair.py`. Cheap single-pair indexed
+  aggregates (`visa_program`, `wage_annual`, employer/job-title FKs); no live
+  solver, no full scan. `@cache_page_skip_bots`.
+- **No thin pages:** a pair 404s unless **≥10 H-1B filings** (≈506 qualifying pairs
+  on current data). Gate shared (`lib/business/salary/h1b_salary_pair.py`) between
+  the view 404-gate and the cached sitemap emit-set (capped 5k) so the sitemap
+  never lists a 404.
+- **Internal-link mesh (gated, never a 404):** the h1b-sponsors role page links
+  each qualifying employer's wage cell to its pair page; the `/job-title/` profile
+  links each top-employer's median cell to the pair page. Plus the sitemap.
+- **Test:** `tests/test_h1b_salary_pair_landing.py` (qualifying renders distribution
+  + market-comparison + FAQPage + self-canonical + outbound mesh; thin/sub-
+  threshold/PERM/unknown 404; gate + sitemap emit qualifying only; role-page
+  wage-cell mesh gated).
+- **Status (2026-06-24):** **LIVE on prod** via the first zero-downtime code
+  cutover (`hosting/cutover.sh --code 1090314`; vb never 502'd), `prod d940644`,
+  506 pages in the prod sitemap, CF purged, GSC re-submitted, suite 75 green. GSC
+  measurement pending.
+
+## {occupation} salary landing pages (`/h1b-salary/<occupation>/` + `/h1b-salary/` hub)
+
+Head-term salary pages keyed off the clean **DOL SOC occupation code**, capturing
+the **"{occupation} h1b salary" / "{occupation} salary"** demand that drives the
+/salaries on-site search (Software Engineer, Data Scientist, Financial Analyst …).
+The existing `/job-title/<slug>/` cluster pages only rank for ultra-long-tail
+niche titles because clustering mangles the head terms —
+`/job-title/software-engineer/` 301s to a garbage canonical
+(`sr-member-of-the-technical-staff-software-engineer`), so the head terms had **no
+clean landing page**. This page type fixes that with a curated occupation→SOC
+registry, independent of clustering.
+
+- **Why SOC, not soc_title:** `soc_code` is the clean DOL classification;
+  `soc_title` in the data is employer-typed garbage (often the code itself or a
+  random title). A curated registry maps colloquial head terms → SOC-6 prefixes
+  (validated against the dominant real `job_title` per code on prod).
+- **Content:** percentiles (p10–p90), median + p25–p75 range, top sponsoring
+  employers (linked), top worksite states, real job-title cross-links (to
+  `/job-title/` pages), H-1B-vs-PERM split, query-targeted `<title>`
+  ("{Occupation} H-1B & PERM Salary {year}: Median $X (N filings)"). FAQPage +
+  Occupation JSON-LD, self-canonical.
+- **Registry/view:** `lib/business/salary/soc_occupations.py` (41 curated
+  occupations, alias→canonical 301s), `lib/business/salary/occupation_stats.py`
+  (reuses `common_stats`; `$12k` wage floor keeps low-wage PERM occupations like
+  cook/truck-driver), `webapp/views/salary/occupation.py`.
+- **No thin pages:** an occupation 404s unless **≥100 filings**; gate shared with
+  the cached sitemap emit-set so the sitemap never lists a 404. All 41 registry
+  occupations currently qualify.
+- **Internal-link mesh:** "Salary by occupation" hub button added to the
+  `/salaries` explore rail (renders on every salary search view); hub
+  cross-links every page; pages link back to `/job-title/` + `/salaries`. Also
+  in the sitemap + `/llms.txt`.
+- **Test:** `tests/test_occupation_salary.py` (qualifying renders title/median/
+  percentiles/FAQPage/Occupation/self-canonical + employer mesh; thin 404; alias
+  301; SOC-scoping; unknown 404; hub + sitemap emit qualifying only).
+- **Status (2026-06-26):** **LIVE on prod** via zero-downtime code cutover
+  (`hosting/cutover.sh --code 50b9961`; vb never 502'd), `prod 0a071d1`, 41
+  occupation pages + hub in the prod sitemap, CF purged, GSC re-submitted (0
+  errors, 14,436 URLs), suite 78 green. Validated against prod data (SWE 460k
+  filings/$111k median, attorney $180k, truck-driver $42k). GSC measurement
+  pending (~days–weeks to index).
 
 ## Timing-query consolidation (`/when-is-the-next-visa-bulletin/`)
 
@@ -294,6 +491,26 @@ Content includes:
 | `<meta theme-color>` | `#003366` |
 | `<link rel="canonical">` | `canonical_url` context var (rendered only if set) |
 | `<meta robots>` | `meta_robots` context var (rendered only if set; default = no tag = `index, follow`) |
+
+## /salaries onward-navigation rail — dead-end break
+
+`/salaries/` is the highest-traffic non-home page but had the worst behavior
+(64% bounce / 36% engaged): result pages ended at pagination with no onward
+path, and the landing offered no scannable next step. The **"Explore the salary
+database" rail** (`webapp/templates/webapp/includes/salary_explore_rail.html`)
+now renders on **every** salary search render — bare landing, filtered results,
+and zero-result searches — carrying: popular-role chips → `/job-title/<slug>/`,
+top-sponsor chips → `/employer/<slug>/`, browse hubs (job-title + employer
+directories, sponsor ranking, priority-date hub), and H-1B/PERM quick filters.
+Link sets come from `get_salary_explore_links()`
+(`lib/business/salary/market_overview.py`, cached — top clusters off precomputed
+counts, cheap on every render). This both breaks the UX dead-end and strengthens
+the internal-link mesh into the employer/job-title pSEO pages (and now the
+`{occupation}` salary pages — the rail's "Salary by occupation" button). Regression
+tests: `tests/test_salary_search_view.py::SalaryExploreRailTest`. Follow-up: the
+`{occupation}` pSEO landing pages from on-site search demand **shipped 2026-06-26**
+(see the `/h1b-salary/<occupation>/` section above); still open: measure the GA4
+`/salaries` bounce delta (~1–2 wks) + the `/employer/*` meta-description CTR tweak.
 
 ## Crawl-budget hygiene — noindex the free-text search space
 

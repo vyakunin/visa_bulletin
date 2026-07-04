@@ -74,6 +74,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django_config.middleware.RequestTimingMiddleware",
+    # APPEND_SLASH: 301 slash-less URLs (/job-title/lawyers) to their canonical
+    # slashed route instead of 404ing — without this, every externally-linked
+    # slash-less profile URL is a dead end (~1.1k 404 hits/day, 2026-07-04).
+    "django.middleware.common.CommonMiddleware",
 ]
 
 # Templates configuration

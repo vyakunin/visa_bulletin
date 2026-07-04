@@ -14,6 +14,7 @@ from lib.business.salary.h1b_sponsors import (
     qualifying_slugs,
     qualifying_state_codes,
 )
+from lib.business.salary.job_title_stats import INDEXABLE_MIN_FILINGS
 from lib.business.salary.occupation_stats import qualifying_occupation_slugs
 from lib.utils.location_utils import US_STATES
 from models.blog import BlogPost
@@ -263,12 +264,13 @@ def sitemap_view(request):
             lastmod=_lastmod_capped(cluster.updated_at, today),
         ))
 
-    # Job title profile pages (top 10,000 by filing count)
+    # Job title profile pages — only above the thin-page gate (the view
+    # noindexes anything below it, so the sitemap must not advertise those).
     try:
         job_title_clusters = list(
             JobTitleCluster.objects.filter(
                 slug__isnull=False,
-                total_filings__gte=10,
+                total_filings__gte=INDEXABLE_MIN_FILINGS,
             ).order_by("-total_filings")[:10000]
         )
     except (OperationalError, ProgrammingError):

@@ -35,8 +35,9 @@
 }
 </script>
 
-<!-- Plotly.js - Load directly since charts are always present on this page -->
-<script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js"></script>
+<!-- Plotly.js: deferred — render-blocking in <head> hurt mobile first paint;
+     chart init polls via ensurePlotlyLoaded, so defer is safe. -->
+<script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -245,8 +246,9 @@
                                     <th data-sort-col="0" data-sort-type="text">Role</th>
                                     <th class="text-end" data-sort-col="1" data-sort-type="number">Count</th>
                                     <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
-                                    <th class="text-end" data-sort-col="3" data-sort-type="number">Min</th>
-                                    <th class="text-end" data-sort-col="4" data-sort-type="number">Max</th>
+                                    {# Min/Max hidden on phones: 5 columns force sideways scrolling #}
+                                    <th class="text-end d-none d-md-table-cell" data-sort-col="3" data-sort-type="number">Min</th>
+                                    <th class="text-end d-none d-md-table-cell" data-sort-col="4" data-sort-type="number">Max</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -263,8 +265,8 @@
                                     </td>
                                     <td class="text-end">{{ title.count|intcomma }}</td>
                                     <td class="text-end">${{ title.median_salary|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-muted">${{ title.min_salary|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-muted">${{ title.max_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-muted d-none d-md-table-cell">${{ title.min_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-muted d-none d-md-table-cell">${{ title.max_salary|floatformat:0|intcomma }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -462,6 +464,8 @@
         </div>
     </div>
 </div>
+
+{% include "webapp/includes/profile_interaction_events.html" with surface="emp" %}
 
 <!-- Plotly Chart Rendering -->
 {% if chart_data %}

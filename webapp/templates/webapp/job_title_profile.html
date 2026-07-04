@@ -42,8 +42,10 @@
 }
 </script>
 
-<!-- Plotly.js -->
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<!-- Plotly.js: basic bundle (charts here use only bar+scatter traces) and
+     deferred — the full "latest" bundle was ~3.5MB render-blocking in <head>,
+     a major mobile first-paint cost. Chart init polls via ensurePlotlyLoaded. -->
+<script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -212,7 +214,8 @@
                                     <th data-sort-col="0" data-sort-type="text">Employer</th>
                                     <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
                                     <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
-                                    <th class="text-end" data-sort-col="3" data-sort-type="text">Salary Range</th>
+                                    {# Range column hidden on phones: 5 columns force sideways scrolling #}
+                                    <th class="text-end d-none d-md-table-cell" data-sort-col="3" data-sort-type="text">Salary Range</th>
                                     <th class="text-end" data-sort-col="4" data-sort-type="number">Approval Rate</th>
                                 </tr>
                             </thead>
@@ -230,7 +233,7 @@
                                     </td>
                                     <td class="text-end">{{ employer.count|intcomma }}</td>
                                     <td class="text-end">{% if employer.pair_url %}<a href="{{ employer.pair_url }}">${{ employer.median_salary|floatformat:0|intcomma }}</a>{% else %}${{ employer.median_salary|floatformat:0|intcomma }}{% endif %}</td>
-                                    <td class="text-end text-muted">
+                                    <td class="text-end text-muted d-none d-md-table-cell">
                                         ${{ employer.min_salary|floatformat:0|intcomma }} - ${{ employer.max_salary|floatformat:0|intcomma }}
                                     </td>
                                     <td class="text-end">{{ employer.approval_rate|floatformat:1 }}%</td>
@@ -262,7 +265,8 @@
                                     <th data-sort-col="0" data-sort-type="text">Experience Level</th>
                                     <th class="text-end" data-sort-col="1" data-sort-type="number">Filings</th>
                                     <th class="text-end" data-sort-col="2" data-sort-type="number">Median Salary</th>
-                                    <th class="text-end" data-sort-col="3" data-sort-type="text">Salary Range</th>
+                                    {# Range column hidden on phones: keeps this table 3 columns on small screens #}
+                                    <th class="text-end d-none d-md-table-cell" data-sort-col="3" data-sort-type="text">Salary Range</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -271,7 +275,7 @@
                                     <td><strong>{{ exp.experience_level_display }}</strong></td>
                                     <td class="text-end">{{ exp.count|intcomma }}</td>
                                     <td class="text-end">${{ exp.median_salary|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-muted">
+                                    <td class="text-end text-muted d-none d-md-table-cell">
                                         ${{ exp.min_salary|floatformat:0|intcomma }} - ${{ exp.max_salary|floatformat:0|intcomma }}
                                     </td>
                                 </tr>
@@ -551,6 +555,8 @@
         </div>
     </div>
 </div>
+
+{% include "webapp/includes/profile_interaction_events.html" with surface="jt" %}
 
 <!-- Plotly Chart Rendering -->
 {% if chart_data %}

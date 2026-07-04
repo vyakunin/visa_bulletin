@@ -27,9 +27,10 @@ from lib.business.salary.common_stats import (
     calculate_yoy_growth,
     calculate_yoy_trends,
 )
+from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
-from models.salary import Employer, EmployerCluster, SalaryRecord
+from models.salary import EmployerCluster, SalaryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,11 @@ def _get_cluster_or_404(slug: str):
     try:
         cluster = EmployerCluster.objects.get(slug=slug)
     except EmployerCluster.DoesNotExist:
-        slug_normalized = slug.replace("-", " ").lower()
-        employers = Employer.objects.filter(
-            name_normalized__icontains=slug_normalized
-        ).select_related("canonical_cluster")
-        if employers.exists():
-            canonical_cluster = employers.first().canonical_cluster
-            if canonical_cluster and canonical_cluster.slug:
-                return redirect(
-                    "employer_profile", slug=canonical_cluster.slug, permanent=True
-                )
+        # Stale slug (re-clustering churn): resolve to the current canonical
+        # slug via the indexed ladder in slug_redirects.
+        target = resolve_employer_slug(slug)
+        if target and target != slug:
+            return redirect("employer_profile", slug=target, permanent=True)
         raise Http404("Employer not found")
     if cluster.canonical_name == "Unknown" or cluster.slug == "unknown":
         raise Http404("Employer not found")

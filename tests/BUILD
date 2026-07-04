@@ -980,6 +980,22 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_profile_slug_redirects",
+    size = "small",
+    srcs = ["test_profile_slug_redirects.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/salary:job_title_stats",
+        "//models:job_title",
+        "//models:salary",
+        "//webapp/views/employers:profile",
+        "//webapp/views/job_titles:profile",
+        "//webapp/views/seo:sitemaps",
+    ],
+)
+
+django_py_test(
     name = "test_sitemap_lastmod",
     size = "small",
     srcs = ["test_sitemap_lastmod.py"],
