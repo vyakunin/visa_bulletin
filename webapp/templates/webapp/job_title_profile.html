@@ -64,6 +64,41 @@
                     {% include "webapp/includes/autocomplete_input.html" with input_id="profession-search" input_name="profession" placeholder="e.g., Software Engineer, Data Analyst" endpoint_url=job_title_autocomplete_url display_field="title" count_field="total_filings" slug_field="slug" navigate_url_pattern="/job-title/__slug__/" label="Search for another profession" %}
                 </div>
             </div>
+
+            {% comment %}
+            Thin-page rescue: this exact title has too few filings to say much
+            — route the visitor to the broader role (content-token subset
+            match), or at least a relevant salaries search, instead of a
+            dead end.
+            {% endcomment %}
+            {% if broader_role %}
+            <div class="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+                <div>
+                    <strong>Only {{ cluster.total_filings|default:0|intcomma }} filing{{ cluster.total_filings|pluralize }}</strong>
+                    match this exact title. For the full picture, see the broader
+                    <strong>{{ broader_role.canonical_title }}</strong> profile
+                    ({{ broader_role.total_filings|intcomma }} filings).
+                </div>
+                <a href="{% url 'job_title_profile' slug=broader_role.slug %}"
+                   data-gc-target="broader-role-cta"
+                   class="btn btn-primary btn-sm text-nowrap">
+                    View {{ broader_role.canonical_title }} &rarr;
+                </a>
+            </div>
+            {% elif salaries_q %}
+            <div class="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+                <div>
+                    <strong>Only {{ cluster.total_filings|default:0|intcomma }} filing{{ cluster.total_filings|pluralize }}</strong>
+                    match this exact title. Browse all salary records for
+                    &ldquo;{{ salaries_q }}&rdquo; roles instead.
+                </div>
+                <a href="/salaries/?q={{ salaries_q|urlencode }}"
+                   data-gc-target="broader-role-cta"
+                   class="btn btn-primary btn-sm text-nowrap">
+                    Search {{ salaries_q }} salaries &rarr;
+                </a>
+            </div>
+            {% endif %}
             
             <!-- Auto-expand notice -->
             {% if stats.auto_expanded %}

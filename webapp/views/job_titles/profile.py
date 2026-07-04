@@ -4,7 +4,6 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import F
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -18,29 +17,30 @@ from lib.business.salary.job_title_stats import (
     get_job_title_statistics,
     get_related_job_titles,
 )
+from lib.business.salary.similar_titles import (
+    find_broader_role,
+    rank_similar,
+    salaries_search_token,
+)
 from lib.business.salary.slug_redirects import resolve_job_title_slug
 from models.job_title import JobTitle, JobTitleCluster
 
 # Cache key version — bump to invalidate all similar-cluster cache entries
 # without flushing the rest of the cache (e.g. after re-clustering changes
-# canonical_title for many clusters).
-_SIMILAR_CLUSTERS_CACHE_VERSION = 1
+# canonical_title for many clusters). v2 = token-overlap ranking over the
+# indexable universe (similar_titles.rank_similar) instead of first-word
+# icontains, which recommended every big "Senior *" cluster to any
+# "Senior ..." title.
+_SIMILAR_CLUSTERS_CACHE_VERSION = 2
 # Day-long TTL: the canonical_title universe only changes when the clustering
 # pipeline runs, and a one-day staleness on a "Related Job Titles" sidebar is
-# imperceptible.
+# imperceptible. Bot crawls walk every /job-title/<slug>/ — the per-cluster
+# cache keeps the ranking off the request path.
 _SIMILAR_CLUSTERS_CACHE_TTL = 60 * 60 * 24
 
 
-def _get_similar_clusters(cluster: JobTitleCluster) -> list[JobTitleCluster]:
-    """Return up to 5 other clusters whose canonical_title shares the first
-    word of this cluster's title.
-
-    Cached per-cluster because the underlying icontains lookup is a SeqScan
-    on canonical_title (no trigram index on the column yet) and the answer
-    is stable between clustering pipeline runs. Bot crawls walk every
-    /job-title/<slug>/ — without this cache, every crawl fires the SeqScan
-    and produces the slow-tail the operator sees in nginx logs.
-    """
+def _get_similar_clusters(cluster: JobTitleCluster):
+    """Up to 5 indexable clusters ranked by shared content tokens, cached."""
     if not cluster.canonical_title:
         return []
     cache_key = (
@@ -49,14 +49,7 @@ def _get_similar_clusters(cluster: JobTitleCluster) -> list[JobTitleCluster]:
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
-    first_word = cluster.canonical_title.split()[0]
-    similar = list(
-        JobTitleCluster.objects.filter(slug__isnull=False)
-        .exclude(id=cluster.id)
-        .filter(canonical_title__icontains=first_word)
-        .annotate(total_count=F("total_filings"))
-        .order_by("-total_count")[:5]
-    )
+    similar = rank_similar(cluster.canonical_title, cluster.slug)
     cache.set(cache_key, similar, _SIMILAR_CLUSTERS_CACHE_TTL)
     return similar
 
@@ -179,6 +172,16 @@ def job_title_profile_view(request, slug: str):
 
     # Build SEO metadata (use cluster.total_filings so it matches directory)
     total_filings = cluster.total_filings or 0
+
+    # Thin-page rescue: a searcher landing on a 1-3-filing hyper-specific
+    # title has nothing to do here — hand them the broader indexable role
+    # (content-token subset match) as a prominent CTA, plus a salaries-search
+    # fallback so there is always a relevant next step.
+    broader_role = None
+    salaries_q = ""
+    if total_filings < INDEXABLE_MIN_FILINGS:
+        broader_role = find_broader_role(cluster.canonical_title, cluster.slug)
+        salaries_q = salaries_search_token(cluster.canonical_title)
     median_salary = stats["basic"].get("median_salary") or 0
     seo = {
         "title": f"{cluster.canonical_title} Salary Data & Market Analysis | Visa Bulletin",
@@ -198,6 +201,8 @@ def job_title_profile_view(request, slug: str):
         "level_choices": level_choices,
         "start_year": start_year,
         "similar_clusters": similar_clusters,
+        "broader_role": broader_role,
+        "salaries_q": salaries_q,
         "h1b_sponsors_url": h1b_sponsors_url,
         "job_title_autocomplete_url": request.build_absolute_uri(
             reverse("job_title_autocomplete")
