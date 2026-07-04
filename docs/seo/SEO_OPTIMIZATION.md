@@ -51,6 +51,46 @@ Site: `https://visa-bulletin.us`
   replay; on-page behavior beyond scroll+exit is invisible today (ticket
   2026-07-04 to add profile-interaction events).
 
+## Profile-surface remediation (2026-07-04) — 404 wave, thin pages, mobile, telemetry
+
+Four fixes shipped together off the 2026-07-04 engagement dig:
+
+1. **Stale-slug 404 wave (~3.6k hits/day post 06-25 re-cluster) → 301s.** Two
+   classes: (a) slash-less URLs 404ed because `MIDDLEWARE` had no
+   `CommonMiddleware`, so `APPEND_SLASH` never ran (`/job-title/lawyers` 404
+   while `/job-title/lawyers/` 200) — fixed in `django_config/settings.py`;
+   (b) re-clustered slugs — `lib/business/salary/slug_redirects.py` resolves
+   them via an indexed ladder (suffix-strip of requisition/uniqueness tokens →
+   exact `title_normalized` / `name_normalized` matches through the same
+   normalizers that populate those columns → legacy substring scan last),
+   with the outcome (incl. no-match) cached 24h because bots bypass the page
+   cache. Both profile views 301 to the resolved canonical slug.
+2. **Thin-page gate on `/job-title/*`** — `INDEXABLE_MIN_FILINGS = 100`
+   (`lib/business/salary/job_title_stats.py`): profiles below it render with
+   `noindex, follow` and are excluded from the sitemap (was `>= 10`). Kills
+   the requisition-id 1–3-filing pages Google landed searchers on — the
+   scaled-content-abuse suspect for the June impression halving. Reversible
+   (lift the constant) if the 07-11 re-measure exonerates thin pages.
+3. **Mobile first-paint + tables** — Plotly was a **render-blocking `<head>`
+   script** on both profile templates (job-title even shipped the full
+   unversioned `plotly-latest`, ~3.5 MB); both now load
+   `plotly-basic-2.32.0.min.js` with `defer` (init already polls via
+   `ensurePlotlyLoaded`). Salary-Range / Min / Max table columns are hidden
+   below `md` (`d-none d-md-table-cell`) so profile tables fit a phone without
+   sideways scroll. Suspects behind mobile 49.8% engaged vs desktop 70.4%.
+4. **Profile-interaction telemetry** —
+   `webapp/templates/webapp/includes/profile_interaction_events.html`
+   (included with `surface="jt"` / `"emp"`): GoatCounter events
+   `ev/profile/<surface>/<target>` (+ GA4 `profile_interaction` when gtag is
+   present) for internal-nav clicks by target group (employer-link, role-link,
+   pair-link, sponsors-cta, salaries-link), table sorting, filter changes, and
+   search-box use. Closes the "what do non-engaging landers do" blind spot.
+
+Tests: `tests/test_profile_slug_redirects.py`. Measure: 404 rate in nginx +
+GSC not-found count should fall within days; GC Events tab + GA4
+`profile_interaction` populate as traffic lands; job-title engaged-rate WoW in
+the daily checkup (`_section_ga4_engagement`) is the outcome metric.
+
 ## Sitemap & robots.txt
 
 Both generated dynamically by `webapp/views/seo/sitemaps.py`.
@@ -73,7 +113,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 | Priority-date landings (Spanish) | 12 | `/es/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Priority-date hub + rollups | 4 | `/priority-date/` + `/priority-date/{eb1,eb2,eb3}/` (country-agnostic) | Latest bulletin `fetched_at` |
 | Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
-| Job title profiles | ~5,200 | `JobTitleCluster` with slug, `total_filings >= 10`, top 10k | Latest bulletin date |
+| Job title profiles | ~1,265 | `JobTitleCluster` with slug, `total_filings >= INDEXABLE_MIN_FILINGS` (100 — the thin-page gate; was `>= 10` / ~5,200 until 2026-07-04) | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
 | Prediction archive | all bulletin months | One URL per `Bulletin` month | Per-bulletin `publication_date` |
 | Month forecast | 1 (rolling) | The upcoming bulletin month (`latest + 1`) | Latest bulletin `fetched_at` |

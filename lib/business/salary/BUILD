@@ -82,6 +82,16 @@ py_library(
 )
 
 py_library(
+    name = "slug_redirects",
+    srcs = ["slug_redirects.py"],
+    deps = [
+        "//models:job_title",
+        "//models:salary",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "common_stats",
     srcs = ["common_stats.py"],
     deps = [

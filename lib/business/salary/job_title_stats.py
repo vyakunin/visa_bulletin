@@ -28,6 +28,13 @@ from lib.business.salary.common_stats import (
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import SalaryRecord
 
+# Thin-page gate for the /job-title/ surface: profiles below this filing count
+# are noindexed (view) and excluded from the sitemap. Hyper-specific 1-3-filing
+# titles (requisition-id slugs) give a searcher nothing to do and are the prime
+# scaled-content-abuse suspect for the June-2026 profile-impression halving.
+# Shared between webapp/views/job_titles/profile.py and webapp/views/seo/sitemaps.py.
+INDEXABLE_MIN_FILINGS = 100
+
 GROWTH_PARTIAL_YEAR_MIN_RATIO = 0.6
 
 # Salary validation bounds (annual)

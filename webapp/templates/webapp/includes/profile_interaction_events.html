@@ -1,0 +1,62 @@
+{% comment %}
+Profile-interaction telemetry for /job-title/ and /employer/ pages.
+Include with surface="jt" or surface="emp".
+
+GA4 enhanced measurement only sees page_view / scroll@90% / outbound clicks,
+so on-page behavior (which internal links get clicked, table sorting, filter
+and search use) is invisible — this closes that gap with low-cardinality
+GoatCounter events (path: ev/profile/<surface>/<target>, Events tab) plus a
+matching GA4 event when gtag is present (prod analytics_script override).
+{% endcomment %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var surface = '{{ surface }}';
+    function track(target, label) {
+        if (window.goatcounter && window.goatcounter.count) {
+            window.goatcounter.count({
+                path: 'ev/profile/' + surface + '/' + target,
+                event: true,
+                title: (label || '').slice(0, 50)
+            });
+        }
+        if (typeof gtag === 'function') {
+            gtag('event', 'profile_interaction', {surface: surface, target: target});
+        }
+    }
+    function classifyHref(href) {
+        if (!href) return null;
+        var path = href.replace(/^https?:\/\/[^/]+/, '');
+        if (path.indexOf('/employer/') === 0) return 'employer-link';
+        if (path.indexOf('/job-title/') === 0) return 'role-link';
+        if (path.indexOf('/h1b-salary/') === 0) return 'pair-link';
+        if (path.indexOf('/h1b-sponsors/') === 0) return 'sponsors-cta';
+        if (path.indexOf('/salaries') === 0) return 'salaries-link';
+        return null;
+    }
+    document.addEventListener('click', function(e) {
+        var a = e.target.closest('a[href]');
+        if (a) {
+            var target = classifyHref(a.getAttribute('href'));
+            if (target) track(target, (a.textContent || '').trim());
+            return;
+        }
+        var th = e.target.closest('th[data-sort-col]');
+        if (th) track('table-sort', (th.textContent || '').trim());
+    });
+    document.addEventListener('change', function(e) {
+        if (e.target.matches && e.target.matches('form select')) {
+            track('filter', e.target.id || e.target.name);
+        }
+    });
+    // Search box use: fire once per pageview, on first focus of the
+    // autocomplete input (profession-search / employer-search).
+    var searchTracked = false;
+    document.addEventListener('focusin', function(e) {
+        if (searchTracked) return;
+        if (e.target.matches && e.target.matches('input[id$="-search"]')) {
+            searchTracked = true;
+            track('search', e.target.id);
+        }
+    });
+});
+</script>
