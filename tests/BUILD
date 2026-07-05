@@ -310,6 +310,22 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_dashboard_maturity_invariant",
+    size = "small",
+    srcs = ["test_dashboard_maturity_invariant.py"],
+    deps = [
+        "//webapp/views:views",
+        "//models:visa_cutoff_date",
+        "//models:bulletin",
+        "//models/enums:visa_category",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//django_config:urls",
+        "//webapp:urls",
+    ],
+)
+
+django_py_test(
     name = "test_salary",
     size = "small",
     srcs = ["test_salary.py"],

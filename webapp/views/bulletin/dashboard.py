@@ -256,10 +256,21 @@ def _historical_linear_maturity(
     return estimated
 
 
+def _counterpart_action_type(action_type: str) -> str:
+    """The "other" action type — Filing <-> Final Action."""
+    return (
+        ActionType.FILING.value
+        if action_type == ActionType.FINAL_ACTION.value
+        else ActionType.FINAL_ACTION.value
+    )
+
+
 def _build_unified_prediction_rows(
     visa_class_data: list[dict],
     vqs_predictions: dict,
     submission_date: date | None,
+    counterpart_maturity: dict[str, date | None] | None = None,
+    is_filing: bool = False,
 ) -> list[dict]:
     """
     Merge visa_class_data and vqs_predictions into unified rows for the combined table.
@@ -271,6 +282,15 @@ def _build_unified_prediction_rows(
       - next_cutoff, confidence, confidence_low, confidence_high: 1m-ahead prediction
       - maturity_month: first month cutoff ≥ submission_date (None = beyond VQS horizon)
       - linear_maturity: linear-extrapolation fallback (None = stalled / no estimate)
+
+    counterpart_maturity/is_filing (optional): the OTHER action type's already-computed
+    effective maturity per label (maturity_month or linear_maturity), used to enforce
+    the invariant that a Dates-for-Filing cutoff is never behind its Final Action
+    counterpart — so Filing must reach a given priority date no LATER than Final
+    Action, and Final Action can never reach it EARLIER than Filing. Final Action and
+    Filing are forecast as fully independent VQS runs (see _get_vqs_predictions), so
+    without this clamp their linear-extrapolation fallbacks can disagree on rate and
+    silently violate that ordering (see Notion 39462b8d, reported via r/USCIS 2026-07-05).
     """
     # Build lookup: label → current cutoff (last non-None cutoff date)
     current_cutoffs: dict[str, date | None] = {}
@@ -302,6 +322,20 @@ def _build_unified_prediction_rows(
             # Fallback: VQS trajectory (for series with no recent actual data)
             if linear is None and pred.get("trajectory"):
                 linear = _linear_maturity_fallback(submission_date, pred["trajectory"])
+
+        if not already_current and counterpart_maturity:
+            other = counterpart_maturity.get(lbl)
+            effective = maturity if maturity is not None else linear
+            if effective is not None and other is not None:
+                violated = (
+                    (is_filing and effective > other)
+                    or (not is_filing and effective < other)
+                )
+                if violated:
+                    if maturity is not None:
+                        maturity = other
+                    else:
+                        linear = other
 
         has_vqs = bool(pred)
 
@@ -401,6 +435,33 @@ def dashboard_view(request, category=None, country=None):
         except Exception:
             logger.exception("Failed to load VQS predictions")
 
+    # Fetch the OTHER action type's effective maturity per label, so the unified
+    # rows below can clamp Filing <= Final Action (Filing is never behind Final
+    # Action in the real bulletin, so its projected maturity must never land
+    # later — see _build_unified_prediction_rows docstring). Cheap: same cached
+    # VQS call the counterpart page load would make anyway.
+    counterpart_maturity: dict[str, date | None] = {}
+    if category == VisaCategory.EMPLOYMENT_BASED.value and has_data and submission_date:
+        try:
+            counterpart_action_type = _counterpart_action_type(action_type)
+            counterpart_visa_class_data, counterpart_has_data = get_aggregated_visa_class_data(
+                category, country, counterpart_action_type, submission_date_for_chart
+            )
+            if counterpart_has_data:
+                counterpart_vqs_predictions = _get_vqs_predictions(
+                    category, country, counterpart_action_type, submission_date
+                )
+                counterpart_rows = _build_unified_prediction_rows(
+                    counterpart_visa_class_data, counterpart_vqs_predictions, submission_date,
+                )
+                counterpart_maturity = {
+                    r["label"]: (r["maturity_month"] or r["linear_maturity"])
+                    for r in counterpart_rows
+                    if not r["already_current"]
+                }
+        except Exception:
+            logger.exception("Failed to load counterpart VQS predictions for maturity clamp")
+
     # Build chart after VQS predictions so trajectory data can be included
     if has_data:
         cat_label = (
@@ -419,6 +480,8 @@ def dashboard_view(request, category=None, country=None):
             visa_class_data,
             vqs_predictions,
             submission_date,
+            counterpart_maturity=counterpart_maturity,
+            is_filing=(action_type == ActionType.FILING.value),
         )
 
     latest_post = BlogPost.objects.filter(is_published=True).order_by("-published_date").first()
