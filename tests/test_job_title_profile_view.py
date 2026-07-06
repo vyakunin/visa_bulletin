@@ -317,6 +317,95 @@ class TestJobTitleProfileView(TestCase):
         # Should either return 200 or redirect (depending on match logic)
         self.assertIn(response.status_code, [200, 301, 302, 404])
 
+    def test_stats_script_populates_job_title_avg_salary(self):
+        """Regression: update_job_title_cluster_stats must set JobTitle.avg_salary.
+
+        Bug (2026-07-05): JobTitle.avg_salary was NULL for all 214k prod rows —
+        no pipeline populated it — so the Related Roles table rendered a bare '$'
+        for every row. The script sets JobTitle.title but never .avg_salary.
+        A JobTitle that starts NULL must come out populated with the mean of its
+        in-bounds record wages after the script runs.
+        """
+        cluster = JobTitleCluster.objects.create(
+            slug="avgsal-regression",
+            canonical_title="Avgsal Regression Role",
+            total_filings=0,
+        )
+        jt = JobTitle.objects.create(
+            title_normalized="avgsal regression role",
+            experience_level="",
+            title="Avgsal Regression Role",
+            canonical_cluster=cluster,
+            total_filings=0,
+            avg_salary=None,  # the buggy starting state for every prod row
+        )
+        wages = [Decimal("100000.00"), Decimal("120000.00"), Decimal("140000.00")]
+        for i, w in enumerate(wages):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-JT-AVGSAL-{i}",
+                employer_name="Test Company Inc JT",
+                employer=self.employer,
+                job_title="Avgsal Regression Role",
+                job_title_entity=jt,
+                worksite_city="San Francisco",
+                worksite_state="CA",
+                wage_from=w,
+                wage_unit=WageUnit.YEAR,
+                wage_annual=w,
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=2024,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+
+        old_argv = sys.argv
+        try:
+            sys.argv = ["update_job_title_cluster_stats"]
+            update_job_title_cluster_stats_main()
+        finally:
+            sys.argv = old_argv
+
+        jt.refresh_from_db()
+        self.assertIsNotNone(
+            jt.avg_salary, "JobTitle.avg_salary must be populated by the stats script"
+        )
+        self.assertEqual(int(jt.avg_salary), 120000)  # mean of 100k/120k/140k
+
+    def test_related_roles_avg_salary_null_renders_dash_not_bare_dollar(self):
+        """Template guards NULL avg_salary with an em-dash, never a bare '$'.
+
+        Defense-in-depth for the Related Roles 'Avg Salary' column: even if a
+        title has no in-bounds wage (so avg_salary stays NULL), the cell must
+        render '—', not a lone '$'.
+        """
+        cluster = JobTitleCluster.objects.create(
+            slug="nullavg-render-test",
+            canonical_title="Nullavg Render Test",
+            total_filings=1,
+            avg_salary=Decimal("100000.00"),
+        )
+        # total_filings>0 so it appears in related.all_titles, but avg_salary NULL.
+        JobTitle.objects.create(
+            title_normalized="nullavg render test",
+            experience_level="",
+            title="Nullavg Render Test",
+            canonical_cluster=cluster,
+            total_filings=1,
+            avg_salary=None,
+        )
+
+        client = Client()
+        response = client.get(
+            reverse("job_title_profile", kwargs={"slug": "nullavg-render-test"})
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        # The Related Roles cell for the NULL-avg title shows an em-dash.
+        self.assertIn("&mdash;", html)
+        # And never a bare "$" immediately closing the cell.
+        self.assertNotIn("$</td>", html)
+
 
 @override_settings(
     CACHES={
