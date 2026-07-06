@@ -121,6 +121,21 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+exports_files(["employer_renames.yaml"])
+
+py_library(
+    name = "employer_renames",
+    srcs = ["employer_renames.py"],
+    data = [":employer_renames.yaml"],
+    deps = [
+        ":slug_redirects",
+        "//lib/utils:bazel_runfiles",
+        "//models:salary",
+        requirement("pyyaml"),
+    ],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "common_stats",
     srcs = ["common_stats.py"],
