@@ -49,7 +49,23 @@
                 <h1>{{ cluster.canonical_name }}</h1>
                 <p class="text-muted">H-1B &amp; Green Card Sponsorship Data</p>
                 <small class="text-muted d-block mb-2">Source: US Dept of Labor. Represents Base Salary only. Excludes RSUs, signing bonuses, and variable compensation.</small>
-                <a href="{% url 'salary_search' %}?employer={{ cluster.canonical_name|urlencode }}" 
+                {% if rename_link %}
+                <div class="alert alert-info d-flex align-items-start gap-2 mb-3" role="note">
+                    <i class="bi bi-arrow-left-right mt-1"></i>
+                    <div>
+                        {% if rename_link.viewing_is_successor %}
+                        Formerly <a href="{% url 'employer_profile' slug=rename_link.other.slug %}"><strong>{{ rename_link.other.canonical_name }}</strong></a>.
+                        {% else %}
+                        Now filing as <a href="{% url 'employer_profile' slug=rename_link.other.slug %}"><strong>{{ rename_link.other.canonical_name }}</strong></a>.
+                        {% endif %}
+                        {{ rename_link.note }}
+                        {% if rename_link.combined_total %}
+                        <span class="d-block small text-muted mt-1">Combined lifetime across both entities: {{ rename_link.combined_total|intcomma }} H-1B &amp; PERM filings ({{ rename_link.combined_lca_count|intcomma }} H-1B, {{ rename_link.combined_perm_count|intcomma }} PERM).</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                <a href="{% url 'salary_search' %}?employer={{ cluster.canonical_name|urlencode }}"
                    class="btn btn-outline-primary">
                     <i class="bi bi-search"></i> View All Salary Records
                 </a>

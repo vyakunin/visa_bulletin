@@ -766,6 +766,20 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_employer_renames",
+    size = "small",
+    srcs = ["test_employer_renames.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/salary:employer_renames",
+        "//models:salary",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)
+
+django_py_test(
     name = "test_employer_rankings_view",
     size = "small",
     srcs = ["test_employer_rankings_view.py"],

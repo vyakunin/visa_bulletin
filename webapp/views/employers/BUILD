@@ -32,6 +32,7 @@ py_library(
         "//lib/business/i129:pay_comparison",
         "//lib/business/salary:common_stats",
         "//lib/business/salary:common_chart_builder",
+        "//lib/business/salary:employer_renames",
         "//lib/business/salary:slug_redirects",
         "//models/enums:visa_program",
         "//models:job_title",

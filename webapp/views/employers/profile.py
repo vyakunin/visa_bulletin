@@ -27,6 +27,7 @@ from lib.business.salary.common_stats import (
     calculate_yoy_growth,
     calculate_yoy_trends,
 )
+from lib.business.salary.employer_renames import get_rename_link
 from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
@@ -405,9 +406,16 @@ def employer_profile_view(request, slug):
     # ~99% LCA cert rate. None when too thin (template hides the section).
     approval_stats = get_employer_approval_stats(cluster)
 
+    # Legal-successor cross-link (e.g. Facebook, Inc. -> Meta Platforms, Inc.).
+    # None for the vast majority of employers (not in the curated rename map);
+    # cheap single indexed slug lookup when present. Template hides the banner
+    # when None.
+    rename_link = get_rename_link(cluster)
+
     context = {
         "cluster": cluster,
         "stats": stats,
+        "rename_link": rename_link,
         "chart_data": chart_data,
         "pay_comparison": pay_comparison,
         "approval_stats": approval_stats,

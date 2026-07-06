@@ -1,0 +1,21 @@
+# Curated corporate rename / legal-successor mappings.
+#
+# The employer clustering pipeline is name-based, so a legal rename (Facebook,
+# Inc. -> Meta Platforms, Inc.) produces two SEPARATE EmployerCluster rows /
+# profile pages even though it is the same company post-rename. This curated
+# layer sits ON TOP of the existing clusters (it does NOT merge them) and drives
+# a bidirectional cross-link banner + combined lifetime totals on both profile
+# pages, so a visitor on either page sees the unified history.
+#
+# `predecessor` / `successor` are EmployerCluster slugs. If a re-cluster ever
+# churns a slug, the resolver falls back to the slug_redirects ladder, so stale
+# slugs here still resolve. Curated by hand — high precision over recall; add a
+# well-known rename only when both profile pages exist and it is unambiguous the
+# same legal entity, not merely a parent/subsidiary relationship.
+#
+# `note` is shown verbatim in the banner. Keep it factual (what renamed, when).
+
+renames:
+  - predecessor: facebook-inc
+    successor: meta-platforms-inc
+    note: "Facebook, Inc. renamed to Meta Platforms, Inc. in October 2021."
