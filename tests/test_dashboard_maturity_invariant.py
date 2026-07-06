@@ -95,13 +95,17 @@ class TestMaturityInvariant(unittest.TestCase):
         # This is the reported bug shape: Filing (ahead today) still lands later.
         self.assertGreater(filing_est, final_est)
 
-    def test_clamped_projections_respect_the_invariant(self):
-        """With the counterpart bound wired in, Filing must never land after Final Action."""
+    def test_clamped_filing_never_lands_after_final_action(self):
+        """With the Final Action bound wired in, Filing is pulled DOWN to <= Final Action."""
         label = "EB-1: Priority Workers"
 
         final_rows = self._rows(self.final_dates, self.final_cutoffs)
         final_est = final_rows[0]["linear_maturity"]
         final_maturity_lookup = {label: final_est}
+
+        # Baseline: unclamped Filing violates the invariant (lands after Final Action).
+        filing_est_unclamped = self._rows(self.filing_dates, self.filing_cutoffs)[0]["linear_maturity"]
+        self.assertGreater(filing_est_unclamped, final_est)
 
         filing_rows = self._rows(
             self.filing_dates, self.filing_cutoffs,
@@ -112,19 +116,37 @@ class TestMaturityInvariant(unittest.TestCase):
 
         self.assertIsNotNone(filing_est)
         self.assertLessEqual(filing_est, final_est)
+        # Clamped exactly to the Final Action date, not to some third value.
+        self.assertEqual(filing_est, final_est)
 
-        # And the symmetric direction: Final Action can't be clamped earlier
-        # than Filing's own (unclamped) estimate.
-        filing_rows_unclamped = self._rows(self.filing_dates, self.filing_cutoffs)
-        filing_est_unclamped = filing_rows_unclamped[0]["linear_maturity"]
-        filing_maturity_lookup = {label: filing_est_unclamped}
+    def test_final_action_estimate_is_never_pushed_later_by_filing(self):
+        """
+        The clamp is one-directional. Rendering the Final Action page must NOT drag
+        its estimate later to match a slower/plateaued Filing projection — Final
+        Action's own (here earlier, faster) projection is the binding upper bound.
+        This is the quality guard on the reported EB-1 India shape: FAD ~2027 must
+        stay ~2027, not get pushed to Filing's bogus ~2029.
+        """
+        label = "EB-1: Priority Workers"
+
+        final_rows_unclamped = self._rows(self.final_dates, self.final_cutoffs)
+        final_est_unclamped = final_rows_unclamped[0]["linear_maturity"]
+
+        # Filing's own (unclamped) estimate is LATER than Final Action's.
+        filing_est_unclamped = self._rows(self.filing_dates, self.filing_cutoffs)[0]["linear_maturity"]
+        self.assertGreater(filing_est_unclamped, final_est_unclamped)
+
+        # Render the Final Action page with Filing supplied as the counterpart.
+        # is_filing=False → no clamp applies; Final Action is preserved.
         final_rows_clamped = self._rows(
             self.final_dates, self.final_cutoffs,
-            counterpart_maturity=filing_maturity_lookup,
+            counterpart_maturity={label: filing_est_unclamped},
             is_filing=False,
         )
         final_est_clamped = final_rows_clamped[0]["linear_maturity"]
-        self.assertGreaterEqual(final_est_clamped, filing_est_unclamped)
+
+        self.assertEqual(final_est_clamped, final_est_unclamped)
+        self.assertLess(final_est_clamped, filing_est_unclamped)
 
 
 if __name__ == "__main__":

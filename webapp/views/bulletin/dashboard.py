@@ -283,14 +283,20 @@ def _build_unified_prediction_rows(
       - maturity_month: first month cutoff ≥ submission_date (None = beyond VQS horizon)
       - linear_maturity: linear-extrapolation fallback (None = stalled / no estimate)
 
-    counterpart_maturity/is_filing (optional): the OTHER action type's already-computed
-    effective maturity per label (maturity_month or linear_maturity), used to enforce
-    the invariant that a Dates-for-Filing cutoff is never behind its Final Action
-    counterpart — so Filing must reach a given priority date no LATER than Final
-    Action, and Final Action can never reach it EARLIER than Filing. Final Action and
-    Filing are forecast as fully independent VQS runs (see _get_vqs_predictions), so
-    without this clamp their linear-extrapolation fallbacks can disagree on rate and
-    silently violate that ordering (see Notion 39462b8d, reported via r/USCIS 2026-07-05).
+    counterpart_maturity/is_filing (optional): the Final Action effective maturity
+    per label (maturity_month or linear_maturity), used ONLY when is_filing=True to
+    enforce the invariant that a Dates-for-Filing cutoff is never behind its Final
+    Action counterpart — a priority date therefore becomes current for Filing no
+    LATER than for Final Action. Final Action and Filing are forecast as fully
+    independent VQS runs (see _get_vqs_predictions), so beyond the forecast horizon
+    their linear-extrapolation fallbacks can disagree on rate and put Filing later
+    than Final Action — impossible in reality. When that happens we clamp Filing's
+    estimate DOWN to the Final Action date. The clamp is one-directional: we never
+    push Final Action later, because Final Action's own projection is the binding
+    upper bound for Filing — importing Filing's (here plateaued) rate into Final
+    Action would only degrade the more-reliable series. See Notion 39462b8d,
+    reported via r/USCIS 2026-07-05 (EB-1 India PD 4/29/2025: FAD ~2027 vs
+    Filing ~2029).
     """
     # Build lookup: label → current cutoff (last non-None cutoff date)
     current_cutoffs: dict[str, date | None] = {}
@@ -323,19 +329,19 @@ def _build_unified_prediction_rows(
             if linear is None and pred.get("trajectory"):
                 linear = _linear_maturity_fallback(submission_date, pred["trajectory"])
 
-        if not already_current and counterpart_maturity:
-            other = counterpart_maturity.get(lbl)
+        # One-directional clamp: only the Filing page corrects itself against Final
+        # Action. Filing must never mature later than Final Action (Filing cutoffs are
+        # always at-or-ahead), so if Filing's independent estimate lands after Final
+        # Action's, pull Filing DOWN to the Final Action date. Final Action is left
+        # untouched — its own projection is the binding upper bound. (See docstring.)
+        if not already_current and is_filing and counterpart_maturity:
+            other = counterpart_maturity.get(lbl)  # Final Action effective maturity
             effective = maturity if maturity is not None else linear
-            if effective is not None and other is not None:
-                violated = (
-                    (is_filing and effective > other)
-                    or (not is_filing and effective < other)
-                )
-                if violated:
-                    if maturity is not None:
-                        maturity = other
-                    else:
-                        linear = other
+            if effective is not None and other is not None and effective > other:
+                if maturity is not None:
+                    maturity = other
+                else:
+                    linear = other
 
         has_vqs = bool(pred)
 
@@ -435,13 +441,19 @@ def dashboard_view(request, category=None, country=None):
         except Exception:
             logger.exception("Failed to load VQS predictions")
 
-    # Fetch the OTHER action type's effective maturity per label, so the unified
-    # rows below can clamp Filing <= Final Action (Filing is never behind Final
-    # Action in the real bulletin, so its projected maturity must never land
-    # later — see _build_unified_prediction_rows docstring). Cheap: same cached
-    # VQS call the counterpart page load would make anyway.
+    # On the Filing page only, fetch the Final Action effective maturity per label so
+    # the unified rows below can clamp Filing <= Final Action (Filing is never behind
+    # Final Action in the real bulletin, so its projected maturity must never land
+    # later — see _build_unified_prediction_rows docstring). The Final Action page
+    # needs no counterpart: it is the binding upper bound and is never moved. Cheap:
+    # same cached VQS call the Final Action page load would make anyway.
     counterpart_maturity: dict[str, date | None] = {}
-    if category == VisaCategory.EMPLOYMENT_BASED.value and has_data and submission_date:
+    if (
+        category == VisaCategory.EMPLOYMENT_BASED.value
+        and has_data
+        and submission_date
+        and action_type == ActionType.FILING.value
+    ):
         try:
             counterpart_action_type = _counterpart_action_type(action_type)
             counterpart_visa_class_data, counterpart_has_data = get_aggregated_visa_class_data(
