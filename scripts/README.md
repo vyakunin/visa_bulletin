@@ -1179,6 +1179,32 @@ tail -f /tmp/clustering.log
 
 ---
 
+## Test-DB hygiene — `drop_orphan_test_dbs.py`
+
+The test suite (`tests/django_setup.py`) creates a per-pid `test_postgres_<pid>`
+database on the shared local postgres for each bazel target. Clean exits now drop
+their own DB via an `atexit` hook, but a target **killed** by a timeout/OOM
+orphans one. Left unswept these accumulate (2065 DBs / 21 GB by 2026-07-07 on the
+minipc).
+
+`scripts/drop_orphan_test_dbs.py` is the backstop. It drops a `test_postgres_%`
+DB only when it has **no active connection** AND the `<pid>` in its name is **no
+longer a live process** (`/proc/<pid>` absent) — so a running test is never hit.
+Peer-auths to postgres over the unix socket as the current OS user.
+
+```bash
+uv run scripts/drop_orphan_test_dbs.py --dry-run   # preview
+uv run scripts/drop_orphan_test_dbs.py             # sweep
+```
+
+Installed as an **hourly user cron** on the minipc (logs to
+`logs/drop_orphan_test_dbs.log`, gitignored):
+```
+37 * * * * cd .../visa_bulletin && ~/.local/bin/uv run scripts/drop_orphan_test_dbs.py >> .../logs/drop_orphan_test_dbs.log 2>&1
+```
+
+---
+
 ## Temporary/One-Off Scripts
 
 Temporary debugging scripts should be placed in `scripts/oneoff/` and logged to `logs/throwaway_calls.log` using `log_context()`.
