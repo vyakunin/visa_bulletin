@@ -706,7 +706,8 @@ function initMarketCharts() {
         }
         try {
             element.innerHTML = "";
-            Plotly.newPlot(elementId, chartData.data, chartData.layout, {responsive: true, displayModeBar: false});
+            var vbMode = window.vbChartMode(elementId, chartData);
+            Plotly.newPlot(elementId, chartData.data, window.vbChartLayout(chartData.layout, vbMode), window.vbChartConfig(vbMode));
         } catch (e) {
             console.error("Failed to render chart:", elementId, e);
         }

@@ -328,6 +328,11 @@ def _wrap_chart_as_html(chart_json: str) -> str:
                 'responsive': true,
                 'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d']
             }};
+            // Touch devices: static so a swipe scrolls the page instead of being
+            // captured as a Plotly drag (desktop keeps zoom/pan via config above).
+            if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {{
+                config = {{ 'responsive': true, 'displayModeBar': false, 'staticPlot': true }};
+            }}
             Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function(gd) {{
                 gd.on('plotly_click', function(data){{
                     var point = data.points[0];
