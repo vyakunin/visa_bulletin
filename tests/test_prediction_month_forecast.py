@@ -188,10 +188,12 @@ class TestPredictionMonthForecast(TestCase):
         )
 
     def test_published_month_redirects_to_archive(self):
-        # June 2026 has an actual bulletin -> forecast URL 301s to the accuracy archive.
+        # June 2026 has an actual bulletin -> forecast URL 301s straight to the
+        # canonical bare-numeric accuracy archive (not the employment_based alias,
+        # which would 301 again).
         resp = self.client.get("/predictions/june-2026/")
         self.assertEqual(resp.status_code, 301)
-        self.assertEqual(resp["Location"], "/predictions/employment_based/2026-6/")
+        self.assertEqual(resp["Location"], "/predictions/2026-6/")
 
     def test_future_month_without_forecast_404(self):
         # September 2026: no stored predictions -> no thin page, no live solver.
@@ -202,7 +204,8 @@ class TestPredictionMonthForecast(TestCase):
 
     def test_route_does_not_shadow_category_landing(self):
         # /predictions/employment_based/ must still resolve to the category landing
-        # (redirect to latest month), NOT be captured by the forecast pattern.
+        # (redirect to latest month), NOT be captured by the forecast pattern. The
+        # landing now redirects straight to the canonical bare-numeric month URL.
         resp = self.client.get("/predictions/employment_based/")
         self.assertIn(resp.status_code, (301, 302))
-        self.assertIn("/predictions/employment_based/2026-6/", resp["Location"])
+        self.assertIn("/predictions/2026-6/", resp["Location"])

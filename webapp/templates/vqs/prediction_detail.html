@@ -49,7 +49,7 @@
                 <i class="bi bi-graph-up"></i>
             </a>
             {% if nav_prev %}
-            <a href="{% url 'prediction_detail_category' category nav_prev.year nav_prev.month %}"
+            <a href="{{ nav_prev_url }}"
                 class="btn btn-outline-primary">
                 <i class="bi bi-chevron-left"></i> {{ formatted_nav_prev }}
             </a>
@@ -57,7 +57,7 @@
             <button class="btn btn-outline-secondary disabled">Prev</button>
             {% endif %}
             {% if nav_next %}
-            <a href="{% url 'prediction_detail_category' category nav_next.year nav_next.month %}"
+            <a href="{{ nav_next_url }}"
                 class="btn btn-outline-primary">
                 {{ formatted_nav_next }} <i class="bi bi-chevron-right"></i>
             </a>

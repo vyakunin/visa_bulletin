@@ -386,11 +386,24 @@ def sitemap_view(request):
     for pub_date in bulletin_dates:
         # The latest bulletin's publication_date is next month (future); cap so
         # /predictions/<latest>/ never advertises a future lastmod.
+        # Bare numeric = the canonical employment_based page (see
+        # prediction_canonical_path); the /predictions/employment_based/<y>-<m>/
+        # alias 301s here, so we never list it.
         xml_parts.extend(_url_entry(
             f"{base_url}/predictions/{pub_date.year}-{pub_date.month}/",
             lastmod=_lastmod_capped(pub_date, today),
             changefreq="yearly",
             priority="0.5",
+        ))
+
+    # Family-sponsored prediction archive — distinct content, self-canonical,
+    # and previously orphaned from the sitemap. One URL per bulletin month.
+    for pub_date in bulletin_dates:
+        xml_parts.extend(_url_entry(
+            f"{base_url}/predictions/family_sponsored/{pub_date.year}-{pub_date.month}/",
+            lastmod=_lastmod_capped(pub_date, today),
+            changefreq="yearly",
+            priority="0.4",
         ))
 
     xml_parts.append("</urlset>")

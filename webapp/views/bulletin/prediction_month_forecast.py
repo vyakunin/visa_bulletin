@@ -335,10 +335,12 @@ def prediction_month_forecast_view(request, slug: str) -> HttpResponse:
         raise Http404("Unknown forecast month")
 
     # Once the actual bulletin for this month exists, the forecast is history —
-    # send the URL to the accuracy archive so there's no duplicate page.
+    # send the URL to the accuracy archive so there's no duplicate page. Target
+    # the canonical bare-numeric URL directly (the employment_based/<y>-<m> alias
+    # would just 301 again — see prediction_canonical_path).
     if Bulletin.objects.filter(publication_date=target).exists():
         return HttpResponsePermanentRedirect(
-            f"/predictions/employment_based/{target.year}-{target.month}/"
+            f"/predictions/{target.year}-{target.month}/"
         )
 
     latest = Bulletin.objects.order_by("-publication_date").first()
