@@ -67,8 +67,9 @@
           var el = document.getElementById('pd-history-chart');
           if (!el || typeof Plotly === 'undefined') return;
           el.innerHTML = '';
-          Plotly.newPlot('pd-history-chart', payload.data, payload.layout,
-            { responsive: true, displayModeBar: false }).then(function () {
+          var vbMode = window.vbChartMode('pd-history-chart', payload);
+          Plotly.newPlot('pd-history-chart', payload.data, window.vbChartLayout(payload.layout, vbMode),
+            window.vbChartConfig(vbMode)).then(function () {
               Plotly.Plots.resize('pd-history-chart');
             });
         }

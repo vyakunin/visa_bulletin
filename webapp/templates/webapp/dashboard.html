@@ -742,6 +742,9 @@
         }
     };
 
+    // Touch devices: make the trend chart static so a swipe scrolls the page
+    // instead of being captured as a Plotly drag (desktop keeps full zoom/pan).
+    if (window.vbIsTouch) { config = { responsive: true, displayModeBar: false, staticPlot: true }; }
     Plotly.newPlot('priority-date-chart', chartData.data, chartData.layout, config).then(function (gd) {
         // Store initial smart range
         var initialRange = calculateVisibleRange();

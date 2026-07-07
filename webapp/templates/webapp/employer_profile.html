@@ -521,11 +521,12 @@ function initEmployerCharts() {
         }
         element.innerHTML = '';
         try {
+            var vbMode = window.vbChartMode(elementId, chartData);
             Plotly.newPlot(
                 elementId,
                 chartData.data,
-                chartData.layout,
-                {responsive: true, displayModeBar: false}
+                window.vbChartLayout(chartData.layout, vbMode),
+                window.vbChartConfig(vbMode)
             ).then(function() {
                 console.log('Chart rendered:', elementId);
                 Plotly.Plots.resize(elementId);

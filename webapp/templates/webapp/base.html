@@ -828,6 +828,38 @@
             }
         });
         
+        // ── Shared Plotly interactivity policy ──────────────────────────
+        // Touch (coarse pointer): every chart is staticPlot, so a swipe that
+        // lands on a chart scrolls the page instead of being captured as a
+        // Plotly box-zoom drag. Desktop: charts auto-classify by trace type —
+        // all-bar charts (values already labelled on the bars) are static;
+        // line/scatter charts keep hover tooltips but drag-zoom is disabled so
+        // a stray drag can't create a meaningless "sub-scope" zoom box. A small
+        // whitelist keeps genuine zoom/pan where scoping a range is meaningful
+        // (the priority-date trend + salary-distribution histograms).
+        window.vbIsTouch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        window.__vbInteractiveIds = ['priority-date-chart', 'salary-histogram'];
+        window.vbChartMode = function(elementId, chartData) {
+            if (window.vbIsTouch) return 'static';            // touch: always static
+            var id = String(elementId || '');
+            for (var i = 0; i < window.__vbInteractiveIds.length; i++) {
+                if (id.indexOf(window.__vbInteractiveIds[i]) !== -1) return 'interactive';
+            }
+            var data = (chartData && chartData.data) || [];
+            var allBar = data.length > 0 && data.every(function(t) { return t && t.type === 'bar'; });
+            return allBar ? 'static' : 'hover';               // bars → static; lines → hover
+        };
+        window.vbChartConfig = function(mode, extra) {
+            var c = Object.assign({ responsive: true, displayModeBar: false, scrollZoom: false }, extra || {});
+            if (mode === 'static') c.staticPlot = true;       // no interaction at all
+            return c;                                         // 'hover'/'interactive' keep tooltips
+        };
+        window.vbChartLayout = function(layout, mode) {
+            layout = layout || {};
+            if (mode === 'hover') layout.dragmode = false;    // tooltips yes, zoom box no
+            return layout;                                    // 'interactive' keeps default zoom drag
+        };
+
         // Shared multi-line chart with checkboxes (same pattern as visa bulletin dashboard)
         window.renderMultilineChartWithCheckboxes = function(elementId, chartData, options) {
             options = options || {};
@@ -880,7 +912,9 @@
             layout.margin.b = layout.margin.b !== undefined ? layout.margin.b : 90;
             layout.margin.l = layout.margin.l !== undefined ? layout.margin.l : 45;
             layout.autosize = true;
-            var config = { responsive: true, displayModeBar: false };
+            var vbMode = window.vbChartMode(elementId, chartData);
+            layout = window.vbChartLayout(layout, vbMode);
+            var config = window.vbChartConfig(vbMode);
             Plotly.newPlot(elementId, chartData.data, layout, config).then(function() {
                 if (typeof Plotly.Plots !== 'undefined' && Plotly.Plots.resize) {
                     Plotly.Plots.resize(elementId);

@@ -628,11 +628,12 @@ document.addEventListener('DOMContentLoaded', function() {
             var loadingEl = element.querySelector('.chart-loading');
             if (loadingEl) loadingEl.remove();
             element.innerHTML = '';
+            var vbMode = window.vbChartMode(elementId, chartData);
             Plotly.newPlot(
                 elementId,
                 chartData.data,
-                chartData.layout,
-                {responsive: true, displayModeBar: false}
+                window.vbChartLayout(chartData.layout, vbMode),
+                window.vbChartConfig(vbMode)
             );
             console.log('Chart rendered:', elementId);
         } catch (e) {
