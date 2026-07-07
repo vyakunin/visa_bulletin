@@ -93,6 +93,19 @@ class SitemapLastmodTest(TestCase):
             assert m.group(1) == "2026-02-08", \
                 f"{path} lastmod {m.group(1)} != cluster updated_at 2026-02-08"
 
+    def test_family_sponsored_archive_in_sitemap(self):
+        """Family-sponsored prediction months must be listed (were orphaned).
+
+        The archive loop used to emit only the bare-numeric (employment_based)
+        form, so /predictions/family_sponsored/<y>-<m>/ appeared nowhere in the
+        sitemap despite being live, self-canonical content.
+        """
+        import re
+        body = self.client.get(reverse("sitemap")).content.decode()
+        fs_path = f"/predictions/family_sponsored/{self.future.year}-{self.future.month}/"
+        assert re.search(rf"<loc>[^<]*{re.escape(fs_path)}</loc>", body), \
+            f"family_sponsored archive URL {fs_path} missing from sitemap"
+
     def test_dashboard_lastmod_is_bulletin_fetched_at_not_publication_date(self):
         """Static/dashboard URLs use the bulletin's real ingest time (fetched_at),
         not its future publication_date capped to today.

@@ -4,7 +4,11 @@ import logging
 import re
 from datetime import date
 
-from django.http import HttpRequest, HttpResponse
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponsePermanentRedirect,
+)
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import cache_page
 
@@ -72,12 +76,9 @@ def prediction_category_landing(request: HttpRequest, category: str) -> HttpResp
 
         raise Http404("No bulletins available")
 
-    return redirect(
-        "prediction_detail_category",
-        category=category,
-        year=latest.year,
-        month=latest.month,
-    )
+    # Redirect straight to the canonical month URL (bare numeric for
+    # employment_based) so we don't chain landing -> category-alias -> numeric.
+    return redirect(prediction_canonical_path(category, latest.year, latest.month))
 
 
 def _add_months(sourcedate: date, months: int) -> date:
@@ -86,6 +87,24 @@ def _add_months(sourcedate: date, months: int) -> date:
     mon = m % 12 + 1
     day = min(sourcedate.day, calendar.monthrange(y, mon)[1])
     return date(y, mon, day)
+
+
+def prediction_canonical_path(category: str, year: int, month: int) -> str:
+    """The single canonical URL path for a published-month prediction page.
+
+    We serve the same page under two URLs — the bare numeric
+    ``/predictions/<y>-<m>/`` (legacy default, employment_based) and
+    ``/predictions/employment_based/<y>-<m>/`` — so exactly one must be
+    canonical. We pick the bare numeric form: it's what the sitemap and the
+    archive index already link, and it's already indexed. Non-default
+    categories (family_sponsored) keep their category segment — they are
+    distinct content and self-canonical. This is the nearest thing the app has
+    to a ``get_absolute_url`` for a prediction month; route every internal
+    link, canonical tag, and sitemap entry through it.
+    """
+    if category == VisaCategory.EMPLOYMENT_BASED.value:
+        return f"/predictions/{year}-{month}/"
+    return f"/predictions/{category}/{year}-{month}/"
 
 
 def _cache_historical_predictions_only(timeout: int):
@@ -128,6 +147,18 @@ def prediction_detail(
     request: HttpRequest, year: int, month: int, category: str = "employment_based"
 ) -> HttpResponse:
     """Detailed view: backtested predictions + actual bulletin for a month."""
+    # Collapse the duplicate employment_based/<y>-<m> URL onto the canonical
+    # bare numeric /predictions/<y>-<m>/ (301). Only when reached via the
+    # explicit category route — the bare numeric route lands here directly and
+    # must render, not loop. family_sponsored keeps its segment (distinct,
+    # self-canonical).
+    if (
+        request.resolver_match is not None
+        and request.resolver_match.url_name == "prediction_detail_category"
+        and category == VisaCategory.EMPLOYMENT_BASED.value
+    ):
+        return HttpResponsePermanentRedirect(f"/predictions/{year}-{month}/")
+
     target_date = date(year, month, 1)
 
     actual_bulletin = Bulletin.objects.filter(publication_date=target_date).first()
@@ -347,6 +378,20 @@ def prediction_detail(
     formatted_nav_prev = nav_prev.strftime("%b %Y") if nav_prev else None
     formatted_nav_next = nav_next.strftime("%b %Y") if nav_next else None
 
+    # Internal nav links use the canonical scheme (numeric for employment_based)
+    # so prev/next agree with the sitemap + archive index instead of pushing the
+    # duplicate employment_based/<y>-<m> form.
+    nav_prev_url = (
+        prediction_canonical_path(category, nav_prev.year, nav_prev.month)
+        if nav_prev
+        else None
+    )
+    nav_next_url = (
+        prediction_canonical_path(category, nav_next.year, nav_next.month)
+        if nav_next
+        else None
+    )
+
     context = {
         "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
@@ -356,11 +401,16 @@ def prediction_detail(
         "countries": list(countries),
         "nav_prev": nav_prev,
         "nav_next": nav_next,
+        "nav_prev_url": nav_prev_url,
+        "nav_next_url": nav_next_url,
         "formatted_title": formatted_title,
         "formatted_nav_prev": formatted_nav_prev,
         "formatted_nav_next": formatted_nav_next,
         "category": category,
         "category_label": category_label,
+        "canonical_url": request.build_absolute_uri(
+            prediction_canonical_path(category, year, month)
+        ),
     }
     return render(request, "vqs/prediction_detail.html", context)
 
