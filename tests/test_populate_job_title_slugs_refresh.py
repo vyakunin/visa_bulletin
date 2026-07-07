@@ -15,7 +15,10 @@ setup_django_for_tests()
 from django.test import TestCase
 
 from models.job_title import JobTitleCluster
-from scripts.salary.populate_job_title_slugs import _find_stale_slugs, _refresh_stale_slugs
+from scripts.salary.populate_job_title_slugs import (
+    _find_stale_slugs,
+    _refresh_stale_slugs,
+)
 
 
 class TestScopedSlugRefresh(TestCase):

@@ -161,7 +161,6 @@ django_py_test(
 
 django_py_test(
     name = "test_country_header_parsing",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_country_header_parsing.py"],
     data = [
@@ -216,11 +215,13 @@ py_test(
 
 django_py_test(
     name = "test_prediction_category_landing",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     srcs = ["test_prediction_category_landing.py"],
     deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
         "//models:bulletin",
         "//webapp:urls",
+        "//webapp/views:views",
     ],
 )
 
@@ -309,6 +310,22 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_dashboard_maturity_invariant",
+    size = "small",
+    srcs = ["test_dashboard_maturity_invariant.py"],
+    deps = [
+        "//webapp/views:views",
+        "//models:visa_cutoff_date",
+        "//models:bulletin",
+        "//models/enums:visa_category",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//django_config:urls",
+        "//webapp:urls",
+    ],
+)
+
+django_py_test(
     name = "test_salary",
     size = "small",
     srcs = ["test_salary.py"],
@@ -323,11 +340,6 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_search_view",
-    # QUARANTINE 2026-06-10: pre-existing failure (response.context is None
-    # under the pytest harness — the "test suite false-green" ticket). Deps
-    # below were completed 2026-06-18 so it imports cleanly; the remaining
-    # blocker is the harness not populating response.context.
-    tags = ["manual"],
     size = "small",
     srcs = ["test_salary_search_view.py"],
     deps = [
@@ -385,7 +397,13 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_import",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: all 11 failures were one BUILD dep-gap, not a
+    # logic regression. db_importer._get_or_create_employer does a runtime
+    # `from lib.business.salary.employer_clustering import assign_to_cluster`
+    # (local import to avoid a lib-level cycle); without the dep in runfiles every
+    # row errored before validation ran, so even the rejection tests failed. The 3
+    # salary_search view tests also needed webapp views+urls (like
+    # test_salary_real_data). Added all three deps.
     size = "small",
     srcs = ["test_salary_import.py"],
     data = [
@@ -393,16 +411,20 @@ django_py_test(
     ],
     deps = [
         ":conftest_lib",
+        "//lib/business/salary:employer_clustering",
         "//lib/parsing/salary:db_importer",
+        "//lib/parsing/salary:wage_unit_correction",
+        "//lib/utils:data_source_utils",
         "//models:salary",
         "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
         requirement("pytest-django"),
     ],
 )
 
 django_py_test(
     name = "test_ingest_integration",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "medium",
     srcs = ["test_ingest_integration.py"],
     deps = [
@@ -420,7 +442,6 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_real_data",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_salary_real_data.py"],
     deps = [
@@ -446,7 +467,8 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_plugins",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: test_download was fixed in commit 04ea649 (the
+    # last remaining failure); the target now runs fully green.
     size = "small",
     srcs = ["test_ingest_plugins.py"],
     deps = [
@@ -455,6 +477,7 @@ django_py_test(
         "//lib/ingest:registry",
         "//lib/ingest/plugins:dol_lca",
         "//lib/ingest/plugins:dol_perm",
+        "//lib/utils:http_utils",
         "//models/ingest:ingest",
         "//models/ingest:enums",
         "//models:salary",
@@ -476,7 +499,10 @@ django_py_test(
 
 django_py_test(
     name = "test_lca_plugin",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: 5 failures were a missing @pytest.mark.django_db
+    # on the DB-touching classes (TestLCATransformRouting/Parse/Validation); the
+    # 6th was a stale fixture (a year-less filename -> _fiscal_year=None) fixed by
+    # using an FY2024 filename. See umbrella "test suite false-green" ticket.
     size = "small",
     srcs = ["test_lca_plugin.py"],
     deps = [
@@ -496,7 +522,7 @@ django_py_test(
     name = "test_ingest_versioning",
     size = "small",
     srcs = ["test_ingest_versioning.py"],
-    tags = ["exclusive", "manual"],  # QUARANTINE 2026-06-10: pre-existing failure exposed by the false-green fix. See Notion "test suite false-green" ticket.
+    tags = ["exclusive"],
     deps = [
         ":conftest_lib",
         "//lib/ingest:versioning",
@@ -509,7 +535,11 @@ django_py_test(
 
 django_py_test(
     name = "test_validation",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: the 5 failing wage-unit assertions were stale
+    # (asserted old arbitrary $500/hr,$50K/mo thresholds + a higher min). The
+    # should_correct_wage_unit redesign to a single data-driven [MIN_ANNUAL,
+    # MAX_ANNUAL] range was intentional (ticket 38462b8d); tests rewritten to the
+    # new contract.
     size = "small",
     srcs = ["test_validation.py"],
     deps = [
@@ -524,7 +554,12 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_clustering",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Un-quarantined 2026-06-20: 3 failures were fixture unique-collisions
+    # (normalize_name collapses "Google Inc."/"Google" -> "google", etc.); 2 were
+    # stale matching assertions against a pre-rewrite 0.85 threshold (the impl has
+    # used a 0.95 similarity threshold since commit 2ffb1ec, favoring precision).
+    # Rewritten to the real contract + a precision-boundary non-match test. See
+    # umbrella "test suite false-green" ticket.
     size = "small",
     srcs = ["test_employer_clustering.py"],
     deps = [
@@ -535,26 +570,8 @@ django_py_test(
     ],
 )
 
-django_py_test(
-    name = "test_clustering_evaluator",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
-    size = "small",
-    srcs = ["test_clustering_evaluator.py"],
-    deps = [
-        "//lib/business/salary:clustering_evaluator",
-        "//models:salary",
-    ],
-)
-
-django_py_test(
-    name = "test_clustering_metrics",
-    size = "small",
-    srcs = ["test_clustering_metrics.py"],
-    deps = [
-        "//lib/business/salary:clustering_evaluator",
-        "//models:salary",
-    ],
-)
+# test_clustering_evaluator + test_clustering_metrics + test_llm_validation_integration
+# removed 2026-06-20 with the Ollama LLM clustering-evaluator subsystem (Ollama retired).
 
 django_py_test(
     name = "test_clustering_regression",
@@ -597,7 +614,6 @@ django_py_test(
 
 django_py_test(
     name = "test_data_source_utils",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_data_source_utils.py"],
     deps = [
@@ -609,13 +625,13 @@ django_py_test(
 
 django_py_test(
     name = "test_orchestrator_upsert",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_orchestrator_upsert.py"],
     deps = [
         ":conftest_lib",
         "//lib/ingest:orchestrator",
         "//models:salary",
+        "//models/enums:visa_program",
         "//models/ingest:ingest",
     ],
 )
@@ -631,7 +647,13 @@ django_py_test(
 
 django_py_test(
     name = "test_dol_transform_golden",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
+    # Golden rebaselined 2026-06-23 from verified transform output (440 annotated
+    # non-error cases) after categorizing every drift: 3204 None->value enrichment
+    # (dates/employer_id/prevailing_wage_unit), worksite_state full-name->2-letter
+    # (normalize_state_code), the resolved PERM/H1B employer-title preference, and
+    # the wage-unit annualization fix — ZERO field losses. Regenerate with
+    # //scripts/oneoff:regen_dol_golden (it ABORTS if any annotated case now
+    # transforms to None — a real regression vs benign drift).
     size = "medium",
     srcs = ["test_dol_transform_golden.py"],
     data = [
@@ -730,12 +752,16 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_profile_view",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_employer_profile_view.py"],
     deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:job_title",
         "//models:salary",
         "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
     ],
 )
 
@@ -755,13 +781,15 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_rankings_view",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_employer_rankings_view.py"],
     deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
         "//models:salary",
         "//models/enums:visa_program",
         "//webapp:urls",
+        "//webapp/views:views",
         "//webapp/views/employers:rankings",
     ],
 )
@@ -777,11 +805,6 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_directory_view",
-    # QUARANTINE 2026-06-10: pre-existing failure (response.context is None
-    # under the pytest harness — the "test suite false-green" ticket). Deps
-    # below were completed 2026-06-18 so it imports cleanly; the remaining
-    # blocker is the harness not populating response.context.
-    tags = ["manual"],
     size = "small",
     srcs = ["test_employer_directory_view.py"],
     deps = [
@@ -876,7 +899,6 @@ django_py_test(
 
 django_py_test(
     name = "test_refresh_pipeline",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_refresh_pipeline.py"],
     deps = [
@@ -884,12 +906,13 @@ django_py_test(
         "//scripts/cron/refresh:config",
         "//scripts/cron/refresh:pipeline",
         "//scripts/cron/refresh:runner",
+        # steps.py lazily does `from . import services`; needed in runfiles.
+        "//scripts/cron/refresh:services",
     ],
 )
 
 django_py_test(
     name = "test_refresh_steps",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_refresh_steps.py"],
     deps = [
@@ -900,37 +923,9 @@ django_py_test(
     ],
 )
 
-django_py_test(
-    name = "test_refresh_instance",
-    size = "small",
-    srcs = ["test_refresh_instance.py"],
-    deps = [
-        "//scripts/cron/refresh:instance",
-    ],
-)
-
-django_py_test(
-    name = "test_traffic_switch",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
-    size = "small",
-    srcs = ["test_traffic_switch.py"],
-    deps = [
-        "//scripts/cron/refresh:traffic_switch",
-    ],
-)
-
-django_py_test(
-    name = "test_refresh_orchestrate",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: hangs/timeouts when actually run (real orchestration). See Notion "test suite false-green" ticket.
-    size = "small",
-    srcs = ["test_refresh_orchestrate.py"],
-    deps = [
-        "//scripts/cron/refresh:config",
-        "//scripts/cron/refresh:instance",
-        "//scripts/cron/refresh:orchestrate",
-        "//scripts/cron/refresh:runner",
-    ],
-)
+# test_refresh_instance + test_traffic_switch + test_refresh_orchestrate removed
+# 2026-06-20 with the AWS/Lightsail orchestrator (instance / traffic_switch /
+# orchestrate) they covered (Lightsail retired -> homeserver + Cloudflare).
 
 # New tests from wip/pre-cleanup
 django_py_test(
@@ -944,7 +939,6 @@ django_py_test(
 
 django_py_test(
     name = "test_url_utils",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     srcs = ["test_url_utils.py"],
     deps = [
         "//lib/utils:url_utils",
@@ -953,7 +947,6 @@ django_py_test(
 
 django_py_test(
     name = "test_vqs_regime",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_vqs_regime.py"],
     deps = [
@@ -963,7 +956,6 @@ django_py_test(
 
 django_py_test(
     name = "test_vqs_metrics",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_vqs_metrics.py"],
     deps = [
@@ -973,17 +965,22 @@ django_py_test(
 
 django_py_test(
     name = "test_data_cache",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_data_cache.py"],
     deps = [
         "//lib/business/vqs:data_cache",
+        # data_cache lazily imports models.bulletin / models.visa_cutoff_date inside
+        # its functions, so the bulletin enum chain isn't picked up statically.
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//models/enums:employment_preference",
+        "//models/enums:family_preference",
+        "//models/enums:visa_category",
     ],
 )
 
 django_py_test(
     name = "test_solver_regime_display",
-    tags = ["manual"],  # QUARANTINE 2026-06-10: ran for the first time after the false-green fix; pre-existing failure. See Notion "test suite false-green" ticket.
     size = "small",
     srcs = ["test_solver_regime_display.py"],
     deps = [

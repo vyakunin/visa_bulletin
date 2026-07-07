@@ -85,6 +85,30 @@ def _most_frequent_raw_title_per_job_title() -> list[tuple[int, str]]:
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
 
+def _avg_salary_per_job_title() -> list[tuple[int, Decimal | None]]:
+    """
+    Return [(job_title_id, avg_salary), ...] using one indexed query.
+
+    Per-entity AVG(wage_annual) over the same reasonable-salary bounds as the
+    cluster stats, so the Related Roles table's per-title "Avg Salary" column is
+    populated (JobTitle.avg_salary was NULL for every row before this).
+    """
+    sql = """
+    SELECT
+        job_title_entity_id AS id,
+        AVG(wage_annual) AS avg_salary
+    FROM salary_record
+    WHERE job_title_entity_id IS NOT NULL
+      AND wage_annual IS NOT NULL
+      AND wage_annual >= %s
+      AND wage_annual <= %s
+    GROUP BY job_title_entity_id
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [MIN_REASONABLE_SALARY, MAX_REASONABLE_SALARY])
+        return [(row[0], row[1]) for row in cursor.fetchall()]
+
+
 def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
     """
     Return [(cluster_id, display_title), ...] using one query.
@@ -208,13 +232,15 @@ def main():
 
     if args.dry_run:
         logger.info(
-            "DRY RUN: would run 4 bulk SQL queries then batch-update JobTitle and JobTitleCluster"
+            "DRY RUN: would run 5 bulk SQL queries then batch-update JobTitle and JobTitleCluster"
         )
         n_jt = _most_frequent_raw_title_per_job_title()
+        n_avg = _avg_salary_per_job_title()
         n_cl = _most_frequent_raw_title_per_cluster()
         n_st = _stats_by_cluster()
         n_recent = _recent_filings_by_cluster()
         logger.info("  JobTitle representative titles: %s rows", f"{len(n_jt):,}")
+        logger.info("  JobTitle avg_salary: %s rows", f"{len(n_avg):,}")
         logger.info(
             "  JobTitleCluster representative titles: %s rows", f"{len(n_cl):,}"
         )
@@ -237,33 +263,42 @@ def main():
         return
 
     # 1) Bulk SQL: most frequent raw title per JobTitle
-    logger.info("Query 1/4: Most frequent raw title per JobTitle...")
+    logger.info("Query 1/5: Most frequent raw title per JobTitle...")
     job_title_updates = _most_frequent_raw_title_per_job_title()
     logger.info(
         "  Got %s JobTitle representative titles", f"{len(job_title_updates):,}"
     )
 
-    # 2) Bulk SQL: most frequent raw title per cluster
-    logger.info("Query 2/4: Most frequent raw title per cluster...")
+    # 2) Bulk SQL: avg_salary per JobTitle (Related Roles "Avg Salary" column)
+    logger.info("Query 2/5: Avg salary per JobTitle...")
+    avg_salary_by_job_title = dict(_avg_salary_per_job_title())
+    logger.info(
+        "  Got avg_salary for %s JobTitles", f"{len(avg_salary_by_job_title):,}"
+    )
+
+    # 3) Bulk SQL: most frequent raw title per cluster
+    logger.info("Query 3/5: Most frequent raw title per cluster...")
     cluster_canonical = dict(_most_frequent_raw_title_per_cluster())
     logger.info("  Got %s cluster representative titles", f"{len(cluster_canonical):,}")
 
-    # 3) Bulk SQL: stats by cluster (total_filings, avg_salary)
+    # 4) Bulk SQL: stats by cluster (total_filings, avg_salary)
     # Each cluster gets its true total so directory and profile counts match.
-    logger.info("Query 3/4: Stats by cluster (total_filings, avg_salary)...")
+    logger.info("Query 4/5: Stats by cluster (total_filings, avg_salary)...")
     stats_by_cluster_list = _stats_by_cluster()
     stats_by_cluster = {row[0]: (row[1], row[2]) for row in stats_by_cluster_list}
     logger.info("  Got stats for %s clusters", f"{len(stats_by_cluster):,}")
 
-    # 4) Bulk SQL: recent filings by cluster (last RECENT_YEARS years, for autocomplete)
-    logger.info("Query 4/4: Recent filings by cluster (last %s years)...", RECENT_YEARS)
+    # 5) Bulk SQL: recent filings by cluster (last RECENT_YEARS years, for autocomplete)
+    logger.info("Query 5/5: Recent filings by cluster (last %s years)...", RECENT_YEARS)
     recent_by_cluster_list = _recent_filings_by_cluster()
     recent_by_cluster = {row[0]: row[1] for row in recent_by_cluster_list}
     logger.info("  Got recent filings for %s clusters", f"{len(recent_by_cluster):,}")
 
-    # 4) Batch-update JobTitle.title (only set where different; bulk_update sends full batch)
-    logger.info("Updating JobTitle.title to most frequent raw title...")
+    # Batch-update JobTitle.title + avg_salary (only mark changed where different;
+    # bulk_update sends the full batch either way).
+    logger.info("Updating JobTitle.title + avg_salary...")
     title_updated_count = 0
+    avg_updated_count = 0
     for i in range(0, len(job_title_updates), JOB_TITLE_BATCH_SIZE):
         batch = job_title_updates[i : i + JOB_TITLE_BATCH_SIZE]
         ids = [b[0] for b in batch]
@@ -274,9 +309,15 @@ def main():
             if new_title is not None and new_title != jt.title:
                 jt.title = new_title
                 title_updated_count += 1
+            new_avg = avg_salary_by_job_title.get(jt.id)
+            if new_avg is not None and jt.avg_salary != new_avg:
+                jt.avg_salary = new_avg
+                avg_updated_count += 1
         if job_titles:
             bulk_update_batched(
-                job_titles, batch_size=JOB_TITLE_BATCH_SIZE, fields=["title"]
+                job_titles,
+                batch_size=JOB_TITLE_BATCH_SIZE,
+                fields=["title", "avg_salary"],
             )
         if (
             i + JOB_TITLE_BATCH_SIZE
@@ -289,8 +330,9 @@ def main():
                 f"{len(job_title_updates):,}",
             )
     logger.info(
-        "  Updated %s JobTitle titles to most frequent raw title",
+        "  Updated %s JobTitle titles + %s avg_salary values",
         f"{title_updated_count:,}",
+        f"{avg_updated_count:,}",
     )
 
     # 5) Batch-update JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)

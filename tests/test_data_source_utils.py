@@ -99,7 +99,7 @@ class TestDataSourceUtils(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_excel(self, mock_load_workbook):
         """Test get_file_stats for Excel files"""
         # Mock workbook and worksheet
@@ -126,10 +126,12 @@ class TestDataSourceUtils(unittest.TestCase):
         self.assertIn("filepath", result)
         self.assertIn("size_bytes", result)
 
-        # Verify workbook was closed
-        mock_wb.close.assert_called_once()
+        # Verify workbook was closed. get_file_stats now opens the workbook twice
+        # (excel_utils._count_excel_rows for the row count, then read_excel_headers
+        # for the columns), so close() is called once per open.
+        self.assertEqual(mock_wb.close.call_count, 2)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_excel_with_empty_rows(self, mock_load_workbook):
         """Test get_file_stats for Excel files with no data rows"""
         mock_ws = Mock()
@@ -149,7 +151,7 @@ class TestDataSourceUtils(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["row_count"], 0)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_excel_with_none_max_row(self, mock_load_workbook):
         """Test get_file_stats for Excel files with None max_row"""
         mock_ws = Mock()
@@ -192,7 +194,7 @@ class TestDataSourceUtils(unittest.TestCase):
 
         self.assertIn("Unknown file type", str(context.exception))
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_caching(self, mock_load_workbook):
         """Test get_file_stats caches results"""
         mock_ws = Mock()
@@ -210,8 +212,9 @@ class TestDataSourceUtils(unittest.TestCase):
         # First call - should analyze file
         result1 = get_file_stats(self.test_excel_file)
 
-        # Verify load_workbook was called on first call
-        self.assertEqual(mock_load_workbook.call_count, 1)
+        # Verify load_workbook was called on first call (twice: once for the row
+        # count, once for the headers).
+        self.assertEqual(mock_load_workbook.call_count, 2)
 
         # Second call - should use cache (load_workbook should not be called again)
         mock_load_workbook.reset_mock()
@@ -221,11 +224,14 @@ class TestDataSourceUtils(unittest.TestCase):
         # load_workbook should not be called again (using cache)
         self.assertEqual(mock_load_workbook.call_count, 0)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_count_file_rows_excel(self, mock_load_workbook):
         """Test count_file_rows for Excel files"""
         mock_ws = Mock()
         mock_ws.max_row = 101  # 100 data rows + 1 header
+        # count_file_rows -> get_file_stats also reads headers (read_excel_headers
+        # iterates ws[1]), so the worksheet mock must be subscriptable.
+        mock_ws.__getitem__ = Mock(return_value=[Mock(value="Header1")])
 
         mock_wb = Mock()
         mock_wb.active = mock_ws
@@ -248,11 +254,12 @@ class TestDataSourceUtils(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             count_file_rows(nonexistent)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_count_file_rows_caching(self, mock_load_workbook):
         """Test count_file_rows caches results"""
         mock_ws = Mock()
         mock_ws.max_row = 101
+        mock_ws.__getitem__ = Mock(return_value=[Mock(value="Header1")])
 
         mock_wb = Mock()
         mock_wb.active = mock_ws
@@ -269,7 +276,7 @@ class TestDataSourceUtils(unittest.TestCase):
         # load_workbook should only be called once (first time, via get_file_stats)
         self.assertEqual(mock_load_workbook.call_count, 0)  # Cached, so not called
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_count_file_rows_backwards_compatibility_old_cache_format(
         self, mock_load_workbook
     ):
@@ -295,7 +302,7 @@ class TestDataSourceUtils(unittest.TestCase):
         # Should not call load_workbook since we used cached int
         mock_load_workbook.assert_not_called()
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_count_file_rows_new_cache_format(self, mock_load_workbook):
         """Test count_file_rows handles new cache format (dict)"""
         # Manually set up cache with new format (dict)
@@ -327,7 +334,7 @@ class TestDataSourceUtils(unittest.TestCase):
         # Should not call load_workbook since we used cached dict
         mock_load_workbook.assert_not_called()
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_with_cache_cleared(self, mock_load_workbook):
         """Test get_file_stats re-analyzes when cache is cleared"""
         mock_ws = Mock()
@@ -338,9 +345,9 @@ class TestDataSourceUtils(unittest.TestCase):
         mock_wb.active = mock_ws
         mock_load_workbook.return_value = mock_wb
 
-        # First call - should cache result
+        # First call - should cache result (two opens: row count + headers)
         result1 = get_file_stats(self.test_excel_file)
-        self.assertEqual(mock_load_workbook.call_count, 1)
+        self.assertEqual(mock_load_workbook.call_count, 2)
 
         # Clear cache
         import lib.utils.data_source_utils as dsu_module
@@ -356,21 +363,22 @@ class TestDataSourceUtils(unittest.TestCase):
 
         self.assertEqual(result1, result2)
         # load_workbook should be called again (cache was cleared)
-        self.assertEqual(mock_load_workbook.call_count, 1)
+        self.assertEqual(mock_load_workbook.call_count, 2)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_count_file_rows_with_cache_cleared(self, mock_load_workbook):
         """Test count_file_rows re-analyzes when cache is cleared"""
         mock_ws = Mock()
         mock_ws.max_row = 101
+        mock_ws.__getitem__ = Mock(return_value=[Mock(value="Header1")])
 
         mock_wb = Mock()
         mock_wb.active = mock_ws
         mock_load_workbook.return_value = mock_wb
 
-        # First call - should cache result
+        # First call - should cache result (two opens: row count + headers)
         result1 = count_file_rows(self.test_excel_file)
-        self.assertEqual(mock_load_workbook.call_count, 1)
+        self.assertEqual(mock_load_workbook.call_count, 2)
 
         # Clear cache
         import lib.utils.data_source_utils as dsu_module
@@ -386,9 +394,9 @@ class TestDataSourceUtils(unittest.TestCase):
 
         self.assertEqual(result1, result2)
         # load_workbook should be called again (cache was cleared, via get_file_stats)
-        self.assertEqual(mock_load_workbook.call_count, 1)
+        self.assertEqual(mock_load_workbook.call_count, 2)
 
-    @patch("lib.utils.data_source_utils.load_workbook")
+    @patch("lib.utils.excel_utils.load_workbook")
     def test_get_file_stats_excel_error_handling(self, mock_load_workbook):
         """Test get_file_stats raises exception when Excel loading fails"""
         mock_load_workbook.side_effect = Exception("Failed to load workbook")

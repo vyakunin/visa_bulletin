@@ -110,6 +110,7 @@ class TestVersioning:
             employer_name="Test Employer",
             job_title="Engineer",
             wage_annual=100000,
+            fiscal_year=2024,
             source_file="test.xlsx",
             ingest_version=version1,
         )
@@ -121,6 +122,7 @@ class TestVersioning:
             employer_name="Test Employer",
             job_title="Manager",
             wage_annual=150000,
+            fiscal_year=2024,
             source_file="test.xlsx",
             ingest_version=version2,
         )

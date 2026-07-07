@@ -246,21 +246,28 @@ class SalaryImportIntegrationTest(TestCase):
 
         client = Client()
 
-        # Test empty search (should show welcome message or empty state)
+        # Test empty search (should show welcome message or empty state).
+        # Plain substring (not html=True): the heading is "Search H-1B & Green
+        # Card Salary Data", so "Search H-1B" is only a prefix of that text node;
+        # html=True requires a complete text-node match and would miss it.
         response = client.get(reverse("salary_search"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Search H-1B", html=True)
+        self.assertContains(response, "Search H-1B")
 
         # Test search with query
         response = client.get(reverse("salary_search"), {"q": "Software Engineer"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Software Engineer", html=True)
-        self.assertContains(response, "Google", html=True)
+        # Plain substring (not html=True): the employer renders as "Google Inc",
+        # so "Google" is only a prefix of that text node.
+        self.assertContains(response, "Google")
 
-        # Test search by employer
+        # Test search by employer. Plain substring (not html=True): the results
+        # table renders the employer as "Google Inc", so "Google" is a prefix of
+        # that text node and html=True (complete-node match) would miss it.
         response = client.get(reverse("salary_search"), {"employer": "Google"})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Google", html=True)
+        self.assertContains(response, "Google")
 
         # Test search by state
         response = client.get(reverse("salary_search"), {"state": "CA"})
@@ -321,14 +328,19 @@ class SalaryImportIntegrationTest(TestCase):
         # Pagination should not be shown for small result sets
 
     def test_validation_rejects_low_salary(self):
-        """Test that salaries below minimum threshold are rejected during import"""
+        """Test that salaries too low for ANY unit interpretation are rejected.
 
-        # Create a test row with invalid low salary
+        Note: a sub-minimum value stated as YEAR is first run through the
+        unit-correction up-path (correct_wage_unit): e.g. $7/year is reinterpreted
+        as $7/hour ($14,560) and ACCEPTED. Only a value too low for every unit
+        (here $2: even $2 x 2080h = $4,160 < MIN_ANNUAL=$5,000) survives as YEAR
+        and is rejected by validate_wage_annual. See ticket 38462b8d.
+        """
         test_row = {
             "CASE_NUMBER": "TEST-LOW-SALARY-001",
             "EMPLOYER_NAME": "Test Company",
             "JOB_TITLE": "Test Job",
-            "WAGE_RATE_OF_PAY_FROM": "7",
+            "WAGE_RATE_OF_PAY_FROM": "2",
             "WAGE_UNIT_OF_PAY": "Year",
             "WORKSITE_STATE": "CA",
             "CASE_STATUS": "Certified",
@@ -446,12 +458,16 @@ class SalaryImportIntegrationTest(TestCase):
 
         self.assertFalse(result.rejected, "Salary at minimum threshold should pass")
 
-        # Test just below minimum (should reject)
+        # Test a value too low for ANY unit (should reject). A YEAR value just
+        # below MIN (e.g. MIN-1) does NOT reject — the unit-correction up-path
+        # rescues it as weekly/monthly (4,999/yr -> 4,999/wk). Only a value too
+        # small for the largest multiplier (HOUR x2080) survives as YEAR and is
+        # rejected: $2 x 2080 = $4,160 < MIN_ANNUAL. See ticket 38462b8d.
         test_row_below_min = {
             "CASE_NUMBER": "TEST-BELOW-MIN",
             "EMPLOYER_NAME": "Test Company",
             "JOB_TITLE": "Test Job",
-            "WAGE_RATE_OF_PAY_FROM": str(MIN_VALID_ANNUAL - 1),
+            "WAGE_RATE_OF_PAY_FROM": "2",
             "WAGE_UNIT_OF_PAY": "Year",
             "WORKSITE_STATE": "CA",
             "CASE_STATUS": "Certified",
@@ -469,7 +485,9 @@ class SalaryImportIntegrationTest(TestCase):
             employers_cache=employers_cache,
         )
 
-        self.assertTrue(result.rejected, "Salary below minimum should be rejected")
+        self.assertTrue(
+            result.rejected, "Salary too low for any unit should be rejected"
+        )
 
         # Test at maximum threshold (should pass)
         test_row_max = {

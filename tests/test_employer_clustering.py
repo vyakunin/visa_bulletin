@@ -65,24 +65,53 @@ class TestEmployerMatching(TestCase):
         self.assertIn("Exact normalized name match", reason)
 
     def test_substring_match(self):
-        """Test that one name being substring of another is detected"""
-        # Create employer with substring name
-        google_base = Employer.objects.create(
-            name="Google",
-            name_normalized=Employer.normalize_name("Google"),
-            city="Mountain View",
+        """One normalized name being a short-suffix substring of another matches.
+
+        "Google"/"Google Inc." both normalize to "google" now (-> exact path, not
+        substring), so this uses a genuine prefix pair with a <=3 char diff, which
+        the substring path treats as a typo/abbreviation.
+        """
+        sf = Employer(
+            name="Salesforce",
+            name_normalized=Employer.normalize_name("Salesforce"),
+            city="San Francisco",
             state="CA",
         )
-        is_match, confidence, reason = match_employers(google_base, self.google1)
+        sf_typo = Employer(
+            name="Salesforcee",
+            name_normalized=Employer.normalize_name("Salesforcee"),
+            city="San Francisco",
+            state="CA",
+        )
+        is_match, confidence, reason = match_employers(sf, sf_typo)
         self.assertTrue(is_match)
         self.assertGreaterEqual(confidence, 0.85)
         self.assertIn("Substring match", reason)
 
     def test_high_similarity_match(self):
-        """Test that very similar names are detected"""
-        is_match, confidence, reason = match_employers(self.jpmorgan1, self.jpmorgan2)
+        """Very similar names (>=0.95 fuzz ratio) match via the similarity path.
+
+        The similarity threshold is 0.95 (since the clustering rewrite, commit
+        2ffb1ec; favors precision per employer_clustering.md). A one-char typo
+        variant clears it. A moderately-similar pair like "JP Morgan" /
+        "JPMorgan Chase" (ratio ~0.70) does NOT -- see
+        test_moderate_similarity_below_threshold_no_match.
+        """
+        deloitte = Employer(
+            name="Deloitte Consulting",
+            name_normalized=Employer.normalize_name("Deloitte Consulting"),
+            city="New York",
+            state="NY",
+        )
+        deloitte_typo = Employer(
+            name="Deloite Consulting",
+            name_normalized=Employer.normalize_name("Deloite Consulting"),
+            city="New York",
+            state="NY",
+        )
+        is_match, confidence, reason = match_employers(deloitte, deloitte_typo)
         self.assertTrue(is_match)
-        self.assertGreaterEqual(confidence, 0.85)
+        self.assertGreaterEqual(confidence, 0.95)
         self.assertIn("similarity", reason.lower())
 
     def test_low_similarity_no_match(self):
@@ -90,6 +119,15 @@ class TestEmployerMatching(TestCase):
         is_match, confidence, reason = match_employers(self.google1, self.apple)
         self.assertFalse(is_match)
         self.assertLess(confidence, 0.85)
+
+    def test_moderate_similarity_below_threshold_no_match(self):
+        """Precision boundary: names below the 0.95 similarity threshold do NOT
+        match, even when moderately similar. "JP Morgan" / "JPMorgan Chase"
+        (fuzz ratio ~0.70) is a deliberate non-match (clustering favors
+        precision; raising recall here is a product/threshold decision)."""
+        is_match, confidence, reason = match_employers(self.jpmorgan1, self.jpmorgan2)
+        self.assertFalse(is_match)
+        self.assertLess(confidence, 0.95)
 
 
 class TestFuzzyMatching(TestCase):
@@ -102,10 +140,14 @@ class TestFuzzyMatching(TestCase):
             city="Redmond",
             state="WA",
         )
+        # Different city from employer1: normalize_name("Microsoft Corporation")
+        # and normalize_name("MicroSoft Inc") both reduce to "microsoft", so
+        # sharing (name_normalized, city, state) would violate the Employer
+        # unique constraint. City does not affect fuzzy_match (name-only).
         self.employer2 = Employer.objects.create(
             name="MicroSoft Inc",
             name_normalized=Employer.normalize_name("MicroSoft Inc"),
-            city="Redmond",
+            city="Bellevue",
             state="WA",
         )
         self.employer3 = Employer.objects.create(

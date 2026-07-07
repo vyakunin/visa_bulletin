@@ -20,6 +20,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from lib.ingest.orchestrator import PipelineOrchestrator, _identify_new_and_existing
+from models.enums.visa_program import VisaProgram
 from models.ingest.data_source import DataSource
 from models.ingest.enums import (
     DataDomain,
@@ -117,7 +118,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create existing record
         existing_record = SalaryRecord.objects.create(
             case_number="CASE-001",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Test Employer",
             job_title="Software Engineer",
@@ -134,7 +135,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create new record (not in DB)
         new_record = SalaryRecord(
             case_number="CASE-002",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Test Employer",
             job_title="Data Scientist",
@@ -145,7 +146,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create incoming record with same case_number as existing
         incoming_existing = SalaryRecord(
             case_number="CASE-001",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Test Employer Updated",
             job_title="Senior Software Engineer",
@@ -179,7 +180,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create new record
         new_record = SalaryRecord(
             case_number="CASE-NEW",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Test Employer",
             job_title="Software Engineer",
@@ -211,7 +212,7 @@ class TestOrchestratorUpsert(TestCase):
 
         existing_record = SalaryRecord.objects.create(
             case_number="CASE-EXISTING",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Old Employer Name",
             job_title="Old Job Title",
@@ -230,7 +231,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create incoming record with newer data
         incoming_record = SalaryRecord(
             case_number="CASE-EXISTING",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="New Employer Name",
             job_title="New Job Title",
@@ -263,7 +264,7 @@ class TestOrchestratorUpsert(TestCase):
 
         existing_record = SalaryRecord.objects.create(
             case_number="CASE-EXISTING",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Current Employer Name",
             job_title="Current Job Title",
@@ -282,7 +283,7 @@ class TestOrchestratorUpsert(TestCase):
         # Create incoming record with older data
         incoming_record = SalaryRecord(
             case_number="CASE-EXISTING",
-            visa_program="H1B",
+            visa_program=VisaProgram.H1B,
             employer=self.employer,
             employer_name="Old Employer Name",
             job_title="Old Job Title",

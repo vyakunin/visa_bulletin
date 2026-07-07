@@ -139,16 +139,18 @@ filters most, so most hits are `0`). `FirstVisit=1` marks unique-ish visitors.
 
 ## What to Do If the User Won't Give You a Token
 
-Fall back to the origin nginx logs on `prod_2Gb_vm` — they are more granular
+Fall back to the origin nginx logs on the homeserver — they are more granular
 (real client IPs via Cloudflare `CF-Connecting-IP`, exact timestamps, status
-codes, referers). The command pattern used in prior sessions:
+codes, referers). Prod nginx now runs in the `vb_nginx` container and logs to
+docker stdout (short retention, ~12–24h — see `.claude/rules/analytics.md`), so
+read them with `docker logs`, not from `/var/log/nginx`:
 
 ```bash
-ssh prod_2Gb_vm 'sudo awk "..." /var/log/nginx/access.log'
+ssh homeserver 'docker logs vb_nginx 2>&1 | awk "..."'
 ```
 
-See the Cloudflare playbook (`docs/deployment/cloudflare.md`) and commit
-history for examples. The tradeoff: origin logs include bot traffic that
+See `.claude/rules/deployment.md` for the current topology. The tradeoff: origin
+logs include bot traffic that
 GoatCounter's JS beacon strips (no JS ⇒ no hit), so numbers will be 3–5×
 higher than GC. That's still the right dataset for "is traffic healthy" and
 "which slugs 404" — it's only wrong for "unique humans".

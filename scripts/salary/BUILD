@@ -639,42 +639,14 @@ py_binary(
     },
 )
 
-py_binary(
-    name = "evaluate_clustering_threshold",
-    srcs = ["evaluate_clustering_threshold.py"],
-    main = "evaluate_clustering_threshold.py",
-    data = [
-        "llm_prompt_template.txt",  # Template file for LLM prompts
-        "//tools/ollama:ollama",  # Ollama binary dependency - Bazel will install if missing
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//lib/utils:logging_utils",
-        "//lib/business/salary:llm_verifier",  # For async parallel validation
-        "//lib/business/salary:clustering_evaluator",  # For ClusteringEvaluator
-        "//models:salary",
-        "//django_config:settings",
-        "//django_config:logging_config",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),  # PostgreSQL adapter
-        requirement("ollama"),  # Ollama Python library for HTTP API
-    ],
-    python_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-)
-
+# evaluate_clustering_threshold + test_llm_prompts removed 2026-06-20 with the
+# Ollama LLM verifier (Ollama retired; live clustering is rule-based + fuzzy).
+# binary_search_threshold kept (does not use the LLM); its //tools/ollama data
+# dep was dropped.
 py_binary(
     name = "binary_search_threshold",
     srcs = ["binary_search_threshold.py"],
     main = "binary_search_threshold.py",
-    data = [
-        "//tools/ollama:ollama",  # Ollama binary dependency - Bazel will install if missing
-    ],
     visibility = ["//visibility:public"],
     deps = [
         "//lib/utils:logging_utils",
@@ -685,32 +657,6 @@ py_binary(
         requirement("asgiref"),
         requirement("sqlparse"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter
-    ],
-    python_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-)
-
-py_binary(
-    name = "test_llm_prompts",
-    srcs = ["test_llm_prompts.py"],
-    main = "test_llm_prompts.py",
-    data = [
-        "llm_prompt_template.txt",  # Template file for LLM prompts
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//lib/business/salary:llm_verifier",  # For LLM validation functions
-        "//lib/business/salary:clustering_evaluator",  # For EmployerPair
-        "//lib/utils:bazel_runfiles",  # For get_template_file
-        "//models:salary",
-        "//django_config:settings",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("ollama"),  # Ollama Python library for HTTP API
     ],
     python_version = "PY3",
     env = {
@@ -1120,36 +1066,7 @@ py_binary(
 )
 
 
-py_binary(
-    name = "benchmark_clustering",
-    srcs = ["benchmark_clustering.py"],
-    main = "benchmark_clustering.py",
-    data = [
-        "llm_prompt_template.txt",  # Template file for LLM prompts
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//lib/utils:logging_utils",
-        "//lib/business/salary:llm_verifier",  # For LLM verifier interface
-        "//lib/business/salary:clustering_evaluator",  # For EmployerPair
-        "//lib/business/salary:employer_clustering",  # For production algorithm benchmarking
-        "//scripts/salary:cluster_existing_employers",  # For LSH functions (_build_lsh_index, _get_normalized_name_similarity)
-        "//models:salary",
-        "//django_config:settings",
-        "//django_config:logging_config",
-        "//webapp:apps",
-        requirement("Django"),
-        requirement("asgiref"),
-        requirement("sqlparse"),
-        requirement("psycopg2_binary"),  # PostgreSQL adapter
-        requirement("ollama"),  # Ollama Python library for HTTP API
-        requirement("datasketch"),  # For LSH (MinHash, MinHashLSH)
-    ],
-    python_version = "PY3",
-    env = {
-        "DJANGO_SETTINGS_MODULE": "django_config.settings",
-    },
-)
+# benchmark_clustering removed 2026-06-20 with the Ollama LLM verifier (Ollama retired).
 
 py_binary(
     name = "verify_file_discovery",

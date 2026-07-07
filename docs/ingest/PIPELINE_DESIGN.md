@@ -746,9 +746,9 @@ For extremely large ingests (millions of records), you can optimize index mainte
 def optimize_indexes_for_bulk(model_class):
     """Temporarily optimize PostgreSQL settings for bulk load"""
     # Increase maintenance_work_mem for faster index builds
-    # Note: On Lightsail with ~1GB RAM, use 256MB max (not 1GB)
+    # Note: On the constrained self-hosted homeserver (~1GB RAM), use 256MB max (not 1GB)
     with connection.cursor() as cursor:
-        # Use 25% of available RAM, max 256MB for Lightsail
+        # Use 25% of available RAM, max 256MB on the small-RAM homeserver box
         cursor.execute("SET maintenance_work_mem = '256MB'")  # Safe for 1GB RAM
         # ... bulk insert ...
         cursor.execute("RESET maintenance_work_mem")

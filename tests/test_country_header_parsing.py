@@ -227,7 +227,11 @@ class TestCountryHeaderParsing(unittest.TestCase):
     def test_header_normalization_handles_special_chars(self):
         """Test that normalize() handles special HTML characters correctly"""
         test_cases = [
-            ("All Chargeability&nbsp;Areas", "All Chargeability Areas"),
+            # BeautifulSoup decodes the &nbsp; entity to U+00A0 before normalize()
+            # ever sees it, so the realistic input is the non-breaking space char,
+            # which re.sub(r"\s+", ...) collapses (the literal "&nbsp;" text never
+            # reaches normalize in the real pipeline).
+            ("All Chargeability Areas", "All Chargeability Areas"),
             ("All Chargeability\nAreas", "All Chargeability Areas"),
             ("All Chargeability  Areas", "All Chargeability Areas"),  # Multiple spaces
             ("All Chargeability\tAreas", "All Chargeability Areas"),  # Tabs

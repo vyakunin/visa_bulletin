@@ -91,6 +91,44 @@ GSC not-found count should fall within days; GC Events tab + GA4
 `profile_interaction` populate as traffic lands; job-title engaged-rate WoW in
 the daily checkup (`_section_ga4_engagement`) is the outcome metric.
 
+**SHIPPED TO PROD 2026-07-04** (zero-downtime cutover, image `staging-36dd234`;
+all four fixes verified live: append-slash 301, ladder 301, thin-page
+`noindex`, sitemap 1,265 job-title URLs, telemetry include, plotly-basic +
+defer). CF edge purged; sitemap resubmitted to GSC (errors 0, 6,579 URLs).
+
+5. **Slug reclaim (follow-up, same day).** The re-cluster left **513 of 1,265
+   indexable job-title clusters with stale slugs** (`slug !=
+   slugify(canonical_title)`) — flagship pages on requisition-ID or typo'd
+   URLs: the 117k-filing Software Engineer cluster sat on
+   `software-engineer-161559609` while `software-engineer` was unclaimed;
+   `market-researh-analyst`, `mechanial-engineers`, etc. With the 301 ladder
+   live, renaming became safe, so
+   `scripts/salary/populate_job_title_slugs.py --refresh-all --min-filings 100
+   --skip-collisions` (new flags, commit `6b9a74a`: indexable-only scope,
+   biggest-first ordering, never rename INTO a counter-suffixed slug,
+   multi-pass to claim freed slugs) reclaimed **454 clean slugs** on both
+   staging and prod DBs (59 kept — genuine collisions). Old slugs 301 to the
+   reclaimed canonical via the ladder; Redis flushed on both stacks, CF
+   purged, sitemap resubmitted. Rule of thumb going forward: after ANY
+   job-title re-cluster, run this refresh (indexable scope) so canonical URLs
+   track canonical titles instead of accreting suffixes.
+
+6. **Thin-page rescue — relevant, not just noindexed (same day, per Vladimir:
+   "aim to keep them on site; if not possible — be helpful and relevant").**
+   The Similar Roles section matched on the title's FIRST WORD, so "Senior
+   Vice President, Legal & Compliance" recommended Senior Software Engineer —
+   qualifier noise, and on thin pages it was the only escape hatch. Now
+   (`lib/business/salary/similar_titles.py`): suggestions are the ~1.3k
+   **indexable** clusters ranked by shared content tokens
+   (seniority/level qualifiers stripped, requisition junk tokenizes away).
+   Thin pages additionally render a **broader-role CTA banner** — the best
+   indexable cluster whose content tokens are a strict subset of the page's
+   ("Software Engineer" for "Software Engineer Kbgfjg353961"): "Only N
+   filings match this exact title — see the full X profile (M filings)".
+   Fallback when no subset exists: a `/salaries/?q=<distinctive-token>`
+   search link. CTA clicks tracked as `ev/profile/jt/broader-role-cta`;
+   compare against thin-page exits at the 07-11 re-measure.
+
 ## Sitemap & robots.txt
 
 Both generated dynamically by `webapp/views/seo/sitemaps.py`.

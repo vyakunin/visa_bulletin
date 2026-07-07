@@ -1,5 +1,11 @@
 """Tests that forced-persistence predictions don't carry a misleading regime label."""
 
+# solver imports Django models at module level, and one test queries the DB
+# (visa_cutoff_date) — create + migrate the test DB before importing solver.
+from tests.django_setup import setup_django_for_tests
+
+setup_django_for_tests()
+
 from unittest.mock import patch
 
 from lib.business.vqs.regime import Regime, RegimeState

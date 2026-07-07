@@ -40,13 +40,13 @@ from webapp.views.prediction_views import (
 )
 from webapp.views.salary.by_state import salary_by_state_view
 from webapp.views.salary.h1b_salary_pair import h1b_salary_pair_view
-from webapp.views.salary.occupation import (
-    occupation_index_view,
-    occupation_salary_view,
-)
 from webapp.views.salary.h1b_sponsors import (
     h1b_sponsors_landing_view,
     h1b_sponsors_state_view,
+)
+from webapp.views.salary.occupation import (
+    occupation_index_view,
+    occupation_salary_view,
 )
 from webapp.views.salary.search import salary_search_view, worksite_search_view
 from webapp.views.static.pages import (

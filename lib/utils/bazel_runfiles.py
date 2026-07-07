@@ -11,14 +11,23 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Try to import the standard Bazel runfiles library
+# Try to import the standard Bazel runfiles library.
+# The module path differs between WORKSPACE and bzlmod builds:
+#   - bzlmod (current):   python.runfiles
+#   - legacy WORKSPACE:   rules_python.python.runfiles
+# Under `bazel test` only the bzlmod path resolves, so try it first.
 try:
-    from rules_python.python.runfiles import runfiles
+    from python.runfiles import runfiles
 
     _RUNFILES_AVAILABLE = True
 except ImportError:
-    _RUNFILES_AVAILABLE = False
-    logger.debug("Bazel runfiles library not available (non-Bazel environment)")
+    try:
+        from rules_python.python.runfiles import runfiles
+
+        _RUNFILES_AVAILABLE = True
+    except ImportError:
+        _RUNFILES_AVAILABLE = False
+        logger.debug("Bazel runfiles library not available (non-Bazel environment)")
 
 
 def get_data_file_path(workspace_path: str) -> Path | None:
@@ -68,6 +77,28 @@ def get_data_file_path(workspace_path: str) -> Path | None:
         resolved = r.Rlocation(workspace_path)
         if resolved and Path(resolved).exists():
             return Path(resolved)
+
+        # Try the bzlmod canonical root-module prefix. Under bzlmod the root
+        # module's runfiles live under "_main/", and r.Rlocation("visa_bulletin/…")
+        # is not repo-mapped without a source_repo, so the apparent-name attempt
+        # above misses under `bazel test` (BUILD_WORKSPACE_DIRECTORY is unset there).
+        resolved = r.Rlocation(f"_main/{workspace_path}")
+        if resolved and Path(resolved).exists():
+            return Path(resolved)
+
+        # Direct RUNFILES_DIR filesystem fallback: under `bazel test` the runfiles
+        # tree is materialized on disk with the bzlmod "_main/" repo dir. Rlocation
+        # can miss this when repo-mapping rewrites the leading repo name, so resolve
+        # against RUNFILES_DIR directly as a last resort.
+        runfiles_dir = os.environ.get("RUNFILES_DIR")
+        if runfiles_dir:
+            for cand in (
+                Path(runfiles_dir) / "_main" / workspace_path,
+                Path(runfiles_dir) / "visa_bulletin" / workspace_path,
+                Path(runfiles_dir) / workspace_path,
+            ):
+                if cand.exists():
+                    return cand
 
         logger.debug(f"Data file not found in runfiles: {workspace_path}")
         return None

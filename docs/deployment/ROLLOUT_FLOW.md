@@ -1,72 +1,65 @@
 # Rollout Flow
 
-> **Canonical reference:** [docs/BRANCHING_AND_DEPLOYMENT.md](../BRANCHING_AND_DEPLOYMENT.md)
+> **Canonical reference:** [`.claude/rules/branching.md`](../../.claude/rules/branching.md)
+> + [`.claude/rules/deployment.md`](../../.claude/rules/deployment.md). This file is a
+> quick-reference summary of the current homeserver flow.
 >
-> This file is a quick-reference summary. For full details (branch strategy, separation of concerns, IP flip procedure, hotfix workflow), see the canonical doc.
+> **All releases/promotions/data-graduations go through the private VB platform repo
+> `visa_bulletin_platform/hosting/`** — never hand-roll a `docker compose` deploy or an
+> ad-hoc script. The old AWS-Lightsail "IP flip" / blue-green graduation is retired
+> (migrated to a self-hosted homeserver behind a Cloudflare Tunnel, 2026-05-08).
+
+## Topology (abstract — concrete hosts/keys live in the private ops repo)
+
+Production is a single Docker Compose stack at `/opt/stack/visa_bulletin` on the
+homeserver (`vb_web`, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared`), reached
+via the `homeserver` SSH alias. Staging is a separate stack (`vb_stg_*` containers).
+All public traffic enters via Cloudflare Tunnel — no router port forwards, no origin IP.
 
 ## Quick Reference
 
-### Feature Deployment to Staging
+### Feature deployment to staging
 
 ```bash
-# 1. Cherry-pick from main to staging
-git checkout staging && git cherry-pick <commits> && git push origin staging
-
-# 2. Deploy to staging instance
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && git fetch origin staging && git checkout staging && git reset --hard origin/staging"
-ssh staging_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
-
+# 1. Cherry-pick from main to staging (via the staging worktree)
+cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <commit> && git push origin staging
+# 2. Wait for CI to publish ghcr.io/vyakunin/visa_bulletin:staging-<sha>, then on the staging stack:
+cd /opt/stack/visa_bulletin_staging && IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web
 # 3. Verify
-curl -s -o /dev/null -w "%{http_code}" http://<staging-ip>/
+curl -s -o /dev/null -w "%{http_code}\n" https://staging.visa-bulletin.us/
 ```
 
-### Graduation (Staging to Prod)
+### Promotion (staging → prod) — ZERO-DOWNTIME default
 
 ```bash
-# 1. Tag
-git checkout staging && git tag -a v1.X.Y -m "Release 1.X.Y: ..." && git push origin v1.X.Y
-
-# 2. IP flip (see docs/BRANCHING_AND_DEPLOYMENT.md for full procedure)
-export AWS_PROFILE=visa-bulletin-deploy
-aws lightsail detach-static-ip --static-ip-name <prod-ip> --region us-east-1
-aws lightsail attach-static-ip --static-ip-name <prod-ip> --instance-name <staging-instance> --region us-east-1
-
-# 3. Verify prod
-curl -s -o /dev/null -w "%{http_code}" https://visa-bulletin.us
-
-# 4. Update prod branch
-git checkout prod && git merge staging && git push origin prod
-
-# 5. Bring new staging up to date
-ssh <new-staging> "cd /opt/visa_bulletin && git fetch origin staging && git checkout staging && git reset --hard origin/staging"
-ssh <new-staging> "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
+# Gate on staging, then swap the homeserver image while the standby serves prod (vb never 502s):
+cd ~/cursor_projects/visa_bulletin_platform/hosting && ./cutover.sh --code <sha>   # --dry to preview
+# Keep the prod branch mirror honest:
+cd ~/cursor_projects/visa_bulletin_prod && git merge --ff-only staging && git push origin prod
 ```
 
-### Critical Hotfix
+Data/DB-level promotion (after a verified off-prod refresh) → `./cutover.sh --data`.
+Disruptive fallback (only if the cutover is unavailable; ~10-15s prod 502s):
+`./promote.sh <sha> --prod --accept-502`. Path-1 (code) vs Path-2 (data) decision:
+`hosting/RELEASE_PATHS.md`.
+
+### Critical hotfix (prod-down only)
 
 ```bash
-# 1. Fix on prod branch
-git checkout prod && <fix> && git commit && git push origin prod
-
-# 2. Deploy to prod-serving instance
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && git fetch origin prod && git checkout prod && git reset --hard origin/prod"
-ssh prod_2Gb_vm "cd /opt/visa_bulletin && docker-compose -f deployment/docker-compose.yml restart web"
-
-# 3. Cherry-pick to staging and main
-git checkout staging && git cherry-pick <fix> && git push origin staging
-git checkout main && git cherry-pick <fix> && git push origin main
+# Fix on main → cherry-pick to prod → deploy → back-port to staging
+cd ~/cursor_projects/visa_bulletin_prod && git cherry-pick <fix> && git push origin prod
+cd ~/cursor_projects/visa_bulletin_platform/hosting && ./cutover.sh --code <sha>
+cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <fix> && git push origin staging
 ```
 
-### Rollback (After IP Flip)
+### Rollback
 
-```bash
-# Swap IPs back to the previous instance
-aws lightsail detach-static-ip --static-ip-name <prod-ip> --region us-east-1
-aws lightsail attach-static-ip --static-ip-name <prod-ip> --instance-name <old-prod-instance> --region us-east-1
-```
+Re-promote the previous image SHA via `cutover.sh --code <previous-sha>` (the registry
+keeps prior images). No AWS IP-flip step anymore.
 
 ## Key Rules
 
-- **Never scp files to servers.** All changes through git branches.
-- **Code deploy and data refresh are separate.** See [BRANCHING_AND_DEPLOYMENT.md](../BRANCHING_AND_DEPLOYMENT.md).
-- **`scripts/deploy.sh` is outdated.** Use git pull + container restart.
+- **Never scp/edit files on servers.** All changes go through git branches + the `hosting/` flow.
+- **Releases go through `visa_bulletin_platform/hosting/`** (zero-downtime `cutover.sh`), never a hand-rolled script in this repo. (The old `scripts/deploy.sh` was deleted 2026-06-27.)
+- **Code deploy and data refresh are separate operations.** See `.claude/rules/branching.md`.
+- **Keep staging in parity with prod** — mirror any direct-prod runtime-config change to staging in the same task (`.claude/rules/branching.md`).

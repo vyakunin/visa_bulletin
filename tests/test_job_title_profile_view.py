@@ -236,13 +236,20 @@ class TestJobTitleProfileView(TestCase):
         self.assertNotContains(response, "Salary by Experience Level")
 
     def test_default_view_aggregates_across_levels(self):
-        """Default view aggregates records across all experience levels."""
-        from lib.business.salary.job_title_stats import get_job_title_statistics
+        """Default view aggregates a cluster's records across all experience levels,
+        and stays scoped to that cluster (records in a different cluster that merely
+        share the normalized title are NOT counted).
 
+        The view uses cluster-level stats (normalized_title=None) so total_filings
+        matches JobTitleCluster — see webapp/views/job_titles/profile.py. So the
+        expected count is the 8 records in self.cluster (5 senior + 3 junior), NOT
+        the 2 in the separate `other_cluster` below.
+        """
         other_cluster = JobTitleCluster.objects.create(
             slug="software-engineer-test-alt",
             canonical_title="Software Engineer Test Alt",
         )
+        # Same normalized title, but a DIFFERENT canonical cluster — must be isolated.
         other_job_title = JobTitle.objects.create(
             title_normalized="software engineer test",
             experience_level="mid",
@@ -276,17 +283,11 @@ class TestJobTitleProfileView(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        if response.context:
-            stats = response.context["stats"]
-        else:
-            stats = get_job_title_statistics(
-                self.cluster,
-                years=5,
-                program_filter="all",
-                normalized_title="software engineer test",
-            )
-        # Count by normalized title (10 = 8 in self.cluster + 2 in other_cluster)
-        self.assertEqual(stats["basic"]["total_filings"], 10)
+        stats = response.context["stats"]
+        # 8 = 5 senior + 3 junior in self.cluster, aggregated across levels.
+        # The 2 records in other_cluster share the normalized title but belong to a
+        # different cluster, so they are correctly excluded from this profile.
+        self.assertEqual(stats["basic"]["total_filings"], 8)
 
     def test_redirect_for_title_variation(self):
         """Test that view redirects for title variations to canonical slug"""
@@ -315,6 +316,95 @@ class TestJobTitleProfileView(TestCase):
 
         # Should either return 200 or redirect (depending on match logic)
         self.assertIn(response.status_code, [200, 301, 302, 404])
+
+    def test_stats_script_populates_job_title_avg_salary(self):
+        """Regression: update_job_title_cluster_stats must set JobTitle.avg_salary.
+
+        Bug (2026-07-05): JobTitle.avg_salary was NULL for all 214k prod rows —
+        no pipeline populated it — so the Related Roles table rendered a bare '$'
+        for every row. The script sets JobTitle.title but never .avg_salary.
+        A JobTitle that starts NULL must come out populated with the mean of its
+        in-bounds record wages after the script runs.
+        """
+        cluster = JobTitleCluster.objects.create(
+            slug="avgsal-regression",
+            canonical_title="Avgsal Regression Role",
+            total_filings=0,
+        )
+        jt = JobTitle.objects.create(
+            title_normalized="avgsal regression role",
+            experience_level="",
+            title="Avgsal Regression Role",
+            canonical_cluster=cluster,
+            total_filings=0,
+            avg_salary=None,  # the buggy starting state for every prod row
+        )
+        wages = [Decimal("100000.00"), Decimal("120000.00"), Decimal("140000.00")]
+        for i, w in enumerate(wages):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-JT-AVGSAL-{i}",
+                employer_name="Test Company Inc JT",
+                employer=self.employer,
+                job_title="Avgsal Regression Role",
+                job_title_entity=jt,
+                worksite_city="San Francisco",
+                worksite_state="CA",
+                wage_from=w,
+                wage_unit=WageUnit.YEAR,
+                wage_annual=w,
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=2024,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+
+        old_argv = sys.argv
+        try:
+            sys.argv = ["update_job_title_cluster_stats"]
+            update_job_title_cluster_stats_main()
+        finally:
+            sys.argv = old_argv
+
+        jt.refresh_from_db()
+        self.assertIsNotNone(
+            jt.avg_salary, "JobTitle.avg_salary must be populated by the stats script"
+        )
+        self.assertEqual(int(jt.avg_salary), 120000)  # mean of 100k/120k/140k
+
+    def test_related_roles_avg_salary_null_renders_dash_not_bare_dollar(self):
+        """Template guards NULL avg_salary with an em-dash, never a bare '$'.
+
+        Defense-in-depth for the Related Roles 'Avg Salary' column: even if a
+        title has no in-bounds wage (so avg_salary stays NULL), the cell must
+        render '—', not a lone '$'.
+        """
+        cluster = JobTitleCluster.objects.create(
+            slug="nullavg-render-test",
+            canonical_title="Nullavg Render Test",
+            total_filings=1,
+            avg_salary=Decimal("100000.00"),
+        )
+        # total_filings>0 so it appears in related.all_titles, but avg_salary NULL.
+        JobTitle.objects.create(
+            title_normalized="nullavg render test",
+            experience_level="",
+            title="Nullavg Render Test",
+            canonical_cluster=cluster,
+            total_filings=1,
+            avg_salary=None,
+        )
+
+        client = Client()
+        response = client.get(
+            reverse("job_title_profile", kwargs={"slug": "nullavg-render-test"})
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        # The Related Roles cell for the NULL-avg title shows an em-dash.
+        self.assertIn("&mdash;", html)
+        # And never a bare "$" immediately closing the cell.
+        self.assertNotIn("$</td>", html)
 
 
 @override_settings(

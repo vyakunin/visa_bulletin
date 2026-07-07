@@ -1,5 +1,11 @@
 # Employer Clustering System: Complete Explanation
 
+> ⚠️ **LLM parts RETIRED (2026-06-20).** The Ollama LLM verifier and the
+> benchmark/evaluator tooling described here were deleted when Ollama was retired.
+> Live clustering is **rule-based + fuzzy only** (`employer_clustering.py`) — the
+> "what uses LLMs" sections below are historical. See
+> `.claude/rules/employer_clustering.md`.
+
 This document clarifies how the employer clustering system works, what uses LLMs vs rule-based logic, and how to interpret the benchmark results.
 
 ## System Overview

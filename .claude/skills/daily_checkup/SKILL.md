@@ -108,6 +108,11 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
   - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
   - Then a per-surface breakdown — **one surface per line, each row showing 7d views, share-of-total %, distinct page count, MoM%, and WoW%** (user request 2026-06-17: wants the full-coverage section-share table in every digest, with MoM/WoW). Data is in the MCP's `_build_surface_deltas` rows: `this_week` (absolute), `share_pct` (% of 7d total), `pages` (distinct paths in the bucket — the long-tail size), `delta_pct` (MoM vs `cycle_ago`), `wow_pct` (vs `prev_week`). Rows are already sorted by `this_week` desc — render in that order. Annotate the profile surfaces (`employer_profile`, `job_title_profile`) with `← tail` since their share is spread over hundreds of pages. Column header, terse, ≤50 chars/line, no wide tables:
+  - 🚨 **RENDER EVERY SURFACE ROW THE MCP RETURNS — DO NOT SHORTEN.** This block keeps getting trimmed to a handful of rows; that is a recurring defect, not a formatting choice (user, 2026-06-29). The rule:
+    - Emit **one line per surface for ALL rows** in `gc.surfaces` (and the matching `surface_breakdown`/`surface_latency`), in `this_week` desc order. No "top N", no "…and 4 others", no dropping the small/zero-traffic surfaces.
+    - **Never cut surface rows to fit the ~3000-char cap. SPLIT into a 2nd `🤖 `-prefixed send instead** — the per-surface block is the daily KPI payload, so it has priority over single-message length. Truncating rows to stay in one message is the exact failure to avoid.
+    - **`other` is a row too** — render it whenever `this_week > 0`. A large/growing `other` means a live URL surface has no `SURFACE_PATTERN` yet → flag it (`⚠️ other <N> — unclassified surface, add a bucket`) so it gets a taxonomy entry rather than hiding.
+    - The taxonomy now includes the recently-launched pSEO families — `priority_date`, `occupation_salary`, `h1b_sponsors`, `spanish` (added 2026-06-29). They will appear as their own rows; render them like any other surface (they were previously swallowed by `other`).
     ```
     7d / share / pages / MoM / WoW:
     dashboard  6.0k  57%  7p   −27%/+33%
@@ -127,6 +132,7 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
        gsc: 139 clk · 21k impr · pos 7.0 ↑
     ```
   - GSC lags ~2d so its window is offset from GC's by `GSC_LAG_DAYS` — they won't tie out to the unit, that's expected; it's the direction (position arrow) that matters. Show `gsc: n/a` if the GSC gather errored (in `errors`). Only attach GSC to organic surfaces (profiles, salaries, blog, dashboard) — not to `api`/`static_meta`/`donation_click`.
+  - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP now returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the GSC lines, raw numbers both windows (never percentages alone). It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)

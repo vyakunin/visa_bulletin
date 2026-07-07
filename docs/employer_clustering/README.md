@@ -1,5 +1,9 @@
 # Employer Clustering Documentation
 
+> ⚠️ Note (2026-06-20): the Ollama LLM-verifier subsystem + its benchmark/eval
+> tooling were retired; live clustering is rule-based + fuzzy only. LLM/benchmark
+> references in these docs are historical — see `.claude/rules/employer_clustering.md`.
+
 This directory contains documentation for the employer clustering system that groups similar employer names across different data sources.
 
 ## Overview

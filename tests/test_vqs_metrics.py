@@ -123,10 +123,12 @@ class TestRegimeWeight:
         assert cfg.regime_weight(3) == 1.5
         assert cfg.regime_weight(6) == 1.5
 
-    def test_default_weights_are_one(self):
+    def test_default_weights_are_tuned_constants(self):
+        # Defaults are Optuna-tuned (no longer 1.0): FY-boundary months {8,9,10}
+        # get fy_boundary_weight, other months get steady_state_weight.
         cfg = MetricConfig()
-        assert cfg.regime_weight(10) == 1.0
-        assert cfg.regime_weight(3) == 1.0
+        assert cfg.regime_weight(10) == cfg.fy_boundary_weight  # October (FY boundary)
+        assert cfg.regime_weight(3) == cfg.steady_state_weight  # March (steady state)
 
 
 class TestMagnitudeWeight:

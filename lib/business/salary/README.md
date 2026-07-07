@@ -44,11 +44,9 @@ from lib.business.salary.generic_words import (
 )
 ```
 
-### `clustering_evaluator.py`
-Evaluates clustering quality and identifies false positives/negatives.
-
-### `llm_verifier.py`
-LLM-based verification of employer pair matches using Ollama.
+> `clustering_evaluator.py` and `llm_verifier.py` (Ollama LLM verification of
+> employer pairs) were removed 2026-06-20 when Ollama was retired. Clustering is
+> rule-based + fuzzy with no LLM step.
 
 ## Normalization
 
@@ -82,15 +80,11 @@ State normalization uses `normalize_state_code()` from `lib/utils/location_utils
 
 ## Benchmarking
 
-Use `benchmark_clustering.py` to measure clustering performance:
-
-```bash
-bazel run //scripts/salary:benchmark_clustering -- \
-  --mode production \
-  --examples-file $(pwd)/data/clustering_examples.jsonl \
-  --only-reviewed \
-  --limit 0
-```
+The automated `benchmark_clustering` tool was removed 2026-06-20 with Ollama. The
+labeled ground-truth dataset (`data/clustering_examples.jsonl`, from
+`collect_clustering_examples`) remains; to measure precision/recall, compare the
+rule-based `match_employers()` output against the labeled pairs (rebuild an
+LLM-free benchmark if needed). See `.claude/rules/employer_clustering.md`.
 
 **Key Metrics:**
 - **Precision** - Percentage of matches that are correct (few false positives)
@@ -179,7 +173,6 @@ The refresh pipeline runs `cluster_existing_employers` on staging; the step can 
 
 - `models/salary.py` - `Employer.normalize_name()` - Name normalization logic
 - `lib/utils/location_utils.py` - `normalize_state_code()` - State code normalization
-- `scripts/salary/benchmark_clustering.py` - Benchmarking script
 - `scripts/salary/collect_clustering_examples.py` - Example collection script
 - `data/clustering_examples.jsonl` - Benchmark dataset
 

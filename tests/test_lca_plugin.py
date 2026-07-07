@@ -8,6 +8,8 @@ setup_django_for_tests()
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from models.enums.visa_program import VisaProgram
 from models.ingest.data_source import DataSource
@@ -98,6 +100,7 @@ class TestLCADiscovery:
         )  # Combined plugin uses LCA source_type
 
 
+@pytest.mark.django_db
 class TestLCATransformRouting:
     """Tests for transform method routing (SalaryRecord vs WorksiteRecord)"""
 
@@ -237,6 +240,7 @@ class TestLCATransformRouting:
         assert result.wage_annual == 120000.0
 
 
+@pytest.mark.django_db
 class TestLCAParse:
     """Tests for parse method"""
 
@@ -283,11 +287,13 @@ class TestLCAParse:
             ]
         )
 
-        test_file = tmp_path / "test_lca.xlsx"
+        # Filename carries the fiscal year (FY2024) so the plugin can extract it;
+        # a year-less name like "test_lca.xlsx" yields _fiscal_year=None.
+        test_file = tmp_path / "LCA_FY2024.xlsx"
         wb.save(test_file)
 
         source = DataSource.objects.create(
-            url="https://example.com/test_lca.xlsx",
+            url="https://example.com/LCA_FY2024.xlsx",
             domain=DataDomain.DOL,
             source_type=SourceType.LCA,
         )
@@ -303,11 +309,12 @@ class TestLCAParse:
         assert records[0]["WORKSITE_CITY"] == "San Francisco"
         assert records[1]["LCA_CASE_NUMBER"] == "G-200-98765-4321"
         assert records[1]["WORKSITE_STATE"] == "WA"
-        # Should have fiscal year and source file
-        assert records[0].get("_fiscal_year") is not None
-        assert records[0].get("_source_file") == "test_lca.xlsx"
+        # Should have fiscal year (extracted from the FY2024 filename) and source file
+        assert records[0].get("_fiscal_year") == 2024
+        assert records[0].get("_source_file") == "LCA_FY2024.xlsx"
 
 
+@pytest.mark.django_db
 class TestLCAValidation:
     """Tests for post-ingest validation"""
 

@@ -439,7 +439,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">{{ title.total_filings|intcomma }}</td>
-                                    <td class="text-end">${{ title.avg_salary|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{% if title.avg_salary %}${{ title.avg_salary|floatformat:0|intcomma }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
                                 </tr>
                                 {% empty %}
                                 <tr>

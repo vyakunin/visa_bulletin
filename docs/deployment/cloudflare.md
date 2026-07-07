@@ -1,5 +1,15 @@
 # Cloudflare in front of visa-bulletin.us
 
+> **⚠️ HISTORICAL — describes the retired AWS-Lightsail + Cloudflare-proxy setup.**
+> Production migrated off Lightsail on 2026-05-08 and now sits behind a **Cloudflare
+> Tunnel** (the `vb_cloudflared` connector in the prod Docker Compose stack). There
+> is **no public origin IP** anymore, so the origin-firewall lock-down below
+> (Step 7 — Lightsail firewall, `aws lightsail` CLI, IP allowlisting) is **moot** —
+> the tunnel makes the origin unreachable except through Cloudflare by construction.
+> The generic CF concepts here (edge cache, real-client-IP headers, WAF) still
+> apply, but the Lightsail/AWS-CLI-specific mechanics are dead. For the current
+> topology see `.claude/rules/deployment.md`.
+
 Goal: put the Cloudflare free tier in front of the Lightsail origin to offload
 bot traffic, absorb spikes, and serve cached HTML/static assets from the edge.
 
@@ -248,13 +258,19 @@ Keep the nginx rate limits in place — they cover the origin-IP-direct path
 
 ## Step 7 — Lock origin to Cloudflare (after CF is confirmed working)
 
+> **⚠️ RETIRED — no longer applicable.** This entire step assumed a public origin
+> IP (the Lightsail VM) that bots could reach directly. Prod now runs behind a
+> Cloudflare Tunnel (`vb_cloudflared`), so the origin has no public IP to firewall
+> and there is nothing to "lock down" — the tunnel is the lock. The `aws lightsail`
+> CLI below targets a VM that no longer exists. Kept for historical reference only.
+
 Until this step, bots can still reach the origin by IP, bypassing CF entirely.
 The existing `default-server.conf` exists precisely for that scenario; now we
 close it.
 
 **Do this AFTER verifying CF → origin is healthy for ≥48 h.**
 
-### Option A — Lightsail firewall (simplest)
+### Option A — Lightsail firewall (simplest) — RETIRED (no public origin under the tunnel)
 
 Lightsail → instance → Networking → Firewall:
 

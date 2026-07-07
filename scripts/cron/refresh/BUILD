@@ -53,28 +53,12 @@ py_library(
     visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
 )
 
-py_library(
-    name = "instance",
-    srcs = ["instance.py"],
-    visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
-)
-
-py_library(
-    name = "traffic_switch",
-    srcs = ["traffic_switch.py"],
-    visibility = ["//scripts/cron:__pkg__", "//scripts/oneoff:__pkg__", "//tests:__pkg__"],
-)
-
+# services.py (remote SSH service mgmt) is used by steps.py for remote/staging
+# pipeline runs. The AWS-only instance / traffic_switch / orchestrate modules were
+# removed when Lightsail was retired (homeserver + Cloudflare now).
 py_library(
     name = "services",
     srcs = ["services.py"],
-    visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
-)
-
-py_library(
-    name = "orchestrate",
-    srcs = ["orchestrate.py"],
-    deps = [":config", ":instance", ":pipeline", ":runner", ":services", ":traffic_switch"],
     visibility = ["//scripts/cron:__pkg__", "//tests:__pkg__"],
 )
 
@@ -87,13 +71,10 @@ py_library(
         ":config",
         ":discovery",
         ":disk",
-        ":instance",
-        ":orchestrate",
         ":pipeline",
         ":runner",
         ":services",
         ":smoke",
         ":steps",
-        ":traffic_switch",
     ],
 )

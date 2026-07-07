@@ -22,7 +22,15 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on th
 
 ## Production Deploy Process
 
-**Code deploy is `docker compose pull web && docker compose up -d web`. It has
+> **Routine promotions default to the ZERO-DOWNTIME cutover, not this in-place swap.**
+> The private ops repo's `hosting/cutover.sh --code <sha>` swaps the prod image while a
+> second stack serves prod traffic, so vb never 502s (see `branching.md` § "Promote via
+> the ZERO-DOWNTIME cutover"). The in-place `docker compose up -d web` below is the
+> **mechanics that sits under it** and the **disruptive fallback** (used only when the
+> cutover is unavailable, or a true prod-down hotfix). The low-traffic-window rule below
+> applies to that fallback's 502 window — the cutover has no such window.
+
+**The in-place code deploy is `docker compose pull web && docker compose up -d web`. It has
 ~10-15s of customer-facing 502s** while the old container stops and the new
 one boots (migrate + collectstatic + gunicorn). CF-cached pages keep serving
 from the edge during the window; uncached/POST requests fail.
@@ -131,7 +139,7 @@ print(connection.queries[-1]['sql'][:300])
 "
 ```
 
-A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path). **Implemented** for the salary / worksite list views by `lib/utils/filter_utils.py:fenced_page_ids` (an `OFFSET 0` fence resolves the ordered page of pks via a Bitmap Heap Scan, then the ≤50 rows are fetched by pk with `select_related`). Measured on prod: `ENGINEERS` p4 5959→1614ms, `Architect` 2444→479ms, `CASHIER` 39→6ms. If you reintroduce a `.order_by('-wage_annual','-fiscal_year')[slice]` over a trigram-filtered queryset anywhere, route it through `fenced_page_ids` or it will pessimize again.
+A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path). **Implemented** for the salary / worksite list views by `lib/utils/filter_utils.py:fenced_page_ids` (an `OFFSET 0` fence resolves the ordered page of pks via a Bitmap Heap Scan, then the ≤50 rows are fetched by pk with `select_related`). Measured on prod: `ENGINEERS` p4 5959→1614ms, `Architect` 2444→479ms, `CASHIER` 39→6ms. If you reintroduce a `.order_by('-wage_annual','-fiscal_year')[slice]` over a trigram-filtered queryset anywhere, route it through `fenced_page_ids` or it will pessimize again. Since 2026-07-04 the COLD `/salaries/` filtered-search path uses `fenced_page_and_aggregate` instead — one `AS MATERIALIZED` fenced scan yields both the ordered page and the count/avg/min/max (the old `fenced_aggregate` + `fenced_page_ids` pair scanned the 55k-391k-row match set twice; prod ENGINEERS 3196→1965ms). A view needing page + aggregate over the same filter should use the combined resolver, not the pair.
 
 **Heavy mutations (CREATE INDEX, ALTER TABLE, schema migrations) MUST use the CONCURRENTLY form so reads + writes continue.** A non-concurrent ALTER on `salary_record` (1.5M rows) acquires AccessExclusiveLock and blocks every reader for the duration → effective outage. See migrations 0044, 0046, 0047 for examples of the `RunSQL(... atomic=False)` pattern.
 
@@ -188,48 +196,20 @@ regenerated; caught only when the user screenshotted staging.
 - The methodology blog post `/analysis/how-my-prediction-model-works/` — narrator output + manual edits, easy to drift between DBs
 - The latest monthly blog post (whichever `/analysis/visa-bulletin-analysis-<latest-month>/` is freshest)
 
-**Helper (bash, zsh-safe array syntax):**
+**Helper — the committed script `scripts/staging_prod_diff.sh`** (run from the repo root; documented in `scripts/README.md` § Deployment):
 
 ```bash
-bash -c '
-mkdir -p /tmp/vb_diff && rm -f /tmp/vb_diff/*
-URLS=(
-  "/"
-  "/employment-based/india/"
-  "/predictions/employment_based/2026-6/"
-  "/predictions/family_sponsored/2026-6/"
-  "/predictions/2024-1/"
-  "/predictions/2020-1/"
-  "/predictions/2005-1/"
-  "/analysis/how-my-prediction-model-works/"
-)
-for u in "${URLS[@]}"; do
-  slug=$(echo "$u" | tr "/" "_" | sed "s/^_//; s/_$//")
-  [ -z "$slug" ] && slug=root
-  curl -s "https://visa-bulletin.us$u"    > "/tmp/vb_diff/prod_$slug.html"
-  curl -s "https://staging.visa-bulletin.us$u" \
-    | sed "s|staging\.visa-bulletin\.us|visa-bulletin.us|g" \
-    > "/tmp/vb_diff/stg_$slug.html"
-  d=$(diff "/tmp/vb_diff/prod_$slug.html" "/tmp/vb_diff/stg_$slug.html" | wc -l | tr -d " ")
-  ps=$(wc -c < "/tmp/vb_diff/prod_$slug.html" | tr -d " ")
-  ss=$(wc -c < "/tmp/vb_diff/stg_$slug.html" | tr -d " ")
-  printf "%-50s prod=%sb stg=%sb difflines=%s\n" "$u" "$ps" "$ss" "$d"
-done
-'
+./scripts/staging_prod_diff.sh                 # summary table (filtered difflines per URL)
+./scripts/staging_prod_diff.sh --show          # + dump the filtered diff for URLs that differ
+./scripts/staging_prod_diff.sh --show /         # one specific path
+PROD_BASE=... STAGING_BASE=... PRED_MONTH=2026-7 ./scripts/staging_prod_diff.sh   # env overrides
 ```
 
-The `sed` rewrite of `staging.visa-bulletin.us → visa-bulletin.us` is **load-bearing** — without it every canonical_url, og:url, og:image, twitter:url, and schema.org Dataset URL shows as a diff and drowns out real signal.
+It curls the URL set above on both stacks, saves artifacts to `/tmp/vb_diff/{prod,stg}_<slug>.html`, and prints the **filtered** diffline count per URL (exit 1 if any URL differs). `PRED_MONTH` defaults to the current year-month.
 
-**Then inspect the diffs and classify each block:**
+The script's `sed` rewrite of `staging.visa-bulletin.us → visa-bulletin.us` is **load-bearing** — without it every canonical_url, og:url, og:image, twitter:url, and schema.org Dataset URL shows as a diff and drowns out real signal. Its `grep -vE` filter strips known-cosmetic noise: the rotating Cloudflare email-obfuscation tokens (`data-cfemail=...`) which differ on every request, and any GoatCounter / `data-gc-event` content that's been merged to staging but not yet on prod (which IS the deploy you're about to do — those diffs are *expected*).
 
-```bash
-# For each URL with non-zero difflines:
-diff /tmp/vb_diff/prod_<slug>.html /tmp/vb_diff/stg_<slug>.html \
-  | grep -vE '(goatcounter|data-cfemail|cdn-cgi/l/email-protection|window\.goatcounter|data-gc-event|Strip query strings|Outbound-link|Trigger via|action_type=)' \
-  | head -80
-```
-
-The `grep -vE` filter strips known-cosmetic noise: the rotating Cloudflare email-obfuscation tokens (`data-cfemail=...`) which differ on every request, and any GoatCounter / `data-gc-event` content that's been merged to staging but not yet on prod (which IS the deploy you're about to do — those diffs are *expected*).
+**Then inspect each URL with non-zero difflines and classify the block** (`--show` dumps the filtered diff; or hand-run `diff /tmp/vb_diff/prod_<slug>.html /tmp/vb_diff/stg_<slug>.html | grep -vE '(goatcounter|data-cfemail|cdn-cgi/l/email-protection|window\.goatcounter|data-gc-event)' | head -80`):
 
 **Classify what's left:**
 
@@ -255,17 +235,16 @@ Cross-reference unexplained HTML diffs against this list. If the diff is in `web
 
 **Why this rule exists:** 2026-05-27 — after a cherry-pick chain to staging, smoke tests passed but a manual diff against prod surfaced (1) a 9-line "Scope of accuracy claims" paragraph missing from staging's methodology BlogPost (DB drift), (2) substantively different EB prediction values + confidence intervals (data drift in `PredictedCutoff`), and (3) `<link rel="canonical" href="http://localhost:8000/">` on staging's homepage cache (Docker healthcheck populating cache with no Host header). None of those would have failed a 200-status smoke test. The diff caught all three in ~5 minutes.
 
-### Optional: zero-downtime via blue/green (NOT YET BUILT)
+### Zero-downtime promotion — BUILT, in the VB platform repo (default path)
 
-Notion follow-up ticket exists for building a reusable
-`tools/blue_green_deploy.sh` script that uses the existing dual-stack
-(`visa_bulletin` + `visa_bulletin_staging` compose projects sharing
-`vb_public`). High-level dance: repoint staging container's DB to prod
-postgres → CF Tunnel ingress swap (prod hostnames → `vb_stg_nginx`) →
-recreate `vb_web` with no traffic on it → swap CF ingress back → revert
-staging DB. Per-deploy overhead ~30-60s, customer downtime 0s. Build it
-when deploy frequency or off-peak constraints justify the orchestration
-cost.
+The zero-downtime promotion this section once speculated about **is built** and is now the
+**default** for routine prod promotions: `visa_bulletin_platform/hosting/cutover.sh --code <sha>`
+(code) / `--data` (DB-level). It gates on staging then swaps the homeserver image while a second
+stack serves prod traffic, so vb never 502s. See `branching.md` §"Promote via the ZERO-DOWNTIME
+cutover" for the policy and `hosting/RELEASE_PATHS.md` for the engine. Do NOT build a parallel
+`tools/blue_green_deploy.sh` in this public repo — all release tooling lives in `hosting/`
+(`branching.md` §"Two-repo split"). The in-place `docker compose up -d web` below is only the
+under-the-hood mechanics + the `--accept-502` disruptive fallback.
 
 **Building images** still happens via the GitHub Actions workflow on push to `staging`/`prod` branches — see "Docker Image Strategy" below. Nothing about the build/registry side changed; only the runtime moved.
 
@@ -290,7 +269,7 @@ Images built by GitHub Actions on pushes to `staging`/`prod` branches or version
 
 **Image contains:** Python runtime, system deps (libpq5), pip packages, gunicorn, baked-in app code.
 
-**Prod and staging both run baked-in image code** (no `../:/app` volume mount). To deploy code changes: push to branch → wait for CI → `docker pull` + `docker-compose up -d web` on the server.
+**Prod and staging both run baked-in image code** (no `../:/app` volume mount). To deploy code changes: push to branch → wait for CI to publish the image → swap the image tag on the target stack. **For prod that swap is the zero-downtime `hosting/cutover.sh --code <sha>`** (`branching.md`); the bare `docker pull` + `docker-compose up -d web` on the server is the staging path / disruptive prod fallback only.
 
 **⚠️ CRITICAL:** `docker restart` does NOT update the image. To deploy a new image you MUST recreate the container via `docker-compose up -d` with the correct `IMAGE_TAG`. Verify: `docker inspect <name> --format '{{.Config.Image}}'`.
 

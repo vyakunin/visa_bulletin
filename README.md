@@ -345,34 +345,16 @@ Old standalone scripts may still exist in `scripts/bulletin/` and `scripts/salar
 - ✅ `bazel run //:runserver` for development
 - ✅ Hermetic builds with caching
 
-**Production (AWS Lightsail 2GB):**
-- ✅ Docker + Gunicorn
-- ✅ PostgreSQL (single DB per instance; instance rotation)
-- ✅ Pre-built Bazel binaries (reduced memory)
-- ✅ Nginx reverse proxy with SSL
+**Production (self-hosted homeserver behind a Cloudflare Tunnel):**
+- ✅ Docker Compose stack (Postgres, Redis, Django+gunicorn, nginx, cloudflared)
+- ✅ Image-tag promotion (`docker compose pull web && up -d web`)
+- ✅ Nginx reverse proxy; TLS terminates at the Cloudflare edge
 
-### New Instance Setup
+> AWS/Lightsail (the prior host, with a blue/green instance-rotation orchestrator)
+> was retired 2026-06-20. The deploy procedure now lives in
+> `.claude/rules/deployment.md` + `.claude/rules/branching.md` and `deployment/homeserver/`.
 
-```bash
-# Clone and run automated setup
-git clone https://github.com/vyakunin/visa_bulletin.git /opt/visa_bulletin
-cd /opt/visa_bulletin
-./scripts/setup_new_instance.sh
-```
-
-The setup script configures:
-- Swap (2GB, swappiness=60)
-- Docker and PostgreSQL
-- Memory limits for Bazel and PostgreSQL
-- Monitoring tools (sysstat, atop)
-
-### Zero-Downtime Deployment
-
-```bash
-./scripts/deploy.sh ~/.ssh/lightsail_visa_bulletin v1.2.3
-```
-
-**Full deployment guide:** See [deployment/README.md](deployment/README.md) and [docs/deployment/NEW_INSTANCE_SETUP.md](docs/deployment/NEW_INSTANCE_SETUP.md)
+**Full deployment guide:** See `.claude/rules/deployment.md` and `deployment/homeserver/`.
 
 ## Quick Start
 
@@ -403,24 +385,17 @@ This project uses **different tooling** for local development vs production depl
 - ✅ Reproducible test environment
 - 💻 **Why**: Bazel's toolchain (~500MB) and build cache provide excellent DX
 
-**Production (AWS Lightsail $5/month):**
-- ✅ **Raw Python** with venv
-- ✅ Gunicorn as WSGI server
-- ✅ Direct `python` commands
-- ✅ Minimal resource footprint
-- 🚀 **Why**: Fits 1GB RAM constraint; Bazel requires ~1-2GB RAM for builds
+**Production (self-hosted, Docker + Cloudflare Tunnel):**
+- ✅ Single Docker Compose stack (`vb_web` gunicorn, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared`)
+- ✅ Image-tag releases built by GitHub Actions, promoted zero-downtime
+- ✅ No public port forwards — traffic enters via Cloudflare Tunnel
+- 🚀 **Why**: migrated off AWS Lightsail on 2026-05-08; the image carries baked-in app code, so prod needs no Bazel
 
-**Quick Deploy:**
-```bash
-./scripts/deploy.sh ~/Downloads/VisaBulletin.pem
-```
-
-**Full deployment guide:** See [deployment/README.md](deployment/README.md) for:
-- AWS Lightsail setup ($5/month)
-- Nginx reverse proxy
-- SSL/HTTPS with Let's Encrypt
-- Systemd service management
-- Daily cron job for data refresh
+**Releases are NOT run from this repo.** Production deploys / promotions go through the
+VB platform repo `visa_bulletin_platform/hosting/` (zero-downtime `cutover.sh --code <sha>`),
+never a hand-rolled script here. The canonical release + branching flow lives in
+[`.claude/rules/branching.md`](.claude/rules/branching.md) and
+[`.claude/rules/deployment.md`](.claude/rules/deployment.md).
 
 ## Project Structure
 

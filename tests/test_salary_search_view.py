@@ -7,6 +7,7 @@ setup_django_for_tests()
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils.html import escape
 
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
@@ -211,7 +212,8 @@ class SalarySearchSEOTest(TestCase):
 
         body = response.content.decode("utf-8")
         self.assertIsNotNone(response.context["page_intro"])
-        self.assertIn(response.context["page_intro"], body)
+        # page_intro contains "&" which the template auto-escapes to "&amp;".
+        self.assertIn(escape(response.context["page_intro"]), body)
         # H1 carries the dynamic heading.
         self.assertIn(f"<h1 class=\"h3 mb-2\">{response.context['page_heading']}</h1>", body)
 

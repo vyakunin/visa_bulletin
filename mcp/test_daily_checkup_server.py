@@ -35,21 +35,21 @@ def _lat(n10=0, n3=0, count=300):
 def test_predictions_routine_slow_tail_not_red():
     """14 >10s on predictions (routine heavy Plotly) stays green — not RED."""
     nx = {"surface_latency": {"predictions": _lat(n10=14)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "green", status
 
 
 def test_predictions_genuine_spike_is_yellow_not_red():
     """A real explosion on predictions warns (yellow) but never escalates RED."""
     nx = {"surface_latency": {"predictions": _lat(n10=m.PERF_HEAVY_SPIKE_N10 + 5)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "yellow", status
 
 
 def test_transactional_surface_slow_tail_still_red():
     """>10s on a transactional surface (salaries) IS a regression → still RED."""
     nx = {"surface_latency": {"salaries": _lat(n10=m.PERF_RED_N10)}}
-    _section, status = m._section_top_properties(nx, None, None)
+    _section, status = m._section_top_properties(nx, None)
     assert status == "red", status
 
 
@@ -119,6 +119,63 @@ def test_surface_deltas_emit_share_and_pages_from_csv():
     assert abs(rows["dashboard"]["share_pct"] - 100 / 110 * 100) < 0.01
 
 
+# ── CF Managed Challenge is not a probe failure (2026-07-01) ──────────────────
+# /salaries/ got a Cloudflare Managed Challenge on 2026-06-28. A headless probe
+# always gets a 403 challenge interstitial it can't solve, but real browsers
+# pass it invisibly — so it must NOT flag the probe (and the whole digest) RED.
+
+def _resp(status, headers=None, body=""):
+    return httpx.Response(status, headers=headers or {}, content=body.encode())
+
+
+def test_cf_challenge_detected_by_header():
+    """Authoritative signal: `cf-mitigated: challenge` header."""
+    assert m._is_cf_challenge(_resp(403, {"cf-mitigated": "challenge"}))
+
+
+def test_cf_challenge_detected_by_body_marker():
+    """Fallback: 403/503 + the challenge-platform interstitial marker."""
+    assert m._is_cf_challenge(_resp(403, body="<script>challenge-platform</script>"))
+    assert m._is_cf_challenge(_resp(503, body="challenge-platform"))
+
+
+def test_genuine_403_is_not_a_challenge():
+    """A plain 403 with no CF challenge signal is still a real failure."""
+    assert not m._is_cf_challenge(_resp(403, body="Forbidden"))
+
+
+def test_genuine_5xx_body_marker_is_not_a_challenge():
+    """A 500 (outside the 403/503 challenge set) is a real error, not a challenge.
+
+    CF only serves managed challenges as 403/503 + the cf-mitigated header, so a
+    body substring on a 500 must not mask a genuine origin exception.
+    """
+    assert not m._is_cf_challenge(_resp(500, body="challenge-platform noise"))
+
+
+def test_challenged_probe_is_ok_and_digest_stays_green():
+    """A challenged /salaries/ probe → ok=True, section green (info-only note)."""
+    probes = [
+        {"label": "home", "url": "u", "status": 200, "ok": True, "body_check": {}},
+        {"label": "salaries", "url": "u", "status": 403, "ok": True,
+         "challenged": True, "body_check": {}},
+    ]
+    section, status = m._section_probes(probes)
+    assert status == "green", status
+    assert section is not None and "CF challenge" in section["title"]
+    assert section["importance"] == 1
+
+
+def test_genuine_probe_failure_still_red():
+    """A real non-200 (not a challenge) still escalates the probes section RED."""
+    probes = [
+        {"label": "home", "url": "u", "status": 200, "ok": True, "body_check": {}},
+        {"label": "salaries", "url": "u", "status": 500, "ok": False, "body_check": {}},
+    ]
+    section, status = m._section_probes(probes)
+    assert status == "red", status
+
+
 def test_surface_deltas_fallback_has_null_share_and_pages():
     """top-100 fallback path → share/pages are None (never faked from a cap)."""
     rows = m._build_surface_deltas(
@@ -126,3 +183,141 @@ def test_surface_deltas_fallback_has_null_share_and_pages():
         fallback_surf_this={"dashboard": 100}, fallback_surf_cycle={"dashboard": 80})
     assert rows[0]["share_pct"] is None
     assert rows[0]["pages"] is None
+
+
+# ── Surface taxonomy: newly-launched pSEO families get their own bucket ──────
+# Regression for 2026-06-29: priority-date / h1b-salary / h1b-sponsors / es
+# pSEO pages were all silently falling into `other`. Each must classify into a
+# dedicated surface so the per-surface block in the digest shows them.
+
+def test_new_pseo_surfaces_have_dedicated_buckets():
+    cases = {
+        "/priority-date/": "priority_date",
+        "/priority-date/eb2/": "priority_date",
+        "/priority-date/eb2/india/": "priority_date",
+        "/priority-date-calculator/": "priority_date",
+        "/h1b-salary/": "occupation_salary",
+        "/h1b-salary/software-engineer/": "occupation_salary",
+        "/h1b-salary/google-llc/software-engineer/": "occupation_salary",
+        "/h1b-sponsors/in/california/": "h1b_sponsors",
+        "/h1b-sponsors/data-scientist/": "h1b_sponsors",
+        "/es/": "spanish",
+        "/es/faq/": "spanish",                       # NOT static_pages
+        "/es/priority-date/eb3/mexico/": "spanish",  # NOT priority_date
+    }
+    for path, expected in cases.items():
+        assert m._bucket_path(path) == expected, f"{path} -> {m._bucket_path(path)} (want {expected})"
+    # every dedicated bucket is also a rendered top-property (not dropped)
+    for surf in {"priority_date", "occupation_salary", "h1b_sponsors", "spanish"}:
+        assert surf in m.TOP_PROPERTY_SURFACES
+        assert surf in m.SURFACE_LABELS
+
+
+def test_dead_surfaces_not_rendered():
+    """worksites (~0 traffic) + donation_click (events filtered → always empty)
+    must NOT render as 'no data' rows. Still classified (pattern kept) so they
+    don't pollute `other`. Regression for 2026-06-29 user request."""
+    for surf in ("worksites", "donation_click"):
+        assert surf not in m.TOP_PROPERTY_SURFACES, f"{surf} must not render"
+    # but still classifiable (no `other` pollution)
+    assert m._bucket_path("/worksites/foo") == "worksites"
+    assert m._bucket_path("ext-buy-me-a-coffee") == "donation_click"
+
+
+# ── DOL data freshness: weekly-refresh trigger signal (2026-06-20) ───────────
+
+def test_dol_tuples_parse_program_fy_quarter_and_skip_noise():
+    """LCA/PERM disclosure files parse to (program, fy, quarter); worksite /
+    appendix / pw files are excluded; DOL's misspelled 'dislclosure' is tolerated."""
+    # Realistic input: one URL per line (matches the psql `SELECT url` dump and
+    # the quote/slash-delimited HTML hrefs the regex is designed for).
+    base = "https://www.dol.gov/sites/dolgov/files/eta/oflc/pdfs/"
+    text = "\n".join(base + n for n in [
+        "lca_disclosure_data_fy2026_q1.xlsx",
+        "lca_dislclosure_data_fy2026_q2.xlsx",   # DOL's real misspelling
+        "perm_disclosure_data_fy2024.xlsx",      # annual → quarter 0
+        "perm_disclosure_data_fy2026_q2.xlsx",
+        "lca_worksites_fy2026_q2.xlsx",          # excluded
+        "pw_appendix_a_fy2026_q2.xlsx",          # excluded
+    ])
+    got = m._dol_disclosure_tuples(text)
+    assert ("H1B", 2026, 1) in got
+    assert ("H1B", 2026, 2) in got               # misspelled file still caught
+    assert ("PERM", 2024, 0) in got
+    assert ("PERM", 2026, 2) in got
+    assert not any("worksite" for t in got if False)  # noise excluded
+    assert all(t[2] in (0, 1, 2) for t in got)
+    # worksite/appendix never create H1B FY2026 beyond the disclosure ones
+    assert len([t for t in got if t[0] == "H1B" and t[1] == 2026]) == 2
+
+
+def test_dol_rank_annual_ranks_as_full_year():
+    """Annual (q=0) ranks as Q4 so it isn't treated as 'older' than a quarter."""
+    assert m._dol_rank(("PERM", 2025, 0)) == m._dol_rank(("PERM", 2025, 4))
+    assert m._dol_rank(("PERM", 2026, 1)) > m._dol_rank(("PERM", 2025, 0))
+
+
+def test_freshness_current_is_green():
+    """Upstream == prod → green, no action."""
+    up = {"H1B": ("H1B", 2026, 2), "PERM": ("PERM", 2026, 2)}
+    prod = "lca_dislclosure_data_fy2026_q2.xlsx\nperm_disclosure_data_fy2026_q2.xlsx\n"
+    sec, status = m._section_data_freshness(up, prod)
+    assert status == "green", status
+    assert "current" in sec["title"].lower()
+
+
+def test_freshness_new_upstream_is_yellow():
+    """DOL newer than prod → yellow with the trigger hint."""
+    up = {"H1B": ("H1B", 2026, 2), "PERM": ("PERM", 2026, 2)}
+    prod = "lca_dislclosure_data_fy2026_q1.xlsx\nperm_disclosure_data_fy2026_q1.xlsx\n"
+    sec, status = m._section_data_freshness(up, prod)
+    assert status == "yellow", status
+    assert "new file(s) available" in sec["title"]
+    assert "🆕" in sec["body"]
+
+
+def test_freshness_upstream_unreachable_is_green_informational():
+    """Transient DOL fetch failure must not escalate the digest."""
+    prod = "perm_disclosure_data_fy2026_q2.xlsx\n"
+    sec, status = m._section_data_freshness(None, prod)
+    assert status == "green", status
+
+
+# --- GA4 engagement section --------------------------------------------------
+
+def _ga4_rows(*rows):
+    return [
+        {"landingPage": p, "sessions": str(s), "engagedSessions": str(e),
+         "userEngagementDuration": str(d)}
+        for p, s, e, d in rows
+    ]
+
+
+def test_ga4_bucket_aggregates_surfaces():
+    b = m._ga4_bucket(_ga4_rows(
+        ("/", 100, 80, 5000),
+        ("/job-title/head-chef", 30, 10, 300),
+        ("/job-title/orthoptist", 20, 10, 200),
+        ("/employer/google-llc", 50, 35, 900),
+    ))
+    assert b["site organic"]["sessions"] == 200          # everything
+    assert b["/job-title/*"] == {"sessions": 50, "engaged": 20, "eng_dur": 500.0}
+    assert b["/employer/*"]["engaged"] == 35
+
+
+def test_ga4_engagement_drop_flags_yellow():
+    """≥10pt WoW engagement drop on a watched surface with enough N → yellow."""
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 100, 45, 1000)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 100, 60, 1000)))
+    sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
+    assert status == "yellow", status
+    assert "−15pt" in sec["title"]
+
+
+def test_ga4_small_n_never_flags():
+    """Below GA4_MIN_SESSIONS the rate is noise — stays green."""
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 20, 2, 50)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 30, 25, 700)))
+    sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
+    assert status == "green", status
+    assert "20 sess" in sec["body"] and "30 sess" in sec["body"]

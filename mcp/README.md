@@ -10,6 +10,7 @@ Implements the contract at `~/.cursor/shared_rules/daily_checkup.mdc`. Exposes a
 - Hourly bulletin-refresh cron freshness + filtered error lines from `/opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log` (known-harmless 200X / 2015 source noise per POST_MIGRATION_TRACKER #8 is suppressed).
 - Daily GDrive-backup cron freshness + errors from `/opt/stack/visa_bulletin/logs/cron/backup.log`.
 - Postgres data freshness: newest `Bulletin.publication_date` (handles future-month case), last successful `IngestRun.completed_at`, connection count.
+- **DOL data freshness** (weekly-refresh trigger signal): fetches the DOL performance page and compares the latest LCA/PERM disclosure file (by fiscal year + quarter) against prod's ingested sources (`ingest_data_source`). Since the weekly DOL salary refresh runs **manually** (branching.md Path 2), this flags **yellow** when DOL has published a newer disclosure file than prod has ingested, so the refresh can be triggered; **green** when current. Tolerant of DOL's misspelled `dislclosure` filenames; annual (no-quarter) files rank as full-year. NOTE: DOL anti-bot 403s browser User-Agents but allows the default httpx UA — the fetch deliberately sends no browser UA.
 - `vb_cloudflared` state + restart count.
 
 ### Traffic / performance (GoatCounter API)

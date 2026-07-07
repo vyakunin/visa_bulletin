@@ -2,7 +2,7 @@
 
 > Concrete hosting topology (hosts, IPs, hardware, the staging/standby/cutover mechanics, backup wiring, DR) lives in the private ops repo, not in this public repository. Public docs use abstract roles (production / staging / data-pipeline server). The 3-branch model below is host-agnostic.
 
-**Canonical reference:** `docs/BRANCHING_AND_DEPLOYMENT.md`.
+**This rule is canonical** for the branch + release model. `docs/BRANCHING_AND_DEPLOYMENT.md` is a human-readable narrative overview that defers to this rule + `deployment.md` + the release tooling in `visa_bulletin_platform/hosting/`.
 
 ## 🚨 Rule: ALL releases go through `visa_bulletin_platform/hosting/` — never hand-roll a deploy
 
@@ -12,7 +12,7 @@ Canonical release surfaces (the ONLY paths to prod):
 
 | Operation | Use | Never instead |
 |---|---|---|
-| Promote staging→prod (Path 1 image swap) | `hosting/promote.sh --prod` | a manual `docker compose pull web && up -d` on the box |
+| Promote staging→prod (Path 1, code-only) | **`hosting/cutover.sh --code <sha>`** — zero-downtime (gates on staging, then swaps while the minipc serves prod; vb never 502s) | `promote.sh --prod` or a bare `docker compose pull web && up -d` on the box — both 502 prod ~10–15 s. Disruptive fallback ONLY when the cutover is unavailable (and then `promote.sh <sha> --prod --accept-502`). |
 | Data-refresh / heavyweight graduation (Path 2) | `hosting/cutover.sh --data` / `hosting/graduate.sh` | a direct heavy mutation on the serving prod box |
 | Runtime config (compose, `.env`, monetization `overrides/`) | edit the per-stack file under `hosting/{homeserver,staging,standby}/` then deploy it; **mirror to staging same task** (parity rule below) | `sed`/`vi` on `/opt/stack/...` on the server |
 | Edge cache purge | `hosting/scripts/cf_cache_purge.py` | manual CF dashboard clicks |
@@ -28,13 +28,33 @@ Origin: 2026-06-24 — the EB-dashboard worker-warmup fix needed `VQS_WARM=1` on
 - **`staging`** — Release candidate. Cherry-picks from `main`. Deployed to the staging stack. Data refreshes run here.
 - **`prod`** — **Mirror of production. NEVER update unless the change is actually deployed to production.** Updated only in two cases: (1) promotion — fast-forward to match `staging` after staging is verified, (2) critical hotfix — fix deployed directly. The branch must always reflect exactly what's running.
 
+### Branch divergence is EXPECTED — judge parity by CONTENT, never by commit count
+
+`git rev-list --count` between these branches is a **misleading signal** and must NOT be treated as drift to "fix":
+
+- **`staging`/`prod` legitimately trail `main` by tens of commits** — `main` is dev and carries unreleased WIP. "staging is N commits behind main" is the model working, not a problem. **NEVER "reconcile" by merging/resetting `main` → `staging`** — that dumps unvalidated WIP into the release candidate and breaks the whole 3-branch separation.
+- **Promotion is by CHERRY-PICK (and image-SHA), which rewrites the commit hash.** So the *same* change lands under a *different* SHA on each branch, and the three branches diverge in commit count and SHA even when their working trees are **byte-identical**. A large `main…staging` / `staging…prod` count is almost always this artifact, not real divergence.
+- **The only parity that matters: (a) working-tree CONTENT and (b) the deployed image tag.** Verify content parity with `git diff --stat <a> <b>` (empty = identical) or `git show <branch> --format= | git patch-id` (same patch-id on each tip = same change, cherry-picked). Verify deployed state against the live prod image tag, not the `prod` branch SHA — prod runs the promoted `staging-<sha>` image; the `prod` branch is a content-mirror for reference, not the source of the running SHA.
+- **Do NOT force-push/reset `staging` or `prod` to "tidy lineage."** History rewrites on shared release branches are Tier 3 (`automation_safety.md`) and can desync the branch↔deployed-image mapping. If the branches are content-equal at the tip and serving correctly, there is nothing to reconcile — leave them.
+- **BUT after every rollout, CATCH THE `prod` MIRROR UP TO THE DEPLOYED SHA — same task, don't defer.** The mirror's whole job is to reflect what's live; a rollout that leaves `prod` behind (missing the just-released files) makes it lie. So the promotion is not done until `prod` reflects the deployed image's SHA:
+  - **Preferred:** `git merge --ff-only staging` on the `prod` worktree (clean lineage → fast-forwards).
+  - **When ff FAILS due to divergent cherry-pick lineage** (the common case here), it is a genuine **content-stale** mirror, NOT "tidying lineage" — the carve-out above does not apply. Reconcile by a **careful force-reset to the deployed SHA**, only after you have PROVEN both: (a) the deployed image tag = the SHA you're resetting to (`ssh homeserver "docker inspect vb_web --format '{{.Config.Image}}'"` → `staging-<sha>`); (b) the divergence is benign — every `staging..prod` commit is a **hash-twin** of a `staging`-only commit (equal `git patch-id`), so nothing unique is discarded, and `git diff --stat origin/prod origin/staging` shows only the release's files. Then:
+    ```bash
+    cd ~/cursor_projects/visa_bulletin_prod
+    git reset --hard <deployed-sha>          # = staging tip
+    git push --force-with-lease=prod:<old-prod-sha> origin prod   # lease-guard; NEVER bare --force
+    ```
+    Re-verify: `git diff --stat origin/prod origin/staging` empty AND `origin/prod` == the deployed `staging-<sha>`. This force-push is Tier 3 but the "catch up the mirror after rollout" mandate authorizes it once (a)+(b) hold — don't confirmation-fish (`drive_dont_defer.md`); if either proof fails, STOP and surface it.
+
+Origin: 2026-07-01 — after the i129/privacy rollout, `prod` couldn't ff (20 hash-twin cherry-pick commits) and sat content-stale (missing the release's 18 files) while prod ran `staging-7797a89`. I flagged the needed force-push but framed it as a question. Vladimir: *"Tighten rule to always catch up staging to prod after roll out and (carefully) do now."* Reconciled by force-reset to the deployed SHA after proving (a) deployed image = `staging-7797a89` and (b) all 20 prod-only commits are patch-id twins.
+
 ## Separation of Concerns
 
 Three independent operations — never conflate them:
 
-- **Code deployment**: `docker compose pull web && docker compose up -d web` on the server against the stack you're deploying to. No data refresh.
-- **Data refresh**: weekly job that ingests new salary/bulletin data, run against the staging DB.
-- **Promotion (staging → prod)**: either (a) deploying the staging-tested image tag to the prod stack, or (b) atomically swapping the postgres-data volumes (for DB-level promotion after a refresh).
+- **Code deployment**: image-tag swap on the target stack. To **staging**, that's `IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web` on the staging stack. To **prod**, it's the zero-downtime `hosting/cutover.sh --code <sha>` (NOT a bare in-place `docker compose up -d web`, which 502s prod — see "Promote via the ZERO-DOWNTIME cutover"). No data refresh.
+- **Data refresh**: weekly job that ingests new salary/bulletin data, run against the staging DB (off-prod), then graduated via `hosting/cutover.sh --data`.
+- **Promotion (staging → prod)**: code → `hosting/cutover.sh --code <sha>`; data/DB-level → `hosting/cutover.sh --data` (postgres-data volume swap after a verified refresh). Always via the VB platform `hosting/` tooling, never hand-rolled.
 
 ## Which release path — rendering vs data-population
 
@@ -48,9 +68,50 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 - **`no schema migration` ≠ Path 1.** A data-population code change is Path 2 *even with no migration* and *even though the new code sits inert in the prod image until a refresh runs it* — validating it requires running the refresh against real data on the off-prod staging stack and checking the derived data + downstream effects, then graduating the DATA via the cutover. A quick Path 1 swap skips that and leaves the next refresh running unvalidated pipeline code at prod scale.
 - **A mixed batch is Path 2.** If even one commit in the promote set touches data-population, the whole promotion is Path 2 — or split the batch and ship only the pure-rendering commits via Path 1.
 
+## 🚨 Promote the WHOLE staged tree by default — don't ship one change and PARK the rest
+
+**A staging→prod promotion promotes the ENTIRE staged tree (every commit in `git log prod..staging`), not just the change you came to ship.** The default is: everything sitting on staging goes to prod. Cherry-picking / force-pushing `staging` down to a subset to ship one change **while leaving the rest parked on staging is the anti-pattern** — a parked RC then sits release-ready-but-unshipped across sessions, the morning digest re-flags it "never promoted," and the next release either forgets it or has to untangle it from a fresh change.
+
+**Before every promotion, enumerate `git log --oneline origin/prod..origin/staging` and account for EVERY commit:** each one either ships in this promotion, or you have a *stated, real* reason it's held (see the narrow exceptions below). "I only care about commit X right now" is **not** a reason to park the others — promote them too. This is the action-side twin of `~/.claude/rules/notion_followups.md` §"reconcile EVERY ticket the batch carries" (that rule is the ticket side; this is the code side).
+
+**Splitting the tree is the EXCEPTION, allowed only when:**
+- A subset is **genuinely not ready** (broken, unvalidated, explicitly held by its workstream) — then ship the ready part, and leave a **note/ticket** on the held part with the unblock condition, don't silently park it.
+- A subset needs a **different release path** (a Path-1 pure-rendering change batched with a Path-2 data-population change): ship each via its correct path — Path-1 subset via `cutover --code`, Path-2 subset via its data graduation — but ship **both**, in the same workstream. Don't ship the easy Path-1 half and abandon the Path-2 half on staging.
+
+Even when you split, **the goal is that staging returns to parity with prod** (no unshipped tail) by the end of the work, not that one change is live and a pile of others linger. If you force-push `staging` to a subset to isolate a Path-1 ship, **restore staging to the full tree and promote the remainder** as the immediate next step — don't leave the superset parked.
+
+Origin: 2026-07-03 — an SEO Path-1 ship was isolated by force-pushing staging to an SEO-only tree, which correctly avoided riding a parked Path-2 predictions RC on a code cutover — but the predictions RC was then left parked on staging (`git log prod..staging` still carried 3 unshipped predictions commits). Vladimir: *"Promote the remainder of staged. Update rules to go for all staged changes by default."*
+
 ## Staging runs OFF the prod box — always
 
 The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
+
+## Promote via the ZERO-DOWNTIME cutover — never the 502 web-swap by default
+
+A code-only promotion to prod **defaults to `hosting/cutover.sh --code <sha>`**, which gates on staging (it calls `promote.sh <sha>` internally) and then swaps the homeserver image *while the minipc serves prod traffic* — so **vb never 502s**. Do NOT routinely promote with `promote.sh --prod` or a bare `docker compose pull web && docker compose up -d web`: those recreate the live `web` container in place, 502-ing prod for ~10–15 s on every release. Disturbing prod is not the cost of a routine deploy; the no-downtime path is BUILT — use it.
+
+- **The cutover's only blast cost is bubba's ~30–60 s blip** (shared homeserver tunnel) — and policy (2026-06-22, `RELEASE_PATHS.md`) already ACCEPTS that as collateral: it does not gate or window a VB release. So there is no "low-traffic window" excuse to fall back to the 502 swap.
+- **`promote.sh --prod` is a fallback only when the cutover is genuinely unavailable** (minipc below the RAM floor for the standby restore, standby stack down). It now refuses to run without an explicit `--accept-502` flag, precisely so the disruptive swap can't be taken by habit.
+- **Hotfix exception:** a true prod-down emergency (sustained 5xx, broken parser pre-publication) MAY take the fast disruptive swap — but say so; "it was just quicker" is not an emergency.
+- **Verify:** zero vb 502s during the swap is the end-state (`promote.sh --prod` would show the ~10–15 s window; the cutover shows none). `cutover.sh --code <sha> --dry` prints the plan + preflight first.
+
+Origin: 2026-06-24 — vb promotions kept disturbing prod with the `promote.sh --prod` / `docker compose up -d web` web-swap (~10–15 s 502s) even though the zero-downtime `cutover.sh --code` was built and is the documented no-downtime path. Vladimir: *"vb promotion keeps disturbing prod, ignoring no-downtime process. Tighten its rules to defer here for promotion."* → flipped the default to the cutover here + in `RELEASE_PATHS.md`, and guarded `promote.sh --prod` behind `--accept-502`.
+
+## Keep staging and prod in PARITY — mirror every direct-prod change to staging immediately
+
+Staging is only a trustworthy release-candidate (and `promote.sh` diff-gate) if it differs from prod **only by the change under test**. Any change made directly to the **prod** stack's *runtime config* — monetization `overrides/*.html`, `.env`, compose volumes/services, an `ALLOWED_HOSTS` edit, a hotfix applied straight to prod — MUST be mirrored to the **staging** stack in the **same task**. Otherwise divergence silently accumulates and pollutes the next diff-gate with phantom deltas, eroding trust in the gate.
+
+- **Runtime config is NOT carried by the image.** `promote.sh` swaps the web image; it does **not** sync `overrides/`, `.env`, or compose between stacks. Those are per-stack and drift unless you sync them by hand.
+- **Source of truth = live prod behavior.** When you change prod runtime config, copy the same files/values into `hosting/staging/`, restart the staging web, and flush staging Redis. When a `monetization/` override is deployed to prod, deploy it to staging too.
+- **Mirror immediately, same task** — "sync staging later" means the next diff-gate is noisy and someone re-explains a known divergence.
+- **Verify parity:** `diff` the staging vs prod override/`.env` files, and/or run the committed HTML diff-gate `./scripts/staging_prod_diff.sh` (curls the top-URL set on both stacks, filters cosmetic noise, prints filtered difflines per URL; see `deployment.md` § "Diff staging vs prod HTML"). Confirm they match except the intended delta.
+- **DISCOVERING drift = reconcile it in the SAME task — don't defer, don't ask.** The trigger is not only "I'm about to change prod." When a `promote.sh` diff-gate (or any staging↔prod curl-diff) surfaces a **phantom delta** — a difference on a page your change didn't touch, prod runtime config ahead of/behind staging, an override deployed to one stack only — that discovery IS the mandate to mirror it back into parity right then, in the turn that found it. The diff-gate exists precisely to catch this; surfacing it and walking away defeats the gate. This is `~/.claude/rules/drive_dont_defer.md` applied to parity: the mirror is unblocked work you can do with the access in hand, so do it.
+- **No excuses that defer it:** "that's the ads/monetization workstream's config, not this SEO turn," "I'll mirror it as a separate step," "it's pre-existing, not mine" — none suspend the same-task mirror. Parity is whoever-touches-the-stack's job; the turn that finds the drift owns its reconciliation, not the workstream that authored it.
+
+❌ Anti-pattern (2026-06-24): an SEO image-promotion's diff-gate surfaced ~308 phantom difflines (prod's affiliate/ads `overrides/` ahead of staging, never mirrored). I correctly flagged it — then ended the turn with *"Want me to mirror prod's affiliate overrides → staging as a separate step?"* That's confirmation-fishing on unblocked work. ✅ Right: copy prod's `overrides/` → `hosting/staging/`, restart staging web, flush staging Redis, re-diff to confirm only the intended delta remains — all in the same turn — then report it done.
+
+Origin: 2026-06-23 — staging's monetization overrides were stale (support-CTA card removed from prod 6/18, affiliate updated 6/20, neither mirrored), so the priority-date `promote.sh` diff-gate flagged a phantom "Buy-Me-a-Coffee card on staging." Vladimir: *"tighten the rules to prevent divergences: even on direct prod deploys we should immediately follow with staging updates."*
+Origin: 2026-06-24 — on an SEO promotion I discovered prod's affiliate/ads `overrides/` were ahead of staging (~308 phantom difflines) and *asked* to mirror it "as a separate step" instead of doing it in-task. Vladimir: *"Tighten your rules to always keep staging up to date … maybe share some?"* → added the discovered-drift / no-excuses clauses here + promoted the generic principle to `~/.claude/rules/staging_prod_parity.md`.
 
 ## 🚨 Heavyweight data tasks: compute OFF-PROD on staging, graduate via cutover — NEVER mutate the serving prod box directly
 
@@ -74,7 +135,7 @@ Origin: 2026-06-21 — the employer-clustering split-cluster fix was validated o
 
 **Feature:** `main` → cherry-pick to `staging` → deploy to staging stack → test → iterate. **Never to `prod`.**
 
-**Promotion:** verify staging → fast-forward `prod` from `staging` → on the production server `cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web`.
+**Promotion:** verify staging → **`hosting/cutover.sh --code <sha>`** (zero-downtime; gates staging then swaps with vb never 502ing) → **catch the `prod` mirror up to the deployed SHA, same task** (ff-only if lineage is clean, else careful force-reset to the deployed SHA per "Branch divergence is EXPECTED" — never leave `prod` behind after a rollout). Never the in-place `docker compose up -d web` on prod by default — that 502s (see "Promote via the ZERO-DOWNTIME cutover" above).
 
 **Hotfix (critical prod issue only):** fix on `main` → cherry-pick to `prod` → deploy to prod stack → cherry-pick to `staging`. **Only for crashes/5xx — not for features or non-critical fixes.**
 
@@ -110,12 +171,12 @@ git push origin prod
 
 - **Never scp files to servers.** All changes through git branches.
 - **Never check out staging/prod in the main workspace.** Use worktrees.
-- **`prod` branch = exact mirror of production.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (fast-forward from staging after staging is verified) or critical hotfixes (crashes/5xx deployed directly to prod). If the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch.
+- **`prod` branch = exact mirror of production — catch it up to the deployed SHA on EVERY rollout, same task.** NEVER cherry-pick features or non-critical fixes to it. Only promotion (catch up from staging after staging is verified + deployed — ff-only when lineage is clean, else careful force-reset to the deployed `staging-<sha>` per "Branch divergence is EXPECTED") or critical hotfixes (crashes/5xx deployed directly to prod). Leaving `prod` behind a rollout makes the mirror lie; if the code isn't running on the prod-serving stack, it doesn't belong on the `prod` branch — and conversely, code that IS running must be reflected on `prod`.
 - **`staging` branch = what's on staging.** View via `visa_bulletin_staging/` worktree. All features go through staging first.
 - **Tags mark releases.** `v1.X.Y` on `staging` before promotion, then on `prod` after fast-forward.
-- **Code deploy ≠ data refresh.** Code deploy = `docker compose pull web && docker compose up -d web` (~30 s). Data refresh = weekly pipeline run on the staging DB followed by atomic flip (~30 min total).
+- **Code deploy ≠ data refresh.** Code deploy to **prod** = `hosting/cutover.sh --code <sha>` (zero-downtime; the in-place `docker compose up -d web` is the disruptive fallback only — see Promotion line below). Data refresh = weekly pipeline run on the staging DB followed by atomic flip via `cutover.sh --data` (~30 min total).
 - **Audit Docker before touching containers on prod.** See `AGENTS.md` and `.claude/rules/deployment.md`. Never `docker-compose up/down` without knowing what's actually serving — `vb_web`, `vb_postgres`, `vb_redis`, `vb_nginx`, `vb_cloudflared` are the current prod containers.
-- **Promotion is image-tag-based.** Production runs as a single Compose stack; promotion happens via image-tag bump in `docker compose up -d` or postgres-data volume swap.
+- **Promotion is image-tag-based, run via the zero-downtime cutover.** Production runs as a single Compose stack; a code promotion bumps the image tag — but **default to `hosting/cutover.sh --code <sha>`** so the swap happens with the minipc serving prod (no 502s), not a bare in-place `docker compose up -d web`. Data promotion = postgres-data volume swap via `cutover.sh --data`.
 
 ## Code Deployment (Quick Reference)
 
@@ -127,8 +188,14 @@ cd ~/cursor_projects/visa_bulletin_staging && git cherry-pick <hash> && git push
 
 # Deploy to staging stack first (on the staging server):
 cd /opt/stack/visa_bulletin_staging && IMAGE_TAG=staging-<sha> docker compose pull web && docker compose up -d web
-# Smoke-test https://staging.visa-bulletin.us/, then promote:
+# Smoke-test https://staging.visa-bulletin.us/, then promote ZERO-DOWNTIME (default):
+cd ~/cursor_projects/visa_bulletin_platform/hosting && ./cutover.sh --code <sha>
+# ^ gates staging, then swaps the homeserver image while the minipc serves prod — vb never 502s.
+#   (preview: ./cutover.sh --code <sha> --dry)
+# Then fast-forward the prod branch to keep the mirror honest:
 cd ~/cursor_projects/visa_bulletin_prod && git merge --ff-only staging && git push origin prod
-# On the production server:
-cd /opt/stack/visa_bulletin_prod && IMAGE_TAG=<tag> docker compose pull web && docker compose up -d web
+#
+# DISRUPTIVE FALLBACK only if the cutover is unavailable (minipc RAM floor / standby down) —
+# ~10-15s prod 502s; must pass --accept-502:
+#   cd ~/cursor_projects/visa_bulletin_platform/hosting && ./promote.sh <sha> --prod --accept-502
 ```

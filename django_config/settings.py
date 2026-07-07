@@ -122,28 +122,16 @@ _default_allowed_hosts = [
     "visa-bulletin.us",
     "www.visa-bulletin.us",
 ]
-# Instance IPs come from ALLOWED_HOSTS in .env (set by setup_new_instance.sh).
-# The orchestrator health check (GET http://inactive_ip/health/) requires the
-# instance IP in ALLOWED_HOSTS; add REFRESH_ACTIVE/INACTIVE_INSTANCE_IP so the
-# health check works even if .env only lists domain names.
-_refresh_ips = [
-    ip
-    for var in ("REFRESH_ACTIVE_INSTANCE_IP", "REFRESH_INACTIVE_INSTANCE_IP")
-    if (ip := os.environ.get(var, "").strip())
-]
+# ALLOWED_HOSTS comes from .env (comma-separated). Always allow loopback so Docker
+# health checks (curl localhost:8000) work regardless of what .env lists.
 if os.environ.get("ALLOWED_HOSTS"):
     _allowed = [h.strip() for h in os.environ["ALLOWED_HOSTS"].split(",") if h.strip()]
-    for ip in _refresh_ips:
-        if ip not in _allowed:
-            _allowed.append(ip)
-    # Always allow loopback so Docker health checks (curl localhost:8000) work regardless
-    # of what ALLOWED_HOSTS is set to in .env.
     for h in ("localhost", "127.0.0.1"):
         if h not in _allowed:
             _allowed.append(h)
     ALLOWED_HOSTS = _allowed
 else:
-    ALLOWED_HOSTS = _default_allowed_hosts + _refresh_ips
+    ALLOWED_HOSTS = _default_allowed_hosts
 
 # Defensive: refuse to boot if DEBUG is on with a production hostname in ALLOWED_HOSTS.
 # Must run AFTER ALLOWED_HOSTS is finalized above.

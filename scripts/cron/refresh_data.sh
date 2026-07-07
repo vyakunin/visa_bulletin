@@ -2,10 +2,6 @@
 # scripts/cron/refresh_data.sh
 # Thin wrapper: source .env and run Python refresh pipeline (local).
 #
-# For cross-instance (prod -> staging): run refresh_and_switch.py instead:
-#   bazel run //scripts/cron:refresh_and_switch_py -- --no-traffic-switch   # first validation
-#   bazel run //scripts/cron:refresh_and_switch_py                          # full cycle with traffic switch
-#
 # OPTIONS: passed to refresh_data.py (e.g. --resume)
 # Cron: 0 2 * * 0 cd /opt/visa_bulletin && scripts/cron/refresh_data.sh >> /var/log/visa-bulletin/refresh.log 2>&1
 

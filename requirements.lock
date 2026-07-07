@@ -58,6 +58,8 @@ exceptiongroup==1.3.1
     #   pytest
 fonttools==4.60.2
     # via matplotlib
+greenlet==3.5.2
+    # via sqlalchemy
 gunicorn==23.0.0
     # via -r requirements.txt
 h11==0.16.0

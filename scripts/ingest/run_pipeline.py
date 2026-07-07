@@ -15,6 +15,8 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- status
     bazel run //scripts/ingest:run_pipeline -- check-completeness --domain dol
     bazel run //scripts/ingest:run_pipeline -- reingest-files --files data/salary/dol_data/LCA_Disclosure_Data_FY2024_Q4.xlsx
+    bazel run //scripts/ingest:run_pipeline -- reingest-perm-titles --only-file PERM_FY2019 --keep-indexes
+    bazel run //scripts/ingest:run_pipeline -- reingest-perm-titles
     bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed
     bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --dry-run
 """
@@ -38,7 +40,7 @@ import django
 
 django.setup()
 
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from django_config.logging_config import setup_logging
@@ -53,6 +55,7 @@ from lib.utils.data_source_utils import get_data_source_filepath
 from lib.utils.http_utils import get_workspace_dir
 from lib.utils.logging_utils import ScriptLogger
 from lib.utils.url_utils import normalize_source_url, path_basename_from_url
+from models.enums.visa_program import VisaProgram
 from models.ingest.data_source import DataSource
 from models.ingest.enums import DataDomain, IngestStage, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
@@ -482,6 +485,166 @@ def reingest_files(
     finally:
         if did_drop_indexes:
             _run_manage_salary_indexes("recreate", snapshot_path, overwrite_snapshot)
+
+
+def _perm_file_stats(source_filename: str) -> tuple[int, int]:
+    """Return (total PERM rows, rows where job_title == soc_title) for a source file."""
+    qs = SalaryRecord.objects.filter(
+        visa_program=VisaProgram.PERM, source_file=source_filename
+    )
+    total = qs.count()
+    eq = qs.filter(job_title=F("soc_title")).count()
+    return total, eq
+
+
+def _spot_check_perm_titles(source_filename: str, limit: int = 8) -> None:
+    """Log a sample of PERM rows showing job_title vs soc_title/soc_code."""
+    rows = list(
+        SalaryRecord.objects.filter(
+            visa_program=VisaProgram.PERM, source_file=source_filename
+        ).values("case_number", "job_title", "soc_title", "soc_code")[:limit]
+    )
+    logger.info("  Spot-check sample (%s):", source_filename)
+    for r in rows:
+        logger.info(
+            "    %-14s | job_title=%-34r | soc_title=%-30r | soc=%s",
+            r["case_number"],
+            (r["job_title"] or "")[:34],
+            (r["soc_title"] or "")[:30],
+            r["soc_code"],
+        )
+
+
+def reingest_perm_titles(
+    snapshot_path: str | None,
+    overwrite_snapshot: bool,
+    only_file: str | None = None,
+    keep_indexes: bool = False,
+    keep_files: bool = False,
+) -> None:
+    """Re-fetch every PERM source file and UPDATE job_title in place for ALL rows.
+
+    Backfills commit caf3246 (job_title <- JOB_INFO_JOB_TITLE, the employer's
+    specific job-opportunity title, instead of the SOC occupational bucket) onto
+    existing PERM SalaryRecord rows. ONLY job_title is updated; soc_title /
+    soc_code and every other field are left untouched (update_fields=["job_title"]).
+
+    Disk-safe: each PERM source xlsx is re-downloaded from DOL, used, then deleted
+    before the next, so at most one source file is on disk at a time. Indexes are
+    dropped once before the batch and recreated once after (skip with
+    keep_indexes for a single-file spot-check).
+    """
+    register_plugins()
+    PluginRegistry.register(PERMSalaryDataSourcePlugin(skip_clustering=True))
+
+    # Only re-ingest PERM sources that actually have rows in the DB, matched by
+    # source_file basename (skips discovered-but-never-ingested sources like
+    # FY2009 / FY2025 / New_Form duplicates so we don't waste downloads).
+    db_files = set(
+        SalaryRecord.objects.filter(visa_program=VisaProgram.PERM)
+        .values_list("source_file", flat=True)
+        .distinct()
+    )
+    db_files_lower = {f.lower(): f for f in db_files if f}
+
+    candidates: list[tuple[DataSource, str]] = []
+    for source in DataSource.objects.filter(
+        source_type=SourceType.PERM.value
+    ).order_by("id"):
+        basename = path_basename_from_url(source.url)
+        db_source_file = db_files_lower.get(basename.lower())
+        if not db_source_file:
+            continue
+        if only_file and only_file.lower() not in basename.lower():
+            continue
+        candidates.append((source, db_source_file))
+
+    if not candidates:
+        logger.error(
+            "No PERM sources matched (only_file=%s). DB source_files: %s",
+            only_file,
+            sorted(db_files),
+        )
+        sys.exit(1)
+
+    logger.info(
+        "PERM job_title backfill: %d source file(s) to process%s",
+        len(candidates),
+        f" (filtered to '{only_file}')" if only_file else "",
+    )
+
+    did_drop_indexes = False
+    total_updated = 0
+    try:
+        if not keep_indexes:
+            _run_manage_salary_indexes("drop", snapshot_path, overwrite_snapshot)
+            did_drop_indexes = True
+
+        for idx, (source, db_source_file) in enumerate(candidates, 1):
+            before_total, before_eq = _perm_file_stats(db_source_file)
+            logger.info(
+                "[%d/%d] %s — %d PERM rows, %d currently job_title==soc_title; "
+                "re-downloading + updating job_title…",
+                idx,
+                len(candidates),
+                db_source_file,
+                before_total,
+                before_eq,
+            )
+            downloaded_path: Path | None = None
+            try:
+                orchestrator = PipelineOrchestrator(
+                    batch_size=1000,
+                    adaptive_batch=True,
+                    prefilter_existing=False,
+                    use_copy=False,
+                    update_mode=True,
+                    update_fields=["job_title"],
+                    update_filter={"visa_program": VisaProgram.PERM},
+                )
+                run = orchestrator.run(source, resume=False)
+                source.refresh_from_db()
+                if source.local_file_path:
+                    downloaded_path = Path(source.local_file_path)
+                after_total, after_eq = _perm_file_stats(db_source_file)
+                total_updated += run.records_updated
+                logger.info(
+                    "[%d/%d] %s done (run %s): records_updated=%s; "
+                    "job_title==soc_title %d -> %d (delta %d)",
+                    idx,
+                    len(candidates),
+                    db_source_file,
+                    run.id,
+                    run.records_updated,
+                    before_eq,
+                    after_eq,
+                    after_eq - before_eq,
+                )
+                _spot_check_perm_titles(db_source_file)
+            except Exception as e:
+                logger.error(
+                    "Pipeline failed for source %s (%s): %s",
+                    source.id,
+                    db_source_file,
+                    e,
+                    exc_info=True,
+                )
+            finally:
+                if downloaded_path and not keep_files and downloaded_path.exists():
+                    try:
+                        downloaded_path.unlink()
+                        logger.info("  Deleted source file %s", downloaded_path)
+                    except OSError as e:
+                        logger.warning("  Could not delete %s: %s", downloaded_path, e)
+    finally:
+        if did_drop_indexes:
+            _run_manage_salary_indexes("recreate", snapshot_path, overwrite_snapshot)
+
+    logger.info(
+        "PERM job_title backfill complete: %d files, %d total records_updated",
+        len(candidates),
+        total_updated,
+    )
 
 
 def discover_and_ingest(
@@ -986,6 +1149,37 @@ def main():
         help="Overwrite existing index snapshot when dropping indexes",
     )
 
+    # Re-fetch every PERM source file and update job_title in place (all rows)
+    perm_titles_parser = subparsers.add_parser(
+        "reingest-perm-titles",
+        help="Re-download PERM files and update job_title in place for ALL rows "
+        "(backfills caf3246: employer JOB_INFO_JOB_TITLE over the SOC bucket; "
+        "only job_title is touched, soc_title/soc_code kept)",
+    )
+    perm_titles_parser.add_argument(
+        "--only-file",
+        help="Substring of a single PERM source basename to process (e.g. PERM_FY2019)",
+    )
+    perm_titles_parser.add_argument(
+        "--keep-indexes",
+        action="store_true",
+        help="Do NOT drop/recreate salary indexes (use for a single-file spot-check)",
+    )
+    perm_titles_parser.add_argument(
+        "--keep-files",
+        action="store_true",
+        help="Do NOT delete each re-downloaded source file after processing",
+    )
+    perm_titles_parser.add_argument(
+        "--index-snapshot",
+        help="Snapshot path for dropped indexes (default: data/index_snapshots/salary_indexes.yaml)",
+    )
+    perm_titles_parser.add_argument(
+        "--overwrite-index-snapshot",
+        action="store_true",
+        help="Overwrite existing index snapshot when dropping indexes",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1028,6 +1222,14 @@ def main():
         elif args.command == "reingest-files":
             reingest_files(
                 args.files, args.index_snapshot, args.overwrite_index_snapshot
+            )
+        elif args.command == "reingest-perm-titles":
+            reingest_perm_titles(
+                args.index_snapshot,
+                args.overwrite_index_snapshot,
+                only_file=args.only_file,
+                keep_indexes=args.keep_indexes,
+                keep_files=args.keep_files,
             )
     except Exception as e:
         logger.error(f"Command failed: {e}", exc_info=True)

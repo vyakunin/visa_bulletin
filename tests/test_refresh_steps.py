@@ -219,12 +219,18 @@ def test_nginx_default_server_conf_uses_unescaped_variables() -> None:
     """Nginx default-server.conf must use $http_host, $remote_addr (not \\$...) so Host header is correct."""
     path = Path(__file__).resolve().parent.parent / "deployment" / "nginx" / "default-server.conf"
     conf = path.read_text()
-    assert "$http_host" in conf, "Host header must use nginx variable $http_host"
-    assert "\\$host" not in conf and "\\$http_host" not in conf
-    assert "$remote_addr" in conf
-    assert "\\$remote_addr" not in conf
-    assert "$scheme" in conf
-    assert "\\$scheme" not in conf
+    # Only nginx directives matter for behavior. Strip comment lines (`#`) so the
+    # escaping check ignores the explanatory warning comment, which deliberately
+    # mentions `\$host` to document why escaping is wrong.
+    directives = "\n".join(
+        line for line in conf.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "$http_host" in directives, "Host header must use nginx variable $http_host"
+    assert "\\$host" not in directives and "\\$http_host" not in directives
+    assert "$remote_addr" in directives
+    assert "\\$remote_addr" not in directives
+    assert "$scheme" in directives
+    assert "\\$scheme" not in directives
 
 
 # ---------------------------------------------------------------------------

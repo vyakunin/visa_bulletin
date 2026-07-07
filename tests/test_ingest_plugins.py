@@ -14,7 +14,7 @@ from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
 from lib.ingest.registry import PluginRegistry
 from models.ingest.data_source import DataSource
-from models.ingest.enums import DataDomain, IngestStatus, SourceType
+from models.ingest.enums import DataDomain, FormatVersion, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
 from models.salary import SalaryRecord, WorksiteRecord
 
@@ -34,15 +34,15 @@ class TestH1BSalaryDataSourcePlugin:
         """Test format version detection from filename"""
         plugin = H1BSalaryDataSourcePlugin()
 
-        # Test with fiscal year
+        # FY >= 2015 → MODERN format (get_format_version returns a FormatVersion enum).
         filepath = Path("LCA_Disclosure_Data_FY2024.xlsx")
         version = plugin.get_format_version(filepath)
-        assert version == "2024"
+        assert version == FormatVersion.MODERN
 
         # Test with quarter
         filepath = Path("LCA_Disclosure_Data_FY2024_Q4.xlsx")
         version = plugin.get_format_version(filepath)
-        assert "2024" in version
+        assert version == FormatVersion.MODERN
 
     @patch("lib.ingest.plugins.dol_lca.fetch_page")
     def test_discover_sources(self, mock_fetch):
@@ -63,9 +63,20 @@ class TestH1BSalaryDataSourcePlugin:
         assert all(s.domain == DataDomain.DOL.value for s in sources)
         assert all(s.source_type == SourceType.LCA.value for s in sources)
 
-    @patch("lib.ingest.plugins.dol_lca.download_file")
-    def test_download(self, mock_download):
-        """Test file download"""
+    # download() is inherited from the base plugin. base.download() builds its own
+    # dest_path under get_workspace_dir()/data/..., calls download_file(url, dest_path)
+    # (return value is ignored), then compute_file_hash(dest_path) — so the mock must
+    # materialize dest_path or the hash step raises FileNotFoundError. Both helpers are
+    # imported locally inside download() from lib.utils.http_utils, so patch them there.
+    # A tmp workspace keeps dest_path out of the read-only runfiles tree and guarantees
+    # it doesn't pre-exist between runs (else the file-exists early-return path skips the
+    # download_file call entirely).
+    @patch("lib.utils.http_utils.get_workspace_dir")
+    @patch("lib.utils.http_utils.download_file")
+    def test_download(self, mock_download, mock_workspace, tmp_path):
+        """download() materializes the file, hashes it, persists metadata, returns dest_path."""
+        mock_workspace.return_value = tmp_path
+
         plugin = H1BSalaryDataSourcePlugin()
 
         source = DataSource.objects.create(
@@ -76,13 +87,24 @@ class TestH1BSalaryDataSourcePlugin:
 
         run = IngestRun.objects.create(source=source, status=IngestStatus.PENDING)
 
-        mock_dest = Path("/tmp/test.xlsx")
-        mock_download.return_value = mock_dest
+        def fake_download(url, dest_path):
+            Path(dest_path).write_bytes(b"test-content")
+
+        mock_download.side_effect = fake_download
 
         result = plugin.download(source, run)
 
-        assert result == mock_dest
         mock_download.assert_called_once()
+        called_url, called_dest = mock_download.call_args[0]
+        assert called_url == source.url
+        # download() returns the dest_path it built, not download_file's return value.
+        assert result == Path(called_dest)
+        assert result.exists()
+
+        # Metadata persisted from the real hash of the materialized file.
+        source.refresh_from_db()
+        assert source.content_hash
+        assert source.local_file_path == str(result)
 
     def test_parse_excel_streaming(self, tmp_path):
         """Test Excel parsing with openpyxl streaming"""

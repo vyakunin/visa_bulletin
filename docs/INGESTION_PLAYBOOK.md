@@ -1,5 +1,16 @@
 # DOL Data Ingestion Playbook
 
+> **⚠️ Deploy/host mechanics updated for the homeserver topology (post-2026-05-08).**
+> The old AWS "blue-green cross-instance refresh" is **retired**. The production
+> data refresh now runs **off-prod on the staging stack** (against a prod-copy DB)
+> and is graduated to prod via the zero-downtime postgres-data volume swap
+> `cutover.sh --data` in the private VB platform repo
+> (`~/cursor_projects/visa_bulletin_platform/hosting/`). Canonical flow:
+> `.claude/rules/deployment.md` "Weekly DB Refresh Pattern" + `.claude/rules/branching.md`
+> heavyweight-data-task rule. The manual ingest steps below remain valid — just run
+> them on the right host (`homeserver` / `vb_stg_*` staging stack) and path
+> (`/opt/stack/visa_bulletin`), not on a Lightsail VM under `/opt/visa_bulletin`.
+
 **Complete step-by-step guide for ingesting Department of Labor H-1B/PERM data.**
 
 ## Overview
@@ -20,27 +31,26 @@ This playbook covers the complete ingestion workflow, from initial setup through
 
 ## Production vs Development
 
-### Production (Automated - Blue-Green Refresh)
+### Production (Off-prod refresh on staging, graduated via cutover)
 
-**DO NOT run manual ingestion in production.**
+**DO NOT run manual ingestion against the live prod DB.**
 
-Production uses an automated blue-green database refresh strategy with near-zero downtime:
+> The earlier AWS "blue-green cross-instance" refresh (copy DB → ingest → swap on
+> the same VM) is **retired**. Production data refresh now runs **off-prod on the
+> staging stack** against a prod-copy DB, then the verified DATA is graduated to prod
+> via the zero-downtime postgres-data volume swap `cutover.sh --data`.
 
-- **Automated cron job** runs weekly (Sunday 2:00 AM)
-- **Blue-green databases** allow refresh without affecting live traffic
-- **Complete workflow:** Discover sources → Copy DB → Ingest → Process → Test → Swap
-- **Rollback capability** with archived versions
-- **Near-zero downtime** (~2-3 seconds during swap)
+- **Heavy compute/mutation runs on staging** (`vb_stg_*` containers), never on the serving prod box — per `.claude/rules/branching.md` heavyweight-data-task rule.
+- **Graduate the verified data** with `cutover.sh --data` from `~/cursor_projects/visa_bulletin_platform/hosting/` (the staging stack serves prod traffic during the swap; vb stays up).
+- **Complete workflow + cadence:** `.claude/rules/deployment.md` "Weekly DB Refresh Pattern".
 
-**See:** the private ops repo for the complete production refresh workflow. Concrete hosting topology and the staging/standby/cutover mechanics are not in this public repository.
-
-**Monitoring production refresh:**
+**Monitoring a prod data refresh / hourly bulletin cron:**
 ```bash
-# Check refresh logs
-tail -f /var/log/visa-bulletin/refresh_*.log
+# Hourly bulletin-refresh cron log on prod
+ssh homeserver "tail -f /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log"
 
-# Check current active database
-systemctl show visa-bulletin -p Environment | grep DATABASE_URL
+# Which image prod web is running
+ssh homeserver "docker inspect vb_web --format '{{.Config.Image}}'"
 ```
 
 ### Development (Manual - This Playbook)
@@ -201,10 +211,12 @@ bazel run //scripts/salary:manage_salary_indexes -- --recreate \
 # Creates only the 5 indexes required for job title and employer clustering
 bazel run //scripts/salary:manage_salary_indexes -- --create-clustering-indexes
 
-# On production instances with <4GB RAM, add bazel shutdown:
-bazel build //scripts/salary:manage_salary_indexes && bazel shutdown && \
-cd /opt/visa_bulletin && set -a && source .env && set +a && \
-DB_HOST=localhost ./bazel-bin/scripts/salary/manage_salary_indexes --create-clustering-indexes
+# On a low-RAM box, add bazel shutdown to free the Bazel server's ~400-500MB.
+# NOTE (historical): the old on-prod-VM `cd /opt/visa_bulletin && ./bazel-bin/...`
+# variant is retired — prod runs the baked image in Docker (no on-box Bazel/source
+# checkout). Heavy index/clustering work now runs off-prod on the STAGING stack per
+# the heavyweight-data-task rule (.claude/rules/branching.md), e.g.:
+#   docker exec -w /app vb_stg_web python3 -m scripts.salary.manage_salary_indexes --create-clustering-indexes
 
 # Verify indexes created
 bazel run //scripts/salary:manage_salary_indexes -- --list
@@ -262,12 +274,11 @@ Creates `JobTitle` entities and `JobTitleCluster` groupings. **Note:** This crea
 # Development (local machine with RAM):
 bazel run //scripts/salary:cluster_job_titles
 
-# Production (<4GB RAM) - Build, shutdown Bazel server, then run:
-bazel build //scripts/salary:cluster_job_titles && \
-bazel shutdown && \
-cd /opt/visa_bulletin && set -a && source .env && set +a && \
-DB_HOST=localhost nohup ./bazel-bin/scripts/salary/cluster_job_titles \
-  > /var/log/visa-bulletin/cluster_job_titles.log 2>&1 &
+# Off-prod (staging stack) - heavy clustering runs on staging, NOT the serving
+# prod box (per .claude/rules/branching.md heavyweight-data-task rule). The old
+# on-prod-VM `cd /opt/visa_bulletin && ./bazel-bin/...` variant is retired.
+docker exec -w /app vb_stg_web python3 -m scripts.salary.cluster_job_titles \
+  > /tmp/cluster_job_titles.log 2>&1 &
 ```
 
 **Why `bazel shutdown`?** Bazel server uses ~400-500MB RAM. On 2GB instances, this memory is critical for clustering scripts.
@@ -291,18 +302,17 @@ Creates `EmployerCluster` groupings and links duplicate employers:
 bazel run //scripts/salary:cluster_existing_employers \
   > /tmp/employer_clustering.log 2>&1 &
 
-# Production (<4GB RAM) - Build, shutdown Bazel server, then run:
-bazel build //scripts/salary:cluster_existing_employers && \
-bazel shutdown && \
-cd /opt/visa_bulletin && set -a && source .env && set +a && \
-DB_HOST=localhost nohup ./bazel-bin/scripts/salary/cluster_existing_employers \
-  > /var/log/visa-bulletin/cluster_employers.log 2>&1 &
+# Off-prod (staging stack) - heavy clustering runs on staging, NOT the serving
+# prod box (per .claude/rules/branching.md heavyweight-data-task rule). The old
+# on-prod-VM `cd /opt/visa_bulletin && ./bazel-bin/...` variant is retired.
+docker exec -w /app vb_stg_web python3 -m scripts.salary.cluster_existing_employers \
+  > /tmp/cluster_employers.log 2>&1 &
 
 # Monitor progress
-tail -f /var/log/visa-bulletin/cluster_employers.log
+tail -f /tmp/cluster_employers.log
 
 # Check for errors
-grep "Error\|ValueError" /var/log/visa-bulletin/cluster_employers.log
+grep "Error\|ValueError" /tmp/cluster_employers.log
 ```
 
 **Why `bazel shutdown`?** Bazel server uses ~400-500MB RAM. On 2GB instances, this memory is critical for clustering scripts.

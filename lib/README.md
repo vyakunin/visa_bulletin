@@ -187,7 +187,7 @@ All library code is organized in subdirectories following a clear structure:
 
 **Features:**
 - Auto-clusters high-confidence matches (threshold >= 0.95 by default)
-- Queues ambiguous matches for human/LLM review
+- Queues ambiguous matches for human review
 - Handles name variations (e.g., "Google", "Google Inc", "Google LLC")
 - Handles cross-location clustering (same employer in different cities/states)
 - Uses enhanced normalization for better matching
@@ -204,7 +204,7 @@ cluster = assign_to_cluster(employer)
 **Review queue:**
 - Ambiguous matches are stored in `EmployerClusteringReview` model
 - Use `scripts/salary/review_clustering.py` to review pending matches
-- Supports LLM review (ollama) and human review
+- Human review only (the Ollama LLM-review path was retired 2026-06-20)
 
 ---
 
