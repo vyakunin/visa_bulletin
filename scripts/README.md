@@ -1013,6 +1013,26 @@ bazel run //scripts/salary:update_wage_thresholds
 bazel run //scripts:benchmark_db_ingest
 ```
 
+**`scripts/benchmark_fenced_queries.py`** - Benchmark the SalaryRecord fenced-query resolvers
+
+**Purpose:** Time the three ways the `/salaries/` (and `/worksites/`) list views resolve a filtered page + count/avg/min/max aggregate over `salary_record`, so a regression in the fenced-query optimization (`lib/utils/filter_utils.py`) is measurable: `two_scan` (`fenced_aggregate` + `fenced_page_ids`), `single_scan` (`fenced_page_and_aggregate`, the current cold `?q=` path), and the opt-in `naive` baseline (`.aggregate()` + sliced `.order_by()`). For each representative filter shape (common job-title token, rare token, employer filter, state filter, the combined trigram+employer+state case, and a deep-page case) it prints the wall-clock ms (min + median over N iterations) per path, mirroring the exact queryset `webapp/views/salary/search.py:salary_search_view` builds.
+
+**When to use:** after touching `filter_utils.py` (the fenced resolvers) or before/after a query-shape change, to confirm `single_scan` still beats `two_scan` and neither regressed. The fence + `AS MATERIALIZED` CTE are PostgreSQL-specific, so authoritative timing wants prod/staging Postgres with a populated `salary_record` — against an empty/small dev DB the numbers are structural-only (they confirm each SQL path executes).
+
+```bash
+# all shapes on the local dev DB (structural-only timings)
+bazel run //scripts:benchmark_fenced_queries
+
+# more iterations + the naive baseline
+bazel run //scripts:benchmark_fenced_queries -- --iterations 5 --include-naive
+
+# a single shape
+bazel run //scripts:benchmark_fenced_queries -- --shape rare_title
+
+# authoritative numbers on prod/staging (inside the web container, after `bazel shutdown`)
+#   docker exec -w /app vb_web python3 -m scripts.benchmark_fenced_queries -- --iterations 5
+```
+
 **Note:** The following benchmarking scripts exist but don't have BUILD targets yet. They were used during development for performance optimization:
 - `scripts/benchmark_db_serving.py` - Database serving performance
 - `scripts/benchmark_excel_standalone.py` - Excel parsing (standalone)
