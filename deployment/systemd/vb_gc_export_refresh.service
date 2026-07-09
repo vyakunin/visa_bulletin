@@ -1,0 +1,12 @@
+[Unit]
+Description=visa_bulletin GoatCounter full-export cache refresher (owns the slow /export pull so the daily_checkup digest never blocks on it)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/vyakunin/cursor_projects/visa_bulletin
+Environment=PATH=/home/vyakunin/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+ExecStart=/home/vyakunin/.local/bin/uv run scripts/refresh_gc_export.py
+StandardOutput=append:/home/vyakunin/cursor_projects/visa_bulletin/logs/gc_export_refresh.log
+StandardError=append:/home/vyakunin/cursor_projects/visa_bulletin/logs/gc_export_refresh.log

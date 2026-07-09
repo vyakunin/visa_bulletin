@@ -154,11 +154,17 @@ GC_RETRY_BACKOFF_S = 1.0
 GC_EXPORT_CACHE_DIR = Path.home() / ".cache" / "vb_daily_checkup"
 GC_EXPORT_CACHE_TTL_S = 6 * 3600
 GC_EXPORT_POLL_INTERVAL_S = 3.0
-# /export jobs on visa-bulletin.us run ~60-90s for the full 350k-hit history;
-# 40 polls × 3s = 120s leaves a comfortable margin without blowing the
-# 60s MCP response budget (the export is fire-and-forget for the *next*
-# checkup — this run still completes if the export doesn't land in time).
-GC_EXPORT_MAX_POLLS = 40
+# /export jobs on visa-bulletin.us grew past ~2min end-to-end as the hit history
+# grew (POST → server generates the full CSV → download a 10 MB+ file). At that
+# size the export CANNOT complete inside the digest's response budget, so the
+# DIGEST no longer waits for it: it polls only up to GC_EXPORT_DIGEST_BUDGET_S
+# then serves the cached CSV (stale is fine for a morning digest). The slow
+# export is owned by the OUT-OF-BAND refresher `scripts/refresh_gc_export.py`
+# (systemd timer every 3h, generous GC_EXPORT_REFRESH_BUDGET_S), so the cache is
+# normally <6h old and the digest hits the fast cache path without ever POSTing.
+# The digest's own tight-budget attempt is just a safety net if the refresher died.
+GC_EXPORT_DIGEST_BUDGET_S = 35.0
+GC_EXPORT_REFRESH_BUDGET_S = 300.0
 
 # Watchpoint thresholds for the "non-IND EB vs IND homepage" red flag (user
 # request 2026-05-27): today the homepage template == India EB dashboard.
@@ -796,7 +802,12 @@ def _gc_export_looks_valid(raw: bytes) -> bool:
     return text.count("\n") >= GC_EXPORT_MIN_VALID_ROWS
 
 
-async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
+async def _gc_export_full_csv(
+    client: httpx.AsyncClient,
+    *,
+    budget_s: float = GC_EXPORT_DIGEST_BUDGET_S,
+    force: bool = False,
+) -> Path | None:
     """Run /api/v0/export round-trip and return the path to the cached CSV.
 
     GoatCounter caps `/stats/hits` at 100 paths, missing ~43% of the long
@@ -806,10 +817,16 @@ async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
     last good pull (validated, atomically written — see below) on rate-limit
     / fetch failure / a garbage download; returns None only if no cache
     exists at all and the fresh fetch failed.
+
+    `budget_s` caps the wall-clock spent POLLING for the export job to finish
+    before serving the stale cache. The DIGEST passes the tight default
+    (GC_EXPORT_DIGEST_BUDGET_S) so it never blocks past its response budget;
+    the out-of-band refresher (`scripts/refresh_gc_export.py`) passes a generous
+    budget + `force=True` to bypass the TTL and actually pull a fresh CSV.
     """
     GC_EXPORT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = GC_EXPORT_CACHE_DIR / "gc_export.csv"
-    if csv_path.exists():
+    if csv_path.exists() and not force:
         age_s = time.time() - csv_path.stat().st_mtime
         if age_s < GC_EXPORT_CACHE_TTL_S:
             logger.info("gc export: using fresh cache (%ds old)", int(age_s))
@@ -844,8 +861,11 @@ async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
         return csv_path if csv_path.exists() else None
 
     finished = False
-    for attempt in range(GC_EXPORT_MAX_POLLS):
+    deadline = time.monotonic() + budget_s
+    attempt = 0
+    while time.monotonic() < deadline:
         await asyncio.sleep(GC_EXPORT_POLL_INTERVAL_S)
+        attempt += 1
         try:
             r = await client.get(f"{GOATCOUNTER_BASE}/export/{job_id}", timeout=GC_TIMEOUT)
             r.raise_for_status()
@@ -856,8 +876,11 @@ async def _gc_export_full_csv(client: httpx.AsyncClient) -> Path | None:
             finished = True
             break
     if not finished:
-        logger.warning("gc export poll timed out after %d attempts; serving stale cache",
-                       GC_EXPORT_MAX_POLLS)
+        logger.warning(
+            "gc export not ready within %.0fs budget (%d polls); serving stale cache. "
+            "The out-of-band refresher (scripts/refresh_gc_export.py) owns the slow pull.",
+            budget_s, attempt,
+        )
         return csv_path if csv_path.exists() else None
 
     try:
@@ -2312,21 +2335,27 @@ async def daily_checkup(since: str | None = None) -> str:
     sections: list[dict] = []
     statuses: list[str] = []
 
-    # 1) Homeserver snapshot (one SSH round-trip)
-    snap: dict | None = None
-    try:
-        snap = await asyncio.to_thread(_gather_homeserver_snapshot)
-    except Exception as e:
-        logger.exception("homeserver snapshot failed")
-        errors.append(f"homeserver: {type(e).__name__}: {e}")
-        sections.append({
-            "title": "Homeserver UNREACHABLE",
-            "body": f"SSH to `{SSH_ALIAS}` failed: {e}",
-            "importance": 5,
-        })
-        statuses.append("red")
+    # ALL gathers run CONCURRENTLY, including the SSH homeserver snapshot. The
+    # snapshot used to run SERIALLY before the others (up to 60s of the heavy
+    # nginx-log awk) — so at the traffic levels since ~2026-07-07 the serial
+    # SSH + parallel gathers + cold-uv spawn no longer fit the aggregator's
+    # 120s budget, and the first 7am run timed out 3 days straight (07-07/08/09;
+    # a manual retry recovered). The snapshot has no data dependency on the
+    # others, so folding it into the gather makes wall-clock ≈ max(snapshot,
+    # slowest gather) instead of snapshot + slowest gather. On failure it
+    # returns None + records the error; the UNREACHABLE section is built after.
+    snap_err: str | None = None
 
-    # 2) GoatCounter + 3) external probes can run in parallel with parsing snap
+    async def _safe_snapshot():
+        nonlocal snap_err
+        try:
+            return await asyncio.to_thread(_gather_homeserver_snapshot)
+        except Exception as e:
+            logger.exception("homeserver snapshot failed")
+            snap_err = f"{type(e).__name__}: {e}"
+            errors.append(f"homeserver: {snap_err}")
+            return None
+
     async def _safe_gc():
         try:
             return await _gather_goatcounter()
@@ -2367,9 +2396,21 @@ async def daily_checkup(since: str | None = None) -> str:
             errors.append(f"ga4_engagement: {type(e).__name__}: {e}")
             return None
 
-    gc_data, probe_data, gmail_data, freshness_data, ga4_data = await asyncio.gather(
-        _safe_gc(), _safe_probes(), _safe_gmail(), _safe_freshness(), _safe_ga4()
+    snap, gc_data, probe_data, gmail_data, freshness_data, ga4_data = await asyncio.gather(
+        _safe_snapshot(), _safe_gc(), _safe_probes(), _safe_gmail(),
+        _safe_freshness(), _safe_ga4()
     )
+
+    # Homeserver-unreachable section (deferred from the gather so all gathers
+    # run concurrently). Only when the snapshot genuinely errored — a None from
+    # any other cause is not an SSH failure.
+    if snap is None and snap_err is not None:
+        sections.append({
+            "title": "Homeserver UNREACHABLE",
+            "body": f"SSH to `{SSH_ALIAS}` failed: {snap_err}",
+            "importance": 5,
+        })
+        statuses.append("red")
 
     # Build sections from snapshot
     if snap is not None:

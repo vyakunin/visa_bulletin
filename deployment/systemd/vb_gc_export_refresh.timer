@@ -1,0 +1,12 @@
+[Unit]
+Description=visa_bulletin GoatCounter export refresh timer (every 3h; the 06:15 run warms the cache before the 07:00 daily_checkup digest)
+
+[Timer]
+# Every 3 hours at :15 past — keeps the cached export well under its 6h TTL, and
+# the 06:15 run lands ~45 min before the 07:00 digest so the digest reads a fresh
+# cache and never has to POST the slow /export itself.
+OnCalendar=*-*-* 00/3:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
