@@ -947,6 +947,23 @@ uv run scripts/gc_section_shares.py --start 2026-06-01 --end 2026-06-16 --paths
 ```
 Exit 2 if the export is unavailable (does NOT fall back to top-100). For a **known** path set (affiliate SubIds), use the chunked-`include_paths` path in `visa_bulletin_platform/monetization/affiliate_epv_reconcile.py` instead.
 
+### Daily Checkup — run the report locally
+
+**`scripts/run_daily_checkup.py`** — run the `daily_checkup` MCP coroutine locally and dump its report JSON.
+
+**Purpose:** the committed one-liner around `asyncio.run(daily_checkup())`, so nobody re-types that boilerplate to inspect the checkup report while debugging (`~/.claude/rules/no_adhoc_scripts.md`). It imports the SAME `daily_checkup` coroutine `mcp/daily_checkup_server.py` serves (`@mcp.tool()` returns the plain coroutine), so the output is byte-identical to what the digest pipeline receives.
+
+**🚨 HEAVY PROD READ — not casual.** Invoking it does a real production gather: one SSH round-trip to `homeserver` (containers, nginx 24h-log awk, Postgres freshness), a GoatCounter `/api/v0/export` pull (10 MB+ CSV, 1/hour rate-limited, shared cache side effect), GA4/Gmail/GSC sub-MCP calls, and HTTP probes against visa-bulletin.us. Expect tens of seconds; run deliberately, never in a loop.
+
+**Usage:**
+```bash
+uv run scripts/run_daily_checkup.py                          # pretty JSON to stdout
+uv run scripts/run_daily_checkup.py --raw                    # exact MCP string, unformatted
+uv run scripts/run_daily_checkup.py --since 2026-07-01T00:00:00Z   # (since currently ignored by server)
+uv run scripts/run_daily_checkup.py --out /tmp/checkup.json
+```
+Exit 0 on a produced report, 1 on gather failure. Requires `~/tokens/goatcounter.token`, the `homeserver` SSH alias, and the sub-MCP auth the server needs.
+
 ## Development Utilities
 
 ### File Inspection
