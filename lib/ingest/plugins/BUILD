@@ -123,6 +123,7 @@ py_library(
         "//models/ingest:ingest_run",
         "//models:uscis_employer",
         requirement("Django"),
+        requirement("requests"),
     ],
 )
 
