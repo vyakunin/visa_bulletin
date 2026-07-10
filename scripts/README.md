@@ -868,6 +868,24 @@ branch; inspect every URL with non-zero difflines and classify it per the table 
 PROD_BASE=... STAGING_BASE=... PRED_MONTH=2026-7 ./scripts/staging_prod_diff.sh
 ```
 
+**`scripts/warm_cache.sh`** - post-deploy cache warmer
+Curls the top ~20 high-traffic **cacheable** GET pages (homepage, predictions index +
+current EB/FS month pages, per-country dashboards, priority-date hubs, salary/employer/
+job-title landings, methodology + latest analysis posts, FAQ/about/contact) so Django
+re-populates its `@cache_page` Redis entries after a deploy clears them — once the origin
+is warm, Cloudflare re-caches the HTML and cold users never pay the 2-3s render. Requests
+with `Cache-Control: no-cache` so they reach the origin (not a stale edge copy); no
+cache-busting query param, so it warms the same key real visitors hit. Faceted
+`/salaries/?...` query URLs are deliberately excluded (per-query, challenge-gated). Run it
+right after a prod deploy + Redis flush (see the deploy flow in `.claude/rules/deployment.md`,
+next to the `redis-cli -n 1 FLUSHDB` step). Prints per-URL status + timing; exit 1 if any
+URL is non-200. Safe to run any time — plain read-only GETs.
+```bash
+./scripts/warm_cache.sh                                    # warm https://visa-bulletin.us
+./scripts/warm_cache.sh --base https://staging.visa-bulletin.us
+BASE=... PRED_MONTH=2026-8 ./scripts/warm_cache.sh         # env overrides
+```
+
 ### Instance Setup Scripts
 
 > **AWS/Lightsail deployment is RETIRED** (2026-06-20). Production is a self-hosted
