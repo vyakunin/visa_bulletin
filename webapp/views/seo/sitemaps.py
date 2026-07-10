@@ -149,7 +149,7 @@ def sitemap_view(request):
     ]
 
     # Static pages — all reflect data that changes on each pipeline refresh
-    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/contact/", "/es/", "/es/faq/", "/es/predictions/", "/es/priority-date/"):
+    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/methodology/", "/corrections/", "/ai-citation/", "/contact/", "/es/", "/es/faq/", "/es/predictions/", "/es/priority-date/"):
         xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=bulletin_lastmod))
 
     # Category landing pages (updated when new bulletin arrives)

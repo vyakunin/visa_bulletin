@@ -51,9 +51,12 @@ from webapp.views.salary.occupation import (
 from webapp.views.salary.search import salary_search_view, worksite_search_view
 from webapp.views.static.pages import (
     about_view,
+    ai_citation_view,
     contact_view,
+    corrections_view,
     faq_view,
     health_view,
+    methodology_view,
     next_bulletin_view,
     privacy_view,
     spanish_landing_view,
@@ -104,6 +107,9 @@ urlpatterns = [
     path("faq/", faq_view, name="faq"),
     path("when-is-the-next-visa-bulletin/", next_bulletin_view, name="next_bulletin"),
     path("about/", about_view, name="about"),
+    path("methodology/", methodology_view, name="methodology"),
+    path("corrections/", corrections_view, name="corrections"),
+    path("ai-citation/", ai_citation_view, name="ai_citation"),
     path("contact/", contact_view, name="contact"),
     path("privacy/", privacy_view, name="privacy"),
     # Spanish (/es/) cluster — converts "boletín de visas" search demand.

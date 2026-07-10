@@ -1,0 +1,58 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}Corrections & Updates Policy - U.S. Immigration Data{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 offset-lg-2">
+        <h1 class="h2 mb-3"><i class="bi bi-pencil-square"></i> Corrections &amp; Updates Policy</h1>
+        <p class="text-muted"><em>Last updated: July 10, 2026</em></p>
+
+        <p>visa-bulletin.us covers government immigration and wage data that people use
+            to make real decisions. Getting it right matters, and when we get something
+            wrong we want to fix it quickly and visibly. This page explains how.</p>
+
+        <h2 class="h4 mt-4">How we keep data current</h2>
+        <ul>
+            <li>Visa Bulletin cut-off dates are re-parsed automatically from the U.S.
+                Department of State within about a day of each monthly release.</li>
+            <li>Employment and wage figures are refreshed from U.S. Department of Labor
+                disclosure files as new quarterly data is published.</li>
+            <li>Forecasts re-run automatically whenever the underlying bulletin or
+                demand data updates.</li>
+        </ul>
+
+        <h2 class="h4 mt-4">Reporting an error</h2>
+        <p>If you find an incorrect date, figure, name, or statement &mdash; or a
+            forecast that looks clearly broken &mdash; please tell us:</p>
+        <ul>
+            <li>Email <a href="mailto:vyakunin@gmail.com">vyakunin@gmail.com</a> with
+                the page URL and what looks wrong, or</li>
+            <li>Open an issue on
+                <a href="https://github.com/vyakunin/visa_bulletin/issues" target="_blank" rel="noopener">GitHub</a>.</li>
+        </ul>
+        <p>Please include the specific page and, where you can, the correct value and
+            its source. That lets us verify against the official government record.</p>
+
+        <h2 class="h4 mt-4">How we handle corrections</h2>
+        <ul>
+            <li><strong>Data errors</strong> (a mis-parsed date, a wrong figure) are
+                fixed at the source and flow to the live site on the next refresh. We
+                aim to correct clear factual errors within a few days of confirming
+                them.</li>
+            <li><strong>Methodology or interpretation issues</strong> are reviewed and,
+                where warranted, the affected pages and the
+                <a href="{% url 'methodology' %}">methodology page</a> are updated.</li>
+            <li><strong>Dating.</strong> Policy and explainer pages carry a
+                &ldquo;last updated&rdquo; date. Data pages reflect the most recent
+                government release we have ingested.</li>
+        </ul>
+
+        <h2 class="h4 mt-4">What we don't do</h2>
+        <p>We do not change or override official government figures. Where our reading
+            of a bulletin differs from the source, the official
+            <a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" target="_blank" rel="noopener">Department of State Visa Bulletin</a>
+            always governs.</p>
+    </div>
+</div>
+{% endblock %}
