@@ -1240,6 +1240,7 @@ django_py_test(
         "//lib/ingest/plugins:uscis_datahub",
         "//models:uscis_employer",
         requirement("pytest-django"),
+        requirement("requests"),
     ],
 )
 
