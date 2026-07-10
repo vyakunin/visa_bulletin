@@ -35,6 +35,12 @@ from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
 from models.visa_cutoff_date import VisaCutoffDate
 from models.vqs import PredictedCutoff
+from webapp.views.bulletin.retention import (
+    STATUS_CURRENT,
+    STATUS_DATE,
+    STATUS_UNAVAILABLE,
+    make_record,
+)
 
 # EB preference visa_class -> short display label (the stored visa_class values).
 _EB_CLASSES = {"1st": "EB-1", "2nd": "EB-2", "3rd": "EB-3", "4th": "EB-4", "5th": "EB-5"}
@@ -250,6 +256,44 @@ def _headline_cards(
     return cards
 
 
+def _retention_status(fc: _Forecast) -> str:
+    if fc.is_unavailable:
+        return STATUS_UNAVAILABLE
+    if fc.predicted_date is not None:
+        return STATUS_DATE
+    return STATUS_CURRENT
+
+
+def _retention_records(
+    stored: dict[tuple[str, int, str], PredictedCutoff],
+    actuals: dict[tuple[str, int, str], VisaCutoffDate],
+) -> list[dict]:
+    """localStorage-comparable records for the headline oversubscribed series
+    (Final Action + Filing) — the dates visitors return to check."""
+    records = []
+    for vc, country in _HEADLINE_SERIES:
+        for action in (_FINAL, _FILING):
+            fc = _forecast_from_row(
+                stored.get((vc, country.value, action)),
+                actuals.get((vc, country.value, action)),
+                vc,
+                country.value,
+            )
+            if fc.display == "—":
+                continue  # no forecast for this series — nothing to remember
+            records.append(
+                make_record(
+                    "employment_based",
+                    country.value,
+                    vc,
+                    action,
+                    status=_retention_status(fc),
+                    predicted_date=fc.predicted_date,
+                )
+            )
+    return records
+
+
 def _faq(month_label: str, cards: list[dict]) -> list[dict]:
     india_eb2 = next((c for c in cards if c["label"] == "EB-2 India"), None)
     faq = [
@@ -399,5 +443,6 @@ def prediction_month_forecast_view(request, slug: str) -> HttpResponse:
         "fs_grid": fs_grid,
         "country_headers": country_headers,
         "faq": faq,
+        "retention_records": _retention_records(stored, actuals),
     }
     return render(request, "webapp/prediction_month_forecast.html", context)
