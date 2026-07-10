@@ -30,6 +30,11 @@ from webapp.views.bulletin.priority_date_landing import (
 from webapp.views.bulletin.priority_date_landing import (
     _EB_CLASSES as _PRIORITY_DATE_EB_CLASSES,
 )
+from webapp.views.bulletin.retention import (
+    STATUS_CURRENT,
+    STATUS_DATE,
+    make_record,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +457,11 @@ def _build_unified_prediction_rows(
 
         rows.append({
             "label": lbl,
+            # Raw normalized class code ("1st".."5th" / "F1".."F4") — the stable,
+            # URL-independent identifier the retention banner keys off (matches the
+            # forecast page's PredictedCutoff.visa_class), distinct from the display
+            # label above.
+            "visa_class": vcd.get("visa_class") or "",
             "last_bulletin_date": vcd.get("last_bulletin_date"),
             "current_cutoff": current_cutoffs.get(lbl),
             "next_cutoff": pred.get("next_cutoff"),
@@ -467,6 +477,39 @@ def _build_unified_prediction_rows(
         })
     return rows
 
+
+
+def _dashboard_retention_records(
+    category: str,
+    country: int,
+    action_type: str,
+    unified_rows: list[dict],
+) -> list[dict]:
+    """localStorage-comparable records for the retention "your date moved" banner.
+
+    One record per visa class on this (category, country, action_type) page that
+    carries a concrete predicted next-month cutoff (or is already Current). Keyed
+    by the raw class code so it's stable across the URL scheme and lines up with
+    the forecast page. See webapp/views/bulletin/retention.py.
+    """
+    records = []
+    for row in unified_rows:
+        vc = row.get("visa_class") or ""
+        if not vc:
+            continue
+        if row.get("already_current"):
+            status, predicted = STATUS_CURRENT, None
+        elif isinstance(row.get("next_cutoff"), date):
+            status, predicted = STATUS_DATE, row["next_cutoff"]
+        else:
+            continue  # no concrete prediction to remember
+        records.append(
+            make_record(
+                category, country, vc, action_type,
+                status=status, predicted_date=predicted,
+            )
+        )
+    return records
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -709,6 +752,9 @@ def dashboard_view(request, category=None, country=None):
         "show_vqs_column": category == VisaCategory.EMPLOYMENT_BASED.value,
         "priority_date_links": priority_date_links,
         "country_dashboard_links": country_dashboard_links,
+        "retention_records": _dashboard_retention_records(
+            category, country, action_type, unified_rows
+        ),
         "latest_post": latest_post,
         "current_bulletin_date": current_bulletin_date,
         # Filter options

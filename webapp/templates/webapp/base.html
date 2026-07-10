@@ -620,6 +620,45 @@
             }
         }
 
+        /* "Your date moved" return banner. position:fixed keeps it OUT of normal
+           flow, so appearing on a return visit causes ZERO layout shift (CLS) —
+           safe even on the chart-hydration pages flagged for CLS. */
+        #retention-banner {
+            position: fixed;
+            left: 50%;
+            bottom: 1rem;
+            transform: translateX(-50%);
+            z-index: 1080;
+            max-width: min(92vw, 640px);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.7rem 0.9rem 0.7rem 1rem;
+            background: var(--gov-navy);
+            color: #fff;
+            border-left: 4px solid var(--gov-gold);
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            font-size: 0.95rem;
+            line-height: 1.35;
+        }
+        #retention-banner .retention-banner__msg { flex: 1; }
+        #retention-banner .retention-banner__close {
+            flex: 0 0 auto;
+            background: transparent;
+            border: 0;
+            color: #fff;
+            font-size: 1.4rem;
+            line-height: 1;
+            padding: 0 0.25rem;
+            cursor: pointer;
+            opacity: 0.85;
+        }
+        #retention-banner .retention-banner__close:hover { opacity: 1; }
+        @media (max-width: 575.98px) {
+            #retention-banner { left: 0.5rem; right: 0.5rem; bottom: 0.5rem; transform: none; max-width: none; }
+        }
+
     </style>
 
     {% block extra_head %}{% endblock %}
@@ -982,7 +1021,15 @@
     <!-- Autocomplete functionality -->
     <script src="{% static 'js/autocomplete.js' %}" defer></script>
     <script src="{% static 'js/sortable_tables.js' %}" defer></script>
-    
+
+    {% comment %}Anonymous "your date moved" return banner. Only prediction pages
+       supply retention_records; the JS no-ops when the data script is absent or
+       localStorage is unavailable. json_script safely escapes the payload.{% endcomment %}
+    {% if retention_records %}
+    {{ retention_records|json_script:"retention-data" }}
+    <script src="{% static 'js/retention_banner.js' %}" defer></script>
+    {% endif %}
+
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

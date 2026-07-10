@@ -8,11 +8,22 @@ py_library(
 )
 
 py_library(
+    name = "retention",
+    srcs = ["retention.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/enums:action_type",
+        "//models/enums:country",
+    ],
+)
+
+py_library(
     name = "dashboard",
     srcs = ["dashboard.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":priority_date_landing",
+        ":retention",
         "//django_config:cache_utils",
         "//lib/business/bulletin:chart_builder",
         "//lib/business/bulletin:cutoff_data_aggregator",
@@ -87,6 +98,7 @@ py_library(
     srcs = ["prediction_month_forecast.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":retention",
         "//django_config:cache_utils",
         "//models:bulletin",
         "//models:visa_cutoff_date",
