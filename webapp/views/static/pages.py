@@ -1,5 +1,6 @@
 """Static informational pages."""
 
+import json
 import time
 from datetime import date
 
@@ -8,6 +9,29 @@ from django.shortcuts import render
 from django.test import Client
 
 from lib.business.bulletin.release_schedule import get_release_schedule
+
+# Canonical author entity, reused across trust pages (E-E-A-T / GEO). A single
+# named human with sameAs links is the signal Google's quality systems and
+# LLM-citation pipelines look for on a YMYL (immigration) site; the site
+# otherwise presents as anonymous ("built to help the community").
+_AUTHOR_LD = {
+    "@type": "Person",
+    "name": "Vladimir Yakunin",
+    "url": "https://visa-bulletin.us/about/",
+    "email": "vyakunin@gmail.com",
+    "sameAs": ["https://github.com/vyakunin"],
+    "knowsAbout": [
+        "U.S. Visa Bulletin",
+        "immigration priority dates",
+        "H-1B and PERM labor data",
+        "data engineering",
+    ],
+}
+_PUBLISHER_LD = {
+    "@type": "Organization",
+    "name": "U.S. Immigration Data (visa-bulletin.us)",
+    "url": "https://visa-bulletin.us",
+}
 
 # Top-level pages the health check must fetch; each must return 200, <1s, non-empty content
 HEALTH_CHECK_PATHS = ("/", "/salaries/", "/job-titles/", "/employers/")
@@ -121,13 +145,135 @@ def next_bulletin_view(request):
 
 
 def about_view(request):
-    """About page."""
+    """About page.
+
+    Carries the named-author Person JSON-LD (E-E-A-T): the human behind a YMYL
+    immigration site is a first-class trust signal, and the page already names
+    Vladimir Yakunin in prose — the structured data makes it machine-readable
+    for Google + LLM-citation.
+    """
     return render(
         request,
         "webapp/about.html",
         {
             "page_title": "About - U.S. Immigration Data",
             "page_description": "Learn about the Visa Bulletin dashboard, data sources, projection methodology, and the team behind this community tool.",
+            "canonical_url": request.build_absolute_uri("/about/"),
+            "structured_data": json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "AboutPage",
+                    "name": "About U.S. Immigration Data",
+                    "url": request.build_absolute_uri("/about/"),
+                    "publisher": _PUBLISHER_LD,
+                    "mainEntity": _AUTHOR_LD,
+                }
+            ),
+        },
+    )
+
+
+def methodology_view(request):
+    """Prediction methodology page.
+
+    A dedicated, canonical trust surface (vs the existing methodology *blog
+    post*, which is harder to find and not linked as a policy page). States in
+    plain language how the Bulletin Forecast Model works, what the 80% range
+    means, the data sources + update cadence, and — deliberately — an HONEST
+    accuracy posture (no single vanity "% accurate" headline; error varies by
+    category and horizon). This honesty is the E-E-A-T differentiator vs
+    competitors that publish unaudited accuracy marketing.
+    """
+    return render(
+        request,
+        "webapp/methodology.html",
+        {
+            "page_title": "Prediction Methodology - How the Visa Bulletin Forecast Works",
+            "page_description": (
+                "How visa-bulletin.us predicts priority-date movement: the regime-aware "
+                "near-term model, the longer-horizon gradient-boosted model, what the 80% "
+                "range means, data sources, and how we measure our own accuracy — honestly."
+            ),
+            "canonical_url": request.build_absolute_uri("/methodology/"),
+            "structured_data": json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "TechArticle",
+                    "headline": "How the Visa Bulletin Forecast Model Works",
+                    "description": (
+                        "Methodology behind visa-bulletin.us priority-date predictions: "
+                        "regime classification, gradient-boosted longer-horizon forecasts, "
+                        "confidence ranges, data sources, and accuracy measurement."
+                    ),
+                    "url": request.build_absolute_uri("/methodology/"),
+                    "author": _AUTHOR_LD,
+                    "publisher": _PUBLISHER_LD,
+                    "about": "U.S. Visa Bulletin priority date prediction methodology",
+                }
+            ),
+        },
+    )
+
+
+def corrections_view(request):
+    """Corrections policy page.
+
+    A visible corrections/updates policy is a standard journalistic + YMYL
+    trust marker (the kind of page Google's quality raters and LLM-citation
+    pipelines weight). Short, static.
+    """
+    return render(
+        request,
+        "webapp/corrections.html",
+        {
+            "page_title": "Corrections & Updates Policy - U.S. Immigration Data",
+            "page_description": (
+                "How visa-bulletin.us handles errors and updates: how to report a "
+                "correction, how quickly we fix data issues, and how pages are dated."
+            ),
+            "canonical_url": request.build_absolute_uri("/corrections/"),
+            "structured_data": json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "WebPage",
+                    "name": "Corrections & Updates Policy",
+                    "url": request.build_absolute_uri("/corrections/"),
+                    "publisher": _PUBLISHER_LD,
+                }
+            ),
+        },
+    )
+
+
+def ai_citation_view(request):
+    """AI citation & content-reuse policy (GEO).
+
+    Explicitly welcomes AI Overviews / LLM assistants to cite the site with
+    attribution — LLMs increasingly answer "visa bulletin predictions" queries,
+    and being the clearly-citable source with unambiguous terms is a distribution
+    channel. Also disambiguates licensing: the *code* is PolyForm Noncommercial;
+    this page defines the terms for citing the site's *data and content*.
+    """
+    return render(
+        request,
+        "webapp/ai_citation.html",
+        {
+            "page_title": "AI Citation & Content Use Policy - U.S. Immigration Data",
+            "page_description": (
+                "How AI assistants and publishers may cite visa-bulletin.us: attribution "
+                "terms, what may be quoted, and the distinction between our open data and "
+                "the site's source-code license."
+            ),
+            "canonical_url": request.build_absolute_uri("/ai-citation/"),
+            "structured_data": json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "WebPage",
+                    "name": "AI Citation & Content Use Policy",
+                    "url": request.build_absolute_uri("/ai-citation/"),
+                    "publisher": _PUBLISHER_LD,
+                }
+            ),
         },
     )
 

@@ -1,0 +1,111 @@
+{% extends "webapp/base.html" %}
+
+{% block title %}Prediction Methodology - How the Visa Bulletin Forecast Works{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 offset-lg-2">
+        <h1 class="h2 mb-3"><i class="bi bi-diagram-3"></i> Prediction Methodology</h1>
+        <p class="text-muted"><em>Last reviewed: July 10, 2026</em></p>
+
+        <p class="lead">How we forecast U.S. Visa Bulletin priority-date movement —
+            what the model actually does, what the ranges mean, where the data comes
+            from, and how accurate it really is.</p>
+
+        <div class="alert alert-info" role="alert">
+            We publish this so you can judge the forecasts for yourself. These are
+            model estimates, not guarantees — read the <a href="#accuracy">accuracy
+            section</a> and <a href="#caveats">caveats</a> before you rely on any date.
+        </div>
+
+        <h2 class="h4 mt-4">What the forecast is</h2>
+        <p>Every month the U.S. Department of State publishes cut-off dates in the
+            Visa Bulletin. Our <strong>Bulletin Forecast Model</strong> estimates where
+            those cut-off dates are likely to move next, per category (EB-1 through
+            EB-5, F1 through F4) and per country of chargeability (India, China,
+            Mexico, Philippines, and Rest of World). It runs on more than a decade of
+            bulletin history plus demand signals from published immigration data.</p>
+
+        <h2 class="h4 mt-4">Two models, two horizons</h2>
+        <p>Priority-date movement behaves very differently over a one-month horizon
+            than over a year, so we use two approaches:</p>
+        <ul>
+            <li><strong>Near-term (next bulletin).</strong> The model first classifies
+                each visa series into a <em>regime</em> — advancing, stalled, or
+                retrogressing — from its recent movement, then applies the strategy
+                that has historically been most accurate for that state. A series that
+                has been stalled for months is forecast differently from one advancing
+                steadily.</li>
+            <li><strong>Longer horizon (roughly 6&ndash;12 months).</strong> A
+                gradient-boosted model combines historical bulletin patterns, pending
+                demand, and fiscal-year cycles to catch structural turns — like the
+                annual reset on October 1 — that simple month-to-month extrapolation
+                misses.</li>
+        </ul>
+
+        <h2 class="h4 mt-4">What the ranges mean</h2>
+        <p>Where we show a range around a predicted date, it is an
+            <strong>80% range</strong>: based on how the model has performed
+            historically for that kind of series and horizon, we'd expect the actual
+            cut-off to land inside that band about 80% of the time. A wider band means
+            the model is less certain — usually a volatile or thin-data series. It is a
+            statement about uncertainty, not a promise; unusual months fall outside it.</p>
+
+        <h2 class="h4 mt-4">Where the data comes from</h2>
+        <ul>
+            <li><strong>Visa Bulletin history</strong> &mdash; parsed automatically from
+                <a href="https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html" target="_blank" rel="noopener">U.S. Department of State</a>
+                bulletins. New bulletins are ingested within about a day of release,
+                and the forecast refreshes with them.</li>
+            <li><strong>Employment &amp; wage data</strong> &mdash; public disclosure
+                data from the U.S. Department of Labor's
+                <a href="https://www.dol.gov/agencies/whd/immigration" target="_blank" rel="noopener">Office of Foreign Labor Certification</a>
+                (H-1B / LCA and PERM filings), used for demand context and for the
+                salary features.</li>
+        </ul>
+        <p>Everything is extracted programmatically from official government files.
+            There is no manual data entry.</p>
+
+        <h2 class="h4 mt-4" id="accuracy">How accurate is it — honestly</h2>
+        <p>We deliberately do <strong>not</strong> advertise a single headline
+            &ldquo;X% accurate&rdquo; number, because it would be misleading. Accuracy
+            depends enormously on the category, the country, and how far out you look:</p>
+        <ul>
+            <li>For <strong>stable, well-behaved series</strong> the near-term forecast
+                is often within a few weeks of the actual cut-off.</li>
+            <li>For <strong>volatile series</strong> &mdash; heavily backlogged
+                categories, or periods around retrogression and the fiscal-year reset
+                &mdash; errors can be far larger, sometimes several months.</li>
+            <li>The honest baseline: for many series in calm periods, a naive
+                &ldquo;assume it keeps doing what it just did&rdquo; guess is already
+                hard to beat. Our model's value is concentrated in the turns &mdash;
+                regime changes and structural shifts &mdash; and in giving you a
+                calibrated <em>range</em> rather than a false-precision single date.</li>
+        </ul>
+        <p>We measure this by <strong>backtesting</strong>: for each past month we
+            re-run the model using only the data that existed at the time, then compare
+            its prediction to what the bulletin actually did. A detailed, per-category
+            predicted-vs-actual track record is being published as its own page; until
+            then, treat every forecast as an informed estimate with real uncertainty.
+            For a deeper walk-through of the near-term model, see
+            <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}">how the prediction model works</a>.</p>
+
+        <h2 class="h4 mt-4" id="caveats">Caveats</h2>
+        <ul>
+            <li><strong>Policy beats models.</strong> A visa-number reallocation, a
+                sudden demand surge, or a court decision can invalidate any forecast
+                instantly. No historical model can see a policy change coming.</li>
+            <li><strong>Dates are estimates, not legal advice.</strong> Do not make
+                filing, travel, or job decisions on a forecast alone &mdash; confirm
+                against the official bulletin and, where it matters, an attorney.</li>
+            <li><strong>Salaries are offered wages.</strong> Wage figures come from what
+                employers listed on visa filings, not W-2 income or total compensation
+                (equity and bonuses are excluded).</li>
+        </ul>
+
+        <p class="mt-4">Found something wrong? See our
+            <a href="{% url 'corrections' %}">corrections policy</a>, or email
+            <a href="mailto:vyakunin@gmail.com">vyakunin@gmail.com</a>.</p>
+    </div>
+</div>
+{% endblock %}
