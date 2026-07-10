@@ -2,6 +2,28 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 py_binary(
+    name = "check_fad_dff_violations",
+    srcs = ["check_fad_dff_violations.py"],
+    main = "check_fad_dff_violations.py",
+    deps = [
+        "//django_config:settings",
+        "//lib/business/vqs:coupling",
+        "//lib/business/vqs:solver",
+        "//lib/utils:logging_utils",
+        "//models:bulletin",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)
+
+py_binary(
     name = "create_uscis_blog_post",
     srcs = ["create_uscis_blog_post.py"],
     main = "create_uscis_blog_post.py",
