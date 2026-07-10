@@ -886,6 +886,28 @@ URL is non-200. Safe to run any time — plain read-only GETs.
 BASE=... PRED_MONTH=2026-8 ./scripts/warm_cache.sh         # env overrides
 ```
 
+**`scripts/staging_page_audit.sh`** - per-URL SEO/marker audit of the staging stack
+The committed form of the ad-hoc `curl -H 'Host: staging.visa-bulletin.us' <url>` + grep
+check that ran repeatedly across sessions. Curls a representative set of staging URLs
+(homepage, an employer profile, a job-title profile, the current predictions month page,
+`/salaries/`) via the staging Host and reports, per URL: HTTP status, robots-meta state
+(`index`/`noindex`/`none`), whether it's an employer/job-title **profile** page
+(`emp`/`jobtitle`/`no`, via the distinguishing rendered JSON-LD schema type —
+`AggregateRating` for employers, `Occupation` for job titles), and whether a **Plotly**
+chart is rendered. Sibling of `staging_prod_diff.sh` (same `STAGING_BASE` env pattern,
+same `/tmp` artifact convention) but a standalone per-page audit, not a staging↔prod diff.
+Use after a staging deploy that touches robots meta/indexability, the profile templates,
+or chart rendering. Exit 1 if any URL is non-200. Artifacts saved to
+`/tmp/vb_page_audit/<slug>.html`.
+```bash
+./scripts/staging_page_audit.sh                                   # audit the default URL set
+./scripts/staging_page_audit.sh --show                           # + dump matched marker lines per URL
+./scripts/staging_page_audit.sh --url /employer/google-llc/ --url /salaries/   # audit only these
+AUDIT_URLS="/ /salaries/" ./scripts/staging_page_audit.sh        # override the set via env
+# Bypass Cloudflare and hit the origin directly with an explicit Host header:
+STAGING_BASE=http://127.0.0.1:8080 HOST_HEADER=staging.visa-bulletin.us ./scripts/staging_page_audit.sh
+```
+
 ### Instance Setup Scripts
 
 > **AWS/Lightsail deployment is RETIRED** (2026-06-20). Production is a self-hosted
