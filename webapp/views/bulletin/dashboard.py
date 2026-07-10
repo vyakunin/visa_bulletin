@@ -14,6 +14,12 @@ from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
     get_aggregated_visa_class_data,
 )
+from lib.business.vqs.coupling import (
+    LEGACY_CLAMP_W,
+    reconcile_maturity,
+    reconcile_pair,
+    w_fad_concedes_for_country,
+)
 from models.blog import BlogPost
 from models.enums.action_type import ActionType
 from models.enums.country import Country
@@ -134,6 +140,12 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
                 "confidence": confidence,
                 "confidence_low": None,
                 "confidence_high": None,
+                # Horizon anchor months, so the 1m/6m/12m cutoff cells can be
+                # re-derived by month after FAD↔DFF trajectory reconciliation
+                # (see _apply_reconciled_trajectory / coupling.reconcile_pair).
+                "next_cutoff_month": results[0].month if results else None,
+                "cutoff_6m_month": results[5].month if len(results) > 5 else None,
+                "cutoff_12m_month": results[11].month if len(results) > 11 else None,
             }
             if results:
                 first = results[0]
@@ -265,6 +277,95 @@ def _counterpart_action_type(action_type: str) -> str:
     )
 
 
+def _apply_reconciled_trajectory(
+    pred: dict,
+    reconciled_traj: list[tuple[date, date | None]],
+    submission_date: date | None,
+) -> dict:
+    """Return a copy of ``pred`` with its cutoff cells + maturity re-derived from a
+    reconciled cutoff trajectory.
+
+    ``next_cutoff``/``cutoff_6m``/``cutoff_12m`` are looked up by their anchor month
+    (recorded in ``_get_vqs_predictions``); a month absent from the reconciled
+    trajectory (its cutoff was None) yields None, matching the original semantics.
+    ``maturity_month`` becomes the first reconciled month whose cutoff reaches the
+    submission date. All values inherit the DFF≥FAD invariant by construction.
+    """
+    by_month = {m: c for m, c in reconciled_traj}
+    new = dict(pred)
+    new["trajectory"] = reconciled_traj
+
+    nm = pred.get("next_cutoff_month")
+    if nm is not None and by_month.get(nm) is not None:
+        new["next_cutoff"] = by_month[nm]
+    c6 = pred.get("cutoff_6m_month")
+    if c6 is not None:
+        new["cutoff_6m"] = by_month.get(c6)
+    c12 = pred.get("cutoff_12m_month")
+    if c12 is not None:
+        new["cutoff_12m"] = by_month.get(c12)
+
+    if submission_date is not None:
+        matured = None
+        for month, cutoff in reconciled_traj:
+            if cutoff is not None and cutoff >= submission_date:
+                matured = month
+                break
+        new["maturity_month"] = matured
+    return new
+
+
+def _reconcile_prediction_pair(
+    fad_pred: dict,
+    dff_pred: dict,
+    w_fad_concedes: float,
+    submission_date: date | None,
+) -> tuple[dict, dict]:
+    """Reconcile a (Final Action, Filing) prediction pair so the smooth VQS
+    trajectory satisfies DFF≥FAD at every step, then re-derive both preds' cutoff
+    cells + maturity from the repaired trajectories. See lib.business.vqs.coupling.
+    """
+    fad_traj2, dff_traj2 = reconcile_pair(
+        fad_pred.get("trajectory") or [],
+        dff_pred.get("trajectory") or [],
+        w_fad_concedes,
+    )
+    return (
+        _apply_reconciled_trajectory(fad_pred, fad_traj2, submission_date),
+        _apply_reconciled_trajectory(dff_pred, dff_traj2, submission_date),
+    )
+
+
+def _reconcile_projection_estimate(
+    projection: dict | None,
+    counterpart_estimate: date | None,
+) -> None:
+    """In-place: pull a Filing series' historical-linear ``projection.estimated_date``
+    DOWN onto the Final Action estimate when it violates DFF≤FAD.
+
+    This closes the 4th independent invariant surface —
+    ``cutoff_projection.calculate_projection`` — which drives the chart's forecast
+    diamond and is computed independently of both the VQS trajectory and the
+    unified-row maturity. ``months_to_wait`` + ``message`` are recomputed so the dict
+    stays internally consistent. No-op when either estimate is absent or already
+    ordered. See lib.business.vqs.coupling.reconcile_maturity (LEGACY_CLAMP_W: the
+    Final Action projection is the binding upper bound and is never moved).
+    """
+    if not projection or counterpart_estimate is None:
+        return
+    est = projection.get("estimated_date")
+    if est is None:
+        return
+    _fad, new_est = reconcile_maturity(counterpart_estimate, est, LEGACY_CLAMP_W)
+    if new_est == est:
+        return
+    projection["estimated_date"] = new_est
+    today = date.today()
+    months = max(0, (new_est.year - today.year) * 12 + (new_est.month - today.month))
+    projection["months_to_wait"] = months
+    projection["message"] = f"Estimated processing in {months} months"
+
+
 def _build_unified_prediction_rows(
     visa_class_data: list[dict],
     vqs_predictions: dict,
@@ -284,19 +385,19 @@ def _build_unified_prediction_rows(
       - linear_maturity: linear-extrapolation fallback (None = stalled / no estimate)
 
     counterpart_maturity/is_filing (optional): the Final Action effective maturity
-    per label (maturity_month or linear_maturity), used ONLY when is_filing=True to
+    per label (maturity_month or linear_maturity), used when is_filing=True to
     enforce the invariant that a Dates-for-Filing cutoff is never behind its Final
     Action counterpart — a priority date therefore becomes current for Filing no
-    LATER than for Final Action. Final Action and Filing are forecast as fully
-    independent VQS runs (see _get_vqs_predictions), so beyond the forecast horizon
-    their linear-extrapolation fallbacks can disagree on rate and put Filing later
-    than Final Action — impossible in reality. When that happens we clamp Filing's
-    estimate DOWN to the Final Action date. The clamp is one-directional: we never
-    push Final Action later, because Final Action's own projection is the binding
-    upper bound for Filing — importing Filing's (here plateaued) rate into Final
-    Action would only degrade the more-reliable series. See Notion 39462b8d,
-    reported via r/USCIS 2026-07-05 (EB-1 India PD 4/29/2025: FAD ~2027 vs
-    Filing ~2029).
+    LATER than for Final Action. This is the FAD↔DFF reconciliation's LINEAR-TAIL
+    surface: the smooth VQS trajectory (and the cutoff cells + maturity derived from
+    it) is already reconciled upstream in dashboard_view; here we repair only the
+    beyond-horizon linear extrapolation, whose independent rate can put Filing later
+    than Final Action — impossible in reality. Filing's estimate is pulled DOWN onto
+    Final Action via lib.business.vqs.coupling.reconcile_maturity at LEGACY_CLAMP_W
+    (the overshooting extrapolation is the unreliable side; Final Action is the
+    binding upper bound and is never moved). See Notion 39462b8d +
+    docs/fad_dff_coupling_design.md, reported via r/USCIS 2026-07-05 (EB-1 India
+    PD 4/29/2025: FAD ~2027 vs Filing ~2029).
     """
     # Build lookup: label → current cutoff (last non-None cutoff date)
     current_cutoffs: dict[str, date | None] = {}
@@ -329,19 +430,23 @@ def _build_unified_prediction_rows(
             if linear is None and pred.get("trajectory"):
                 linear = _linear_maturity_fallback(submission_date, pred["trajectory"])
 
-        # One-directional clamp: only the Filing page corrects itself against Final
-        # Action. Filing must never mature later than Final Action (Filing cutoffs are
-        # always at-or-ahead), so if Filing's independent estimate lands after Final
-        # Action's, pull Filing DOWN to the Final Action date. Final Action is left
-        # untouched — its own projection is the binding upper bound. (See docstring.)
+        # Linear-tail reconciliation: the trajectory-derived maturities are already
+        # reconciled upstream (dashboard_view). This closes the remaining surface —
+        # the beyond-horizon LINEAR extrapolation — through the shared helper. At
+        # LEGACY_CLAMP_W the overshooting Filing extrapolation is pulled DOWN onto the
+        # Final Action date (the binding upper bound), reproducing the prior scalar
+        # clamp exactly; Final Action is never moved. See
+        # lib.business.vqs.coupling.reconcile_maturity.
         if not already_current and is_filing and counterpart_maturity:
             other = counterpart_maturity.get(lbl)  # Final Action effective maturity
             effective = maturity if maturity is not None else linear
-            if effective is not None and other is not None and effective > other:
-                if maturity is not None:
-                    maturity = other
-                else:
-                    linear = other
+            if effective is not None and other is not None:
+                _fad, new_eff = reconcile_maturity(other, effective, LEGACY_CLAMP_W)
+                if new_eff != effective:
+                    if maturity is not None:
+                        maturity = new_eff
+                    else:
+                        linear = new_eff
 
         has_vqs = bool(pred)
 
@@ -441,38 +546,74 @@ def dashboard_view(request, category=None, country=None):
         except Exception:
             logger.exception("Failed to load VQS predictions")
 
-    # On the Filing page only, fetch the Final Action effective maturity per label so
-    # the unified rows below can clamp Filing <= Final Action (Filing is never behind
-    # Final Action in the real bulletin, so its projected maturity must never land
-    # later — see _build_unified_prediction_rows docstring). The Final Action page
-    # needs no counterpart: it is the binding upper bound and is never moved. Cheap:
-    # same cached VQS call the Final Action page load would make anyway.
+    # Enforce the DFF≥FAD invariant everywhere by reconciling this page's VQS
+    # trajectories against the counterpart action_type's (Option B — confidence-
+    # weighted reconciliation; see lib.business.vqs.coupling +
+    # docs/fad_dff_coupling_design.md). Because reconciliation happens on the
+    # trajectory BEFORE the chart + unified rows are built, the plotted chart, the
+    # 1m/6m/12m cutoff cells AND the trajectory-derived maturity all inherit the
+    # repaired (never-crossing) path — replacing the former scalar-only maturity
+    # clamp that fixed just one of the ~4 surfaces the invariant can break.
+    #
+    # w = per-country confidence weight for the SMOOTH trajectory (India → trust the
+    # smooth DFF; China → symmetric). The beyond-horizon LINEAR extrapolation tail is
+    # reconciled separately inside _build_unified_prediction_rows with LEGACY_CLAMP_W
+    # (Final Action is the binding upper bound there — the overshooting linear
+    # extrapolation, not the smooth series, is the unreliable side).
     counterpart_maturity: dict[str, date | None] = {}
-    if (
-        category == VisaCategory.EMPLOYMENT_BASED.value
-        and has_data
-        and submission_date
-        and action_type == ActionType.FILING.value
-    ):
+    if category == VisaCategory.EMPLOYMENT_BASED.value and has_data and vqs_predictions:
         try:
+            w = w_fad_concedes_for_country(country)
+            is_filing = action_type == ActionType.FILING.value
             counterpart_action_type = _counterpart_action_type(action_type)
-            counterpart_visa_class_data, counterpart_has_data = get_aggregated_visa_class_data(
-                category, country, counterpart_action_type, submission_date_for_chart
+            counterpart_vqs_predictions = _get_vqs_predictions(
+                category, country, counterpart_action_type, submission_date
             )
-            if counterpart_has_data:
-                counterpart_vqs_predictions = _get_vqs_predictions(
-                    category, country, counterpart_action_type, submission_date
+            counterpart_reconciled: dict[str, dict] = {}
+            for label, this_pred in list(vqs_predictions.items()):
+                other_pred = counterpart_vqs_predictions.get(label)
+                if not other_pred:
+                    continue
+                if is_filing:
+                    fad2, dff2 = _reconcile_prediction_pair(other_pred, this_pred, w, submission_date)
+                    vqs_predictions[label] = dff2
+                    counterpart_reconciled[label] = fad2
+                else:
+                    fad2, dff2 = _reconcile_prediction_pair(this_pred, other_pred, w, submission_date)
+                    vqs_predictions[label] = fad2
+                    counterpart_reconciled[label] = dff2
+
+            # Filing page only: also derive the Final Action effective maturity
+            # (trajectory-or-linear) so the unified rows can reconcile Filing's
+            # beyond-horizon linear tail against it. The Final Action page needs no
+            # such counterpart — at LEGACY_CLAMP_W the linear-tail reconciliation
+            # never moves Final Action (it is the binding upper bound), so it would
+            # be a no-op; skip its extra aggregation.
+            if is_filing and submission_date:
+                counterpart_visa_class_data, counterpart_has_data = get_aggregated_visa_class_data(
+                    category, country, counterpart_action_type, submission_date_for_chart
                 )
-                counterpart_rows = _build_unified_prediction_rows(
-                    counterpart_visa_class_data, counterpart_vqs_predictions, submission_date,
-                )
-                counterpart_maturity = {
-                    r["label"]: (r["maturity_month"] or r["linear_maturity"])
-                    for r in counterpart_rows
-                    if not r["already_current"]
-                }
+                if counterpart_has_data:
+                    counterpart_rows = _build_unified_prediction_rows(
+                        counterpart_visa_class_data, counterpart_reconciled, submission_date,
+                    )
+                    counterpart_maturity = {
+                        r["label"]: (r["maturity_month"] or r["linear_maturity"])
+                        for r in counterpart_rows
+                        if not r["already_current"]
+                    }
+                    # 4th surface: reconcile this page's chart forecast-diamond
+                    # (calculate_projection.estimated_date) against Final Action's,
+                    # in place, before the chart is built below.
+                    counterpart_estimate = {
+                        (d.get("visa_class_label") or d.get("visa_class")): (d.get("projection") or {}).get("estimated_date")
+                        for d in counterpart_visa_class_data
+                    }
+                    for d in visa_class_data:
+                        lbl = d.get("visa_class_label") or d.get("visa_class")
+                        _reconcile_projection_estimate(d.get("projection"), counterpart_estimate.get(lbl))
         except Exception:
-            logger.exception("Failed to load counterpart VQS predictions for maturity clamp")
+            logger.exception("Failed to reconcile FAD/DFF VQS predictions")
 
     # Build chart after VQS predictions so trajectory data can be included
     if has_data:

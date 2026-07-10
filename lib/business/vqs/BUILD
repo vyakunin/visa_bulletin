@@ -8,6 +8,15 @@ py_library(
 )
 
 py_library(
+    name = "coupling",
+    srcs = ["coupling.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models/enums:country",
+    ],
+)
+
+py_library(
     name = "demand",
     srcs = ["demand.py"],
     visibility = ["//visibility:public"],

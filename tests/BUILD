@@ -310,6 +310,19 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_coupling",
+    # Pure-math module (no DB); "medium" only tolerates the Django app-registry
+    # load, which can exceed the small (60s) budget under concurrent build load.
+    size = "medium",
+    srcs = ["test_coupling.py"],
+    deps = [
+        "//lib/business/vqs:coupling",
+        "//models/enums:country",
+        requirement("python-dateutil"),
+    ],
+)
+
+django_py_test(
     name = "test_dashboard_maturity_invariant",
     size = "small",
     srcs = ["test_dashboard_maturity_invariant.py"],
