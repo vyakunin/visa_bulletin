@@ -192,7 +192,7 @@ def methodology_view(request):
             "page_description": (
                 "How visa-bulletin.us predicts priority-date movement: the regime-aware "
                 "near-term model, the longer-horizon gradient-boosted model, what the 80% "
-                "range means, data sources, and how we measure our own accuracy — honestly."
+                "range means, data sources, and how we measure our own accuracy."
             ),
             "canonical_url": request.build_absolute_uri("/methodology/"),
             "structured_data": json.dumps(
