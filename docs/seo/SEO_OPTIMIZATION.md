@@ -300,11 +300,18 @@ exactly that gap (the not-yet-published month).
   bulletins land. Inbound links FROM `/predictions/` (archive) and
   `/when-is-the-next-visa-bulletin/`.
 - Test: `tests/test_prediction_month_forecast.py`.
-- **Status (2026-06-23):** core shipped to `main` + sitemap + inbound links, suite
-  green. Pending: staging deploy + real-data render verify, prod graduation
-  (Path-1 image swap — pure rendering), CF edge purge + GSC sitemap submit, then
-  GSC measurement. Possible v2: emit +2/+3 month pages, embed the per-series
-  chart, surface confidence intervals.
+- **Status (2026-07-13, full-page audit):** live and the site's #2 traffic surface —
+  `/predictions/august-2026/` did 8,827 GSC clicks / 74,805 impr / 11.8% CTR /
+  pos 4.8 and 10.5k GoatCounter views over 06-13..07-13 (site total 86.4k). Top
+  queries are actual-bulletin intent ("visa bulletin august 2026" 2,446 clicks /
+  13,284 impr pos 3.0) ahead of prediction intent ("… predictions" 1,235 clicks,
+  pos 2.2); Spanish queries ~223 clicks/30d land here with no ES page (tracked).
+  Audit outcome: model side is at its documented 1m ceiling (persistence + T3
+  demand gate, calibrated 80% CIs); page-side follow-ups ticketed in Notion —
+  CF-edge purge missing from the bulletin-ingest path (stale page up to 1h at the
+  drop), post-drop archive title lacks "Visa Bulletin" (301-inherited query
+  equity), grid CIs hover-only (invisible on mobile), ES month pages + hreflang,
+  VQS ensemble re-tune.
 
 ## Top-H-1B-sponsors-per-role pages (`/h1b-sponsors/<job-title-slug>/`)
 
