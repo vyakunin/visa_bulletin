@@ -57,9 +57,12 @@ petitions that were <strong>selected and filed</strong> (372,841 rows) &mdash; n
 full registration pool. A frozen FOIA snapshot; per-beneficiary identifiers are
 redacted, so figures are aggregates only. Every number on this page was checked against
 the live database on 2026-07-13.</p>
-<p class="small text-muted mt-3">Related: <a href="/salaries/">H-1B &amp; PERM certified
-wages by employer, role and state</a> &middot; <a href="/analysis/">more data
-analysis</a>.</p>
+<p><strong>Custom data slices for research or reporting.</strong> If you're a researcher,
+academic or journalist and want a specific cut of this data &mdash; a breakdown by
+employer, occupation, country of birth, fiscal year, or any combination not shown here
+&mdash; <a href="/contact/">get in touch</a> and I'll put it together. Attribution to
+visa-bulletin.us is appreciated.</p>
+<p class="small text-muted mt-3"><a href="/analysis/">More data analysis</a>.</p>
 """
 
 
@@ -189,6 +192,13 @@ cannot be reconstructed (FOIA-redacted keys).</li>
 The named high-rate employers are shown with their petition counts for that reason.</li>
 <li>Coverage: FY2021&ndash;2024, cap-subject lottery petitions, frozen snapshot.</li>
 </ul>
+
+<h2>Explore the employers yourself</h2>
+<p>Look up any H-1B filer in the <a href="/employers/">employer directory</a> or the
+<a href="/employers/rankings/">sponsor rankings</a> &mdash; each employer profile shows
+that company's I-129 approval rate and how its reported pay compares to the posted wage.
+You can also <a href="/salaries/">search the certified-wage records</a> by employer, role
+and state.</p>
 """
     return Story(
         title="H-1B multi-registration tripled to 25% — and it wasn't the big outsourcers",
@@ -286,6 +296,14 @@ posted wage, and 71.8% are within &plusmn;1% of it. The often-cited "+19&ndash;2
 <strong>mean</strong> effect driven entirely by the upper quartile. So "H-1B workers are
 paid ~20% above the posted wage" is not a defensible summary; "the typical worker is paid
 the posted wage, and about one in four is paid above it, sometimes well above" is.</p>
+
+<h2>Explore the pay data yourself</h2>
+<p>The <a href="/h1b-salary/">H-1B salary explorer</a> shows reported-vs-posted pay for
+each occupation &mdash; for example
+<a href="/h1b-salary/software-engineer/">software engineers</a> &mdash; and
+<a href="/salaries/">the wage search</a> lets you filter certified H-1B and PERM wages by
+employer, role and state. Individual <a href="/employers/">employer profiles</a> break
+the same comparison down company by company.</p>
 """
     return Story(
         title="The H-1B “gender pay gap” is a sorting story, not an unequal-pay story",
@@ -364,6 +382,14 @@ k &le; 10 out of 759k). The only estimated input &mdash; the ~4.3 average regist
 conditioning; the unconditional number was practically meaningless pre-FY25, which is
 the whole point.</li>
 </ul>
+
+<h2>Explore the data yourself</h2>
+<p>The multi-registration behavior behind these odds is broken down in
+<a href="/analysis/h1b-multi-registration-lottery-gaming/">the multi-registration
+story</a>, and the pay side in
+<a href="/analysis/h1b-gender-pay-gap-decomposition/">the H-1B pay decomposition</a>.
+For the workers who were selected and filed, <a href="/salaries/">the wage search</a>
+shows certified pay by employer, role and state.</p>
 """
     return Story(
         title="H-1B lottery odds depended on how many times you were registered",
