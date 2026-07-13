@@ -237,7 +237,9 @@ def compute_bulletin_accuracy(
                         predicted_cutoff=date.fromisoformat(rd["predicted_cutoff"])
                         if rd["predicted_cutoff"]
                         else None,
-                        actual_cutoff=date.fromisoformat(rd["actual_cutoff"]),
+                        actual_cutoff=date.fromisoformat(rd["actual_cutoff"])
+                        if rd.get("actual_cutoff")
+                        else None,
                         error_days=rd["error_days"],
                         confidence_low=date.fromisoformat(rd["confidence_low"])
                         if rd.get("confidence_low")
@@ -1061,6 +1063,15 @@ def compute_composite_metric(
         total_hw += hw
     if total_hw > 0:
         composite /= total_hw
+    else:
+        # No evaluated horizon carries a configured weight (misconfigured horizon
+        # set vs horizon_weights). A 0.0 composite would read as a PERFECT score and
+        # be picked as the tuning optimum — surface it as worst instead.
+        logger.warning(
+            "composite_mae: no evaluated horizon has a weight (horizons vs "
+            "horizon_weights mismatch) — returning inf sentinel, not 0.0"
+        )
+        composite = float("inf")
 
     # Trend (direction) score per horizon
     trend_by_horizon: dict[int, dict] = {}

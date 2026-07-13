@@ -1011,6 +1011,21 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_prediction_audit_fixes",
+    size = "small",
+    srcs = ["test_prediction_audit_fixes.py"],
+    deps = [
+        "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:metric_config",
+        "//lib/business/vqs:prediction_loader",
+        "//models:bulletin",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+    ],
+)
+
+django_py_test(
     name = "test_data_cache",
     size = "small",
     srcs = ["test_data_cache.py"],

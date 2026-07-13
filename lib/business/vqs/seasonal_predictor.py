@@ -240,7 +240,7 @@ def get_historical_issuance_median(
         if str(dims.get("visa_class")) != str(visa_class):
             continue
 
-        if f.reference_period_start.month != target_month:
+        if f.reference_period_start is None or f.reference_period_start.month != target_month:
             continue
 
         # Extract value
