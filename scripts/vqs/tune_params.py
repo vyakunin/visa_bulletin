@@ -262,7 +262,9 @@ def _apply_gbm_params(gbm_params: dict) -> None:
 
     # Patch 1: 1m regression model
     def patched_train_1m(knowledge_date, action_type="filing"):
-        cache_key = ("reg1m", knowledge_date.year, knowledge_date.month)
+        # A3-F3: keep action_type in the key, consistent with gbm_expert (tuning
+        # uses only filing today, so this is consistency insurance, not a live bug).
+        cache_key = ("reg1m", action_type, knowledge_date.year, knowledge_date.month)
         if cache_key in _gbm._model_cache:
             return _gbm._model_cache[cache_key]
         model = _make_regressor()
@@ -280,7 +282,7 @@ def _apply_gbm_params(gbm_params: dict) -> None:
 
     # Patch 2: direct multi-horizon regression
     def patched_train_horizon(knowledge_date, horizon, action_type="filing"):
-        cache_key = ("direct", knowledge_date.year, knowledge_date.month, horizon)
+        cache_key = ("direct", action_type, knowledge_date.year, knowledge_date.month, horizon)
         if cache_key in _gbm._model_cache:
             return _gbm._model_cache[cache_key]
         model = _make_regressor()
@@ -301,7 +303,7 @@ def _apply_gbm_params(gbm_params: dict) -> None:
         knowledge_date, horizon, movement_threshold_local=None, action_type="filing"
     ):
         thr = movement_threshold_local if movement_threshold_local is not None else movement_threshold
-        cache_key = ("clf", knowledge_date.year, knowledge_date.month, horizon, thr)
+        cache_key = ("clf", action_type, knowledge_date.year, knowledge_date.month, horizon, thr)
         if cache_key in _gbm._classifier_cache:
             return _gbm._classifier_cache[cache_key]
         clf = _make_classifier()
