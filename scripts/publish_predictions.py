@@ -422,8 +422,15 @@ def publish_predictions(
                         )
                         m_meta = outcome.metadata
                         confidence = outcome.confidence
+                        # A2-F6: FS runs through the persistence branch, so attribute
+                        # it as persistence, not the dead "vqs_ensemble" fallback
+                        # (m_meta has no "model" key here).
                         if isinstance(m_meta, dict):
-                            model_name = m_meta.get("model") or "vqs_ensemble"
+                            model_name = (
+                                m_meta.get("model")
+                                or m_meta.get("selected_expert")
+                                or "persistence"
+                            )
                     elif (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
                         dispatch_key == _INDIA_EB1 and horizon_m < 6
                     ) or horizon_m == 1:
@@ -517,7 +524,6 @@ def publish_predictions(
                     low = None
                     high = None
                     expert_data = {}
-                    explanation = generate_explanation(m_meta, confidence)
 
                     if isinstance(m_meta, dict):
                         low = m_meta.get("confidence_low")
@@ -552,6 +558,14 @@ def publish_predictions(
                                     "pred": pred_date.isoformat() if pred_date else None,
                                     "weight": round(weights.get(name, 0), 4),
                                 }
+
+                    # A2-F5: generate the explanation from the FINAL (calibrated) CI,
+                    # not the pre-override expert-disagreement CI — otherwise a wide
+                    # calibrated interval could be captioned "narrow". Inject the
+                    # calibrated low/high into the metadata the explanation reads.
+                    if isinstance(m_meta, dict):
+                        m_meta = {**m_meta, "confidence_low": low, "confidence_high": high}
+                    explanation = generate_explanation(m_meta, confidence)
 
                     # Try to find actual if exists
                     actual_date = None

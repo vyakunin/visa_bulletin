@@ -226,8 +226,13 @@ def _get_i485_rows_most_recent(
         return []
 
     most_recent_pub = rows[0].publication_date
-    cutoff_pub = most_recent_pub - timedelta(days=180)
-    return [r for r in rows if r.publication_date >= cutoff_pub and r.publication_date == most_recent_pub]
+    # A3-F10: measure freshness against knowledge_date, not against most_recent_pub
+    # itself (which was vacuous — `pub == most_recent` trivially satisfies
+    # `pub >= most_recent-180d`). If the newest I-485 snapshot is more than ~6 months
+    # stale relative to the knowledge date, don't feed an arbitrarily old inventory.
+    if most_recent_pub < knowledge_date - timedelta(days=180):
+        return []
+    return [r for r in rows if r.publication_date == most_recent_pub]
 
 
 def _get_i485_queue(

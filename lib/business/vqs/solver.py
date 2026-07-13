@@ -504,7 +504,17 @@ def predict_regime_switched(
             "selected_expert": "persistence",
             "expert_preds": {},
         }
-        return SolverOutcome(current_cutoff, meta, None, [result], "low")
+        # A1-F10: honour priority_date. An applicant whose PD the (flat persistence)
+        # cutoff has already reached is matured NOW; the branch previously always
+        # returned maturity=None even for an already-current applicant.
+        persist_maturity = (
+            first_future
+            if priority_date is not None
+            and current_cutoff is not None
+            and current_cutoff >= priority_date
+            else None
+        )
+        return SolverOutcome(current_cutoff, meta, persist_maturity, [result], "low")
 
     expert_name = _select_expert_for_regime(
         regime_state, visa_class, country, target_month
@@ -1047,15 +1057,10 @@ def predict_next_bulletin_and_maturity(
         results.append(res)
         if i == 0:
             raw_next_cutoff = res.cutoff_date
-
-        if (
-            priority_date is not None
-            and res.cutoff_date is not None
-            and res.cutoff_date >= priority_date
-            and maturity_month is None
-        ):
-            maturity_month = res.month
-            break
+        # A1-F1: maturity is computed AFTER the persistence blend below, from the
+        # final dampened trajectory — not here from the pre-dampening ensemble
+        # trajectory (which reported an optimistic month) with a break that stopped
+        # the sim before the true post-dampening maturity could occur.
 
     # Regime-aware persistence blending for all predictions.
     # FY-aware mode uses phase-specific weights; standard mode uses regime-based weights.
@@ -1078,6 +1083,23 @@ def predict_next_bulletin_and_maturity(
         final_next_cutoff = meta.apply_post_step(
             current_cutoff, raw_next_cutoff, confidence, advancement_rate=avg_adv
         )
+
+    # A1-F2: the headline (final_next_cutoff) and results[0] are BOTH the
+    # month-1 prediction and must agree. They can diverge — most visibly when
+    # ensemble_traj is None (blend disabled): the headline is the ensemble value
+    # while results[0] stayed pure physics, so the spaghetti month-1 point
+    # disagreed with the published number. Pin results[0] to the headline.
+    if results:
+        results[0] = replace(results[0], cutoff_date=final_next_cutoff)
+
+    # A1-F1: maturity = first month of the FINAL (dampened + headline-consistent)
+    # trajectory whose cutoff has reached the applicant's priority date.
+    maturity_month = None
+    if priority_date is not None:
+        for res in results:
+            if res.cutoff_date is not None and res.cutoff_date >= priority_date:
+                maturity_month = res.month
+                break
 
     # Enrich metadata with regime and pace signals for explainability
     metadata["regime"] = regime_state.regime.value

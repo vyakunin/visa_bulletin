@@ -139,7 +139,16 @@ def _physics_prediction_impl(
         return None
 
     queue = build_virtual_queue_snapshot(knowledge_date, facts, visa_class, country)
-    supply = get_monthly_supply(knowledge_date, country=country, visa_class=visa_class)
+    # A1-F11: the first simulated month is the month AFTER knowledge_date
+    # (first_future), matching the other experts the solver blends positionally.
+    # Starting at knowledge_date predicted the CURRENT month, offsetting this
+    # expert one month early; supply is likewise taken for first_future's month
+    # (get_monthly_supply is FY-seasonal, so the month matters).
+    if knowledge_date.month == 12:
+        first_future = date(knowledge_date.year + 1, 1, 1)
+    else:
+        first_future = date(knowledge_date.year, knowledge_date.month + 1, 1)
+    supply = get_monthly_supply(first_future, country=country, visa_class=visa_class)
     calibrate_queue_depth(
         queue, current_cutoff, knowledge_date, supply,
         visa_class, country, action_type,
@@ -147,7 +156,7 @@ def _physics_prediction_impl(
 
     try:
         first_result = next(
-            run_monthly_loop(queue, current_cutoff, supply, start_month=knowledge_date, max_months=12)
+            run_monthly_loop(queue, current_cutoff, supply, start_month=first_future, max_months=12)
         )
         return first_result.cutoff_date
     except StopIteration:
@@ -313,7 +322,11 @@ def expert_i485_queue_depth(
     most_recent_date = i485_facts[0].publication_date
 
     for f in i485_facts:
-        if f.publication_date < most_recent_date - timedelta(days=120):
+        # A1-F6: i485_pending_inventory_monthly is a MONTHLY snapshot. The old
+        # 120-day window summed ~4 consecutive monthly snapshots → ~4x the true
+        # pending density. Use only the single freshest snapshot (rows are sorted
+        # descending by publication_date, so break once we leave it).
+        if f.publication_date != most_recent_date:
             break
         dims = f.dimensions if isinstance(f.dimensions, dict) else {}
         f_country = dims.get("country")
@@ -516,7 +529,11 @@ def _seasonal_chain_trajectory(
         target_month = ((knowledge_date.month + i) % 12) + 1
         move = get_seasonal_prediction(
             visa_class, country, action_type,
+            # A1-F3: match the single-step experts' lookback_years=4. Omitting it
+            # defaulted to ALL history, so multi-step trajectories chained
+            # pre-retrogression seasonal medians (phantom ~+30d/mo).
             knowledge_date=knowledge_date, target_month=target_month, min_samples=3,
+            lookback_years=4,
         )
         if move is not None:
             cutoff = cutoff + timedelta(days=move)
@@ -592,7 +609,11 @@ def trajectory_cross_series(
         target_month = ((knowledge_date.month + i) % 12) + 1
         move = get_seasonal_prediction(
             visa_class, country, action_type,
+            # A1-F3: match the single-step experts' lookback_years=4. Omitting it
+            # defaulted to ALL history, so multi-step trajectories chained
+            # pre-retrogression seasonal medians (phantom ~+30d/mo).
             knowledge_date=knowledge_date, target_month=target_month, min_samples=3,
+            lookback_years=4,
         )
         base_move = move if move is not None else 0
         adjusted_move = int(base_move * (1.0 - cross_series_weight) + eb1_recent_avg * cross_series_weight)
@@ -627,7 +648,9 @@ def trajectory_fy_reset(
         else:
             move = get_seasonal_prediction(
                 visa_class, country, action_type,
+                # A1-F3: match the single-step experts' lookback_years=4 (see above).
                 knowledge_date=knowledge_date, target_month=target_month, min_samples=3,
+                lookback_years=4,
             )
             if move is not None:
                 cutoff = cutoff + timedelta(days=move)
@@ -654,10 +677,16 @@ def trajectory_physics(
     if not current:
         return [None] * steps
     queue = build_virtual_queue_snapshot(knowledge_date, facts, visa_class, country)
-    supply = get_monthly_supply(knowledge_date, country=country, visa_class=visa_class)
+    # A1-F11: start the trajectory at first_future (month after knowledge_date),
+    # aligned with the other experts' positional indexing; supply for that month.
+    if knowledge_date.month == 12:
+        first_future = date(knowledge_date.year + 1, 1, 1)
+    else:
+        first_future = date(knowledge_date.year, knowledge_date.month + 1, 1)
+    supply = get_monthly_supply(first_future, country=country, visa_class=visa_class)
     calibrate_queue_depth(queue, current, knowledge_date, supply, visa_class, country, action_type)
     results: list[date | None] = []
-    for res in run_monthly_loop(queue, current, supply, start_month=knowledge_date, max_months=steps):
+    for res in run_monthly_loop(queue, current, supply, start_month=first_future, max_months=steps):
         results.append(res.cutoff_date)
     while len(results) < steps:
         results.append(results[-1] if results else None)

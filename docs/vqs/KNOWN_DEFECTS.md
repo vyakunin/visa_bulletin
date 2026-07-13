@@ -117,51 +117,55 @@ horizon-gap). PATH2 graduation bundled into the combined rollout.
   → no future-target rows with a future `prediction_date` mislabeled 1m polluting h=1
   calibration. The genuine next-month forecast is produced by the default no-args path.
 
-## THEME 5 — queue-physics value bugs (LIVE physics-eligible, PATH2) → ticket
-- **A5-F3** [LIVE,certain] `advance_cutoff` returns the consumed bucket's month, not the first
-  unserved, at an exact supply/bucket boundary → cutoff under-advances one month.
-  `queue_snapshot.py:71`.
-- **A5-F4** [LIVE,certain] naive demand spread `max(1, n//n_months)` adds phantom applicants
-  when receipts < months (n=2 over a quarter → 3 added). `demand.py:160-161`.
-- **A5-F5** [LIVE,certain] PERM-lag convolution per-bin `round()` loses mass (n=10 over 20 bins
-  @0.05 → round(0.5)=0 each → 0 added). `demand.py:151`.
-- **A5-F6** [LIVE,likely] convolution anchors all receipts at `reference_period_start` → PDs
-  bucketed ~1mo early vs the naive path. `demand.py:149-150`.
-- **A1-F7** [LIVE,certain] `get_retrogression_months_from_history` docstring says median but
-  computes **mean** (and drops sub-month retrogressions). `solver.py:333,371-379`.
-- **A1-F8** [LIVE,certain] October retro clamps day→1 → up to +30d extra retrogression each
-  simulated October. `solver.py:277-282`.
-- **A1-F6** [LIVE,likely] `expert_i485_queue_depth` sums pending across a 120-day window (multiple
-  monthly snapshots) for a `_monthly` metric → ~4× density. `expert_pool.py:315-326`.
-- **A3-F10** [LIVE,certain] `_get_i485_rows_most_recent` 6-month freshness guard is vacuous
-  (`>= most_recent-180d AND == most_recent`) → arbitrarily stale I-485 snapshots feed features.
-  `gbm_expert.py:228-230`.
-- **A5-F8** [LIVE-ish,likely] fy_utilization denominator always uses the 7% cap → ROW rates ~8.6×,
-  uncapped >1, inconsistent with the supply model's shares. `fy_utilization.py:107-108`.
+## ✅ THEME 5 — queue-physics value bugs — CODE FIXED 2026-07-13 (commit 4006065 + this)
+Physics-value fixes. Commit 4006065 (5a) = A5-F3/F4/F5/F6 + A1-F7/F8; this commit (5b) =
+A1-F6 + A3-F10. Tests: `TestQueuePhysics`. PATH2 graduation bundled into the combined rollout.
+- ✅ **A5-F3** [LIVE,certain] `advance_cutoff` advances to the first of the NEXT month when a
+  bucket is fully served (was the consumed bucket's month). `queue_snapshot.py`.
+- ✅ **A5-F4** [LIVE,certain] naive demand spread floor-divides + distributes the remainder
+  (was `max(1, n//n_months)` → phantom applicants). `demand.py`.
+- ✅ **A5-F5** [LIVE,certain] PERM-lag convolution accumulates float mass per bucket + apportions
+  via largest-remainder (`_apportion_ints`) instead of per-bin round(). `demand.py`.
+- ✅ **A5-F6** [LIVE,likely] convolution anchors at the reference-period MIDPOINT. `demand.py`.
+- ✅ **A1-F7** [LIVE,certain] `get_retrogression_months_from_history` returns the MEDIAN
+  (day-based, includes sub-month retros). `solver.py`.
+- ✅ **A1-F8** [LIVE,certain] October retro preserves the day-of-month (was clamped to day 1).
+  `solver.py`.
+- ✅ **A1-F6** [LIVE,likely] `expert_i485_queue_depth` uses only the single freshest monthly
+  snapshot (was a 120-day window → ~4× density). `expert_pool.py`.
+- ✅ **A3-F10** [LIVE,certain] `_get_i485_rows_most_recent` freshness now measured vs
+  `knowledge_date` (returns [] if the newest snapshot is >180d stale). `gbm_expert.py`.
+- **A5-F8** [likely] → **RE-GROUPED to Theme 7**: `compute_utilization_rate`'s 7%-cap
+  denominator feeds ONLY the experimental (off-by-default) FY-transition path, and the correct
+  fix needs the allocator's per-country shares. Fix with Theme 7 / when FY-transition is enabled.
+  `fy_utilization.py:107-108`.
 
-## THEME 6 — solver output-consistency (LIVE, PATH2) → ticket
-- **A1-F1** [LIVE,certain] `maturity_month` is set from the pre-persistence-blend trajectory then
-  every result is dampened + the loop `break`s → reported maturity is optimistic and the true
-  post-dampening maturity month is never simulated. `solver.py:1026-1046`.
-- **A1-F2** [LIVE,certain] headline `predicted_cutoff` (pure-ensemble→persistence) ≠ `results[0]`
-  (physics+ens_traj→persistence); when `ensemble_traj is None`, `results[0]` stays pure physics
-  while the headline is ensemble → spaghetti month-1 disagrees with the published number.
-  `solver.py:1010-1020` vs `1048-1051`.
-- **A1-F10** [LIVE,certain] `predict_regime_switched` non-eligible branch ignores `priority_date`
-  → maturity None even for an already-matured applicant. `solver.py:484-492`.
-- **A1-F3** [LIVE,certain] multi-step trajectories omit `lookback_years=4` that the single-step
-  experts pass → steps 1+ chain pre-retrogression seasonal medians (phantom +30d/mo).
-  `expert_pool.py:517-520,593-596,628-631`.
-- **A1-F11** [LIVE,likely] `expert_physics`/`trajectory_physics` start the loop at `knowledge_date`
-  not `first_future` → supply for the wrong month + trajectory index misaligned vs other experts
-  the solver blends positionally. `expert_pool.py:142,150,657,660`.
-- **A2-F5** [LIVE,certain,SAFE-on-next-publish] explanation text generated before the calibrated CI
-  overrides low/high → a wide CI captioned "narrow". `publish_predictions.py:499`.
-- **A2-F6** [attribution] FS `model_name` always "vqs_ensemble" though it's pure persistence;
-  `m_meta.get("model")` is dead. `publish_predictions.py:404-405`.
+## ✅ THEME 6 — solver output-consistency — CODE FIXED 2026-07-13 (this commit)
+Solver-internal consistency + attribution. PATH2 graduation bundled into the combined rollout.
+Verified by the existing solver suites staying green + the combined backtest (solver internals
+are impractical to unit-test without heavy fixtures).
+- ✅ **A1-F1** [LIVE,certain] `maturity_month` computed AFTER the persistence blend from the final
+  dampened + headline-consistent trajectory; removed the premature in-loop break. `solver.py`.
+- ✅ **A1-F2** [LIVE,certain] `results[0]` pinned to the headline `final_next_cutoff` so the
+  spaghetti month-1 point agrees with the published number. `solver.py`.
+- ✅ **A1-F10** [LIVE,certain] `predict_regime_switched` non-eligible branch now honours
+  `priority_date` (matures an already-current applicant). `solver.py`.
+- ✅ **A1-F3** [LIVE,certain] multi-step trajectories now pass `lookback_years=4` (matching the
+  single-step experts) so they don't chain pre-retrogression seasonal medians. `expert_pool.py`.
+- ✅ **A1-F11** [LIVE,likely] `expert_physics`/`trajectory_physics` start the loop at
+  `first_future` (+ supply for that month), aligned with the other experts. `expert_pool.py`.
+- ✅ **A2-F5** [LIVE,certain] explanation generated AFTER the calibrated CI override (injected into
+  metadata) so a wide CI isn't captioned "narrow". `publish_predictions.py`.
+- ✅ **A2-F6** [attribution] FS `model_name` now `persistence` (was the dead "vqs_ensemble"
+  fallback). `publish_predictions.py`.
 
 ## THEME 7 — FY-transition / october-reset (mostly NOT live — experimental) → ticket (low)
 `fy_transition_model` is experimental/off by default (README). Fix before enabling.
+- **A5-F8** [likely] (re-grouped from Theme 5) `compute_utilization_rate` divides by the 7%
+  per-country cap even for ROW/All-Chargeability (which isn't 7%-capped) → ROW rates ~8.6×,
+  uncapped >1. Feeds ONLY the experimental FY-transition path. The correct denominator needs
+  the allocator's per-country share (`supply/country_cap.py`), so fix it together with the
+  FY-transition enablement, not as a blind constant swap. `fy_utilization.py:107-108`.
 - **A5-F1** [BACKTEST,certain] LOO excludes the wrong year (fiscal_year=cal year vs
   `get_fiscal_year` key) → Aug/Sep target leakage. `fy_transition_model.py:119-120`.
 - **A5-F12** [certain] September momentum `*1.2` amplifies an *advance* under a deceleration
