@@ -59,6 +59,14 @@ class DatasetSchemaTest(TestCase):
             self.assertIn("Department of Labor", source_names)
             self.assertIn("Department of State", source_names)
             self.assertIn("USCIS", source_names)
+            # Google Dataset requires `description` on EVERY Dataset node, incl. the
+            # isBasedOn sources — omitting it is a critical Rich-Results error that
+            # makes the source ineligible (regression: 2026-07-13 shipped without it).
+            for src in ds["isBasedOn"]:
+                self.assertTrue(
+                    src.get("description", "").strip(),
+                    f"isBasedOn source {src.get('name')!r} needs a non-empty description",
+                )
 
     def test_dataset_is_head_only_so_no_layout_shift(self):
         # JSON-LD in <head> renders no visible DOM -> zero CLS. Pin the Dataset block
