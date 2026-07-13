@@ -324,8 +324,8 @@ class TestAggregatorWeightIntegrity:
     def test_warmup_scores_at_day_before_publication(self, monkeypatch):
         # A4-F1: each warmup step must score at pub_date - 1 (mirroring live), not
         # at pub_date (which hands persistence the answer).
-        from lib.business.vqs import aggregator as agg_mod
         import models.visa_cutoff_date as vcd_mod
+        from lib.business.vqs import aggregator as agg_mod
 
         class _Chain:
             def __init__(self, rows):
@@ -370,6 +370,25 @@ class TestAggregatorWeightIntegrity:
         agg.warmup_history("2nd", 3, "filing", date(2025, 1, 1))
         assert seen_predict_kd == [date(2024, 1, 31)]  # pub_date - 1, not 2024-02-01
         assert seen_update_kd == [date(2024, 1, 31)]
+
+
+class TestDirectionCorrectSymmetry:
+    """A4-F5: trend-direction scoring must be symmetric. A held month
+    (actual didn't move) counts a predicted move as WRONG, not as an excluded
+    None — the old logic only ever returned True/None on held months, inflating
+    trend accuracy on the common no-movement case."""
+
+    def test_direction_correct_matrix(self):
+        from lib.business.vqs.accuracy_metrics import _direction_correct
+
+        assert _direction_correct(0, 0) is True       # held, predicted held → right
+        assert _direction_correct(30, 0) is False      # held, predicted move → WRONG (was None)
+        assert _direction_correct(-30, 0) is False     # held, predicted retro → WRONG
+        assert _direction_correct(30, 30) is True       # advanced, predicted advance
+        assert _direction_correct(-30, -30) is True     # retro, predicted retro
+        assert _direction_correct(-30, 30) is False     # advanced, predicted retro
+        assert _direction_correct(30, -30) is False     # retro, predicted advance
+        assert _direction_correct(0, 30) is False       # advanced, predicted held
 
 
 class TestStoredPredictionSelection(TestCase):

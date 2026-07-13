@@ -74,36 +74,33 @@ fix-4 MUST re-run on this corrected code.**
 - NOTE: calibration backtest twins A3-F6 (same off-by-one) + A3-F7 (unobservable actuals)
   remain in Theme 3 (`calibration.py`).
 
-## THEME 3 — backtest/tuning-metric integrity (TUNE, qualifies fix-4) → ticket
-These corrupt the objective the §24/fix-4 re-tune optimizes; fix + re-validate BEFORE
-trusting any re-tune result.
-- **A4-F1** [TUNE,certain] `ExpertAggregator.warmup_history` replays with
-  `knowledge_date = the scored bulletin's own pub_date`; `get_cutoff_at_date` is inclusive
-  → persistence gets loss 0 every warmup step → weights converge to persistence regardless
-  of skill (live path uses t−1day). `aggregator.py:301,292-297`.
-- **A4-F2** [TUNE,likely] online update feeds actuals up to 11 months in the future into the
-  weights used for the next scored predictions → lookahead leak. `accuracy_metrics.py:364-376`.
-- **A4-F5** [BACKTEST,certain] `direction_correct`: (actual==0, pred≠0) → None → *excluded*
-  not counted wrong, while (0,0) counts correct → asymmetric, inflates trend accuracy on
-  the common held-month case. `accuracy_metrics.py:962-968,892-898`.
-- **A4-F6** [BACKTEST,certain] long-term metric records `error_days=0` (perfect) for
-  unverifiable predictions between last bulletin and today. `accuracy_metrics.py:608-611`.
-- **A4-F9** [BACKTEST,certain] `horizon!=1` runs feed the h-actual as the h=1 actual to
-  `aggregator.update`. `accuracy_metrics.py:369-376`.
-- **A4-F12** [BACKTEST,certain] multi-horizon bulletin trim off-by-one (`_add_months(b,max_h)`
-  should be `max_h-1`) → last evaluable bulletin dropped. `accuracy_metrics.py:802-804`.
-- **A4-F7** [TUNE,likely] (re-grouped from Theme 1) warmup/weight-update paths train on
-  is_current sentinel actuals the error metrics exclude. `accuracy_metrics.py:166-174`.
-- **A3-F2** (see Theme 2) also lands here.
-- **A3-F6** [BACKTEST,likely] calibration backtest-error supplement has the same B-1→B+1
-  off-by-one as A3-F1. `calibration.py:99-123`.
-- **A3-F7** [BACKTEST,likely] calibration includes stored-prediction errors whose actual
-  wasn't observable at knowledge_date (filters only on prediction_date). `calibration.py:73-74`.
-- **A4-F3/F4** [TUNE,likely] Expert + Contextual aggregator weight keys omit `action_type`
-  → final_action/filing share one weight vector + 2nd action's warmup skipped.
-  `aggregator.py:35-36,275-276`; `contextual_aggregator.py:46-47`.
-- **A4-F8** [TUNE,likely] abstaining experts get Hedge loss 0 → a never-predicting expert's
-  weight grows to 1 and swamps the blend when it wakes. `aggregator.py:203-204`.
+## ✅ THEME 3 — backtest/tuning-metric integrity — CODE FIXED 2026-07-13 (commits 1f6406f + this)
+These corrupted the objective the §24/fix-4 re-tune optimizes; **fixed BEFORE re-running
+fix-4**. Aggregator part = commit 1f6406f (Theme 3a); accuracy_metrics + calibration =
+this commit (Theme 3b). Tests: `TestAggregatorWeightIntegrity`, `TestDirectionCorrectSymmetry`.
+- ✅ **A4-F1** [TUNE→LIVE,certain] `warmup_history` now scores each bulletin at `pub_date−1`
+  (was pub_date, giving persistence loss 0 every step → weight collapse). `aggregator.py`.
+- ✅ **A4-F2** [TUNE] online walk-forward update no longer feeds future (3/6/12-mo-ahead)
+  actuals — restricted to the immediately-observable next-bulletin actual. `accuracy_metrics.py`.
+- ✅ **A4-F5** [BACKTEST] `_direction_correct` extracted + made symmetric: held-month
+  (actual==0) counts a predicted move as WRONG, not None. `accuracy_metrics.py`.
+- ✅ **A4-F6** [BACKTEST] long-term metric: predictions whose ready-month is between the last
+  bulletin and today now score `None` (unverifiable), not a phantom `error_days=0`.
+- ✅ **A4-F9** [BACKTEST] online update runs ONLY at horizon 1, so the h-actual is never fed
+  as the h=1 actual. `accuracy_metrics.py`.
+- ✅ **A4-F12** [BACKTEST] multi-horizon trim now `_add_months(b, max_h−1)` → last evaluable
+  bulletin kept. `accuracy_metrics.py`.
+- ✅ **A4-F7** [TUNE] (re-grouped from Theme 1) resolved by removing the leaky
+  `_build_actuals_by_horizon` online path (its only caller was the A4-F2 update).
+- ✅ **A3-F6** [BACKTEST] calibration backtest supplement 1m actual now = cutoff(B) not
+  cutoff(B+1) (same fix as A3-F1). `calibration.py`.
+- ✅ **A3-F7** [BACKTEST] calibration skips stored predictions whose target month is on/after
+  knowledge_date (actual not yet observable). `calibration.py`.
+- ✅ **A4-F3/F4** [TUNE] Expert + Contextual aggregator weight keys now include `action_type`.
+  `aggregator.py`; `contextual_aggregator.py`.
+- ✅ **A4-F8** [TUNE] abstaining experts get the field's mean active-loss factor → relative
+  weight unchanged (was factor 1.0, which ballooned a sleeper's weight). `aggregator.py`.
+- **A3-F2** (Theme 2) also landed here — fixed in Theme 2.
 
 ## THEME 4 — multi-horizon backfill semantics (LIVE, `--horizon>1`) → ticket
 - **A2-F3** [LIVE,certain,PATH2] (re-grouped from Theme 1) every FS series publishes

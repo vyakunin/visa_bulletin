@@ -148,33 +148,6 @@ def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]] | None:
         return None
 
 
-def _build_actuals_by_horizon(
-    visa_class: str,
-    country: int,
-    action_type: str,
-    pub_date: date,
-    horizon_weights: dict[int, float],
-) -> dict[int, date] | None:
-    """Look up actual cutoffs at h=3,6,12 months ahead for online learning."""
-    from lib.business.vqs.data_cache import get_cutoff_at_date
-
-    horizons_needed = [h for h in horizon_weights if h > 1]
-    if not horizons_needed:
-        return None
-    abh: dict[int, date] = {}
-    for h in horizons_needed:
-        target_pub = _add_months(pub_date, h - 1)
-        future_actual = get_cutoff_at_date(
-            visa_class=visa_class,
-            country=country,
-            action_type=action_type,
-            as_of=target_pub,
-        )
-        if future_actual is not None:
-            abh[h] = future_actual
-    return abh if abh else None
-
-
 def compute_bulletin_accuracy(
     bulletins=None,
     visa_category: str = "employment_based",
@@ -362,19 +335,21 @@ def compute_bulletin_accuracy(
                 ):
                     error_days = abs((pred_cutoff - actual).days)
 
-            # Online Learning Update with multi-horizon actuals
-            if aggregator and actual is not None:
-                abh = _build_actuals_by_horizon(
-                    row.visa_class, row.country, row.action_type, t,
-                    aggregator.metric_config.horizon_weights,
-                )
+            # Online Learning Update — ONLY at horizon 1, and ONLY with the
+            # immediately-observable next-bulletin actual.
+            # A4-F2: the old path fed actuals 3/6/12 months AHEAD of the knowledge
+            # date into the weight update, so weights used for later scored
+            # predictions incorporated the future (lookahead leak into the metric).
+            # A4-F9: for horizon>1, `actual` is the h-horizon actual, and passing it
+            # as the h=1 `actual_cutoff` mis-scored every expert. The multi-horizon
+            # weight learning is done (correctly, on past data) by warmup_history.
+            if aggregator and actual is not None and horizon == 1:
                 aggregator.update(
                     row.visa_class,
                     row.country,
                     knowledge_date,
                     actual,
                     action_type=row.action_type,
-                    actuals_by_horizon=abh,
                 )
 
             # Extract confidence intervals from metadata if available
@@ -607,7 +582,14 @@ def compute_longterm_accuracy(
             if actual_ready_month is not None:
                 error_days = abs((actual_ready_month - pred_ready_month).days)
             else:
-                if pred_ready_month < today:
+                # A4-F6: only penalise when a bulletin that SHOULD have shown the
+                # predicted ready date has already been published without it
+                # (pred_ready_month <= last_bulletin_date). A prediction whose ready
+                # month falls between the last bulletin and today is not yet
+                # verifiable — leave error_days=None (excluded), not a phantom 0
+                # (the old `< today` test made `diff` negative → max(0, …) = 0 =
+                # "perfect" for every such unverifiable prediction).
+                if pred_ready_month <= last_bulletin_date:
                     diff = (last_bulletin_date - pred_ready_month).days
                     error_days = max(0, int(1.5 * diff))
                     error_note = "pred_past_not_seen"
@@ -744,6 +726,19 @@ def compare_to_no_change_baseline(
     }
 
 
+def _direction_correct(pred_move: int, actual_move: int) -> bool:
+    """Did the prediction get the sign of movement right? (A4-F5)
+
+    Symmetric: a held month (actual_move == 0) counts a no-move prediction as
+    correct and ANY predicted move as WRONG. When the actual moved, the signs must
+    match. The old inline logic left the (actual 0, predicted non-0) case as None,
+    which excluded a wrong prediction and inflated trend accuracy on held months.
+    """
+    if actual_move == 0:
+        return pred_move == 0
+    return (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
+
+
 def _add_months(d: date, months: int) -> date:
     """Return first day of month d + months."""
     year, month = d.year, d.month
@@ -801,8 +796,12 @@ def compute_multi_horizon_accuracy(
     if not all_pub_dates:
         return []
     last_available = all_pub_dates[-1]
+    # A4-F12: the horizon-h target is at _add_months(pub_date, h-1) (see the eval
+    # loop), so a bulletin is evaluable at max_horizon iff _add_months(b,
+    # max_horizon-1) <= last_available. Using max_horizon dropped the last
+    # genuinely-evaluable bulletin.
     eval_bulletins = [
-        b for b in all_pub_dates if _add_months(b, max_horizon) <= last_available
+        b for b in all_pub_dates if _add_months(b, max_horizon - 1) <= last_available
     ]
 
     target_classes = QUEUE_DRIVEN_CLASSES if exclude_eb4 else EVALUABLE_VISA_CLASSES
@@ -891,13 +890,7 @@ def compute_multi_horizon_accuracy(
                         if current_cutoff is not None:
                             pred_move = (pred - current_cutoff).days
                             actual_move = (actual - current_cutoff).days
-                            if actual_move == 0 and pred_move == 0:
-                                direction_correct = True
-                            elif actual_move != 0:
-                                direction_correct = (
-                                    (pred_move > 0 and actual_move > 0)
-                                    or (pred_move < 0 and actual_move < 0)
-                                )
+                            direction_correct = _direction_correct(pred_move, actual_move)
 
                     rows.append(
                         MultiHorizonRow(
@@ -961,13 +954,7 @@ def compute_multi_horizon_accuracy(
                     if current_cutoff is not None:
                         pred_move = (pred - current_cutoff).days
                         actual_move = (actual - current_cutoff).days
-                        if actual_move == 0 and pred_move == 0:
-                            direction_correct = True
-                        elif actual_move != 0:
-                            direction_correct = (
-                                (pred_move > 0 and actual_move > 0)
-                                or (pred_move < 0 and actual_move < 0)
-                            )
+                        direction_correct = _direction_correct(pred_move, actual_move)
 
                 rows.append(
                     MultiHorizonRow(
