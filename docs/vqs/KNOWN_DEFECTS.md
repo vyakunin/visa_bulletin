@@ -26,31 +26,34 @@ graduate, needs backtest re-validation) · DECISION (needs product judgment).
 
 ---
 
-## THEME 1 — "Current/Unavailable" stale-cutoff (systemic, LIVE) → ticket
+## ✅ THEME 1 — "Current/Unavailable" stale-cutoff (systemic, LIVE) — CODE FIXED 2026-07-13
 Root cause: `get_cutoff_at_date` reads a cache filtered `cutoff_date__isnull=False`
 (`data_cache.py:64`), so for a series that has gone **Current/Unavailable** it returns
 the last *real* cutoff (years old) instead of None. The correct helpers
 `is_current_at_date` / `is_unavailable_at_date` / `_latest_full_entry_at_date` exist
-but are applied inconsistently. Every consumer that reasons "None ⇒ Current" is wrong.
-- **A3-F4** [LIVE,certain,PATH2] GBM features `eb1_surplus_indicator` + `row_is_current`
-  can never fire during a Current spell → the spillover/velocity leading indicators are
-  silently dead exactly when they matter. `gbm_expert.py:396-398,421-422`.
-- **A2-F3** [LIVE,certain,PATH2] every FS series publishes `predicted_date=None` in any
-  `--horizon>1` run (FS not physics-eligible → `results` has one month=`first_future`;
-  `next(r.month==target)` → None). `publish_predictions.py:393-401`.
-- **A2-F7** [LIVE,likely,PATH2] Unavailable guard is EB-only (`visa_class in _EB_CLASSES`)
-  → an FS series marked "U" publishes a stale pre-U cutoff. `publish_predictions.py:322`.
-- **A1-F4** [LIVE,likely,PATH2] `predict_next_bulletin_and_maturity` non-eligible branch
-  lacks the `is_current_at_date` guard `predict_regime_switched` has → returns stale
-  years-old cutoff not None. `solver.py:771-803` vs `479-484`.
-- **A5-F2** [DEAD→PATH2,certain] `CascadeModel` bonus never fires for Current higher-pref
-  series (checks `cutoff is None`) → effectively dead. `supply/cascade.py:28,42`.
-- **A5-F9** [LIVE-ish,certain,PATH2] `compute_backlog_depth` reports huge phantom backlog
-  for Current series → skews fy_transition NN weights. `fy_utilization.py:143-146`.
-- **A4-F7** [TUNE,likely] weight-update/warmup paths train on is_current sentinel actuals
-  the error metrics exclude. `accuracy_metrics.py:166-174` + warmup queries.
-Fix once: a knowledge-date-aware "is this series Current/Unavailable as of kd?" that
-returns None, applied at every site above. Then regen + re-validate.
+but were applied inconsistently. Every consumer that reasoned "None ⇒ Current" was wrong.
+Fix: applied the knowledge-date-aware `is_current_at_date` / `is_unavailable_at_date`
+predicates at every consumer site. Regression tests in
+`tests/test_prediction_audit_fixes.py::TestCurrentUnavailableGuard`.
+**Code + tests landed on `main`; PATH2 graduation (regen + graduate the corrected
+predictions) is bundled into the combined graduation (ticket #7 / fix-4).**
+- ✅ **A3-F4** [LIVE,PATH2] GBM `_get_eb1_surplus_indicator` + `_get_row_velocity` now use
+  `is_current_at_date` (were `cutoff is None`, which never fired). `gbm_expert.py`.
+- ✅ **A2-F7** [LIVE,PATH2] Unavailable guard now applies to FS too; EB october-reset
+  framing kept EB-only, generic Unavailable explanation for FS. `publish_predictions.py`.
+- ✅ **A1-F4** [LIVE,PATH2] `predict_next_bulletin_and_maturity` non-eligible branch now
+  has the Current+Unavailable→None guard (mirrors `predict_regime_switched`). `solver.py`.
+- ✅ **A5-F2** [PATH2] `CascadeModel` bonus now fires for a Current higher-pref series
+  (uses `is_current_at_date`). `supply/cascade.py`.
+- ✅ **A5-F9** [experimental] `compute_backlog_depth` → 0 for Current, None for Unavailable
+  (was huge phantom backlog). `fy_utilization.py`.
+- **A2-F3** [LIVE,certain,PATH2] → **RE-GROUPED to Theme 4** (multi-horizon): every FS
+  series publishes `predicted_date=None` in `--horizon>1` runs because the non-eligible
+  persistence branch returns only one month (`first_future`); this is a multi-horizon
+  dispatch bug, fixed with the rest of Theme 4. `publish_predictions.py:393-401`.
+- **A4-F7** [TUNE,likely] → **RE-GROUPED to Theme 3** (tuning-metric): warmup/weight-update
+  paths train on is_current sentinel actuals the error metrics exclude — a metric-integrity
+  issue, fixed with the accuracy_metrics cluster. `accuracy_metrics.py:166-174`.
 
 ## THEME 2 — GBM training-label off-by-one + leakage + cache key (LIVE + TUNE) → ticket
 - **A3-F3** [LIVE,certain,PATH2] all 3 GBM caches omit `action_type` (`gbm_expert.py:744,
@@ -89,6 +92,8 @@ trusting any re-tune result.
   `aggregator.update`. `accuracy_metrics.py:369-376`.
 - **A4-F12** [BACKTEST,certain] multi-horizon bulletin trim off-by-one (`_add_months(b,max_h)`
   should be `max_h-1`) → last evaluable bulletin dropped. `accuracy_metrics.py:802-804`.
+- **A4-F7** [TUNE,likely] (re-grouped from Theme 1) warmup/weight-update paths train on
+  is_current sentinel actuals the error metrics exclude. `accuracy_metrics.py:166-174`.
 - **A3-F2** (see Theme 2) also lands here.
 - **A3-F6** [BACKTEST,likely] calibration backtest-error supplement has the same B-1→B+1
   off-by-one as A3-F1. `calibration.py:99-123`.
@@ -101,6 +106,10 @@ trusting any re-tune result.
   weight grows to 1 and swamps the blend when it wakes. `aggregator.py:203-204`.
 
 ## THEME 4 — multi-horizon backfill semantics (LIVE, `--horizon>1`) → ticket
+- **A2-F3** [LIVE,certain,PATH2] (re-grouped from Theme 1) every FS series publishes
+  `predicted_date=None` in any `--horizon>1` run: FS is not physics-eligible so the
+  non-eligible branch returns one month (`first_future`); `next(r.month==target)` → None.
+  Fix with the multi-horizon dispatch. `publish_predictions.py:393-401`.
 - **A2-F1** [LIVE,certain,PATH2] `--horizon N` computes an actual month-gap of **N+1** (earlier
   bulletin pub=1st, knowledge=prev-day), so dispatch/GBM-arg/stored `prediction_date` all encode
   N+1 while labeled N; boundary mis-dispatch (`--horizon 11`→h=12 routes China EB-1 to GBM not

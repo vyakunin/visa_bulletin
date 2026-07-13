@@ -6,6 +6,9 @@ cover the non-value-changing fixes shipped from the audit; the value-changing
 """
 
 from datetime import date
+from types import SimpleNamespace
+
+import pytest
 
 from tests.django_setup import setup_django_for_tests
 
@@ -53,6 +56,105 @@ class TestCompositeNoWeightSentinel:
         result = compute_composite_metric(rows, config=cfg)
         assert result["composite_mae"] < float("inf")
         assert result["composite_mae"] > 0
+
+
+class TestCurrentUnavailableGuard:
+    """THEME 1: a series that has gone Current/Unavailable must NOT be treated as
+    if its last real (years-old) cutoff still applies.
+
+    Root cause: get_cutoff_at_date reads a cache filtered to non-null cutoffs, so
+    during a Current/Unavailable spell it returns the STALE last-real cutoff, not
+    None. Every consumer that reasoned `cutoff is None ⇒ Current` was silently
+    dead. These tests inject that exact cache state (stale non-null cutoff + a
+    newer Current/Unavailable full-entry) and assert the consumers now react.
+    """
+
+    KEY = ("2nd", Country.INDIA.value, "final_action")
+    EB1_KEY = ("1st", Country.INDIA.value, "final_action")
+
+    def _entry(self, pub: date, cutoff=None, is_current=False, is_unavailable=False):
+        return SimpleNamespace(
+            bulletin=SimpleNamespace(publication_date=pub),
+            cutoff_date=cutoff,
+            is_current=is_current,
+            is_unavailable=is_unavailable,
+        )
+
+    def _inject(self, key, *, state: str):
+        """Populate both caches for a series whose last REAL cutoff is 2020-01-01
+        (published 2022) and which then went `state` (current/unavailable) in 2023."""
+        from lib.business.vqs import data_cache
+
+        real = self._entry(date(2022, 1, 1), cutoff=date(2020, 1, 1))
+        spell = self._entry(
+            date(2023, 1, 1),
+            is_current=(state == "current"),
+            is_unavailable=(state == "unavailable"),
+        )
+        # Non-null-cutoff cache (what get_cutoff_at_date reads) sees ONLY the real row.
+        data_cache._CUTOFF_CACHE[key] = [real]
+        data_cache._PUB_DATE_CACHE[key] = [real.bulletin.publication_date]
+        # Full-entry cache (what is_current/is_unavailable read) sees both.
+        data_cache._CURRENT_CACHE[key] = [real, spell]
+        data_cache._CURRENT_PUB_DATES[key] = [
+            real.bulletin.publication_date, spell.bulletin.publication_date
+        ]
+
+    @pytest.fixture(autouse=True)
+    def _clear(self):
+        from lib.business.vqs import data_cache
+
+        for c in (data_cache._CUTOFF_CACHE, data_cache._PUB_DATE_CACHE,
+                  data_cache._CURRENT_CACHE, data_cache._CURRENT_PUB_DATES):
+            c.clear()
+        yield
+        for c in (data_cache._CUTOFF_CACHE, data_cache._PUB_DATE_CACHE,
+                  data_cache._CURRENT_CACHE, data_cache._CURRENT_PUB_DATES):
+            c.clear()
+
+    def test_root_cause_get_cutoff_stale_while_is_current_true(self):
+        # The trap itself: during a Current spell get_cutoff_at_date returns the
+        # stale 2020 date (NOT None), while is_current_at_date correctly says True.
+        from lib.business.vqs import data_cache
+
+        self._inject(self.KEY, state="current")
+        as_of = date(2024, 6, 1)
+        assert data_cache.get_cutoff_at_date(*self.KEY, as_of=as_of) == date(2020, 1, 1)
+        assert data_cache.is_current_at_date(*self.KEY, as_of=as_of) is True
+
+    def test_backlog_depth_zero_for_current_not_phantom_years(self):
+        # A5-F9: was (2024-06-01 − 2020-01-01) ≈ 1600 phantom days; must be 0.
+        from lib.business.vqs.fy_utilization import compute_backlog_depth
+
+        self._inject(self.KEY, state="current")
+        assert compute_backlog_depth(*self.KEY, knowledge_date=date(2024, 6, 1)) == 0
+
+    def test_backlog_depth_none_for_unavailable(self):
+        # A5-F9: Unavailable → depth not derivable from a stale cutoff → None.
+        from lib.business.vqs.fy_utilization import compute_backlog_depth
+
+        self._inject(self.KEY, state="unavailable")
+        assert compute_backlog_depth(*self.KEY, knowledge_date=date(2024, 6, 1)) is None
+
+    def test_eb1_surplus_indicator_fires_during_current_spell(self):
+        # A3-F4: EB-1 Current must set the spillover indicator to 1.0; it was
+        # stuck at 0.0 because get_cutoff_at_date returned a stale non-None date.
+        from lib.business.vqs.gbm_expert import _get_eb1_surplus_indicator
+
+        self._inject(self.EB1_KEY, state="current")
+        assert _get_eb1_surplus_indicator(
+            Country.INDIA.value, "final_action", date(2024, 6, 1)
+        ) == 1.0
+
+    def test_cascade_bonus_fires_for_current_higher_preference(self):
+        # A5-F2: EB-1 Current → surplus falls down to EB-2; bonus must be > 0.
+        from lib.business.vqs.supply.cascade import CascadeModel
+
+        self._inject(self.EB1_KEY, state="current")
+        bonus = CascadeModel().estimate_cascade_bonus(
+            "2nd", Country.INDIA.value, date(2024, 6, 1), date(2024, 6, 1)
+        )
+        assert bonus > 0
 
 
 class TestStoredPredictionSelection(TestCase):

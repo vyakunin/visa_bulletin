@@ -387,14 +387,15 @@ def _get_eb1_surplus_indicator(
     """1 if EB-1 same country had Current status (no cutoff) in last 3 months, else 0.
 
     EB-1 going Current means surplus visas may spill over into EB-2/3.
-    "Current" is represented as cutoff_date = None in the DB.
     """
-    from lib.business.vqs.data_cache import get_cutoff_at_date
+    from lib.business.vqs.data_cache import is_current_at_date
 
     for months_back in range(1, 4):
         check_date = knowledge_date - timedelta(days=30 * months_back)
-        cutoff = get_cutoff_at_date("1st", country, action_type, check_date)
-        if cutoff is None:
+        # Must use is_current_at_date, NOT `get_cutoff_at_date(...) is None`:
+        # the latter returns the stale last-real cutoff during a Current spell
+        # (its cache filters null cutoffs out), so this indicator never fired.
+        if is_current_at_date("1st", country, action_type, check_date):
             return 1.0
     return 0.0
 
@@ -409,7 +410,7 @@ def _get_row_velocity(
     This is the strongest community-used leading indicator for India/China: when
     ROW advances rapidly or goes Current, oversubscribed countries follow.
     """
-    from lib.business.vqs.data_cache import get_cutoff_at_date
+    from lib.business.vqs.data_cache import get_cutoff_at_date, is_current_at_date
     from lib.business.vqs.seasonal_predictor import get_last_N_moves
     from models.enums.country import Country
 
@@ -418,8 +419,16 @@ def _get_row_velocity(
     move_1m = float(moves[0]) if moves else 0.0
     move_avg = sum(float(m) for m in moves) / len(moves) if moves else 0.0
 
+    # is_current_at_date catches a formal Current spell (where get_cutoff_at_date
+    # returns a stale non-None date); the 60-day window also catches an
+    # effectively-current near-live cutoff that hasn't formally gone "C".
+    row_current = is_current_at_date(visa_class, row_country, action_type, knowledge_date)
     row_cutoff = get_cutoff_at_date(visa_class, row_country, action_type, knowledge_date)
-    is_current = 1.0 if (row_cutoff is None or (knowledge_date - row_cutoff).days <= 60) else 0.0
+    is_current = (
+        1.0
+        if (row_current or row_cutoff is None or (knowledge_date - row_cutoff).days <= 60)
+        else 0.0
+    )
 
     return move_1m, move_avg, is_current
 

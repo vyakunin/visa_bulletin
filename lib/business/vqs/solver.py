@@ -11,7 +11,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from lib.business.vqs.data_cache import get_cutoff_at_date
+from lib.business.vqs.data_cache import (
+    get_cutoff_at_date,
+    is_current_at_date,
+    is_unavailable_at_date,
+)
 from lib.business.vqs.demand import build_virtual_queue_snapshot
 from lib.business.vqs.estimators import get_monthly_supply
 from lib.business.vqs.meta_params import VqsMetaParams
@@ -473,12 +477,15 @@ def predict_regime_switched(
     }
 
     if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES or visa_class == "4th":
-        # If the series is "Current" (no backlog), persistence returns a stale
-        # cutoff from potentially years ago.  Return None so the prediction is
-        # not displayed rather than showing a wildly wrong date.
-        from lib.business.vqs.data_cache import is_current_at_date
-
-        if is_current_at_date(visa_class, country, action_type, knowledge_date):
+        # If the series is "Current" or "Unavailable" (no meaningful backlog),
+        # persistence returns a stale cutoff from potentially years ago.  Return
+        # None so the prediction is not displayed rather than showing a wildly
+        # wrong date.
+        if is_current_at_date(
+            visa_class, country, action_type, knowledge_date
+        ) or is_unavailable_at_date(
+            visa_class, country, action_type, knowledge_date
+        ):
             current_cutoff = None
 
         result = SolverResult(month=first_future, cutoff_date=current_cutoff, consumed=0)
@@ -772,6 +779,16 @@ def predict_next_bulletin_and_maturity(
         current_cutoff = get_cutoff_at_date(
             visa_class, country, action_type, knowledge_date
         )
+
+        # Current/Unavailable series have no meaningful cutoff; persistence would
+        # otherwise return a stale years-old date (mirrors the guard in
+        # predict_regime_switched). Suppress to None so the prediction is not shown.
+        if is_current_at_date(
+            visa_class, country, action_type, knowledge_date
+        ) or is_unavailable_at_date(
+            visa_class, country, action_type, knowledge_date
+        ):
+            current_cutoff = None
 
         if knowledge_date.month == 12:
             first_future = date(knowledge_date.year + 1, 1, 1)

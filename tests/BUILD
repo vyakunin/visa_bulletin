@@ -1016,8 +1016,12 @@ django_py_test(
     srcs = ["test_prediction_audit_fixes.py"],
     deps = [
         "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:fy_utilization",
+        "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:metric_config",
         "//lib/business/vqs:prediction_loader",
+        "//lib/business/vqs/supply",
         "//models:bulletin",
         "//models:vqs",
         "//models/enums:action_type",

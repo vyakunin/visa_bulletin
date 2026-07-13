@@ -319,33 +319,41 @@ def publish_predictions(
                     # stays Unavailable until the October fiscal-year reset. Without
                     # this guard the solver persists the last pre-Unavailable cutoff
                     # (e.g. India EB-2 showing a stale 2013 date labelled "Advancing").
-                    if visa_class in _EB_CLASSES and is_unavailable_at_date(
+                    if is_unavailable_at_date(
                         visa_class, country, action, knowledge_date
                     ):
                         # October-reset / U-transition model: the prediction stays
                         # a null-cutoff "unavailable" row (so it is excluded from
-                        # accuracy scoring and shows the Unavailable badge), but we
-                        # attach the structural reset framing + a pre-Unavailable
-                        # reference date so the forecast page can explain WHEN a date
-                        # returns (Oct 1, structural) and honestly caveat WHERE
-                        # (uncertain). See lib/business/vqs/october_reset.py.
-                        series_label = (
-                            f"{_EB_LABEL.get(visa_class, visa_class)} "
-                            f"{Country(country).label.split(' (')[0]}"
+                        # accuracy scoring and shows the Unavailable badge), but for
+                        # EB series we attach the structural reset framing + a
+                        # pre-Unavailable reference date so the forecast page can
+                        # explain WHEN a date returns (Oct 1, structural) and honestly
+                        # caveat WHERE (uncertain). See lib/business/vqs/october_reset.py.
+                        # Applies to FS classes too (F2A etc. go Unavailable): without
+                        # this guard an FS Unavailable series fell through to the
+                        # persistence path and published a stale pre-U cutoff.
+                        generic_unavailable = (
+                            "Category is **Unavailable** — the annual limit has been "
+                            "reached; no cutoff date is expected until the fiscal-year "
+                            "reset in October."
                         )
-                        est = estimate_october_reset(
-                            visa_class, country, action, knowledge_date,
-                            all_events=_reset_events(action),
-                        )
-                        if est.is_unavailable and est.reset_year:
-                            explanation = describe_reset(est, series_label)
-                            reset_meta = {"october_reset": est.to_dict()}
-                        else:
-                            explanation = (
-                                "Category is **Unavailable** — the annual limit has been "
-                                "reached; no cutoff date is expected until the fiscal-year "
-                                "reset in October."
+                        if visa_class in _EB_CLASSES:
+                            series_label = (
+                                f"{_EB_LABEL.get(visa_class, visa_class)} "
+                                f"{Country(country).label.split(' (')[0]}"
                             )
+                            est = estimate_october_reset(
+                                visa_class, country, action, knowledge_date,
+                                all_events=_reset_events(action),
+                            )
+                            if est.is_unavailable and est.reset_year:
+                                explanation = describe_reset(est, series_label)
+                                reset_meta = {"october_reset": est.to_dict()}
+                            else:
+                                explanation = generic_unavailable
+                                reset_meta = {}
+                        else:
+                            explanation = generic_unavailable
                             reset_meta = {}
                         PredictedCutoff.objects.create(
                             bulletin=pred_bulletin,

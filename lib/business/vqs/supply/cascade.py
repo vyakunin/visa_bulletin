@@ -1,6 +1,6 @@
 from datetime import date
 
-from lib.business.vqs.data_cache import get_cutoff_at_date
+from lib.business.vqs.data_cache import is_current_at_date
 from lib.business.vqs.estimators import get_monthly_supply
 
 
@@ -25,22 +25,12 @@ class CascadeModel:
         total_cascade = 0
 
         for hc in higher_classes:
-            cutoff = get_cutoff_at_date(hc, country, "final_action", knowledge_date)
-
-            # If cutoff is None, it means "Current" (or no data, but usually Current)
-            # Actually get_cutoff_at_date returns None if no bulletin found?
-            # No, if bulletin exists but "C", it returns None?
-            # Wait, get_cutoff_at_date implementation:
-            # "Returns None if no data." - what about "C"?
-            # VisaCutoffDate stores "C" as None cutoff_date?
-            # Creating a VisaCutoffDate with cutoff_date=None usually implies 'C' in some contexts,
-            # but let's check VisaCutoffDate model.
-
-            # Assuming None means "Current" for this logic (or at least no restriction).
-            # If it really meant "no data", we might overestimate, but for recent years data exists.
-
-            if cutoff is None:
-                # "Current" = surplus likely
+            # A higher preference going "Current" (its annual limit is not binding)
+            # frees unused allocation to fall down to lower preferences. Use
+            # is_current_at_date, NOT `get_cutoff_at_date(...) is None`: the latter
+            # returns the stale last-real cutoff during a Current spell, so this
+            # bonus never fired for a Current higher-preference series.
+            if is_current_at_date(hc, country, "final_action", knowledge_date):
                 allocation = get_monthly_supply(month, country=country, visa_class=hc)
                 total_cascade += int(allocation * 0.35)
 
