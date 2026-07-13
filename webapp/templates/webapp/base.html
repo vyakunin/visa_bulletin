@@ -114,7 +114,57 @@
         }
     }
     </script>
-    
+
+    <!-- Structured Data (JSON-LD) - Dataset (E-E-A-T / GEO data provenance).
+         Head-only JSON-LD: renders no visible DOM, so it has zero layout footprint (no CLS). -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": "U.S. Work-Visa & Green-Card Labor Market Data",
+        "description": "A structured dataset of U.S. immigration labor-market records compiled from public U.S. government sources: the monthly Department of State Visa Bulletin priority-date cutoffs (family- and employment-based), H-1B and PERM Labor Condition Application offered wages by job title, employer, and state from Department of Labor disclosure files, and FOIA-released USCIS I-129 petition and H-1B registration microdata (actual pay and beneficiary demographics). Aggregated and updated monthly.",
+        "url": "https://visa-bulletin.us/",
+        "sameAs": "https://visa-bulletin.us/methodology/",
+        "keywords": ["H-1B salary", "PERM prevailing wage", "Labor Condition Application", "visa bulletin", "priority date", "green card", "employment-based immigration", "I-129 petition", "H-1B lottery", "prevailing wage", "actual pay"],
+        "isAccessibleForFree": true,
+        "license": "https://visa-bulletin.us/methodology/",
+        "creator": {
+            "@type": "Person",
+            "name": "Vladimir Yakunin",
+            "url": "https://visa-bulletin.us/about/",
+            "sameAs": ["https://github.com/vyakunin"]
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "U.S. Immigration Data (visa-bulletin.us)",
+            "url": "https://visa-bulletin.us"
+        },
+        "temporalCoverage": "2001-12-01/..",
+        "spatialCoverage": {"@type": "Place", "name": "United States"},
+        "variableMeasured": ["Visa Bulletin priority-date cutoff", "H-1B offered wage", "PERM prevailing wage", "actual beneficiary pay", "employer", "job title", "worksite state", "country of birth", "I-129 first decision", "H-1B multi-registration rate"],
+        "isBasedOn": [
+            {
+                "@type": "Dataset",
+                "name": "U.S. Department of Labor — LCA & PERM Disclosure Data",
+                "url": "https://www.dol.gov/agencies/eta/foreign-labor/performance",
+                "creator": {"@type": "GovernmentOrganization", "name": "U.S. Department of Labor"}
+            },
+            {
+                "@type": "Dataset",
+                "name": "U.S. Department of State — Visa Bulletin",
+                "url": "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html",
+                "creator": {"@type": "GovernmentOrganization", "name": "U.S. Department of State"}
+            },
+            {
+                "@type": "Dataset",
+                "name": "USCIS I-129 petition & H-1B registration microdata (Bloomberg v. DHS FOIA release)",
+                "url": "https://github.com/BloombergGraphics/2024-h1b-immigration-data",
+                "creator": {"@type": "GovernmentOrganization", "name": "U.S. Citizenship and Immigration Services"}
+            }
+        ]
+    }
+    </script>
+
     <!-- Structured Data (JSON-LD) - Page-specific data -->
     {% if structured_data %}
     <script type="application/ld+json">
