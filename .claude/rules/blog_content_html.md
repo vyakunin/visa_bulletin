@@ -89,6 +89,29 @@ This is the public-content register of `be_human_in_drafts.md` / `llm_tell_avoid
 applied to data pages: write TO a cold reader, lead with the concrete claim, no
 scaffolding that assumes a prior turn.
 
+## Trap 3: don't attribute a change to one cause when many things moved
+
+A before/after that coincides with a policy/rule change is **not proof the change caused
+it** — and a rigor-branded data page must not imply it did. When a number drops (or
+rises) right after a rule, ask what *else* happened in the same window before writing
+"the rule did this":
+
+- ❌ *"USCIS's numbers close the arc: eligible registrations dropped 759k → 470k. The
+  gaming this documents is the exact behavior the rule was written to end."* — pins the
+  whole pool drop on one rule when the FY2026 registration fee ($10 → $215), a cooler
+  tech-hiring market, and enforcement all moved registrations in the same period.
+- ✅ Separate the mechanically-linked effect from the confounded one, and name the
+  confounders: *"the multi-registration collapse tracks the rule's mechanism (duplicates
+  stopped paying off); the broader drop in how many people register reflects several
+  2025 changes at once — the fee increase, a softer market — not this one measure. The
+  raw before/after is not a clean natural experiment."*
+
+Rule of thumb for these pages: claim causation only for the effect that is
+*mechanically* tied to the change (here: uniform per-beneficiary odds → multi-entry
+incentive gone). For everything else that merely *coincided*, say "coincided with" /
+"alongside" and list the other movers. This is `be_human_in_drafts.md` §11 (no invented
+causal dependencies) applied to published data stories.
+
 ## Origin
 2026-07-13 — the i129 FOIA data stories: (1) `34.9%` / `FY21` broke mid-token on mobile
 in every table (Bootstrap `.text-break`), fixed template-wide + static-tested; (2) the

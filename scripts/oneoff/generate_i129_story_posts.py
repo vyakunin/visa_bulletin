@@ -174,13 +174,23 @@ statistics:</p>
 filed-petition rate (8.2% &rarr; 25.5%, 3.1&times;) &mdash; so selection bias makes our
 figure <strong>conservative</strong>, not inflated.</p>
 
-<h2>The "after": the FY2025 rule</h2>
-<p>This is the "before" picture of the FY2025 <strong>beneficiary-centric</strong> rule
-(one lottery entry per person regardless of how many employers register them). USCIS's
-own numbers close the arc: multi-registered <em>registrations</em> fell
-<strong>408,891 &rarr; 47,314 (&minus;88%)</strong> in one year, and total eligible
-registrations dropped from 759k to 470k. The gaming this trend documents is the exact
-behavior the rule was written to end.</p>
+<h2>What changed next: the FY2025 beneficiary-centric rule</h2>
+<p>This is the "before" picture. Starting with the FY2025 lottery, USCIS switched to
+<strong>beneficiary-centric</strong> selection &mdash; each person is entered once no
+matter how many employers register them, so running one beneficiary through several
+shells no longer improves their odds. In the first year under the rule, multi-registered
+registrations fell <strong>408,891 &rarr; 47,314 (&minus;88%)</strong> and total eligible
+registrations dropped from 759k to 470k.</p>
+<p><strong>How much of that is the rule?</strong> The <em>multi-registration</em> collapse
+tracks the rule's mechanism closely: once duplicate entries stop paying off, the reason
+to file them is gone. But the overall pool didn't shrink in a vacuum, and the raw
+before/after is not a clean natural experiment. Several things moved at once in
+2024&ndash;25: the per-registration fee later jumped from $10 to $215 (FY2026), the
+tech-hiring market cooled, and enforcement scrutiny rose &mdash; and the pool kept
+falling the next year (470k &rarr; 344k) well after the counting change. So the
+defensible read is narrow: the rule removed the specific incentive this story documents
+and multi-registration cratered right after; the broader decline in <em>how many people
+register</em> reflects several 2025 changes together, not this one measure.</p>
 
 <h2>How to read these numbers</h2>
 <ul>
@@ -319,8 +329,9 @@ number &mdash; they depended on how many employers registered you. In FY2024, a
 single-registration beneficiary had about a <strong>25%</strong> chance of selection;
 the average multi-registered beneficiary (~4.3 registrations) had about
 <strong>70% &mdash; a 2.8&times; advantage</strong>. The FY2025 beneficiary-centric rule
-deleted that asymmetry: <strong>29% for everyone</strong>, and ~415,000 duplicate
-entries evaporated.</p>
+deleted that asymmetry &mdash; <strong>the same odds for everyone</strong> &mdash; and the
+multi-registered entries that had skewed the lottery collapsed
+(408,891 &rarr; 47,314 in a year).</p>
 
 <h2>Layer 1 &mdash; the per-registration selection rate</h2>
 <p>Selections &divide; eligible registrations, from USCIS:</p>
@@ -358,8 +369,10 @@ registrations had roughly 1 &minus; (1 &minus; p)<sup>k</sup> odds:</p>
 ~446,000 unique-beneficiary figure), for <strong>~70% odds vs 24.8% for a single
 registration &mdash; a 2.8&times; advantage</strong>. That asymmetry is exactly what the
 FY2025 rule removed: every beneficiary now has identical odds regardless of employer
-count (28.9% in FY25, ~35% in FY26, because the pool shrank ~415k once duplicate entries
-stopped paying off).</p>
+count &mdash; 28.9% in FY25, ~35% in FY26. The odds rose because the pool got smaller,
+but that shrinkage isn't all the counting rule: the FY2026 registration fee jumped from
+$10 to $215 and the tech-hiring market cooled, both of which cut registrations
+independently of the beneficiary-centric change.</p>
 
 <h2>Layer 3 &mdash; corroboration from the FOIA microdata</h2>
 <p>Our selected-and-filed petitions show the multi-registration share rising
