@@ -15,7 +15,23 @@ mobile width) documented in .claude/rules/blog_content_html.md.
 import re
 from pathlib import Path
 
-_TEMPLATE = Path(__file__).resolve().parent.parent / "webapp/templates/blog/post_detail.html"
+_REPO = Path(__file__).resolve().parent.parent
+_TEMPLATE = _REPO / "webapp/templates/blog/post_detail.html"
+_I129_GENERATOR = _REPO / "scripts/oneoff/generate_i129_story_posts.py"
+
+# Editorial / internal-process voice that must not reach the published /analysis/ copy
+# (see .claude/rules/blog_content_html.md Trap 2). These are the mechanically-detectable
+# tells; the semantic "does the lead establish the claim it counters" judgment is NOT
+# statically checkable and stays a human/LLM review step.
+_EDITORIAL_VOICE_TELLS = (
+    "Mandatory caveats",
+    "and we say so",
+    "we flag",
+    "Lead with the",
+    "read it correctly",
+    "read them correctly",
+    "on the page)",  # draft meta like "caveats (on the page)"
+)
 
 
 def _blog_content_wraps_table_cells_normally(css_source: str) -> bool:
@@ -34,4 +50,14 @@ def test_post_detail_neutralizes_text_break_on_tables():
         "post_detail.html must reset word-break to normal on .blog-content table "
         "cells, or numbers/%/FY-codes break mid-token on mobile (see "
         ".claude/rules/blog_content_html.md)."
+    )
+
+
+def test_i129_stories_have_no_editorial_voice():
+    """Catch the mechanical 'internal discussion leaked into publication' tells."""
+    src = _I129_GENERATOR.read_text(encoding="utf-8")
+    hits = [tell for tell in _EDITORIAL_VOICE_TELLS if tell in src]
+    assert not hits, (
+        f"editorial/internal-process voice found in published /analysis/ copy: {hits}. "
+        "Write caveats and headings TO the reader (see .claude/rules/blog_content_html.md)."
     )

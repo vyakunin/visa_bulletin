@@ -72,7 +72,10 @@ py_test(
     name = "test_blog_table_wrap_guard",
     size = "small",
     srcs = ["test_blog_table_wrap_guard.py"],
-    data = ["//webapp:templates"],
+    data = [
+        "//scripts/oneoff:generate_i129_story_posts.py",
+        "//webapp:templates",
+    ],
 )
 
 django_py_test(
