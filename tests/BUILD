@@ -1029,6 +1029,7 @@ django_py_test(
         "//models:vqs",
         "//models/enums:action_type",
         "//models/enums:country",
+        "//scripts:publish_predictions",
     ],
 )
 

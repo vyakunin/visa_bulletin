@@ -391,6 +391,37 @@ class TestDirectionCorrectSymmetry:
         assert _direction_correct(0, 30) is False       # advanced, predicted held
 
 
+class TestMultiHorizonKnowledgeDate(TestCase):
+    """A2-F1: get_knowledge_date_for_target(target, N) must yield a knowledge date
+    that is EXACTLY N bulletins before target. The old code subtracted N months and
+    then a day; because bulletins publish on the 1st, `1st - 1 day` crosses into the
+    prior month, so the computed horizon came out as N+1 and mis-dispatched at the
+    6/12-month predictor boundaries."""
+
+    def _gap_months(self, target: date, kd: date) -> int:
+        return (target.year - kd.year) * 12 + (target.month - kd.month)
+
+    def test_computed_horizon_matches_requested_primary_path(self):
+        from scripts.publish_predictions import get_knowledge_date_for_target
+
+        for m in range(1, 13):
+            Bulletin.objects.create(publication_date=date(2024, m, 1))
+        target = date(2024, 8, 1)
+        for n in (1, 2, 3, 6):
+            kd = get_knowledge_date_for_target(target, n)
+            assert self._gap_months(target, kd) == n, (n, kd)
+
+    def test_computed_horizon_matches_requested_fallback_path(self):
+        # No bulletins created → the fallback branch runs; it must still yield a
+        # gap of exactly N.
+        from scripts.publish_predictions import get_knowledge_date_for_target
+
+        target = date(2024, 8, 1)
+        for n in (2, 3, 6):
+            kd = get_knowledge_date_for_target(target, n)
+            assert self._gap_months(target, kd) == n, (n, kd)
+
+
 class TestStoredPredictionSelection(TestCase):
     """A5-F7 / A5-F11: reads over stored PredictedCutoff rows must be
     deterministic and complete."""

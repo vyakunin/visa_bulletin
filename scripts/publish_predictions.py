@@ -166,8 +166,14 @@ def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -
         # relative to today) and mislabel the horizon as 2.
         return target_month.replace(day=1) - timedelta(days=1)
 
-    # Multi-horizon: find the bulletin that was published ~horizon_months before target.
-    earlier = target_month - relativedelta(months=horizon_months)
+    # Multi-horizon: knowledge date = the day before the bulletin (horizon_months-1)
+    # months before target, so target is EXACTLY horizon_months bulletins ahead.
+    # (A2-F1: using `target - horizon_months` here and then subtracting a day pushed
+    # the knowledge date a full month too early — bulletins publish on the 1st, so
+    # `1st - 1 day` crosses into the prior month — making the computed horizon come
+    # out as horizon_months+1 and mis-dispatch at the 6/12-month predictor
+    # boundaries, e.g. `--horizon 11` routed China EB-1 to GBM instead of RS.)
+    earlier = target_month - relativedelta(months=horizon_months - 1)
     try:
         b = Bulletin.objects.filter(
             publication_date__year=earlier.year,
@@ -178,9 +184,9 @@ def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -
             return b.publication_date - timedelta(days=1)
     except Exception:
         pass
-    # Fallback: last day of the month that is horizon_months before target.
-    last_day = (earlier.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
-    return last_day
+    # Fallback: the day before the first of `earlier`'s month (the month that
+    # bulletin would occupy) → the last day of the prior month, a horizon_months gap.
+    return earlier.replace(day=1) - timedelta(days=1)
 
 
 REGIME_DESCRIPTIONS = {
@@ -398,6 +404,13 @@ def publish_predictions(
                             meta=meta,
                             aggregator=aggregator,
                         )
+                        # A2-F3: FS series are non-physics-eligible → the solver's
+                        # persistence branch returns a single result for first_future
+                        # only, so a target_month more than 1 month ahead never
+                        # matches and every --horizon>1 FS row published None. FS
+                        # persistence is flat, so fall back to outcome.predicted_cutoff
+                        # (== the flat persistence value at any horizon; already None
+                        # for Current/Unavailable via the Theme 1 guard).
                         cutoff = next(
                             (
                                 r.cutoff_date
@@ -405,7 +418,7 @@ def publish_predictions(
                                 if r.month.year == target_month.year
                                 and r.month.month == target_month.month
                             ),
-                            None,
+                            outcome.predicted_cutoff,
                         )
                         m_meta = outcome.metadata
                         confidence = outcome.confidence
@@ -519,7 +532,13 @@ def publish_predictions(
                                 country=country,
                                 action_type=action,
                                 knowledge_date=knowledge_date,
-                                horizon=max(1, horizon_months),
+                                # A2-F2: key the CI on the SAME horizon the point
+                                # prediction was dispatched at (horizon_m), not the
+                                # requested horizon_months. They now agree (A2-F1),
+                                # but keying off horizon_m keeps the CI bucket
+                                # correct even if they ever diverge — a mismatch
+                                # empties the bucket and silently falls back to ±270d.
+                                horizon=max(1, horizon_m),
                                 coverage=0.80,
                             )
                         except Exception as _ci_err:
@@ -622,8 +641,13 @@ def main():
         if args.backfill_end_year:
             end = date(args.backfill_end_year, 12, 1)
         else:
+            # A2-F4: a backfill is RETROSPECTIVE. The old default ran to +2 months,
+            # producing targets whose bulletin isn't published yet — stored with a
+            # future prediction_date and mislabeled 1m, polluting h=1 calibration.
+            # Cap at the current month (last month with a published bulletin); the
+            # genuine next-month forecast is produced by the default no-args path.
             today = date.today()
-            end = date(today.year, today.month, 1) + relativedelta(months=2)
+            end = date(today.year, today.month, 1)
 
         curr = start
         while curr <= end:

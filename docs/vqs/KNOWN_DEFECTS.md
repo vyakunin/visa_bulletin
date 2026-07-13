@@ -102,20 +102,20 @@ this commit (Theme 3b). Tests: `TestAggregatorWeightIntegrity`, `TestDirectionCo
   weight unchanged (was factor 1.0, which ballooned a sleeper's weight). `aggregator.py`.
 - **A3-F2** (Theme 2) also landed here — fixed in Theme 2.
 
-## THEME 4 — multi-horizon backfill semantics (LIVE, `--horizon>1`) → ticket
-- **A2-F3** [LIVE,certain,PATH2] (re-grouped from Theme 1) every FS series publishes
-  `predicted_date=None` in any `--horizon>1` run: FS is not physics-eligible so the
-  non-eligible branch returns one month (`first_future`); `next(r.month==target)` → None.
-  Fix with the multi-horizon dispatch. `publish_predictions.py:393-401`.
-- **A2-F1** [LIVE,certain,PATH2] `--horizon N` computes an actual month-gap of **N+1** (earlier
-  bulletin pub=1st, knowledge=prev-day), so dispatch/GBM-arg/stored `prediction_date` all encode
-  N+1 while labeled N; boundary mis-dispatch (`--horizon 11`→h=12 routes China EB-1 to GBM not
-  RS; `--horizon 5`→h=6). `publish_predictions.py:169-183,293-296`.
-- **A2-F2** [LIVE,likely,PATH2] calibrated CI keyed `horizon=max(1,horizon_months)` while the
-  point prediction is at `horizon_m`(=N+1) → CI bucket empty → silent ±270d default.
-  `publish_predictions.py:508-516`.
-- **A2-F4** [LIVE,likely,DECISION] default backfill end = +2 months → future `prediction_date`,
-  row mislabeled 1m, pollutes h=1 calibration. `publish_predictions.py:617-618`.
+## ✅ THEME 4 — multi-horizon backfill semantics — CODE FIXED 2026-07-13
+Code + tests landed on `main`. Test: `TestMultiHorizonKnowledgeDate` (primary + fallback
+horizon-gap). PATH2 graduation bundled into the combined rollout.
+- ✅ **A2-F1** [LIVE,certain,PATH2] `get_knowledge_date_for_target` now uses `earlier =
+  target − (N−1) months` (+ consistent fallback), so the computed `horizon_m` equals N, not
+  N+1. Fixes the boundary mis-dispatch (`--horizon 11`→h=12 etc.). `publish_predictions.py`.
+- ✅ **A2-F2** [LIVE,PATH2] calibrated CI now keyed `horizon=max(1, horizon_m)` — the horizon
+  the point prediction was dispatched at (agrees with A2-F1; robust to future divergence).
+- ✅ **A2-F3** [LIVE,certain,PATH2] (from Theme 1) FS extraction now falls back to
+  `outcome.predicted_cutoff` (flat persistence, None for Current/Unavailable) instead of None,
+  so `--horizon>1` FS rows publish the correct flat value. `publish_predictions.py`.
+- ✅ **A2-F4** [LIVE,DECISION] default backfill end capped at the current month (was +2 months)
+  → no future-target rows with a future `prediction_date` mislabeled 1m polluting h=1
+  calibration. The genuine next-month forecast is produced by the default no-args path.
 
 ## THEME 5 — queue-physics value bugs (LIVE physics-eligible, PATH2) → ticket
 - **A5-F3** [LIVE,certain] `advance_cutoff` returns the consumed bucket's month, not the first
