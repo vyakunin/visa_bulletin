@@ -78,25 +78,30 @@ class Story:
 
 def _story_a() -> Story:
     body = """
-<p class="lead">Among <strong>filed</strong> H-1B petitions, the share tied to a
-beneficiary that multiple employers had registered in the lottery <strong>tripled in
-four years &mdash; 8.2% (FY2021) to 25.5% (FY2024)</strong>. USCIS's own registration
-data shows the underlying pool went further: over half of FY2024 lottery registrations
-were multi-entries. And the concentration is the opposite of the common assumption
-&mdash; it lives in the long tail of small staffing firms, not Infosys, TCS, or
-Amazon.</p>
+<p class="lead">In 2024,
+<a href="https://www.bloomberg.com/graphics/2024-staffing-firms-game-h1b-visa-lottery-system/">Bloomberg
+revealed</a> that thousands of companies &mdash; mostly small IT-staffing firms &mdash;
+were gaming the H-1B lottery by registering the same worker through several related
+entities, so that person got many entries while everyone else got one. It estimated
+roughly one selected registration in six was won this way.
+<a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">USCIS
+agreed</a>: multi-registrations had jumped from 165,180 to 408,891 (+147%) in a single
+year, and it rewrote the lottery to select by person rather than by registration. That's
+the known story, and it's worth knowing.</p>
 
-<p class="text-muted"><em>Lottery gaming isn't a new finding.
-<a href="https://www.bloomberg.com/graphics/2024-staffing-firms-game-h1b-visa-lottery-system/">Bloomberg's
-2024 investigation</a> first showed staffing firms flooding the lottery, and
-<a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">USCIS's
-own rulemaking</a> published the registration-pool counts and rewrote the selection
-process because of it. This page is the companion view from the
-<strong>selected-and-filed petitions</strong>: a conservative rate over time, an employer
-size-gradient, and an India&times;IT-services cut &mdash; all reproducible from the public
-microdata.</em></p>
+<p>Working from the same public source &mdash; the FOIA-released I-129 petition
+microdata &mdash; we rebuilt it from the ground up, and three things the pool-level
+headlines don't show fall out of it: <strong>how fast the gaming rose among the petitions
+that were actually filed</strong> (a conservative lower bound), <strong>a clean employer
+size-gradient</strong> that puts numbers on Bloomberg's "small firms" observation, and
+the <strong>India&times;IT-services interaction</strong> underneath it. Everything below
+is reproducible from the public data.</p>
 
-<h2>The trend, among selected-and-filed petitions</h2>
+<h2>New: the gaming rate among the petitions that were filed</h2>
+<p>The counts everyone cites are <em>registration-pool</em> numbers. Restricting to the
+petitions that were selected <em>and filed</em>, the share tied to a multi-registered
+beneficiary still <strong>tripled in four years &mdash; 8.2% (FY2021) to 25.5%
+(FY2024)</strong>:</p>
 <div class="table-responsive">
 <table class="table table-sm table-striped align-middle">
 <thead><tr><th>Fiscal year</th><th class="text-end">Filed petitions</th>
@@ -144,10 +149,11 @@ pooled FY21&ndash;24:</p>
 countries); India&nbsp;&times;&nbsp;IT-services reaches <strong>45.4% by FY2024</strong>.
 The sector is half the story.</p>
 
-<h2>The inversion: small staffing shops, not Big Tech</h2>
-<p>The reflex is to blame the large outsourcers. The data says the opposite.
-Multi-registration rates among the biggest filers are low &mdash; Amazon 3.6%,
-Infosys 3.1%, TCS 4.7%, Cognizant 4.5%, Microsoft 3.3%, IBM 3.1%.</p>
+<h2>Quantifying Bloomberg's "small firms": a clean size-gradient</h2>
+<p>Bloomberg's reporting pointed at small staffing shops rather than the household-name
+outsourcers; the microdata turns that observation into a clean gradient. Multi-registration
+rates among the biggest filers are low &mdash; Amazon 3.6%, Infosys 3.1%, TCS 4.7%,
+Cognizant 4.5%, Microsoft 3.3%, IBM 3.1%.</p>
 <p>The extreme rates are tiny staffing firms: Aclat Inc. 88 of 88 petitions (100%),
 Snowstack LLC 96.8%, R2 Technologies 91.9%. A clean size gradient, employers bucketed
 by total FY21&ndash;24 filings:</p>
@@ -224,7 +230,7 @@ You can also <a href="/salaries/">search the certified-wage records</a> by emplo
 and state.</p>
 """
     return Story(
-        title="H-1B multi-registration tripled to 25% — and it wasn't the big outsourcers",
+        title="H-1B lottery gaming, from the filings: the rate tripled to 25%",
         slug="h1b-multi-registration-lottery-gaming",
         content=body + _ATTRIBUTION,
     )
@@ -344,22 +350,20 @@ the same comparison down company by company.</p>
 
 def _story_c() -> Story:
     body = """
-<p class="lead">Before the 2024 rule change, your H-1B lottery odds weren't a single
-number &mdash; they depended on how many employers registered you. In FY2024, a
-single-registration beneficiary had about a <strong>25%</strong> chance of selection;
-the average multi-registered beneficiary (~4.3 registrations) had about
-<strong>70% &mdash; a 2.8&times; advantage</strong>. The FY2025 beneficiary-centric rule
-deleted that asymmetry &mdash; <strong>the same odds for everyone</strong> &mdash; and the
-multi-registered entries that had skewed the lottery collapsed
-(408,891 &rarr; 47,314 in a year).</p>
+<p class="lead">The H-1B lottery's yearly odds are well documented: about a
+<strong>25% selection rate</strong> in FY2024, a number USCIS publishes and every
+law-firm tracker and odds calculator repeats. It's also widely understood that, since the
+FY2025 <a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">beneficiary-centric
+rule</a>, registering the same person through many employers no longer helps &mdash;
+everyone now gets one entry. (The market design of these lottery reforms is studied in
+<a href="https://www.nber.org/papers/w26767">NBER w26767</a>.)</p>
 
-<p class="text-muted"><em>The headline per-year selection rates here are USCIS's own,
-widely republished; the mechanics of the FY2025 change trace to
-<a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">its
-rulemaking</a> (and the market design of lottery reforms to
-<a href="https://www.nber.org/papers/w26767">NBER w26767</a>). What this page adds is one
-step those numbers usually skip: conditioning the odds on <strong>how many times a person
-was registered</strong> &mdash; which, before FY2025, is what actually set them.</em></p>
+<p>What that single per-year number hides is the thing that actually set your odds
+<em>before</em> FY2025: <strong>how many times you were registered</strong>. Condition on
+that and the one "lottery rate" splits in two &mdash; roughly <strong>25% for a single
+registration vs ~70% for the average multi-registered beneficiary, a 2.8&times;
+advantage</strong> the rule then erased. The conditioning below is built entirely from
+USCIS's own published totals; the arithmetic is ours, the inputs are theirs.</p>
 
 <h2>Layer 1 &mdash; the per-registration selection rate</h2>
 <p>Selections &divide; eligible registrations, from USCIS:</p>
