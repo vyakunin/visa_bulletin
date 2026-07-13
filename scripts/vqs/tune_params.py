@@ -561,6 +561,93 @@ def objective(
         return mae
 
 
+def run_baseline(
+    horizons: list[int],
+    quick: bool,
+    action_type: str | None,
+    objective_type: str,
+    gbm_params: bool,
+) -> dict:
+    """Evaluate the CURRENT production defaults under the same objective (no Optuna).
+
+    This is the apples-to-apples comparator a re-tune needs: `tune_params` does NOT
+    seed the current params into its search, so a "best trial value" is only "best
+    found", never "beats current" until it is compared against this baseline computed
+    under the identical objective + sampling. Mirrors the branch logic in objective()
+    but uses the live prod defaults (gbm_expert module constants / MetaParams /
+    ContextualTrajectoryAggregator defaults) instead of a sampled trial.
+    """
+    from lib.business.vqs import gbm_expert as _gbm
+
+    # GBM-only conditional path: same branch tune_params uses with --gbm-params
+    # --objective conditional. Evaluate the current default GBM expert directly.
+    if gbm_params and objective_type == "conditional":
+        # Ensure caches reflect the un-patched (current prod) GBM defaults.
+        _gbm._model_cache.clear()
+        _gbm._classifier_cache.clear()
+        _gbm._quantile_cache.clear()
+        cond_obj, metrics = compute_gbm_only_objective(
+            movement_threshold=_gbm._GBM_DEFAULT_MOVEMENT_THRESHOLD,
+            gate_threshold=_gbm._GBM_DEFAULT_GATE_THRESHOLD,
+            quick=quick,
+            action_type=action_type or "filing",
+        )
+        logger.info(
+            f"BASELINE (current GBM defaults: n_est={_gbm._GBM_N_ESTIMATORS} "
+            f"depth={_gbm._GBM_MAX_DEPTH} lr={_gbm._GBM_LEARNING_RATE} "
+            f"mv_thr={_gbm._GBM_DEFAULT_MOVEMENT_THRESHOLD} "
+            f"gate={_gbm._GBM_DEFAULT_GATE_THRESHOLD}): "
+            f"CondObj={cond_obj:.1f} CondMAE={metrics['cond_mae']:.0f}d "
+            f"F1={metrics['f1']:.2f} 6mMAE={metrics['long_horizon_mae']:.0f}d "
+            f"TP={metrics['move_tp']} FP={metrics['move_fp']} FN={metrics['move_fn']}"
+        )
+        return {"baseline_value": cond_obj, "metrics": metrics, "path": "gbm_only"}
+
+    # Ensemble path: evaluate the current ContextualTrajectoryAggregator defaults
+    # under a default MetricConfig (the current prod aggregator/meta config).
+    eval_cfg = MetricConfig()
+    aggregator = ContextualTrajectoryAggregator()
+    warmup_cfg = replace(eval_cfg, horizon_weights={1: 1.0})
+
+    bulletins: list[date] | None = None
+    if quick:
+        from lib.business.vqs.data_cache import get_all_bulletins
+        bulletins = [b.publication_date for b in get_all_bulletins()][::3]
+
+    from lib.business.vqs.accuracy_metrics import EVALUABLE_VISA_CLASSES
+    from models.enums.country import Country
+
+    distinct_series = [
+        (vc, c)
+        for vc in EVALUABLE_VISA_CLASSES
+        if vc != "4th"
+        for c in [Country.INDIA.value, Country.CHINA.value]
+    ]
+    if bulletins:
+        first_date = min(bulletins)
+        for vc, c in distinct_series:
+            aggregator.warmup_history(vc, c, action_type or "filing", first_date, horizons)
+
+    rows = compute_multi_horizon_accuracy(
+        bulletins=bulletins,
+        horizons=horizons,
+        exclude_eb4=True,
+        action_type=action_type,
+        metric_config=warmup_cfg,
+        aggregator=aggregator,
+        use_contextual_ensemble=True,
+    )
+
+    if objective_type == "conditional":
+        value = compute_conditional_objective(rows=rows, config=eval_cfg, key_series=_KEY_SERIES)
+        comp_mae = compute_composite_metric(rows, config=eval_cfg)["composite_mae"]
+        logger.info(f"BASELINE (current ensemble defaults): CondObj={value:.1f} CompMAE={comp_mae:.1f}")
+    else:
+        value = compute_composite_metric(rows, config=eval_cfg)["composite_mae"]
+        logger.info(f"BASELINE (current ensemble defaults): MAE={value:.1f}")
+    return {"baseline_value": value, "path": "ensemble"}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Optuna VQS parameter tuning")
     parser.add_argument("--n-trials", type=int, default=30)
@@ -583,10 +670,26 @@ def main():
         "--per-series-weights", action="store_true",
         help="Include per-series persistence weights for EB-2/3 India/China",
     )
+    parser.add_argument(
+        "--baseline", action="store_true",
+        help="Skip Optuna; evaluate CURRENT prod defaults under the objective "
+             "(apples-to-apples comparator for a re-tune's best trial)",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.baseline:
+        result = run_baseline(
+            args.horizons, args.quick, args.action_type,
+            objective_type=args.objective, gbm_params=args.gbm_params,
+        )
+        out_path = output_dir / "baseline_result.json"
+        with open(out_path, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        logger.info(f"Baseline result saved to {out_path}")
+        return
 
     storage = args.db or f"sqlite:///{output_dir / 'optuna.db'}"
     study = optuna.create_study(

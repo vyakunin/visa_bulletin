@@ -1819,12 +1819,39 @@ VQS Ensemble "beats persistence" went 2/5 → 3/6 series. Unit tests
 ### Current Status
 Enabled (no flag — correctness fix). Production serving unaffected.
 
-### Pending Planning Review
-Awaiting planning session to interpret why removing the leak slightly *lowered*
-VQS Ensemble MAE (hypothesis: the full-history median was a worse early-year
-estimate than the per-knowledge-date value / fallback constant) and whether the
-FY-boundary fallback constants in `_RETROGRESSING_SERIES` warrant re-tuning now
-that early-year backtests no longer see future retrogression.
+### Analysis (planning review, 2026-07-13 — Opus)
+**Facts:** removing the FY-boundary lookahead leak (bounding
+`get_retrogression_months_from_history` by `knowledge_date`) *lowered* VQS
+Ensemble composite MAE 139.0→137.4 (−1.6); largest single win India EB-1 3m
+170.9→164.6 (−6.3); production "Dashboard" byte-identical (it already uses
+`knowledge_date = now`, so the new `<=` filter is a no-op there).
+
+**Interpretation (hypothesis, confidence high):** removing *future* information
+improved *backtest* accuracy because the leaked signal was actively wrong for
+early-year contexts, not merely uninformative. `get_retrogression_months_from_history`
+returns the **median** Sept→Oct retrogression magnitude (months). Pre-fix, an
+early-year backtest (e.g. 2017) computed that median over the *full* 2013–2026
+transition set — importing later-year retrogression behavior that hadn't developed
+yet. For India EB-1 especially (retrogression regime shifted materially over the
+decade) the full-history median *over-stated* retrogression in years where it had
+not yet emerged, so bounding to knowledge-date-only history de-noised those
+early-year predictions. This is a de-noising effect, not a paradox: the leak was
+injecting regime-inappropriate priors, so its removal is a strict improvement.
+
+**Decision on `_RETROGRESSING_SERIES` fallback constants (India EB-2/3=3mo,
+China EB-2/3=2mo, EB-1=1mo):** do NOT re-tune them now. Rationale: (1) the §21
+win came from *correct temporal bounding*, not from the fallback — there is no
+evidence in this data that the constants are miscalibrated; (2) the fallback only
+binds when <3 knowledge-date-bounded Sept/Oct transitions exist, which is
+increasingly rare as history accumulates (its leverage shrinks over time); (3) the
+measured, ready-to-exploit headroom is elsewhere — the GBM/ensemble re-tune (§24)
+shows ~25% CondObj headroom vs the ~0 evidence here. **Caveat recorded:** post-fix,
+early-year backtests fall back to the constants *more often* than before, so the
+constants now carry more leverage on early-year backtest MAE specifically. That is
+a reason to *check* (not re-tune) them only if a future FY-phase-stratified eval
+flags early-year retrogression as a dominant error source — a dedicated, lower-
+priority experiment, not part of the §24 re-tune. **§21 Pending Planning Review is
+resolved (closed).**
 
 ---
 
@@ -1995,25 +2022,67 @@ Aug-predictions page audit to get a real signal on whether re-tuning has headroo
   **--quick**` off-prod on the staging DB (prod-copy) via `run_in_stg.sh`. Optuna
   study `vqs_retune_20`. `--quick` subsamples bulletins (~3× faster) — so this is a
   fast-signal search, NOT the definitive `--n-trials 50` full run §0 step 3 specifies.
-- **Best trial #4: conditional objective = 72.0** (CondMAE 70d, F1 0.38, 6mMAE 165d),
-  vs a spread of ~72–100 across the 20 trials (median ~86). Best params (subsampled):
-  `use_regime_context=False`, `blend_temperature≈0.026`, `steady_state_weight≈1.52`,
-  `hw_1/3/6/12 ≈ 0.20/0.10/0.25/0.34`, `use_huber_loss=True`, `gbm_n_estimators=242`,
-  `gbm_max_depth=3`, `gbm_learning_rate≈0.017`, `gbm_movement_threshold=37`,
-  `gbm_gate_threshold≈0.58`. Full param set in the run log.
+- **Best trial #4: conditional objective = 72.0** (CondMAE 51d, F1 0.52, 6mMAE 108d,
+  TP=17 FP=32 FN=0), vs a spread of 72–110 across the 20 trials (median ~89).
+  **Correction (2026-07-13, planner):** the original §24 entry mis-transcribed the
+  best trial — it listed trial 0's metrics (CondMAE 70d / F1 0.38 / 6mMAE 165d) and a
+  wrong param set. The actual trial-#4 params from `/tmp/vqs_tune_20.log` are the GBM
+  ones that drive this objective: `gbm_n_estimators=128, gbm_max_depth=6,
+  gbm_learning_rate=0.152, gbm_min_child_samples=7, gbm_reg_alpha=2.05,
+  gbm_reg_lambda=3.78, gbm_movement_threshold=25, gbm_gate_threshold=0.331`.
+  The aggregator/MetricConfig params Optuna also sampled (`blend_temperature`,
+  `steady_state_weight`, `hw_*`, `learning_rate`, `use_regime_context`, …) are
+  **inert in this branch** and must NOT be read as tuned — see the objective-scope
+  finding below.
 
-### Pending Planning Review
-This run is NOT a ship signal on its own — two things must happen before any param
-change + prediction regen:
-1. **A baseline gap.** `tune_params` does not seed the current prod params, and this
-   run was `--quick`. So CondObj=72.0 is "best found in a 20-trial subsampled search",
-   not "beats current" — the current prod params have no measured CondObj under the
-   identical objective to compare against. Needed: a full `--n-trials 50` (non-quick)
-   run AND an eval of the current `MetaParams()` under the same objective for an
-   apples-to-apples delta.
-2. **The §21 'Pending Planning Review'** (interpret why removing the backtest
-   lookahead leak slightly LOWERED VQS Ensemble MAE; decide whether the
-   `_RETROGRESSING_SERIES` FY-boundary fallback constants warrant re-tuning) is still
-   open and belongs in the same planning pass.
-Shipping any resulting param change is a heavyweight Path-2 change (off-prod
-regenerate all `PredictedCutoff` + graduate the DATA), not a code-only deploy.
+### Baseline (current prod params under the identical objective) — the missing comparator
+`tune_params` does NOT seed the current prod params, so §24's 72.0 is only "best
+found in a subsampled 20-trial search", never "beats current" until compared against
+the current params under the same objective. Added a reusable `--baseline` flag to
+`tune_params.py` for exactly this (evaluates the live prod defaults, no Optuna) and
+ran it off-prod on staging (2026-07-13):
+- **Current prod GBM defaults** (`n_est=258, depth=8, lr=0.103, mv_thr=50, gate=0.68`),
+  **quick**: CondObj = **95.5** (CondMAE 95d, F1 0.38, 6mMAE 115d).
+- **Current prod, non-quick (full bulletins)**: CondObj = **108.9** (CondMAE 134d,
+  F1 0.51, 6mMAE 154d, TP=56 FP=59 FN=47).
+So §24's best-found (72.0, quick) vs current (95.5, quick) = ~25% lower objective —
+a real headroom region, not noise; current params sit at the search median. A full
+`--n-trials 50` **non-quick** run is in flight (study `vqs_retune_50_full`,
+`/tmp/vqs_retune_50.log`) to get a robust best on full data for the apples-to-apples
+delta vs the non-quick baseline (108.9).
+
+### Objective-scope finding — the CondObj win may NOT translate to shipped predictions (planner, 2026-07-13)
+`--gbm-params --objective conditional` routes to `compute_gbm_only_objective`, which
+evaluates the **GBM expert in isolation** — so this run tunes the **GBM expert**, NOT
+`ensemble_persistence_weight` (the ticket's/Motivation's literal target; that lives in
+the `ContextualTrajectoryAggregator` path, tuned by `conditional` *without*
+`--gbm-params`). More importantly, the objective is **80%-weighted on horizon h=1**
+(0.3 conditional-MAE + 0.3 movement-F1 + 0.2 overall-MAE, all at h=1) and only 20% on
+h=6. But production (`publish_predictions.py` dispatch) uses **GBM at NO 1-month
+horizon** — every series is `regime_switched` at 1m. GBM Gated serves only **6m**
+(India EB-1, China EB-3) and **12m** (China EB-1/2/3, India EB-1/2). And even the 20%
+h=6 term uses `expert_gbm_direct`, whereas prod uses `expert_gbm_gated` at 6m. So the
+CondObj optimizes a horizon/function GBM is *not deployed on*. Consequence: a CondObj
+win is **not a valid ship gate**. The real gate is a **production backtest** of the
+tuned GBM params on the GBM-served series at 6m/12m (`evaluate_model` /
+`compute_prediction_accuracy`) vs current params — only ship (Path-2 regen) if the
+production-served MAE improves. If it doesn't, the durable lesson is that the next
+real lever is a **production-aligned GBM objective** (weight 6m/12m on gated, on the
+5–7 series GBM actually serves), not more search against this h=1-heavy proxy.
+
+### Status (2026-07-13, planner)
+1. **Baseline gap — CLOSED.** Current prod params measured under the identical
+   objective: quick 95.5, non-quick 108.9 (see "Baseline" block above). §24's 72.0
+   (quick) beats current-quick 95.5 by ~25% → real headroom. Full non-quick 50-trial
+   run in flight for the robust best on full data.
+2. **§21 Pending Planning Review — RESOLVED** (see §21 Analysis, 2026-07-13):
+   removing the leak de-noised early-year retrogression estimates; `_RETROGRESSING_SERIES`
+   fallback constants do NOT warrant re-tuning now (no evidence they're miscalibrated;
+   leverage shrinks as history accumulates).
+3. **Ship gate CORRECTED.** The CondObj is NOT a valid ship gate (it optimizes GBM at
+   h=1, a horizon GBM is not deployed on — see "Objective-scope finding" above). Before
+   any param change: evaluate the full-run's winning GBM params on the **production
+   backtest** for the GBM-served series at 6m/12m (India EB-1/2, China EB-1/2/3) vs
+   current params. Ship ONLY if production-served MAE improves.
+Shipping any resulting param change is a heavyweight Path-2 change (off-prod regenerate
+all `PredictedCutoff` + graduate the DATA), not a code-only deploy.
