@@ -283,6 +283,95 @@ class TestGbmTrainingLabels:
         gbm_expert._model_cache.clear()
 
 
+class TestAggregatorWeightIntegrity:
+    """THEME 3: online Hedge aggregator weight-learning integrity.
+
+    A4-F1: warmup replayed each bulletin at knowledge_date = its OWN publication
+    date; get_cutoff_at_date is inclusive so persistence saw the actual cutoff and
+    scored loss 0 every step → weights collapsed onto persistence.
+    A4-F3/F4: the series/weight key omitted action_type, so filing and
+    final_action shared one weight vector (and the 2nd action's warmup was skipped).
+    A4-F8: an abstaining expert kept factor 1.0 while active experts were penalised,
+    so its relative weight grew and swamped the blend when it woke up.
+    """
+
+    def test_series_key_discriminates_action_type(self):
+        from lib.business.vqs.aggregator import ExpertAggregator
+
+        agg = ExpertAggregator()
+        assert agg._get_series_key("2nd", 3, "filing") != agg._get_series_key(
+            "2nd", 3, "final_action"
+        )
+
+    def test_abstaining_expert_does_not_gain_relative_weight(self):
+        from lib.business.vqs.aggregator import ExpertAggregator
+
+        experts = {
+            "persistence": lambda vc, c, at, kd, facts=None: date(2020, 1, 1),
+            "abstainer": lambda vc, c, at, kd, facts=None: None,
+        }
+        agg = ExpertAggregator(experts=experts)
+        kd = date(2024, 1, 1)
+        agg.predict("2nd", 3, "filing", kd)
+        # actual differs from persistence's pred → persistence takes a real loss.
+        agg.update("2nd", 3, kd, date(2020, 3, 1), action_type="filing")
+        w = agg.weights[agg._get_series_key("2nd", 3, "filing")]
+        # Both experts start at 0.5. The abstainer must track the field's mean loss
+        # (only persistence is active), so normalised weights stay equal — it does
+        # NOT balloon to > 0.5 the way factor=1.0 would make it.
+        assert abs(w["persistence"] - w["abstainer"]) < 1e-9
+
+    def test_warmup_scores_at_day_before_publication(self, monkeypatch):
+        # A4-F1: each warmup step must score at pub_date - 1 (mirroring live), not
+        # at pub_date (which hands persistence the answer).
+        from lib.business.vqs import aggregator as agg_mod
+        import models.visa_cutoff_date as vcd_mod
+
+        class _Chain:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def filter(self, **k):
+                return self
+
+            def select_related(self, *a):
+                return self
+
+            def order_by(self, *a):
+                return self
+
+            def __iter__(self):
+                return iter(self._rows)
+
+            def __len__(self):
+                return len(self._rows)
+
+        row = SimpleNamespace(
+            bulletin=SimpleNamespace(publication_date=date(2024, 2, 1)),
+            cutoff_date=date(2020, 1, 1),
+        )
+        monkeypatch.setattr(
+            vcd_mod, "VisaCutoffDate", SimpleNamespace(objects=_Chain([row]))
+        )
+        monkeypatch.setattr(
+            "lib.business.vqs.seasonal_predictor.get_last_N_moves",
+            lambda *a, **k: [],
+        )
+
+        agg = agg_mod.ExpertAggregator()
+        seen_predict_kd, seen_update_kd = [], []
+        monkeypatch.setattr(
+            agg, "predict", lambda vc, c, at, kd, facts=None: seen_predict_kd.append(kd)
+        )
+        monkeypatch.setattr(
+            agg, "update",
+            lambda vc, c, kd, actual, **kw: seen_update_kd.append(kd),
+        )
+        agg.warmup_history("2nd", 3, "filing", date(2025, 1, 1))
+        assert seen_predict_kd == [date(2024, 1, 31)]  # pub_date - 1, not 2024-02-01
+        assert seen_update_kd == [date(2024, 1, 31)]
+
+
 class TestStoredPredictionSelection(TestCase):
     """A5-F7 / A5-F11: reads over stored PredictedCutoff rows must be
     deterministic and complete."""
