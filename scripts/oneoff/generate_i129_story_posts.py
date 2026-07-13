@@ -376,7 +376,7 @@ def create_i129_story_posts() -> list[BlogPost]:
             slug=story.slug,
             defaults={
                 "title": story.title,
-                "content": story.content,
+                "content": _TABLE_STYLE + story.content,
                 "is_published": True,
                 "category": CATEGORY,
                 "related_bulletin": None,
@@ -390,6 +390,17 @@ def create_i129_story_posts() -> list[BlogPost]:
         )
         posts.append(post)
     return posts
+
+
+# The site wraps blog bodies in Bootstrap's .text-break
+# (word-break: break-word !important), which breaks tokens mid-character inside
+# narrow table columns: "34.9%" -> "34." / "9%", "FY21" -> "FY2" / "1". Reset table
+# cells to normal word-breaking so single tokens (numbers, %, FY-codes) stay whole
+# while multi-word headers still wrap between words. !important beats .text-break's.
+_TABLE_STYLE = (
+    "<style>.blog-content table td,.blog-content table th"
+    "{overflow-wrap:normal!important;word-break:normal!important;}</style>\n"
+)
 
 
 def main() -> None:
