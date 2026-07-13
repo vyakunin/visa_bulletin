@@ -1980,3 +1980,40 @@ re-confirm the §8 lesson that injecting an unconditional seasonal move during q
 regimes overshoots. The honest 1m posture is unchanged: persistence is a very strong
 1m baseline; the regime-switched selector + demand gate matches it on the important
 series while adding a dampened direction signal and catching EB-1 FY jumps.
+
+## 24. Ensemble Re-Tune — Bounded Exploratory Run (July 2026)
+
+### Motivation
+Section 0 Hypothesis #9 / recommended step 3: the prod ensemble constants
+(`ensemble_persistence_weight=0.797` in `meta_params.py:83`) were tuned before the
+GBM expert and the i485 fix landed, so they are stale. This is a bounded first pass
+at `tune_params --objective conditional --gbm-params`, run as part of the 2026-07-13
+Aug-predictions page audit to get a real signal on whether re-tuning has headroom.
+
+### What Was Implemented (Facts)
+- Ran `scripts/vqs/tune_params.py --n-trials 20 --objective conditional --gbm-params
+  **--quick**` off-prod on the staging DB (prod-copy) via `run_in_stg.sh`. Optuna
+  study `vqs_retune_20`. `--quick` subsamples bulletins (~3× faster) — so this is a
+  fast-signal search, NOT the definitive `--n-trials 50` full run §0 step 3 specifies.
+- **Best trial #4: conditional objective = 72.0** (CondMAE 70d, F1 0.38, 6mMAE 165d),
+  vs a spread of ~72–100 across the 20 trials (median ~86). Best params (subsampled):
+  `use_regime_context=False`, `blend_temperature≈0.026`, `steady_state_weight≈1.52`,
+  `hw_1/3/6/12 ≈ 0.20/0.10/0.25/0.34`, `use_huber_loss=True`, `gbm_n_estimators=242`,
+  `gbm_max_depth=3`, `gbm_learning_rate≈0.017`, `gbm_movement_threshold=37`,
+  `gbm_gate_threshold≈0.58`. Full param set in the run log.
+
+### Pending Planning Review
+This run is NOT a ship signal on its own — two things must happen before any param
+change + prediction regen:
+1. **A baseline gap.** `tune_params` does not seed the current prod params, and this
+   run was `--quick`. So CondObj=72.0 is "best found in a 20-trial subsampled search",
+   not "beats current" — the current prod params have no measured CondObj under the
+   identical objective to compare against. Needed: a full `--n-trials 50` (non-quick)
+   run AND an eval of the current `MetaParams()` under the same objective for an
+   apples-to-apples delta.
+2. **The §21 'Pending Planning Review'** (interpret why removing the backtest
+   lookahead leak slightly LOWERED VQS Ensemble MAE; decide whether the
+   `_RETROGRESSING_SERIES` FY-boundary fallback constants warrant re-tuning) is still
+   open and belongs in the same planning pass.
+Shipping any resulting param change is a heavyweight Path-2 change (off-prod
+regenerate all `PredictedCutoff` + graduate the DATA), not a code-only deploy.
