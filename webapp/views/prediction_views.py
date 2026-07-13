@@ -372,9 +372,31 @@ def prediction_detail(
             )
         table_rows.append(row_data)
 
-    formatted_title = (
-        f"{category_label} Predictions for {target_date.strftime('%B %Y')}"
-    )
+    # Title/meta. The FRESHEST published month (no bulletin after it) inherits
+    # this URL's ranking via the 301 from /predictions/<month>-<year>/ exactly
+    # when actual-bulletin intent ("visa bulletin <month> <year>") peaks and
+    # stays high for weeks. Lead its title with "<Month> <Year> Visa Bulletin"
+    # and frame it as official-results-vs-predictions. Older months keep the
+    # predictions-vs-actual framing but still lead with "Visa Bulletin".
+    month_label = target_date.strftime("%B %Y")
+    is_latest_published = next_actual is None
+    if is_latest_published:
+        formatted_title = (
+            f"{month_label} Visa Bulletin — Official {category_label} Dates & Our Predictions"
+        )
+        page_description = (
+            f"The official {month_label} U.S. Visa Bulletin {category_label} Final "
+            f"Action and Filing dates, scored against our model's predictions — "
+            f"priority date movements by category and country."
+        )
+    else:
+        formatted_title = (
+            f"{month_label} Visa Bulletin {category_label} Predictions vs Actual Dates"
+        )
+        page_description = (
+            f"How our {month_label} {category_label.lower()} visa bulletin predictions "
+            f"scored against the actual State Department dates."
+        )
     formatted_nav_prev = nav_prev.strftime("%b %Y") if nav_prev else None
     formatted_nav_next = nav_next.strftime("%b %Y") if nav_next else None
 
@@ -404,6 +426,10 @@ def prediction_detail(
         "nav_prev_url": nav_prev_url,
         "nav_next_url": nav_next_url,
         "formatted_title": formatted_title,
+        # page_title/page_description drive <title>, og:*, twitter:*, and the meta
+        # description in base.html (previously unset here -> generic sitewide og).
+        "page_title": formatted_title,
+        "page_description": page_description,
         "formatted_nav_prev": formatted_nav_prev,
         "formatted_nav_next": formatted_nav_next,
         "category": category,

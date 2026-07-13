@@ -12,7 +12,7 @@
       <tr>
         <th scope="row">{{ row.label }}</th>
         {% for fc in row.cells %}
-        <td{% if fc.ci_low and fc.ci_high %} title="80% range: {{ fc.ci_low|date:'M j, Y' }} – {{ fc.ci_high|date:'M j, Y' }}"{% endif %}>
+        <td>
           {% if fc.is_unavailable %}
           <span title="This category hit its fiscal-year annual limit; new visa numbers become available October 1.">Unavailable <i class="bi bi-info-circle text-muted small"></i></span>
           {% else %}
@@ -24,6 +24,9 @@
           {% if fc.is_baseline and fc.predicted_date %}
           <sup class="text-muted small" title="No dedicated model for this series — shown as a no-change baseline.">baseline</sup>
           {% endif %}
+          {% if fc.ci_low and fc.ci_high %}
+          <span class="d-block text-muted" style="font-size:0.7rem; white-space:nowrap;" title="Calibrated 80% confidence interval">80% range: {{ fc.ci_low|date:'M j, Y' }} – {{ fc.ci_high|date:'M j, Y' }}</span>
+          {% endif %}
         </td>
         {% endfor %}
       </tr>
@@ -31,4 +34,4 @@
     </tbody>
   </table>
 </div>
-<p class="text-muted small mb-3"><sup>baseline</sup> = no dedicated model for this series — shown as a no-change baseline. Ranges (hover a cell) show the model's calibrated 80% confidence interval.</p>
+<p class="text-muted small mb-3"><sup>baseline</sup> = no dedicated model for this series — shown as a no-change baseline. The <em>80% range</em> under a modeled date is the model's calibrated 80% confidence interval.</p>

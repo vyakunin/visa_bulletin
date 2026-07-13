@@ -168,8 +168,12 @@ def _forecast_from_row(
             movement_prob_label=plabel,
             movement_prob_color=pcolor,
             is_baseline=baseline,
-            ci_low=row.confidence_low,
-            ci_high=row.confidence_high,
+            # A calibrated 80% interval implies a dedicated model. Baseline
+            # (no-model, forced-persistence) cells must not show one — otherwise
+            # the "no dedicated model" footnote contradicts a range on the same
+            # cell. Only real modeled series (EB-1/2/3 x China/India) carry a CI.
+            ci_low=None if baseline else row.confidence_low,
+            ci_high=None if baseline else row.confidence_high,
         )
     # Null prediction: model_name distinguishes Unavailable from Current/no-backlog.
     if (row.model_name or "") == "unavailable":

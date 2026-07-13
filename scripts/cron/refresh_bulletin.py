@@ -19,10 +19,13 @@ Cron (hourly, uses `. .env` not `source` for /bin/sh compatibility):
         >> /var/log/visa-bulletin/bulletin_refresh.log 2>&1
 """
 
+import json
 import logging
 import os
 import runpy
 import sys
+import urllib.error
+import urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -254,6 +257,45 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
                 logger.exception("Failed %dm-ahead publish for %s", h, fwd_str)
 
 
+def _purge_cloudflare_edge() -> None:
+    """Purge the Cloudflare edge cache after a new bulletin lands.
+
+    ``cache.clear()`` only drops the Redis page cache on the origin. The CF edge
+    keeps serving the pre-drop HTML (``Cache-Control: max-age=3600``) for up to an
+    hour — including the now-stale ``/predictions/<month>-<year>/`` forecast page
+    that the origin already 301s to the accuracy archive — at the single
+    highest-traffic hour of the month. A bulletin drop invalidates essentially the
+    whole dynamic surface (homepage, every per-country tracker, every prediction
+    page, the new analysis post, the sitemap), so a zone-wide purge is the right
+    scope. Runs at most ~monthly, so the re-warm cost is negligible.
+
+    Reads ``CF_PURGE_TOKEN`` (Cache-Purge-scoped) + ``CF_ZONE_ID`` from the env.
+    No-op (logged) when either is absent (dev / staging without the secret) and
+    never raises — a purge failure must not fail the ingest.
+    """
+    token = os.environ.get("CF_PURGE_TOKEN")
+    zone_id = os.environ.get("CF_ZONE_ID")
+    if not token or not zone_id:
+        logger.info("Cloudflare edge purge skipped (CF_PURGE_TOKEN / CF_ZONE_ID not set)")
+        return
+
+    req = urllib.request.Request(
+        f"https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache",
+        data=json.dumps({"purge_everything": True}).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode())
+        if payload.get("success"):
+            logger.info("Cloudflare edge cache purged (purge_everything).")
+        else:
+            logger.warning("Cloudflare purge returned success=false: %s", payload.get("errors"))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        logger.warning("Cloudflare edge purge failed (non-fatal).", exc_info=True)
+
+
 def _generate_blog_posts_for_latest_bulletins(n_bulletins: int) -> None:
     """Generate analysis blog posts for the N most recently ingested bulletins."""
     narrator = BulletinNarrator()
@@ -299,6 +341,11 @@ def main() -> None:
             logger.info("Django cache cleared. New bulletin data is live.")
         except Exception:
             logger.warning("Cache clear failed (non-fatal, Redis may be unavailable)", exc_info=True)
+
+        # Origin cache is clear but the CF edge still serves pre-drop HTML for up
+        # to an hour — purge it so users see the new bulletin (and the forecast
+        # page 301s) immediately, at the month's highest-traffic moment.
+        _purge_cloudflare_edge()
     else:
         logger.warning("No bulletins were successfully ingested.")
         sys.exit(1)
