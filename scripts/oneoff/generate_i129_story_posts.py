@@ -49,9 +49,12 @@ _ATTRIBUTION = """
 <h2>Source &amp; method</h2>
 <p>The petition-level figures come from the <strong>I-129 microdata released under
 the Freedom of Information Act</strong> — "sourced from USCIS, obtained by Bloomberg"
-(<em>Bloomberg&nbsp;v.&nbsp;DHS</em>), the same dataset used in Borjas &amp; co. (NBER
-w34793). Registration-pool figures (eligible registrations, selections, the FY2025
-rule effects) are from USCIS's own published H-1B Electronic Registration statistics.</p>
+(<em>Bloomberg&nbsp;v.&nbsp;DHS</em>), the same dataset behind
+<a href="https://www.nber.org/papers/w34793">Borjas's H-1B wage-gap paper (NBER
+w34793)</a>. Registration-pool figures (eligible registrations, selections, the FY2025
+rule effects) are from USCIS's own published H-1B Electronic Registration statistics and
+its <a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">FY2025
+selection-rule rulemaking</a>.</p>
 <p><strong>Universe:</strong> fiscal years 2021&ndash;2024, cap-subject H-1B lottery
 petitions that were <strong>selected and filed</strong> (372,841 rows) &mdash; not the
 full registration pool. A frozen FOIA snapshot; per-beneficiary identifiers are
@@ -82,6 +85,16 @@ data shows the underlying pool went further: over half of FY2024 lottery registr
 were multi-entries. And the concentration is the opposite of the common assumption
 &mdash; it lives in the long tail of small staffing firms, not Infosys, TCS, or
 Amazon.</p>
+
+<p class="text-muted"><em>Lottery gaming isn't a new finding.
+<a href="https://www.bloomberg.com/graphics/2024-staffing-firms-game-h1b-visa-lottery-system/">Bloomberg's
+2024 investigation</a> first showed staffing firms flooding the lottery, and
+<a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">USCIS's
+own rulemaking</a> published the registration-pool counts and rewrote the selection
+process because of it. This page is the companion view from the
+<strong>selected-and-filed petitions</strong>: a conservative rate over time, an employer
+size-gradient, and an India&times;IT-services cut &mdash; all reproducible from the public
+microdata.</em></p>
 
 <h2>The trend, among selected-and-filed petitions</h2>
 <div class="table-responsive">
@@ -228,6 +241,13 @@ disappears &mdash; an adjusted <strong>+0.3% at the mean, &minus;0.9% at the med
 across 388 title&times;year strata (107,000 petitions). The story is <em>which jobs</em>
 men and women hold, not different pay for the same job.</p>
 
+<p class="text-muted"><em>The best-known study of this dataset,
+<a href="https://www.nber.org/papers/w34793">Borjas's H-1B wage-gap paper (NBER
+w34793)</a>, asks a different question: how H-1B pay compares to <strong>U.S.-born</strong>
+workers (it finds a large gap, and the finding is contested). This page instead holds
+nationality and visa status fixed and looks <strong>within</strong> the H-1B workforce, at
+the gap between men and women &mdash; a cut that paper doesn't report.</em></p>
+
 <h2>What the raw numbers look like (and why they mislead)</h2>
 <p>Trimmed to $20k&ndash;$1M (raw values run from $0.01 to $169M, so trimming is
 mandatory):</p>
@@ -332,6 +352,14 @@ the average multi-registered beneficiary (~4.3 registrations) had about
 deleted that asymmetry &mdash; <strong>the same odds for everyone</strong> &mdash; and the
 multi-registered entries that had skewed the lottery collapsed
 (408,891 &rarr; 47,314 in a year).</p>
+
+<p class="text-muted"><em>The headline per-year selection rates here are USCIS's own,
+widely republished; the mechanics of the FY2025 change trace to
+<a href="https://www.federalregister.gov/documents/2024/02/02/2024-01770/improving-the-h-1b-registration-selection-process-and-program-integrity">its
+rulemaking</a> (and the market design of lottery reforms to
+<a href="https://www.nber.org/papers/w26767">NBER w26767</a>). What this page adds is one
+step those numbers usually skip: conditioning the odds on <strong>how many times a person
+was registered</strong> &mdash; which, before FY2025, is what actually set them.</em></p>
 
 <h2>Layer 1 &mdash; the per-registration selection rate</h2>
 <p>Selections &divide; eligible registrations, from USCIS:</p>
