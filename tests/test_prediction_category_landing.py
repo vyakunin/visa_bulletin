@@ -82,3 +82,44 @@ class TestPredictionCanonicalScheme(TestCase):
             b'href="http://testserver/predictions/family_sponsored/2025-11/">',
             response.content,
         )
+
+
+class TestPredictionDetailSeoTitles(TestCase):
+    """Post-drop archive title/meta.
+
+    The freshest published month inherits /predictions/<month>-<year>/'s ranking
+    via the 301 exactly when actual-bulletin intent ("visa bulletin <month>
+    <year>") peaks and stays high for weeks. Its title must lead with "<Month>
+    <Year> Visa Bulletin" and og/meta must be set (regression: they used to fall
+    back to the generic sitewide defaults). Older months lead with "Visa
+    Bulletin" too but keep predictions-vs-actual framing.
+    """
+
+    def setUp(self):
+        Bulletin.objects.create(publication_date=date(2025, 6, 1))
+        Bulletin.objects.create(publication_date=date(2025, 11, 1))  # latest
+
+    def test_latest_month_leads_with_visa_bulletin_and_official(self):
+        body = self.client.get("/predictions/2025-11/").content.decode()
+        # <title> (block override) + H1 both use the same string.
+        self.assertIn("November 2025 Visa Bulletin", body)
+        self.assertIn("Official Employment-Based Dates", body)
+        # og:title / twitter:title / meta description are now the page's own,
+        # NOT the generic sitewide fallback.
+        self.assertIn(
+            '<meta property="og:title" content="November 2025 Visa Bulletin', body
+        )
+        self.assertIn(
+            'content="The official November 2025 U.S. Visa Bulletin', body
+        )
+        # The old generic-default meta description must not be what we ship here.
+        self.assertNotIn(
+            'content="Priority dates, work visas, and labor market data.', body
+        )
+
+    def test_historical_month_keeps_predictions_vs_actual_framing(self):
+        # 2025-06 is NOT the latest (2025-11 exists after it).
+        body = self.client.get("/predictions/2025-6/").content.decode()
+        self.assertIn("June 2025 Visa Bulletin", body)
+        self.assertIn("Predictions vs Actual Dates", body)
+        self.assertNotIn("Official Employment-Based Dates", body)

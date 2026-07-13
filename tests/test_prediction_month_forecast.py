@@ -114,6 +114,16 @@ class TestPredictionMonthForecast(TestCase):
             model_name="persistence",
         )
 
+        # EB-3 Philippines: a baseline series that DOES carry stored CI bounds.
+        # The view must SUPPRESS the CI on baseline cells (no dedicated model =>
+        # no calibrated range), so these 2099 sentinel dates must never render.
+        _actual(self.latest, ActionType.FINAL_ACTION.value, Country.PHILIPPINES.value, "3rd", date(2024, 8, 1))
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.PHILIPPINES.value, "3rd", date(2024, 8, 1),
+            confidence_low=date(2099, 1, 1), confidence_high=date(2099, 12, 1),
+            model_name="persistence",
+        )
+
     def test_future_month_renders(self):
         resp = self.client.get("/predictions/july-2026/")
         self.assertEqual(resp.status_code, 200)
@@ -158,6 +168,22 @@ class TestPredictionMonthForecast(TestCase):
         body = self.client.get("/predictions/july-2026/").content.decode()
         self.assertIn("80% range", body)
         self.assertIn("May 1, 2020", body)  # confidence_high of EB-2 India
+
+    def test_grid_ci_is_visible_not_hover_only(self):
+        # The EB/FS grid previously hid the calibrated 80% range in a
+        # <td title="80% range: ..."> tooltip — invisible on touch (the audience
+        # is mobile-heavy). It must now render as visible inline cell text.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn('title="80% range', body)  # no hover-only CI on any cell
+        self.assertIn("80% range: Feb 1, 2020", body)  # ci_low of EB-2 India, inline
+
+    def test_baseline_cell_suppresses_confidence_interval(self):
+        # A no-dedicated-model (baseline) series must not render a calibrated CI
+        # even when one is stored on the row — "no model" and "80% range" on the
+        # same cell contradict. The EB-3 Philippines 2099 sentinel bounds prove it.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn("Jan 1, 2099", body)
+        self.assertNotIn("Dec 1, 2099", body)
 
     def test_movement_prob_badge_has_explainer(self):
         body = self.client.get("/predictions/july-2026/").content.decode()
