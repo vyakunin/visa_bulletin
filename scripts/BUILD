@@ -223,6 +223,28 @@ py_binary(
 )
 
 py_binary(
+    name = "benchmark_fenced_queries",
+    srcs = ["benchmark_fenced_queries.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        "//models:salary",
+        "//lib/utils:filter_utils",
+        "//lib/utils:logging_utils",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "smoke_check_production",
     srcs = ["smoke_check_production.py"],
     main = "smoke_check_production.py",

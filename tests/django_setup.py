@@ -118,3 +118,33 @@ def setup_django_for_tests():
     # Apply migrations so test DB has all tables (salary_employer, etc.).
     call_command("migrate", verbosity=0)
     _test_db_created = True
+
+    # Drop the per-pid test DB when this process exits. create_test_db() has no
+    # matching teardown in this regime (Django's test runner normally calls
+    # destroy_test_db, but we create it manually at import), so without this every
+    # bazel target leaks a test_{base}_<pid> database onto the shared postgres
+    # server — 2065 of them (21 GB) had accumulated by 2026-07-07. atexit covers
+    # clean exits; a process killed by a bazel timeout/OOM still orphans one, so
+    # scripts/drop_orphan_test_dbs.py is the periodic backstop for those.
+    import atexit
+
+    def _drop_test_db(name=test_name, base_db=base):
+        try:
+            import psycopg2
+
+            conn = psycopg2.connect(
+                dbname=base_db,
+                user=os.environ.get("DB_USER", "postgres"),
+                password=os.environ.get("DB_PASSWORD", ""),
+                host=os.environ.get("DB_HOST", "localhost"),
+                port=os.environ.get("DB_PORT", "5432"),
+                connect_timeout=5,
+            )
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            conn.close()
+        except Exception:
+            pass  # best-effort cleanup; the sweep script is the backstop
+
+    atexit.register(_drop_test_db)

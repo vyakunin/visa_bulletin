@@ -868,6 +868,46 @@ branch; inspect every URL with non-zero difflines and classify it per the table 
 PROD_BASE=... STAGING_BASE=... PRED_MONTH=2026-7 ./scripts/staging_prod_diff.sh
 ```
 
+**`scripts/warm_cache.sh`** - post-deploy cache warmer
+Curls the top ~20 high-traffic **cacheable** GET pages (homepage, predictions index +
+current EB/FS month pages, per-country dashboards, priority-date hubs, salary/employer/
+job-title landings, methodology + latest analysis posts, FAQ/about/contact) so Django
+re-populates its `@cache_page` Redis entries after a deploy clears them — once the origin
+is warm, Cloudflare re-caches the HTML and cold users never pay the 2-3s render. Requests
+with `Cache-Control: no-cache` so they reach the origin (not a stale edge copy); no
+cache-busting query param, so it warms the same key real visitors hit. Faceted
+`/salaries/?...` query URLs are deliberately excluded (per-query, challenge-gated). Run it
+right after a prod deploy + Redis flush (see the deploy flow in `.claude/rules/deployment.md`,
+next to the `redis-cli -n 1 FLUSHDB` step). Prints per-URL status + timing; exit 1 if any
+URL is non-200. Safe to run any time — plain read-only GETs.
+```bash
+./scripts/warm_cache.sh                                    # warm https://visa-bulletin.us
+./scripts/warm_cache.sh --base https://staging.visa-bulletin.us
+BASE=... PRED_MONTH=2026-8 ./scripts/warm_cache.sh         # env overrides
+```
+
+**`scripts/staging_page_audit.sh`** - per-URL SEO/marker audit of the staging stack
+The committed form of the ad-hoc `curl -H 'Host: staging.visa-bulletin.us' <url>` + grep
+check that ran repeatedly across sessions. Curls a representative set of staging URLs
+(homepage, an employer profile, a job-title profile, the current predictions month page,
+`/salaries/`) via the staging Host and reports, per URL: HTTP status, robots-meta state
+(`index`/`noindex`/`none`), whether it's an employer/job-title **profile** page
+(`emp`/`jobtitle`/`no`, via the distinguishing rendered JSON-LD schema type —
+`AggregateRating` for employers, `Occupation` for job titles), and whether a **Plotly**
+chart is rendered. Sibling of `staging_prod_diff.sh` (same `STAGING_BASE` env pattern,
+same `/tmp` artifact convention) but a standalone per-page audit, not a staging↔prod diff.
+Use after a staging deploy that touches robots meta/indexability, the profile templates,
+or chart rendering. Exit 1 if any URL is non-200. Artifacts saved to
+`/tmp/vb_page_audit/<slug>.html`.
+```bash
+./scripts/staging_page_audit.sh                                   # audit the default URL set
+./scripts/staging_page_audit.sh --show                           # + dump matched marker lines per URL
+./scripts/staging_page_audit.sh --url /employer/google-llc/ --url /salaries/   # audit only these
+AUDIT_URLS="/ /salaries/" ./scripts/staging_page_audit.sh        # override the set via env
+# Bypass Cloudflare and hit the origin directly with an explicit Host header:
+STAGING_BASE=http://127.0.0.1:8080 HOST_HEADER=staging.visa-bulletin.us ./scripts/staging_page_audit.sh
+```
+
 ### Instance Setup Scripts
 
 > **AWS/Lightsail deployment is RETIRED** (2026-06-20). Production is a self-hosted
@@ -947,6 +987,23 @@ uv run scripts/gc_section_shares.py --start 2026-06-01 --end 2026-06-16 --paths
 ```
 Exit 2 if the export is unavailable (does NOT fall back to top-100). For a **known** path set (affiliate SubIds), use the chunked-`include_paths` path in `visa_bulletin_platform/monetization/affiliate_epv_reconcile.py` instead.
 
+### Daily Checkup — run the report locally
+
+**`scripts/run_daily_checkup.py`** — run the `daily_checkup` MCP coroutine locally and dump its report JSON.
+
+**Purpose:** the committed one-liner around `asyncio.run(daily_checkup())`, so nobody re-types that boilerplate to inspect the checkup report while debugging (`~/.claude/rules/no_adhoc_scripts.md`). It imports the SAME `daily_checkup` coroutine `mcp/daily_checkup_server.py` serves (`@mcp.tool()` returns the plain coroutine), so the output is byte-identical to what the digest pipeline receives.
+
+**🚨 HEAVY PROD READ — not casual.** Invoking it does a real production gather: one SSH round-trip to `homeserver` (containers, nginx 24h-log awk, Postgres freshness), a GoatCounter `/api/v0/export` pull (10 MB+ CSV, 1/hour rate-limited, shared cache side effect), GA4/Gmail/GSC sub-MCP calls, and HTTP probes against visa-bulletin.us. Expect tens of seconds; run deliberately, never in a loop.
+
+**Usage:**
+```bash
+uv run scripts/run_daily_checkup.py                          # pretty JSON to stdout
+uv run scripts/run_daily_checkup.py --raw                    # exact MCP string, unformatted
+uv run scripts/run_daily_checkup.py --since 2026-07-01T00:00:00Z   # (since currently ignored by server)
+uv run scripts/run_daily_checkup.py --out /tmp/checkup.json
+```
+Exit 0 on a produced report, 1 on gather failure. Requires `~/tokens/goatcounter.token`, the `homeserver` SSH alias, and the sub-MCP auth the server needs.
+
 ## Development Utilities
 
 ### File Inspection
@@ -1011,6 +1068,26 @@ bazel run //scripts/salary:update_wage_thresholds
 **`scripts/benchmark_db_ingest.py`** - Benchmark database ingestion performance
 ```bash
 bazel run //scripts:benchmark_db_ingest
+```
+
+**`scripts/benchmark_fenced_queries.py`** - Benchmark the SalaryRecord fenced-query resolvers
+
+**Purpose:** Time the three ways the `/salaries/` (and `/worksites/`) list views resolve a filtered page + count/avg/min/max aggregate over `salary_record`, so a regression in the fenced-query optimization (`lib/utils/filter_utils.py`) is measurable: `two_scan` (`fenced_aggregate` + `fenced_page_ids`), `single_scan` (`fenced_page_and_aggregate`, the current cold `?q=` path), and the opt-in `naive` baseline (`.aggregate()` + sliced `.order_by()`). For each representative filter shape (common job-title token, rare token, employer filter, state filter, the combined trigram+employer+state case, and a deep-page case) it prints the wall-clock ms (min + median over N iterations) per path, mirroring the exact queryset `webapp/views/salary/search.py:salary_search_view` builds.
+
+**When to use:** after touching `filter_utils.py` (the fenced resolvers) or before/after a query-shape change, to confirm `single_scan` still beats `two_scan` and neither regressed. The fence + `AS MATERIALIZED` CTE are PostgreSQL-specific, so authoritative timing wants prod/staging Postgres with a populated `salary_record` — against an empty/small dev DB the numbers are structural-only (they confirm each SQL path executes).
+
+```bash
+# all shapes on the local dev DB (structural-only timings)
+bazel run //scripts:benchmark_fenced_queries
+
+# more iterations + the naive baseline
+bazel run //scripts:benchmark_fenced_queries -- --iterations 5 --include-naive
+
+# a single shape
+bazel run //scripts:benchmark_fenced_queries -- --shape rare_title
+
+# authoritative numbers on prod/staging (inside the web container, after `bazel shutdown`)
+#   docker exec -w /app vb_web python3 -m scripts.benchmark_fenced_queries -- --iterations 5
 ```
 
 **Note:** The following benchmarking scripts exist but don't have BUILD targets yet. They were used during development for performance optimization:
@@ -1175,6 +1252,32 @@ Example:
 bazel run //scripts/salary:cluster_existing_employers > /tmp/clustering.log 2>&1 &
 PID=$!
 tail -f /tmp/clustering.log
+```
+
+---
+
+## Test-DB hygiene — `drop_orphan_test_dbs.py`
+
+The test suite (`tests/django_setup.py`) creates a per-pid `test_postgres_<pid>`
+database on the shared local postgres for each bazel target. Clean exits now drop
+their own DB via an `atexit` hook, but a target **killed** by a timeout/OOM
+orphans one. Left unswept these accumulate (2065 DBs / 21 GB by 2026-07-07 on the
+minipc).
+
+`scripts/drop_orphan_test_dbs.py` is the backstop. It drops a `test_postgres_%`
+DB only when it has **no active connection** AND the `<pid>` in its name is **no
+longer a live process** (`/proc/<pid>` absent) — so a running test is never hit.
+Peer-auths to postgres over the unix socket as the current OS user.
+
+```bash
+uv run scripts/drop_orphan_test_dbs.py --dry-run   # preview
+uv run scripts/drop_orphan_test_dbs.py             # sweep
+```
+
+Installed as an **hourly user cron** on the minipc (logs to
+`logs/drop_orphan_test_dbs.log`, gitignored):
+```
+37 * * * * cd .../visa_bulletin && ~/.local/bin/uv run scripts/drop_orphan_test_dbs.py >> .../logs/drop_orphan_test_dbs.log 2>&1
 ```
 
 ---

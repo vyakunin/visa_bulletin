@@ -67,7 +67,7 @@ The MCP returns RAW signals. Do not just paste them — **answer each red/yellow
 - **Slow tail (>10s requests)**: cross-reference the path against the per-property "Performance" data. If predictions backtest is the offender, that's expected today (heavy Plotly render); flag only if it grows beyond 5–10 hits.
 - **Rate-limited (nginx 429)**: ~6k+/day is normal — that's the bot subnet limiter doing its job. Surface only if `5xx > 0.5%` of total OR human-request 429s appear (filter UA for non-bot).
 - **/salaries/ 4xx flood**: ~2k/day of 429 to /salaries/ is bingbot getting throttled — not a bug. Confirm with `docker logs vb_nginx --since 24h | awk '$7 ~ /^\\/salaries\\/?$/ && $9 ~ /^4/'`.
-- **Traffic deltas**: positive MoM is the goal — celebrate briefly. Negative MoM ≥ 30% → 🟡, ≥ 60% → 🔴; investigate the surface-by-surface breakdown and check GSC for ranking/visibility drops (mcp__gsc__gsc_query_search_analytics).
+- **Traffic deltas**: positive MoM is the goal — celebrate briefly. Negative MoM ≥ 30% → 🟡, ≥ 60% → 🔴; investigate the surface-by-surface breakdown (nginx/GC). Ranking/visibility (GSC) analysis is NOT this digest's job — it lives in the visa_bulletin_platform digest; don't pull GSC or render a `gsc:` line here.
 
 ### Step 2.5 — unified ticket block (visa_bulletin)
 
@@ -124,15 +124,8 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
     predict    220   2%  77p   +159%/−4%
     ```
   - This is the SAME full-coverage data `scripts/gc_section_shares.py` prints (export CSV, 100% coverage). Round views (1.2k / 773) + percentages to whole numbers. Show `n/a` for share/pages/MoM/WoW when null — that means the MCP fell back to the top-100 `/stats/hits` path (export unavailable); flag it explicitly (`⚠️ top-100 only — long tail not counted this run`) rather than presenting truncated shares as real.
-  - **GSC stats next to the SEO surfaces (user request 2026-06-17).** For the two organic-profile rows (`employer_profile`, `job_title_profile`) — and any other surface you're flagging — append Google's own numbers on the next indented line: **clicks / impressions / avg-position (with the position trend arrow vs cycle)**. The data is already in the MCP's GSC section `surface_breakdown[]`, keyed by the SAME surface name: `clicks_this`, `impressions_this`, `pos_this`, `pos_cycle` (lower position = better; ↑=improving=pos went down, ↓=worsening). This lets the reader eyeball a GC view-drop against Google's side — **a GC drop with improving/flat GSC position is surge-unwind, not erosion** (the 2026-06-17 investigation: profiles mean-reverted off a late-May Google surge while position kept improving 8→6). Render inline, terse:
-    ```
-    employer   773   7%  659p  −11%/−15% ← tail
-       gsc: 389 clk · 22k impr · pos 6.0 ↑
-    job-title  471   5%  420p  −44%/−18% ← tail
-       gsc: 139 clk · 21k impr · pos 7.0 ↑
-    ```
-  - GSC lags ~2d so its window is offset from GC's by `GSC_LAG_DAYS` — they won't tie out to the unit, that's expected; it's the direction (position arrow) that matters. Show `gsc: n/a` if the GSC gather errored (in `errors`). Only attach GSC to organic surfaces (profiles, salaries, blog, dashboard) — not to `api`/`static_meta`/`donation_click`.
-  - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP now returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the GSC lines, raw numbers both windows (never percentages alone). It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
+  - **NO GSC / SEO lines in this digest — do NOT render any `gsc:` line, not even `gsc: n/a`.** GSC/SEO reporting was removed from the visa_bulletin MCP on 2026-06-26 and moved to the **visa_bulletin_platform** digest (marketing/SEO is owned by the platform overlay, same split as F5Bot/Reddit-watch — see `daily_checkup.md`). The MCP returns no GSC section here, so there is nothing to render and a `gsc: n/a` line falsely reads as a gather-gap in a digest GSC was never in scope for. Clicks/impressions/position live in the platform digest. (If GSC is ever deliberately re-scoped back into THIS channel, that's a code change to the MCP + this skill — until then, no gsc line.)
+  - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the surface breakdown, raw numbers both windows (never percentages alone). Note the engaged-time is **whole-visit** active engagement time (session-scoped, attributed to the organic landing surface — keeps counting as the user browses other pages), not time on a single page; label it `engaged/visit` so it's not misread as per-page. It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)
@@ -169,7 +162,7 @@ listener the moment the user replies to the bot.
 
 - ❌ Do not duplicate the cross-project digest. This skill covers ONLY visa_bulletin.
 - ❌ Do not reply on Kombi — always on @vyakunin_visa_bulletin_bot.
-- ❌ Do not paste raw MCP signals without investigation. The whole point of running on the project's bot is that the agent's cwd is the project repo — use it (SSH into homeserver, check nginx logs, query GSC).
+- ❌ Do not paste raw MCP signals without investigation. The whole point of running on the project's bot is that the agent's cwd is the project repo — use it (SSH into homeserver, check nginx logs, query the prod DB).
 - ❌ Do not surface "all clear" sections verbatim. Collapse to a footer line.
 - ❌ Do not skip the traffic line even when nothing else is interesting — it's the daily KPI the user opens the chat to see.
 

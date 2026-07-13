@@ -7,6 +7,10 @@ map to the right fields; header-junk and blank-employer rows are dropped.
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+import requests
 
 from tests.django_setup import setup_django_for_tests
 
@@ -89,3 +93,99 @@ class TestUscisDataHubPlugin(TestCase):
         assert obj.initial_approval == 1234
         assert obj.initial_denial == 0  # blank → 0
         assert obj.continuing_denial == 0
+
+    def test_download_fetches_from_mirror_when_missing(self):
+        """Cache miss → the per-year CSV is fetched from the GitHub mirror.
+
+        Regression guard for the self-sufficient re-ingest: before this behavior,
+        a missing file raised FileNotFoundError instead of being fetched.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            plugin = UscisEmployerDataHubPlugin()
+            # URL as ingest-registration stores it: lowercased basename.
+            source = SimpleNamespace(
+                url="https://raw.githubusercontent.com/johnbroberg/h1b_hub/main/"
+                "data/employer_information_2024.csv"
+            )
+
+            def fake_download(url, dest_path, *args, **kwargs):
+                Path(dest_path).write_text("fetched")
+                return Path(dest_path)
+
+            with (
+                mock.patch.object(plugin, "_base_path", return_value=base),
+                mock.patch(
+                    "lib.ingest.plugins.uscis_datahub.download_file",
+                    side_effect=fake_download,
+                ) as m,
+            ):
+                result = plugin.download(source, _FakeRun())
+
+            assert m.call_count == 1
+            fetched_url = m.call_args.args[0]
+            # Canonical (case-correct) mirror URL, not the lowercased stored one.
+            assert fetched_url.endswith("Employer_Information_2024.csv")
+            assert "raw.githubusercontent.com" in fetched_url
+            # Saved under the canonical filename in the cache dir.
+            assert result == base / "Employer_Information_2024.csv"
+            assert result.exists()
+
+    def test_download_uses_cache_case_insensitive_without_fetch(self):
+        """An already-present file (case-insensitive) is reused — no re-download."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            cached = base / "Employer_Information_2024.csv"
+            cached.write_text("cached")
+            plugin = UscisEmployerDataHubPlugin()
+            # Stored URL is lowercased; the cache file is canonical-cased.
+            source = SimpleNamespace(
+                url="https://raw.githubusercontent.com/johnbroberg/h1b_hub/main/"
+                "data/employer_information_2024.csv"
+            )
+
+            with (
+                mock.patch.object(plugin, "_base_path", return_value=base),
+                mock.patch(
+                    "lib.ingest.plugins.uscis_datahub.download_file"
+                ) as m,
+            ):
+                result = plugin.download(source, _FakeRun())
+
+            m.assert_not_called()
+            assert result == cached
+
+    def test_download_mirror_failure_raises_clear_error_no_partial(self):
+        """A mirror error surfaces a clear message and leaves no partial file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            plugin = UscisEmployerDataHubPlugin()
+            source = SimpleNamespace(
+                url="https://raw.githubusercontent.com/johnbroberg/h1b_hub/main/"
+                "data/employer_information_2024.csv"
+            )
+
+            with (
+                mock.patch.object(plugin, "_base_path", return_value=base),
+                mock.patch(
+                    "lib.ingest.plugins.uscis_datahub.download_file",
+                    side_effect=requests.ConnectionError("boom"),
+                ),
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    plugin.download(source, _FakeRun())
+
+            assert not (base / "Employer_Information_2024.csv").exists()
+
+    def test_discover_sources_enumerates_fy_range_without_local_files(self):
+        """discover_sources emits one mirror source per FY, needing no local files."""
+        plugin = UscisEmployerDataHubPlugin()
+        sources = plugin.discover_sources()
+        years = {s.metadata["fiscal_year"] for s in sources}
+        assert 2009 in years
+        assert 2024 in years
+        assert all("raw.githubusercontent.com" in s.url for s in sources)
+        assert all(
+            s.url.endswith(f"Employer_Information_{s.metadata['fiscal_year']}.csv")
+            for s in sources
+        )
