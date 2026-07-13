@@ -55,24 +55,24 @@ predictions) is bundled into the combined graduation (ticket #7 / fix-4).**
   paths train on is_current sentinel actuals the error metrics exclude — a metric-integrity
   issue, fixed with the accuracy_metrics cluster. `accuracy_metrics.py:166-174`.
 
-## THEME 2 — GBM training-label off-by-one + leakage + cache key (LIVE + TUNE) → ticket
-- **A3-F3** [LIVE,certain,PATH2] all 3 GBM caches omit `action_type` (`gbm_expert.py:744,
-  786,828,876`) → publish loops both action types in one process, so `filing` predictions
-  are served from the **final_action-trained** model (calibration.py itself notes the two
-  have very different distributions). HIGH.
-- **A3-F1** [LIVE+TUNE,likely,PATH2] 1m + horizon training labels span **h+1** transitions:
-  `kd = B.pub-1` anchors `current` on bulletin B−1, but the label uses `next_b` = B+1 →
-  `actual_move` = B+1 − B−1 = 2 transitions for a 1-transition prediction. Model learns ~2×
-  the movement it's asked to produce. `gbm_expert.py:643-655,694-712`. Correct label = cutoff
-  at `bulletin.publication_date` (B), not `next_b`. **Sits directly under fix-4's tuning
-  objective** (`compute_gbm_only_objective` trains via this path).
-- **A3-F2** [TUNE,certain] walk-forward leakage: only *feature* bulletins are filtered
-  `< knowledge_date`; the *label* bulletin (`next_bulletins ... > bulletin.pub`) is not, so
-  in backtests/backfills the label can be the very target being predicted (horizon builder
-  pulls labels up to kd+h+35d). Backtest MAE/F1 optimistically biased → tuning optimizes a
-  leaky metric. `gbm_expert.py:633 vs 644, 684 vs 697-704`.
-- **A3-F5** [LIVE,certain,PATH2] demand-drop masking applied in **training** too (comment
-  says inference-only) → shipped model ≠ the §17 ablation design. `gbm_expert.py:583-587`.
+## ✅ THEME 2 — GBM training-label off-by-one + leakage + cache key — CODE FIXED 2026-07-13
+Code + regression tests landed on `main`; PATH2 graduation bundled into the combined
+rollout (ticket #7). Tests: `TestGbmTrainingLabels` (label arithmetic + cache-key +
+walk-forward exclusion). **Theme 2 fixes sit directly under fix-4's tuning objective, so
+fix-4 MUST re-run on this corrected code.**
+- ✅ **A3-F3** [LIVE,certain,PATH2,HIGH] all 4 GBM caches (`reg1m`/`direct`/`clf`/`quantile`)
+  now include `action_type` in the key → filing no longer served from the final_action model.
+- ✅ **A3-F1** [LIVE+TUNE,PATH2] 1m label now `cutoff(B) − cutoff(B−1)` (was `cutoff(B+1) −
+  cutoff(B−1)` = 2 transitions); horizon target now anchored on B (`bulletin.publication_date
+  + (h−1) months`) so h=1 collapses to B and h transitions = h, not h+1. `gbm_expert.py`.
+- ✅ **A3-F2** [TUNE,certain] 1m: label bulletin B is `< knowledge_date` by construction now
+  (no `next_b`). Horizon: added `if target_b.publication_date >= knowledge_date: continue`
+  walk-forward guard so the label is always observable at kd.
+- ✅ **A3-F5** [LIVE,certain,PATH2] `_build_features_for_series(mask_demand_drop=True)` default;
+  the two training builders pass `False` → training keeps all features (matches §17 ablation),
+  inference still masks. `gbm_expert.py`.
+- NOTE: calibration backtest twins A3-F6 (same off-by-one) + A3-F7 (unobservable actuals)
+  remain in Theme 3 (`calibration.py`).
 
 ## THEME 3 — backtest/tuning-metric integrity (TUNE, qualifies fix-4) → ticket
 These corrupt the objective the §24/fix-4 re-tune optimizes; fix + re-validate BEFORE

@@ -5,7 +5,7 @@ cover the non-value-changing fixes shipped from the audit; the value-changing
 (Path-2) and tuning-metric findings are tracked as Notion tickets, not here.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -155,6 +155,132 @@ class TestCurrentUnavailableGuard:
             "2nd", Country.INDIA.value, date(2024, 6, 1), date(2024, 6, 1)
         )
         assert bonus > 0
+
+
+class TestGbmTrainingLabels:
+    """THEME 2: GBM training labels + cache keys.
+
+    A3-F1: the 1m/horizon labels spanned one transition too many (anchored
+    `current` on bulletin B-1 but reached the label to B+1 → 2 transitions for a
+    1-step prediction, so the model learned ~2x the movement).
+    A3-F2: the label bulletin was not walk-forward-filtered (could be the very
+    target being predicted).
+    A3-F3: the model caches omitted action_type, so filing predictions were
+    served from the final_action-trained model within one publish process.
+    """
+
+    SERIES = (Country.INDIA.value, "2nd")  # one _GBM_ELIGIBLE series
+
+    def _monthly_bulletins(self, n: int):
+        # n consecutive monthly bulletins from 2023-01-01.
+        out, y, m = [], 2023, 1
+        for _ in range(n):
+            out.append(SimpleNamespace(publication_date=date(y, m, 1)))
+            m += 1
+            if m > 12:
+                m, y = 1, y + 1
+        return out
+
+    def _install(self, monkeypatch, bulletins, *, step_days=30):
+        """Wire data_cache so each successive bulletin's cutoff advances step_days.
+        get_cutoff_at_date returns the cutoff of the latest bulletin <= as_of."""
+        import models.raw_facts as raw_facts_mod
+        from lib.business.vqs import data_cache, gbm_expert
+
+        base = date(2019, 1, 1)
+        cutoff_of = {
+            b.publication_date: base + timedelta(days=step_days * i)
+            for i, b in enumerate(bulletins)
+        }
+
+        def fake_cutoff(vc, country, action_type, as_of):
+            latest = None
+            for b in bulletins:
+                if b.publication_date <= as_of:
+                    latest = b.publication_date
+            return cutoff_of.get(latest)
+
+        monkeypatch.setattr(data_cache, "get_all_bulletins", lambda: bulletins)
+        monkeypatch.setattr(data_cache, "get_cutoff_at_date", fake_cutoff)
+        monkeypatch.setattr(gbm_expert, "_GBM_ELIGIBLE", [self.SERIES])
+        monkeypatch.setattr(gbm_expert, "_MIN_TRAINING_SAMPLES", 1)
+        monkeypatch.setattr(
+            gbm_expert, "_build_features_for_series",
+            lambda vc, c, at, kd, facts, mask_demand_drop=True: [0.0] * len(gbm_expert.FEATURE_NAMES),
+        )
+        monkeypatch.setattr(
+            raw_facts_mod, "RawFactsLedger",
+            SimpleNamespace(objects=SimpleNamespace(filter=lambda **k: [])),
+        )
+
+    def test_1m_label_is_single_transition(self, monkeypatch):
+        from lib.business.vqs import gbm_expert
+
+        buls = self._monthly_bulletins(8)
+        self._install(monkeypatch, buls, step_days=30)
+        x, y = gbm_expert._build_training_data(date(2024, 6, 1), "filing")
+        # Each label = one bulletin's advance (30d), NOT two (60d).
+        assert x, "expected training rows"
+        assert all(val == 30.0 for val in y), y
+
+    def test_horizon_label_is_exactly_h_transitions(self, monkeypatch):
+        from lib.business.vqs import gbm_expert
+
+        buls = self._monthly_bulletins(20)
+        self._install(monkeypatch, buls, step_days=30)
+        # 6-month horizon over a 30d/step ramp → interior labels are 180d (6
+        # transitions). The OLD off-by-one anchored the target a month too far and
+        # produced 210d (7 transitions); the max label must now be 180, never 210.
+        # (Edge bulletins whose exact target month is past the last bulletin snap
+        # the ±35d window to a nearer bulletin → labels < 180, which is fine.)
+        x, y = gbm_expert._build_training_data_horizon(date(2025, 6, 1), 6, "filing")
+        assert x, "expected training rows"
+        assert max(y) == 180.0, y
+        assert 180.0 in y
+
+    def test_horizon_label_excludes_unobservable_target(self, monkeypatch):
+        # A3-F2: a target bulletin at/after knowledge_date must not become a
+        # training label (walk-forward leakage).
+        from lib.business.vqs import gbm_expert
+
+        buls = self._monthly_bulletins(20)
+        self._install(monkeypatch, buls, step_days=30)
+        # bulletins < kd = 2023-01..2023-11 (i0..i10). Valid 6m samples need B-1 to
+        # exist AND B+5 to be published BEFORE kd. That is i1..i5 (targets
+        # 2023-07..2023-11); i6+ target 2023-12-01 (== kd) or later and are dropped
+        # by the walk-forward guard. Without the guard, i1..i10 = 10 rows leak.
+        kd = date(2023, 12, 1)
+        x, y = gbm_expert._build_training_data_horizon(kd, 6, "filing")
+        assert len(x) == 5, len(x)
+
+    def test_model_cache_key_discriminates_action_type(self, monkeypatch):
+        # A3-F3: filing and final_action must train/cache SEPARATE models.
+        import sys
+
+        from lib.business.vqs import gbm_expert
+
+        gbm_expert._model_cache.clear()
+        trained_for = []
+
+        def fake_training(kd, action_type="filing"):
+            trained_for.append(action_type)
+            return [[0.0] * len(gbm_expert.FEATURE_NAMES)], [1.0]
+
+        monkeypatch.setattr(gbm_expert, "_build_training_data", fake_training)
+        fake_lgb = SimpleNamespace(
+            LGBMRegressor=lambda **k: SimpleNamespace(
+                fit=lambda x, y: None, predict=lambda x: [0.0]
+            )
+        )
+        monkeypatch.setitem(sys.modules, "lightgbm", fake_lgb)
+
+        kd = date(2025, 6, 1)
+        m_filing = gbm_expert._get_or_train_model(kd, "filing")
+        m_final = gbm_expert._get_or_train_model(kd, "final_action")
+        assert m_filing is not None and m_final is not None
+        assert trained_for == ["filing", "final_action"]  # no cache collision
+        assert m_filing is not m_final
+        gbm_expert._model_cache.clear()
 
 
 class TestStoredPredictionSelection(TestCase):

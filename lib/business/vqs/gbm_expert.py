@@ -497,10 +497,17 @@ def _build_features_for_series(
     action_type: str,
     knowledge_date: date,
     facts: list | None = None,
+    mask_demand_drop: bool = True,
 ) -> list[float] | None:
     """Build feature vector for one (series, knowledge_date).
 
     Returns None if insufficient data.
+
+    mask_demand_drop: zero the demand-drop features (22-25) for masked series.
+    This is INFERENCE-only (default True); the training builders pass False so
+    the model still learns the general pattern from all features (A3-F5 — the
+    masking was previously applied unconditionally, including during training,
+    contradicting the design and the §17 ablation).
     """
     from lib.business.vqs.data_cache import get_cutoff_at_date
     from lib.business.vqs.seasonal_predictor import get_last_N_moves
@@ -587,9 +594,10 @@ def _build_features_for_series(
     ]
 
     # Zero demand-drop features for series where ROW velocity signal hurts accuracy.
-    # Inference-only masking: training retains all features so the model learns the general
-    # pattern; we simply don't let those features mislead deeply-backlogged series.
-    if (country, visa_class) in _DEMAND_DROP_MASKED_SERIES:
+    # Inference-only masking (mask_demand_drop=True): training retains all features
+    # so the model learns the general pattern; we simply don't let those features
+    # mislead deeply-backlogged series at prediction time.
+    if mask_demand_drop and (country, visa_class) in _DEMAND_DROP_MASKED_SERIES:
         feats[22] = 0.0
         feats[23] = 0.0
         feats[24] = 0.0
@@ -649,21 +657,29 @@ def _build_training_data(
     y: list[float] = []
 
     for bulletin in bulletins:
+        # kd = day before bulletin B is published; the latest cutoff observable at
+        # kd is bulletin B-1's. The label is the ONE transition B introduces, i.e.
+        # cutoff(B) - cutoff(B-1). (A3-F1: the old code used the bulletin AFTER B
+        # (next_b) as the label, so actual_move spanned B+1 - B-1 = TWO transitions,
+        # teaching the model ~2x the movement a 1-step prediction should produce.)
+        # Because B itself is < knowledge_date (loop filter), the label bulletin is
+        # already observable at knowledge_date, so there is no walk-forward leakage
+        # (A3-F2).
         kd = bulletin.publication_date - timedelta(days=1)
-        next_bulletins = [b for b in get_all_bulletins() if b.publication_date > bulletin.publication_date]
-        if not next_bulletins:
-            continue
-        next_b = next_bulletins[0]
 
         for country, vc in _GBM_ELIGIBLE:
             current = get_cutoff_at_date(vc, country, action_type, kd)
-            next_cutoff = get_cutoff_at_date(vc, country, action_type, next_b.publication_date)
+            next_cutoff = get_cutoff_at_date(
+                vc, country, action_type, bulletin.publication_date
+            )
             if current is None or next_cutoff is None:
                 continue
 
             actual_move = (next_cutoff - current).days
             kd_facts = [f for f in facts if f.publication_date <= kd]
-            feats = _build_features_for_series(vc, country, action_type, kd, kd_facts)
+            feats = _build_features_for_series(
+                vc, country, action_type, kd, kd_facts, mask_demand_drop=False
+            )
             if feats is None:
                 continue
 
@@ -701,7 +717,12 @@ def _build_training_data_horizon(
 
     for bulletin in bulletins:
         kd = bulletin.publication_date - timedelta(days=1)
-        target_kd = kd + relativedelta(months=horizon)
+        # Anchor the target on bulletin B, not on kd. The latest cutoff observable
+        # at kd is B-1's; a horizon-h prediction targets the h-th bulletin after
+        # B-1, i.e. B advanced by (h-1) months. (A3-F1: `kd + horizon` rounded to
+        # B+h — one bulletin too far, spanning h+1 transitions. For h=1 this must
+        # collapse to B, matching the 1m builder.)
+        target_kd = bulletin.publication_date + relativedelta(months=horizon - 1)
         # Need bulletin at target time
         target_bulletins = [
             b for b in get_all_bulletins()
@@ -711,6 +732,10 @@ def _build_training_data_horizon(
         if not target_bulletins:
             continue
         target_b = min(target_bulletins, key=lambda b: abs((b.publication_date - target_kd).days))
+        # Walk-forward: the target outcome must be observable at knowledge_date, or
+        # the backtest/tuning metric leaks the future it is trying to predict (A3-F2).
+        if target_b.publication_date >= knowledge_date:
+            continue
 
         for country, vc in _GBM_ELIGIBLE:
             current = get_cutoff_at_date(vc, country, action_type, kd)
@@ -720,7 +745,9 @@ def _build_training_data_horizon(
 
             actual_move = (target_cutoff - current).days
             kd_facts = [f for f in facts if f.publication_date <= kd]
-            feats = _build_features_for_series(vc, country, action_type, kd, kd_facts)
+            feats = _build_features_for_series(
+                vc, country, action_type, kd, kd_facts, mask_demand_drop=False
+            )
             if feats is None:
                 continue
 
@@ -750,7 +777,7 @@ def _build_training_data_classifier(
 
 def _get_or_train_model(knowledge_date: date, action_type: str = "filing") -> object | None:
     """Get or train the 1-month regression model."""
-    cache_key = ("reg1m", knowledge_date.year, knowledge_date.month)
+    cache_key = ("reg1m", action_type, knowledge_date.year, knowledge_date.month)
     if cache_key in _model_cache:
         return _model_cache[cache_key]
 
@@ -792,7 +819,7 @@ def _get_or_train_model_horizon(
     knowledge_date: date, horizon: int, action_type: str = "filing"
 ) -> object | None:
     """Get or train a direct h-month regression model."""
-    cache_key = ("direct", knowledge_date.year, knowledge_date.month, horizon)
+    cache_key = ("direct", action_type, knowledge_date.year, knowledge_date.month, horizon)
     if cache_key in _model_cache:
         return _model_cache[cache_key]
 
@@ -834,7 +861,7 @@ def _get_or_train_classifier(
     knowledge_date: date, horizon: int, movement_threshold: int = 30, action_type: str = "filing"
 ) -> object | None:
     """Get or train a binary classifier for P(|move| > movement_threshold)."""
-    cache_key = ("clf", knowledge_date.year, knowledge_date.month, horizon, movement_threshold)
+    cache_key = ("clf", action_type, knowledge_date.year, knowledge_date.month, horizon, movement_threshold)
     if cache_key in _classifier_cache:
         return _classifier_cache[cache_key]
 
@@ -882,7 +909,7 @@ def _get_or_train_quantile(
 ) -> object | None:
     """Get or train a quantile regression GBM (alpha = 0.1 or 0.9)."""
     alpha_key = int(alpha * 100)
-    cache_key = ("quantile", knowledge_date.year, knowledge_date.month, horizon, alpha_key)
+    cache_key = ("quantile", action_type, knowledge_date.year, knowledge_date.month, horizon, alpha_key)
     if cache_key in _quantile_cache:
         return _quantile_cache[cache_key]
 
