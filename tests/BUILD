@@ -855,6 +855,18 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_dataset_schema",
+    size = "small",
+    srcs = ["test_dataset_schema.py"],
+    deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)
+
+django_py_test(
     name = "test_dashboard_content_depth",
     size = "small",
     srcs = ["test_dashboard_content_depth.py"],
