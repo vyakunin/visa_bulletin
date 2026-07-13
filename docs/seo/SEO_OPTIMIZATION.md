@@ -307,11 +307,19 @@ exactly that gap (the not-yet-published month).
   13,284 impr pos 3.0) ahead of prediction intent ("… predictions" 1,235 clicks,
   pos 2.2); Spanish queries ~223 clicks/30d land here with no ES page (tracked).
   Audit outcome: model side is at its documented 1m ceiling (persistence + T3
-  demand gate, calibrated 80% CIs); page-side follow-ups ticketed in Notion —
-  CF-edge purge missing from the bulletin-ingest path (stale page up to 1h at the
-  drop), post-drop archive title lacks "Visa Bulletin" (301-inherited query
-  equity), grid CIs hover-only (invisible on mobile), ES month pages + hreflang,
-  VQS ensemble re-tune.
+  demand gate, calibrated 80% CIs). Three page-side fixes SHIPPED to prod
+  2026-07-13 (commit `8fbc246` / prod `e0f7345`, zero-downtime cutover) ahead of
+  the Aug drop: (1) the bulletin-refresh cron now purges the CF edge on ingest
+  (`_purge_cloudflare_edge`, env-gated) so the drop's 301 + fresh data show
+  immediately instead of ≤1h stale — fires every future monthly drop incl. the
+  Oct FY-reset; (2) the post-drop archive page (`/predictions/<y>-<m>/`) for the
+  freshest month now leads its title with "<Month> <Year> Visa Bulletin —
+  Official … Dates & Our Predictions" and sets page_title/page_description
+  (og/meta were falling back to the generic sitewide default); (3) the EB/FS grid
+  80% CIs render as visible inline text (were hover-only, invisible on mobile),
+  and baseline cells no longer carry a contradictory CI. Still open: ES month
+  pages + hreflang (~223 ES clicks/30d), VQS ensemble re-tune (bounded run
+  in progress 07-13).
 
 ## Top-H-1B-sponsors-per-role pages (`/h1b-sponsors/<job-title-slug>/`)
 
