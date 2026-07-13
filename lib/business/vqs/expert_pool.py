@@ -740,8 +740,14 @@ def trajectory_oppenheim_pace(
     action_type: str,
     knowledge_date: date,
     steps: int = 12,
+    facts: list | None = None,
 ) -> list[date | None]:
-    """Multi-step trajectory using Oppenheim constant pace."""
+    """Multi-step trajectory using Oppenheim constant pace.
+
+    A1-F12: accepts `facts` (unused — the pace model reads only the current cutoff)
+    to match the 6-arg trajectory convention. Without it, being selected via
+    ALL_EXPERT_TRAJECTORIES and called with facts would raise TypeError.
+    """
     return [expert_oppenheim_pace(visa_class, country, action_type, knowledge_date, i + 1) for i in range(steps)]
 
 

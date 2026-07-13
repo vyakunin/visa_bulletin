@@ -166,37 +166,52 @@ are impractical to unit-test without heavy fixtures).
   uncapped >1. Feeds ONLY the experimental FY-transition path. The correct denominator needs
   the allocator's per-country share (`supply/country_cap.py`), so fix it together with the
   FY-transition enablement, not as a blind constant swap. `fy_utilization.py:107-108`.
-- **A5-F1** [BACKTEST,certain] LOO excludes the wrong year (fiscal_year=cal year vs
-  `get_fiscal_year` key) → Aug/Sep target leakage. `fy_transition_model.py:119-120`.
-- **A5-F12** [certain] September momentum `*1.2` amplifies an *advance* under a deceleration
-  signal (wrong direction). `fy_transition_model.py:264-266`.
-- **A5-F13/F14** [low] knowledge-date `>=` vs `<=` boundary; current-util partial-FY vs
-  training end-of-FY scale mismatch. `fy_utilization.py:60`; `fy_transition_model.py:132-136`.
-- **A3-F9** [BACKTEST→LIVE-precedent,likely] `find_reset_events` mislabels U-spells that extend
-  past September (FY from spell's last month pushes the reset search a year forward).
-  `october_reset.py:183-185`.
+- ✅ **A5-F1** [BACKTEST,certain] FIXED — LOO now excludes by the target's CALENDAR year
+  (matching how `FYTransition.fiscal_year` is actually stored), not a `get_fiscal_year` key.
+  `fy_transition_model.py`.
+- ✅ **A5-F12** [certain] FIXED — September momentum under deceleration now dampens advances
+  (`*0.8`) / amplifies retros (`*1.2`), instead of amplifying an advance. `fy_transition_model.py`.
+- **A5-F13/F14** [low] OPEN — knowledge-date `>=` vs `<=` boundary + current-util partial-FY vs
+  training end-of-FY scale mismatch. Fix with the FY-transition enablement (both are experimental-
+  path-only calibration details, not a crash/leak). `fy_utilization.py:60`; `fy_transition_model.py`.
+- ✅ **A3-F9** [BACKTEST→LIVE-precedent,likely] FIXED — `find_reset_events` derives the exhausted
+  FY from a Jul/Aug/Sep month the U-spell touches, not `run[-1]` (which may be past September in
+  the next FY). `october_reset.py`.
 
 ## THEME 8 — design / judgment calls (DECISION) → ticket
-- **A1-F9** VOLATILE uses `cv = vol/avg_abs`, so a symmetric oscillation (cv≈1<2) classifies
-  STALLED not VOLATILE. `regime.py:81-97`. Intended? both route to persistence but weights differ.
-- **A1-F13** asymmetric CI comment ("overshoots more likely" ⇒ truth<pred) contradicts the band
-  `[P−30%, P+70%]` (extends up). `solver.py:886-894`. One of comment/sign is wrong.
-- **A3-F8** insufficient-data calibration fallback `max(60, 90*h//2)` gives ±60d for h=1 while its
-  own comment + the exception path say ±90d. `calibration.py:186-189`.
-- **A3-F11** `_get_issuance_drop_ratio` ignores its `visa_class` param (sums all classes).
-  `gbm_expert.py:449-475`. Class-blind proxy or bug?
-- **A5-F10** `seasonal_adjustment_map` keyed by the predicted cutoff's month, not the target
-  bulletin month (contradicts docstring); also bypasses forward/back caps. LATENT (empty default).
-  `meta_params.py:176-180`.
-- **A4-F11** `use_contextual_ensemble` param of `compute_bulletin_accuracy` accepted but never
-  used → contextual A/B silently compares the solver to itself. `accuracy_metrics.py:190`.
-- **A1-F12** `trajectory_oppenheim_pace` missing `facts` param → TypeError if selected via the
-  6-arg convention (LATENT — selector never returns it today). `expert_pool.py:708-732`.
-- **A1-F14/F15** `calibrate_queue_depth` returns None on demand≤0 despite valid rate;
-  `_cached_physics_prediction` lru_cache not invalidated across an ingest. `solver.py:229-231`;
-  `expert_pool.py:157-165`.
-- **A3-F13** leap-day crash in `lookback_years` cutoff (no day-clamp) — unreachable until 2104
-  with current callers. `seasonal_predictor.py:52`.
+Fixed the unambiguous ones (comment/consistency/latent-crash); the genuine judgment calls are
+RESOLVED-IN-PLACE below (fix or documented-intentional) — none is a live bug.
+- ✅ **A1-F13** [comment] FIXED — corrected the CI comment: the band `[P−30%, P+70%]` is wider on
+  the UPSIDE because the model under-predicts (truth lands above pred more often). The band's
+  0.3/0.7 shape is right; the old "overshoots more likely" comment was backwards. `solver.py`.
+- ✅ **A3-F8** [certain] FIXED — insufficient-data fallback floors at 90 (`max(90, 90*h//2)`), so
+  h=1 gives ±90 as the comment/exception-path intend (was ±60). `calibration.py`.
+- ✅ **A1-F12** [LATENT] FIXED — `trajectory_oppenheim_pace` now accepts `facts` (6-arg
+  convention) so selecting it can't TypeError. `expert_pool.py`.
+- ✅ **A3-F13** [LATENT] FIXED — `lookback_years` cutoff day-clamped so a Feb-29 knowledge_date
+  can't ValueError on a non-leap look-back year. `seasonal_predictor.py`.
+- **A1-F9** [DECISION] OPEN — VOLATILE uses `cv = vol/avg_abs`, so a symmetric oscillation
+  (cv≈1<2) classifies STALLED not VOLATILE. Both route to persistence (different weights), so it's
+  NOT a live wrong-answer; whether to widen the VOLATILE band is a tuning call for the research log,
+  not a mechanical fix. `regime.py:81-97`.
+- **A3-F11** [DECISION] OPEN — `_get_issuance_drop_ratio` sums issuance across all classes,
+  ignoring `visa_class`. This is a deliberate class-blind demand-drop PROXY (ROW velocity is the
+  cross-class signal), but the unused param is misleading. Resolution: either drop the param or make
+  it class-specific — a modeling call to validate by backtest, not blind-edit. `gbm_expert.py:449-475`.
+- **A5-F10** [LATENT] OPEN — `seasonal_adjustment_map` keyed by the predicted cutoff's month, not
+  the target bulletin month (contradicts docstring) + bypasses forward/back caps. The default map is
+  EMPTY so this never fires today; fix the keying when/if the map is populated. `meta_params.py:176-180`.
+- **A4-F11** [BACKTEST] OPEN — `use_contextual_ensemble` IS branched on (warms the contextual
+  aggregator) but needs verification that the prediction path then actually predicts WITH the
+  contextual aggregator rather than the solver. Backtest-only A/B; verify alongside the objective-
+  alignment work. `accuracy_metrics.py`.
+- **A1-F14** [DECISION] OPEN — `calibrate_queue_depth` returns None on demand≤0 despite a valid
+  rate. Arguably correct (no demand → no queue-depth calibration) but worth a guard review during
+  the physics-calibration pass. `solver.py:229-231`.
+- **A1-F15** [BY-DESIGN] `_cached_physics_prediction`'s lru_cache (and the whole data_cache layer)
+  is per-process and assumes a FRESH process per publish/backtest run — which is how it's invoked, so
+  NOT a live bug. Only a hazard if a long-lived process ingests then predicts; if that pattern is ever
+  introduced, add a `cache_clear()` at the ingest boundary. `expert_pool.py:166`.
 
 ## Cleared by reviewers (checked, NOT defects)
 All 7 `date(y,month+1,1)` sites are December-guarded; `get_cutoff_at_date` as-of `<=` semantics

@@ -7,6 +7,7 @@ This is a statistical baseline that captures seasonal patterns (October retrogre
 September acceleration) without relying on the physics engine.
 """
 
+import calendar
 import logging
 from collections import defaultdict
 from datetime import date
@@ -49,7 +50,11 @@ def get_seasonal_prediction(
         return None
 
     if lookback_years is not None:
-        min_date = date(knowledge_date.year - lookback_years, knowledge_date.month, knowledge_date.day)
+        # A3-F13: clamp the day so a Feb-29 knowledge_date doesn't raise ValueError
+        # when the look-back year isn't a leap year.
+        lb_year = knowledge_date.year - lookback_years
+        lb_day = min(knowledge_date.day, calendar.monthrange(lb_year, knowledge_date.month)[1])
+        min_date = date(lb_year, knowledge_date.month, lb_day)
         cutoffs = [c for c in cutoffs if c.bulletin.publication_date >= min_date]
 
     if len(cutoffs) < 2:

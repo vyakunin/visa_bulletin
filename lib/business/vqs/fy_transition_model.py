@@ -116,8 +116,12 @@ def predict_fy_transition(
         from models.raw_facts import RawFactsLedger
         facts = list(RawFactsLedger.objects.filter(publication_date__lte=knowledge_date))
 
+    # A5-F1: FYTransition.fiscal_year actually stores the CALENDAR year of the
+    # Sept/Oct bulletin, so the leave-one-out exclusion below must compare against
+    # the target's calendar year — NOT a get_fiscal_year(...) key, which mixed a
+    # fiscal-year value with calendar-year data and leaked the target year into the
+    # Aug/Sep training set.
     target_year = knowledge_date.year if target_month > knowledge_date.month else knowledge_date.year + 1
-    fy_year = get_fiscal_year(date(target_year, target_month, 1))
 
     # Collect historical transitions (walk-forward: only data before knowledge_date)
     end_year = knowledge_date.year
@@ -150,17 +154,17 @@ def predict_fy_transition(
     # Build prediction based on target month
     if target_month == 10:
         predicted_move, diag = _predict_october(
-            transitions, fy_year, current_backlog, current_utilization,
+            transitions, target_year, current_backlog, current_utilization,
             cross_signals, avg_recent_momentum, unconditional_move,
         )
     elif target_month == 9:
         predicted_move, diag = _predict_september(
-            transitions, fy_year, current_backlog, current_utilization,
+            transitions, target_year, current_backlog, current_utilization,
             avg_recent_momentum, unconditional_move,
         )
     elif target_month == 8:
         predicted_move, diag = _predict_august(
-            transitions, fy_year, current_backlog, current_utilization,
+            transitions, target_year, current_backlog, current_utilization,
             avg_recent_momentum, unconditional_move,
         )
     else:
@@ -261,9 +265,13 @@ def _predict_september(
         current_backlog=backlog, current_utilization=utilization,
     )
 
-    # Momentum adjustment: if recent months show deceleration, more likely to retrogress
+    # Momentum adjustment: if recent months show deceleration, more likely to retrogress.
+    # A5-F12: move the prediction TOWARD retrogression. Amplifying (*1.2) is only
+    # correct when `predicted` is already a retrogression (negative); for a positive
+    # predicted advance, *1.2 made the advance BIGGER — the wrong direction. Dampen
+    # advances, amplify retros.
     if momentum is not None and momentum < -10:
-        predicted = int(predicted * 1.2)
+        predicted = int(predicted * 1.2) if predicted < 0 else int(predicted * 0.8)
 
     return predicted, {
         "method": "conditional_september",

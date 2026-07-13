@@ -190,8 +190,10 @@ def compute_calibrated_interval(
 
     # Still not enough data → fall back to series-independent defaults
     if len(errors) < 5:
-        # Default intervals: ±90d for h=1, scaling with horizon
-        spread_days = max(60, 90 * horizon // 2)
+        # Default intervals: ±90d for h=1, scaling with horizon.
+        # A3-F8: floor at 90, not 60 — h=1 gave max(60, 45)=60, contradicting both
+        # this comment and the shallower fallback above (spread = 90 * horizon).
+        spread_days = max(90, 90 * horizon // 2)
         return predicted_date - timedelta(days=spread_days), predicted_date + timedelta(days=spread_days)
 
     errors_sorted = sorted(errors)

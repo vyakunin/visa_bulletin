@@ -918,8 +918,11 @@ def predict_next_bulletin_and_maturity(
             max_pred = max(valid_preds)
             spread_days = (max_pred - min_pred).days
 
-            # Use asymmetric confidence: low = -30% of spread, high = +70% of spread
-            # (Overshoots are more likely than undershoots in visa retrogression)
+            # Use asymmetric confidence: low = -30% of spread, high = +70% of spread.
+            # A1-F13: the band is WIDER on the upside because the model tends to
+            # UNDER-predict advancement — the actual cutoff lands ABOVE the
+            # prediction more often than below. (The old comment claimed "overshoots
+            # more likely", i.e. truth below pred, which is the opposite of the band.)
             if ensemble_cutoff:
                 confidence_low = ensemble_cutoff - timedelta(
                     days=int(spread_days * 0.3)
