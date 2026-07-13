@@ -68,6 +68,13 @@ django_py_test(
     ],
 )
 
+py_test(
+    name = "test_blog_table_wrap_guard",
+    size = "small",
+    srcs = ["test_blog_table_wrap_guard.py"],
+    data = ["//webapp:templates"],
+)
+
 django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",

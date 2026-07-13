@@ -7,6 +7,7 @@ Django/PostgreSQL/Bazel app parsing US visa bulletin data. Python 3.11+, AWS Lig
 ## Project rules
 
 @.claude/rules/analytics.md
+@.claude/rules/blog_content_html.md
 @.claude/rules/branching.md
 @.claude/rules/deployment.md
 @.claude/rules/employer_clustering.md

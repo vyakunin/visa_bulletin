@@ -2,6 +2,21 @@
 
 {% block extra_head %}
 <script src="https://cdn.plot.ly/plotly-basic-2.32.0.min.js" charset="utf-8"></script>
+{% comment %}
+  .blog-content carries Bootstrap's .text-break (word-break: break-word !important),
+  which breaks single tokens mid-character inside narrow table columns on mobile —
+  "34.9%" -> "34." / "9%", "FY21" -> "FY2" / "1". Reset table cells to normal
+  word-breaking (higher specificity + !important beats .text-break) so numbers,
+  percents and short codes stay whole while multi-word headers still wrap between
+  words. Applies to every /analysis/ post (narrator monthly posts + authored data
+  stories), which all render through this template. See .claude/rules/blog_content_html.md.
+{% endcomment %}
+<style>
+  .blog-content table td, .blog-content table th {
+      overflow-wrap: normal !important;
+      word-break: normal !important;
+  }
+</style>
 {% endblock %}
 
 {% block title %}{{ post.title }}{% endblock %}
