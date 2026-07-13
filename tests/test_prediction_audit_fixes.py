@@ -422,6 +422,66 @@ class TestMultiHorizonKnowledgeDate(TestCase):
             assert self._gap_months(target, kd) == n, (n, kd)
 
 
+class TestQueuePhysics:
+    """THEME 5: queue-physics value bugs.
+
+    A5-F3: advance_cutoff returned the fully-consumed bucket's month instead of the
+    first unserved month at an exact supply/bucket boundary → cutoff one month short.
+    A5-F5: the PERM-lag convolution rounded each lag bin independently, so a
+    distribution that rounds every bin to 0 (n over many small fractions) dropped
+    the whole mass.
+    """
+
+    def test_advance_cutoff_advances_past_fully_served_month(self):
+        from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
+
+        q = VirtualQueueSnapshot()
+        q.add(date(2024, 1, 1), 100)
+        q.add(date(2024, 2, 1), 100)
+        new, consumed = q.advance_cutoff(date(2024, 1, 1), 100)
+        assert (new, consumed) == (date(2024, 2, 1), 100)  # past fully-served Jan
+
+    def test_advance_cutoff_stays_within_partially_served_month(self):
+        from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
+
+        q = VirtualQueueSnapshot()
+        q.add(date(2024, 1, 1), 100)
+        new, consumed = q.advance_cutoff(date(2024, 1, 1), 40)
+        assert (new, consumed) == (date(2024, 1, 1), 40)  # 60 remain in Jan
+
+    def test_advance_cutoff_exhausts_all_to_month_after_last(self):
+        from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
+
+        q = VirtualQueueSnapshot()
+        q.add(date(2024, 1, 1), 100)
+        q.add(date(2024, 2, 1), 100)
+        new, consumed = q.advance_cutoff(date(2024, 1, 1), 200)
+        assert (new, consumed) == (date(2024, 3, 1), 200)
+
+    def test_advance_cutoff_december_rolls_to_january(self):
+        from lib.business.vqs.queue_snapshot import VirtualQueueSnapshot
+
+        q = VirtualQueueSnapshot()
+        q.add(date(2024, 12, 1), 50)
+        new, consumed = q.advance_cutoff(date(2024, 12, 1), 50)
+        assert (new, consumed) == (date(2025, 1, 1), 50)
+
+    def test_apportion_preserves_mass_across_many_small_bins(self):
+        from lib.business.vqs.demand import _apportion_ints
+
+        # 12 bins each 0.5 → per-bin round(0.5)=0 would drop ALL 6 units.
+        weights = {date(2020, m, 1): 0.5 for m in range(1, 13)}
+        out = _apportion_ints(weights)
+        assert sum(out.values()) == 6
+
+    def test_apportion_exact_total(self):
+        from lib.business.vqs.demand import _apportion_ints
+
+        weights = {date(2020, 1, 1): 3.4, date(2020, 2, 1): 3.3, date(2020, 3, 1): 3.3}
+        out = _apportion_ints(weights)
+        assert sum(out.values()) == 10
+
+
 class TestStoredPredictionSelection(TestCase):
     """A5-F7 / A5-F11: reads over stored PredictedCutoff rows must be
     deterministic and complete."""

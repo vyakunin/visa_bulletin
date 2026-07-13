@@ -6,10 +6,12 @@ calibration from historical bulletin advancement rates and fiscal-year
 retrogression handling.
 """
 
+import calendar
 import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from statistics import median
 
 from lib.business.vqs.data_cache import (
     get_cutoff_at_date,
@@ -283,7 +285,12 @@ def run_monthly_loop(
             while retro_month <= 0:
                 retro_month += 12
                 retro_year -= 1
-            cutoff = date(retro_year, retro_month, 1)
+            # A1-F8: preserve the day-of-month. Clamping to day 1 dropped up to ~30
+            # days of the original cutoff, deepening the retrogression by nearly a
+            # month every simulated October. Clamp only when the target month is
+            # shorter than the source day.
+            max_day = calendar.monthrange(retro_year, retro_month)[1]
+            cutoff = date(retro_year, retro_month, min(cutoff.day, max_day))
 
         supply = supply_fn(current) if supply_fn else monthly_supply
         new_cutoff, consumed = queue.advance_cutoff(cutoff, supply)
@@ -371,16 +378,17 @@ def get_retrogression_months_from_history(
         sept_cutoff = cutoff
         if oct_cutoff >= sept_cutoff:
             continue
-        # Retrogression: Oct is earlier. Months backward (approximate).
-        months_back = (sept_cutoff.year - oct_cutoff.year) * 12 + (
-            sept_cutoff.month - oct_cutoff.month
-        )
-        if months_back > 0:
-            retro_months_list.append(months_back)
+        # A1-F7: measure the retrogression in DAYS→months so sub-month retros are
+        # included. The old integer-month diff dropped every retro < 1 month
+        # (`months_back > 0`), biasing the estimate upward.
+        days_back = (sept_cutoff - oct_cutoff).days  # oct < sept guaranteed above
+        retro_months_list.append(days_back / 30.0)
 
     if len(retro_months_list) < MIN_RETROGRESSION_TRANSITIONS:
         return None
-    return int(round(sum(retro_months_list) / len(retro_months_list)))
+    # A1-F7: MEDIAN (as the docstring states), not mean — robust to outlier
+    # retrogression years.
+    return int(round(median(retro_months_list)))
 
 
 def _select_expert_for_regime(
