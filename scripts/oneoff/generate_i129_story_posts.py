@@ -443,9 +443,20 @@ shows certified pay by employer, role and state.</p>
     )
 
 
-def create_i129_story_posts() -> list[BlogPost]:
+_ALL_STORIES = (_story_a, _story_b, _story_c)
+
+
+def create_i129_story_posts(only_slug: str | None = None) -> list[BlogPost]:
+    """Publish the i129 data stories. only_slug -> publish just that one (for the
+    scheduled per-story rollout); None -> all three."""
+    stories = [s() for s in _ALL_STORIES]
+    if only_slug is not None:
+        stories = [s for s in stories if s.slug == only_slug]
+        if not stories:
+            valid = ", ".join(s().slug for s in _ALL_STORIES)
+            raise SystemExit(f"unknown --slug '{only_slug}'; valid slugs: {valid}")
     posts = []
-    for story in (_story_a(), _story_b(), _story_c()):
+    for story in stories:
         post, created = BlogPost.objects.update_or_create(
             slug=story.slug,
             defaults={
@@ -478,10 +489,21 @@ _TABLE_STYLE = (
 
 
 def main() -> None:
-    log_context("Generating I-129 FOIA data-story /analysis/ pages (a/b/c)")
-    logger.info("=== Generating I-129 data-story posts ===")
-    posts = create_i129_story_posts()
-    logger.info("Done. %d posts published at /analysis/:", len(posts))
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Publish the i129 /analysis/ data stories.")
+    parser.add_argument(
+        "--slug",
+        default=None,
+        help="publish only this story slug (default: all three). Used by the scheduled "
+        "per-story rollout / blog-publish MCP.",
+    )
+    args = parser.parse_args()
+
+    log_context(f"Generating I-129 FOIA data-story /analysis/ pages (slug={args.slug or 'all'})")
+    logger.info("=== Generating I-129 data-story posts (slug=%s) ===", args.slug or "all")
+    posts = create_i129_story_posts(only_slug=args.slug)
+    logger.info("Done. %d post(s) published at /analysis/:", len(posts))
     for p in posts:
         logger.info("  /analysis/%s/", p.slug)
 
