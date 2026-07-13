@@ -199,12 +199,14 @@ The named high-rate employers are shown with their petition counts for that reas
 
 def _story_b() -> Story:
     body = """
-<p class="lead">In the <strong>same job title</strong>, H-1B women and men are paid
-essentially the same: an adjusted gap of <strong>+0.3% at the mean, &minus;0.9% at the
-median</strong> across 388 title&times;year strata (107,000 petitions). The
-much-quoted raw gap &mdash; and the far larger 16&ndash;25% raw gaps among Chinese- and
-other-born workers &mdash; is about <strong>which jobs</strong> men and women hold, not
-different pay for the same job.</p>
+<p class="lead">A widely-quoted statistic says H-1B women earn less than men &mdash; a
+raw gap of roughly 4%, and much larger (16&ndash;25%) among Chinese- and other-born
+workers. Taken at face value it reads as unequal pay for equal work. In the FOIA'd
+petition data it is almost entirely <strong>occupational sorting</strong>, not unequal
+pay: compare men and women in the <strong>same job title</strong> and the gap all but
+disappears &mdash; an adjusted <strong>+0.3% at the mean, &minus;0.9% at the median</strong>
+across 388 title&times;year strata (107,000 petitions). The story is <em>which jobs</em>
+men and women hold, not different pay for the same job.</p>
 
 <h2>What the raw numbers look like (and why they mislead)</h2>
 <p>Trimmed to $20k&ndash;$1M (raw values run from $0.01 to $169M, so trimming is
@@ -215,10 +217,10 @@ mandatory):</p>
 <li>Raw gap: <strong>+4.8% mean, +4.4% median</strong> &mdash; and narrowing over time
 (+6.9% FY21 &rarr; +3.9% FY24).</li>
 </ul>
-<p>Taken alone, that reads like a pay-equity story. It isn't. H-1B base pay is anchored
-to the Labor Condition Application position wage, so within a given role there is little
+<p>Taken alone, that looks like a pay-equity problem. But H-1B base pay is anchored to
+the Labor Condition Application position wage, so within a given role there is little
 room for two workers to be paid differently &mdash; the aggregate gap has to come from
-<em>composition</em>.</p>
+<em>composition</em> (who holds which job), not from unequal pay inside a job.</p>
 
 <h2>The decomposition</h2>
 <p>Comparing men and women <strong>within the same job title</strong> (title&times;fiscal
@@ -256,12 +258,13 @@ once you compare the same job. Occupational sorting, not unequal pay.</p>
 Doctorate), and age composition works <em>against</em> the raw gap (men are older, and
 older bands show the <em>smallest</em> gaps).</p>
 
-<h2>Mandatory caveats</h2>
+<h2>What this comparison does and doesn't show</h2>
 <ul>
-<li><strong>Titles encode seniority.</strong> "Senior Software Engineer" is a title;
+<li><strong>Titles encode seniority.</strong> "Senior Software Engineer" is a title, so
 equal pay <em>within</em> a title does not rule out gendered differences in
-<em>reaching</em> the senior title. The classic controlled-gap critique cuts both ways,
-and we say so.</li>
+<em>reaching</em> the senior title in the first place. This method controls for the job
+someone holds, not the path to it &mdash; the same limitation that applies to any
+controlled pay-gap number.</li>
 <li><strong>Base pay only.</strong> The I-129 reports prospective base compensation
 &mdash; no equity or bonus, which is exactly where tech-sector gender gaps tend to
 concentrate. This is a floor-wage comparison, not total comp.</li>
@@ -269,20 +272,20 @@ concentrate. This is a floor-wage comparison, not total comp.</li>
 rate of pay stated on the petition, not verified payroll.</li>
 <li><strong>Sample.</strong> New-hire cap-lottery petitions, FY21&ndash;24. 33.5% of
 rows have a blank job title (a redaction-era source artifact); the decomposition uses
-the non-blank subsample, and a representativeness check confirms the raw gap is nearly
-identical in the blank (+5.5%) and non-blank (+4.5%) halves, so it isn't cherry-picking.
-Treating "blank" as its own stratum would fake a +3.1% "within-occupation" gap &mdash; a
-trap we flag explicitly.</li>
+only the rows with a title, and the raw gap is nearly identical in the blank (+5.5%) and
+non-blank (+4.5%) halves, so dropping them doesn't skew the result. (Treating the
+blank-title rows as their own occupational group would instead manufacture a spurious
++3.1% "within-occupation" gap, which is why they're excluded rather than pooled.)</li>
 </ul>
 
-<h2>The related "actual vs posted wage" number &mdash; read it correctly</h2>
-<p>The FOIA data also lets us compare reported pay to the LCA-posted position wage. Lead
-with the <strong>median: the ratio is exactly 1.000</strong> &mdash; the typical H-1B
-worker's reported pay equals the posted wage, and 71.8% are within &plusmn;1% of it. The
-oft-cited "+19&ndash;24%" is a <strong>mean</strong> effect driven entirely by the upper
-quartile. "H-1B workers are paid ~20% above the posted wage" is not a defensible summary;
-"the typical worker is paid the posted wage, and about one in four is paid above it,
-sometimes well above" is.</p>
+<h2>A related figure: reported pay vs the posted wage</h2>
+<p>The same data lets you compare each worker's reported pay to the wage posted on the
+Labor Condition Application. The median tells the honest story: the ratio is
+<strong>exactly 1.000</strong> &mdash; the typical H-1B worker's reported pay equals the
+posted wage, and 71.8% are within &plusmn;1% of it. The often-cited "+19&ndash;24%" is a
+<strong>mean</strong> effect driven entirely by the upper quartile. So "H-1B workers are
+paid ~20% above the posted wage" is not a defensible summary; "the typical worker is paid
+the posted wage, and about one in four is paid above it, sometimes well above" is.</p>
 """
     return Story(
         title="The H-1B “gender pay gap” is a sorting story, not an unequal-pay story",
