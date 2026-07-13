@@ -67,6 +67,22 @@ class DatasetSchemaTest(TestCase):
                     src.get("description", "").strip(),
                     f"isBasedOn source {src.get('name')!r} needs a non-empty description",
                 )
+                # Google's Rich Results Test flags each source with 2 non-critical
+                # issues unless both hold (regression: 2026-07-13 Rich-Results alert):
+                #  - `license` present (optional-but-recommended on every Dataset node);
+                #  - `creator.@type` is Person/Organization exactly — `GovernmentOrganization`
+                #    is a schema.org Organization subclass but Google's Dataset validator
+                #    rejects it as "Invalid object type for field creator".
+                self.assertTrue(
+                    src.get("license", "").strip(),
+                    f"isBasedOn source {src.get('name')!r} needs a license",
+                )
+                self.assertIn(
+                    src.get("creator", {}).get("@type"),
+                    ("Organization", "Person"),
+                    f"isBasedOn source {src.get('name')!r} creator.@type must be "
+                    "Organization/Person (not GovernmentOrganization) for Google Dataset",
+                )
 
     def test_dataset_is_head_only_so_no_layout_shift(self):
         # JSON-LD in <head> renders no visible DOM -> zero CLS. Pin the Dataset block
