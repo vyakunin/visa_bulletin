@@ -371,6 +371,11 @@ class TestJobTitleProfileView(TestCase):
             jt.avg_salary, "JobTitle.avg_salary must be populated by the stats script"
         )
         self.assertEqual(int(jt.avg_salary), 120000)  # mean of 100k/120k/140k
+        # Regression (2026-07-14): JobTitle.total_filings previously came from
+        # backfill_job_title_links with NO wage bounds, so the Related Roles
+        # "Filings" column didn't sum to the profile's Total Filings card. The
+        # stats script now sets it with the same wage-bounded definition.
+        self.assertEqual(jt.total_filings, 3)
 
     def test_related_roles_avg_salary_null_renders_dash_not_bare_dollar(self):
         """Template guards NULL avg_salary with an em-dash, never a bare '$'.

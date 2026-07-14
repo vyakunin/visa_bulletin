@@ -49,9 +49,13 @@ setup_logging()
 script_logger = ScriptLogger(__file__)
 logger = logging.getLogger(__name__)
 
-# Salary bounds for filtering (same as job_title_stats.py)
-MIN_REASONABLE_SALARY = 30000
-MAX_REASONABLE_SALARY = 1000000
+# Salary bounds for filtering — the single source of truth lives in
+# job_title_stats.py; a duplicated literal here once drifted from the
+# render-time floor and made the profile card disagree with the charts.
+from lib.business.salary.job_title_stats import (  # noqa: E402
+    MAX_REASONABLE_SALARY,
+    MIN_REASONABLE_SALARY,
+)
 
 # Years for "recent" filings (autocomplete ranking); must match webapp/views/job_titles/directory.AUTOCOMPLETE_YEARS
 RECENT_YEARS = 5
@@ -85,17 +89,20 @@ def _most_frequent_raw_title_per_job_title() -> list[tuple[int, str]]:
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
 
-def _avg_salary_per_job_title() -> list[tuple[int, Decimal | None]]:
+def _stats_per_job_title() -> list[tuple[int, int, Decimal | None]]:
     """
-    Return [(job_title_id, avg_salary), ...] using one indexed query.
+    Return [(job_title_id, total_filings, avg_salary), ...] using one indexed query.
 
-    Per-entity AVG(wage_annual) over the same reasonable-salary bounds as the
-    cluster stats, so the Related Roles table's per-title "Avg Salary" column is
-    populated (JobTitle.avg_salary was NULL for every row before this).
+    Per-entity COUNT + AVG(wage_annual) over the same reasonable-salary bounds
+    as the cluster stats, so the Related Roles table's "Filings" and "Avg
+    Salary" columns use the SAME definition as the profile's Total Filings card
+    (previously JobTitle.total_filings came from backfill_job_title_links with
+    no wage bounds, so the related-roles counts didn't sum to the card).
     """
     sql = """
     SELECT
         job_title_entity_id AS id,
+        CAST(COUNT(*) AS INTEGER) AS total_filings,
         AVG(wage_annual) AS avg_salary
     FROM salary_record
     WHERE job_title_entity_id IS NOT NULL
@@ -106,7 +113,7 @@ def _avg_salary_per_job_title() -> list[tuple[int, Decimal | None]]:
     """
     with connection.cursor() as cursor:
         cursor.execute(sql, [MIN_REASONABLE_SALARY, MAX_REASONABLE_SALARY])
-        return [(row[0], row[1]) for row in cursor.fetchall()]
+        return [(row[0], row[1], row[2]) for row in cursor.fetchall()]
 
 
 def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
@@ -235,7 +242,7 @@ def main():
             "DRY RUN: would run 5 bulk SQL queries then batch-update JobTitle and JobTitleCluster"
         )
         n_jt = _most_frequent_raw_title_per_job_title()
-        n_avg = _avg_salary_per_job_title()
+        n_avg = _stats_per_job_title()
         n_cl = _most_frequent_raw_title_per_cluster()
         n_st = _stats_by_cluster()
         n_recent = _recent_filings_by_cluster()
@@ -269,11 +276,13 @@ def main():
         "  Got %s JobTitle representative titles", f"{len(job_title_updates):,}"
     )
 
-    # 2) Bulk SQL: avg_salary per JobTitle (Related Roles "Avg Salary" column)
-    logger.info("Query 2/5: Avg salary per JobTitle...")
-    avg_salary_by_job_title = dict(_avg_salary_per_job_title())
+    # 2) Bulk SQL: total_filings + avg_salary per JobTitle (Related Roles columns)
+    logger.info("Query 2/5: Filings + avg salary per JobTitle...")
+    stats_by_job_title = {
+        row[0]: (row[1], row[2]) for row in _stats_per_job_title()
+    }
     logger.info(
-        "  Got avg_salary for %s JobTitles", f"{len(avg_salary_by_job_title):,}"
+        "  Got filings/avg_salary for %s JobTitles", f"{len(stats_by_job_title):,}"
     )
 
     # 3) Bulk SQL: most frequent raw title per cluster
@@ -294,11 +303,12 @@ def main():
     recent_by_cluster = {row[0]: row[1] for row in recent_by_cluster_list}
     logger.info("  Got recent filings for %s clusters", f"{len(recent_by_cluster):,}")
 
-    # Batch-update JobTitle.title + avg_salary (only mark changed where different;
-    # bulk_update sends the full batch either way).
-    logger.info("Updating JobTitle.title + avg_salary...")
+    # Batch-update JobTitle.title + total_filings + avg_salary (only mark changed
+    # where different; bulk_update sends the full batch either way).
+    logger.info("Updating JobTitle.title + total_filings + avg_salary...")
     title_updated_count = 0
     avg_updated_count = 0
+    filings_updated_count = 0
     for i in range(0, len(job_title_updates), JOB_TITLE_BATCH_SIZE):
         batch = job_title_updates[i : i + JOB_TITLE_BATCH_SIZE]
         ids = [b[0] for b in batch]
@@ -309,7 +319,10 @@ def main():
             if new_title is not None and new_title != jt.title:
                 jt.title = new_title
                 title_updated_count += 1
-            new_avg = avg_salary_by_job_title.get(jt.id)
+            new_count, new_avg = stats_by_job_title.get(jt.id, (0, None))
+            if jt.total_filings != new_count:
+                jt.total_filings = new_count
+                filings_updated_count += 1
             if new_avg is not None and jt.avg_salary != new_avg:
                 jt.avg_salary = new_avg
                 avg_updated_count += 1
@@ -317,7 +330,7 @@ def main():
             bulk_update_batched(
                 job_titles,
                 batch_size=JOB_TITLE_BATCH_SIZE,
-                fields=["title", "avg_salary"],
+                fields=["title", "total_filings", "avg_salary"],
             )
         if (
             i + JOB_TITLE_BATCH_SIZE
