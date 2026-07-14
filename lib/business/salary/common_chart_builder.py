@@ -358,6 +358,9 @@ def build_filing_volume_chart(yoy_trends: list[dict], title: str) -> str | None:
         template="plotly_white",
         showlegend=False,
     )
+    # Fiscal years are integers — without this Plotly picks fractional ticks
+    # ("2,022.5") on short series.
+    fig.update_xaxes(tickformat="d", dtick=1)
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 
@@ -390,4 +393,6 @@ def build_salary_trend_chart(yoy_trends: list[dict], title: str) -> str | None:
         template="plotly_white",
         showlegend=False,
     )
+    # Integer year ticks — see build_filing_volume_chart.
+    fig.update_xaxes(tickformat="d", dtick=1)
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)

@@ -602,6 +602,9 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
             template="plotly_white",
             showlegend=False,
         )
+        # Integer year ticks — Plotly otherwise picks fractional ("2,022.5")
+        # ticks on short series.
+        fig.update_xaxes(tickformat="d", dtick=1)
 
         charts["filing_volume"] = fig.to_json()
         if log_slug:
@@ -639,6 +642,8 @@ def _build_employer_profile_charts(stats, employer_name, slug=None):
             template="plotly_white",
             showlegend=False,
         )
+        # Integer year ticks — see filing_volume above.
+        fig.update_xaxes(tickformat="d", dtick=1)
 
         charts["salary_trend"] = fig.to_json()
         if log_slug:

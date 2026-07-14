@@ -40,7 +40,12 @@ GROWTH_PARTIAL_YEAR_MIN_RATIO = 0.6
 # Salary validation bounds (annual)
 # These filter out clearly incorrect data (data entry errors, unrealistic values)
 MIN_REASONABLE_SALARY = (
-    30000  # $30k/year minimum (below this is likely hourly wage miscoded as annual)
+    # Full-time federal minimum wage (~$15,080/yr). Low-wage PERM occupations
+    # (poultry processing, farm work, housekeeping) legitimately certify
+    # $15-30k annual wages — a higher floor silently erases their history
+    # (118k real rows sat in the $15-30k band as of 2026-07). Genuine unit
+    # miscodes (hourly recorded as annual) are 2-4 digit values, far below this.
+    15000
 )
 MAX_REASONABLE_SALARY = 1000000  # $1M/year maximum (above this is likely data error)
 

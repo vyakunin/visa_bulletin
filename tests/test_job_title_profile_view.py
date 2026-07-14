@@ -733,6 +733,35 @@ class TestJobTitleStatistics(TestCase):
         self.assertEqual(stats["basic"]["total_filings"], 8)
         self.assertIsNotNone(stats["basic"]["median_salary"])
 
+    def test_statistics_include_low_wage_annual_filings(self):
+        """$15-30k annual wages are real (low-wage PERM occupations), not
+        miscodes. Regression: a $30k MIN_REASONABLE_SALARY floor erased whole
+        years of history — poultry-cutter FY2016-21 averaged ~$21k, so the
+        profile chart began at 2022 despite 'all years' being selected."""
+        from lib.business.salary.job_title_stats import get_job_title_statistics
+
+        job_title = JobTitle.objects.get(title_normalized="data analyst test")
+        SalaryRecord.objects.create(
+            case_number="TEST-STATS-JT-LOWWAGE",
+            employer_name="Tech Corp Test",
+            job_title="Data Analyst Test",
+            job_title_entity=job_title,
+            worksite_state="CA",
+            wage_from=Decimal("21000"),
+            wage_unit=WageUnit.YEAR,
+            wage_annual=Decimal("21000"),
+            visa_program=VisaProgram.PERM,
+            case_status=CaseStatus.CERTIFIED,
+            fiscal_year=2023,
+            source_file="test.xlsx",
+            is_worksite=False,
+        )
+
+        stats = get_job_title_statistics(self.cluster, years=5, program_filter="all")
+
+        self.assertEqual(stats["basic"]["total_filings"], 9)  # 8 + the $21k row
+        self.assertIn(2023, [t["fiscal_year"] for t in stats["yoy_trends"]])
+
     def test_statistics_salary_percentiles(self):
         """Test that salary percentiles are calculated"""
         from lib.business.salary.job_title_stats import get_job_title_statistics
@@ -1425,6 +1454,29 @@ class TestSimilarClustersCaching(TestCase):
         )
         with self.assertNumQueries(0):
             self.assertEqual(_get_similar_clusters(empty_cluster), [])
+
+
+class TestFiscalYearChartAxis(TestCase):
+    """Year-axis charts must use integer ticks (regression: Plotly rendered
+    fractional '2,022.5' ticks on short numeric year series)."""
+
+    def test_fiscal_year_axis_uses_integer_ticks(self):
+        import json
+
+        from lib.business.salary.common_chart_builder import (
+            build_filing_volume_chart,
+            build_salary_trend_chart,
+        )
+
+        trends = [
+            {"fiscal_year": 2022, "count": 30, "median_salary": 25000},
+            {"fiscal_year": 2023, "count": 295, "median_salary": 27500},
+            {"fiscal_year": 2024, "count": 181, "median_salary": 29000},
+        ]
+        for builder in (build_filing_volume_chart, build_salary_trend_chart):
+            fig = json.loads(builder(trends, "t"))
+            self.assertEqual(fig["layout"]["xaxis"]["dtick"], 1)
+            self.assertEqual(fig["layout"]["xaxis"]["tickformat"], "d")
 
 
 if __name__ == "__main__":
