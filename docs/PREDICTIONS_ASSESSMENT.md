@@ -80,7 +80,7 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 - Pace 6m MAE = 211d vs persistence 228d, beats persistence on all 6 series (Section 11)
 - Supply rebalancing reduced 2025+ under-prediction rate from ~72% to 42% (Section 13)
 - I-140 data: FY2014–FY2025 complete (576 rows in raw_facts_ledger)
-- Tuned GBM params: n_estimators=258, max_depth=8, lr=0.103, movement_threshold=50, gate_threshold=0.68
+- Tuned GBM params (production since 2026-07-14, §25 gate + graduation): n_estimators=68, max_depth=8, lr=0.0101, min_child_samples=16, reg_alpha=4.24, reg_lambda=3.19, movement_threshold=49, gate_threshold=0.488. (Prior §16 params: n_estimators=258, lr=0.103, movement_threshold=50, gate_threshold=0.68.)
 - **GBM at 1m is unsafe at ALL gate thresholds (0.68–0.95)**: 1m MAE is 93d–123d depending on series. Gate sweep confirms no operating point. (Section 17)
 - **GBM already trains per-horizon** (confirmed Section 18 review): `_build_training_data` (1m) and `_build_training_data_horizon` (3m/6m/12m) are separate.
 - 12m dispatch live (Section 18). Movement probability badge implemented in UI (Section 18).
@@ -2151,11 +2151,23 @@ improve except China EB-3 @6m (194→233, base 228).
   (tuned = §24 full-run trial #25).
 
 ### Current Status
-Gate run complete; graduation of the `_GBM_*` constants NOT yet applied — held for
-user go. If graduated: heavyweight Path-2 change per §24 (off-prod regenerate
-`PredictedCutoff` + graduate the DATA). Candidate follow-up: with tuned params,
-India EB-1 @6m final_action ≈ persistence — its GBM dispatch slot (won on §20 same-
-window eval) may warrant re-dispatch evaluation vs RS/Pace.
+GRADUATED 2026-07-14 on user go. **Fact:** tuned params applied to `_GBM_*`
+defaults (`d12a94f` on main), shipped to prod via the Path-2 data cutover
+(`cutover.sh --data 6aa53ad`, zero vb 502s, exit 0). Prod runs image
+`staging-6aa53ad`; the ship carried the full main tree incl. the Theme 1–8
+audit fixes (staging was synced to main in `6aa53ad` because the gate
+validated tuned params against main's semantics — A2-F1 horizon fix,
+Current/Unavailable guards). **Fact:** forward `PredictedCutoff` rows
+regenerated on staging pre-cutover with tuned constants: targets 2026-08
+(h=1), 2026-10 (h=4), 2027-01 (h=7), 2027-07 (h=13) — 160 rows unchanged,
+190 changed, 210 new (multi-horizon filing/FS rows now populated per Theme 4),
+0 disappeared. Verified serving on prod (e.g. India EB-1 @12m final_action
+2023-06-07 → 2023-10-08 on /predictions/july-2027/). The 3 i129 story posts
+were explicitly kept staging-only through the cutover (unpublished for the DB
+graduation, re-published on staging after) per the locked B→A→C campaign
+schedule. Candidate follow-up: with tuned params, India EB-1 @6m final_action
+≈ persistence — its GBM dispatch slot (won on §20 same-window eval) may
+warrant re-dispatch evaluation vs RS/Pace.
 
 ### Pending Planning Review
 Awaiting planning session to interpret results, update hypotheses, and re-prioritize
