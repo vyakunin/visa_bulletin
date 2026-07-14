@@ -97,7 +97,7 @@
     {% for item in faq %}
     <div class="mb-3">
       <div class="fw-semibold">{{ item.q }}</div>
-      <div class="text-muted">{{ item.a }}</div>
+      <div class="text-muted">{% if item.a_html %}{{ item.a_html|safe }}{% else %}{{ item.a }}{% endif %}</div>
     </div>
     {% endfor %}
 

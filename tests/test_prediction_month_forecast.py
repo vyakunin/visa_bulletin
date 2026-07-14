@@ -201,6 +201,30 @@ class TestPredictionMonthForecast(TestCase):
         self.assertIn("since 2016", body)
         self.assertNotIn("since 2020", body)
 
+    def test_grid_suppresses_redundant_no_change_annotation(self):
+        # Zero-delta cells (every baseline/persistence series) used to render a
+        # per-cell "no change" label that wrapped mid-phrase and duplicated the
+        # "baseline" marker on every FS cell. Only real +/− deltas are annotated
+        # now; the footnote states that an unannotated date means no change.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn("no change</span>", body)
+        self.assertIn("forecast unchanged from the current bulletin", body)
+        self.assertIn("+2m", body)  # real deltas still annotated
+
+    def test_faq_answers_carry_inline_links(self):
+        # The visible FAQ links methodology / accuracy archive / filing explainer;
+        # the FAQPage JSON-LD keeps plain text (no escaped anchors in the blob).
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn('<a href="/predictions/">historical accuracy archive</a>', body)
+        self.assertIn(
+            '<a href="/analysis/how-my-prediction-model-works/">methodology</a>', body
+        )
+        self.assertIn(
+            '<a href="/analysis/uscis-visa-bulletin-filing-dates-explained/">Dates for Filing</a>',
+            body,
+        )
+        self.assertNotIn('<a href=\\"', body)  # JSON-LD answers stay link-free
+
     def test_faqpage_schema_present(self):
         body = self.client.get("/predictions/july-2026/").content.decode()
         self.assertIn('"@type": "FAQPage"', body)
