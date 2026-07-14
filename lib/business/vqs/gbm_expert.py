@@ -83,19 +83,21 @@ _model_cache: dict[tuple, object] = {}
 _classifier_cache: dict[tuple, object] = {}
 _quantile_cache: dict[tuple, object] = {}
 
-# Default GBM hyperparameters — tuned with Optuna (Section 16, March 2026) using
-# a direct GBM-only conditional objective (not VQS ensemble). Improvements vs defaults:
-#   F1: 0.31 → 0.48, CondMAE: 144d → 129d, 6mMAE: 225d → 201d (quick-mode eval).
-_GBM_N_ESTIMATORS: int = 258
+# Default GBM hyperparameters — re-tuned with Optuna (Section 25, July 2026) using
+# the production-aligned objective (expert_gbm_gated at 6m/12m on dispatch-served
+# surfaces, both action types). Gated via scripts/vqs/backtest_publish_dispatch.py:
+# stall-era traffic-weighted MAE 538→497 (no-change 532), condMAE on real moves
+# 598→549 (614), direction hit on India EB-2 @12m .63→.79. Prior tune: Section 16.
+_GBM_N_ESTIMATORS: int = 68
 _GBM_MAX_DEPTH: int = 8
 _GBM_NUM_LEAVES: int = 255  # 2^8 - 1
-_GBM_LEARNING_RATE: float = 0.103
-_GBM_MIN_CHILD_SAMPLES: int = 15
-_GBM_REG_ALPHA: float = 2.34
-_GBM_REG_LAMBDA: float = 4.11
+_GBM_LEARNING_RATE: float = 0.01012631855379843
+_GBM_MIN_CHILD_SAMPLES: int = 16
+_GBM_REG_ALPHA: float = 4.236840993215285
+_GBM_REG_LAMBDA: float = 3.19088425130655
 # Default gate / movement thresholds for expert_gbm_gated and expert_gbm_movement_prob
-_GBM_DEFAULT_MOVEMENT_THRESHOLD: int = 50
-_GBM_DEFAULT_GATE_THRESHOLD: float = 0.68
+_GBM_DEFAULT_MOVEMENT_THRESHOLD: int = 49
+_GBM_DEFAULT_GATE_THRESHOLD: float = 0.48805562655785184
 
 
 def _get_i140_ratio(country: int, knowledge_date: date, facts: list | None = None) -> float:
