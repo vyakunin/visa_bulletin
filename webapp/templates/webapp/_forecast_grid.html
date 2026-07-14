@@ -18,8 +18,8 @@
           {% else %}
           {{ fc.display }}
           {% endif %}
-          {% if fc.movement %}
-          <span class="small text-{% if fc.movement_type == 'positive' %}success{% elif fc.movement_type == 'negative' %}danger{% else %}muted{% endif %}">{{ fc.movement }}</span>
+          {% if fc.movement and fc.movement_type != 'neutral' %}
+          <span class="small text-{% if fc.movement_type == 'positive' %}success{% else %}danger{% endif %}" style="white-space:nowrap;">{{ fc.movement }}</span>
           {% endif %}
           {% if fc.is_baseline and fc.predicted_date %}
           <sup class="text-muted small" title="No dedicated model for this series — shown as a no-change baseline.">baseline</sup>
@@ -34,4 +34,4 @@
     </tbody>
   </table>
 </div>
-<p class="text-muted small mb-3"><sup>baseline</sup> = no dedicated model for this series — shown as a no-change baseline. The <em>80% range</em> under a modeled date is the model's calibrated 80% confidence interval.</p>
+<p class="text-muted small mb-3">A date with no +/− delta is forecast unchanged from the current bulletin. <sup>baseline</sup> = no dedicated model for this series — shown as a no-change baseline. The <em>80% range</em> under a modeled date is the model's calibrated 80% confidence interval.</p>

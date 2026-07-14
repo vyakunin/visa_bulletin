@@ -298,54 +298,85 @@ def _retention_records(
     return records
 
 
+_METHODOLOGY_URL = "/analysis/how-my-prediction-model-works/"
+_ARCHIVE_URL = "/predictions/"
+_FILING_EXPLAINER_URL = "/analysis/uscis-visa-bulletin-filing-dates-explained/"
+_NEXT_BULLETIN_URL = "/when-is-the-next-visa-bulletin/"
+
+
 def _faq(month_label: str, cards: list[dict]) -> list[dict]:
+    """FAQ items. `a` is plain text (FAQPage JSON-LD); `a_html` adds inline links
+    for the visible page."""
     india_eb2 = next((c for c in cards if c["label"] == "EB-2 India"), None)
+    release_a = (
+        f"The U.S. Department of State publishes each Visa Bulletin in the middle "
+        f"of the prior month — so the {month_label} bulletin is typically released "
+        f"in the second or third week of the preceding month. This page is updated "
+        f"with our model's forecast until the official numbers are published."
+    )
     faq = [
         {
             "q": f"When does the {month_label} Visa Bulletin come out?",
-            "a": (
-                f"The U.S. Department of State publishes each Visa Bulletin in the middle "
-                f"of the prior month — so the {month_label} bulletin is typically released "
-                f"in the second or third week of the preceding month. This page is updated "
-                f"with our model's forecast until the official numbers are published."
+            "a": release_a,
+            "a_html": release_a.replace(
+                "typically released in the second or third week of the preceding month",
+                f'typically released in the <a href="{_NEXT_BULLETIN_URL}">second or '
+                f"third week of the preceding month</a>",
             ),
         },
     ]
     if india_eb2 and india_eb2["final"].predicted_date is not None:
+        eb2_a = (
+            f"Our model forecasts the EB-2 India Final Action Date for the "
+            f"{month_label} bulletin at {india_eb2['final'].display}"
+            + (
+                f" ({india_eb2['final'].movement} vs the current bulletin)."
+                if india_eb2["final"].movement
+                else "."
+            )
+            + " Oversubscribed categories move slowly and can retrogress; treat "
+            "this as a data-driven projection, not a guarantee."
+        )
         faq.append(
             {
                 "q": f"Will EB-2 India advance in the {month_label} Visa Bulletin?",
-                "a": (
-                    f"Our model forecasts the EB-2 India Final Action Date for the "
-                    f"{month_label} bulletin at {india_eb2['final'].display}"
-                    + (
-                        f" ({india_eb2['final'].movement} vs the current bulletin)."
-                        if india_eb2["final"].movement
-                        else "."
-                    )
-                    + " Oversubscribed categories move slowly and can retrogress; treat "
-                    "this as a data-driven projection, not a guarantee."
+                "a": eb2_a,
+                "a_html": eb2_a.replace(
+                    "the EB-2 India Final Action Date",
+                    'the <a href="/priority-date/eb2/india/">EB-2 India Final Action Date</a>',
                 ),
             }
         )
+    accuracy_a = (
+        "The model is backtested against every published bulletin since 2016. "
+        "Accuracy varies by category — stable, advancing series are the most "
+        "predictable, while demand- and policy-driven movements (and "
+        "retrogressions) are inherently hard to call. See the methodology and "
+        "the historical accuracy archive for the track record."
+    )
+    filing_a = (
+        "Final Action Dates govern when USCIS or the consulate can approve the "
+        "green card. Dates for Filing govern when you may submit the application "
+        "(Form I-485 / DS-260), and are usually ahead of Final Action Dates."
+    )
     faq.extend(
         [
             {
                 "q": "How accurate are these Visa Bulletin predictions?",
-                "a": (
-                    "The model is backtested against every published bulletin since 2016. "
-                    "Accuracy varies by category — stable, advancing series are the most "
-                    "predictable, while demand- and policy-driven movements (and "
-                    "retrogressions) are inherently hard to call. See the methodology and "
-                    "the historical accuracy archive for the track record."
+                "a": accuracy_a,
+                "a_html": accuracy_a.replace(
+                    "the methodology", f'the <a href="{_METHODOLOGY_URL}">methodology</a>'
+                ).replace(
+                    "the historical accuracy archive",
+                    f'the <a href="{_ARCHIVE_URL}">historical accuracy archive</a>',
                 ),
             },
             {
                 "q": "What is the difference between Final Action Dates and Dates for Filing?",
-                "a": (
-                    "Final Action Dates govern when USCIS or the consulate can approve the "
-                    "green card. Dates for Filing govern when you may submit the application "
-                    "(Form I-485 / DS-260), and are usually ahead of Final Action Dates."
+                "a": filing_a,
+                "a_html": filing_a.replace(
+                    "Dates for Filing govern",
+                    f'<a href="{_FILING_EXPLAINER_URL}">Dates for Filing</a> govern',
                 ),
             },
         ]
