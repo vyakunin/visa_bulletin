@@ -1277,6 +1277,7 @@ py_library(
     srcs = ["update_job_title_cluster_stats.py"],
     visibility = ["//tests:__pkg__"],
     deps = [
+        "//lib/business/salary:job_title_stats",
         "//lib/utils:logging_utils",
         "//lib/utils:db_utils",
         "//models:job_title",
