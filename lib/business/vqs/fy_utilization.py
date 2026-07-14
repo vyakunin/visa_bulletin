@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from datetime import date
 from statistics import median
 
-from lib.business.vqs.data_cache import get_cutoff_at_date, get_cutoffs_for_series
+from lib.business.vqs.data_cache import (
+    get_cutoff_at_date,
+    get_cutoffs_for_series,
+    is_current_at_date,
+    is_unavailable_at_date,
+)
 from lib.business.vqs.estimators import (
     DEFAULT_ANNUAL_EB_LIMIT,
     PER_CLASS_SHARE,
@@ -138,8 +143,17 @@ def compute_backlog_depth(
 ) -> int | None:
     """Compute backlog depth = (knowledge_date - current_cutoff).days.
 
-    Larger values mean deeper backlog.
+    Larger values mean deeper backlog. Returns 0 for a "Current" series (the
+    cutoff has caught up, so there is no backlog) and None for "Unavailable" or
+    no-data (a real backlog exists but its depth is not derivable from a stale
+    pre-Unavailable cutoff).
     """
+    # Must guard Current/Unavailable BEFORE reading get_cutoff_at_date, which
+    # returns a stale years-old cutoff during those spells → phantom huge backlog.
+    if is_current_at_date(visa_class, country, action_type, knowledge_date):
+        return 0
+    if is_unavailable_at_date(visa_class, country, action_type, knowledge_date):
+        return None
     latest_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
     if latest_cutoff is None:
         return None

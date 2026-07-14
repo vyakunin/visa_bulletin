@@ -166,8 +166,14 @@ def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -
         # relative to today) and mislabel the horizon as 2.
         return target_month.replace(day=1) - timedelta(days=1)
 
-    # Multi-horizon: find the bulletin that was published ~horizon_months before target.
-    earlier = target_month - relativedelta(months=horizon_months)
+    # Multi-horizon: knowledge date = the day before the bulletin (horizon_months-1)
+    # months before target, so target is EXACTLY horizon_months bulletins ahead.
+    # (A2-F1: using `target - horizon_months` here and then subtracting a day pushed
+    # the knowledge date a full month too early — bulletins publish on the 1st, so
+    # `1st - 1 day` crosses into the prior month — making the computed horizon come
+    # out as horizon_months+1 and mis-dispatch at the 6/12-month predictor
+    # boundaries, e.g. `--horizon 11` routed China EB-1 to GBM instead of RS.)
+    earlier = target_month - relativedelta(months=horizon_months - 1)
     try:
         b = Bulletin.objects.filter(
             publication_date__year=earlier.year,
@@ -178,9 +184,9 @@ def get_knowledge_date_for_target(target_month: date, horizon_months: int = 1) -
             return b.publication_date - timedelta(days=1)
     except Exception:
         pass
-    # Fallback: last day of the month that is horizon_months before target.
-    last_day = (earlier.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
-    return last_day
+    # Fallback: the day before the first of `earlier`'s month (the month that
+    # bulletin would occupy) → the last day of the prior month, a horizon_months gap.
+    return earlier.replace(day=1) - timedelta(days=1)
 
 
 REGIME_DESCRIPTIONS = {
@@ -319,33 +325,41 @@ def publish_predictions(
                     # stays Unavailable until the October fiscal-year reset. Without
                     # this guard the solver persists the last pre-Unavailable cutoff
                     # (e.g. India EB-2 showing a stale 2013 date labelled "Advancing").
-                    if visa_class in _EB_CLASSES and is_unavailable_at_date(
+                    if is_unavailable_at_date(
                         visa_class, country, action, knowledge_date
                     ):
                         # October-reset / U-transition model: the prediction stays
                         # a null-cutoff "unavailable" row (so it is excluded from
-                        # accuracy scoring and shows the Unavailable badge), but we
-                        # attach the structural reset framing + a pre-Unavailable
-                        # reference date so the forecast page can explain WHEN a date
-                        # returns (Oct 1, structural) and honestly caveat WHERE
-                        # (uncertain). See lib/business/vqs/october_reset.py.
-                        series_label = (
-                            f"{_EB_LABEL.get(visa_class, visa_class)} "
-                            f"{Country(country).label.split(' (')[0]}"
+                        # accuracy scoring and shows the Unavailable badge), but for
+                        # EB series we attach the structural reset framing + a
+                        # pre-Unavailable reference date so the forecast page can
+                        # explain WHEN a date returns (Oct 1, structural) and honestly
+                        # caveat WHERE (uncertain). See lib/business/vqs/october_reset.py.
+                        # Applies to FS classes too (F2A etc. go Unavailable): without
+                        # this guard an FS Unavailable series fell through to the
+                        # persistence path and published a stale pre-U cutoff.
+                        generic_unavailable = (
+                            "Category is **Unavailable** — the annual limit has been "
+                            "reached; no cutoff date is expected until the fiscal-year "
+                            "reset in October."
                         )
-                        est = estimate_october_reset(
-                            visa_class, country, action, knowledge_date,
-                            all_events=_reset_events(action),
-                        )
-                        if est.is_unavailable and est.reset_year:
-                            explanation = describe_reset(est, series_label)
-                            reset_meta = {"october_reset": est.to_dict()}
-                        else:
-                            explanation = (
-                                "Category is **Unavailable** — the annual limit has been "
-                                "reached; no cutoff date is expected until the fiscal-year "
-                                "reset in October."
+                        if visa_class in _EB_CLASSES:
+                            series_label = (
+                                f"{_EB_LABEL.get(visa_class, visa_class)} "
+                                f"{Country(country).label.split(' (')[0]}"
                             )
+                            est = estimate_october_reset(
+                                visa_class, country, action, knowledge_date,
+                                all_events=_reset_events(action),
+                            )
+                            if est.is_unavailable and est.reset_year:
+                                explanation = describe_reset(est, series_label)
+                                reset_meta = {"october_reset": est.to_dict()}
+                            else:
+                                explanation = generic_unavailable
+                                reset_meta = {}
+                        else:
+                            explanation = generic_unavailable
                             reset_meta = {}
                         PredictedCutoff.objects.create(
                             bulletin=pred_bulletin,
@@ -390,6 +404,13 @@ def publish_predictions(
                             meta=meta,
                             aggregator=aggregator,
                         )
+                        # A2-F3: FS series are non-physics-eligible → the solver's
+                        # persistence branch returns a single result for first_future
+                        # only, so a target_month more than 1 month ahead never
+                        # matches and every --horizon>1 FS row published None. FS
+                        # persistence is flat, so fall back to outcome.predicted_cutoff
+                        # (== the flat persistence value at any horizon; already None
+                        # for Current/Unavailable via the Theme 1 guard).
                         cutoff = next(
                             (
                                 r.cutoff_date
@@ -397,12 +418,19 @@ def publish_predictions(
                                 if r.month.year == target_month.year
                                 and r.month.month == target_month.month
                             ),
-                            None,
+                            outcome.predicted_cutoff,
                         )
                         m_meta = outcome.metadata
                         confidence = outcome.confidence
+                        # A2-F6: FS runs through the persistence branch, so attribute
+                        # it as persistence, not the dead "vqs_ensemble" fallback
+                        # (m_meta has no "model" key here).
                         if isinstance(m_meta, dict):
-                            model_name = m_meta.get("model") or "vqs_ensemble"
+                            model_name = (
+                                m_meta.get("model")
+                                or m_meta.get("selected_expert")
+                                or "persistence"
+                            )
                     elif (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
                         dispatch_key == _INDIA_EB1 and horizon_m < 6
                     ) or horizon_m == 1:
@@ -496,7 +524,6 @@ def publish_predictions(
                     low = None
                     high = None
                     expert_data = {}
-                    explanation = generate_explanation(m_meta, confidence)
 
                     if isinstance(m_meta, dict):
                         low = m_meta.get("confidence_low")
@@ -511,7 +538,13 @@ def publish_predictions(
                                 country=country,
                                 action_type=action,
                                 knowledge_date=knowledge_date,
-                                horizon=max(1, horizon_months),
+                                # A2-F2: key the CI on the SAME horizon the point
+                                # prediction was dispatched at (horizon_m), not the
+                                # requested horizon_months. They now agree (A2-F1),
+                                # but keying off horizon_m keeps the CI bucket
+                                # correct even if they ever diverge — a mismatch
+                                # empties the bucket and silently falls back to ±270d.
+                                horizon=max(1, horizon_m),
                                 coverage=0.80,
                             )
                         except Exception as _ci_err:
@@ -525,6 +558,14 @@ def publish_predictions(
                                     "pred": pred_date.isoformat() if pred_date else None,
                                     "weight": round(weights.get(name, 0), 4),
                                 }
+
+                    # A2-F5: generate the explanation from the FINAL (calibrated) CI,
+                    # not the pre-override expert-disagreement CI — otherwise a wide
+                    # calibrated interval could be captioned "narrow". Inject the
+                    # calibrated low/high into the metadata the explanation reads.
+                    if isinstance(m_meta, dict):
+                        m_meta = {**m_meta, "confidence_low": low, "confidence_high": high}
+                    explanation = generate_explanation(m_meta, confidence)
 
                     # Try to find actual if exists
                     actual_date = None
@@ -614,8 +655,13 @@ def main():
         if args.backfill_end_year:
             end = date(args.backfill_end_year, 12, 1)
         else:
+            # A2-F4: a backfill is RETROSPECTIVE. The old default ran to +2 months,
+            # producing targets whose bulletin isn't published yet — stored with a
+            # future prediction_date and mislabeled 1m, polluting h=1 calibration.
+            # Cap at the current month (last month with a published bulletin); the
+            # genuine next-month forecast is produced by the default no-args path.
             today = date.today()
-            end = date(today.year, today.month, 1) + relativedelta(months=2)
+            end = date(today.year, today.month, 1)
 
         curr = start
         while curr <= end:

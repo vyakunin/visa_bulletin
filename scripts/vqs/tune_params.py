@@ -33,7 +33,7 @@ import json
 import logging
 import os
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import django
@@ -262,7 +262,9 @@ def _apply_gbm_params(gbm_params: dict) -> None:
 
     # Patch 1: 1m regression model
     def patched_train_1m(knowledge_date, action_type="filing"):
-        cache_key = ("reg1m", knowledge_date.year, knowledge_date.month)
+        # A3-F3: keep action_type in the key, consistent with gbm_expert (tuning
+        # uses only filing today, so this is consistency insurance, not a live bug).
+        cache_key = ("reg1m", action_type, knowledge_date.year, knowledge_date.month)
         if cache_key in _gbm._model_cache:
             return _gbm._model_cache[cache_key]
         model = _make_regressor()
@@ -280,7 +282,7 @@ def _apply_gbm_params(gbm_params: dict) -> None:
 
     # Patch 2: direct multi-horizon regression
     def patched_train_horizon(knowledge_date, horizon, action_type="filing"):
-        cache_key = ("direct", knowledge_date.year, knowledge_date.month, horizon)
+        cache_key = ("direct", action_type, knowledge_date.year, knowledge_date.month, horizon)
         if cache_key in _gbm._model_cache:
             return _gbm._model_cache[cache_key]
         model = _make_regressor()
@@ -301,7 +303,7 @@ def _apply_gbm_params(gbm_params: dict) -> None:
         knowledge_date, horizon, movement_threshold_local=None, action_type="filing"
     ):
         thr = movement_threshold_local if movement_threshold_local is not None else movement_threshold
-        cache_key = ("clf", knowledge_date.year, knowledge_date.month, horizon, thr)
+        cache_key = ("clf", action_type, knowledge_date.year, knowledge_date.month, horizon, thr)
         if cache_key in _gbm._classifier_cache:
             return _gbm._classifier_cache[cache_key]
         clf = _make_classifier()
@@ -336,23 +338,33 @@ def _add_months_local(d: date, n: int) -> date:
     return d.replace(year=year, month=month, day=min(d.day, max_day))
 
 
+# (series, horizon) pairs GBM actually serves as a POINT predictor in production
+# (README "Per-Series Dispatch Table"): country codes India=3, China=2.
+_GBM_6M_SERIES = [("1st", 3), ("3rd", 2)]  # India EB-1, China EB-3
+_GBM_12M_SERIES = [  # China EB-1, India EB-1, China EB-3, China EB-2, India EB-2
+    ("1st", 2), ("1st", 3), ("3rd", 2), ("2nd", 2), ("2nd", 3),
+]
+# 1m movement-badge series (GBM at 1m is a P(movement) badge, not a point predictor).
+_GBM_BADGE_SERIES = [("1st", 2), ("1st", 3), ("2nd", 2), ("2nd", 3), ("3rd", 2)]
+
+
 def compute_gbm_only_objective(
     movement_threshold: int = 30,
     gate_threshold: float = 0.45,
     quick: bool = False,
     action_type: str = "filing",
 ) -> float:
-    """Directly evaluate GBM Gated / Direct predictions for the 4 key series.
+    """Production-aligned GBM objective for --gbm-params tuning.
 
-    Called instead of the VQS-ensemble objective when --gbm-params is set, so
-    Optuna can actually see the effect of GBM hyperparameters.  The ensemble
-    objective down-weights GBM (due to its higher 1m MAE) making GBM params
-    invisible to the optimizer.
-
-    Evaluates:
-      - GBM Gated at h=1  →  conditional MAE + movement F1 (30% each)
-      - GBM Direct at h=6  →  long-horizon MAE for key series (20%)
-      - GBM Direct at h=1  →  overall 1m MAE sanity (20%)
+    GBM is deployed as a POINT predictor only at 6m/12m on the GBM-served series
+    (dispatch table), and at 1m only as a P(movement) BADGE. So the objective:
+      - 6m point MAE (GBM Direct) on the series GBM serves at 6m  → weight 0.30
+      - 12m point MAE (GBM Direct) on the series GBM serves at 12m → weight 0.50
+        (12m is the dominant GBM surface — 5 series vs 2 at 6m)
+      - 1m movement-detection F1 (GBM Gated) → weight 0.20 (the badge's quality)
+    The old objective spent 50% on 1m POINT MAE (conditional + overall) — a horizon
+    GBM does NOT serve as a point predictor — making the optimizer chase a metric
+    prod never uses (A3 audit, ticket "production-align the objective").
     """
     from lib.business.vqs.data_cache import get_all_bulletins, get_cutoff_at_date
     from lib.business.vqs.gbm_expert import expert_gbm_direct, expert_gbm_gated
@@ -361,73 +373,68 @@ def compute_gbm_only_objective(
     all_b = sorted(b.publication_date for b in get_all_bulletins())
     if quick:
         all_b = all_b[::3]
-
     max_b = max(all_b)
-    # Only keep bulletins where we can measure the 6m horizon
-    eval_bulletins = [b for b in all_b if _add_months_local(b, 6) <= max_b]
 
-    key_series_list = [
-        ("2nd", 3),  # India EB-2
-        ("3rd", 3),  # India EB-3
-        ("2nd", 2),  # China EB-2
-        ("3rd", 2),  # China EB-3
-    ]
-
-    cond_errors: list[float] = []
-    all_1m_errors: list[float] = []
-    all_6m_errors: list[float] = []
+    mae_6m: list[float] = []
+    mae_12m: list[float] = []
     move_tp = move_fp = move_fn = 0
 
     # Pre-load facts once; slice per knowledge_date in the loop
     all_facts = list(RawFactsLedger.objects.all().order_by("publication_date"))
 
-    for pub_date in eval_bulletins:
-        knowledge_date = pub_date - __import__("datetime").timedelta(days=1)
+    for pub_date in all_b:
+        knowledge_date = pub_date - timedelta(days=1)
         current_facts = [f for f in all_facts if f.publication_date <= knowledge_date]
 
-        for visa_class, country in key_series_list:
-            current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
-            if current_cutoff is None:
-                continue
+        # ---- 6m point MAE (GBM Direct) ----
+        target_6m = _add_months_local(pub_date, 5)
+        if target_6m <= max_b:
+            for visa_class, country in _GBM_6M_SERIES:
+                actual = get_cutoff_at_date(visa_class, country, action_type, target_6m)
+                pred = expert_gbm_direct(
+                    visa_class, country, action_type, knowledge_date, 6, current_facts,
+                )
+                if actual is not None and pred is not None:
+                    mae_6m.append(float(abs((pred - actual).days)))
 
-            # ---- 1m evaluation (GBM Gated) ----
-            target_1m = _add_months_local(pub_date, 0)
+        # ---- 12m point MAE (GBM Direct) ----
+        target_12m = _add_months_local(pub_date, 11)
+        if target_12m <= max_b:
+            for visa_class, country in _GBM_12M_SERIES:
+                actual = get_cutoff_at_date(visa_class, country, action_type, target_12m)
+                pred = expert_gbm_direct(
+                    visa_class, country, action_type, knowledge_date, 12, current_facts,
+                )
+                if actual is not None and pred is not None:
+                    mae_12m.append(float(abs((pred - actual).days)))
+
+        # ---- 1m movement-detection F1 (GBM Gated badge) ----
+        target_1m = pub_date  # the next bulletin's cutoff
+        for visa_class, country in _GBM_BADGE_SERIES:
+            current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
             actual_1m = get_cutoff_at_date(visa_class, country, action_type, target_1m)
+            if current_cutoff is None or actual_1m is None:
+                continue
             pred_1m = expert_gbm_gated(
                 visa_class, country, action_type, knowledge_date,
                 1, movement_threshold, gate_threshold, current_facts,
             )
-            if actual_1m is not None and pred_1m is not None:
-                err1 = abs((pred_1m - actual_1m).days)
-                all_1m_errors.append(float(err1))
+            if pred_1m is None:
+                continue
+            actual_move = (actual_1m - current_cutoff).days
+            pred_move = (pred_1m - current_cutoff).days
+            actual_sig = abs(actual_move) > 30
+            pred_sig = abs(pred_move) > 30
+            correct_dir = (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
+            if actual_sig and pred_sig and correct_dir:
+                move_tp += 1
+            elif pred_sig and not (actual_sig and correct_dir):
+                move_fp += 1
+            elif actual_sig and not (pred_sig and correct_dir):
+                move_fn += 1
 
-                actual_move = (actual_1m - current_cutoff).days
-                pred_move = (pred_1m - current_cutoff).days
-                actual_sig = abs(actual_move) > 30
-                pred_sig = abs(pred_move) > 30
-                correct_dir = (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
-
-                if actual_sig:
-                    cond_errors.append(float(err1))
-                if actual_sig and pred_sig and correct_dir:
-                    move_tp += 1
-                elif pred_sig and not (actual_sig and correct_dir):
-                    move_fp += 1
-                elif actual_sig and not (pred_sig and correct_dir):
-                    move_fn += 1
-
-            # ---- 6m evaluation (GBM Direct) ----
-            target_6m = _add_months_local(pub_date, 5)
-            actual_6m = get_cutoff_at_date(visa_class, country, action_type, target_6m)
-            pred_6m = expert_gbm_direct(
-                visa_class, country, action_type, knowledge_date, 6, current_facts,
-            )
-            if actual_6m is not None and pred_6m is not None:
-                all_6m_errors.append(float(abs((pred_6m - actual_6m).days)))
-
-    conditional_mae = sum(cond_errors) / len(cond_errors) if cond_errors else 999.0
-    overall_mae = sum(all_1m_errors) / len(all_1m_errors) if all_1m_errors else 999.0
-    long_horizon_mae = sum(all_6m_errors) / len(all_6m_errors) if all_6m_errors else 999.0
+    mae_6m_val = sum(mae_6m) / len(mae_6m) if mae_6m else 999.0
+    mae_12m_val = sum(mae_12m) / len(mae_12m) if mae_12m else 999.0
 
     precision = move_tp / (move_tp + move_fp) if (move_tp + move_fp) > 0 else 0.0
     recall = move_tp / (move_tp + move_fn) if (move_tp + move_fn) > 0 else 0.0
@@ -435,15 +442,13 @@ def compute_gbm_only_objective(
     movement_f1_score = 1.0 - f1
 
     objective_value = (
-        0.3 * conditional_mae
-        + 0.3 * (movement_f1_score * 200)
-        + 0.2 * long_horizon_mae
-        + 0.2 * overall_mae
+        0.30 * mae_6m_val
+        + 0.50 * mae_12m_val
+        + 0.20 * (movement_f1_score * 200)
     )
     return objective_value, {
-        "cond_mae": conditional_mae,
-        "overall_mae": overall_mae,
-        "long_horizon_mae": long_horizon_mae,
+        "mae_6m": mae_6m_val,
+        "mae_12m": mae_12m_val,
         "f1": f1,
         "move_tp": move_tp,
         "move_fp": move_fp,
@@ -497,9 +502,9 @@ def objective(
             action_type=action_type or "filing",
         )
         logger.info(
-            f"Trial {trial.number}: CondObj={cond_obj:.1f} "
-            f"CondMAE={metrics['cond_mae']:.0f}d F1={metrics['f1']:.2f} "
-            f"6mMAE={metrics['long_horizon_mae']:.0f}d "
+            f"Trial {trial.number}: Obj={cond_obj:.1f} "
+            f"6mMAE={metrics['mae_6m']:.0f}d 12mMAE={metrics['mae_12m']:.0f}d "
+            f"F1={metrics['f1']:.2f} "
             f"TP={metrics['move_tp']} FP={metrics['move_fp']} FN={metrics['move_fn']}"
         )
         return cond_obj
@@ -561,6 +566,93 @@ def objective(
         return mae
 
 
+def run_baseline(
+    horizons: list[int],
+    quick: bool,
+    action_type: str | None,
+    objective_type: str,
+    gbm_params: bool,
+) -> dict:
+    """Evaluate the CURRENT production defaults under the same objective (no Optuna).
+
+    This is the apples-to-apples comparator a re-tune needs: `tune_params` does NOT
+    seed the current params into its search, so a "best trial value" is only "best
+    found", never "beats current" until it is compared against this baseline computed
+    under the identical objective + sampling. Mirrors the branch logic in objective()
+    but uses the live prod defaults (gbm_expert module constants / MetaParams /
+    ContextualTrajectoryAggregator defaults) instead of a sampled trial.
+    """
+    from lib.business.vqs import gbm_expert as _gbm
+
+    # GBM-only conditional path: same branch tune_params uses with --gbm-params
+    # --objective conditional. Evaluate the current default GBM expert directly.
+    if gbm_params and objective_type == "conditional":
+        # Ensure caches reflect the un-patched (current prod) GBM defaults.
+        _gbm._model_cache.clear()
+        _gbm._classifier_cache.clear()
+        _gbm._quantile_cache.clear()
+        cond_obj, metrics = compute_gbm_only_objective(
+            movement_threshold=_gbm._GBM_DEFAULT_MOVEMENT_THRESHOLD,
+            gate_threshold=_gbm._GBM_DEFAULT_GATE_THRESHOLD,
+            quick=quick,
+            action_type=action_type or "filing",
+        )
+        logger.info(
+            f"BASELINE (current GBM defaults: n_est={_gbm._GBM_N_ESTIMATORS} "
+            f"depth={_gbm._GBM_MAX_DEPTH} lr={_gbm._GBM_LEARNING_RATE} "
+            f"mv_thr={_gbm._GBM_DEFAULT_MOVEMENT_THRESHOLD} "
+            f"gate={_gbm._GBM_DEFAULT_GATE_THRESHOLD}): "
+            f"Obj={cond_obj:.1f} 6mMAE={metrics['mae_6m']:.0f}d "
+            f"12mMAE={metrics['mae_12m']:.0f}d F1={metrics['f1']:.2f} "
+            f"TP={metrics['move_tp']} FP={metrics['move_fp']} FN={metrics['move_fn']}"
+        )
+        return {"baseline_value": cond_obj, "metrics": metrics, "path": "gbm_only"}
+
+    # Ensemble path: evaluate the current ContextualTrajectoryAggregator defaults
+    # under a default MetricConfig (the current prod aggregator/meta config).
+    eval_cfg = MetricConfig()
+    aggregator = ContextualTrajectoryAggregator()
+    warmup_cfg = replace(eval_cfg, horizon_weights={1: 1.0})
+
+    bulletins: list[date] | None = None
+    if quick:
+        from lib.business.vqs.data_cache import get_all_bulletins
+        bulletins = [b.publication_date for b in get_all_bulletins()][::3]
+
+    from lib.business.vqs.accuracy_metrics import EVALUABLE_VISA_CLASSES
+    from models.enums.country import Country
+
+    distinct_series = [
+        (vc, c)
+        for vc in EVALUABLE_VISA_CLASSES
+        if vc != "4th"
+        for c in [Country.INDIA.value, Country.CHINA.value]
+    ]
+    if bulletins:
+        first_date = min(bulletins)
+        for vc, c in distinct_series:
+            aggregator.warmup_history(vc, c, action_type or "filing", first_date, horizons)
+
+    rows = compute_multi_horizon_accuracy(
+        bulletins=bulletins,
+        horizons=horizons,
+        exclude_eb4=True,
+        action_type=action_type,
+        metric_config=warmup_cfg,
+        aggregator=aggregator,
+        use_contextual_ensemble=True,
+    )
+
+    if objective_type == "conditional":
+        value = compute_conditional_objective(rows=rows, config=eval_cfg, key_series=_KEY_SERIES)
+        comp_mae = compute_composite_metric(rows, config=eval_cfg)["composite_mae"]
+        logger.info(f"BASELINE (current ensemble defaults): CondObj={value:.1f} CompMAE={comp_mae:.1f}")
+    else:
+        value = compute_composite_metric(rows, config=eval_cfg)["composite_mae"]
+        logger.info(f"BASELINE (current ensemble defaults): MAE={value:.1f}")
+    return {"baseline_value": value, "path": "ensemble"}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Optuna VQS parameter tuning")
     parser.add_argument("--n-trials", type=int, default=30)
@@ -583,10 +675,26 @@ def main():
         "--per-series-weights", action="store_true",
         help="Include per-series persistence weights for EB-2/3 India/China",
     )
+    parser.add_argument(
+        "--baseline", action="store_true",
+        help="Skip Optuna; evaluate CURRENT prod defaults under the objective "
+             "(apples-to-apples comparator for a re-tune's best trial)",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.baseline:
+        result = run_baseline(
+            args.horizons, args.quick, args.action_type,
+            objective_type=args.objective, gbm_params=args.gbm_params,
+        )
+        out_path = output_dir / "baseline_result.json"
+        with open(out_path, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        logger.info(f"Baseline result saved to {out_path}")
+        return
 
     storage = args.db or f"sqlite:///{output_dir / 'optuna.db'}"
     study = optuna.create_study(

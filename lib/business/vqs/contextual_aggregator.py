@@ -43,8 +43,10 @@ class ContextualTrajectoryAggregator:
     def _get_context_key(
         self, visa_class: str, country: int, horizon: int, knowledge_date: date, action_type: str
     ) -> tuple:
+        # action_type is part of the context (A4-F3): filing and final_action have
+        # different movement distributions and must not share a weight vector.
         if not self.use_regime_context:
-            return (visa_class, country, horizon)
+            return (visa_class, country, action_type, horizon)
 
         moves = get_last_N_moves(visa_class, country, action_type, knowledge_date, 6)
         regime_state = classify_regime(moves)
@@ -58,7 +60,7 @@ class ContextualTrajectoryAggregator:
             if eb1_moves:
                 eb1_regime = classify_regime(eb1_moves).regime.value
 
-        return (visa_class, country, horizon, regime_state.regime.value, eb1_regime)
+        return (visa_class, country, action_type, horizon, regime_state.regime.value, eb1_regime)
 
     def _initialize_weights(self, context_key: tuple):
         if context_key not in self.weights:

@@ -180,8 +180,16 @@ def find_reset_events(action_type: str = "final_action") -> list[ResetEvent]:
                         pre_u = rows[k].cutoff_date
                         break
                 if touches_fy_end and pre_u is not None:
-                    spell_end_pub = run[-1].bulletin.publication_date
-                    spell_fy = _fiscal_year(spell_end_pub)
+                    # A3-F9: derive the exhausted FY from a fiscal-year-END month
+                    # (Jul/Aug/Sep) the spell touches, NOT run[-1]. A U-spell that
+                    # extends past September into October has its last month in the
+                    # NEXT fiscal year, which pushed the reset search a year forward
+                    # and mislabeled the reset event.
+                    fy_end_pub = max(
+                        r.bulletin.publication_date for r in run
+                        if r.bulletin.publication_date.month in (7, 8, 9)
+                    )
+                    spell_fy = _fiscal_year(fy_end_pub)
                     reset_cut, reset_pub = _reset_cutoff_after(rows, j, spell_fy)
                     if reset_cut is not None:
                         events.append(

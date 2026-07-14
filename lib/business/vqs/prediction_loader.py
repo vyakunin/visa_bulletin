@@ -60,12 +60,20 @@ def load_stored_predictions_bulk(
     Returns {target_bulletin_month: predicted_date}.
     Used by evaluate_model for batch evaluation.
     """
-    rows = PredictedCutoff.objects.filter(
-        visa_class=visa_class,
-        country=country,
-        action_type=action_type,
-        predicted_date__isnull=False,
-    ).select_related("bulletin")
+    rows = (
+        PredictedCutoff.objects.filter(
+            visa_class=visa_class,
+            country=country,
+            action_type=action_type,
+            predicted_date__isnull=False,
+        )
+        .select_related("bulletin")
+        # Ascending prediction_date so that when several horizons target the same
+        # month, the LATEST prediction (largest prediction_date = shortest horizon,
+        # i.e. the 1-month line) deterministically overwrites the longer-horizon
+        # ones — matching get_all_predictions_for_month / get_prediction_for_series.
+        .order_by("bulletin__prediction_date")
+    )
     return {row.bulletin.target_bulletin_month: row.predicted_date for row in rows}
 
 
@@ -214,6 +222,7 @@ def get_prediction_for_series(
             confidence_high=stored.confidence_high,
             explanation_markdown=stored.explanation_markdown or None,
             expert_predictions=stored.expert_predictions or None,
+            movement_probability=stored.movement_probability,
             model_name=stored.model_name or "unknown",
         )
 

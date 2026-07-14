@@ -32,8 +32,14 @@ class ExpertAggregator:
         self.warmed_series: set[tuple] = set()
         self.history = {}
 
-    def _get_series_key(self, visa_class: str, country: int) -> tuple:
-        return (visa_class, country)
+    def _get_series_key(
+        self, visa_class: str, country: int, action_type: str
+    ) -> tuple:
+        # action_type MUST be part of the key (A4-F3/F4): filing and final_action
+        # have very different movement distributions, so sharing one weight vector
+        # cross-contaminates them and lets the second action's warmup be skipped
+        # (warmed_series would already contain the (class, country) pair).
+        return (visa_class, country, action_type)
 
     def _initialize_weights(self, series_key: tuple, action_type: str = "final_action"):
         if series_key in self.weights:
@@ -63,7 +69,7 @@ class ExpertAggregator:
         facts: list | None = None,
     ) -> tuple[date | None, dict]:
         """Get ensemble prediction for the given series and date."""
-        series_key = self._get_series_key(visa_class, country)
+        series_key = self._get_series_key(visa_class, country, action_type)
         self._initialize_weights(series_key, action_type=action_type)
 
         current_weights = self.weights[series_key]
@@ -120,7 +126,7 @@ class ExpertAggregator:
         facts: list | None = None,
     ) -> list[date | None]:
         """Produce a weighted ensemble trajectory for steps 1..N months ahead."""
-        series_key = self._get_series_key(visa_class, country)
+        series_key = self._get_series_key(visa_class, country, action_type)
         self._initialize_weights(series_key, action_type=action_type)
         current_weights = self.weights[series_key]
 
@@ -175,7 +181,7 @@ class ExpertAggregator:
         Uses Hedge update rule: w_i *= exp(-eta * loss_i).
         Supports regime-aware learning rate via regime_lr_multiplier.
         """
-        series_key = self._get_series_key(visa_class, country)
+        series_key = self._get_series_key(visa_class, country, action_type)
         if series_key not in self.weights:
             return
 
@@ -199,10 +205,10 @@ class ExpertAggregator:
         period_w = metric_config.period_weight(knowledge_date)
 
         updates = {}
+        active_effective_losses: list[float] = []
         for name, pred in expert_preds.items():
             if pred is None:
-                updates[name] = 1.0
-                continue
+                continue  # abstainer handled after the field's mean loss is known
 
             total_loss = 0.0
             total_hw = 0.0
@@ -221,8 +227,21 @@ class ExpertAggregator:
                 avg_loss = metric_config.expert_loss((pred - actual_cutoff).days)
 
             effective_loss = avg_loss * period_w
-            update_factor = math.exp(-eta * effective_loss)
-            updates[name] = update_factor
+            active_effective_losses.append(effective_loss)
+            updates[name] = math.exp(-eta * effective_loss)
+
+        # A4-F8: an abstaining (pred is None) expert must NOT get factor 1.0 while
+        # everyone else is penalised (<1) — after normalisation that inflates the
+        # sleeper's relative weight, so it swamps the blend the moment it wakes up.
+        # Give abstainers the field's MEAN active loss → relative weight unchanged.
+        if active_effective_losses:
+            mean_loss = sum(active_effective_losses) / len(active_effective_losses)
+            neutral_factor = math.exp(-eta * mean_loss)
+        else:
+            neutral_factor = 1.0
+        for name, pred in expert_preds.items():
+            if pred is None:
+                updates[name] = neutral_factor
 
         new_total = 0.0
         for name, factor in updates.items():
@@ -271,7 +290,7 @@ class ExpertAggregator:
         if not history:
             return
 
-        series_key = self._get_series_key(visa_class, country)
+        series_key = self._get_series_key(visa_class, country, action_type)
         if series_key in self.warmed_series:
             return
 
@@ -291,15 +310,21 @@ class ExpertAggregator:
         for idx, row in enumerate(history):
             pub_date = row.bulletin.publication_date
             actual_cutoff = row.cutoff_date
+            # A4-F1: score each bulletin from the DAY BEFORE it publishes, exactly
+            # like the live path. get_cutoff_at_date is inclusive (<=), so scoring
+            # at pub_date itself makes persistence return THIS bulletin's cutoff =
+            # actual_cutoff → loss 0 every warmup step → weights collapse onto
+            # persistence regardless of skill.
+            kd = pub_date - timedelta(days=1)
 
             current_facts = None
             if facts is not None:
-                while fact_idx < n_facts and facts[fact_idx].publication_date <= pub_date:
+                while fact_idx < n_facts and facts[fact_idx].publication_date <= kd:
                     fact_idx += 1
                 current_facts = facts[:fact_idx]
 
             self.predict(
-                visa_class, country, action_type, pub_date, facts=current_facts
+                visa_class, country, action_type, kd, facts=current_facts
             )
 
             actuals_by_horizon: dict[int, date] | None = None
@@ -317,9 +342,9 @@ class ExpertAggregator:
                 if abh:
                     actuals_by_horizon = abh
 
-            # Regime-aware learning rate
+            # Regime-aware learning rate (features observable at kd, not pub_date).
             months_ago = total_months - idx - 1
-            moves = get_last_N_moves(visa_class, country, action_type, pub_date, 6)
+            moves = get_last_N_moves(visa_class, country, action_type, kd, 6)
             regime_state = classify_regime(moves)
             lr_mult = regime_learning_rate(regime_state, base_lr=1.0)
 
@@ -327,10 +352,11 @@ class ExpertAggregator:
             decay_factor = self.metric_config.warmup_weight(months_ago)
             lr_mult *= decay_factor
 
+            # update MUST use the same kd as predict — history is keyed by it.
             self.update(
                 visa_class,
                 country,
-                pub_date,
+                kd,
                 actual_cutoff,
                 action_type=action_type,
                 actuals_by_horizon=actuals_by_horizon,

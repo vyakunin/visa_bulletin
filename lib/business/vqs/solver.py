@@ -6,12 +6,18 @@ calibration from historical bulletin advancement rates and fiscal-year
 retrogression handling.
 """
 
+import calendar
 import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from statistics import median
 
-from lib.business.vqs.data_cache import get_cutoff_at_date
+from lib.business.vqs.data_cache import (
+    get_cutoff_at_date,
+    is_current_at_date,
+    is_unavailable_at_date,
+)
 from lib.business.vqs.demand import build_virtual_queue_snapshot
 from lib.business.vqs.estimators import get_monthly_supply
 from lib.business.vqs.meta_params import VqsMetaParams
@@ -279,7 +285,12 @@ def run_monthly_loop(
             while retro_month <= 0:
                 retro_month += 12
                 retro_year -= 1
-            cutoff = date(retro_year, retro_month, 1)
+            # A1-F8: preserve the day-of-month. Clamping to day 1 dropped up to ~30
+            # days of the original cutoff, deepening the retrogression by nearly a
+            # month every simulated October. Clamp only when the target month is
+            # shorter than the source day.
+            max_day = calendar.monthrange(retro_year, retro_month)[1]
+            cutoff = date(retro_year, retro_month, min(cutoff.day, max_day))
 
         supply = supply_fn(current) if supply_fn else monthly_supply
         new_cutoff, consumed = queue.advance_cutoff(cutoff, supply)
@@ -367,16 +378,17 @@ def get_retrogression_months_from_history(
         sept_cutoff = cutoff
         if oct_cutoff >= sept_cutoff:
             continue
-        # Retrogression: Oct is earlier. Months backward (approximate).
-        months_back = (sept_cutoff.year - oct_cutoff.year) * 12 + (
-            sept_cutoff.month - oct_cutoff.month
-        )
-        if months_back > 0:
-            retro_months_list.append(months_back)
+        # A1-F7: measure the retrogression in DAYS→months so sub-month retros are
+        # included. The old integer-month diff dropped every retro < 1 month
+        # (`months_back > 0`), biasing the estimate upward.
+        days_back = (sept_cutoff - oct_cutoff).days  # oct < sept guaranteed above
+        retro_months_list.append(days_back / 30.0)
 
     if len(retro_months_list) < MIN_RETROGRESSION_TRANSITIONS:
         return None
-    return int(round(sum(retro_months_list) / len(retro_months_list)))
+    # A1-F7: MEDIAN (as the docstring states), not mean — robust to outlier
+    # retrogression years.
+    return int(round(median(retro_months_list)))
 
 
 def _select_expert_for_regime(
@@ -473,12 +485,15 @@ def predict_regime_switched(
     }
 
     if (visa_class, country) not in PHYSICS_ELIGIBLE_SERIES or visa_class == "4th":
-        # If the series is "Current" (no backlog), persistence returns a stale
-        # cutoff from potentially years ago.  Return None so the prediction is
-        # not displayed rather than showing a wildly wrong date.
-        from lib.business.vqs.data_cache import is_current_at_date
-
-        if is_current_at_date(visa_class, country, action_type, knowledge_date):
+        # If the series is "Current" or "Unavailable" (no meaningful backlog),
+        # persistence returns a stale cutoff from potentially years ago.  Return
+        # None so the prediction is not displayed rather than showing a wildly
+        # wrong date.
+        if is_current_at_date(
+            visa_class, country, action_type, knowledge_date
+        ) or is_unavailable_at_date(
+            visa_class, country, action_type, knowledge_date
+        ):
             current_cutoff = None
 
         result = SolverResult(month=first_future, cutoff_date=current_cutoff, consumed=0)
@@ -489,7 +504,17 @@ def predict_regime_switched(
             "selected_expert": "persistence",
             "expert_preds": {},
         }
-        return SolverOutcome(current_cutoff, meta, None, [result], "low")
+        # A1-F10: honour priority_date. An applicant whose PD the (flat persistence)
+        # cutoff has already reached is matured NOW; the branch previously always
+        # returned maturity=None even for an already-current applicant.
+        persist_maturity = (
+            first_future
+            if priority_date is not None
+            and current_cutoff is not None
+            and current_cutoff >= priority_date
+            else None
+        )
+        return SolverOutcome(current_cutoff, meta, persist_maturity, [result], "low")
 
     expert_name = _select_expert_for_regime(
         regime_state, visa_class, country, target_month
@@ -773,6 +798,16 @@ def predict_next_bulletin_and_maturity(
             visa_class, country, action_type, knowledge_date
         )
 
+        # Current/Unavailable series have no meaningful cutoff; persistence would
+        # otherwise return a stale years-old date (mirrors the guard in
+        # predict_regime_switched). Suppress to None so the prediction is not shown.
+        if is_current_at_date(
+            visa_class, country, action_type, knowledge_date
+        ) or is_unavailable_at_date(
+            visa_class, country, action_type, knowledge_date
+        ):
+            current_cutoff = None
+
         if knowledge_date.month == 12:
             first_future = date(knowledge_date.year + 1, 1, 1)
         else:
@@ -883,8 +918,11 @@ def predict_next_bulletin_and_maturity(
             max_pred = max(valid_preds)
             spread_days = (max_pred - min_pred).days
 
-            # Use asymmetric confidence: low = -30% of spread, high = +70% of spread
-            # (Overshoots are more likely than undershoots in visa retrogression)
+            # Use asymmetric confidence: low = -30% of spread, high = +70% of spread.
+            # A1-F13: the band is WIDER on the upside because the model tends to
+            # UNDER-predict advancement — the actual cutoff lands ABOVE the
+            # prediction more often than below. (The old comment claimed "overshoots
+            # more likely", i.e. truth below pred, which is the opposite of the band.)
             if ensemble_cutoff:
                 confidence_low = ensemble_cutoff - timedelta(
                     days=int(spread_days * 0.3)
@@ -1022,15 +1060,10 @@ def predict_next_bulletin_and_maturity(
         results.append(res)
         if i == 0:
             raw_next_cutoff = res.cutoff_date
-
-        if (
-            priority_date is not None
-            and res.cutoff_date is not None
-            and res.cutoff_date >= priority_date
-            and maturity_month is None
-        ):
-            maturity_month = res.month
-            break
+        # A1-F1: maturity is computed AFTER the persistence blend below, from the
+        # final dampened trajectory — not here from the pre-dampening ensemble
+        # trajectory (which reported an optimistic month) with a break that stopped
+        # the sim before the true post-dampening maturity could occur.
 
     # Regime-aware persistence blending for all predictions.
     # FY-aware mode uses phase-specific weights; standard mode uses regime-based weights.
@@ -1053,6 +1086,23 @@ def predict_next_bulletin_and_maturity(
         final_next_cutoff = meta.apply_post_step(
             current_cutoff, raw_next_cutoff, confidence, advancement_rate=avg_adv
         )
+
+    # A1-F2: the headline (final_next_cutoff) and results[0] are BOTH the
+    # month-1 prediction and must agree. They can diverge — most visibly when
+    # ensemble_traj is None (blend disabled): the headline is the ensemble value
+    # while results[0] stayed pure physics, so the spaghetti month-1 point
+    # disagreed with the published number. Pin results[0] to the headline.
+    if results:
+        results[0] = replace(results[0], cutoff_date=final_next_cutoff)
+
+    # A1-F1: maturity = first month of the FINAL (dampened + headline-consistent)
+    # trajectory whose cutoff has reached the applicant's priority date.
+    maturity_month = None
+    if priority_date is not None:
+        for res in results:
+            if res.cutoff_date is not None and res.cutoff_date >= priority_date:
+                maturity_month = res.month
+                break
 
     # Enrich metadata with regime and pace signals for explainability
     metadata["regime"] = regime_state.regime.value

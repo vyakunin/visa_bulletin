@@ -8,6 +8,13 @@ from collections import defaultdict
 from datetime import date
 
 
+def _first_of_next_month(d: date) -> date:
+    """First day of the month after d's month."""
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
 class VirtualQueueSnapshot:
     """
     Snapshot of the virtual queue: demand (applicants) binned by priority date.
@@ -67,9 +74,16 @@ class VirtualQueueSnapshot:
             consumed += take
             self._buckets[d] -= take
             if self._buckets[d] <= 0:
+                # Month d fully served → the cutoff advances PAST it, to the first
+                # of the next month. (A5-F3: setting cursor=d here left the cutoff
+                # one month short at an exact supply/bucket boundary — everyone in
+                # month d had been consumed, yet the cutoff still pointed at d.)
                 del self._buckets[d]
-            cursor = d
-            if consumed >= supply:
+                cursor = _first_of_next_month(d)
+            else:
+                # Partially served → demand remains in month d, so the cutoff sits
+                # at d and supply is now exhausted.
+                cursor = d
                 return (cursor, consumed)
         if consumed > 0:
             return (cursor, consumed)

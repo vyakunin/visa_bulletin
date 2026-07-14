@@ -40,15 +40,17 @@ class TestSupplyModule(unittest.TestCase):
         res = model.apply_cap(Country.INDIA.value, 500, date(2023, 1, 1))
         self.assertEqual(res, 500)
 
-    @patch("lib.business.vqs.supply.cascade.get_cutoff_at_date")
+    @patch("lib.business.vqs.supply.cascade.is_current_at_date")
     @patch("lib.business.vqs.supply.cascade.get_monthly_supply")
-    def test_cascade_model(self, mock_supply, mock_cutoff):
+    def test_cascade_model(self, mock_supply, mock_current):
         model = CascadeModel()
         knowledge_date = date(2023, 1, 1)
         sim_month = date(2023, 2, 1)
 
-        # Setup: EB1 is "Current" (None cutoff)
-        mock_cutoff.return_value = None
+        # Setup: higher preference is "Current" (annual limit not binding).
+        # A5-F2: must key off is_current_at_date, NOT get_cutoff_at_date is None
+        # (the latter returns a stale non-None cutoff during a Current spell).
+        mock_current.return_value = True
         # Setup: EB1 allocation is 1000
         mock_supply.return_value = 1000
 

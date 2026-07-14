@@ -29,6 +29,25 @@ def _get(row, key, default=None):
     return getattr(row, key, default)
 
 
+def _apportion_ints(weights: dict[date, float]) -> dict[date, int]:
+    """Round non-negative float weights to ints preserving the rounded total.
+
+    Uses the largest-remainder (Hamilton) method so a distribution that would
+    round each bin down to 0 (n=10 over 20 bins @0.05 → 0.5 each) still places the
+    full mass. Total == round(sum(weights)).
+    """
+    total = round(sum(weights.values()))
+    floors = {k: int(v) for k, v in weights.items()}  # v >= 0 → int() is floor
+    leftover = total - sum(floors.values())
+    if leftover > 0:
+        by_remainder = sorted(
+            weights, key=lambda k: weights[k] - floors[k], reverse=True
+        )
+        for k in by_remainder[:leftover]:
+            floors[k] += 1
+    return floors
+
+
 def _country_to_enum_value(country: int | str | None) -> int | None:
     """Convert country to enum value (int). First step in all country parsing."""
     if country is None:
@@ -145,10 +164,25 @@ def build_virtual_queue_snapshot(
             n = int(value)
             dist = perm_lag.get((start, end)) if end else None
             if dist and isinstance(dist, dict):
+                # A5-F6: anchor at the reference-period MIDPOINT, not its start, so
+                # the convolution's priority dates aren't biased ~half a period early
+                # relative to the naive per-month spread.
+                anchor = start
+                if end:
+                    anchor = start + timedelta(days=(end - start).days // 2)
+                # A5-F5: accumulate exact float contributions per bucket-month and
+                # apportion them to ints preserving the total. Per-bin round() drops
+                # mass (n=10 over 20 bins @0.05 → round(0.5)=0 each → 0 added).
+                float_by_bucket: dict[date, float] = {}
                 for lag_days, frac in dist.items():
-                    pd_date = start - timedelta(days=int(lag_days))
+                    pd_date = anchor - timedelta(days=int(lag_days))
                     bucket_date = date(pd_date.year, pd_date.month, 1)
-                    snapshot.add(bucket_date, round(n * frac))
+                    float_by_bucket[bucket_date] = (
+                        float_by_bucket.get(bucket_date, 0.0) + n * frac
+                    )
+                for bucket_date, count in _apportion_ints(float_by_bucket).items():
+                    if count > 0:
+                        snapshot.add(bucket_date, count)
             else:
                 # Spread demand evenly across the reference period months
                 if end:
@@ -157,7 +191,11 @@ def build_virtual_queue_snapshot(
                     )
                 else:
                     n_months = 1
-                per_month = max(1, n // n_months)
+                # A5-F4: do NOT force >= 1 per month. `max(1, n // n_months)` adds
+                # phantom applicants when receipts < months (n=2 over a quarter →
+                # 1*3 = 3 added). Floor-divide and hand the remainder to the first
+                # `remainder` months so the total added is exactly n.
+                per_month = n // n_months
                 remainder = n - per_month * n_months
                 lag_months = NAIVE_LAG_BY_CLASS.get(visa_class, NAIVE_LAG_MONTHS)
                 cursor_year, cursor_month = start.year, start.month

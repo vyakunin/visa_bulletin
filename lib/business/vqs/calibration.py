@@ -72,6 +72,12 @@ def _build_error_distributions(knowledge_date: date, action_type: str = "filing"
             continue
         if knowledge >= knowledge_date:
             continue
+        # A3-F7: the stored actual must have been OBSERVABLE at knowledge_date, not
+        # merely filled in later. The actual for target_month is known once that
+        # month's bulletin publishes; if the target month is on/after knowledge_date
+        # it hadn't happened yet, so including its error leaks the future.
+        if target_month >= knowledge_date:
+            continue
 
         # Compute horizon (months from prediction_date to target)
         h = (target_month.year - knowledge.year) * 12 + (target_month.month - knowledge.month)
@@ -101,12 +107,12 @@ def _build_error_distributions(knowledge_date: date, action_type: str = "filing"
             current = get_cutoff_at_date(visa_class, country, action_type, kd)
             if not current:
                 continue
-            # Get next-month actual
-            next_bulletins = [b for b in get_all_bulletins() if b.publication_date > bulletin.publication_date]
-            if not next_bulletins:
-                continue
-            next_b = next_bulletins[0]
-            actual = get_cutoff_at_date(visa_class, country, action_type, next_b.publication_date)
+            # A3-F6: the 1-month actual is THIS bulletin's cutoff (B), not the
+            # bulletin AFTER it. The old code used next_b (B+1), so signed_error
+            # compared a "predict B" seasonal_median against the B+1 actual — the
+            # same off-by-one transition as the GBM label (A3-F1). Because
+            # bulletin.pub < knowledge_date, this actual is also always observable.
+            actual = get_cutoff_at_date(visa_class, country, action_type, bulletin.publication_date)
             if not actual:
                 continue
 
@@ -184,8 +190,10 @@ def compute_calibrated_interval(
 
     # Still not enough data → fall back to series-independent defaults
     if len(errors) < 5:
-        # Default intervals: ±90d for h=1, scaling with horizon
-        spread_days = max(60, 90 * horizon // 2)
+        # Default intervals: ±90d for h=1, scaling with horizon.
+        # A3-F8: floor at 90, not 60 — h=1 gave max(60, 45)=60, contradicting both
+        # this comment and the shallower fallback above (spread = 90 * horizon).
+        spread_days = max(90, 90 * horizon // 2)
         return predicted_date - timedelta(days=spread_days), predicted_date + timedelta(days=spread_days)
 
     errors_sorted = sorted(errors)

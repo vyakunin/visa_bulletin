@@ -1,6 +1,10 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
+# Consumed as data by //tests:test_blog_table_wrap_guard (editorial-voice lint over
+# the authored /analysis/ story HTML — read as source text, not imported).
+exports_files(["generate_i129_story_posts.py"])
+
 py_binary(
     name = "check_fad_dff_violations",
     srcs = ["check_fad_dff_violations.py"],

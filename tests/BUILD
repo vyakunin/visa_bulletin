@@ -68,6 +68,16 @@ django_py_test(
     ],
 )
 
+py_test(
+    name = "test_blog_table_wrap_guard",
+    size = "small",
+    srcs = ["test_blog_table_wrap_guard.py"],
+    data = [
+        "//scripts/oneoff:generate_i129_story_posts.py",
+        "//webapp:templates",
+    ],
+)
+
 django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
@@ -997,6 +1007,31 @@ django_py_test(
     srcs = ["test_vqs_metrics.py"],
     deps = [
         "//lib/business/vqs:metric_config",
+    ],
+)
+
+django_py_test(
+    name = "test_prediction_audit_fixes",
+    size = "small",
+    srcs = ["test_prediction_audit_fixes.py"],
+    deps = [
+        "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:aggregator",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:demand",
+        "//lib/business/vqs:fy_utilization",
+        "//lib/business/vqs:gbm_expert",
+        "//lib/business/vqs:queue_snapshot",
+        "//lib/business/vqs:metric_config",
+        "//lib/business/vqs:prediction_loader",
+        "//lib/business/vqs:seasonal_predictor",
+        "//lib/business/vqs/supply",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//scripts:publish_predictions",
     ],
 )
 
