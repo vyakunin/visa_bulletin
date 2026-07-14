@@ -2086,3 +2086,77 @@ real lever is a **production-aligned GBM objective** (weight 6m/12m on gated, on
    current params. Ship ONLY if production-served MAE improves.
 Shipping any resulting param change is a heavyweight Path-2 change (off-prod regenerate
 all `PredictedCutoff` + graduate the DATA), not a code-only deploy.
+
+## 25. Publish-Dispatch Graduation Gate for the Re-Tuned GBM Params (July 2026)
+
+### Motivation
+§24 status item 3: before graduating the re-tuned GBM constants (30-trial
+production-aligned run, best trial #25, obj 262.9 vs current-params baseline 301.8),
+evaluate them on the **publish path GBM actually serves** — `expert_gbm_gated` at
+6m/12m on the dispatch-table surfaces — not the VQS-ensemble backtest
+(`compute_prediction_accuracy` calls `predict_next_bulletin_and_maturity`, which prod
+does NOT serve at these horizons). Scored per Section 0 principle 4: conditional
+metrics on months that actually moved + movement detection, not stall-friendly
+aggregate MAE, and weighted by real visitor interest per surface.
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| Publish-path gate script | `scripts/vqs/backtest_publish_dispatch.py` (+BUILD) | Walk-forward eval of the exact prod call (`expert_gbm_gated`, thresholds explicit) on the 7 GBM-served (series, horizon) surfaces, importing the dispatch sets from `scripts/publish_predictions.py`. Per surface: MAE vs no-change baseline, conditional MAE + directional hit rate on \|actual\|>30d/90d months, movement P/R/F1, gate-open rate. Windows: full history + stall era (targets ≥2021-10-01). `--params-json` applies candidate `_GBM_*` overrides. |
+
+Invocations (staging DB, working tree, 2026-07-14):
+`scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_publish_dispatch --action-type {final_action,filing} [--params-json /app/logs/gate_tuned_params.json] --out /app/logs/gate_{current,tuned}_{fa,fi}.json`
+
+### Results (Facts)
+
+Traffic weights (measured 2026-06-16..07-13): GC EB-dashboard views India 1,945 vs
+China 539; priority-date pSEO views India 759 vs China 73 (eb2-india 350, eb3-india
+234, eb1-india 175; China eb3/eb2/eb1 28/25/20). GSC query impressions: "eb2 india"
+19,148 (442 clicks), "eb1 india" 8,536 (79), "eb3 india" 5,741 (191); every China
+category ≤883 impressions, ≤3 clicks. Weights below: country 78/22 India/China ×
+within-country pSEO category split, normalized over the 7 GBM surfaces. Note India
+EB-3 (Pace-served) is untouched by this change.
+
+**final_action, stall era (targets ≥2021-10-01, n=58/surface), current→tuned
+(no-change baseline in parens):**
+
+| surface | weight | MAE | condMAE(>90d moves) | dir-hit(>90d) | F1(90d) | gate-open |
+|---|---|---|---|---|---|---|
+| India EB-2 @12m | .39 | 547→502 (557) | 549→504 (565) | .63→.79 | .66→.78 | .88→1.00 |
+| India EB-1 @6m | .19 | 509→576 (576) | 625→701 (740) | .33→.36 | .25→.21 | .81→1.00 |
+| India EB-1 @12m | .19 | 906→755 (759) | 1080→885 (950) | .28→.63 | .22→.55 | .88→.98 |
+| China EB-3 @6m | .06 | 184→133 (176) | 177→128 (218) | .82→.82 | .74→.72 | .98→1.00 |
+| China EB-3 @12m | .06 | 197→205 (278) | 201→197 (330) | .89→.87 | .79→.78 | 1.00 |
+| China EB-2 @12m | .06 | 254→228 (338) | 256→228 (343) | .77→1.00 | .75→.96 | .98→1.00 |
+| China EB-1 @12m | .04 | 334→267 (255) | 397→319 (334) | .57→.81 | .50→.66 | .95→.98 |
+| **traffic-weighted** | 1.00 | **538→497 (532)** | **598→549 (614)** | | | |
+
+Full-history final_action weighted: MAE 497→488 (base 538), condMAE90 513→520 (599).
+
+**filing, stall era, weighted: MAE 435→356 (base 383); condMAE90 415→357 (472).**
+Filing India EB-1 @6m IMPROVES (327→245, base 276; dir .55→.73). All filing surfaces
+improve except China EB-3 @6m (194→233, base 228).
+
+- **Fact:** tuned params open the gate MORE, not less — stall-era gate-open rate
+  rises to 0.95–1.00 on every surface (current 0.81–1.00). The "more conservative"
+  forward-preview read was magnitude damping, not no-movement collapse.
+- **Fact:** the single final_action regression (India EB-1 @6m, weight .19) is
+  concentrated in the FY2024 rebound: on kd 2023-08..12 with actual moves
+  +1,520..+3,196d, tuned predicts +820..+862 vs current +1,510..+1,814 (direction
+  right, magnitude undershot); mean stall-era err delta +67d/mo. Its condMAE stays
+  39d under baseline (701 vs 740).
+- **Fact:** on the top-traffic surface (India EB-2 @12m, .39 weight) tuned improves
+  every metric on both action types.
+- Artifacts: `logs/gate_{current,tuned}_{fa,fi}.json`, `logs/gate_tuned_params.json`
+  (tuned = §24 full-run trial #25).
+
+### Current Status
+Gate run complete; graduation of the `_GBM_*` constants NOT yet applied — held for
+user go. If graduated: heavyweight Path-2 change per §24 (off-prod regenerate
+`PredictedCutoff` + graduate the DATA). Candidate follow-up: with tuned params,
+India EB-1 @6m final_action ≈ persistence — its GBM dispatch slot (won on §20 same-
+window eval) may warrant re-dispatch evaluation vs RS/Pace.
+
+### Pending Planning Review
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize
+next steps.

@@ -68,3 +68,5 @@ perm_*.json
 bulletin_accuracy.json
 longterm_accuracy*.json
 baseline_comparison.json
+logs/*.json
+lib/logs/
