@@ -745,8 +745,8 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% if request.path == '/salaries/' %}active{% endif %}" href="{% url 'salary_search' %}">
-                        <i class="bi bi-currency-dollar"></i> Salaries
+                    <a class="nav-link {% if '/predictions' in request.path %}active{% endif %}" href="{% url 'prediction_list' %}">
+                        <i class="bi bi-graph-up-arrow"></i> Predictions
                     </a>
                 </li>
                 <li class="nav-item">
@@ -757,6 +757,11 @@
                 <li class="nav-item">
                     <a class="nav-link {% if '/employer' in request.path %}active{% endif %}" href="{% url 'employer_directory' %}">
                         <i class="bi bi-building"></i> Employers
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.path == '/salaries/' %}active{% endif %}" href="{% url 'salary_search' %}">
+                        <i class="bi bi-currency-dollar"></i> Salaries
                     </a>
                 </li>
                 <li class="nav-item">
