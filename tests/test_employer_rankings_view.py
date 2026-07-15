@@ -1,5 +1,6 @@
 """Tests for employer rankings view."""
 
+import re
 from datetime import date
 
 from tests.django_setup import setup_django_for_tests
@@ -265,6 +266,43 @@ class EmployerRankingsViewTest(TestCase):
 
     # perm_ratio column was removed; perm_count and total_filings columns
     # remain so users can compare them directly.
+
+    # --- Mobile column visibility ---
+    # Regression: the H-1B/PERM breakdown columns were unconditionally
+    # d-none d-md-table-cell, so on phones the only visible number was
+    # total_filings — switching the program toggle appeared to change nothing.
+    # The selected program's column must stay visible at all widths.
+
+    @staticmethod
+    def _column_classes(html: str, col: str) -> list[str]:
+        """Class attributes of every th/td cell tagged col-<col>."""
+        classes = re.findall(rf'class="([^"]*\bcol-{col}\b[^"]*)"', html)
+        assert classes, f"no col-{col} cells found in rendered HTML"
+        return classes
+
+    def _assert_column_visibility(self, program: str, visible: str, hidden: tuple[str, ...]):
+        response = self.client.get(_url(program=program, period="fy_2024"))
+        html = response.content.decode()
+        for cls in self._column_classes(html, visible):
+            self.assertNotIn(
+                "d-none", cls, f"program={program}: col-{visible} must be visible on mobile"
+            )
+        for col in hidden:
+            for cls in self._column_classes(html, col):
+                self.assertIn(
+                    "d-none d-md-table-cell",
+                    cls,
+                    f"program={program}: col-{col} should collapse below md",
+                )
+
+    def test_perm_filter_perm_column_visible_on_mobile(self):
+        self._assert_column_visibility("perm", visible="perm", hidden=("total", "h1b"))
+
+    def test_h1b_filter_h1b_column_visible_on_mobile(self):
+        self._assert_column_visibility("h1b", visible="h1b", hidden=("total", "perm"))
+
+    def test_all_program_total_column_visible_on_mobile(self):
+        self._assert_column_visibility("all", visible="total", hidden=("h1b", "perm"))
 
 
 class FormatCountTest(TestCase):

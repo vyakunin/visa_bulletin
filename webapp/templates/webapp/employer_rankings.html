@@ -121,9 +121,10 @@
                     <tr>
                         <th class="text-center" style="width: 3em;">#</th>
                         <th>Employer</th>
-                        <th class="text-end {% if program == 'all' %}fw-bold{% endif %}">Total Filings</th>
-                        <th class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-bold{% endif %}">H-1B</th>
-                        <th class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-bold{% endif %}">Green Card</th>
+                        {# The selected program's column stays visible on mobile; the other two collapse below md. #}
+                        <th class="text-end col-total {% if program == 'all' %}fw-bold{% else %}d-none d-md-table-cell{% endif %}">Total Filings</th>
+                        <th class="text-end col-h1b {% if program == 'h1b' %}fw-bold{% else %}d-none d-md-table-cell{% endif %}">H-1B</th>
+                        <th class="text-end col-perm {% if program == 'perm' %}fw-bold{% else %}d-none d-md-table-cell{% endif %}">Green Card</th>
                         <th class="text-end d-none d-lg-table-cell">Avg Salary</th>
                     </tr>
                 </thead>
@@ -140,9 +141,9 @@
                             <span class="fw-semibold">{{ row.cluster_name }}</span>
                             {% endif %}
                         </td>
-                        <td class="text-end {% if program == 'all' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.total_filings|floatformat:"0g" }}</td>
-                        <td class="text-end d-none d-md-table-cell {% if program == 'h1b' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.h1b_count|floatformat:"0g" }}</td>
-                        <td class="text-end d-none d-md-table-cell {% if program == 'perm' %}fw-semibold{% else %}text-muted{% endif %}">{{ row.perm_count|floatformat:"0g" }}</td>
+                        <td class="text-end col-total {% if program == 'all' %}fw-semibold{% else %}d-none d-md-table-cell text-muted{% endif %}">{{ row.total_filings|floatformat:"0g" }}</td>
+                        <td class="text-end col-h1b {% if program == 'h1b' %}fw-semibold{% else %}d-none d-md-table-cell text-muted{% endif %}">{{ row.h1b_count|floatformat:"0g" }}</td>
+                        <td class="text-end col-perm {% if program == 'perm' %}fw-semibold{% else %}d-none d-md-table-cell text-muted{% endif %}">{{ row.perm_count|floatformat:"0g" }}</td>
                         <td class="text-end d-none d-lg-table-cell text-muted">
                             {% if row.avg_salary_k %}
                             ${{ row.avg_salary_k|floatformat:"0" }}K
