@@ -146,7 +146,15 @@
     if (ms <= 0) { el.textContent = "Expected any day now — check back shortly."; return; }
     var days = Math.floor(ms / 86400000);
     var hours = Math.floor((ms % 86400000) / 3600000);
-    el.textContent = "~" + days + (days === 1 ? " day " : " days ") + hours + "h until the expected release";
+    var lead;
+    if (days >= 1) {
+      lead = days + (days === 1 ? " day " : " days ") + hours + "h";
+    } else if (hours >= 1) {
+      lead = hours + (hours === 1 ? " hour" : " hours");
+    } else {
+      lead = "less than an hour";
+    }
+    el.textContent = "~" + lead + " until the expected release";
   }
   tick();
   setInterval(tick, 60000);
