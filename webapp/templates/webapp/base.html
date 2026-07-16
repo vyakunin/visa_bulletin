@@ -305,7 +305,24 @@
             background: var(--gov-background);
             color: var(--gov-text);
         }
-        
+
+        /* Horizontal-overflow guard. An UNFILLED AdSense auto-placed slot collapses its
+           `ins` to width:0 but leaves the aswift host div at its inline width:1200px;
+           centred in the 0-width ins it starts mid-page and runs past the viewport
+           (1913px at a 1440px window), producing a page-wide horizontal scrollbar.
+           We cannot restyle the host: its width is inline, Google owns the markup, and
+           capping it risks collapsing FILLED (revenue-bearing) slots too.
+
+           MUST be `clip`, not `hidden`: `hidden` makes the viewport a scrollport and
+           breaks every position:sticky element on the site (verified — a sticky header
+           scrolls away under `hidden`, stays pinned under `clip`). `clip` establishes a
+           clip container only, so sticky and nested overflow-x:auto table scrollers
+           keep working. Safari <16 ignores `clip` and simply keeps today's scrollbar. */
+        html, body {
+            overflow-x: clip;
+        }
+
+
         /* Prevent layout shift by reserving minimum space */
         main {
             min-height: 600px;

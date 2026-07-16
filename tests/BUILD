@@ -70,6 +70,15 @@ django_py_test(
 )
 
 pytest_py_test(
+    name = "test_base_overflow_guard",
+    size = "small",
+    srcs = ["test_base_overflow_guard.py"],
+    data = [
+        "//webapp:templates",
+    ],
+)
+
+pytest_py_test(
     name = "test_blog_table_wrap_guard",
     size = "small",
     srcs = ["test_blog_table_wrap_guard.py"],
