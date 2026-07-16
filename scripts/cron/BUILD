@@ -13,6 +13,34 @@ py_binary(
     ],
 )
 
+# Importable twin of the py_binary below, so tests can drive main()'s exit semantics
+# (a py_binary is not importable as a dep). Same srcs + deps; keep them in sync.
+py_library(
+    name = "refresh_bulletin_lib",
+    srcs = ["refresh_bulletin.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//lib/business/blog:blog",
+        "//lib/ingest:orchestrator",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:visa_bulletin",
+        "//lib/utils:logging_utils",
+        "//lib/utils:url_utils",
+        "//models:blog",
+        "//models:bulletin",
+        "//models/ingest:ingest",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("redis"),
+        requirement("python-dateutil"),
+    ],
+)
+
 py_binary(
     name = "refresh_bulletin",
     srcs = ["refresh_bulletin.py"],

@@ -108,6 +108,19 @@ pytest_py_test(
 )
 
 django_py_test(
+    name = "test_ingest_exit_codes",
+    size = "medium",
+    srcs = ["test_ingest_exit_codes.py"],
+    deps = [
+        ":conftest_lib",
+        "//models/ingest:ingest",
+        "//scripts/cron:refresh_bulletin_lib",
+        "//scripts/ingest:run_pipeline_lib",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
     srcs = ["test_worksite_record_copy_bug.py"],

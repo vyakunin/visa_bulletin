@@ -348,6 +348,18 @@ def main() -> None:
         _purge_cloudflare_edge()
     else:
         logger.warning("No bulletins were successfully ingested.")
+
+    # Partial failure is still failure. This used to exit 0 whenever ANY source ingested,
+    # so 1-of-3 succeeding looked identical to 3-of-3 — and the minipc bridge alerts off
+    # this exit code, so the two silent failures would never have surfaced. Compare against
+    # what we ATTEMPTED, not against zero. (Permanently-failed sources can't cause an alert
+    # storm here: get_pending_bulletin_source_ids() already parks them at MAX_FAILED_RETRIES.)
+    if ingested < len(pending_ids):
+        logger.error(
+            "%d of %d bulletin source(s) FAILED to ingest — see the per-source errors above.",
+            len(pending_ids) - ingested,
+            len(pending_ids),
+        )
         sys.exit(1)
 
 

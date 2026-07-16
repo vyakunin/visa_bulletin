@@ -4,6 +4,31 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Note: sh_binary is a built-in Bazel rule, no need to load it
 
+# Importable twin of the py_binary below, so tests can drive run_pipeline()/main() directly
+# (a py_binary is not importable as a dep). Same srcs + deps; keep them in sync.
+py_library(
+    name = "run_pipeline_lib",
+    srcs = ["run_pipeline.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//lib/ingest:ingest",
+        "//lib/ingest:orchestrator",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:plugins",
+        "//models/ingest:ingest",
+        "//lib/utils:logging_utils",
+        "//lib/utils:url_utils",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//django_config:urls",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+)
+
 py_binary(
     name = "run_pipeline",
     srcs = ["run_pipeline.py"],

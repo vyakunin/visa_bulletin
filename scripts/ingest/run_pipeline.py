@@ -19,12 +19,19 @@ Usage:
     bazel run //scripts/ingest:run_pipeline -- reingest-perm-titles
     bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed
     bazel run //scripts/ingest:run_pipeline -- mark-unfinished-failed --dry-run
+
+Exit codes (`run` / `discover-and-ingest`): 0 only if EVERY source succeeded; 1 if any
+source failed. The loop itself stays resilient — one bad source does not abort the batch —
+so a driver looping over sources must read the exit code to know an individual source
+failed. It used to exit 0 regardless, which is how the 2026-07-16 re-ingest reported
+"39/39 ok" while october-2015 had failed and persisted zero rows.
 """
 
 import argparse
 import logging
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Convert DB_HOST from host.docker.internal to localhost when running on host
@@ -145,6 +152,23 @@ def discover_sources(domain: str | None = None):
     return discovered
 
 
+@dataclass
+class PipelineResult:
+    """Per-source outcome of a run_pipeline batch.
+
+    The loop is deliberately resilient — one bad source must not abort the rest — so the
+    ONLY thing that makes a partial failure visible is `failed` being non-empty. Callers
+    must act on it; an exit code derived from "did the loop finish" is always 0.
+    """
+
+    succeeded: list[int] = field(default_factory=list)
+    failed: list[int] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failed
+
+
 def run_pipeline(
     source_id: int | None = None,
     url: str | None = None,
@@ -154,7 +178,7 @@ def run_pipeline(
     include_failed: bool = False,
     domain: str | None = None,
     skip_records: int = 0,
-):
+) -> PipelineResult:
     """
     Run ingest pipeline for source(s)
 
@@ -303,6 +327,7 @@ def run_pipeline(
         pipeline_context["skip_records"] = skip_records
         logger.info(f"Skipping first {skip_records:,} records for debugging")
 
+    result = PipelineResult()
     for idx, source in enumerate(sources, 1):
         logger.info(
             f"Running pipeline for source {source.id} ({idx}/{len(sources)}): {source.url}"
@@ -311,20 +336,39 @@ def run_pipeline(
             run = orchestrator.run(
                 source, resume=True, pipeline_context=pipeline_context
             )
-            logger.info(f"Pipeline completed: Run {run.id}")
         except Exception as e:
-            logger.error(f"Pipeline failed for source {source.id}: {e}")
-            # Do NOT raise here, just continue to next source
-            # The run itself is already marked as FAILED by the orchestrator
-            # raise
+            # Stay resilient: one bad source must not abort the batch. The run is already
+            # marked FAILED by the orchestrator; record it so the CALLER can still fail.
+            logger.error(f"Pipeline FAILED for source {source.id} ({source.url}): {e}")
+            result.failed.append(source.id)
             continue
+        # A returned run is not proof of success — check the status rather than logging
+        # "completed" over whatever came back.
+        if run.status == IngestStatus.COMPLETED:
+            logger.info(f"Pipeline completed: Run {run.id}")
+            result.succeeded.append(source.id)
+        else:
+            logger.error(
+                f"Pipeline FAILED for source {source.id} ({source.url}): "
+                f"run {run.id} ended with status {run.status}, not COMPLETED"
+            )
+            result.failed.append(source.id)
 
-    # Final pipeline summary
+    # Per-source summary. A bare "N sources processed" is what let the 2026-07-16
+    # re-ingest report 39/39 while october-2015 had failed and persisted zero rows —
+    # the count of ATTEMPTS must never stand in for the outcome.
+    logger.info(
+        "Pipeline summary: %d/%d sources succeeded, %d failed",
+        len(result.succeeded),
+        len(sources),
+        len(result.failed),
+    )
+    if result.failed:
+        logger.error("FAILED source ids (%d): %s", len(result.failed), result.failed)
     if pipeline_context and len(sources) > 0:
         total_time = time.time() - pipeline_context["start_time"]
-        logger.info(
-            f"Pipeline completed: {len(sources)} sources processed in {total_time / 60:.1f} min"
-        )
+        logger.info(f"Pipeline ran in {total_time / 60:.1f} min")
+    return result
 
 
 def _run_manage_salary_indexes(
@@ -651,7 +695,7 @@ def discover_and_ingest(
     domain: str | None = None,
     all_domains: bool = False,
     no_ingest_new: bool = False,
-):
+) -> PipelineResult:
     """Discover new sources and ingest all pending (excludes sources with FAILED runs unless --include-failed)."""
     logger.info("Discovering new sources...")
     _discovered = discover_sources(domain if not all_domains else None)
@@ -663,7 +707,7 @@ def discover_and_ingest(
         mark_no_run_sources_failed(dry_run=False)
 
     logger.info("Running pipeline for all pending sources...")
-    run_pipeline(all_pending=True, include_failed=False, domain=domain)
+    return run_pipeline(all_pending=True, include_failed=False, domain=domain)
 
 
 def mark_unfinished_runs_failed(
@@ -1192,7 +1236,7 @@ def main():
         if args.command == "discover":
             discover_sources(args.domain)
         elif args.command == "run":
-            run_pipeline(
+            result = run_pipeline(
                 args.source_id,
                 args.url,
                 args.all_pending,
@@ -1202,8 +1246,14 @@ def main():
                 args.domain,
                 args.skip_records,
             )
+            # A source that failed must NOT exit 0: a driver looping over sources reads the
+            # exit code, and exiting 0 on failure is what made the 2026-07-16 re-ingest
+            # report "39/39 ok" while october-2015 had persisted zero rows.
+            if not result.ok:
+                sys.exit(1)
         elif args.command == "discover-and-ingest":
-            discover_and_ingest(args.domain, args.all_domains)
+            if not discover_and_ingest(args.domain, args.all_domains).ok:
+                sys.exit(1)
         elif args.command == "download":
             download_sources(args.domain, args.all_domains, args.list_available)
         elif args.command == "resume":
