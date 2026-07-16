@@ -189,9 +189,14 @@ def extract_table_legacy(table):
 
     rows = []
     for row in table_rows[data_start_idx:]:
+        # Must match the header row's ["td", "th"]: some legacy editions mark the
+        # leading category cell as <th> (May/June 2004 and most of 2001-2003). Reading
+        # only <td> silently dropped that label and shifted every value one column
+        # left, so the All-Chargeability date became the visa class. The row still had
+        # >1 cell, so nothing raised and the shifted row was ingested.
         cols = [
-            convert_to_date(td.get_text(separator=" ", strip=True))
-            for td in row.find_all("td")
+            convert_to_date(cell.get_text(separator=" ", strip=True))
+            for cell in row.find_all(["td", "th"])
         ]
         if cols and len(cols) > 1:  # Must have visa class + at least one country
             if is_family and cols[0]:

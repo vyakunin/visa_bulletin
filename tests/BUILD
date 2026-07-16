@@ -135,6 +135,21 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_legacy_row_label",
+    size = "small",
+    srcs = ["test_legacy_row_label.py"],
+    data = [
+        "//data/bulletin/saved_pages:test_data",
+    ],
+    deps = [
+        ":conftest_lib",
+        "//lib/parsing/bulletin:parser",
+        requirement("beautifulsoup4"),
+        requirement("soupsieve"),
+    ],
+)
+
+django_py_test(
     name = "test_bulletin_format_version",
     size = "small",
     srcs = ["test_bulletin_format_version.py"],
