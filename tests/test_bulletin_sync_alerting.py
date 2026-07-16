@@ -24,7 +24,9 @@ at ALERT_AFTER, recovery fires the passive all-clear and resets the streak, and 
 run writes last_success.
 """
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -34,6 +36,96 @@ _MCP = _REPO / "mcp/daily_checkup_server.py"
 
 def _sync_src() -> str:
     return _SYNC.read_text(encoding="utf-8")
+
+
+def test_armed_cutover_skips_the_run_without_alerting(tmp_path) -> None:
+    """A data cutover must not page as a broken ingest — and must not touch the prod DB.
+
+    Regression (2026-07-16): `cutover.sh --data` resyncs prod from staging via
+    pg_dump | psql. Mid-resync the prod DB is transiently half-populated and
+    constraint-less, so refresh_bulletin died on DataSource.MultipleObjectsReturned and
+    the bridge fired `bulletin-sync:refresh-fail` — "Ingest is broken (parser/DB, not
+    Akamai)" — for a release that was working exactly as designed. cutover.sh's
+    hs_ingest_pause() only comments out the HOMESERVER crontab, and bulletin ingest moved
+    to this minipc-side bridge the same day, so the pause had silently become a no-op.
+
+    Skipping is also what stops real damage: discover's get_or_create can INSERT into
+    DataSource between that table's COPY and its unique-index rebuild, which makes the
+    resync's CREATE UNIQUE INDEX fail under ON_ERROR_STOP=0 and leaves prod permanently
+    without the constraint.
+
+    Hermetic: the guard runs before any fetch/ssh, so this exercises the real script.
+    """
+    marker = tmp_path / "vb_cutover_in_flight"
+    marker.write_text(str(os.getpid()))  # our own PID — guaranteed alive
+    notify_log = tmp_path / "notify_calls.log"
+    stub = tmp_path / "notify_stub.py"
+    stub.write_text(f"import sys, pathlib\npathlib.Path({str(notify_log)!r}).open('a').write(' '.join(sys.argv[1:]))\n")
+
+    proc = subprocess.run(
+        ["bash", str(_SYNC)],
+        env={
+            **os.environ,
+            "VB_CUTOVER_MARKER": str(marker),
+            "BULLETIN_SYNC_NOTIFY": str(stub),
+            "BULLETIN_SYNC_STATE_DIR": str(tmp_path / "state"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert proc.returncode == 0, (
+        "The bridge must exit 0 (clean skip) while a cutover is armed, so cron doesn't "
+        f"treat a healthy release as a failure. Got {proc.returncode}.\n{proc.stdout}\n{proc.stderr}"
+    )
+    assert not notify_log.exists(), (
+        "The bridge alerted during an armed cutover. A routine data graduation must not "
+        f"page as a broken ingest. Alert(s) sent: {notify_log.read_text() if notify_log.exists() else ''}"
+    )
+    assert "cutover in flight" in proc.stdout, (
+        f"Expected the cutover-interlock skip message. Got:\n{proc.stdout}"
+    )
+
+
+def test_stale_cutover_marker_cannot_mute_ingest_forever() -> None:
+    """A leftover marker must never silently disable the only bulletin ingest path.
+
+    cutover.sh's EXIT trap does NOT run on SIGKILL (the script says so itself), so a
+    killed cutover leaves its marker behind. If the bridge trusted a bare file-exists
+    check, ingest would skip every run forever, silently — and the daily_checkup backstop
+    grades on last_success, which a skipping run never updates. So the guard must require
+    a LIVE owner and a bounded age.
+    """
+    fn = re.search(r"^cutover_in_flight\(\)\s*\{.*?^\}", _sync_src(), re.MULTILINE | re.DOTALL)
+    assert fn, f"cutover_in_flight() not found in {_SYNC.name} — the cutover interlock is gone."
+    body = fn.group(0)
+    assert "kill -0" in body, (
+        "cutover_in_flight() no longer checks the marker's owner is alive. A marker left "
+        "by a SIGKILLed cutover would mute bulletin ingest forever, silently."
+    )
+    assert "CUTOVER_MAX_AGE_MIN" in body, (
+        "cutover_in_flight() no longer bounds the marker's age. PIDs are recycled; an "
+        "ancient marker whose PID now belongs to an unrelated process would mute ingest."
+    )
+
+
+def test_prod_touching_alerts_are_cutover_gated() -> None:
+    """Every alert that blames prod must first rule out an in-flight cutover.
+
+    The top-of-run guard narrows the window but cannot close it — a cutover can arm
+    mid-run, restarting vb_web and resyncing the DB under a bridge run already in
+    progress. Each of these three alerts names prod as broken, so each must re-check.
+    """
+    src = _sync_src()
+    for key in ("bulletin-sync:stream-fail", "bulletin-sync:refresh-fail", "bulletin-sync:ingest-fail"):
+        before = src.split(f'alert inject "{key}"')[0]
+        guard = before.rfind("if cutover_in_flight; then")
+        branch = before.rfind("if ")
+        assert guard != -1 and guard >= branch - 400, (
+            f"The {key!r} alert is no longer gated on cutover_in_flight(). A cutover that "
+            "arms mid-run would make this fire against a healthy release."
+        )
 
 
 def test_state_paths_agree_between_bridge_and_daily_checkup() -> None:

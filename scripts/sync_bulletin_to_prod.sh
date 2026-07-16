@@ -26,7 +26,11 @@
 #   * A NEW bulletin landing injects too (rare, ~12/yr): the agent verifies the site,
 #     predictions, and the generated post.
 #   * Ingest-broke (refresh non-zero, or pending sources that all fail) alerts
-#     immediately — that's never transient.
+#     immediately — that's never transient EXCEPT during a data cutover, which resyncs
+#     the prod DB out from under us. Hence the cutover interlock (CUTOVER_MARKER): while
+#     `visa_bulletin_platform/hosting/cutover.sh` is armed, the run skips instead of
+#     ingesting or alerting. Do not "simplify" that to a bare file-exists check — see
+#     cutover_in_flight().
 #   * The BLIND SPOT this cannot cover is "the cron stopped firing at all" (no run =
 #     no alert). The visa_bulletin daily_checkup MCP is the backstop: it reads
 #     $STATE_DIR/last_success and flags staleness in the morning digest.
@@ -52,10 +56,41 @@ MONTHS_ARG=()
 # gets exercised without waiting for a real Akamai miss.
 CDP_ARG=()
 [ -n "${BULLETIN_FETCH_CDP:-}" ] && CDP_ARG=(--cdp "$BULLETIN_FETCH_CDP")
+# Cutover interlock. visa_bulletin_platform/hosting/cutover.sh resyncs the prod DB from
+# staging (pg_dump | psql) and restarts vb_web; it writes its PID to this marker for the
+# whole armed window. The path is a cross-repo contract — change it in both or the
+# interlock silently disappears.
+CUTOVER_MARKER="${VB_CUTOVER_MARKER:-/tmp/vb_cutover_in_flight}"
+CUTOVER_MAX_AGE_MIN="${VB_CUTOVER_MAX_AGE_MIN:-120}"
 
 mkdir -p "$STATE_DIR"
 
 log() { echo "[sync_bulletin] $*"; }
+
+# True only while a cutover is GENUINELY armed. Two reasons this must never touch prod
+# mid-cutover (2026-07-16):
+#   1. Noise: mid-resync the prod DB is transiently half-populated and constraint-less,
+#      so refresh_bulletin dies on MultipleObjectsReturned — indistinguishable, to the
+#      alerts below, from a real parser/DB break. A healthy release paged as "ingest is
+#      broken".
+#   2. Damage: discover_bulletin_sources() does get_or_create on DataSource. An INSERT
+#      landing after that table's COPY but before the restore rebuilds its unique index
+#      makes CREATE UNIQUE INDEX fail — and the resync's psql runs ON_ERROR_STOP=0, so it
+#      plows on and leaves prod permanently WITHOUT that constraint.
+# A stale marker must not mute ingest forever: cutover.sh's EXIT trap does not run on
+# SIGKILL, and this is the only bulletin ingest path, so a forgotten marker would silently
+# drop a bulletin. Hence require a live owner AND a sane age, and say so when ignoring one.
+cutover_in_flight() {
+  [ -f "$CUTOVER_MARKER" ] || return 1
+  local pid age
+  pid="$(tr -dc '0-9' < "$CUTOVER_MARKER" 2>/dev/null)"
+  age=$(( ( $(date +%s) - $(stat -c %Y "$CUTOVER_MARKER" 2>/dev/null || echo 0) ) / 60 ))
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$age" -lt "$CUTOVER_MAX_AGE_MIN" ]; then
+    return 0
+  fi
+  log "WARN: ignoring stale cutover marker $CUTOVER_MARKER (pid='${pid:-none}' age=${age}min, max=${CUTOVER_MAX_AGE_MIN}) — proceeding with ingest."
+  return 1
+}
 
 # alert <mode> <throttle-key> <cooldown-min> <text>
 # Never fails the run: a broken alert path must not also break ingest.
@@ -87,6 +122,11 @@ fail_fetch() {
   fi
   exit 2
 }
+
+if cutover_in_flight; then
+  log "cutover in flight (marker $CUTOVER_MARKER) — skipping this run entirely; the prod DB is mid-resync. The next tick picks it up; dedup makes a delayed month a no-op."
+  exit 0
+fi
 
 log "$(date -u +%FT%TZ) fetching via debug Chrome..."
 rm -rf "$CACHE"
@@ -120,6 +160,11 @@ date -u +%FT%TZ > "$LAST_SUCCESS_FILE"
 log "streaming cache -> vb_web:$CONTAINER_CACHE"
 if ! ssh homeserver "docker exec -i vb_web sh -c 'rm -rf $CONTAINER_CACHE && mkdir -p $CONTAINER_CACHE && tar -C $CONTAINER_CACHE -xf -'" < <(tar -C "$CACHE" -cf - .); then
   log "ERROR: streaming cache to vb_web failed"
+  # A cutover that armed AFTER the top-of-run check restarts vb_web out from under us.
+  if cutover_in_flight; then
+    log "...but a cutover armed mid-run — vb_web is being swapped. Transient, not alerting."
+    exit 0
+  fi
   alert inject "bulletin-sync:stream-fail" 60 \
     "🚨 Bulletin bridge: fetched the HTML but could not stream it into vb_web (ssh homeserver / docker exec failed). Bulletin ingest is stalled — check the homeserver and vb_web container."
   exit 3
@@ -135,13 +180,22 @@ log "cleaning up container cache"
 ssh homeserver "docker exec vb_web rm -rf $CONTAINER_CACHE" || true
 
 if [ "$REFRESH_RC" -ne 0 ]; then
+  if cutover_in_flight; then
+    log "refresh exited ${REFRESH_RC}, but a cutover armed mid-run — the prod DB is mid-resync. Transient, not alerting."
+    exit 0
+  fi
   alert inject "bulletin-sync:refresh-fail" 60 \
     "🚨 Bulletin bridge: browser fetch passed the wall but prod-side refresh_bulletin exited ${REFRESH_RC}. Ingest is broken (parser/DB, not Akamai). Tail: $(echo "$REFRESH_OUT" | tail -5 | tr '\n' ' ')"
   exit 3
 fi
 
-# Pending sources that all failed to ingest = a real parse/load break, never transient.
+# Pending sources that all failed = a real parse/load break -- EXCEPT during a cutover, when
+# the prod DB is transiently constraint-less and every source fails on MultipleObjectsReturned.
 if echo "$REFRESH_OUT" | grep -q "No bulletins were successfully ingested."; then
+  if cutover_in_flight; then
+    log "no bulletins ingested, but a cutover armed mid-run — the prod DB is mid-resync. Transient, not alerting."
+    exit 0
+  fi
   alert inject "bulletin-sync:ingest-fail" 60 \
     "🚨 Bulletin bridge: a new bulletin source was discovered but NONE ingested successfully — parser or DB break. Tail: $(echo "$REFRESH_OUT" | tail -5 | tr '\n' ' ')"
   exit 3
