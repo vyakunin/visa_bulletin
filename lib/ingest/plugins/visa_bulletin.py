@@ -23,6 +23,43 @@ from models.visa_cutoff_date import VisaCutoffDate
 
 logger = logging.getLogger(__name__)
 
+# The bulletin switched to its current HTML layout with the NOVEMBER 2015 edition
+# (the release that introduced Dates for Filing). January-October 2015 are still the
+# legacy layout, so a year-only boundary (year < 2015) misclassifies those ten months
+# as MODERN. The modern extractor then finds zero tables in them, transform() never
+# runs, no Bulletin row is created, and the run dies downstream with the misleading
+# "Bulletin not found for publication date" — which is why 2015-01..2015-10 sat
+# uningested (with ~1.2k FAILED runs each) while 2014-12 and 2015-11 ingested fine.
+MODERN_FORMAT_START = (2015, 11)
+
+# Matches the canonical bulletin slug in either a URL or a bare filename, e.g.
+# ".../visa-bulletin/2016/visa-bulletin-for-october-2015.html" -> ("october", "2015").
+# Anchoring on the slug matters: the FY directory ("/2016/") disagrees with the
+# bulletin's calendar year for every Oct-Dec edition, so a bare \d{4} scan can read
+# the wrong year.
+BULLETIN_MONTH_YEAR_RE = re.compile(r"visa-bulletin-for-([a-z]+)-(\d{4})", re.IGNORECASE)
+
+
+def format_version_for_bulletin(url_or_filename: str) -> FormatVersion:
+    """FormatVersion for a bulletin, keyed off its month + calendar year.
+
+    Returns UNKNOWN when the slug (or its month name) is unparseable, which makes
+    parse() auto-detect rather than commit to a guess.
+    """
+    match = BULLETIN_MONTH_YEAR_RE.search(url_or_filename)
+    if not match:
+        return FormatVersion.UNKNOWN
+    try:
+        month = datetime.strptime(match.group(1), "%B").month
+    except ValueError:
+        return FormatVersion.UNKNOWN
+    year = int(match.group(2))
+    return (
+        FormatVersion.LEGACY
+        if (year, month) < MODERN_FORMAT_START
+        else FormatVersion.MODERN
+    )
+
 
 class VisaBulletinPlugin(DataSourcePlugin):
     """Plugin for Visa Bulletin HTML pages"""
@@ -53,17 +90,7 @@ class VisaBulletinPlugin(DataSourcePlugin):
                 else:
                     url = f"https://travel.state.gov{match}"
 
-                # Extract date from URL
-                date_match = re.search(r"(\w+)-(\d{4})", url)
-                if date_match:
-                    year = int(date_match.group(2))
-                    # Map year to format version
-                    if year < 2015:
-                        format_version = FormatVersion.LEGACY
-                    else:
-                        format_version = FormatVersion.MODERN
-                else:
-                    format_version = FormatVersion.UNKNOWN
+                format_version = format_version_for_bulletin(url)
 
                 sources.append(
                     SourceInfo(
@@ -125,6 +152,22 @@ class VisaBulletinPlugin(DataSourcePlugin):
         else:
             # Fallback: auto-detect (tries modern, then legacy)
             tables = extract_tables(content)
+
+        if not tables and format_version != FormatVersion.UNKNOWN:
+            # format_version is derived from the URL, not the bytes, so it can be wrong
+            # for an edition that sits near a layout change. Committing to it yields zero
+            # tables -> zero records -> no Bulletin row, and the run only fails later with
+            # "Bulletin not found", pointing at the wrong thing entirely. Auto-detect
+            # instead: a parser that finds nothing is never the right answer for a page
+            # the other parser can read.
+            logger.warning(
+                "[Run %s] %s parser found no tables in %s; falling back to auto-detect",
+                run.id,
+                format_version,
+                filename,
+            )
+            tables = extract_tables(content)
+
         pub_date = publication_date.date() if publication_date else None
         if not pub_date:
             logger.warning(
@@ -185,19 +228,8 @@ class VisaBulletinPlugin(DataSourcePlugin):
         return cutoff_date
 
     def get_format_version(self, filepath: Path) -> FormatVersion:
-        """Detect format version from filename or content"""
-
-        # Extract year from filename
-        year_match = re.search(r"(\d{4})", filepath.name)
-        if year_match:
-            year = int(year_match.group(1))
-            # Map year to format version
-            # Visa bulletins changed format around 2015
-            if year < 2015:
-                return FormatVersion.LEGACY
-            else:
-                return FormatVersion.MODERN
-        return FormatVersion.UNKNOWN
+        """Detect format version from the filename's month + year."""
+        return format_version_for_bulletin(filepath.name)
 
     def validate_post_ingest(self, run: IngestRun) -> ValidationResult:
         """

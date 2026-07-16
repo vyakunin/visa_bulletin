@@ -155,6 +155,23 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_bulletin_format_version",
+    size = "small",
+    srcs = ["test_bulletin_format_version.py"],
+    data = [
+        "//data/bulletin/saved_pages:test_data",
+    ],
+    deps = [
+        ":conftest_lib",
+        "//lib/ingest/plugins:visa_bulletin",
+        "//lib/parsing/bulletin:parser",
+        "//models/ingest:enums",
+        requirement("beautifulsoup4"),
+        requirement("soupsieve"),
+    ],
+)
+
+django_py_test(
     name = "test_extractor",
     size = "small",
     srcs = ["test_extractor.py"],
