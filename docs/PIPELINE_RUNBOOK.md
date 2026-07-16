@@ -440,7 +440,10 @@ When fixing data ingestion, processing, or database issues, update the correspon
 **Scripts to update:**
 1. `scripts/setup_new_instance.sh` — initial instance setup
 2. `scripts/cron/refresh_data.sh` — initial data load + weekly refresh
-3. `deployment/cron/setup-ingest-cron.sh` — cron schedule
+3. `scripts/sync_bulletin_to_prod.sh` — the minipc→prod bulletin ingest bridge
+   (cronned on the minipc; the prod-side hourly cron and its
+   `deployment/cron/setup-ingest-cron.sh` installer were retired 2026-07-16 —
+   travel.state.gov's Akamai wall 403'd every prod-side run)
 
 **What to check/update in each:**
 - Environment variables needed for fix

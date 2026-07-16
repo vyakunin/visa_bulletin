@@ -157,7 +157,7 @@ This project can plug into the morning digest pipeline run from `~/cursor_projec
 **Likely signals to surface from this project:**
 
 - Public site availability + last-hour 5xx rate from cloudflared / nginx (`vb_nginx` access log)
-- Hourly bulletin-refresh cron status: did it run, did it parse, any errors? (`/opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log`)
+- Bulletin ingest status: is the **minipc** browser bridge still landing bulletins? Grade the age of `~/.local/state/visa_bulletin/last_success` + its log (`visa_bulletin/logs/sync_bulletin_to_prod.log`) — NOT the prod-side `logs/cron/bulletin_refresh.log`, which is frozen since the prod cron was retired 2026-07-16 (Akamai 403s)
 - Production server headroom — `df -h /`, `free -h` (small SSD — watch disk pressure)
 - Postgres DB size growth + any vacuum / replication warnings
 - Cloudflare tunnel connector state (`vb_cloudflared` — QUIC connections healthy?)

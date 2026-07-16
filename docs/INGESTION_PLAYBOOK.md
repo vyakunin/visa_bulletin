@@ -44,10 +44,14 @@ This playbook covers the complete ingestion workflow, from initial setup through
 - **Graduate the verified data** with `cutover.sh --data` from `~/cursor_projects/visa_bulletin_platform/hosting/` (the staging stack serves prod traffic during the swap; vb stays up).
 - **Complete workflow + cadence:** `.claude/rules/deployment.md` "Weekly DB Refresh Pattern".
 
-**Monitoring a prod data refresh / hourly bulletin cron:**
+**Monitoring a prod data refresh / bulletin ingest:**
 ```bash
-# Hourly bulletin-refresh cron log on prod
-ssh homeserver "tail -f /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log"
+# Bulletin ingest runs on the MINIPC (browser bridge past the Akamai wall), not prod.
+# The prod-side logs/cron/bulletin_refresh.log is FROZEN — its cron was retired
+# 2026-07-16 after 403ing on every run; don't read its staleness as a failure.
+tail -f ~/cursor_projects/visa_bulletin/logs/sync_bulletin_to_prod.log
+cat ~/.local/state/visa_bulletin/last_success   # the signal the daily_checkup backstop grades
+~/cursor_projects/visa_bulletin/scripts/sync_bulletin_to_prod.sh   # run by hand
 
 # Which image prod web is running
 ssh homeserver "docker inspect vb_web --format '{{.Config.Image}}'"

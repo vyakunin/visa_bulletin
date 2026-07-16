@@ -65,6 +65,9 @@ USER_EMAIL = os.environ.get("DAILY_CHECKUP_USER_EMAIL", "vyakunin@gmail.com")
 SUB_MCP_TIMEOUT = 45
 PROD_STACK = "/opt/stack/visa_bulletin"
 STAGING_STACK = "/opt/stack/visa_bulletin_staging"
+# Bulletin ingest runs on THIS box (the minipc) — the browser bridge, not prod cron.
+BULLETIN_SYNC_LOG = Path(__file__).resolve().parent.parent / "logs" / "sync_bulletin_to_prod.log"
+BULLETIN_SYNC_STATE = Path.home() / ".local" / "state" / "visa_bulletin"
 PROD_BASE_URL = "https://visa-bulletin.us"
 STAGING_BASE_URL = "https://staging.visa-bulletin.us"
 
@@ -97,8 +100,13 @@ MEM_YELLOW_PCT = 80
 MEM_RED_PCT = 92
 CPU_LOAD_YELLOW = 1.0  # per-core (load1 / nproc)
 CPU_LOAD_RED = 2.0
-BULLETIN_REFRESH_YELLOW_MIN = 90    # cron runs hourly
-BULLETIN_REFRESH_RED_MIN = 180
+# Bulletin ingest is the minipc->prod browser bridge (sync_bulletin_to_prod.sh); the
+# prod-side hourly cron was retired 2026-07-16 (Akamai 403'd every run). The bridge
+# self-alerts on failures via notify_chat, so this check is only the backstop for the
+# one thing it cannot see: the cron not firing AT ALL. Thresholds are therefore loose
+# — sized for the quiet-period `0 */4` cadence, not the mid-month `*/30` window.
+BULLETIN_REFRESH_YELLOW_MIN = 480   # 8h = two missed 4-hourly runs
+BULLETIN_REFRESH_RED_MIN = 840      # 14h
 BACKUP_YELLOW_HOURS = 30            # cron runs daily at 01:00 UTC
 BACKUP_RED_HOURS = 50
 # How old the newest bulletin's published_date may be before we worry. DoS
@@ -305,7 +313,6 @@ def _gather_homeserver_snapshot() -> dict[str, str]:
     # Single multi-line script. Each section marker is a `printf` so we can
     # rely on exact form. `set +e` so a single failing command doesn't kill
     # the whole snapshot — we want partial data.
-    prod_bul_log = f"{PROD_STACK}/logs/cron/bulletin_refresh.log"
     # Off-box backup migrated to the shared backup_blob.sh cron (2026-06): it
     # writes to /opt/stack/_shared/logs/, NOT the legacy {stack}/logs/cron/backup.log
     # (which froze at 2026-06-17 and produced a daily false "backup FAILING" RED).
@@ -328,13 +335,6 @@ df -h /
 free -m | grep -E '^Mem:'
 nproc
 cat /proc/loadavg
-printf '==SECTION:bulletin_refresh==\n'
-if [ -f {shlex.quote(prod_bul_log)} ]; then
-  stat -c '%Y' {shlex.quote(prod_bul_log)}
-  tail -200 {shlex.quote(prod_bul_log)}
-else
-  echo MISSING
-fi
 printf '==SECTION:backup==\n'
 if [ -f {shlex.quote(prod_bak_log)} ]; then
   stat -c '%Y' {shlex.quote(prod_bak_log)}
@@ -546,7 +546,11 @@ def _parse_resources(text: str) -> dict:
     return out
 
 
-def _parse_log_age(text: str, latest_run_marker: str | None = None) -> dict:
+def _parse_log_age(
+    text: str,
+    latest_run_marker: str | None = None,
+    error_re: re.Pattern[str] | None = None,
+) -> dict:
     """Section format: first line = epoch mtime, rest = tail of log.
 
     `latest_run_marker`: a run-boundary string (e.g. the cron's banner line). When
@@ -556,6 +560,9 @@ def _parse_log_age(text: str, latest_run_marker: str | None = None) -> dict:
     window (~1.5 days of hourly runs) re-surfaces a healed blip as "noisy" for
     days. Only the latest run reflects current health — and a genuinely broken
     run fails the latest run too, so real outages still flag.
+
+    `error_re`: override the error-line matcher for logs that don't use Django's
+    `[ERROR]` bracket form (e.g. the bulletin bridge's plain `ERROR ...`).
     """
     lines = text.strip().splitlines()
     if not lines or lines[0] == "MISSING":
@@ -582,9 +589,10 @@ def _parse_log_age(text: str, latest_run_marker: str | None = None) -> dict:
     scan = tail
     if latest_run_marker and latest_run_marker in tail:
         scan = tail[tail.rindex(latest_run_marker):]
+    err_pat = error_re or re.compile(r"\[ERROR\]|\[CRITICAL\]|\bFAILED\b")
     error_lines = [
         line for line in scan.splitlines()
-        if re.search(r"\[ERROR\]|\[CRITICAL\]|\bFAILED\b", line) and not benign.search(line)
+        if err_pat.search(line) and not benign.search(line)
     ]
     return {
         "present": True,
@@ -593,6 +601,57 @@ def _parse_log_age(text: str, latest_run_marker: str | None = None) -> dict:
         "tail_errors": error_lines[-10:],
         "tail_last_lines": tail.splitlines()[-10:],
     }
+
+
+def _gather_bulletin_sync() -> dict:
+    """Local read of the minipc bulletin bridge's log + state (no ssh).
+
+    The bridge (scripts/sync_bulletin_to_prod.sh) is the ONLY bulletin ingest path
+    since the prod-side cron was retired 2026-07-16, and it runs here, not on the
+    homeserver. It self-alerts on failure streaks; this is the backstop for the case
+    it structurally cannot alert on — the cron not firing at all — so the signal that
+    matters most is the AGE of the last successful run.
+    """
+    if not BULLETIN_SYNC_LOG.exists():
+        return {"present": False, "tail": ""}
+    try:
+        mtime = int(BULLETIN_SYNC_LOG.stat().st_mtime)
+        tail = subprocess.run(
+            ["tail", "-200", str(BULLETIN_SYNC_LOG)],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {"present": False, "tail": ""}
+
+    info = _parse_log_age(
+        f"{mtime}\n{tail}",
+        latest_run_marker="fetching via debug Chrome",
+        # The bridge and its python fetcher log unbracketed `ERROR ...`, unlike the
+        # Django cron's `[ERROR]` — match both, or every failure reads as green.
+        error_re=re.compile(r"\[ERROR\]|\[CRITICAL\]|\bERROR\b|\bFAILED\b"),
+    )
+    if not info.get("present"):
+        return info
+
+    last_success = BULLETIN_SYNC_STATE / "last_success"
+    streak_file = BULLETIN_SYNC_STATE / "fetch_fail_streak"
+    try:
+        info["last_success"] = last_success.read_text().strip() or None
+    except OSError:
+        info["last_success"] = None
+    try:
+        info["fail_streak"] = int(streak_file.read_text().strip() or 0)
+    except (OSError, ValueError):
+        info["fail_streak"] = 0
+    if info["last_success"]:
+        try:
+            ts = datetime.fromisoformat(info["last_success"])
+            info["success_age_min"] = (datetime.now(UTC) - ts).total_seconds() / 60
+        except ValueError:
+            info["success_age_min"] = None
+    else:
+        info["success_age_min"] = None
+    return info
 
 
 def _parse_postgres(text: str) -> dict:
@@ -1597,26 +1656,51 @@ def _section_resources(res: dict) -> tuple[dict, str]:
     return ({"title": title, "body": "\n".join(lines), "importance": importance}, status)
 
 
-def _section_bulletin_refresh(info: dict) -> tuple[dict, str]:
+def _section_bulletin_refresh(info: dict) -> tuple[dict | None, str]:
+    """Backstop for the minipc->prod bulletin bridge (sync_bulletin_to_prod.sh).
+
+    The bridge alerts in real time on failure streaks, so this section deliberately
+    does NOT re-flag a single transient wall miss (the Akamai challenge fails ~1 run
+    in 6 and the next recovers — flagging it daily would be pure noise). It grades on
+    the age of the last SUCCESSFUL run, which is the one failure mode the bridge's own
+    alerting is structurally blind to: the cron not firing at all.
+    """
     if not info.get("present"):
-        return ({"title": "Bulletin refresh log MISSING",
-                 "body": "Expected `/opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log`. Hourly cron may not be running.",
+        return ({"title": "Bulletin bridge log MISSING",
+                 "body": f"Expected `{BULLETIN_SYNC_LOG}`. The minipc bulletin bridge cron "
+                         "(`*/30 ... sync_bulletin_to_prod.sh`) may not be installed — "
+                         "this is the ONLY bulletin ingest path since the prod cron was "
+                         "retired 2026-07-16. Check `crontab -l | grep sync_bulletin`.",
                  "importance": 5}, "red")
-    age = info["age_min"]
+
+    # Age of the last SUCCESS, not of the last log write — a bridge failing every run
+    # still writes the log, so log mtime alone would read green while ingest is dead.
+    age = info.get("success_age_min")
+    if age is None:
+        age = info["age_min"]
     status = "green"
     if age > BULLETIN_REFRESH_RED_MIN:
         status = "red"
     elif age > BULLETIN_REFRESH_YELLOW_MIN:
         status = "yellow"
-    body_lines = [f"- Last cron output: **{age:.0f} min ago** (`{info['last_run']}`)"]
-    if info.get("tail_errors"):
-        status = "red" if status != "green" else "yellow"
-        body_lines.append(f"- {len(info['tail_errors'])} error line(s) in last 200 log lines:")
-        for err_line in info["tail_errors"][-5:]:
-            body_lines.append(f"  `{err_line[:200]}`")
+
+    streak = info.get("fail_streak", 0)
+    body_lines = [
+        f"- Last successful fetch: **{age:.0f} min ago** (`{info.get('last_success') or 'unknown'}`)",
+        f"- Last run wrote the log {info['age_min']:.0f} min ago",
+    ]
+    if streak:
+        body_lines.append(f"- Consecutive failed fetches right now: **{streak}**")
+        if streak >= 3:
+            status = "red"
     if status == "green":
-        return (None, "green")  # type: ignore[return-value]
-    title = "Bulletin refresh " + ({"red": "FAILING", "yellow": "stale or noisy"}[status])
+        return (None, "green")
+    title = "Bulletin ingest bridge " + ({"red": "FAILING", "yellow": "stale"}[status])
+    if info.get("tail_errors"):
+        body_lines.append("- Recent error line(s):")
+        for err_line in info["tail_errors"][-3:]:
+            body_lines.append(f"  `{err_line[:200]}`")
+    body_lines.append(f"- Run by hand: `{BULLETIN_SYNC_LOG.parent.parent}/scripts/sync_bulletin_to_prod.sh`")
     return ({"title": title, "body": "\n".join(body_lines),
              "importance": 5 if status == "red" else 3}, status)
 
@@ -2424,11 +2508,8 @@ async def daily_checkup(since: str | None = None) -> str:
         s, st = _section_resources(_parse_resources(snap.get("resources", "")))
         sections.append(s)
         statuses.append(st)
-        # Bulletin refresh cron
-        s, st = _section_bulletin_refresh(
-            _parse_log_age(snap.get("bulletin_refresh", ""),
-                           latest_run_marker="=== Visa Bulletin Refresh ===")
-        )
+        # Bulletin ingest bridge (minipc-local; prod cron retired 2026-07-16)
+        s, st = _section_bulletin_refresh(_gather_bulletin_sync())
         if s:
             sections.append(s)
         statuses.append(st)

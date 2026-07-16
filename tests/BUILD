@@ -97,6 +97,16 @@ pytest_py_test(
     ],
 )
 
+pytest_py_test(
+    name = "test_bulletin_sync_alerting",
+    size = "small",
+    srcs = ["test_bulletin_sync_alerting.py"],
+    data = [
+        "//mcp:daily_checkup_server.py",
+        "//scripts:sync_bulletin_to_prod.sh",
+    ],
+)
+
 django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",

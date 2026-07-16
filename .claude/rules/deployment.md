@@ -159,10 +159,11 @@ Rollback is just `IMAGE_TAG=<previous_sha>` in .env + `docker compose pull web &
 **A change to a content GENERATOR (`lib/business/blog/bulletin_narrator.py`, the
 blog-post builders, anything that writes `BlogPost.body_html`, predictions copy,
 baked HTML) only affects NEWLY-generated content. Already-published rows keep
-their old stored HTML until explicitly regenerated.** The hourly
-`refresh_bulletin` cron **skips already-published posts** (`if BlogPost.objects
-.filter(slug=…, is_published=True).exists(): return`) — it only creates NEW
-posts. So shipping a narrator fix is inert on existing pages until you regenerate.
+their old stored HTML until explicitly regenerated.** The `refresh_bulletin` run
+(now driven by the minipc bridge, see "Weekly DB Refresh Pattern") **skips
+already-published posts** (`if BlogPost.objects.filter(slug=…, is_published=True)
+.exists(): return`) — it only creates NEW posts. So shipping a narrator fix is
+inert on existing pages until you regenerate.
 
 After deploying such a change, regenerate the affected published posts (the
 mechanical follow-up — do it, don't wait to be asked; cf. `vqs.md` "Run
@@ -257,11 +258,16 @@ The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, inde
 
 > The concrete staging/cutover mechanics — exact host moves, volume paths, and DR — live in the private ops repo, not in this public repository.
 
-**Hourly bulletin refresh** is light (one HTTP fetch + ~1 row insert) and stays on prod. **Cron entry on the production server:**
+**Bulletin refresh** is light (one HTML fetch + ~1 row insert) but no longer runs *from* prod. `travel.state.gov` sits behind Akamai Bot Manager and `vb_web` has no browser, so the old hourly prod cron 403'd on discover for every run — and did so **silently**, exiting 0 with "No pending bulletins to ingest" (a green-looking no-op that ingested nothing). It was **retired 2026-07-16**; do not re-add it.
 
+Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`, cronned on the **minipc**: it browser-fetches via the debug Chrome on `:9222`, streams the HTML into `vb_web`, and runs the unchanged `scripts.cron.refresh_bulletin` there with `BULLETIN_HTML_CACHE_DIR` set, so parse/load/predict still happen prod-side. Idempotent (dedup by `DataSource`).
+
+```bash
+# on the MINIPC (not prod) — cadence: */30 while awaiting a bulletin, 0 */4 otherwise
+*/30 * * * * .../visa_bulletin/scripts/sync_bulletin_to_prod.sh >> .../logs/sync_bulletin_to_prod.log 2>&1
 ```
-0 * * * * docker exec -w /app vb_web python3 -m scripts.cron.refresh_bulletin >> /opt/stack/visa_bulletin/logs/cron/bulletin_refresh.log 2>&1
-```
+
+**Monitoring:** the bridge is the only bulletin ingest path and self-alerts to the visa_bulletin bot via `notify_chat` — a fetch-failure *streak* (single misses are transient: the Akamai challenge fails ~1 run in 6 and the next recovers), an immediate alert on never-transient breaks (refresh non-zero, discovered-but-unignested, stream-to-vb_web failure), and an `inject` when a new bulletin lands. Its one structural blind spot — the cron never firing at all — is backstopped by the daily_checkup MCP, which grades the age of `~/.local/state/visa_bulletin/last_success`. `//tests:test_bulletin_sync_alerting` pins that state-file contract; the prod-side `logs/cron/bulletin_refresh.log` is frozen by design and its staleness is **not** an ingest failure.
 
 ## Docker Image Strategy
 

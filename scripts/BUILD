@@ -5,7 +5,12 @@ load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 # Read as a data file by //tests:test_shared_chrome_cookie_scope (static source guard).
 # Not a py_binary target: it runs on the minipc via `uv run` with playwright, which is
 # deliberately outside the Bazel/prod dependency graph.
-exports_files(["fetch_bulletin_via_browser.py"])
+exports_files([
+    "fetch_bulletin_via_browser.py",
+    # Read by //tests:test_bulletin_sync_alerting — the bridge is the only bulletin
+    # ingest path, so its alerting + state-file contract is guarded statically.
+    "sync_bulletin_to_prod.sh",
+])
 
 py_binary(
     name = "makemigrations_wrapper",

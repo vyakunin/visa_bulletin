@@ -91,6 +91,99 @@ def test_no_marker_falls_back_to_full_tail():
     assert len(info["tail_errors"]) == 1, info["tail_errors"]
 
 
+# ── Bulletin ingest bridge backstop (2026-07-16) ─────────────────────────────
+# The prod-side hourly refresh cron was retired (Akamai 403'd every run); the
+# minipc browser bridge is now the only ingest path. It self-alerts on failure
+# streaks, so this section's job is narrowly the blind spot it cannot cover —
+# the cron not firing — graded on the age of the last SUCCESS.
+
+def _sync_info(success_age_min, *, log_age_min=5, streak=0, errors=None):
+    return {
+        "present": True,
+        "last_run": "2026-07-16T12:00:00+00:00",
+        "age_min": log_age_min,
+        "success_age_min": success_age_min,
+        "last_success": "2026-07-16T12:00:00+00:00",
+        "fail_streak": streak,
+        "tail_errors": errors or [],
+        "tail_last_lines": [],
+    }
+
+
+def test_bridge_fresh_success_is_green_and_silent():
+    """A recent successful fetch emits no section at all."""
+    section, status = m._section_bulletin_refresh(_sync_info(20))
+    assert status == "green", status
+    assert section is None
+
+
+def test_bridge_single_transient_failure_not_flagged():
+    """One failed run (Akamai challenge blip, ~1 in 6) must NOT surface.
+
+    The bridge recovers on the next tick; flagging it would re-create the daily
+    false-alarm this section was rewritten to avoid.
+    """
+    section, status = m._section_bulletin_refresh(
+        _sync_info(35, streak=1, errors=["2026-07-16 13:00:24 ERROR Index fetch did not yield"])
+    )
+    assert status == "green", status
+    assert section is None
+
+
+def test_bridge_failing_every_run_is_red_despite_fresh_log():
+    """The trap: a bridge failing every run still WRITES the log every 30 min.
+
+    Grading on log mtime would read green while bulletin ingest is dead. Age of
+    last SUCCESS is what must drive the status.
+    """
+    section, status = m._section_bulletin_refresh(
+        _sync_info(900, log_age_min=2, streak=18, errors=["ERROR Index fetch did not yield"])
+    )
+    assert status == "red", status
+    assert "FAILING" in section["title"]
+
+
+def test_bridge_alerting_streak_is_red_even_if_success_recent():
+    """3+ consecutive failures = the bridge's own alert threshold → red here too."""
+    section, status = m._section_bulletin_refresh(_sync_info(95, streak=3))
+    assert status == "red", status
+
+
+def test_bridge_stale_cron_is_flagged():
+    """Cron stopped firing → last success ages out → yellow, then red."""
+    _s, status = m._section_bulletin_refresh(_sync_info(m.BULLETIN_REFRESH_YELLOW_MIN + 10))
+    assert status == "yellow", status
+    _s, status = m._section_bulletin_refresh(_sync_info(m.BULLETIN_REFRESH_RED_MIN + 10))
+    assert status == "red", status
+
+
+def test_bridge_missing_log_is_red():
+    """No log at all = the cron was never installed / was removed."""
+    section, status = m._section_bulletin_refresh({"present": False, "tail": ""})
+    assert status == "red", status
+    assert "MISSING" in section["title"]
+
+
+def test_bridge_unbracketed_error_is_matched():
+    """The bridge logs plain `ERROR ...`, not Django's `[ERROR]`.
+
+    With the default matcher every bridge failure would read as green.
+    """
+    import re
+    tail = (
+        "[sync_bulletin] fetching via debug Chrome...\n"
+        "2026-07-16 13:00:24,047 ERROR Index fetch did not yield bulletin links. len=19621\n"
+    )
+    info = m._parse_log_age(
+        _log(tail),
+        latest_run_marker="fetching via debug Chrome",
+        error_re=re.compile(r"\[ERROR\]|\[CRITICAL\]|\bERROR\b|\bFAILED\b"),
+    )
+    assert len(info["tail_errors"]) == 1, info["tail_errors"]
+    # …and the default matcher is what would have missed it.
+    assert m._parse_log_age(_log(tail), latest_run_marker="fetching via debug Chrome")["tail_errors"] == []
+
+
 # ── Surface deltas: full-coverage share% + distinct page counts (2026-06-17) ──
 
 def test_surface_deltas_emit_share_and_pages_from_csv():

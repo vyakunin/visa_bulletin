@@ -41,8 +41,10 @@ server** — keeping it off-box frees prod's full capacity for serving.
 change, data-format change, or heavyweight reprocessing — templates, views, SEO,
 copy, bug fixes, config. Plus **routine data updates**, which need no release.
 
-- **Routine data (hourly bulletin ingest):** runs on the **prod server
-  automatically**. Append-only, ~1 row/hour. Staging is not involved.
+- **Routine data (bulletin ingest):** runs automatically from the **minipc**
+  browser bridge (`scripts/sync_bulletin_to_prod.sh`), which fetches past the
+  Akamai wall and drives the load inside `vb_web`. Append-only, ~1 row/month.
+  Staging is not involved. (The old prod-side hourly cron was retired 2026-07-16.)
 - **Lightweight code:** `main` → cherry-pick to `staging` → CI builds a
   `staging-<sha>` image → deploy to the **staging server** → smoke + prod-diff
   (the HTML/blog diff gate in `.claude/rules/deployment.md`) → fast-forward
@@ -84,16 +86,19 @@ Replaces the old in-place postgres-data swap on the prod server (which had
 time because the staging server temporarily serves prod traffic while the prod
 server is resynced to the new state.
 
-1. **Freeze prod writes** — pause the hourly bulletin ingest (the only prod
-   writer; a 30–60 min gap is harmless). Prevents split-brain: the staging
-   server is the sole writer during the window.
+1. **Freeze prod writes** — pause the bulletin ingest (the only prod writer; a
+   30–60 min gap is harmless). It is now cronned on the **minipc**, so pause it
+   there: comment the `sync_bulletin_to_prod.sh` line out of `crontab -e` on the
+   minipc, not on the prod box. Prevents split-brain: the staging server is the
+   sole writer during the window.
 2. **Cut serving over to the staging server** — it begins serving prod traffic
    from the verified new DB; the prod server stops serving.
 3. **Resync the prod server to the new state** — restore the new DB onto it (via
    logical dump/restore, not a data-dir copy — that sidesteps the role/password
    gotcha) and pull the new image.
 4. **Cut serving back to the prod server** on the new image; smoke; flush cache.
-5. **Drop the staging duplicate**; resume the hourly ingest.
+5. **Drop the staging duplicate**; resume the bulletin ingest (re-enable the
+   minipc cron line).
 
 **Net:** heavy processing never touched prod; prod served continuously (zero
 downtime); the role/password gotcha is gone.
