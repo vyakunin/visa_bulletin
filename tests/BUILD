@@ -6,6 +6,7 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 load(":django_test.bzl", "django_py_test")
+load(":pytest_test.bzl", "pytest_py_test")
 
 exports_files([
     "test_salary_data.csv",
@@ -68,7 +69,7 @@ django_py_test(
     ],
 )
 
-py_test(
+pytest_py_test(
     name = "test_blog_table_wrap_guard",
     size = "small",
     srcs = ["test_blog_table_wrap_guard.py"],
@@ -78,12 +79,21 @@ py_test(
     ],
 )
 
-py_test(
+pytest_py_test(
     name = "test_bulletin_html_cache",
     size = "small",
     srcs = ["test_bulletin_html_cache.py"],
     deps = [
         "//lib/utils:http_utils",
+    ],
+)
+
+pytest_py_test(
+    name = "test_shared_chrome_cookie_scope",
+    size = "small",
+    srcs = ["test_shared_chrome_cookie_scope.py"],
+    data = [
+        "//scripts:fetch_bulletin_via_browser.py",
     ],
 )
 
@@ -224,7 +234,7 @@ django_py_test(
     ],
 )
 
-py_test(
+pytest_py_test(
     name = "test_calibration_cache",
     srcs = ["test_calibration_cache.py"],
     deps = [

@@ -47,10 +47,16 @@ class _TemplateInstrumentationPlugin:
         if "pytest_django" in sys.modules:
             return  # pytest-django owns the test environment for this target.
         try:
+            from django.conf import settings
             from django.template.base import Template
             from django.test.utils import setup_test_environment
         except Exception:
-            return  # Django not configured for this target — nothing to do.
+            return  # Django not importable for this target — nothing to do.
+        # Importable != configured. A non-Django target (pytest_py_test) can still pull
+        # Django in transitively while DJANGO_SETTINGS_MODULE is unset; setup_test_environment()
+        # reads settings.DEBUG and would raise ImproperlyConfigured, erroring every test.
+        if not settings.configured:
+            return
         if getattr(Template._render, "__qualname__", "") == "instrumented_test_render":
             return  # already instrumented — leave it alone.
         setup_test_environment()

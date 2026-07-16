@@ -55,6 +55,10 @@ BULLETIN_URL_TMPL = (
 )
 LINK_RE = re.compile(r"visa-bulletin-for-([a-z]+)-(\d{4})\.html", re.IGNORECASE)
 
+# Cookie domains cleared before a fetch to shed a poisoned Akamai _abck. Scoped on
+# purpose — see the clear_cookies() call site.
+AKAMAI_COOKIE_DOMAINS = ("travel.state.gov", ".travel.state.gov")
+
 
 def _fetch_via_browser(page, url: str, settle_ms: int = 7000) -> str:
     """Fetch one URL through the connected browser, surviving the Akamai redirect churn."""
@@ -118,7 +122,11 @@ def main() -> int:
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(args.cdp)
         ctx = browser.contexts[0]
-        ctx.clear_cookies()  # drop any poisoned Akamai _abck to avoid the redirect loop
+        # Drop any poisoned Akamai _abck to avoid the redirect loop. MUST stay scoped to
+        # travel.state.gov: this is the SHARED debug Chrome profile, so an unscoped
+        # clear_cookies() signs the box out of Google/Reddit/AdSense/LinkedIn (mcps.md).
+        for domain in AKAMAI_COOKIE_DOMAINS:
+            ctx.clear_cookies(domain=domain)
         page = ctx.new_page()
         try:
             index_html = _fetch_via_browser(page, INDEX_URL)

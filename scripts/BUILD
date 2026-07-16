@@ -2,6 +2,11 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 # Note: sh_binary is a built-in Bazel rule, no need to load it
 
+# Read as a data file by //tests:test_shared_chrome_cookie_scope (static source guard).
+# Not a py_binary target: it runs on the minipc via `uv run` with playwright, which is
+# deliberately outside the Bazel/prod dependency graph.
+exports_files(["fetch_bulletin_via_browser.py"])
+
 py_binary(
     name = "makemigrations_wrapper",
     srcs = ["makemigrations_wrapper.py"],
