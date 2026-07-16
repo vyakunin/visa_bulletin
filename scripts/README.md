@@ -161,6 +161,35 @@ These scripts have been deleted and their functionality is available via flags i
 
 ## Data Ingestion
 
+### Bulletin fetch — Akamai wall bypass (minipc browser → prod)
+
+travel.state.gov sits behind Akamai Bot Manager: plain `requests`, browser-UA `curl`,
+and `curl_cffi` Chrome-impersonation all get **403** (JS/sensor challenge). Only a real
+browser passes, so the fetch runs on the **minipc debug Chrome** (CDP `:9222`) and the
+HTML is fed to the prod ingest via `BULLETIN_HTML_CACHE_DIR` (both `fetch_page` and
+`base.download` prefer a cached file — a no-op when the env var is unset).
+
+**`scripts/fetch_bulletin_via_browser.py`** (minipc only) — drives the debug Chrome to
+download the index + requested month pages into a cache dir. The Akamai flow needs a
+fresh `_abck` cookie, so the pattern is `clear cookies → navigate → wait → reload →
+read` (goto/reload raising on the redirect churn is expected). Exit 2 if the wall isn't
+passed / CDP is down.
+```bash
+uv run --with playwright --with python-dateutil \
+  python scripts/fetch_bulletin_via_browser.py --cache-dir /tmp/bulletin_html_cache
+```
+
+**`scripts/sync_bulletin_to_prod.sh`** (minipc only) — the bridge: fetch via browser →
+stream the cache into `vb_web` (tar over ssh) → run `scripts.cron.refresh_bulletin`
+there with `BULLETIN_HTML_CACHE_DIR` set → discover/download read the cached HTML, parse
+/load/predict run prod-side unchanged. Idempotent (dedup by DataSource). Scheduled a few
+times/day on the minipc during the mid-month publish window (State Dept publishes the
+next month ~8th–15th).
+```bash
+scripts/sync_bulletin_to_prod.sh                       # current + next month
+scripts/sync_bulletin_to_prod.sh --months 2026-08      # specific month
+```
+
 ### Import Visa Bulletin Data from CSV
 
 **`scripts/import_visa_bulletin_data.py`** – Import Visa Bulletin data from CSV files exported from another instance (e.g. production to development). Not part of the automated pipeline; use for one-off data transfers.

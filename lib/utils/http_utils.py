@@ -27,6 +27,25 @@ def get_workspace_dir() -> Path:
     return Path(__file__).parent.parent
 
 
+def bulletin_cache_file(url: str) -> Path | None:
+    """Return a pre-fetched HTML cache file for ``url``, or None.
+
+    When ``BULLETIN_HTML_CACHE_DIR`` is set and it contains a file whose name equals
+    the URL path's basename, that file is used instead of a network fetch. This is how
+    browser-fetched travel.state.gov pages (Akamai wall bypass — see
+    ``scripts/fetch_bulletin_via_browser.py``) are fed to the prod ingest, which has no
+    browser. A pure no-op when the env var is unset, so existing flows are untouched.
+    """
+    cache_dir = os.environ.get("BULLETIN_HTML_CACHE_DIR")
+    if not cache_dir:
+        return None
+    name = Path(urlparse(url).path).name
+    if not name:
+        return None
+    candidate = Path(cache_dir) / name
+    return candidate if candidate.is_file() else None
+
+
 def fetch_page(url: str, timeout: int = 30) -> str:
     """
     Fetch HTML page content from URL.
@@ -41,6 +60,10 @@ def fetch_page(url: str, timeout: int = 30) -> str:
     Raises:
         requests.RequestException: If request fails
     """
+    cached = bulletin_cache_file(url)
+    if cached is not None:
+        logger.info(f"Using cached HTML for {url}: {cached}")
+        return cached.read_text(encoding="utf-8", errors="ignore")
     logger.info(f"Fetching: {url}")
     response = requests.get(url, timeout=timeout)
     response.raise_for_status()

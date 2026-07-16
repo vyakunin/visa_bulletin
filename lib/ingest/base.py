@@ -233,8 +233,20 @@ class DataSourcePlugin(ABC):
                         f"Local file not found for URL: {source.url} (path: {path_from_url})"
                     )
 
-        logger.info(f"[Run {run.id}] Downloading: {source.url}")
-        download_file(source.url, dest_path)
+        # Prefer a browser-fetched cached copy when present (Akamai-walled sources
+        # like travel.state.gov that the prod box cannot fetch directly — the minipc
+        # browser drops the HTML into BULLETIN_HTML_CACHE_DIR). No-op when unset.
+        from lib.utils.http_utils import bulletin_cache_file
+
+        cached = bulletin_cache_file(source.url)
+        if cached is not None:
+            import shutil
+
+            logger.info(f"[Run {run.id}] Using cached HTML: {cached} -> {dest_path}")
+            shutil.copy2(cached, dest_path)
+        else:
+            logger.info(f"[Run {run.id}] Downloading: {source.url}")
+            download_file(source.url, dest_path)
 
         # Compute content hash for duplicate detection
         from lib.utils.http_utils import compute_file_hash
