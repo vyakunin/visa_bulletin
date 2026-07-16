@@ -78,6 +78,15 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_bulletin_html_cache",
+    size = "small",
+    srcs = ["test_bulletin_html_cache.py"],
+    deps = [
+        "//lib/utils:http_utils",
+    ],
+)
+
 django_py_test(
     name = "test_worksite_record_copy_bug",
     size = "small",
