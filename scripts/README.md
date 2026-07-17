@@ -24,6 +24,56 @@ This directory contains all project scripts organized by functionality. All scri
 11. [Golden Test Data Management](#golden-test-data-management)
 12. [Testing and Verification Utilities](#testing-and-verification-utilities)
 13. [Investigation/Debugging](#investigationdebugging)
+14. [Ad-surface visual sweep](#ad-surface-visual-sweep)
+
+---
+
+## Ad-surface visual sweep
+
+### `ad_surface_screenshots.py` — weekly screenshots + structural probes of the top ad-bearing surfaces
+
+The ad layer is the only part of the site that renders differently per visitor
+and is invisible to the test suite (slots are injected by Google at runtime).
+This captures what a reader actually gets, on the top-N surfaces **by real
+traffic** (derived from the full GoatCounter export — never the top-100 cap).
+
+```bash
+uv run scripts/ad_surface_screenshots.py                 # top 5, desktop+mobile, ads on
+uv run scripts/ad_surface_screenshots.py --geo EEA       # the real ad-free EEA view
+uv run scripts/ad_surface_screenshots.py --surfaces 3
+uv run scripts/ad_surface_screenshots.py --prune-dry-run # retention preview
+```
+
+Output: `~/.cache/vb_ad_screenshots/<date>/<surface>__<device>[__viewport].jpg`
+plus `manifest.json` (overflow_px, slot fill, reserved-empty px, CLS, doc height).
+Retention: keeps the 4 newest run dirs (`--keep`, `--prune-dry-run`).
+
+**Two traps this script exists to document — read before interpreting output:**
+
+1. **The EEA gate.** The site withholds `adsbygoogle.js` entirely from EEA/UK/CH
+   (`overrides/ad_slot.html` reads `/cdn-cgi/trace`). This box is in Berlin, so
+   an un-overridden capture renders the ad-free view, reports `slots=0`, and
+   looks perfectly clean while measuring **nothing**. `--geo US` (default)
+   intercepts only that trace so the page's own gate loads the ad stack. A run
+   that finds zero slots with the override on **exits 2** rather than reporting
+   a false all-clear.
+2. **Fill rates are not a business metric.** Ad requests come from this box's
+   real German IP, so ad content is German and fill is unrepresentative. Judge
+   layout / overflow / holes / CLS — never fill%. Likewise, full-page shots
+   freeze `position:fixed` anchor ads mid-page (an artifact, not an overlap) —
+   compare the `__viewport.jpg`.
+
+**Scheduled:** `ad_surface_screenshots.timer` (systemd user unit, Mondays 09:15
+Berlin) → `run_ad_screenshot_sweep.sh`, which captures and then *injects* an
+inspect prompt into the visa_bulletin relay so an agent actually looks at the
+images (a screenshot nobody opens catches nothing). A failed capture posts a
+loud "nothing was checked this week" rather than passing silently.
+
+```bash
+systemctl --user list-timers ad_surface_screenshots.timer
+bash scripts/run_ad_screenshot_sweep.sh          # manual run
+journalctl --user -u ad_surface_screenshots.service
+```
 
 ---
 
