@@ -194,23 +194,39 @@ PROBE_TIMEOUT = 8
 # `donation_click` captures the GoatCounter `ext-*` event records that fire on
 # Buy-Me-a-Coffee / GitHub-Sponsors clicks — they appear in the GC `/stats/hits`
 # stream as fake paths, so they need their own bucket or they pollute `other`.
+#
+# TRAILING-SLASH CONTRACT (load-bearing — see tests/test_surface_patterns.py):
+# GoatCounter records paths with the trailing slash STRIPPED, so a hub page
+# served at `/predictions/` arrives here as `/predictions`. Any pattern that
+# HARD-REQUIRES a trailing slash (`^/predictions/`) therefore silently misses
+# its own hub and dumps it into `other`. Use `(/|$)` — never a bare `/` — for
+# any prefix bucket that also has a bare hub route. (2026-07-17: this cost
+# `/predictions` 707 views/wk and `/employment-based` 268 views/wk, both
+# invisible in `other`.)
 SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("donation_click", re.compile(r"^ext-")),
-    ("dashboard", re.compile(r"^/(\?|$)|^/employment-based/")),
+    ("dashboard", re.compile(r"^/(\?|$)|^/employment-based(/|$)")),
     ("job_title_profile", re.compile(r"^/job-title/")),
     ("job_title_directory", re.compile(r"^/job-titles/?$")),
     ("employer_profile", re.compile(r"^/employer/")),
     ("employer_rankings", re.compile(r"^/employers/rankings/?$")),
     ("employer_directory", re.compile(r"^/employers/?$")),
-    ("predictions", re.compile(r"^/predictions/")),
+    ("predictions", re.compile(r"^/predictions(/|$)")),
+    # "When is the next visa bulletin" — a standalone evergreen SEO page, NOT a
+    # /predictions/ route. It is the top wait-window entry point (1.4k views in
+    # the 7d to 2026-07-16, from 0 a cycle earlier) so it gets its own row
+    # rather than hiding in `other`.
+    ("bulletin_timing", re.compile(r"^/when-is-the-next-visa-bulletin")),
     ("blog", re.compile(r"^/analysis/?")),
     ("salaries", re.compile(r"^/salaries/?")),
-    ("worksites", re.compile(r"^/worksites/")),
+    ("worksites", re.compile(r"^/worksites(/|$)")),
     ("seo_landing_fam", re.compile(r"^/family-sponsored/?")),
     # Spanish (/es/) cluster — check BEFORE the EN landing buckets so `/es/faq/`,
     # `/es/priority-date/<eb>/<country>/` etc. land here, not in static_pages/
     # priority_date. All `/es/*` routes roll into one Spanish-SEO surface.
-    ("spanish", re.compile(r"^/es/?")),
+    # `(/|$)` not `/?` — a bare `^/es/?` also matches any path merely STARTING
+    # with "es" (`/estimate`), silently stealing it into the Spanish bucket.
+    ("spanish", re.compile(r"^/es(/|$)")),
     # Priority-date feature family (launched 2026-06-23 pSEO): hub
     # `/priority-date/`, per-EB rollup `/priority-date/<eb>/`, per-(eb×country)
     # landing `/priority-date/<eb>/<country>/`, AND the `/priority-date-calculator/`
@@ -221,8 +237,11 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("occupation_salary", re.compile(r"^/h1b-salary")),
     # Top-H-1B-sponsors leaderboards (`/h1b-sponsors/in/<state>/`,
     # `/h1b-sponsors/<role>/`).
-    ("h1b_sponsors", re.compile(r"^/h1b-sponsors/")),
-    ("static_pages", re.compile(r"^/(faq|about|contact)/?$")),
+    ("h1b_sponsors", re.compile(r"^/h1b-sponsors(/|$)")),
+    # Flat informational routes (webapp/urls.py). `methodology`, `corrections`
+    # and `ai-citation` are siblings of faq/about/contact — low-traffic but they
+    # are real pages, so they belong here rather than in `other`.
+    ("static_pages", re.compile(r"^/(faq|about|contact|methodology|corrections|ai-citation)/?$")),
     ("api", re.compile(r"^/api/")),
     ("static_meta", re.compile(r"^/(robots\.txt|sitemap\.xml|favicon)")),
 ]
@@ -235,7 +254,10 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
 # Returns a bucket key or None.
 _MAIN_ENTRY_HOME_RE     = re.compile(r"^/(\?|$)")
 _MAIN_ENTRY_EB_INDIA_RE = re.compile(r"^/employment-based/india/?(\?|$)")
-_MAIN_ENTRY_EB_OTHER_RE = re.compile(r"^/employment-based/(?!india/?(\?|$))")
+# Same trailing-slash contract as SURFACE_PATTERNS: the bare EB index arrives as
+# `/employment-based`, so anchoring on `^/employment-based/` dropped it from the
+# main-entry line entirely (268 views/wk counted in neither eb_india nor eb_other).
+_MAIN_ENTRY_EB_OTHER_RE = re.compile(r"^/employment-based(?!/india/?(\?|$))")
 _MAIN_ENTRY_FS_RE       = re.compile(r"^/family-sponsored/")
 
 
@@ -259,13 +281,14 @@ def _main_entry_bucket(path: str) -> str | None:
 
 SURFACE_LABELS: dict[str, str] = {
     "donation_click":      "Donation-button clicks (ext-* events, NOT pageviews)",
-    "dashboard":           "Dashboard / EB landings `/` + `/employment-based/<country>/` (same template, country prefilled)",
+    "dashboard":           "Dashboard / EB landings `/` + `/employment-based/<country>/` + EB index (same template, country prefilled)",
     "job_title_profile":   "Job title profile `/job-title/<slug>/`",
     "job_title_directory": "Job titles directory `/job-titles/`",
     "employer_profile":    "Employer profile `/employer/<slug>/`",
     "employer_directory":  "Employers directory `/employers/`",
     "employer_rankings":   "Employer rankings `/employers/rankings/`",
-    "predictions":         "Predictions backtest `/predictions/<...>/` (live predictions are embedded on dashboard)",
+    "predictions":         "Predictions backtest `/predictions/<...>/` + hub (live predictions are embedded on dashboard)",
+    "bulletin_timing":     "Next-bulletin timing `/when-is-the-next-visa-bulletin` (evergreen wait-window SEO page)",
     "blog":                "Blog / analysis `/analysis/<slug>/`",
     "salaries":            "Salaries `/salaries/<...>/`",
     "worksites":           "Worksites `/worksites/<...>/`",
@@ -274,7 +297,7 @@ SURFACE_LABELS: dict[str, str] = {
     "priority_date":       "Priority-date pSEO `/priority-date/<eb>/<country>/` + hub/rollup/calculator",
     "occupation_salary":   "{occupation} H-1B-salary pSEO `/h1b-salary/<...>`",
     "h1b_sponsors":        "Top-H-1B-sponsors leaderboards `/h1b-sponsors/<state|role>/`",
-    "static_pages":        "Static pages `/faq`, `/about`, `/contact`",
+    "static_pages":        "Static pages `/faq`, `/about`, `/contact`, `/methodology`, `/corrections`, `/ai-citation`",
     "api":                 "API `/api/<...>`",
     "static_meta":         "Static meta (robots/sitemap/favicon)",
     "other":               "Other (long-tail / unclassified)",
