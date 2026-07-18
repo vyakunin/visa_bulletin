@@ -89,6 +89,15 @@ pytest_py_test(
 )
 
 pytest_py_test(
+    name = "test_wayback_cache",
+    size = "small",
+    srcs = ["test_wayback_cache.py"],
+    deps = [
+        "//lib/business/bulletin:wayback",
+    ],
+)
+
+pytest_py_test(
     name = "test_bulletin_html_cache",
     size = "small",
     srcs = ["test_bulletin_html_cache.py"],
