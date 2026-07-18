@@ -160,7 +160,10 @@ django_py_test(
 
 django_py_test(
     name = "test_bulletin_format_version",
-    size = "small",
+    # Parses the whole 291-page committed corpus TWICE (once under the real
+    # format boundary, once under the retired year-only rule), so it needs more
+    # than the 60s "small" budget on a loaded box.
+    size = "medium",
     srcs = ["test_bulletin_format_version.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",

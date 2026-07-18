@@ -26,3 +26,26 @@ py_binary(
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
 )
+
+py_binary(
+    name = "backfill_release_dates",
+    srcs = ["backfill_release_dates.py"],
+    main = "backfill_release_dates.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//models:bulletin",
+        "//lib/business/bulletin:wayback",
+        "//lib/utils:logging_utils",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+        requirement("requests"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)

@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.test import Client
 
-from lib.business.bulletin.release_schedule import get_release_schedule
+from lib.business.bulletin.release_schedule import get_release_schedule, release_odds
 
 # Canonical author entity, reused across trust pages (E-E-A-T / GEO). A single
 # named human with sameAs links is the signal Google's quality systems and
@@ -100,8 +100,10 @@ def faq_view(request):
 def next_bulletin_view(request):
     """"When does the next Visa Bulletin come out?" — projected release date + countdown.
 
-    Estimates the next release from recent live-ingested bulletins (their
-    ``fetched_at`` ≈ actual State Dept release date); see
+    Estimates the next release from observed ``Bulletin.released_on`` history
+    (our own live ingests plus, for earlier editions, the first Internet Archive
+    capture of each bulletin's URL) and states what share of past bulletins for
+    the same calendar month had already landed by today. See
     ``lib.business.bulletin.release_schedule``.
     """
     from webapp.views.bulletin.prediction_month_forecast import (
@@ -109,7 +111,14 @@ def next_bulletin_view(request):
         upcoming_forecast_month,
     )
 
-    schedule = get_release_schedule(today=date.today())
+    today = date.today()
+    schedule = get_release_schedule(today=today)
+    # "X% of August bulletins were already out by this point" — the question a
+    # visitor refreshing the page on the 17th actually has. Derived from observed
+    # release history for the same calendar month, so it self-updates daily.
+    odds = (
+        release_odds(schedule.next_governing_month, as_of=today) if schedule else None
+    )
     upcoming = upcoming_forecast_month()
     # Month-specific title/description so the page matches the highest-volume
     # variant of the timing query ("visa bulletin <month> <year> when will it come
@@ -138,6 +147,7 @@ def next_bulletin_view(request):
             "page_description": page_description,
             "canonical_url": request.build_absolute_uri("/when-is-the-next-visa-bulletin/"),
             "schedule": schedule,
+            "odds": odds,
             "forecast_url": forecast_url_for(upcoming) if upcoming else None,
             "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
         },

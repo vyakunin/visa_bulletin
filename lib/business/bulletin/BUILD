@@ -67,3 +67,12 @@ py_library(
 
 
 
+
+py_library(
+    name = "wayback",
+    srcs = ["wayback.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("requests"),
+    ],
+)

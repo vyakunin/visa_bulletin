@@ -494,6 +494,30 @@ applied (2026-06-23):
   mesh). **Status (2026-06-23):** shipped to `main`, suite green. Pending staging
   deploy + GSC measurement of the homepage→dedicated-page shift over ~2-3 wks.
 
+### Real release-date history + the "is it late?" answer (2026-07-18)
+
+The page's release history was arithmetic on **n=4**: `publication_date` is the
+governing month and the only release proxy was `fetched_at`, which is meaningful
+only for the four bulletins our own cron ingested live (286 of 290 prod rows
+shared one synthetic bulk-backfill timestamp). "Typically the 13th–18th" was the
+min/max of those four.
+
+- **`Bulletin.released_on`** (+ `released_on_source`, `released_on_gap_days`,
+  migration 0056) now stores the real release date, backfilled by
+  `scripts/bulletin/backfill_release_dates.py` from our live ingests plus the
+  first Internet Archive capture of each bulletin's URL. Both are upper bounds,
+  so the earlier wins; an implausible lead (outside 3–45 days before the
+  governing month) is rejected rather than guessed.
+- **Coverage starts ~2018** — travel.state.gov moved CMS in late 2017, so every
+  older bulletin at today's URLs was first archived 2017-12-03. The page states
+  this, and states that archived dates mean "published on or before".
+- **New answer, new query:** `release_odds()` powers "X% of past {Month}
+  bulletins had already been published by this point (N of M, YYYY–YYYY)" in the
+  hero card, the body, and an **"Is the {Month Year} Visa Bulletin late?"**
+  FAQPage entry — the question the wait-wave traffic actually arrives with
+  (`/when-is-the-next-visa-bulletin/` did 1.4k views in the 7d before the
+  overdue August 2026 drop). It self-updates daily with no content work.
+
 ## Off-page: head-term backlinks (Lever 4)
 
 The "visa bulletin" head term sits at pos ~8.6 (157k impr/mo) with on-page Levers
@@ -614,7 +638,7 @@ Profile templates (`job_title_profile.html`) override with page-specific title, 
 | Job title profile | `Occupation` + `MonetaryAmountDistribution` (salary percentiles) + `BreadcrumbList` |
 | Employer profile | `Organization` + optional `AggregateRating` (only when `total_filings > 0`) + `BreadcrumbList` |
 | FAQ | `FAQPage` |
-| Next-bulletin (`/when-is-the-next-visa-bulletin/`) | `FAQPage` (projected release date, cadence, official source) — projection in `lib/business/bulletin/release_schedule.py` from recent `Bulletin.fetched_at` |
+| Next-bulletin (`/when-is-the-next-visa-bulletin/`) | `FAQPage` (projected release date, cadence, "is it late?", official source) — projection + odds in `lib/business/bulletin/release_schedule.py` from observed `Bulletin.released_on` history |
 
 **Dataset on the `/salaries/` + `/employers/` landings (added 2026-06-18, commit `5f74599`).**
 These landings rank for the dataset-intent head queries ("h1b salary database",
