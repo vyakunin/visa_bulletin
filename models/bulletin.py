@@ -26,6 +26,42 @@ class Bulletin(models.Model):
         auto_now_add=True, help_text="When this bulletin was fetched and saved"
     )
 
+    # --- Actual State Department release date -------------------------------
+    # publication_date is the GOVERNING month (normalised to the 1st), not when
+    # State posted the bulletin. These three fields carry the release date
+    # itself, from the best source available per row.
+
+    SOURCE_LIVE = "live"
+    SOURCE_WAYBACK = "wayback"
+    RELEASE_SOURCE_CHOICES = [
+        (SOURCE_LIVE, "Live ingest (fetched_at, exact to the day)"),
+        (SOURCE_WAYBACK, "Wayback first capture (upper bound)"),
+    ]
+
+    released_on = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Date the State Department published this bulletin. See released_on_source "
+        "for provenance — wayback-sourced dates are an upper bound.",
+    )
+
+    released_on_source = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        choices=RELEASE_SOURCE_CHOICES,
+        help_text="Where released_on came from. Empty means unknown.",
+    )
+
+    released_on_gap_days = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Wayback rows only: days between the first and second archived capture. "
+        "A crawl-density proxy — a large gap means released_on may overstate the real "
+        "release date by a comparable margin.",
+    )
+
     class Meta:
         ordering = ["-publication_date"]
         db_table = "bulletin"

@@ -240,6 +240,36 @@ scripts/sync_bulletin_to_prod.sh                       # current + next month
 scripts/sync_bulletin_to_prod.sh --months 2026-08      # specific month
 ```
 
+### Backfill real release dates (`Bulletin.released_on`)
+
+**`scripts/bulletin/backfill_release_dates.py`** — fills the date the State Department
+actually *published* each bulletin. `publication_date` is the governing month and
+`fetched_at` only approximates the release for editions our own cron ingested live (4 of
+290 rows before this backfill), so earlier editions come from the **first Internet
+Archive capture** of the bulletin's travel.state.gov URL.
+
+Both sources are upper bounds on the true release, so the **earlier** of the two wins.
+A candidate whose implied lead falls outside 3–45 days before the governing month is
+rejected and the row left NULL — "unknown" stays distinguishable from "known". This
+drops the late-2017 CMS-migration artifact (every pre-2018 bulletin was first archived
+on 2017-12-03), which is why coverage starts at ~2018; recovering older editions needs
+the pre-migration numbered URLs (`/visa/frvi/bulletin/bulletin_NNNN.html`), which are
+not derivable from the publication date.
+
+CDX responses are cached under `--cache-dir` (default `~/.cache/visa_bulletin/wayback_cdx`),
+so re-runs are cheap and resumable; the archive is rate-limited and 503s often, so every
+lookup retries with backoff.
+
+```bash
+bazel run //scripts/bulletin:backfill_release_dates -- --dry-run
+bazel run //scripts/bulletin:backfill_release_dates
+bazel run //scripts/bulletin:backfill_release_dates -- --since 2018-01-01 --refresh
+```
+
+Consumed by `lib/business/bulletin/release_schedule.py` → the
+`/when-is-the-next-visa-bulletin/` page (projected release date, countdown, and the
+"X% of past August bulletins were out by this point" line).
+
 ### Import Visa Bulletin Data from CSV
 
 **`scripts/import_visa_bulletin_data.py`** – Import Visa Bulletin data from CSV files exported from another instance (e.g. production to development). Not part of the automated pipeline; use for one-off data transfers.

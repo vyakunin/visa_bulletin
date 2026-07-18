@@ -1,15 +1,23 @@
-"""Estimate when the next Visa Bulletin will be released.
+"""Estimate when the next Visa Bulletin will be released, from observed history.
 
 The State Department publishes each month's Visa Bulletin roughly two weeks
-before the month it governs (the "July" bulletin posts in mid-June). Our
+before the month it governs (the "July" bulletin posts in mid-June).
 ``Bulletin.publication_date`` is normalised to the 1st of the *governing* month,
-so the real release date is not stored there. ``Bulletin.fetched_at``
-(``auto_now_add``) ≈ when our hourly cron first ingested the bulletin, which is
-within hours of the State Department posting it — so for *live-ingested*
-bulletins it is a faithful proxy for the actual release date.
+so the real release date is not stored there.
 
-This module derives the typical release day-of-month from recent live-ingested
-bulletins and projects the next expected release.
+``Bulletin.released_on`` carries the release date itself, backfilled by
+``scripts/bulletin/backfill_release_dates.py`` from two sources:
+
+* ``live`` — our own cron's ``fetched_at``, within hours of the State Department
+  posting (only the handful of bulletins we ingested live).
+* ``wayback`` — the earliest Internet Archive capture of the bulletin's
+  travel.state.gov URL. An **upper bound**: the crawler sees the page some time
+  after State posts it (measured lag vs our live ingests: -1 to +6 days).
+
+Rows whose implied lead time is implausible are left NULL rather than guessed,
+so "we don't know" stays distinguishable from "we know". For rows not yet
+backfilled this module falls back to the original ``fetched_at`` heuristic, so
+it keeps working on a database that predates the backfill.
 """
 
 from dataclasses import dataclass
@@ -20,11 +28,17 @@ from dateutil.relativedelta import relativedelta
 
 from models.bulletin import Bulletin
 
-# A live ingest lands a few days to a few weeks BEFORE the governing month's 1st.
+# A release lands a few days to a few weeks BEFORE the governing month's 1st.
 # Bulk-backfilled rows share one synthetic fetched_at far from their governing
-# month (huge lead), so this window cleanly excludes them.
+# month, and a sparsely-crawled URL's first capture can land after the governing
+# month starts (e.g. May 2020, first archived on 2020-05-01). This window
+# excludes both: outside it we record nothing rather than a wrong date.
 _MIN_LEAD_DAYS = 3
 _MAX_LEAD_DAYS = 45
+
+# Release-timing practice drifts, and archive coverage thins out the further
+# back you go, so the public-facing stats default to the recent era.
+DEFAULT_LOOKBACK_YEARS = 10
 
 
 @dataclass(frozen=True)
@@ -32,11 +46,18 @@ class ReleaseRecord:
     """One observed release: which month it governs, when it actually posted."""
 
     governing_month: date  # 1st of the governing month
-    released_on: date  # fetched_at date ≈ real State Dept release date
+    released_on: date
+    source: str = ""  # Bulletin.SOURCE_LIVE | SOURCE_WAYBACK | "" (fetched_at fallback)
 
     @property
     def lead_days(self) -> int:
+        """Days between the release and the 1st of the month it governs."""
         return (self.governing_month - self.released_on).days
+
+    @property
+    def is_upper_bound(self) -> bool:
+        """True when the true release may be slightly earlier than ``released_on``."""
+        return self.source != Bulletin.SOURCE_LIVE
 
 
 @dataclass(frozen=True)
@@ -52,28 +73,96 @@ class ReleaseSchedule:
     recent_history: list[ReleaseRecord]
 
 
-def recent_live_releases(limit: int = 12) -> list[ReleaseRecord]:
-    """Most-recent live-ingested bulletins (newest first), backfill rows excluded."""
+@dataclass(frozen=True)
+class ReleaseOdds:
+    """How often the bulletin for this calendar month was already out by now.
+
+    Answers "X% of August bulletins were published by the 18th" — the honest
+    framing for a page whose visitors are refreshing it waiting for a drop.
+    """
+
+    month_name: str          # "August"
+    as_of: date
+    n_total: int             # historical bulletins for this calendar month
+    n_released_by_now: int
+    years_covered: tuple[int, int]  # (earliest, latest) governing year in the sample
+
+    @property
+    def pct_released_by_now(self) -> int:
+        if not self.n_total:
+            return 0
+        return round(100 * self.n_released_by_now / self.n_total)
+
+    @property
+    def is_late(self) -> bool:
+        """True once most historical releases for this month had already landed."""
+        return self.pct_released_by_now >= 50
+
+
+def _record_from_bulletin(b: Bulletin) -> ReleaseRecord | None:
+    """Best available release record for one bulletin, or None when unknown.
+
+    Prefers the backfilled ``released_on``; falls back to the ``fetched_at``
+    heuristic so this keeps working before/without the backfill.
+    """
+    if b.released_on is not None:
+        rec = ReleaseRecord(
+            governing_month=b.publication_date,
+            released_on=b.released_on,
+            source=b.released_on_source or "",
+        )
+    elif b.fetched_at is not None:
+        rec = ReleaseRecord(
+            governing_month=b.publication_date,
+            released_on=b.fetched_at.date(),
+            source="",
+        )
+    else:
+        return None
+    return rec if _MIN_LEAD_DAYS <= rec.lead_days <= _MAX_LEAD_DAYS else None
+
+
+def observed_releases(
+    limit: int | None = None,
+    *,
+    since: date | None = None,
+    calendar_month: int | None = None,
+) -> list[ReleaseRecord]:
+    """Observed releases, newest governing month first.
+
+    Args:
+        limit: stop after this many records (None = all).
+        since: only bulletins governing this month or later.
+        calendar_month: only bulletins governing this calendar month (1-12).
+    """
+    qs = Bulletin.objects.order_by("-publication_date")
+    if since is not None:
+        qs = qs.filter(publication_date__gte=since)
+    if calendar_month is not None:
+        qs = qs.filter(publication_date__month=calendar_month)
+
     out: list[ReleaseRecord] = []
-    # Over-fetch then filter: ordering by publication_date keeps the newest
-    # governing months; the lead-window filter drops synthetic backfill rows.
-    for b in Bulletin.objects.order_by("-publication_date").iterator():
-        if b.fetched_at is None:
+    for b in qs.iterator():
+        rec = _record_from_bulletin(b)
+        if rec is None:
             continue
-        rec = ReleaseRecord(governing_month=b.publication_date, released_on=b.fetched_at.date())
-        if _MIN_LEAD_DAYS <= rec.lead_days <= _MAX_LEAD_DAYS:
-            out.append(rec)
-        if len(out) >= limit:
+        out.append(rec)
+        if limit is not None and len(out) >= limit:
             break
     return out
+
+
+def recent_live_releases(limit: int = 12) -> list[ReleaseRecord]:
+    """Back-compat alias for the most recent observed releases."""
+    return observed_releases(limit=limit)
 
 
 def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     """Project the next Visa Bulletin release from recent release history.
 
-    Returns None when there is not yet enough live-ingested history to estimate.
+    Returns None when there is not yet enough observed history to estimate.
     """
-    history = recent_live_releases()
+    history = observed_releases(limit=12)
     if not history:
         return None
 
@@ -96,6 +185,45 @@ def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
         next_release_window=window,
         typical_release_dom=typical_dom,
         recent_history=history,
+    )
+
+
+def release_odds(
+    governing_month: date,
+    as_of: date,
+    *,
+    lookback_years: int = DEFAULT_LOOKBACK_YEARS,
+) -> ReleaseOdds | None:
+    """How many past bulletins for this calendar month were out by this point.
+
+    Comparison happens in "days before the governing month" space rather than by
+    day-of-month, so month lengths and the release always landing in the prior
+    month are handled without special cases.
+
+    Returns None when there is no usable history for that calendar month.
+    """
+    since = date(governing_month.year - lookback_years, governing_month.month, 1)
+    history = [
+        r
+        for r in observed_releases(since=since, calendar_month=governing_month.month)
+        if r.governing_month < governing_month  # past bulletins only
+    ]
+    if not history:
+        return None
+
+    # Days still to go before the target month starts, as of today.
+    current_lead = (governing_month - as_of).days
+    # A past bulletin was "already out by this point" if it had at least as many
+    # days of runway left when it posted.
+    n_released = sum(1 for r in history if r.lead_days >= current_lead)
+
+    years = [r.governing_month.year for r in history]
+    return ReleaseOdds(
+        month_name=governing_month.strftime("%B"),
+        as_of=as_of,
+        n_total=len(history),
+        n_released_by_now=n_released,
+        years_covered=(min(years), max(years)),
     )
 
 

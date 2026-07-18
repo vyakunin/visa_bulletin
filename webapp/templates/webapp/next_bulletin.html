@@ -32,6 +32,16 @@
         "text": "The Visa Bulletin is published monthly by the U.S. Department of State at travel.state.gov. Each edition governs one calendar month and is posted roughly two weeks before that month begins."
       }
     },
+    {% if odds %}
+    {
+      "@type": "Question",
+      "name": "Is the {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin late?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "By this point in the month, {{ odds.pct_released_by_now }}% of past {{ odds.month_name }} Visa Bulletins had already been published ({{ odds.n_released_by_now }} of {{ odds.n_total }} between {{ odds.years_covered.0 }} and {{ odds.years_covered.1 }}). {% if odds.is_late %}The {{ schedule.next_governing_month|date:'F Y' }} edition is therefore running later than most.{% else %}The {{ schedule.next_governing_month|date:'F Y' }} edition is still within the usual release window.{% endif %} The State Department does not pre-announce release dates."
+      }
+    },
+    {% endif %}
     {
       "@type": "Question",
       "name": "Where is the official Visa Bulletin published?",
@@ -66,6 +76,14 @@
              data-release="{{ schedule.next_release_estimate|date:'Y-m-d' }}"
              class="fs-4 fw-semibold text-primary"
              aria-live="polite"></div>
+        {% if odds %}
+        <div class="mt-3 pt-3 border-top text-muted small">
+          By this point in the month,
+          <strong class="{% if odds.is_late %}text-danger{% else %}text-body{% endif %}">{{ odds.pct_released_by_now }}%</strong>
+          of past {{ odds.month_name }} bulletins had already been published
+          ({{ odds.n_released_by_now }} of {{ odds.n_total }}, {{ odds.years_covered.0 }}&ndash;{{ odds.years_covered.1 }}).
+        </div>
+        {% endif %}
       </div>
     </div>
 
@@ -77,6 +95,16 @@
       of {{ schedule.next_release_estimate|date:"F" }}. The U.S. Department of State posts each edition in
       the middle of the prior month, for the month that follows.
     </p>
+
+    {% if odds %}
+    <p class="lead">
+      For context on how the wait compares to previous years:
+      <strong>{{ odds.pct_released_by_now }}%</strong> of {{ odds.month_name }} bulletins
+      ({{ odds.n_released_by_now }} of the {{ odds.n_total }} we have release dates for,
+      {{ odds.years_covered.0 }}&ndash;{{ odds.years_covered.1 }}) were out by this day of the month.
+      {% if odds.is_late %}This one is running later than most.{% else %}It is still early in the usual window.{% endif %}
+    </p>
+    {% endif %}
 
     <p class="lead">
       The U.S. Department of State publishes the Visa Bulletin <strong>monthly</strong>,
@@ -109,6 +137,15 @@
       Projection is derived from the {{ schedule.recent_history|length }} most recent releases
       (median release day: the {{ schedule.typical_release_dom }}{{ schedule.typical_release_dom|ordinal|slice:"-2:" }} of the month).
       It is an estimate, not an official date &mdash; the State Department does not pre-announce release dates.
+    </p>
+    <p class="text-muted small">
+      Release dates come from our own hourly checks of travel.state.gov, and for earlier
+      editions from the date each bulletin was first archived by the
+      <a href="https://web.archive.org/" rel="nofollow noopener" target="_blank">Internet Archive</a>.
+      An archived date can trail the real publication by a few days, so older entries are
+      a "published on or before" date rather than an exact one. Bulletins before 2018 are
+      not covered: travel.state.gov moved to its current site structure in late 2017, and
+      the archive holds no earlier snapshot at these addresses.
     </p>
     {% else %}
     <p class="lead">
