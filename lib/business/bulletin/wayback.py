@@ -100,13 +100,25 @@ def fetch_captures(
     """
     cached = _cache_path(cache_dir, url)
     if cached is not None and cached.exists():
-        rows = json.loads(cached.read_text())
-        return _history_from_rows(url, rows)
+        try:
+            rows = json.loads(cached.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            # A truncated or unreadable cache entry must not abort the run — the
+            # archive is still authoritative, so fall through and re-query.
+            logger.warning("Ignoring unreadable cache entry %s: %s", cached, exc)
+        else:
+            return _history_from_rows(url, rows)
 
     rows = _query_cdx(url, limit=limit, timeout=timeout)
     if cached is not None:
-        cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(json.dumps(rows))
+        # The cache is an optimisation. Losing a hard-won archive response
+        # because the cache dir is read-only (a docker-cp'd dir owned by another
+        # uid, a full disk) would be strictly worse than not caching at all.
+        try:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_text(json.dumps(rows))
+        except OSError as exc:
+            logger.warning("Could not cache CDX response at %s: %s", cached, exc)
     return _history_from_rows(url, rows)
 
 

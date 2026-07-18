@@ -88,6 +88,16 @@ py_test(
 )
 
 py_test(
+    name = "test_wayback_cache",
+    size = "small",
+    srcs = ["test_wayback_cache.py"],
+    main = "test_wayback_cache.py",
+    deps = [
+        "//lib/business/bulletin:wayback",
+    ],
+)
+
+py_test(
     name = "test_bulletin_html_cache",
     size = "small",
     srcs = ["test_bulletin_html_cache.py"],
