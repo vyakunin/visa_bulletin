@@ -19,6 +19,13 @@
 # `/salaries/?employer=...` query URLs are deliberately EXCLUDED — they are
 # per-query, challenge-gated (cf-cache DYNAMIC), and not worth pre-warming.
 #
+# /sitemap.xml is here because it is by far the most expensive response on the
+# site: ~21-25s to render, 1.3 MB, and Cloudflare will not cache it (DYNAMIC).
+# Warming it only became useful once the SEO views moved off
+# @cache_page_skip_bots (commit 8b7f979) — before that, Googlebot and bingbot
+# bypassed the page cache entirely, so a warmed entry was one the only clients
+# that request a sitemap were coded never to read.
+#
 # WHEN: run right after a prod code deploy + Redis flush (see the deploy flow in
 # .claude/rules/deployment.md, next to the `redis-cli -n 1 FLUSHDB` step). Safe to
 # run any time — these are plain read-only GETs.
@@ -32,6 +39,10 @@
 # Env overrides:
 #   BASE        base URL to warm (default https://visa-bulletin.us)
 #   PRED_MONTH  current predictions month "YYYY-M" (default: derived from `date`)
+#
+# The per-URL curl timeout is 60s, not 30s: on the cold Redis left by a deploy's
+# FLUSHDB, /sitemap.xml alone takes ~21-25s, and a 30s cap risks timing out the
+# one URL that most needs warming.
 #
 # Output: per-URL HTTP status + total time, then a summary line.
 # Exit code: 0 if every URL returned 200; 1 if any URL was non-200 (so a broken
@@ -80,6 +91,7 @@ URLS=(
   "/when-is-the-next-visa-bulletin/"               # high-intent evergreen
   "/about/"                                        # about
   "/contact/"                                      # contact
+  "/sitemap.xml"                                   # 1.3 MB, ~21-25s uncached (see header)
 )
 
 echo "Warming ${#URLS[@]} URLs on ${BASE} (predictions month ${PRED_MONTH})"
@@ -90,7 +102,7 @@ for u in "${URLS[@]}"; do
   # -sS: quiet but show errors; no-cache header so the request reaches the origin
   # and warms Django's @cache_page Redis entry (not a stale CF edge copy).
   read -r code t <<<"$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' \
-    --max-time 30 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+    --max-time 60 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
     "${BASE}${u}" 2>/dev/null || echo 'ERR -')"
   printf '%-48s %6s %9s\n' "$u" "$code" "$t"
   [ "$code" = "200" ] || fail=$((fail + 1))
