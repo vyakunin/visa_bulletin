@@ -995,6 +995,36 @@ URL is non-200. Safe to run any time — plain read-only GETs.
 BASE=... PRED_MONTH=2026-8 ./scripts/warm_cache.sh         # env overrides
 ```
 
+**`scripts/seo/render_sitemap.py`** - pre-render `/sitemap.xml` to a static file
+Writes `<STATIC_ROOT>/sitemap.xml` (the `./staticfiles` bind mount, shared rw into `vb_web`
+and ro into `vb_nginx`), which nginx serves **off disk** instead of proxying the render to
+gunicorn. The sitemap is the most expensive response on the site (~21.7s cold, 1.3 MB, 6.9k
+URLs) and Cloudflare will not edge-cache it (DYNAMIC), so every crawler fetch reached the
+origin. The cost is four whole-corpus GROUP BYs behind the URL sets (`qualifying_pairs`,
+`qualifying_slugs`, `qualifying_state_codes`, `qualifying_occupation_slugs`); each was
+Redis-cached with a 24h TTL, but prod's Redis runs `allkeys-lru` pinned at its 512 MB cap
+(~4k evictions/hour, 61% miss rate), so those keys vanish unpredictably and any single miss
+puts an aggregate on Googlebot's request path. A file cannot be LRU-evicted.
+
+Renders via `build_sitemap_xml()` — the same function the fallback view uses, so the file and
+the view can never disagree. **Refuses to publish a degraded render**: the builder catches
+`OperationalError`/`ProgrammingError` per section and returns `[]`, so a DB blip yields a
+well-formed ~50-URL sitemap; overwriting a good file with it would tell Google 6.8k pages
+vanished. A write must clear both an absolute floor (`--min-urls`, default 1000) and a
+relative floor against the file on disk (`--max-shrink`, default 10%). Refusing leaves the
+last good file serving — a non-zero exit is not a live-traffic incident. Writes atomically
+(temp file + `os.replace` in the same directory), so nginx never sees a partial sitemap.
+
+Scheduled daily at 02:40 on the homeserver, and run immediately after a new bulletin lands
+(`scripts/sync_bulletin_to_prod.sh`), since a bulletin moves `lastmod` on every
+bulletin-derived URL and adds a `/predictions/` pair. nginx falls back to the Django view if
+the file is absent, so a fresh stack degrades to slow-but-correct rather than a 404.
+```bash
+bazel run //scripts/seo:render_sitemap -- --dry-run
+bazel run //scripts/seo:render_sitemap -- --base-url https://staging.visa-bulletin.us
+docker exec -w /app vb_web python3 -m scripts.seo.render_sitemap    # in prod
+```
+
 **`scripts/staging_page_audit.sh`** - per-URL SEO/marker audit of the staging stack
 The committed form of the ad-hoc `curl -H 'Host: staging.visa-bulletin.us' <url>` + grep
 check that ran repeatedly across sessions. Curls a representative set of staging URLs

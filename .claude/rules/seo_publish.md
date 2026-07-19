@@ -5,10 +5,24 @@ pSEO pages, title/meta/schema changes, new content sections), complete ALL of
 these in the **same task** — don't leave "SEO fluff" half-wired. This is the
 post-launch counterpart to `docs/seo/SEO_OPTIMIZATION.md`.
 
-1. **Sitemap inclusion.** New URLs MUST be emitted by `webapp/views/seo/sitemaps.py`
-   (the dynamic sitemap) — mirror the view's slug sets there. Verify on prod:
-   `curl -s https://visa-bulletin.us/sitemap.xml | grep <new-path>`. Confirm
-   `robots.txt` still advertises the sitemap.
+1. **Sitemap inclusion.** New URLs MUST be emitted by `build_sitemap_xml()` in
+   `webapp/views/seo/sitemaps.py` — mirror the view's slug sets there.
+
+   ⚠️ **Since 2026-07-19 the sitemap is PRE-RENDERED to a static file** that nginx
+   serves off disk (`scripts/seo/render_sitemap.py` → `staticfiles/sitemap.xml`;
+   the Django view is only a fallback for when the file is absent). **Deploying
+   the code change is therefore NOT enough** — the live sitemap keeps serving the
+   old URL set until the renderer runs. Re-render explicitly as part of the
+   launch, don't wait for the 02:40 cron:
+   ```bash
+   ssh homeserver "docker exec -w /app vb_web python3 -m scripts.seo.render_sitemap"
+   ```
+   The renderer refuses to publish a render that loses >10% of the on-disk URLs,
+   so if a launch legitimately *removes* a large surface, it will (correctly)
+   refuse — read the reason, then re-run with `--force`.
+
+   Verify on prod: `curl -s https://visa-bulletin.us/sitemap.xml | grep <new-path>`.
+   Confirm `robots.txt` still advertises the sitemap.
 
 2. **Freshness (`<lastmod>`).** Every URL carries a **truthful** `lastmod`, never
    future-dated — Google discounts a future lastmod and, seeing it across many

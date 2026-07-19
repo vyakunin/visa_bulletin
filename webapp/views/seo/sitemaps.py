@@ -132,10 +132,28 @@ def _url_entry(loc: str, lastmod: str | None = None, changefreq: str = "monthly"
     return parts
 
 
-@cache_page_all_agents(settings.CACHE_TIMEOUT)
-def sitemap_view(request):
-    """Generate XML sitemap."""
-    base_url = request.build_absolute_uri("/")[:-1]
+def build_sitemap_xml(base_url: str) -> str:
+    """Render the full sitemap XML for ``base_url`` (no trailing slash).
+
+    Split out of ``sitemap_view`` so the pre-rendered static file
+    (``scripts/seo/render_sitemap.py``) and the Django fallback view are the
+    same code — a divergence here would ship a sitemap that disagrees with the
+    site's own 404-gates.
+
+    This is the site's most expensive render, and the cost is NOT the 6.9k URL
+    strings: it is the four whole-corpus aggregates below (``qualifying_pairs``,
+    ``qualifying_slugs``, ``qualifying_state_codes``,
+    ``qualifying_occupation_slugs``). Each is individually Redis-cached with a
+    24h TTL, which was the original defense — but prod's Redis runs
+    ``allkeys-lru`` at its 512 MB cap and evicts ~4k keys/hour, so those four
+    keys disappear unpredictably and independently. Measured 2026-07-19: three
+    of the four present, ``h1b_sponsors.qualifying_slugs.v1`` already evicted.
+    A miss on any one of them puts a whole-corpus GROUP BY on the request path,
+    which is where the ~21.7s crawler renders came from.
+
+    So this function is meant to run on a SCHEDULE, not per request. Prefer the
+    pre-rendered file; see the module docstring of the render script.
+    """
     today = date.today()
     # Static / category / state pages reflect the latest bulletin + pipeline
     # refresh. Use the bulletin's real ingest time (fetched_at), not its future
@@ -407,4 +425,20 @@ def sitemap_view(request):
         ))
 
     xml_parts.append("</urlset>")
-    return HttpResponse("\n".join(xml_parts), content_type="application/xml")
+    return "\n".join(xml_parts)
+
+
+@cache_page_all_agents(settings.CACHE_TIMEOUT)
+def sitemap_view(request):
+    """Serve the XML sitemap — the FALLBACK path.
+
+    In prod nginx serves a pre-rendered ``staticfiles/sitemap.xml`` off disk and
+    only falls through here when that file is absent (a fresh stack that has not
+    run the renderer yet). Keeping the view means a missing file degrades to a
+    slow-but-correct sitemap rather than a 404 that would drop 6.9k URLs out of
+    Google's index.
+    """
+    return HttpResponse(
+        build_sitemap_xml(request.build_absolute_uri("/")[:-1]),
+        content_type="application/xml",
+    )

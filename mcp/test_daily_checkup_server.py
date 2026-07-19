@@ -414,3 +414,63 @@ def test_ga4_small_n_never_flags():
     sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
     assert status == "green", status
     assert "20 sess" in sec["body"] and "30 sess" in sec["body"]
+
+
+# ── Pre-rendered sitemap freshness (2026-07-19) ─────────────────────────────
+#
+# /sitemap.xml is now a static file vb_nginx serves off disk. Its failure mode is
+# SILENT: the renderer refuses to publish a degraded render and leaves the last
+# good file serving, which is safe but invisible. This project has already been
+# burned by exactly that shape — the retired prod bulletin cron 403'd silently
+# for months — so the age grading is worth pinning.
+
+def _sitemap_raw(age_hours: float, urls: int = 6888, size: int = 1_314_365) -> str:
+    mtime = int(time.time() - age_hours * 3600)
+    return f"{mtime}|{size}\n{urls}\n"
+
+
+def test_fresh_sitemap_is_green_and_silent():
+    section, status = m._section_sitemap(m._parse_sitemap(_sitemap_raw(6)))
+    assert status == "green", status
+    assert section is None, "a healthy sitemap must not add digest noise"
+
+
+def test_one_missed_render_is_still_green():
+    """Cron is daily; ~26h means one run slipped, not a failure."""
+    _s, status = m._section_sitemap(m._parse_sitemap(_sitemap_raw(26)))
+    assert status == "green", status
+
+
+def test_two_missed_renders_go_yellow():
+    section, status = m._section_sitemap(m._parse_sitemap(_sitemap_raw(36)))
+    assert status == "yellow", status
+    assert "render_sitemap.log" in section["body"], "must point at the refusal reason"
+
+
+def test_long_stale_sitemap_goes_red():
+    _s, status = m._section_sitemap(m._parse_sitemap(_sitemap_raw(72)))
+    assert status == "red", status
+
+
+def test_missing_file_is_flagged_but_not_red():
+    """nginx falls back to Django, so the sitemap is correct — just slow again."""
+    section, status = m._section_sitemap(m._parse_sitemap("MISSING\n"))
+    assert status == "yellow", status
+    assert "render_sitemap" in section["body"], "must give the fix command"
+
+
+def test_forced_degraded_render_is_red_even_when_fresh():
+    """A fresh file with ~50 URLs means someone --force'd past the min-urls gate."""
+    section, status = m._section_sitemap(m._parse_sitemap(_sitemap_raw(1, urls=52, size=40_000)))
+    assert status == "red", status
+    assert "52 URLs" in section["body"]
+
+
+def test_parse_handles_missing_url_count():
+    """stat succeeded but the grep line is absent — degrade, don't crash."""
+    mtime = int(time.time() - 3600)
+    info = m._parse_sitemap(f"{mtime}|1314365\n")
+    assert info["present"] is True
+    assert "urls" not in info
+    _s, status = m._section_sitemap(info)
+    assert status == "green", status

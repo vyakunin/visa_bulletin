@@ -205,6 +205,17 @@ fi
 # the live site (predictions published? post generated? CF purged?).
 if echo "$REFRESH_OUT" | grep -qE "Ingested [0-9]+ bulletin\(s\)"; then
   INGESTED_LINE="$(echo "$REFRESH_OUT" | grep -E "Ingested [0-9]+ bulletin\(s\)" | tail -1)"
+
+  # A new bulletin moves lastmod on every bulletin-derived URL and adds a new
+  # /predictions/<y>-<m>/ pair, so the pre-rendered sitemap nginx serves off disk
+  # is now stale. Regenerate immediately rather than waiting for the 02:40 cron.
+  # Non-fatal: the renderer refuses to publish a degraded render, so a failure
+  # here just means the previous good sitemap keeps serving until the cron retries.
+  log "new bulletin ingested -> re-rendering static sitemap"
+  if ! ssh homeserver "docker exec -w /app vb_web python3 -m scripts.seo.render_sitemap" 2>&1; then
+    log "WARNING: sitemap re-render failed; the previous sitemap.xml is still being served"
+  fi
+
   alert inject "bulletin-sync:new-bulletin" 0 \
     "📗 New Visa Bulletin ingested on prod (${INGESTED_LINE}). Verify the end-state: visa-bulletin.us renders the new month, predictions published, the analysis post generated and reading correctly, CF edge purged."
 fi
