@@ -19,12 +19,15 @@
 # `/salaries/?employer=...` query URLs are deliberately EXCLUDED — they are
 # per-query, challenge-gated (cf-cache DYNAMIC), and not worth pre-warming.
 #
-# /sitemap.xml is here because it is by far the most expensive response on the
-# site: ~21-25s to render, 1.3 MB, and Cloudflare will not cache it (DYNAMIC).
-# Warming it only became useful once the SEO views moved off
-# @cache_page_skip_bots (commit 8b7f979) — before that, Googlebot and bingbot
-# bypassed the page cache entirely, so a warmed entry was one the only clients
-# that request a sitemap were coded never to read.
+# /sitemap.xml is deliberately NOT warmed here (removed 2026-07-19). It briefly
+# was: it is the most expensive response on the site (~21-25s, 1.3 MB, and
+# Cloudflare will not cache it — DYNAMIC), and warming became useful once the
+# SEO views moved off @cache_page_skip_bots (commit 8b7f979). That is now moot —
+# nginx serves a PRE-RENDERED staticfiles/sitemap.xml straight off disk
+# (scripts/seo/render_sitemap.py), so a request never reaches Django and a warmed
+# @cache_page entry would be one nothing ever reads. That is the same
+# warm-a-key-nobody-reads trap this paragraph used to describe, just inverted, so
+# it comes out rather than sitting here looking useful.
 #
 # WHEN: run right after a prod code deploy + Redis flush (see the deploy flow in
 # .claude/rules/deployment.md, next to the `redis-cli -n 1 FLUSHDB` step). Safe to
@@ -40,9 +43,10 @@
 #   BASE        base URL to warm (default https://visa-bulletin.us)
 #   PRED_MONTH  current predictions month "YYYY-M" (default: derived from `date`)
 #
-# The per-URL curl timeout is 60s, not 30s: on the cold Redis left by a deploy's
-# FLUSHDB, /sitemap.xml alone takes ~21-25s, and a 30s cap risks timing out the
-# one URL that most needs warming.
+# The per-URL curl timeout is 60s, not 30s. It was raised for /sitemap.xml (now
+# removed — see above), but it stays at 60s: on the cold Redis left by a deploy's
+# FLUSHDB the heavy EB country dashboards have been measured at 11-12s, and a 30s
+# cap leaves too little headroom on a box already busy rebuilding its cache.
 #
 # Output: per-URL HTTP status + total time, then a summary line.
 # Exit code: 0 if every URL returned 200; 1 if any URL was non-200 (so a broken
@@ -91,7 +95,6 @@ URLS=(
   "/when-is-the-next-visa-bulletin/"               # high-intent evergreen
   "/about/"                                        # about
   "/contact/"                                      # contact
-  "/sitemap.xml"                                   # 1.3 MB, ~21-25s uncached (see header)
 )
 
 echo "Warming ${#URLS[@]} URLs on ${BASE} (predictions month ${PRED_MONTH})"

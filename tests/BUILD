@@ -58,6 +58,15 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_render_sitemap",
+    size = "small",
+    srcs = ["test_render_sitemap.py"],
+    deps = [
+        "//scripts/seo:render_sitemap_lib",
+    ],
+)
+
+django_py_test(
     name = "test_copy_schema",
     size = "small",
     srcs = ["test_copy_schema.py"],

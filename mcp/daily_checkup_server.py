@@ -101,6 +101,19 @@ BULLETIN_REFRESH_YELLOW_MIN = 90    # cron runs hourly
 BULLETIN_REFRESH_RED_MIN = 180
 BACKUP_YELLOW_HOURS = 30            # cron runs daily at 01:00 UTC
 BACKUP_RED_HOURS = 50
+# /sitemap.xml is a PRE-RENDERED file that vb_nginx serves off disk
+# (scripts/seo/render_sitemap.py, cron 02:40 + after each bulletin ingest).
+# Staleness here is the one failure this project has burned itself on before:
+# the retired prod bulletin cron 403'd SILENTLY for months. The renderer
+# deliberately refuses to publish a degraded render and exits non-zero, leaving
+# the last good file in place — correct, but invisible unless something grades
+# the file's age. Loose thresholds: one missed daily run is fine, two is not.
+SITEMAP_STALE_YELLOW_HOURS = 30
+SITEMAP_STALE_RED_HOURS = 50
+# Below this the file is not a plausible full sitemap (prod renders ~6.9k URLs).
+# The renderer's own --min-urls gate should make this unreachable, so tripping it
+# means someone --force'd a degraded render.
+SITEMAP_MIN_PLAUSIBLE_URLS = 1000
 # How old the newest bulletin's published_date may be before we worry. DoS
 # publishes monthly; > 35 days suggests we missed one (parser broke / source
 # rotated).
@@ -339,6 +352,13 @@ printf '==SECTION:backup==\n'
 if [ -f {shlex.quote(prod_bak_log)} ]; then
   stat -c '%Y' {shlex.quote(prod_bak_log)}
   tail -50 {shlex.quote(prod_bak_log)}
+else
+  echo MISSING
+fi
+printf '==SECTION:sitemap==\n'
+if [ -f /opt/stack/visa_bulletin/staticfiles/sitemap.xml ]; then
+  stat -c '%Y|%s' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
+  grep -c '<loc>' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
 else
   echo MISSING
 fi
@@ -1646,6 +1666,78 @@ def _section_backup(info: dict) -> tuple[dict | None, str]:
              "importance": 5 if status == "red" else 3}, status)
 
 
+def _parse_sitemap(raw: str) -> dict:
+    """Parse the sitemap section: `mtime|bytes` then a `<loc>` count, or MISSING."""
+    lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
+    if not lines or lines[0] == "MISSING":
+        return {"present": False}
+    try:
+        mtime_s, size_s = lines[0].split("|", 1)
+        info = {
+            "present": True,
+            "age_hours": (time.time() - int(mtime_s)) / 3600,
+            "size_kb": int(size_s) / 1024,
+        }
+    except (ValueError, IndexError):
+        return {"present": False, "parse_error": True}
+    if len(lines) > 1:
+        try:
+            info["urls"] = int(lines[1])
+        except ValueError:
+            pass
+    return info
+
+
+def _section_sitemap(info: dict) -> tuple[dict | None, str]:
+    """Grade the pre-rendered /sitemap.xml that nginx serves off disk."""
+    if not info.get("present"):
+        return ({
+            "title": "Pre-rendered sitemap.xml MISSING",
+            "body": (
+                "Expected `/opt/stack/visa_bulletin/staticfiles/sitemap.xml`. nginx falls back "
+                "to the Django view, so the sitemap is still CORRECT — but crawlers are back on "
+                "the ~21.7s render that pins a gunicorn worker, which is the whole problem the "
+                "static file solves.\n"
+                "- Fix: `ssh homeserver \"docker exec -w /app vb_web python3 -m scripts.seo.render_sitemap\"`\n"
+                "- Then check the 02:40 cron is installed (`crontab -l | grep render_sitemap`)."
+            ),
+            "importance": 3,
+        }, "yellow")
+
+    age_hr = info["age_hours"]
+    urls = info.get("urls")
+    status = "green"
+    if age_hr > SITEMAP_STALE_RED_HOURS:
+        status = "red"
+    elif age_hr > SITEMAP_STALE_YELLOW_HOURS:
+        status = "yellow"
+
+    body_lines = [
+        f"- Last rendered: **{age_hr:.1f} hr ago** ({info['size_kb']:.0f} KB"
+        + (f", {urls} URLs)" if urls is not None else ")")
+    ]
+    if urls is not None and urls < SITEMAP_MIN_PLAUSIBLE_URLS:
+        status = "red"
+        body_lines.append(
+            f"- **Only {urls} URLs** — far below the ~6.9k expected. The renderer's own "
+            "`--min-urls` gate should make this impossible, so this file was probably written "
+            "with `--force` over a degraded render. Google is being told most of the site is gone."
+        )
+    if status == "green":
+        return (None, "green")
+    if age_hr > SITEMAP_STALE_YELLOW_HOURS:
+        body_lines.append(
+            "- The renderer refuses to publish a degraded render (DB blip → ~50 URLs), so a "
+            "stale-but-good file is its SAFE failure mode. Check "
+            "`/opt/stack/visa_bulletin/logs/cron/render_sitemap.log` for the refusal reason."
+        )
+    return ({
+        "title": "Pre-rendered sitemap " + ({"red": "BROKEN", "yellow": "stale"}[status]),
+        "body": "\n".join(body_lines),
+        "importance": 5 if status == "red" else 3,
+    }, status)
+
+
 def _section_postgres(pg: dict) -> tuple[dict | None, str]:
     status = "green"
     lines = []
@@ -2434,6 +2526,11 @@ async def daily_checkup(since: str | None = None) -> str:
         statuses.append(st)
         # Backup cron
         s, st = _section_backup(_parse_log_age(snap.get("backup", "")))
+        if s:
+            sections.append(s)
+        statuses.append(st)
+        # Pre-rendered sitemap.xml (nginx serves it off disk; cron 02:40)
+        s, st = _section_sitemap(_parse_sitemap(snap.get("sitemap", "")))
         if s:
             sections.append(s)
         statuses.append(st)

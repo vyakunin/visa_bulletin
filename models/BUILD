@@ -57,6 +57,11 @@ py_library(
         ":bulletin",
         "//models/ingest:ingest_version",
         "//models/enums:action_type",
+        # visa_cutoff_date.py imports this directly. It was missing here and only
+        # ever resolved because every consumer so far also pulled in the full
+        # webapp dep closure; a narrower binary (//scripts/seo:render_sitemap)
+        # surfaced it as ModuleNotFoundError. Found 2026-07-19.
+        "//models/enums:visa_category",
         requirement("Django"),
         requirement("psycopg2_binary"),  # PostgreSQL adapter
     ],
