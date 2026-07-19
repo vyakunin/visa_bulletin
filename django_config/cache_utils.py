@@ -48,11 +48,8 @@ def _make_cache_key(request) -> str:
     return f"page_cache.{request.method}.{url_hash}"
 
 
-def cache_page_skip_bots(timeout):
-    """Like @cache_page(timeout) but skip cache get/set for bot User-Agents.
-
-    Bot requests always hit the view and never read or write cache, so they
-    don't evict human cache entries when using LRU eviction.
+def _cache_page(timeout, *, skip_bots: bool):
+    """Shared body of the two page-cache decorators below.
 
     Uses a simple URL-based cache key (not Django's Vary-header system) so
     it works without UpdateCacheMiddleware/FetchFromCacheMiddleware.
@@ -62,7 +59,9 @@ def cache_page_skip_bots(timeout):
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
-            if is_bot_request(request) or request.method not in ("GET", "HEAD"):
+            if request.method not in ("GET", "HEAD"):
+                return view_func(request, *args, **kwargs)
+            if skip_bots and is_bot_request(request):
                 return view_func(request, *args, **kwargs)
             key = _make_cache_key(request)
             response = cache.get(key)
@@ -76,3 +75,34 @@ def cache_page_skip_bots(timeout):
         return _wrapped_view
 
     return decorator
+
+
+def cache_page_skip_bots(timeout):
+    """Like @cache_page(timeout) but skip cache get/set for bot User-Agents.
+
+    Bot requests always hit the view and never read or write cache, so they
+    don't evict human cache entries when using LRU eviction.
+
+    Use this for views with a LARGE, OPEN URL SPACE — employer/job-title
+    profiles, faceted salary search — where a crawler walking thousands of
+    distinct URLs would otherwise flush the human working set out of Redis.
+    """
+    return _cache_page(timeout, skip_bots=True)
+
+
+def cache_page_all_agents(timeout):
+    """Like @cache_page(timeout), caching for bots as well as humans.
+
+    For a FIXED-PATH view whose audience IS crawlers — /sitemap.xml,
+    /robots.txt, /llms.txt — the bot-skip rationale inverts. Those URLs are one
+    cache key each, so they cannot cause the many-unique-URL LRU eviction that
+    `cache_page_skip_bots` guards against; skipping cache there just guarantees
+    the site's single most expensive response is re-rendered from scratch on
+    every crawl, by the only clients that ever request it.
+
+    Concretely (measured 2026-07-19): /sitemap.xml renders in ~21.7s uncached
+    and ~0.03s warm. Under `cache_page_skip_bots`, Googlebot and bingbot are on
+    the permanent 21.7s path — long enough that crawlers were disconnecting at
+    their 10s timeout (nginx 499) and each render pinned a gunicorn worker.
+    """
+    return _cache_page(timeout, skip_bots=False)
