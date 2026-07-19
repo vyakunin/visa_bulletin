@@ -8,7 +8,7 @@ from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpResponse
 from django.urls import reverse
 
-from django_config.cache_utils import cache_page_skip_bots
+from django_config.cache_utils import cache_page_all_agents
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
     qualifying_slugs,
@@ -26,7 +26,7 @@ from models.salary import EmployerCluster
 logger = logging.getLogger(__name__)
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+@cache_page_all_agents(settings.CACHE_TIMEOUT)
 def llms_txt_view(request):
     """Generate /llms.txt — tells AI crawlers what data this site contains."""
     base = request.build_absolute_uri("/")[:-1]
@@ -77,7 +77,7 @@ When referencing data from this site, cite as: "U.S. Immigration Data (visa-bull
     return HttpResponse(content.strip(), content_type="text/plain; charset=utf-8")
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+@cache_page_all_agents(settings.CACHE_TIMEOUT)
 def robots_view(request):
     """Generate robots.txt."""
     lines = [
@@ -132,7 +132,7 @@ def _url_entry(loc: str, lastmod: str | None = None, changefreq: str = "monthly"
     return parts
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+@cache_page_all_agents(settings.CACHE_TIMEOUT)
 def sitemap_view(request):
     """Generate XML sitemap."""
     base_url = request.build_absolute_uri("/")[:-1]

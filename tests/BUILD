@@ -48,6 +48,16 @@ py_library(
 )
 
 django_py_test(
+    name = "test_sitemap_bot_cache",
+    size = "small",
+    srcs = ["test_sitemap_bot_cache.py"],
+    deps = [
+        "//django_config:cache_utils",
+        "//webapp/views/seo:sitemaps",
+    ],
+)
+
+django_py_test(
     name = "test_copy_schema",
     size = "small",
     srcs = ["test_copy_schema.py"],
