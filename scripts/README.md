@@ -2,6 +2,22 @@
 
 This directory contains all project scripts organized by functionality. All scripts should be run via Bazel for proper dependency management.
 
+> **Where the OTHER repo's tooling lives** (two-repo split, cross-repo map settled
+> 2026-07-20). This repo keeps **app-level dev/test/data utilities**; the private ops
+> repo `visa_bulletin_platform/scripts/` keeps **traffic, monetization and UX
+> measurement** (they read prod + `~/tokens/` credentials). Neither pair below is a
+> duplicate — they answer different questions, so pick by question, not by filename:
+>
+> | Question | Use | Where |
+> |---|---|---|
+> | Lab CLS/perf for a URL (PageSpeed Insights, no browser) | `scripts/check_cls.sh` | here |
+> | Field CLS after an ad-density/placement change (live CDP + ad slots, the <0.05 monetization gate) | `scripts/measure_cls.py` | platform |
+> | Traffic share **per section/path** (full-coverage GoatCounter export) | `scripts/gc_section_shares.py` | here |
+> | Traffic **channel/referrer mix** (organic vs Reddit vs direct) | `scripts/channel_mix.py` | platform |
+>
+> SEO docs split the same way: implementation here (`docs/seo/SEO_OPTIMIZATION.md`),
+> measurement + strategy in `visa_bulletin_platform/docs/SEO.md`.
+
 ## Quick Reference
 
 - **Data Validation**: `bazel run //scripts/salary:validate_data`
