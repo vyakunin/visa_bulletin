@@ -65,6 +65,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/business/salary:cluster_utils",
+        "//models:salary",
         requirement("Django"),
     ],
 )
@@ -101,6 +102,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":excel_utils",
+        "//models/ingest:data_source",
+        "//models/ingest:ingest_run",
     ],
 )
 
@@ -124,6 +127,7 @@ py_library(
     srcs = ["import_completeness.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/parsing/salary:file_detection",
         "//lib/utils:data_source_utils",
         "//models:salary",
         requirement("Django"),

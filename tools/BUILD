@@ -1,11 +1,22 @@
 # BUILD file for tools directory
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
 exports_files([
     "update_requirements_lock.sh",
+    "bazel_dep_check.py",
 ])
+
+# Undeclared-Bazel-dep checker. Stdlib only, so the pre-commit hook can run it
+# with plain python3 against the real working tree — Bazel's glob() cannot cross
+# package boundaries, so a sandboxed target can never see all 45 BUILD files.
+# The logic is pinned by //tests:test_bazel_dep_check.
+py_library(
+    name = "bazel_dep_check",
+    srcs = ["bazel_dep_check.py"],
+    visibility = ["//visibility:public"],
+)
 
 py_binary(
     name = "update_requirements_lock",

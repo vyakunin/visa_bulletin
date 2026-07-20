@@ -26,6 +26,7 @@ py_library(
     srcs = ["db_importer.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/salary:employer_clustering",
         "//models:salary",
         "//models/enums:visa_program",
         "//lib/parsing/salary:wage_unit_correction",

@@ -108,6 +108,42 @@ py_library(
 )
 ```
 
+### First-party dependencies must be declared
+
+Bazel does **not** enforce declared deps for Python the way it does for Java. If a
+source imports a first-party module its target never lists in `deps`, the build
+keeps working for as long as *some* consumer's dep closure happens to supply that
+module — and then breaks the first time a narrower target is built.
+
+That is not theoretical: `//models:visa_cutoff_date` imported
+`models.enums.visa_category` without declaring it for months, and only broke when
+`//scripts/seo:render_sitemap` (a deliberately thin binary) imported it. A sweep
+in 2026-07 found 21 more.
+
+`tools/bazel_dep_check.py` catches these statically — it parses BUILD files and
+sources with `ast` and compares imports against the declared dep closure. It runs
+from the pre-commit hook against the real working tree:
+
+```bash
+python3 tools/bazel_dep_check.py     # exits 1 and prints the missing deps
+```
+
+It is deliberately **not** a Bazel test. Two reasons, both load-bearing:
+
+- Bazel's `glob()` cannot cross package boundaries, so no sandboxed target can
+  receive all 45 BUILD files as data.
+- A per-target *runtime* import test would not work either: its own scaffolding
+  (`//webapp:apps`, Django settings) re-supplies the module it is trying to prove
+  missing, and it cannot see lazy in-function imports — which are most of the
+  real violations.
+
+Its own logic is pinned by `//tests:test_bazel_dep_check`, which builds synthetic
+BUILD trees in a tmpdir and therefore *is* sandboxable.
+
+Two known exemptions live in `ALLOWLIST` in that file. Both are genuine circular
+imports, which Bazel cannot express as a dep in either direction; the real fix is
+to break the cycle in code, not to add a dep.
+
 ### Accessing Data Files (Runfiles)
 
 **Use the standard Bazel runfiles library** - don't manually construct paths.

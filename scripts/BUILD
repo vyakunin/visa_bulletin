@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 # Note: sh_binary is a built-in Bazel rule, no need to load it
 
@@ -424,6 +424,35 @@ py_binary(
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
+)
+
+# Importable form of the binary above, for callers that need the module rather
+# than the entrypoint (scripts/cron/refresh_bulletin.py:217 imports
+# publish_predictions() directly). Same `_lib` pattern as :refresh_bulletin_lib.
+py_library(
+    name = "publish_predictions_lib",
+    srcs = ["publish_predictions.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//webapp:apps",
+        "//lib/business/vqs:solver",
+        "//lib/business/vqs:aggregator",
+        "//lib/business/vqs:calibration",
+        "//lib/business/vqs:expert_pool",
+        "//lib/business/vqs:gbm_expert",
+        "//lib/business/vqs:meta_params",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:october_reset",
+        "//models:vqs",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:raw_facts",
+        "//models/enums:country",
+        "//models/enums:family_preference",
+        requirement("Django"),
+        requirement("python-dateutil"),
+    ],
 )
 
 py_binary(

@@ -88,6 +88,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/ingest:base",
+        "//lib/parsing/salary:wage_unit_correction",
         "//lib/utils:location_utils",
         "//models/ingest:ingest_run",
         "//models:salary",

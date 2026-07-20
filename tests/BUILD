@@ -40,6 +40,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":django_setup",
+        "//extractors:bulletin_handler",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//webapp:apps",
@@ -64,6 +65,17 @@ django_py_test(
     srcs = ["test_render_sitemap.py"],
     deps = [
         "//scripts/seo:render_sitemap_lib",
+    ],
+)
+
+# No Django, no DB — builds synthetic BUILD trees in a tmpdir. The repo-wide scan
+# runs from the pre-commit hook instead, because glob() cannot cross packages.
+pytest_py_test(
+    name = "test_bazel_dep_check",
+    size = "small",
+    srcs = ["test_bazel_dep_check.py"],
+    deps = [
+        "//tools:bazel_dep_check",
     ],
 )
 

@@ -29,6 +29,7 @@ py_library(
         "//models:blog",
         "//models:bulletin",
         "//models/ingest:ingest",
+        "//scripts:publish_predictions_lib",  # lazy import at refresh_bulletin.py:217
         "//django_config:settings",
         "//django_config:logging_config",
         "//webapp:apps",
@@ -56,6 +57,7 @@ py_binary(
         "//models:blog",
         "//models:bulletin",
         "//models/ingest:ingest",
+        "//scripts:publish_predictions_lib",  # lazy import at refresh_bulletin.py:217
         "//django_config:settings",
         "//django_config:logging_config",
         "//webapp:apps",

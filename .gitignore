@@ -26,6 +26,13 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+# SQLite WAL mode (settings_production.setup_sqlite_wal) writes these alongside
+# the .db while a connection is open, and removes them on a clean close. They end
+# in -shm/-wal, so *.db does not cover them and they were committed by accident.
+*.db-shm
+*.db-wal
+*.sqlite3-shm
+*.sqlite3-wal
 
 # Optional: Uncomment to ignore cached HTML pages
 # saved_pages/

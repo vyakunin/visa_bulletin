@@ -36,6 +36,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//models:visa_cutoff_date",
+        "//models/enums:employment_preference",
     ],
 )
 

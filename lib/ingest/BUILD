@@ -8,6 +8,7 @@ py_library(
     srcs = ["base.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/utils:http_utils",  # lazy imports at base.py:122, 173, 239
         "//models/ingest:data_source",
         "//models/ingest:ingest_run",
         "//models/ingest:enums",

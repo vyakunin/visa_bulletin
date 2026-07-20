@@ -6,6 +6,10 @@ py_library(
     srcs = ["apps.py"],
     visibility = ["//visibility:public"],
     deps = [
+        # ready() lazily imports these (apps.py:43-45) to warm the VQS solver.
+        "//lib/business/vqs:solver",
+        "//models:bulletin",
+        "//models/enums:country",
         requirement("Django"),
         # apps.py:ready() eagerly imports numpy so gunicorn --preload loads it once
         # in the master (CoW-shared to workers), avoiding the per-request numpy

@@ -120,6 +120,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":estimators",
+        ":gbm_expert",  # lazy import at expert_pool.py:445
         ":seasonal_predictor",
         ":data_cache",
         "//models:bulletin",
@@ -149,6 +150,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":data_cache",
+        "//models:raw_facts",
         "//models:visa_cutoff_date",
     ],
 )
@@ -193,6 +195,7 @@ py_library(
     srcs = ["ingest_utils.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/parsing/salary:db_importer",
         "//models/enums:country",
     ],
 )
@@ -230,8 +233,11 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":data_cache",
+        ":estimators",
+        ":regime",
         ":seasonal_predictor",
         "//models:raw_facts",
+        "//models/enums:country",
         requirement("lightgbm"),
         requirement("numpy"),
         requirement("scikit_learn"),
