@@ -76,6 +76,15 @@ py_library(
 )
 
 py_library(
+    name = "reporting",
+    srcs = ["reporting.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":accuracy_metrics",
+    ],
+)
+
+py_library(
     name = "meta_params",
     srcs = ["meta_params.py"],
     visibility = ["//visibility:public"],

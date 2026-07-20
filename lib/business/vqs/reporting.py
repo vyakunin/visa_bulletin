@@ -28,11 +28,22 @@ def run_post_ingest_evaluation(bulletin_date: date):
 
         ci_result = compute_ci_coverage(rows)
         summary = compute_bulletin_accuracy_summary(rows)
-        mae = summary.get("overall", {}).get("mean_error_days")
+        overall = summary.get("overall", {})
+        mae = overall.get("mean_abs_error_days")
+        bias = overall.get("mean_error_days")
 
         logger.info("VQS Automated Report:")
         logger.info(f"  Bulletin: {bulletin_date}")
-        logger.info(f"  MAE (EB1-3,5): {mae:.1f} days")
+        if mae is None:
+            logger.info(
+                f"  MAE (EB1-3,5): n/a — no scoreable predictions "
+                f"({len(rows)} row(s), all Current/Unavailable or unpredicted)"
+            )
+        else:
+            logger.info(
+                f"  MAE (EB1-3,5): {mae:.1f} days "
+                f"(bias {bias:+.1f}, n={overall.get('count')})"
+            )
         logger.info(
             f"  CI Coverage:   {ci_result.coverage_rate * 100:.1f}% "
             f"({ci_result.hits}/{ci_result.total_with_ci})"
