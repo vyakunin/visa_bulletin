@@ -1137,6 +1137,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_vqs_reporting",
+    size = "small",
+    srcs = ["test_vqs_reporting.py"],
+    deps = [
+        "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:reporting",
+    ],
+)
+
+django_py_test(
     name = "test_prediction_audit_fixes",
     size = "small",
     srcs = ["test_prediction_audit_fixes.py"],

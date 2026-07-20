@@ -52,6 +52,7 @@ py_library(
         ":rejection_tracker",
         ":schema",
         ":versioning",  # For create_version, activate_version
+        "//lib/business/vqs:reporting",  # post-ingest accuracy hook (lazy import)
         "//lib/utils:rate_limited_logger",
         "//lib/utils:data_source_utils",
         "//lib/utils:exception_utils",  # For UNRECOVERABLE_ERRORS

@@ -1126,6 +1126,48 @@ def predictability_weight(
     return conf_w * vol_w
 
 
+def compute_bulletin_accuracy_summary(
+    rows: list[BulletinAccuracyRow],
+    exclude_eb4: bool = True,
+) -> dict:
+    """Roll a bulletin's per-cutoff accuracy rows up into overall + per-series stats.
+
+    Both a signed mean (bias: positive = we predicted earlier than reality) and a
+    mean ABSOLUTE error are reported, because they answer different questions and
+    a symmetric miss set cancels to zero bias while still having real MAE.
+
+    Rows with `error_days is None` carry no prediction (or a Current/Unavailable
+    cutoff) and are excluded from every statistic rather than counted as zero.
+    """
+    filtered = [r for r in rows if r.error_days is not None]
+    if exclude_eb4:
+        filtered = [r for r in filtered if r.visa_class != "4th"]
+
+    def _stats(errs: list[int]) -> dict:
+        if not errs:
+            return {
+                "count": 0,
+                "mean_error_days": None,
+                "mean_abs_error_days": None,
+                "max_abs_error_days": None,
+            }
+        return {
+            "count": len(errs),
+            "mean_error_days": round(sum(errs) / len(errs), 1),
+            "mean_abs_error_days": round(sum(abs(e) for e in errs) / len(errs), 1),
+            "max_abs_error_days": max(abs(e) for e in errs),
+        }
+
+    by_series: dict[str, list[int]] = defaultdict(list)
+    for r in filtered:
+        by_series[f"{r.visa_class}/{r.country}"].append(r.error_days)
+
+    return {
+        "overall": _stats([r.error_days for r in filtered]),
+        "by_series": {k: _stats(v) for k, v in sorted(by_series.items())},
+    }
+
+
 def aggregate_bulletin_errors_by_date(
     rows: list[BulletinAccuracyRow],
     filter_visa_class: str | None = None,
