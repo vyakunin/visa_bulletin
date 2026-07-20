@@ -1473,4 +1473,6 @@ uv run scripts/bulletin/fad_history.py --pref 1st --country india --chart filing
 ```
 
 `--country` = row | china | india | mexico | philippines. `--chart` = final | filing.
+Pass `--family` for F1/F2A/F2B/F3/F4 — the family and employment charts share row labels
+in older bulletins, so the kind of chart has to be selected explicitly.
 Missing/unparseable months are reported on stderr and skipped; exit 1 if nothing matched.

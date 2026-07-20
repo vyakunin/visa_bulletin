@@ -65,8 +65,17 @@ def _cells(row_html: str) -> list[str]:
     return out
 
 
-def _preference_tables(page: str) -> list[list[list[str]]]:
-    """Every table that looks like a preference chart, as lists of cell-rows."""
+def _is_employment(table: list[list[str]]) -> bool:
+    """Employment charts carry an 'Other Workers' row; family charts never do.
+
+    Row labels alone can't tell them apart — older bulletins label the family
+    preferences '1st'/'2A' exactly like the employment ones.
+    """
+    return any(r[0].lower().startswith("other workers") for r in table)
+
+
+def _preference_tables(page: str, family: bool) -> list[list[list[str]]]:
+    """Preference charts of the requested kind, in page order (final, then filing)."""
     tables = []
     for match in _TABLE_RE.finditer(page):
         rows = [_cells(r) for r in _ROW_RE.findall(match.group(0))]
@@ -74,7 +83,12 @@ def _preference_tables(page: str) -> list[list[list[str]]]:
         # A preference chart has a header naming the chargeability columns.
         if any("chargeability" in " ".join(r).lower() for r in rows):
             tables.append(rows)
-    return tables
+    employment = [t for t in tables if _is_employment(t)]
+    if family:
+        # Everything before the first employment chart, minus the DV region tables.
+        cutoff = tables.index(employment[0]) if employment else len(tables)
+        return [t for t in tables[:cutoff] if not t[0][0].lower().startswith("region")]
+    return employment
 
 
 def _lookup(rows: list[list[str]], pref: str, col: int) -> str | None:
@@ -110,6 +124,11 @@ def main() -> int:
     ap.add_argument("--pref", default="2nd")
     ap.add_argument("--country", default="row", choices=sorted(COLUMNS))
     ap.add_argument("--chart", default="final", choices=["final", "filing"])
+    ap.add_argument("--family", action="store_true",
+                    help="read the family-sponsored charts instead of employment "
+                         "(required for F1/F2A/F2B/F3/F4 — and for older bulletins, "
+                         "where family rows are labelled '1st'/'2A' just like "
+                         "employment ones)")
     ap.add_argument("--from", dest="start", default=None, help="YYYY-MM")
     ap.add_argument("--to", dest="end", default=None, help="YYYY-MM")
     ap.add_argument("--pages", type=Path, default=DEFAULT_PAGES)
@@ -138,12 +157,8 @@ def main() -> int:
         path = _page_path(args.pages, year, month)
         if not path.exists():
             continue
-        tables = _preference_tables(path.read_text(encoding="utf-8", errors="replace"))
-        # Employment charts follow the family ones; take the last pair on the page
-        # so "2nd" resolves to employment-based rather than F2.
-        emp = [t for t in tables if any(
-            r[0].lower().startswith("other workers") for r in t)]
-        pool = emp or tables
+        pool = _preference_tables(
+            path.read_text(encoding="utf-8", errors="replace"), family=args.family)
         if len(pool) <= table_index:
             print(f"{year}-{month:02d}: no {args.chart} chart", file=sys.stderr)
             continue
