@@ -25,8 +25,9 @@ WHAT IT DOES
      + touch emulation, because ads serve differently by UA and the anchor unit
      is mobile-first).
   3. Records structural ad diagnostics per shot (overflow px, slot fill rates,
-     reserved-but-empty boxes, anchor presence, CLS) into a JSON manifest, so a
-     regression is a number and not a matter of opinion.
+     reserved-but-empty boxes, anchor presence, CLS, plus hero geometry —
+     hero_ad_injected / nav_top_px / h1_top_px / content_below_fold) into a JSON
+     manifest, so a regression is a number and not a matter of opinion.
 
 Runs against the headed debug Chrome over CDP (:9222) — a real profile is what
 makes Google serve ads; headless is both ad-hostile and fingerprint-walled (see
@@ -152,7 +153,28 @@ PROBE_JS = r"""
     const cs = getComputedStyle(e);
     return cs.position === 'fixed' && (e.className || '').toString().includes('adsbygoogle');
   });
+  // Google Auto-ads can inject an in-flow unit INSIDE the branding hero, above
+  // the nav — which inflates the hero and shoves all real content off the first
+  // screen. Invisible to every metric above (it is a FILLED slot, reserves no
+  // empty box, causes no overflow), so it needs its own geometry number.
+  // Found 2026-07-20: a filled 390x390 div.google-auto-placed inside
+  // .hero-section put nav at y=598 and the H1 at y=755 in an 844px viewport.
+  const hero = document.querySelector('.hero-section');
+  const navEl = document.querySelector('nav');
+  const h1El = document.querySelector('h1');
+  const topOf = (e) => e ? Math.round(e.getBoundingClientRect().top) : null;
   return {
+    hero_h: hero ? Math.round(hero.getBoundingClientRect().height) : null,
+    // an ad Google placed inside the hero — never one of ours (.vb-ad-slot)
+    hero_ad_injected: hero
+      ? hero.querySelectorAll('ins.adsbygoogle, .google-auto-placed').length : 0,
+    nav_top_px: topOf(navEl),
+    h1_top_px: topOf(h1El),
+    // the headline number: does ANY real content start above the fold?
+    content_below_fold: (() => {
+      const t = topOf(h1El);
+      return t === null ? null : t >= innerHeight;
+    })(),
     overflow_px: de.scrollWidth - de.clientWidth,
     html_overflow_x: getComputedStyle(de).overflowX,
     body_overflow_x: getComputedStyle(document.body).overflowX,
@@ -318,6 +340,11 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     }
                     shots.append(rec)
                     flag = "" if rec["overflow_px"] <= 0 else f"  ⚠ OVERFLOW {rec['overflow_px']}px"
+                    if rec.get("hero_ad_injected"):
+                        flag += (f"  ⚠ AD-IN-HERO (hero {rec.get('hero_h')}px, "
+                                 f"h1 at y={rec.get('h1_top_px')})")
+                    if rec.get("content_below_fold"):
+                        flag += "  ⚠ H1 BELOW FOLD"
                     print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']} "
                           f"filled={rec['slots_filled']} empty-reserved={rec['slots_reserved_empty']} "
                           f"cls={cls}{flag}")
@@ -395,9 +422,11 @@ def main() -> int:
 
     ok_shots = [s for s in shots if not s.get("error")]
     issues = [s for s in shots if s.get("error") or s.get("overflow_px", 0) > 0
-              or s.get("slots_reserved_empty", 0) > 0]
+              or s.get("slots_reserved_empty", 0) > 0
+              or s.get("hero_ad_injected", 0) > 0 or s.get("content_below_fold")]
     print(f"\nWrote {len(ok_shots)} screenshots + manifest.json")
-    print(f"Flagged {len(issues)} shot(s) with an error / overflow / reserved-empty slot.")
+    print(f"Flagged {len(issues)} shot(s) with an error / overflow / reserved-empty slot / "
+          f"ad-in-hero / H1 below the fold.")
 
     # Silence is not success: with the gate told we are non-EEA, a run that finds
     # ZERO ad slots everywhere has measured nothing about the ad layer — the exact
