@@ -174,9 +174,39 @@ pos ~4.2, "eb3 priority date" pos ~4.6, "priority date" pos ~6.6,
   `priority_date_landing.py` (`_lead_answer`, `_lead_answer_es`). Tests assert
   the lead paragraph + `<h3>` in `test_priority_date_rollup.py`,
   `test_priority_date_landing.py`, `test_spanish_cluster.py`.
-- **Status (2026-06-25):** code on `main`, suite green. Pending: staging diff +
-  prod promote (Path-1) + CF purge + GSC resubmit, then GSC-measure
-  position-0 / CTR uplift on the priority-date cluster over ~2-3 wks.
+- **Status: LIVE on prod since 2026-06-25, MEASURED 2026-07-20 — the cluster moved
+  up, but no rich result was won.** GSC `data_state=all`, 15d post (07-05..07-19) vs
+  15d pre (06-10..06-24); `sitelink_warnings` empty on both pulls, so these are
+  independent rankings, not sitelink bookkeeping.
+
+  | query | before (clk/impr/CTR/pos) | after |
+  |---|---|---|
+  | eb2 priority date india | 81 / 5,761 / 1.41% / 7.18 | 154 / 5,079 / 3.03% / 4.59 |
+  | eb3 priority date india | 35 / 1,857 / 1.88% / 4.39 | 73 / 1,936 / 3.77% / 3.82 |
+  | what is the current priority date for green card | 10 / 293 / 3.41% / 8.44 | 39 / 490 / 7.96% / 4.79 |
+  | eb3 priority date | 46 / 1,167 / 3.94% / 4.75 | 67 / 1,247 / 5.37% / 3.37 |
+  | green card priority date | 92 / 1,628 / 5.65% / 4.23 | 123 / 1,737 / 7.08% / 3.57 |
+  | eb1 priority date | 21 / 854 / 2.46% / 6.02 | 29 / 967 / 3.00% / 3.95 |
+  | eb2 priority date | 166 / 3,207 / 5.18% / 3.65 | 152 / 3,316 / 4.58% / 3.37 |
+
+  Every targeted query gained position; the literal question query and the
+  India-qualified variants gained the most.
+
+  **Losses, recorded so they aren't rediscovered:** bare `priority date` went the
+  wrong way (pos 6.91 → 7.95, clicks 19 → 11); USCIS-branded variants lost CTR
+  (`uscis priority date` 1.32% → 0.74%, `priority date uscis` 2.67% → 0.71%) —
+  consistent with branded/procedural intent belonging to the `.gov`. `eb2 priority
+  date` is the one targeted query that lost CTR while gaining position.
+
+  ⚠️ **The FAQPage JSON-LD half of this play earned nothing measurable.**
+  `gsc_query_search_analytics` with `dimensions=["searchAppearance"]` over the same
+  window returns **zero rows** — GSC records no special search-appearance type for
+  the property. The gains above are attributable to the on-page work (the ~50-word
+  lead-answer paragraph + the `<h3>` conversion), NOT to a position-0 / FAQ rich
+  result. Google restricts FAQ rich results to a narrow set of authoritative
+  domains, which is the likely reason — but that is Google's documented policy, not
+  something this measurement proves. **Do not re-invest in FAQPage markup expecting
+  a rich result without re-testing `searchAppearance` first.**
 
 ## Spanish (/es/) cluster
 
