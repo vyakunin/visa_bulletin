@@ -1460,3 +1460,17 @@ See `.cursor/rules/general_logging.mdc` for details on script usage logging.
 - [Employer Clustering](../../lib/business/salary/README.md) - Clustering documentation
 - [Ingest Pipeline](../../docs/UNIFIED_INGEST_PIPELINE_DESIGN.md) - Ingest pipeline design
 
+
+### `scripts/bulletin/fad_history.py`
+
+Prints the Final Action / Dates for Filing history for one preference + country from the
+archived DoS pages in `data/bulletin/saved_pages/`, so claims about how a category has
+moved can be sourced from the archive instead of from memory.
+
+```bash
+uv run scripts/bulletin/fad_history.py --pref 2nd --country row --from 2022-01
+uv run scripts/bulletin/fad_history.py --pref 1st --country india --chart filing
+```
+
+`--country` = row | china | india | mexico | philippines. `--chart` = final | filing.
+Missing/unparseable months are reported on stderr and skipped; exit 1 if nothing matched.
