@@ -61,8 +61,16 @@ uv run scripts/ad_surface_screenshots.py --prune-dry-run # retention preview
 ```
 
 Output: `~/.cache/vb_ad_screenshots/<date>/<surface>__<device>[__viewport].jpg`
-plus `manifest.json` (overflow_px, slot fill, reserved-empty px, CLS, doc height).
-Retention: keeps the 4 newest run dirs (`--keep`, `--prune-dry-run`).
+plus `manifest.json` (overflow_px, slot fill, reserved-empty px, CLS, doc height,
+and hero geometry — `hero_ad_injected` / `hero_h` / `nav_top_px` / `h1_top_px` /
+`content_below_fold`). Retention: keeps the 4 newest run dirs (`--keep`,
+`--prune-dry-run`).
+
+A **filled** slot can still be the defect: 2026-07-20 found Google Auto-ads
+injecting a filled 390×390 unit *inside* `div.hero-section` on mobile, which
+scored clean on fill, reserved-empty and overflow alike while pushing the H1 to
+y=755 in an 844px viewport. Hence the hero fields above and the `⚠ AD-IN-HERO`
+flag (ticket `3a362b8d409f81769212e5e503b62f95`).
 
 **Two traps this script exists to document — read before interpreting output:**
 
