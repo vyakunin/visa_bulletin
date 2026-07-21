@@ -166,9 +166,24 @@ def build_sitemap_xml(base_url: str) -> str:
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ]
 
-    # Static pages — all reflect data that changes on each pipeline refresh
-    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/methodology/", "/corrections/", "/ai-citation/", "/contact/", "/es/", "/es/faq/", "/es/predictions/", "/es/priority-date/"):
+    # Static pages — all reflect data that changes on each pipeline refresh.
+    # /predictions/ is the prediction-accuracy archive INDEX (the per-month
+    # /predictions/<y>-<m>/ pages are emitted separately below); it previously
+    # had only its /es/ sibling listed, so the English index was orphaned.
+    for path in ("/", "/salaries/", "/employers/", "/job-titles/", "/faq/", "/when-is-the-next-visa-bulletin/", "/about/", "/methodology/", "/corrections/", "/ai-citation/", "/contact/", "/predictions/", "/es/", "/es/faq/", "/es/predictions/", "/es/priority-date/"):
         xml_parts.extend(_url_entry(f"{base_url}{path}", lastmod=bulletin_lastmod))
+
+    # Track-record pages (backtest visualisations) — reachable from the archive
+    # index's "Model track record" section but previously in neither nav nor
+    # sitemap. Low priority + yearly: they change only when the model is
+    # re-backtested, not on each bulletin.
+    for path in ("/spaghetti/", "/metric-report/"):
+        xml_parts.extend(_url_entry(
+            f"{base_url}{path}",
+            lastmod=bulletin_lastmod,
+            changefreq="yearly",
+            priority="0.3",
+        ))
 
     # Category landing pages (updated when new bulletin arrives)
     categories = [

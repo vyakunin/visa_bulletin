@@ -283,8 +283,38 @@ def _detail_structured_data(
     return json.dumps({"@context": "https://schema.org", "@graph": graph})
 
 
+def _archive_index_structured_data(canonical_url: str) -> str:
+    """BreadcrumbList JSON-LD for the /predictions/ accuracy archive index.
+
+    Mirrors the visible page position (Home -> Prediction accuracy archive) so
+    the archive index — previously carrying no canonical and no structured data
+    at all — emits a valid rich-result trail like the per-month recap pages do.
+    """
+    graph = [
+        {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Home",
+                    "item": "https://visa-bulletin.us/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": "Prediction accuracy archive",
+                    "item": canonical_url,
+                },
+            ],
+        }
+    ]
+    return json.dumps({"@context": "https://schema.org", "@graph": graph})
+
+
 def prediction_list(request: HttpRequest) -> HttpResponse:
     """List all bulletin months available for prediction browsing."""
+    from lib.business.vqs.accuracy_surfacing import archive_index_accuracy
     from webapp.views.bulletin.prediction_month_forecast import (
         forecast_url_for,
         upcoming_forecast_month,
@@ -295,12 +325,24 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
         .values_list("publication_date", flat=True)
     )
     upcoming = upcoming_forecast_month()
+    canonical_url = request.build_absolute_uri("/predictions/")
+    # Scorecard (latest month headline accuracy) + all-time track record — real
+    # numbers from compute_bulletin_accuracy_summary / compare_to_no_change_baseline
+    # (cached). Decorative on top of the month list, so it degrades to empty.
+    accuracy = archive_index_accuracy()
     context = {
         "months": list(months),
         "forecast_url": forecast_url_for(upcoming) if upcoming else None,
         "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
         "hreflang_en": request.build_absolute_uri("/predictions/"),
         "hreflang_es": request.build_absolute_uri("/es/predictions/"),
+        # Canonical tag (base.html renders it from canonical_url) — the archive
+        # index previously had none, so it self-canonicalises now.
+        "canonical_url": canonical_url,
+        # BreadcrumbList JSON-LD (base.html renders `structured_data|safe`).
+        "structured_data": _archive_index_structured_data(canonical_url),
+        "scorecard": accuracy.get("scorecard"),
+        "all_time": accuracy.get("all_time"),
     }
     return render(request, "vqs/prediction_list.html", context)
 
@@ -679,6 +721,35 @@ def prediction_detail(
         detail_faq, canonical_url, category_label, month_label, actual_bulletin
     )
 
+    # Visible headline-accuracy rollup banner. Built from the same `matrix` the
+    # table renders (so it can never diverge from the grid) plus the previous
+    # month's REAL actuals as the no-change baseline — every number flows through
+    # compute_bulletin_accuracy_summary / compare_to_no_change_baseline, and the
+    # previous-month lookup keeps it off the process-global data_cache. Renders a
+    # per-category error band + a model-vs-no-change comparison, never one global
+    # "% accurate" (see docs methodology).
+    from lib.business.vqs.accuracy_surfacing import build_month_rollup
+
+    prev_real_cutoffs: dict[tuple[str, int, str], date] = {}
+    for vc in classes:
+        for c in countries:
+            for atype in action_types:
+                pkey = f"{vc}_{c.value}_{atype}"
+                pd = last_actual_cutoffs.get(pkey)
+                p_is_current, p_is_unavailable = last_actual_flags.get(
+                    pkey, (False, False)
+                )
+                if pd is not None and not p_is_current and not p_is_unavailable:
+                    prev_real_cutoffs[(vc, c.value, atype)] = pd
+    accuracy_rollup = build_month_rollup(
+        matrix,
+        target_date,
+        classes,
+        [c.value for c in countries],
+        prev_real_cutoffs,
+        class_display,
+    )
+
     context = {
         "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
@@ -705,6 +776,9 @@ def prediction_detail(
         # text mirrors the FAQPage answers (Google requires visible content).
         "structured_data": structured_data,
         "faq": detail_faq,
+        # Headline-accuracy rollup banner (None when the month has nothing
+        # scoreable — e.g. all Current/Unavailable — so the template omits it).
+        "accuracy_rollup": accuracy_rollup,
     }
     return render(request, "vqs/prediction_detail.html", context)
 

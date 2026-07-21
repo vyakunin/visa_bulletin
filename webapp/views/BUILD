@@ -26,6 +26,7 @@ py_library(
     srcs = ["prediction_views.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/vqs:accuracy_surfacing",
         "//lib/business/vqs:prediction_loader",
         "//models:bulletin",
         "//models:visa_cutoff_date",
