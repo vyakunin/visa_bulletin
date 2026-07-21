@@ -35,8 +35,8 @@
         <ul class="list-group list-group-flush">
             {% for month in months %}
             <li class="list-group-item">
-                <a href="{% url 'prediction_detail' year=month.year month=month.month %}">
-                    Predictions vs actuals for {{ month|date:"F Y" }}
+                <a href="{{ month.url }}">
+                    Predictions vs actuals for {{ month.date|date:"F Y" }}
                 </a>
             </li>
             {% empty %}

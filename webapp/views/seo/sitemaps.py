@@ -401,14 +401,17 @@ def build_sitemap_xml(base_url: str) -> str:
         logger.error("Failed to load bulletin dates for sitemap", exc_info=True)
         bulletin_dates = []
 
+    from webapp.views.prediction_views import prediction_canonical_path
+
     for pub_date in bulletin_dates:
         # The latest bulletin's publication_date is next month (future); cap so
-        # /predictions/<latest>/ never advertises a future lastmod.
-        # Bare numeric = the canonical employment_based page (see
-        # prediction_canonical_path); the /predictions/employment_based/<y>-<m>/
-        # alias 301s here, so we never list it.
+        # the archive URL never advertises a future lastmod. The canonical
+        # employment_based archive is the keyword-rich monthname slug (see
+        # prediction_canonical_path) — the SAME URL the forecast ranked on before
+        # the drop — so the sitemap lists the slug (sitemap == canonical). The
+        # bare-numeric and employment_based/<y>-<m>/ forms 301 here, never listed.
         xml_parts.extend(_url_entry(
-            f"{base_url}/predictions/{pub_date.year}-{pub_date.month}/",
+            f"{base_url}{prediction_canonical_path('employment_based', pub_date.year, pub_date.month)}",
             lastmod=_lastmod_capped(pub_date, today),
             changefreq="yearly",
             priority="0.5",
