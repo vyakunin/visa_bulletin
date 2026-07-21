@@ -1436,6 +1436,26 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_stable_prediction_url",
+    size = "small",
+    srcs = ["test_stable_prediction_url.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        "//webapp/views/seo:sitemaps",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_october_reset",
     size = "medium",
     srcs = ["test_october_reset.py"],

@@ -324,6 +324,18 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
         Bulletin.objects.order_by("-publication_date")
         .values_list("publication_date", flat=True)
     )
+    # Link each month at its CANONICAL employment_based URL (the monthname slug)
+    # so the archive index points straight at the canonical page — no numeric→slug
+    # 301 hop, and internal links agree with the canonical tag + sitemap.
+    month_links = [
+        {
+            "date": d,
+            "url": prediction_canonical_path(
+                VisaCategory.EMPLOYMENT_BASED.value, d.year, d.month
+            ),
+        }
+        for d in months
+    ]
     upcoming = upcoming_forecast_month()
     canonical_url = request.build_absolute_uri("/predictions/")
     # Scorecard (latest month headline accuracy) + all-time track record — real
@@ -331,7 +343,7 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
     # (cached). Decorative on top of the month list, so it degrades to empty.
     accuracy = archive_index_accuracy()
     context = {
-        "months": list(months),
+        "months": month_links,
         "forecast_url": forecast_url_for(upcoming) if upcoming else None,
         "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
         "hreflang_en": request.build_absolute_uri("/predictions/"),
@@ -379,20 +391,29 @@ def _add_months(sourcedate: date, months: int) -> date:
 
 
 def prediction_canonical_path(category: str, year: int, month: int) -> str:
-    """The single canonical URL path for a published-month prediction page.
+    """The single canonical URL path for a prediction month.
 
-    We serve the same page under two URLs — the bare numeric
-    ``/predictions/<y>-<m>/`` (legacy default, employment_based) and
-    ``/predictions/employment_based/<y>-<m>/`` — so exactly one must be
-    canonical. We pick the bare numeric form: it's what the sitemap and the
-    archive index already link, and it's already indexed. Non-default
-    categories (family_sponsored) keep their category segment — they are
-    distinct content and self-canonical. This is the nearest thing the app has
-    to a ``get_absolute_url`` for a prediction month; route every internal
-    link, canonical tag, and sitemap entry through it.
+    For employment_based this is the keyword-rich monthname slug
+    ``/predictions/<monthname>-<year>/`` — the SAME URL the evergreen forecast
+    ranks on before the bulletin drops. Keeping it canonical across the whole
+    lifecycle means the ranking-established URL never changes at publication:
+    the slug route renders the forecast pre-drop and the accuracy archive
+    post-drop, in place, with no peak-intent 301. The bare-numeric
+    ``/predictions/<y>-<m>/`` and the ``/predictions/employment_based/<y>-<m>/``
+    alias each 301 here in a single hop.
+
+    family_sponsored keeps its own ``/predictions/family_sponsored/<y>-<m>/``
+    segment — distinct content, self-canonical, already stable across the
+    lifecycle (no forecast-slug→numeric flip to fix). This is the nearest thing
+    the app has to a ``get_absolute_url`` for a prediction month; route every
+    internal link, canonical tag, and sitemap entry through it.
     """
     if category == VisaCategory.EMPLOYMENT_BASED.value:
-        return f"/predictions/{year}-{month}/"
+        # Reuse the forecast slug builder so the archive canonical and the
+        # forecast URL are byte-identical (one URL, two lifecycle phases).
+        from webapp.views.bulletin.prediction_month_forecast import forecast_url_for
+
+        return forecast_url_for(date(year, month, 1))
     return f"/predictions/{category}/{year}-{month}/"
 
 
@@ -433,20 +454,35 @@ def _cache_historical_predictions_only(timeout: int):
 
 @_cache_historical_predictions_only(60 * 60)
 def prediction_detail(
-    request: HttpRequest, year: int, month: int, category: str = "employment_based"
+    request: HttpRequest,
+    year: int,
+    month: int,
+    category: str = "employment_based",
+    _render_at_slug: bool = False,
 ) -> HttpResponse:
-    """Detailed view: backtested predictions + actual bulletin for a month."""
-    # Collapse the duplicate employment_based/<y>-<m> URL onto the canonical
-    # bare numeric /predictions/<y>-<m>/ (301). Only when reached via the
-    # explicit category route — the bare numeric route lands here directly and
-    # must render, not loop. family_sponsored keeps its segment (distinct,
-    # self-canonical).
-    if (
-        request.resolver_match is not None
-        and request.resolver_match.url_name == "prediction_detail_category"
-        and category == VisaCategory.EMPLOYMENT_BASED.value
-    ):
-        return HttpResponsePermanentRedirect(f"/predictions/{year}-{month}/")
+    """Detailed view: backtested predictions + actual bulletin for a month.
+
+    The employment_based archive is CANONICAL at the keyword-rich monthname slug
+    (``/predictions/<monthname>-<year>/``), which the slug route
+    (``prediction_month_forecast_view``) renders in place once the bulletin
+    publishes. So every employment_based URL that lands here from a *route* — the
+    bare-numeric ``/predictions/<y>-<m>/`` and the ``employment_based/<y>-<m>/``
+    alias — 301s to that slug in a single hop. Only the slug route renders the
+    archive here, signalled by ``_render_at_slug`` (kept out of the URL conf so a
+    routed request can never set it). family_sponsored has no slug form: it
+    renders directly under its own segment, self-canonical.
+    """
+    if category == VisaCategory.EMPLOYMENT_BASED.value and not _render_at_slug:
+        target = date(year, month, 1)
+        if not Bulletin.objects.filter(publication_date=target).exists():
+            from django.http import Http404
+
+            raise Http404(f"No bulletin found for {target.strftime('%B %Y')}")
+        # Single hop straight to the canonical monthname slug (never chained
+        # through the bare-numeric URL).
+        return HttpResponsePermanentRedirect(
+            prediction_canonical_path(category, year, month)
+        )
 
     target_date = date(year, month, 1)
 
