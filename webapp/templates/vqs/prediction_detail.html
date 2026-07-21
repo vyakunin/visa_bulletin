@@ -68,6 +68,7 @@
     <p class="text-muted small mb-2">Knowledge Date: {{ knowledge_date|date:"F d, Y" }} &middot; <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" class="text-muted">Methodology</a></p>
     <div class="table-responsive">
         <table class="table table-bordered table-sm shadow-sm mb-2">
+            <caption class="visually-hidden">Official {{ target_month|date:"F Y" }} Visa Bulletin {{ category_label }} Final Action Dates and Dates for Filing, by preference category and country of chargeability, shown alongside our model's predictions.</caption>
             <thead class="table-dark">
                 <tr>
                     <th rowspan="2" class="align-middle text-center" style="width:60px;">Pref</th>
@@ -139,6 +140,20 @@
             <a href="{% url 'salary_search' %}">Salary Database</a>
         </div>
     </div>
+
+    {% if faq %}
+    <section class="mt-4" aria-labelledby="faq-heading">
+        <h2 id="faq-heading" class="h5 mb-3">{{ target_month|date:"F Y" }} Visa Bulletin — Frequently Asked Questions</h2>
+        <div class="accordion-flush">
+            {% for item in faq %}
+            <div class="mb-3">
+                <h3 class="h6 mb-1">{{ item.q }}</h3>
+                <p class="text-muted small mb-0">{{ item.a }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 </div>
 {% endblock %}
 {% block extra_scripts %}

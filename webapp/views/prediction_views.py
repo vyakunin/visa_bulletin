@@ -1,5 +1,6 @@
 import calendar
 import functools
+import json
 import logging
 import re
 from datetime import date
@@ -34,6 +35,252 @@ _REGIME_DISPLAY = {
 
 _EB4_CLASSES = {"4th"}
 _OVERSUBSCRIBED_EB23_COUNTRIES = {Country.INDIA.value, Country.CHINA.value}
+
+# Short country labels for post-drop FAQ prose (schema.org FAQPage text).
+_COUNTRY_SHORT = {
+    Country.INDIA.value: "India",
+    Country.CHINA.value: "China",
+    Country.MEXICO.value: "Mexico",
+    Country.PHILIPPINES.value: "the Philippines",
+    Country.ALL.value: "all other countries",
+}
+
+_STATE_DEPT_BULLETIN_URL = (
+    "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
+)
+
+
+def _fmt_cell_actual(cell: dict) -> str | None:
+    """The user-visible actual value for a matrix final-action/filing cell:
+    'Current', 'Unavailable', a formatted date, or None when no actual exists.
+
+    Reads exactly the fields the visible table renders, so FAQ/JSON-LD answers
+    can never diverge from the page (no hardcoded/fabricated dates)."""
+    if cell.get("actual_is_current"):
+        return "Current"
+    if cell.get("actual_is_unavailable"):
+        return "Unavailable"
+    return cell.get("formatted_actual")
+
+
+def _movement_phrase(cell: dict) -> str:
+    """A plain-English tail describing month-over-month movement of a real date,
+    derived from the same actual_move the table shows. Empty when not applicable."""
+    move = cell.get("actual_move")
+    if not move:
+        return ""
+    mtype = cell.get("actual_move_type")
+    if move == "0":
+        return ", unchanged from the prior month"
+    if "Current" in move:
+        return ", newly Current this month"
+    amount = move.lstrip("↑↓ ").strip()
+    if mtype == "positive":
+        return f", an advance of {amount} versus the prior month"
+    if mtype == "negative":
+        return f", a retrogression of {amount} versus the prior month"
+    return ""
+
+
+def _detail_faq(
+    matrix: dict,
+    category: str,
+    class_display: dict,
+    month_label: str,
+    next_month_label: str | None,
+) -> list[dict]:
+    """Post-drop FAQ for the accuracy-archive page, built ENTIRELY from the
+    month's ACTUAL published cutoffs (the same `matrix` the table renders).
+
+    Targets the confirmed-bulletin intent ("what is the official date") that we
+    lose to travel.state.gov after a drop. Every answer is derived from real
+    rendered data — no hardcoded or fabricated dates. Returns a list of
+    {"q", "a"} dicts (answers are plain text, valid for FAQPage JSON-LD AND
+    rendered verbatim in the visible FAQ so the two never diverge)."""
+    if category == VisaCategory.FAMILY_SPONSORED.value:
+        target_countries = [
+            Country.INDIA.value,
+            Country.MEXICO.value,
+            Country.PHILIPPINES.value,
+        ]
+        flagship = None
+    else:
+        target_countries = [Country.INDIA.value, Country.CHINA.value]
+        flagship = ("2nd", Country.INDIA.value)  # EB-2 India — the headline series
+
+    faq: list[dict] = []
+
+    # Flagship "did it advance?" question, first — it maps to the highest-volume
+    # post-drop query for the oversubscribed headline series.
+    if flagship is not None:
+        vc, cval = flagship
+        cell = matrix.get(vc, {}).get(cval, {}).get("final_action")
+        val = _fmt_cell_actual(cell) if cell else None
+        if val:
+            cls_label = class_display.get(vc, vc)
+            country = _COUNTRY_SHORT.get(cval, "")
+            q = f"Did {cls_label} {country} advance in the {month_label} Visa Bulletin?"
+            if val == "Current":
+                a = (
+                    f"{cls_label} {country} is Current in the {month_label} Visa "
+                    f"Bulletin — every priority date in the category is authorized."
+                )
+            elif val == "Unavailable":
+                a = (
+                    f"No — {cls_label} {country} is Unavailable in the {month_label} "
+                    f"Visa Bulletin; no numbers are being issued this month."
+                )
+            elif cell.get("actual_move_type") == "positive":
+                amount = cell["actual_move"].lstrip("↑↓ ").strip()
+                a = (
+                    f"Yes — the official {cls_label} {country} Final Action Date "
+                    f"advanced {amount} to {val} in the {month_label} Visa Bulletin."
+                )
+            elif cell.get("actual_move_type") == "negative":
+                amount = cell["actual_move"].lstrip("↑↓ ").strip()
+                a = (
+                    f"No — the official {cls_label} {country} Final Action Date "
+                    f"retrogressed {amount} to {val} in the {month_label} Visa Bulletin."
+                )
+            else:
+                a = (
+                    f"No — the official {cls_label} {country} Final Action Date held "
+                    f"at {val}, unchanged from the prior month, in the {month_label} "
+                    f"Visa Bulletin."
+                )
+            faq.append({"q": q, "a": a})
+
+    # "What is the official <cat> Final Action Date for <country>?" for the
+    # highest-interest series that carry a real actual value.
+    for vc in matrix:
+        cls_label = class_display.get(vc, vc)
+        for cval in target_countries:
+            if len(faq) >= 6:
+                break
+            cell = matrix.get(vc, {}).get(cval, {}).get("final_action")
+            val = _fmt_cell_actual(cell) if cell else None
+            if not val:
+                continue
+            country = _COUNTRY_SHORT.get(cval, "")
+            q = f"What is the {cls_label} Final Action Date for {country} in {month_label}?"
+            if val == "Current":
+                a = (
+                    f"In the {month_label} Visa Bulletin, {cls_label} {country} is "
+                    f"Current for Final Action — all priority dates in the category "
+                    f"are authorized. This is the official status published by the "
+                    f"U.S. Department of State."
+                )
+            elif val == "Unavailable":
+                a = (
+                    f"In the {month_label} Visa Bulletin, {cls_label} {country} is "
+                    f"Unavailable for Final Action — no numbers are being issued this "
+                    f"month. This is the official status published by the U.S. "
+                    f"Department of State."
+                )
+            else:
+                a = (
+                    f"In the {month_label} Visa Bulletin, the official {cls_label} "
+                    f"{country} Final Action Date is {val}{_movement_phrase(cell)}. "
+                    f"Source: the U.S. Department of State Visa Bulletin."
+                )
+            faq.append({"q": q, "a": a})
+        if len(faq) >= 6:
+            break
+
+    # When is the next bulletin out? Only meaningful on the freshest published
+    # month (the page that inherits live "next bulletin" intent).
+    if next_month_label:
+        faq.append(
+            {
+                "q": f"When is the {next_month_label} Visa Bulletin expected?",
+                "a": (
+                    f"The U.S. Department of State typically publishes each Visa "
+                    f"Bulletin in the second or third week of the preceding month, so "
+                    f"the {next_month_label} Visa Bulletin is generally released in "
+                    f"the second half of {month_label}."
+                ),
+            }
+        )
+
+    return faq
+
+
+def _detail_structured_data(
+    faq: list[dict],
+    canonical_url: str,
+    category_label: str,
+    month_label: str,
+    actual_bulletin: Bulletin,
+) -> str:
+    """JSON-LD @graph for the accuracy-archive page: FAQPage (post-drop Q&A) +
+    BreadcrumbList (mirrors the visible trail) + a page-scoped Dataset framing
+    the tables as the official State Department bulletin dates."""
+    graph: list[dict] = []
+    if faq:
+        graph.append(
+            {
+                "@type": "FAQPage",
+                "@id": f"{canonical_url}#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": item["q"],
+                        "acceptedAnswer": {"@type": "Answer", "text": item["a"]},
+                    }
+                    for item in faq
+                ],
+            }
+        )
+    graph.append(
+        {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Home",
+                    "item": "https://visa-bulletin.us/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": "Prediction accuracy archive",
+                    "item": "https://visa-bulletin.us/predictions/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 3,
+                    "name": f"{category_label}: {month_label}",
+                    "item": canonical_url,
+                },
+            ],
+        }
+    )
+    graph.append(
+        {
+            "@type": "Dataset",
+            "@id": f"{canonical_url}#dataset",
+            "name": (
+                f"{month_label} U.S. Visa Bulletin — Official {category_label} "
+                f"Final Action & Filing Dates"
+            ),
+            "description": (
+                f"The official {category_label} Final Action Dates and Dates for "
+                f"Filing from the {month_label} U.S. Department of State Visa "
+                f"Bulletin, by preference category and country of chargeability."
+            ),
+            "url": canonical_url,
+            "temporalCoverage": actual_bulletin.publication_date.strftime("%Y-%m"),
+            "isAccessibleForFree": True,
+            "creator": {
+                "@type": "Organization",
+                "name": "U.S. Department of State",
+                "url": _STATE_DEPT_BULLETIN_URL,
+            },
+            "isBasedOn": _STATE_DEPT_BULLETIN_URL,
+        }
+    )
+    return json.dumps({"@context": "https://schema.org", "@graph": graph})
 
 
 def prediction_list(request: HttpRequest) -> HttpResponse:
@@ -414,6 +661,24 @@ def prediction_detail(
         else None
     )
 
+    canonical_url = request.build_absolute_uri(
+        prediction_canonical_path(category, year, month)
+    )
+
+    # Post-drop structured data + visible FAQ. Only the freshest published month
+    # answers the "next bulletin" question (it inherits that live intent); older
+    # archived months omit it. Answers are generated from `matrix` — the same
+    # actuals the table renders — so nothing is hardcoded or fabricated.
+    next_month_label = (
+        _add_months(target_date, 1).strftime("%B %Y") if is_latest_published else None
+    )
+    detail_faq = _detail_faq(
+        matrix, category, class_display, month_label, next_month_label
+    )
+    structured_data = _detail_structured_data(
+        detail_faq, canonical_url, category_label, month_label, actual_bulletin
+    )
+
     context = {
         "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
@@ -434,9 +699,12 @@ def prediction_detail(
         "formatted_nav_next": formatted_nav_next,
         "category": category,
         "category_label": category_label,
-        "canonical_url": request.build_absolute_uri(
-            prediction_canonical_path(category, year, month)
-        ),
+        "canonical_url": canonical_url,
+        # FAQPage + BreadcrumbList + page Dataset JSON-LD (base.html renders it via
+        # the `structured_data` hook); `faq` drives the visible FAQ section whose
+        # text mirrors the FAQPage answers (Google requires visible content).
+        "structured_data": structured_data,
+        "faq": detail_faq,
     }
     return render(request, "vqs/prediction_detail.html", context)
 

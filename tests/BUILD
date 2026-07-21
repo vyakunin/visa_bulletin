@@ -1377,6 +1377,24 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_prediction_detail_structured_data",
+    size = "small",
+    srcs = ["test_prediction_detail_structured_data.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_october_reset",
     size = "medium",
     srcs = ["test_october_reset.py"],
