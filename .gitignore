@@ -70,3 +70,4 @@ longterm_accuracy*.json
 baseline_comparison.json
 logs/*.json
 lib/logs/
+logs/*.html

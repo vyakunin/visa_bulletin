@@ -16,7 +16,7 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 
 | Metric | What It Measures | Target | Current (Mar 2026) | How to Compute |
 |--------|-----------------|--------|-------------------|----------------|
-| **Conditional 1m direction** | When actual movement >30d, did model predict the correct sign? | ≥65% | **65.4% (China EB-3, 6m)** — only series meeting target; others 22-53% | `evaluate_model.py` with movement filter |
+| **Conditional 1m direction** | When actual movement >30d, did model predict the correct sign? | ≥65% — **target disputed, see §26** | **65.4% (China EB-3, 6m)** — others 22-53%. ⚠️ The "always guess advance" constant classifier scores **~90%** on this metric (§26 Fact 2), so the 65% target is below the trivial baseline and can be met with zero skill. Use `BalDir%` (`bal_direction_acc`) instead — a constant classifier scores 50% there. | `evaluate_model.py --per-series-summary` (prints `CondDir%` beside its `UpBase%` null and `BalDir%`) |
 | **Movement detection precision** | When model predicts >30d move, how often is it right? | ≥50% | **~40%** (GBM Gated best per-series) | Precision on {predicted_move > 30d} |
 | **Movement detection recall** | Of actual >30d moves, how many did model catch? | ≥40% | **>60% multiple series** (GBM at 3m/6m) | Recall on {actual_move > 30d} |
 | **6-month MAE (EB-2/3 India/China)** | Point forecast error at 6m horizon for the 4 key series | ≤190d (≥15% below persistence) | China EB-2: **176d** (GBM Gated); China EB-3: **159d ✓** (GBM Gated); India EB-2: **204d** (GBM Gated); India EB-3: **261d** (GBM Gated) | `evaluate_model.py --horizons 6` per-series |
@@ -92,6 +92,16 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 - **Same-window Pace 6m**: China EB-2 = 155.4d (30% better than GBM Gated 176.1d — Pace remains best at 6m for this series). India EB-2 Pace = 211.3d vs GBM Gated 203.8d (7.5d gap, below 10d dispatch threshold). India EB-3 Pace = 264.3d vs GBM Gated 261.1d (3.2d gap, Pace keeps dispatch).
 - **Dispatch update (Section 20)**: China EB-2 at 12m moved from Pace to GBM Gated (margin 15.7d). GBM Gated now wins 5/6 at 12m. All 6m dispatch series unchanged.
 - **CondDir ≥65% met**: China EB-3 at 6m (65.4%) and 12m (65.4%). All other series below 65%.
+- **§26 (July 2026) — the direction metric's null baseline is ~90%, not 50%.** Of the
+  199 filing-chart months that moved >30d since 2016, 179 (89.9%) were advances
+  (final_action: 265/294 = 90.1%). "Always guess advance" therefore scores ~90% CondDir,
+  above every model in the benchmark table including the production dispatch (46%) and
+  the Demand-Supply queue model (69%). `evaluate_model --per-series-summary` now prints
+  `UpBase%` (this null) and `BalDir%` (base-rate-proof) beside every `CondDir%`.
+- **§26 — the 6m dispatch never predicts a retrogression**: 0 retro-calls in 119 scored
+  knowledge dates for each of India EB-2/EB-3, China EB-1/EB-2 (also 0 at 1m for all six
+  series on the committed artifact). The direction-gate hybrid is consequently a
+  measured no-op at 6m — all four variants bit-identical to Dispatch.
 
 **Success metrics (current, §21 evaluation):**
 

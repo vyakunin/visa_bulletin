@@ -244,6 +244,56 @@ def apply_demand_gate(
     return current_cutoff + timedelta(days=int(shrunk)), "demand_gate", "persistence"
 
 
+DIRECTION_GATE_MIN = 30  # stage-1 must imply >= this move to express a direction
+
+
+def direction_gate(
+    magnitude_pred: date | None,
+    stage1_pred: date | None,
+    current_cutoff: date | None,
+    *,
+    policy: str = "hold",
+    gate_min: int = DIRECTION_GATE_MIN,
+) -> date | None:
+    """Two-stage direction-first hybrid: stage-2 magnitude, re-signed by stage 1.
+
+    Stage 1 (``stage1_pred``) votes {advance, hold, retrogress} by the sign of
+    its implied move from ``current_cutoff``; stage 2 (``magnitude_pred``, in
+    practice the production dispatch) supplies the magnitude.
+
+    Only CONFLICTS are modified. Agreement — and "stage 1 has no opinion", i.e.
+    an implied move below ``gate_min`` — passes through untouched, so the gate
+    can never inject a move the magnitude model did not already forecast. That
+    is the guard against the §8 / §23-T2 failure mode, where an unconditional
+    seasonal move overshot during quiet regimes.
+
+    Conflict policies:
+      * ``hold``   — drop to no-change (most conservative)
+      * ``flip``   — keep the magnitude, take stage 1's sign
+      * ``shrink`` — halve the magnitude, keep stage 2's sign
+
+    Pure: the caller supplies both predictions and the knowledge-date cutoff.
+    """
+    if magnitude_pred is None or stage1_pred is None or current_cutoff is None:
+        return magnitude_pred
+
+    s1_move = (stage1_pred - current_cutoff).days
+    if abs(s1_move) < gate_min:
+        return magnitude_pred
+
+    mag_move = (magnitude_pred - current_cutoff).days
+    if mag_move == 0 or (mag_move > 0) == (s1_move > 0):
+        return magnitude_pred
+
+    if policy == "hold":
+        return current_cutoff
+    if policy == "flip":
+        return current_cutoff + timedelta(days=abs(mag_move) * (1 if s1_move > 0 else -1))
+    if policy == "shrink":
+        return current_cutoff + timedelta(days=int(mag_move / 2))
+    raise ValueError(f"unknown direction-gate policy: {policy}")
+
+
 def regime_learning_rate(regime: RegimeState, base_lr: float = 0.5) -> float:
     """Aggregator learning rate based on regime.
 

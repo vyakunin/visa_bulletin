@@ -1125,6 +1125,15 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_vqs_direction_metrics",
+    size = "small",
+    srcs = ["test_vqs_direction_metrics.py"],
+    deps = [
+        "//lib/business/vqs:direction_metrics",
+    ],
+)
+
+django_py_test(
     name = "test_vqs_reporting",
     size = "small",
     srcs = ["test_vqs_reporting.py"],

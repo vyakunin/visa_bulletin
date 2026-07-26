@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from lib.business.vqs.regime import (
     DEMAND_GATE_MIN_MOVE,
+    DIRECTION_GATE_MIN,
     FYPhase,
     Regime,
     RegimeState,
@@ -15,6 +16,7 @@ from lib.business.vqs.regime import (
     classify_regime,
     classify_regime_fy_aware,
     detect_regime_shift,
+    direction_gate,
     fy_aware_cap_back_days,
     fy_aware_cap_forward_days,
     fy_aware_persistence_weight,
@@ -360,3 +362,50 @@ class TestApplyDemandGate:
             "persistence", self._persist(), self.CUR, demand_pred, advancing
         )
         assert (pred_adv - self.CUR).days > (pred_stall - self.CUR).days
+
+
+class TestDirectionGate:
+    """Two-stage direction-first hybrid (§26). Stage 1 votes on direction,
+    stage 2 supplies magnitude; only CONFLICTS are rewritten, so the gate can
+    never inject a move stage 2 did not forecast (the §8/§23-T2 guard)."""
+
+    CUR = date(2015, 6, 1)
+
+    def _d(self, days):
+        return self.CUR + timedelta(days=days)
+
+    def test_agreement_passes_through_untouched(self):
+        # both say advance -> magnitude survives verbatim
+        assert direction_gate(self._d(120), self._d(60), self.CUR) == self._d(120)
+        # both say retrogress
+        assert direction_gate(self._d(-120), self._d(-60), self.CUR) == self._d(-120)
+
+    def test_stage1_below_gate_min_has_no_opinion(self):
+        weak = self._d(DIRECTION_GATE_MIN - 1)
+        assert direction_gate(self._d(-90), weak, self.CUR) == self._d(-90)
+
+    def test_conflict_hold_drops_to_no_change(self):
+        # stage 1 says advance, stage 2 says retrogress -> no-change
+        assert direction_gate(self._d(-90), self._d(60), self.CUR) == self.CUR
+
+    def test_conflict_flip_keeps_magnitude_takes_stage1_sign(self):
+        assert direction_gate(self._d(-90), self._d(60), self.CUR, policy="flip") == self._d(90)
+        assert direction_gate(self._d(90), self._d(-60), self.CUR, policy="flip") == self._d(-90)
+
+    def test_conflict_shrink_halves_but_keeps_stage2_sign(self):
+        assert direction_gate(self._d(-90), self._d(60), self.CUR, policy="shrink") == self._d(-45)
+
+    def test_gate_never_injects_a_move_stage2_did_not_make(self):
+        # stage 2 predicts no change; stage 1 shouts advance. Gate must stay flat.
+        assert direction_gate(self.CUR, self._d(300), self.CUR) == self.CUR
+        assert direction_gate(self.CUR, self._d(300), self.CUR, policy="flip") == self.CUR
+
+    def test_none_inputs_pass_the_magnitude_through(self):
+        assert direction_gate(None, self._d(60), self.CUR) is None
+        assert direction_gate(self._d(90), None, self.CUR) == self._d(90)
+        assert direction_gate(self._d(90), self._d(60), None) == self._d(90)
+
+    def test_unknown_policy_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            direction_gate(self._d(-90), self._d(60), self.CUR, policy="nonsense")
