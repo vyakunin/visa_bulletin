@@ -32,6 +32,7 @@ from dateutil.relativedelta import relativedelta
 from django.conf import settings
 
 from lib.business.vqs.contextual_aggregator import ContextualTrajectoryAggregator
+from lib.business.vqs.direction_metrics import MovePair, direction_metrics
 from lib.business.vqs.gbm_expert import (
     _GBM_DEFAULT_GATE_THRESHOLD,
     _GBM_DEFAULT_MOVEMENT_THRESHOLD,
@@ -47,7 +48,7 @@ from lib.business.vqs.prediction_loader import (
     get_actual_cutoffs,
     load_stored_predictions_bulk,
 )
-from lib.business.vqs.regime import classify_regime, get_fy_phase
+from lib.business.vqs.regime import classify_regime, direction_gate, get_fy_phase
 from lib.business.vqs.seasonal_predictor import get_last_N_moves
 from models.enums.country import Country
 from models.raw_facts import RawFactsLedger
@@ -302,6 +303,17 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
     - cond_direction_acc: direction accuracy only when |actual_move| > 30d (Section 0 metric)
     - movement_precision: of times model predicted |move| > 30d, how often |actual| > 30d?
     - movement_recall: of times |actual| > 30d, how often did model predict |move| > 30d?
+    - cond_up_rate: of |actual_move| > 30d months, the share that ADVANCED. This is the
+      null baseline for cond_direction_acc — the score an "always predict advance"
+      constant classifier gets. A model whose CondDir does not clear this is expressing
+      the base rate, not direction signal.
+    - pred_up_share: of scored months, the share where the model called an advance > 30d.
+      Near 1.0 means the model IS that constant classifier.
+    - bal_direction_acc: mean of (recall on advances, recall on retrogressions), over
+      |actual_move| > 30d months. Immune to the base rate — a constant classifier scores
+      50% no matter how lopsided the class mix, so this is the metric that actually
+      measures direction skill. ~90% of EB moves are advances, which is why plain
+      cond_direction_acc is not a usable target (§26).
     """
     errors = []
     direction_correct = 0
@@ -312,8 +324,7 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
     regime_change_total = 0
 
     # Section 0 conditional metrics
-    cond_dir_correct = 0
-    cond_dir_total = 0       # times |actual_move| > 30d
+    move_pairs: list[MovePair] = []   # scored (actual, predicted) moves -> direction_metrics()
     move_tp = 0              # predicted > 30d AND actual > 30d (correct direction)
     move_fp = 0              # predicted > 30d but actual <= 30d (or wrong direction)
     move_fn = 0              # actual > 30d but model predicted <= 30d
@@ -355,10 +366,7 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
             pred_significant = abs(pred_move) > 30
             correct_dir = (pred_move > 0 and actual_move > 0) or (pred_move < 0 and actual_move < 0)
 
-            if actual_significant:
-                cond_dir_total += 1
-                if correct_dir:
-                    cond_dir_correct += 1
+            move_pairs.append(MovePair(actual_days=actual_move, predicted_days=pred_move))
 
             # Movement detection precision/recall (|move| > 30d as "positive" class)
             if actual_significant and pred_significant and correct_dir:
@@ -374,10 +382,14 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
             "direction_acc": None, "count": 0,
             "big_move_capture_rate": None, "regime_change_detection_acc": None,
             "cond_direction_acc": None, "movement_precision": None, "movement_recall": None,
+            "cond_up_rate": None, "pred_up_share": None, "cond_n": 0,
+            "advance_recall": None, "retro_recall": None, "retro_n": 0,
+            "bal_direction_acc": None,
         }
 
     precision = move_tp / (move_tp + move_fp) if (move_tp + move_fp) > 0 else None
     recall = move_tp / (move_tp + move_fn) if (move_tp + move_fn) > 0 else None
+    dm = direction_metrics(move_pairs)
 
     return {
         "label": label,
@@ -388,9 +400,16 @@ def compute_metrics(dates, actuals, predictions, label, error_start):
         "big_move_capture_rate": round(big_move_predicted / big_move_actual * 100, 1) if big_move_actual > 0 else None,
         "big_move_actual_count": big_move_actual,
         "regime_change_detection_acc": round(regime_change_correct / regime_change_total * 100, 1) if regime_change_total > 0 else None,
-        "cond_direction_acc": round(cond_dir_correct / cond_dir_total * 100, 1) if cond_dir_total > 0 else None,
+        "cond_direction_acc": dm.cond_direction_acc,
         "movement_precision": round(precision * 100, 1) if precision is not None else None,
         "movement_recall": round(recall * 100, 1) if recall is not None else None,
+        "cond_up_rate": dm.cond_up_rate,
+        "pred_up_share": dm.pred_up_share,
+        "cond_n": dm.cond_n,
+        "advance_recall": dm.advance_recall,
+        "retro_recall": dm.retro_recall,
+        "retro_n": dm.retro_n,
+        "bal_direction_acc": dm.bal_direction_acc,
     }
 
 
@@ -791,7 +810,7 @@ def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int])
 _CROSS_SERIES_EXPERTS = frozenset({"cross_series", "gbm"})
 
 
-def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_group: str | None = None):
+def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_group: str | None = None, dir_gate: bool = False):
     """Run evaluation across all series and horizons, return chart data and metrics."""
     chart_data = {}
     all_metrics = []
@@ -1027,6 +1046,18 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 h_data["gbm_gated"] = gbm_gated_vals
             per_horizon[str(h)] = h_data
 
+            # Two-stage direction gate (§26): a stage-1 direction vote re-signs or
+            # clamps the production Dispatch magnitude. Pure post-processing of
+            # lists already computed above — no extra model evaluation cost.
+            dirgate_lists: dict[str, list] = {}
+            if dir_gate:
+                for src_name, src_list in (("Q", dsupply_list), ("RS", rs_list)):
+                    for pol in ("hold", "flip"):
+                        dirgate_lists[f"DirGate {src_name}-{pol}"] = [
+                            direction_gate(dispatch_list[i], src_list[i], persist_list[i], policy=pol)
+                            for i in range(len(dispatch_list))
+                        ]
+
             # Compute stratified metrics for this horizon
             model_lists = {
                 "Persistence": persist_list,
@@ -1048,6 +1079,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 model_lists["GBM"] = gbm_list
                 model_lists["GBM Direct"] = gbm_direct_list
                 model_lists["GBM Gated"] = gbm_gated_list
+            model_lists.update(dirgate_lists)
             stratified_by_horizon[str(h)] = compute_stratified_metrics(
                 plot_dates, actual_list, model_lists, point_meta, error_start,
             )
@@ -1104,6 +1136,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
                 model_eval_pairs.append((gbm_list, "GBM"))
                 model_eval_pairs.append((gbm_direct_list, "GBM Direct"))
                 model_eval_pairs.append((gbm_gated_list, "GBM Gated"))
+            model_eval_pairs.extend((v, k) for k, v in dirgate_lists.items())
             for model_list, model_label in model_eval_pairs:
                 m = compute_metrics(plot_dates, actual_list, model_list, model_label, error_start)
                 m["series"] = label
@@ -1128,6 +1161,9 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
 MODELS = ["Persistence", "Dashboard", "VQS Ensemble", "Regime-Switched", "Pace", "Demand-Supply", "Contextual Ensemble", "Hybrid", "3m Momentum", "Seasonal Median", "Poly Trend"]
 MODELS_ABLATE = MODELS + ["VQS No Cross-Series"]
 MODELS_GBM = MODELS + ["GBM", "GBM Direct", "GBM Gated", "Dispatch"]
+# §26 two-stage direction-gate variants: stage-1 source (Q = Demand-Supply queue,
+# RS = Regime-Switched) x conflict policy.
+MODELS_DIR_GATE = ["DirGate Q-hold", "DirGate Q-flip", "DirGate RS-hold", "DirGate RS-flip"]
 
 # EB-1 series where Regime-Switched beats VQS Ensemble
 _EB1_LABELS = {"India EB-1", "China EB-1"}
@@ -1168,6 +1204,8 @@ def print_metrics_table(metrics, horizons):
         models = MODELS_ABLATE
     else:
         models = MODELS
+    if any(m["label"] in MODELS_DIR_GATE for m in metrics):
+        models = list(models) + MODELS_DIR_GATE
 
     for h in horizons:
         print("\n" + "=" * 110)
@@ -1233,19 +1271,26 @@ def print_per_series_summary(metrics, horizons):
     Shows the metrics that matter for beating persistence: conditional direction
     accuracy (when actual moves > 30d), movement detection precision/recall.
     """
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 128)
     print("SECTION 0 SUMMARY: Conditional Metrics (EB-2/3 India/China focus)")
     print("Targets: CondDir >= 65%, MovPrec >= 50%, MovRec >= 40%, 6m MAE <= 190d")
-    print("=" * 110)
+    print("UpBase% = share of moving months that ADVANCED = the CondDir an 'always advance'")
+    print("  constant classifier scores. CondDir at or below UpBase% is base rate, not signal.")
+    print("Up%     = share of scored months where the model itself called an advance >30d.")
+    print("BalDir% = mean(advance recall, retrogression recall) — base-rate-proof; a constant")
+    print("  classifier scores 50%. This is the metric that measures direction SKILL.")
+    print("=" * 128)
 
     all_series = sorted(set(m["series"] for m in metrics))
 
-    all_models = MODELS_GBM if any(m["label"] == "GBM" for m in metrics) else MODELS
+    all_models = MODELS_GBM if any(m["label"] == "GBM" for m in metrics) else list(MODELS)
+    if any(m["label"] in MODELS_DIR_GATE for m in metrics):
+        all_models = all_models + MODELS_DIR_GATE
 
     for h in horizons:
         print(f"\n--- {h}-month horizon ---")
-        print(f"{'Series':<20} {'Model':<22} {'MAE':<8} {'CondDir%':<10} {'MovPrec%':<10} {'MovRec%':<9} {'MovF1%':<8} {'Beat Persist?'}")
-        print("-" * 105)
+        print(f"{'Series':<20} {'Model':<22} {'MAE':<8} {'CondDir%':<10} {'UpBase%':<9} {'BalDir%':<9} {'Up%':<8} {'MovPrec%':<10} {'MovRec%':<9} {'MovF1%':<8} {'Beat Persist?'}")
+        print("-" * 133)
 
         for series in all_series:
             is_key = series in _KEY_SERIES
@@ -1264,6 +1309,12 @@ def print_per_series_summary(metrics, horizons):
                 cda_s = f"{cda:.1f}%" if cda is not None else "N/A"
                 mp_s = f"{mp:.1f}%" if mp is not None else "N/A"
                 mr_s = f"{mr:.1f}%" if mr is not None else "N/A"
+                ub = m.get("cond_up_rate")
+                pu = m.get("pred_up_share")
+                ub_s = f"{ub:.1f}%" if ub is not None else "N/A"
+                pu_s = f"{pu:.1f}%" if pu is not None else "N/A"
+                bd = m.get("bal_direction_acc")
+                bd_s = f"{bd:.1f}%" if bd is not None else "N/A"
 
                 f1 = None
                 if mp is not None and mr is not None and (mp + mr) > 0:
@@ -1280,7 +1331,7 @@ def print_per_series_summary(metrics, horizons):
                         beats = f"no ({m['mae'] - persist_mae:.1f}d worse)"
 
                 prefix = "* " if is_key and model != "Persistence" else "  "
-                print(f"{prefix}{series:<18} {model:<22} {mae_s:<8} {cda_s:<10} {mp_s:<10} {mr_s:<9} {f1_s:<8} {beats}")
+                print(f"{prefix}{series:<18} {model:<22} {mae_s:<8} {cda_s:<10} {ub_s:<9} {bd_s:<9} {pu_s:<8} {mp_s:<10} {mr_s:<9} {f1_s:<8} {beats}")
             print()
 
 
@@ -1308,6 +1359,8 @@ def print_composite_table(metrics: list[dict], horizons: list[int]) -> None:
         model_set = MODELS_ABLATE
     else:
         model_set = MODELS
+    if any(m["label"] in MODELS_DIR_GATE for m in metrics):
+        model_set = list(model_set) + MODELS_DIR_GATE
 
     # horizon_mae[model][h] = average MAE across series for that horizon
     horizon_mae: dict[str, dict[int, float]] = {}
@@ -1602,6 +1655,12 @@ def main():
     parser.add_argument("--diagnostic", action="store_true", help="Print per-month RS vs persistence divergences")
     parser.add_argument("--ablate", action="store_true", help="Compare VQS with vs without cross-series/GBM experts")
     parser.add_argument("--per-series-summary", action="store_true", help="Print Section 0 conditional metrics per key series")
+    parser.add_argument(
+        "--dir-gate", action="store_true",
+        help="Add the §26 two-stage direction-gate variants (Dispatch magnitude re-signed "
+             "by a Demand-Supply or Regime-Switched direction vote). Requires --gbm for a "
+             "faithful Dispatch baseline.",
+    )
     parser.add_argument("--gbm", action="store_true", help="Include GBM standalone, GBM Direct, and GBM Gated models (slower)")
     parser.add_argument("--gate-threshold", type=float, default=_GBM_DEFAULT_GATE_THRESHOLD,
                         help=f"GBM Gated gate threshold (default: {_GBM_DEFAULT_GATE_THRESHOLD}). "
@@ -1631,6 +1690,7 @@ def main():
         gbm=args.gbm,
         gate_threshold=args.gate_threshold,
         ablate_group=args.ablate_group,
+        dir_gate=args.dir_gate,
     )
     print_metrics_table(metrics, horizons)
     print_composite_table(metrics, horizons)

@@ -16,7 +16,7 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 
 | Metric | What It Measures | Target | Current (Mar 2026) | How to Compute |
 |--------|-----------------|--------|-------------------|----------------|
-| **Conditional 1m direction** | When actual movement >30d, did model predict the correct sign? | ≥65% | **65.4% (China EB-3, 6m)** — only series meeting target; others 22-53% | `evaluate_model.py` with movement filter |
+| **Conditional 1m direction** | When actual movement >30d, did model predict the correct sign? | ≥65% — **target disputed, see §26** | **65.4% (China EB-3, 6m)** — others 22-53%. ⚠️ The "always guess advance" constant classifier scores **~90%** on this metric (§26 Fact 2), so the 65% target is below the trivial baseline and can be met with zero skill. Use `BalDir%` (`bal_direction_acc`) instead — a constant classifier scores 50% there. | `evaluate_model.py --per-series-summary` (prints `CondDir%` beside its `UpBase%` null and `BalDir%`) |
 | **Movement detection precision** | When model predicts >30d move, how often is it right? | ≥50% | **~40%** (GBM Gated best per-series) | Precision on {predicted_move > 30d} |
 | **Movement detection recall** | Of actual >30d moves, how many did model catch? | ≥40% | **>60% multiple series** (GBM at 3m/6m) | Recall on {actual_move > 30d} |
 | **6-month MAE (EB-2/3 India/China)** | Point forecast error at 6m horizon for the 4 key series | ≤190d (≥15% below persistence) | China EB-2: **176d** (GBM Gated); China EB-3: **159d ✓** (GBM Gated); India EB-2: **204d** (GBM Gated); India EB-3: **261d** (GBM Gated) | `evaluate_model.py --horizons 6` per-series |
@@ -92,6 +92,16 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 - **Same-window Pace 6m**: China EB-2 = 155.4d (30% better than GBM Gated 176.1d — Pace remains best at 6m for this series). India EB-2 Pace = 211.3d vs GBM Gated 203.8d (7.5d gap, below 10d dispatch threshold). India EB-3 Pace = 264.3d vs GBM Gated 261.1d (3.2d gap, Pace keeps dispatch).
 - **Dispatch update (Section 20)**: China EB-2 at 12m moved from Pace to GBM Gated (margin 15.7d). GBM Gated now wins 5/6 at 12m. All 6m dispatch series unchanged.
 - **CondDir ≥65% met**: China EB-3 at 6m (65.4%) and 12m (65.4%). All other series below 65%.
+- **§26 (July 2026) — the direction metric's null baseline is ~90%, not 50%.** Of the
+  199 filing-chart months that moved >30d since 2016, 179 (89.9%) were advances
+  (final_action: 265/294 = 90.1%). "Always guess advance" therefore scores ~90% CondDir,
+  above every model in the benchmark table including the production dispatch (46%) and
+  the Demand-Supply queue model (69%). `evaluate_model --per-series-summary` now prints
+  `UpBase%` (this null) and `BalDir%` (base-rate-proof) beside every `CondDir%`.
+- **§26 — the 6m dispatch never predicts a retrogression**: 0 retro-calls in 119 scored
+  knowledge dates for each of India EB-2/EB-3, China EB-1/EB-2 (also 0 at 1m for all six
+  series on the committed artifact). The direction-gate hybrid is consequently a
+  measured no-op at 6m — all four variants bit-identical to Dispatch.
 
 **Success metrics (current, §21 evaluation):**
 
@@ -2172,3 +2182,226 @@ warrant re-dispatch evaluation vs RS/Pace.
 ### Pending Planning Review
 Awaiting planning session to interpret results, update hypotheses, and re-prioritize
 next steps.
+
+---
+
+## 26. Direction-First Hybrid: the Premise Was a Base-Rate Artifact (July 2026)
+
+### Motivation
+Ticket *"VQS: direction-first hybrid — queue-model direction gate (69% dir) +
+dispatch magnitude (46% dir today)"*. Premise: the public methodology benchmark
+shows the Demand-Supply queue model at **69%** conditional direction accuracy at
+6m (with a worse point estimate, 227d) while the production dispatch is at
+**46%** dir / 198d MAE — apparently complementary, so hybridise them. Stage 1
+calls {advance / hold / retrogress} from the queue sim plus the GBM
+movement-probability classifier; stage 2 supplies magnitude from the current
+per-series dispatch, clamped to stage 1's sign. Target: ≥60% direction at 6m
+without regressing the 164d composite.
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| The gate itself | `lib/business/vqs/regime.py` (`direction_gate`), `tests/test_vqs_regime.py::TestDirectionGate` | Pure two-stage combiner. Rewrites only CONFLICTS (stage 1 and stage 2 disagree on sign, stage 1's implied move ≥ `DIRECTION_GATE_MIN`=30d); agreement and "stage 1 has no opinion" pass through untouched, so the gate can never inject a move stage 2 did not forecast — the §8 / §23-T2 overshoot guard. Policies: `hold` / `flip` / `shrink`. |
+| Base-rate-proof direction metrics | `lib/business/vqs/direction_metrics.py`, `tests/test_vqs_direction_metrics.py` | `cond_up_rate` (the null baseline — the CondDir an "always advance" constant classifier scores) and `bal_direction_acc` (mean of advance recall and retrogression recall; any constant classifier scores 50%). Consumed by `compute_metrics`. |
+| Harness wiring | `scripts/vqs/evaluate_model.py` | New `UpBase%` / `BalDir%` / `Up%` columns in `--per-series-summary`; `--dir-gate` adds four gate variants (stage 1 ∈ {Demand-Supply, Regime-Switched} × policy ∈ {hold, flip}) scored against production Dispatch. |
+| Base-rate probe | `scripts/oneoff/direction_base_rate.py` | Answers the null-baseline question in seconds instead of a ~1h walk-forward eval. |
+
+### Results (Facts)
+
+**Fact 1 — neither proposed stage-1 source can express a retrogression.**
+Code-level, not statistical:
+
+* `evaluate_model.forecast_demand_supply` returns exactly one of `current_fad`,
+  `current_fad + horizon*30`, or `current_fad + int(monthly_pace_days * horizon)`
+  where `monthly_pace_days = monthly_visa_budget / demand_per_day` and both
+  factors are guarded positive. Output is **always ≥ the current cutoff**. The
+  "Demand-Supply Queue" model is a {hold, advance} classifier.
+* `expert_demand_signal` (`expert_pool.py:216`) early-returns `current_cutoff`
+  whenever `base_pred <= current_cutoff` — also never negative.
+* `expert_gbm_movement_prob` (`gbm_expert.py:1067`) returns P(|move| > threshold)
+  — **unsigned**; it carries no direction channel at all.
+
+**Fact 2 — ~90% of moves are advances, so CondDir is base-rate dominated.**
+Measured on the staging (prod-copy) DB, 2016-01 onward, months with
+|move| > 30d (`scripts/oneoff/direction_base_rate.py`):
+
+| chart | moves >30d | advances | UpBase% | retrogressions |
+|---|---|---|---|---|
+| filing | 199 | 179 | **89.9** | 20 |
+| final_action | 294 | 265 | **90.1** | 29 |
+
+Per series (filing): India EB-2 86.4, India EB-3 83.3, China EB-2 94.1,
+China EB-3 82.8, China EB-1 95.3, India EB-1 91.5.
+
+The constant rule "always guess advance" therefore scores ~90% CondDir. Every
+model in the published benchmark table is below it — persistence 8, seasonal 27,
+pace 38, momentum 46, **production dispatch 46**, dashboard 54, poly 55,
+**demand-supply queue 69**. The queue model's 69% is not "high direction
+accuracy"; it is 21 points behind a one-line heuristic.
+
+**Fact 3 — the production 6m dispatch never predicts a retrogression, so there
+is nothing for a direction gate to arbitrate.** Counted from the persisted
+prediction series (`logs/spag_quick6.html`, `--horizons 6`, 119 scored knowledge
+dates per series), a "retrogression" being a prediction below the knowledge-date
+cutoff:
+
+| series | h | dispatch retro-calls | stage-1 opinions (≥30d) | CONFLICTS |
+|---|---|---|---|---|
+| India EB-2 | 6 | 0 | 116 (Q) / 12 (RS) | **0** |
+| India EB-3 | 6 | 0 | 119 / 15 | **0** |
+| China EB-2 | 6 | 0 | 119 / 31 | **0** |
+| China EB-1 | 6 | 0 | 119 / 35 | **0** |
+
+All four gate variants (Q-hold, Q-flip, RS-hold, RS-flip) are therefore
+**bit-identical to Dispatch** on every series and metric — e.g. China EB-2
+153.9d MAE / 35.5% CondDir / 66.7% BalDir for Dispatch and for all four
+variants. The 6m dispatch models are Pace (structurally advance-only) and RS.
+On the three Pace-served series a conflict would require an RS-implied move
+≤ −30d; RS registered 12-31 opinions (|move| ≥ 30d) per series and **not one was
+negative**. On China EB-1 stage 2 *is* RS, so stage 1 = RS agrees trivially and
+only the Q variants are informative there. Either way stage 2 is advance-only in
+practice and the gate is a no-op.
+The same count on the committed `--horizons 1,3,6` artifact shows 0 dispatch
+retro-calls at 1m and 6m for all six series (3m, served by VQS Ensemble, has a
+few: India EB-2 13, India EB-1 8, India EB-3 3, China EB-2 2).
+
+**Fact 4 — at h>1 this metric family measures level bias, not direction.**
+`compute_metrics` scores `pred_move = prediction[i] − actual[i−1]`: the
+prediction for month *i* against the **previous month's actual**, a quantity a
+6-month-ahead forecaster cannot observe. Consequences visible in the 6m table:
+
+* Persistence scores `BalDir` exactly 50.0% on China EB-1/EB-2 and India EB-2 —
+  because at 6m its prediction (the stale knowledge-date cutoff) sits *below*
+  last month's actual almost always, making it an "always retrogress" classifier
+  in this frame: retrogression recall 100%, advance recall 0%.
+* Pace, structurally advance-only from its own anchor, nonetheless earns
+  retrogression credit for the same reason (China EB-2: CondDir 35.5% but
+  BalDir 66.7% — it catches the one retrogression by under-forecasting).
+
+So a model that systematically under-forecasts looks like a retrogression
+predictor and one that over-forecasts looks like an advance predictor. CondDir
+at long horizons is improved by inflating predicted advances, which trades MAE
+for the metric.
+
+**Fact 5 — with GBM in the dispatch the gate DOES fire, and still buys nothing.**
+Full `--horizons 1,3,6,12 --gbm --dir-gate` run (staging prod-copy DB, artifact
+`logs/spaghetti_dirgate.html`). GBM Gated's regression output can go negative, so
+conflicts exist: 90 in total across the 24 (series × horizon) cells, concentrated at
+3m where dispatch is the VQS Ensemble. Effect on the cells where they fire:
+
+| cell | conflicts | Dispatch MAE | best gate variant | Δ MAE | Δ BalDir |
+|---|---|---|---|---|---|
+| China EB-3 @6m | 8 (Q) / 2 (RS) | 222.8 | Q-flip 221.7 | **−1.1d** | +2.3pt |
+| India EB-1 @6m | 0 (Q) / 4 (RS) | 230.9 | RS-hold 231.3 | +0.4d | −1.7pt |
+| China EB-3 @12m | 0 (Q) / 5 (RS) | 260.7 | RS-hold 274.8 | +14.1d | −2.3pt |
+| all other cells | — | — | identical to Dispatch | 0 | 0 |
+
+Composite across all four horizons: Dispatch **177.5d**, Q-hold 177.3d,
+Q-flip **177.2d**, RS-hold 178.1d, RS-flip 179.0d. The best variant is
+**0.3d better on a 177.5d composite — 0.17%**, versus the project's own 10d
+threshold for changing a dispatch cell (§20). One cell out of 24 improves, by 0.5%;
+the RS variants regress. Nothing is shippable.
+
+Note what Q-flip's tiny gain actually is: it rewrites GBM's retrogression calls into
+advances. It "helps" by re-expressing the 90% advance base rate, not by adding
+information — the same effect Fact 2 describes, applied one cell at a time.
+
+**Fact 6 (incidental, and it matters more than the ticket) — the published
+composite is stale by 13d.** On this run Persistence (194.7 vs 195), Pace (180.1 vs
+180), Dashboard (230.6 vs 231), Seasonal (199.1 vs 199) and Momentum (297.6 vs 298)
+all reproduce their published values to within 0.4d — same harness, same window,
+same data. Two rows moved:
+
+| model | published | measured 2026-07-27 | Δ |
+|---|---|---|---|
+| **This model** (production dispatch) | 164d composite / 198d @6m | **177.5d / 209.3d** | +13.5d / +11.3d |
+| Demand-Supply Queue | 193d / 227d | **200.7d / 240.6d** | +7.7d / +13.6d |
+
+Because the untouched baselines reproduce exactly, the movement is in the models,
+not the evaluation. The leading explanation for the dispatch row is the §25
+tuned-GBM graduation (2026-07-14, `d12a94f`), which was validated on the
+publish-path conditional/traffic-weighted objective at 6m/12m — a different
+objective from this MAE composite, and one that did not measure the composite at
+all. Demand-Supply's shift is separate: it reads I-140 receipts from
+`RawFactsLedger`, which has grown since §21. **Not verified by re-running with the
+pre-§25 constants** — that requires a params override `evaluate_model` does not
+expose (only `backtest_publish_dispatch --params-json` has one), so the attribution
+is a hypothesis, not a measurement.
+
+The public methodology page's headline — "wins on composite (164d vs next-best Pace
+180d)" — was therefore overstating the margin: it is 177d vs 180d, still a win but
+by 3d rather than 16d. Corrected in the generator.
+
+### Analysis
+
+**Facts:** the six above.
+
+**Hypotheses (inferred):**
+
+* **The ticket's hybrid cannot work as specified, and the reason is structural,
+  not a tuning failure.** A stage 1 that cannot signal a retrogression has no
+  information to add. Where stage 2 also never retrogresses (Pace/RS at 6m) the
+  gate is a literal no-op; where it does (GBM Gated, VQS Ensemble) the gate fires
+  90 times and moves the composite by 0.3d. *This hypothesis was pre-registered
+  with its falsification — "a gate variant beating Dispatch on both composite and
+  BalDir" — and the falsification did not occur:* the one cell that improves
+  (China EB-3 @6m, Q-flip, −1.1d) is a twentieth of the threshold the project uses
+  to change a dispatch cell, and the RS variants regress. **Confirmed.**
+* **The Section 0 metric "conditional 1m direction ≥65%" is mis-specified.** It
+  sits below the ~90% constant-classifier baseline, so it can be met with zero
+  skill, and it rewards optimism at long horizons (Fact 4). `bal_direction_acc`
+  is the base-rate-proof replacement; retrogression recall at a fixed precision
+  is the user-facing version, since a retrogression is the move that costs
+  people time and a never-retrogressing model has zero recall on it however good
+  its headline looks. *Competing:* CondDir may still be a fair (if harsh)
+  measure of level bias at long horizons — but then it should be named that, not
+  "direction accuracy".
+* **The honest direction story for this site is that the model does not predict
+  direction, and neither does anything else in the benchmark.** ~90% of the
+  signal is "EB cutoffs usually move forward"; the residual — which of the ~10%
+  of moves retrogress — is not predicted at better than chance by any model
+  tested here. *Prior confidence:* high for the six focus series on this feature
+  set.
+
+### Current Status
+**Ticket premise REJECTED with evidence; no hybrid shipped.** The gate
+(`regime.direction_gate`) and the metrics (`direction_metrics.py`) are committed
+because they are the instruments that produced the result and the guard against
+repeating it: `UpBase%` now prints beside every `CondDir%`, so a future "high
+direction accuracy" claim is checked against its null automatically.
+
+Public methodology page corrected (`scripts/oneoff/generate_initial_blog_posts.py`):
+it claimed the Demand-Supply model "achieves the highest Dir% (67%)" — a stale
+number (the table renders 69%) presented as a virtue. Replaced with the measured
+baseline and what the column does and does not show. **The post is stored in the
+DB; it needs regeneration + deploy to reach readers** (see
+`deployment.md` §"Regenerate stored content after a generator/narrator change").
+
+Published benchmark numbers re-measured (Fact 6): "this model" 164→177 composite,
+198→209 @6m; Demand-Supply 193→201 / 227→241; Dir% 46→43 and 69→65. The other five
+rows reproduced and are unchanged. Generator docstring now records the re-measure
+date and the attribution caveat.
+
+`docs/PREDICTION_SYSTEM_OVERVIEW.md` §3 dispatch table corrected: China EB-2 at
+12m has been GBM Gated since §20, not Pace.
+
+Reproduce: `scripts/vqs/run_in_stg.sh -m scripts.vqs.evaluate_model --horizons
+1,3,6,12 --gbm --dir-gate --per-series-summary --output /app/logs/spaghetti_dirgate.html`
+(~26 min) and `scripts/vqs/run_in_stg.sh scripts/oneoff/direction_base_rate.py
+[--move-min 0]` (seconds).
+
+### Pending Planning Review
+Three items for the next planning session:
+
+1. **Retire the Section 0 CondDir target?** It sits below a zero-skill baseline, so
+   it can be met by a constant. `bal_direction_acc` (already computed) or
+   retrogression recall at fixed precision are the candidates. Flagged as disputed
+   in the Section 0 table; not changed unilaterally.
+2. **Should the public benchmark keep a Dir% column at all**, given no model in it
+   clears the trivial baseline? Currently kept with the baseline stated beneath it.
+3. **Did the §25 tuned-GBM graduation regress the MAE composite by ~13d?** Fact 6
+   is a measurement; the attribution is not. Settling it needs a `--params-json`
+   equivalent on `evaluate_model` and a re-run with the pre-§25 constants. If
+   confirmed, the graduation traded ~13d of blog-comparable composite for gains on
+   the publish-path conditional objective — a trade worth making explicitly rather
+   than discovering, and an argument for scoring future graduations on both.

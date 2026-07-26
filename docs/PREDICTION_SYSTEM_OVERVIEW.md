@@ -131,7 +131,7 @@ Ordered by expected impact on the weakest predictions (India EB-2/3):
 | Series | 1m | 3m | 6m | 12m |
 |--------|-----|-----|-----|------|
 | **China EB-1** | RS | RS | RS | GBM Gated |
-| **China EB-2** | VQS Ensemble | VQS Ensemble | Oppenheim Pace | Oppenheim Pace |
+| **China EB-2** | VQS Ensemble | VQS Ensemble | Oppenheim Pace | GBM Gated |
 | **China EB-3** | VQS Ensemble | VQS Ensemble | GBM Gated | GBM Gated |
 | **India EB-1** | RS | RS | GBM Gated | GBM Gated |
 | **India EB-2** | VQS Ensemble | VQS Ensemble | Oppenheim Pace | GBM Gated |

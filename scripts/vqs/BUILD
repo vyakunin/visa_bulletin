@@ -161,6 +161,7 @@ py_binary(
         "//django_config:logging_config",
         "//django_config:settings",
         "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:direction_metrics",
         "//lib/business/vqs:estimators",
         "//lib/business/vqs:gbm_expert",
         "//lib/business/vqs:metric_config",
