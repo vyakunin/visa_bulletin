@@ -72,7 +72,7 @@ scored clean on fill, reserved-empty and overflow alike while pushing the H1 to
 y=755 in an 844px viewport. Hence the hero fields above and the `⚠ AD-IN-HERO`
 flag (ticket `3a362b8d409f81769212e5e503b62f95`).
 
-**Two traps this script exists to document — read before interpreting output:**
+**Three traps this script exists to document — read before interpreting output:**
 
 1. **The EEA gate.** The site withholds `adsbygoogle.js` entirely from EEA/UK/CH
    (`overrides/ad_slot.html` reads `/cdn-cgi/trace`). This box is in Berlin, so
@@ -86,6 +86,17 @@ flag (ticket `3a362b8d409f81769212e5e503b62f95`).
    layout / overflow / holes / CLS — never fill%. Likewise, full-page shots
    freeze `position:fixed` anchor ads mid-page (an artifact, not an overlap) —
    compare the `__viewport.jpg`.
+3. **Lazy charts are force-rendered, so a rendered chart proves nothing about
+   the real page.** The capture runs under CDP `setDeviceMetricsOverride`, where
+   the page does not actually scroll (`scrollY` stays 0) and
+   `IntersectionObserver` never fires — so the observer-gated Plotly charts on
+   `/` and the country landings used to photograph as a permanent "Loading
+   chart…" spinner and read as a broken widget. `_scroll_through()` now wakes
+   them, and the **scroll pass alone does not work** under the metrics override:
+   the direct `loadPlotly()` call is what actually renders them. Two
+   consequences — a spinner in an *old* run (≤2026-07-27) is that artifact, not
+   a defect; and a chart present in a *new* shot does not confirm a real user's
+   chart loads on its own, which only the headed debug Chrome can show.
 
 **Scheduled:** `ad_surface_screenshots.timer` (systemd user unit, Mondays 09:15
 Berlin) → `run_ad_screenshot_sweep.sh`, which captures and then *injects* an
