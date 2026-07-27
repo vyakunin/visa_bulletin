@@ -76,6 +76,36 @@ docker exec vb_redis redis-cli -n 1 FLUSHDB
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
 ```
 
+### Known issue: recreating `web` can strand nginx on the dead container's IP
+
+`nginx/visa_bulletin.conf` uses `proxy_pass http://web:8000` with no `resolver`, so
+nginx resolves `web` **once, at config load**. Recreate the web container onto a
+different bridge IP and nginx keeps connecting to the dead one: **every request 502s
+instantly** — `~0.000s` request_time, `connect() failed (111: Connection refused)` in
+nginx's error log naming the stale IP, **nothing in `vb_web`'s own logs**, and the
+container reporting `healthy`. The symptom points away from the cause, and it reads
+like an app fault when it is a networking one.
+
+It hides most of the time because a lone `docker compose up -d web` reclaims the same
+IP. Recreate anything alongside it and the allocation shifts (measured 2026-07-27 on
+staging: web moved `.4` → `.5` when redis was recreated in the same run, and the whole
+surface 502'd).
+
+Diagnose in two commands — if these disagree, that's the bug:
+```bash
+docker inspect vb_web   --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}'
+docker exec   vb_nginx  getent hosts web
+docker logs   vb_nginx --tail 50 2>&1 | grep upstream   # names the IP nginx is using
+```
+Fix: `docker compose restart nginx`, then re-check. Confirm the app itself is fine
+first by hitting gunicorn directly, bypassing nginx:
+`docker exec vb_web python3 -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/').status)"`.
+
+The release scripts handle this themselves since `hosting` commit `566369d` —
+`promote.sh` and `cutover.sh`'s `hs_web_swap` bounce nginx after the web swap and
+**assert** its upstream matches the live container before continuing. You only need the
+manual recipe for a hand-run `docker compose up -d web`.
+
 ### Rule: Capture a pre-deploy perf baseline + post-deploy verification window
 
 **Every prod deploy (code, schema, infra) MUST include a pre-deploy baseline snapshot AND a 30-minute post-deploy verification window** with the same signals. Latency / 5xx regressions after a deploy are common (planner picks a new plan after schema changes, a new view forgets to use `select_related`, a Redis cache clear cold-starts every page) and they are catastrophically cheap to detect early and expensive to detect via user reports. This rule exists because the 2026-05-17 staging-crawl incident showed that perf regressions silently degrade UX for hours unless deliberately monitored — and because that incident's own fix (trigram indexes) needed verification it wasn't trivially providing.
