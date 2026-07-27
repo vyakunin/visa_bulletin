@@ -11,21 +11,46 @@ import re
 
 from django.core.cache import cache
 
-# Same bot list as nginx gptbot-rate-limit.conf (case-insensitive match).
-# HealthCheck is included so docker-compose healthchecks don't poison the page
-# cache — their localhost requests have no real Host header and bake
-# "localhost:8000" into <link rel="canonical">.
-BOT_USER_AGENT_PATTERNS = (
-    r"GPTBot",
-    r"Googlebot",
-    r"Bingbot",
-    r"DuckDuckBot",
-    r"Slurp",
-    r"Baiduspider",
-    r"YandexBot",
+# Case-insensitive match against the User-Agent.
+#
+# Most of this is a GENERIC test rather than a roster of crawler names, because
+# the roster is what rots: a hand-maintained allowlist only ever covers the
+# crawlers someone thought of, and every one it misses writes into a page cache
+# that is evicting under LRU. Measured on prod 2026-07-27 over 24h, when this
+# was a 9-name list: 40,333 requests across 31,184 distinct URLs came from
+# crawlers the list did not name (Amzn-SearchBot 16.7k, Claude-SearchBot 7.0k,
+# AhrefsBot 5.8k, proximic, Mediapartners-Google, IAS, PetalBot, ChatGPT-User,
+# OAI-SearchBot) against 9,651 distinct human URLs — so ~76% of the cache's
+# write pressure was crawler traffic, and vb_redis sat pinned at its cap with a
+# 59% miss rate while real users waited 10-25s on cold renders.
+#
+# Nearly every crawler self-identifies in one of a few ways, so match the SHAPE:
+# `bot` as a whole word (Googlebot/2.1, Amzn-SearchBot), crawler, spider,
+# scraper, slurp, plus the bare HTTP clients that never render a page anyway.
+# `bot\b` deliberately requires a word boundary so ordinary words ending in
+# other letters cannot match.
+_GENERIC_BOT_RE = r"bot\b|crawler|spider|scraper|slurp|feedfetcher"
+_HTTP_CLIENT_RE = r"python-requests|python-urllib|curl/|wget/|go-http-client|okhttp|java/|libwww-perl"
+
+# Crawlers that do NOT self-identify by any of the shapes above, so they have to
+# be named. HealthCheck is ours: docker-compose healthchecks hit localhost with
+# no real Host header and would bake "localhost:8000" into <link rel="canonical">.
+NAMED_BOT_USER_AGENT_PATTERNS = (
     r"facebookexternalhit",
+    r"meta-externalagent",
+    r"Mediapartners-Google",  # AdSense crawler
+    r"ChatGPT-User",
+    r"anthropic-ai",
+    r"proximic",  # comScore
+    r"ias[-_](?:ie|va)",  # Integral Ad Science
+    r"ia_archiver",
     r"HealthCheck",
 )
+
+BOT_USER_AGENT_PATTERNS = (
+    _GENERIC_BOT_RE,
+    _HTTP_CLIENT_RE,
+) + NAMED_BOT_USER_AGENT_PATTERNS
 _BOT_RE = re.compile("|".join(f"(?:{p})" for p in BOT_USER_AGENT_PATTERNS), re.I)
 
 
