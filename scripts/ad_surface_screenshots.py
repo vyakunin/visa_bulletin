@@ -132,6 +132,53 @@ SKIP_SURFACES = {"donation_click", "static_meta", "api"}
 # either fills or collapses. Capturing earlier photographs a transient state.
 AD_SETTLE_MS = 7000
 
+# Lazy content (the Plotly charts) is gated on IntersectionObserver, so it never
+# initialises in a capture that never scrolls. These bound the scroll pass that
+# wakes it: step by ~80% of a viewport, pausing briefly, then return to top.
+LAZY_SCROLL_STEP_FRAC = 0.8
+LAZY_SCROLL_PAUSE_MS = 250
+LAZY_SCROLL_MAX_STEPS = 40
+LAZY_RENDER_SETTLE_MS = 3000
+
+
+def _scroll_through(page) -> None:
+    """Scroll top→bottom→top so IntersectionObserver-gated content renders.
+
+    Bounded by LAZY_SCROLL_MAX_STEPS so a page that grows as lazy units load
+    (ads injecting below the fold) cannot loop forever. Best-effort: a failure
+    here must not lose the screenshot, so it degrades to whatever was on screen.
+    """
+    try:
+        step = int(page.evaluate("() => window.innerHeight") * LAZY_SCROLL_STEP_FRAC)
+        for _ in range(LAZY_SCROLL_MAX_STEPS):
+            at_end = page.evaluate(
+                "(s) => { const before = window.scrollY;"
+                " window.scrollBy(0, s);"
+                " return window.scrollY === before; }",
+                step,
+            )
+            page.wait_for_timeout(LAZY_SCROLL_PAUSE_MS)
+            if at_end:
+                break
+        page.evaluate("() => window.scrollTo(0, 0)")
+        # Scrolling alone is not enough: under CDP setDeviceMetricsOverride the
+        # page does not actually scroll (scrollY stays 0) and IntersectionObserver
+        # never fires, so the observer-gated charts stay on their spinner. Call
+        # the site's own loader directly as the fallback — verified in the headed
+        # debug Chrome that a real user DOES get these charts, so forcing them
+        # makes the capture more faithful, not less.
+        page.evaluate(
+            "() => { if (typeof window.loadPlotly === 'function') {"
+            "   window.loadPlotly(() => document.dispatchEvent(new Event('plotlyLoaded')));"
+            " } }"
+        )
+        # Let whatever we woke up actually draw before we photograph it.
+        page.wait_for_timeout(LAZY_RENDER_SETTLE_MS)
+    except Exception as e:
+        print(f"  WARN: lazy-content scroll pass failed ({e}); capturing as-is",
+              file=sys.stderr)
+
+
 # ── Structural probe: what the reader actually got ──────────────────────────
 # Runs in-page after ads settle. Every field is something that has previously
 # broken, or that distinguishes "ad worked" from "ad left a hole".
@@ -318,6 +365,18 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     except Exception:
                         cls = None
                     diag = page.evaluate(PROBE_JS)
+                    # Trigger IntersectionObserver-gated lazy content before the
+                    # full-page shot. The Plotly charts on / and the country
+                    # landings only inject their CDN script once #chart-container
+                    # intersects; a never-scrolled capture leaves every one of
+                    # them showing "Loading chart..." and reads as a broken
+                    # widget on inspection. Verified against the headed debug
+                    # Chrome: with a real scroll the observer fires, Plotly
+                    # loads and .js-plotly-plot renders, so the spinner was the
+                    # capture's artifact, not a production defect. Runs AFTER
+                    # the CLS + probe evaluate() calls so their numbers keep
+                    # measuring the unscrolled first paint.
+                    _scroll_through(page)
                     fn = out_dir / f"{surf}__{dev}.jpg"
                     page.screenshot(path=str(fn), full_page=True, type="jpeg", quality=80)
                     # A full-page shot stitches the scrolled page but leaves position:fixed
