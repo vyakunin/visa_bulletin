@@ -48,6 +48,13 @@ py_library(
 )
 
 django_py_test(
+    name = "test_cache_bot_detection",
+    size = "small",
+    srcs = ["test_cache_bot_detection.py"],
+    deps = ["//django_config:cache_utils"],
+)
+
+django_py_test(
     name = "test_sitemap_bot_cache",
     size = "small",
     srcs = ["test_sitemap_bot_cache.py"],
