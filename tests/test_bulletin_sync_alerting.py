@@ -239,3 +239,77 @@ def test_new_bulletin_injects_an_agent_pass() -> None:
     assert re.search(r'alert inject "bulletin-sync:new-bulletin"', src), (
         "The new-bulletin alert must use `inject` (wakes an agent), not passive."
     )
+
+
+def test_cdp_wedge_detection_requires_the_full_signature() -> None:
+    """The auto-restart must fire ONLY on a genuinely wedged browser.
+
+    Regression (2026-07-27): Chrome had been up 10 days with 8 stale tabs; the CDP HTTP
+    endpoint still answered /json/version and the websocket still connected, but no page
+    target responded, so connect_over_cdp hung to its 180s timeout on every run for ~12h
+    until a human restarted the service.
+
+    That exact triple — ws CONNECTED, then a connect_over_cdp TIMEOUT — is what proves
+    the browser is unusable by every agent (a co-tenant's tabs are dead too), which is
+    what makes an unattended restart of a SHARED service safe. A looser match (any
+    non-zero exit, or a bare "Timeout") would restart the browser out from under other
+    projects on an unrelated failure — e.g. a refused endpoint, which is a different
+    fault entirely and belongs to the alert path.
+    """
+    src = _sync_src()
+    fn = re.search(r"^cdp_is_wedged\(\)\s*\{.*?^\}", src, re.MULTILINE | re.DOTALL)
+    assert fn, "cdp_is_wedged() is gone — the wedged-Chrome self-heal has no guard."
+    body = fn.group(0)
+    for marker in ("connect_over_cdp", "<ws connected>", "Timeout"):
+        assert marker in body, (
+            f"cdp_is_wedged() no longer requires {marker!r}. All three markers together "
+            "are what distinguish a wedged browser from an absent/refused endpoint; "
+            "dropping one turns this into a restart-on-any-failure."
+        )
+
+
+def test_cdp_autoheal_never_restarts_chrome_on_the_test_path() -> None:
+    """A stubbed CDP endpoint must never restart the real shared browser.
+
+    BULLETIN_FETCH_CDP is how the alert path gets exercised without waiting for a real
+    Akamai miss — it points the fetcher at a deliberately dead endpoint. If the self-heal
+    ignored it, running the alerting test would kill the debug Chrome (and every other
+    project's tabs) as a side effect.
+    """
+    src = _sync_src()
+    heal = re.search(r"cdp_is_wedged \\\n?.*?^fi", src, re.MULTILINE | re.DOTALL)
+    assert heal, "The CDP self-heal block is gone from the fetch path."
+    block = heal.group(0)
+    assert '-z "${BULLETIN_FETCH_CDP:-}"' in block, (
+        "The self-heal no longer skips when BULLETIN_FETCH_CDP is set. A test pointed at "
+        "a stub endpoint would restart the real shared debug Chrome."
+    )
+    assert 'BULLETIN_CDP_AUTOHEAL:-1' in block, (
+        "The BULLETIN_CDP_AUTOHEAL kill switch is gone. Restarting a shared service "
+        "unattended needs an off switch that does not require editing the script."
+    )
+
+
+def test_cdp_autoheal_retries_at_most_once() -> None:
+    """One restart per run — never a retry loop against a browser that will not come back.
+
+    A loop here would hammer a shared service every cron tick and could mask a real,
+    persistent fault (bad profile, port taken) behind endless restarts instead of letting
+    the failure streak reach ALERT_AFTER and page a human.
+    """
+    src = _sync_src()
+    heal = re.search(r"cdp_is_wedged \\\n?.*?^fi", src, re.MULTILINE | re.DOTALL)
+    assert heal, "The CDP self-heal block is gone from the fetch path."
+    block = heal.group(0)
+    assert block.count("systemctl --user restart debug_chrome_cdp.service") == 1, (
+        "More than one restart in the self-heal block — it must restart at most once, "
+        "then fall through to the streak/alert path."
+    )
+    assert block.count("run_fetch") == 1, (
+        "The self-heal must re-run the fetch exactly once after the restart."
+    )
+    # The fall-through matters as much as the retry: a failed heal must still alert.
+    assert re.search(r'if \[ "\$FETCH_RC" -ne 0 \] \|\| ! echo "\$SUMMARY"', src), (
+        "The self-heal no longer falls through to the fetch-failure/alert check, so a "
+        "browser that stays wedged after a restart would report success."
+    )

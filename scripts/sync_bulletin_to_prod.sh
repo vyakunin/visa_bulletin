@@ -23,6 +23,10 @@
 #     after ALERT_AFTER consecutive misses (default 3 = 90min at */30), via
 #     notify_chat inject -> the agent investigates.
 #   * Recovery after an alerting streak sends a passive all-clear.
+#   * A WEDGED debug Chrome (CDP answers HTTP, ws connects, then connect_over_cdp
+#     hangs — no page target responds) self-heals: the run restarts
+#     debug_chrome_cdp.service once and retries the fetch, then reports passively.
+#     See cdp_is_wedged(). Kill switch: BULLETIN_CDP_AUTOHEAL=0.
 #   * A NEW bulletin landing injects too (rare, ~12/yr): the agent verifies the site,
 #     predictions, and the generated post.
 #   * Ingest-broke (refresh non-zero, or pending sources that all fail) alerts
@@ -118,7 +122,7 @@ fail_fetch() {
     local last_ok
     last_ok="$(cat "$LAST_SUCCESS_FILE" 2>/dev/null || echo 'never')"
     alert inject "bulletin-sync:fetch-fail" 60 \
-      "🚨 Bulletin ingest bridge failing: ${streak} consecutive fetch failures (last success: ${last_ok}). travel.state.gov Akamai wall not passed, or the debug Chrome on :9222 is down. The prod-side cron is retired, so this is the ONLY bulletin ingest path — the August bulletin would be missed. Check: systemctl --user status debug_chrome_cdp.service; tail -40 ${REPO}/logs/sync_bulletin_to_prod.log; then run ${REPO}/scripts/sync_bulletin_to_prod.sh by hand. Detail: ${detail}"
+      "🚨 Bulletin ingest bridge failing: ${streak} consecutive fetch failures (last success: ${last_ok}). travel.state.gov Akamai wall not passed, or the debug Chrome on :9222 is down. The prod-side cron is retired, so this is the ONLY bulletin ingest path — the next bulletin would be missed. Check: systemctl --user status debug_chrome_cdp.service; tail -40 ${REPO}/logs/sync_bulletin_to_prod.log; then run ${REPO}/scripts/sync_bulletin_to_prod.sh by hand. Detail: ${detail}"
   fi
   exit 2
 }
@@ -129,18 +133,60 @@ if cutover_in_flight; then
 fi
 
 log "$(date -u +%FT%TZ) fetching via debug Chrome..."
-rm -rf "$CACHE"
 # stdout = the JSON summary; stderr = the fetcher's own INFO/ERROR log lines. Keep
 # them apart so `grep '"index_ok"'` stays exact, but replay stderr into the cron log
 # and reuse its tail as the alert detail.
 FETCH_ERR="$(mktemp)"
 trap 'rm -f "$FETCH_ERR"' EXIT
-SUMMARY="$(cd "$REPO" && uv run --with playwright --with python-dateutil \
-  python scripts/fetch_bulletin_via_browser.py --cache-dir "$CACHE" \
-  "${MONTHS_ARG[@]}" "${CDP_ARG[@]}" 2>"$FETCH_ERR")"
-FETCH_RC=$?
-cat "$FETCH_ERR"
-log "fetch summary: $SUMMARY"
+
+run_fetch() {
+  rm -rf "$CACHE"
+  SUMMARY="$(cd "$REPO" && uv run --with playwright --with python-dateutil \
+    python scripts/fetch_bulletin_via_browser.py --cache-dir "$CACHE" \
+    "${MONTHS_ARG[@]}" "${CDP_ARG[@]}" 2>"$FETCH_ERR")"
+  FETCH_RC=$?
+  cat "$FETCH_ERR"
+  log "fetch summary: $SUMMARY"
+}
+
+# The debug Chrome can WEDGE while still looking alive: the CDP HTTP endpoint keeps
+# answering /json/version (so any "is :9222 up?" check passes), the websocket still
+# connects — and then connect_over_cdp hangs to its 180s timeout because no page
+# target responds. Observed 2026-07-27 after Chrome had been up 10 days: all 8 stale
+# tabs unresponsive, one renderer alive for eight page targets. Every run failed for
+# ~12h until a human restarted the service.
+#
+# That signature — ws CONNECTED, then a connect_over_cdp timeout — means the browser
+# is unusable by ANY agent, not just this one (a co-tenant's tabs are already dead),
+# so restarting it is strictly better than leaving it wedged. Narrow on purpose: a
+# refused/absent endpoint is a DIFFERENT failure (service down, port moved) and is
+# left to the alert path rather than papered over with a restart.
+cdp_is_wedged() {
+  grep -q 'connect_over_cdp' "$FETCH_ERR" \
+    && grep -q 'Timeout .* exceeded' "$FETCH_ERR" \
+    && grep -q '<ws connected>' "$FETCH_ERR"
+}
+
+run_fetch
+if [ "$FETCH_RC" -ne 0 ] && cdp_is_wedged \
+   && [ "${BULLETIN_CDP_AUTOHEAL:-1}" != "0" ] && [ -z "${BULLETIN_FETCH_CDP:-}" ]; then
+  # BULLETIN_FETCH_CDP set = pointed at a stub/dead endpoint by a test; never restart
+  # the real shared browser on that path.
+  log "CDP wedged (ws connected, connect_over_cdp timed out) — restarting debug Chrome and retrying once"
+  if systemctl --user restart debug_chrome_cdp.service; then
+    for _ in $(seq 1 15); do
+      curl -sf --max-time 5 http://127.0.0.1:9222/json/version >/dev/null 2>&1 && break
+      sleep 2
+    done
+    run_fetch
+    if [ "$FETCH_RC" -eq 0 ] && echo "$SUMMARY" | grep -q '"index_ok": true'; then
+      alert passive "bulletin-sync:cdp-autoheal" 60 \
+        "🔧 Bulletin bridge: debug Chrome was wedged (CDP alive but no target responding); restarted it and the fetch succeeded on retry. No action needed."
+    fi
+  else
+    log "WARN: debug Chrome restart failed; falling through to the alert path"
+  fi
+fi
 
 # Two distinct failure shapes: a non-zero exit (CDP down, crash) and a clean exit
 # whose summary says the wall wasn't passed. Both are the same alert.
