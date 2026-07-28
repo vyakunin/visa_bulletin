@@ -276,6 +276,21 @@ Always report the *referrer mix* and *country mix* explicitly when answering "wh
 
 `/api/v0/export` is gated to **1 request per hour per token**. If you've already triggered it this hour (the response will say `try again in Xm`), you can still get every signal you need from `/api/v0/stats/hits|locations|toprefs` queried per-hour, plus nginx logs. Don't refuse to answer because export is locked.
 
+### Step 7 — a bot spike POISONS the next month's baseline; cross-check GC against GA4 before reporting any MoM
+
+A spike you correctly classified as bot traffic today becomes the **comparison window** four weeks later, and the digest then reports a catastrophic-looking `-N% MoM` that is nothing but the spike falling out. This has produced two wrong root-cause claims on `/salaries` (see the ticket below), each time blamed on whatever infra change happened to be nearby.
+
+So before reporting **any** GC MoM/WoW delta as a finding:
+
+1. **Pull the DAILY series across BOTH windows** (`/api/v0/stats/hits?daily=true`), not the two totals. A single day carrying a large share of the baseline is the tell.
+2. **Cross-check the same days in GA4.** GA4 filters most of what GC counts, so a window where **GC ≫ GA4** is bot-inflated and unusable as a baseline. Worked example (2026-06-27, `/salaries`): GC 1,268 vs GA4 152, against a GC baseline of ~45-65/day. The healthy `/salaries` ratio is **GC ≈ 0.25-0.5 × GA4** — GC *under*-counts this surface normally, so GC exceeding GA4 at all is the alarm.
+3. **Re-base on a clean week and say which one you used.** Same example: `-87% MoM` against the spike week vs **-22%** against the clean week before it.
+4. **Normalize against site-wide GC for the same days.** If the surface fell while the site didn't, that is a real finding; if both moved, it is the bulletin cycle.
+
+Do NOT reason "metric fell + an infra change exists nearby ⇒ the change caused it" (`~/.claude/rules/be_human_in_drafts.md` §14 — inventing mechanism). Check the daily series for a **step at the change date** first; no step means no causal link, whatever the MoM says.
+
+Origin: 2026-07-25 + 2026-07-28 — the morning digest twice pinned a `/salaries` GC collapse on the Cloudflare managed-challenge rule. Both times wrong: the baseline window (Jun 22-28) contained a four-day residential-proxy swarm spike GA4 never saw, and no series showed a step at the rule's 07-04 landing. Full measurement series + the rule's identity: Notion ticket `3a862b8d409f81229f70f95dba21ca53`.
+
 ## Rule: Check This Inventory Before Answering "Do We Have X?"
 
 When the user (or you, internally) ask "do we have analytics on Y?":
