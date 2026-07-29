@@ -930,6 +930,21 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_employer_index_depth_cap",
+    size = "medium",
+    srcs = ["test_employer_index_depth_cap.py"],
+    deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
+        "//lib/utils:pagination",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)
+
+django_py_test(
     name = "test_single_h1",
     size = "small",
     srcs = ["test_single_h1.py"],

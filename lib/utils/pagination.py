@@ -1,10 +1,12 @@
 """Pagination utilities for Django views
 
 Provides reusable pagination calculation and query string building.
-Keyset (cursor) pagination uses opaque cursor strings; format is internal.
+Keyset (cursor) pagination uses opaque SIGNED cursor strings; format is internal.
 """
 
-import base64
+from typing import NamedTuple
+
+from django.core import signing
 
 # Hard cap on page number for offset-based listing pages. Postgres has to
 # materialize and sort `(page - 1) * per_page` rows just to skip them — at
@@ -16,42 +18,87 @@ import base64
 # cap kills the bot pattern + the slow-tail in one move.
 MAX_PAGE = 100
 
+# Depth cap for the DIRECTORY indexes (/employers/), which are a different
+# problem from the salary long tail: deep index pagination is a free
+# full-table export, and that is what a distributed scraper pool harvests.
+# Measured 2026-07-29 over 48h of origin logs: a rotating proxy pool walked
+# `?cursor=…&page=18..32` at 955 requests from 939 distinct IPs (1.02 req/IP,
+# 98% no-referer). Nothing per-IP can see that, so the answer is to remove the
+# prize rather than argue about who is asking.
+#
+# Costs real users nothing, measured rather than assumed: over 2026-06-29..07-29
+# GSC recorded 16 clicks on bare /employers/ and ZERO clicks on every deep
+# paginated URL (they carry 1-6 impressions each, most of which GSC itself
+# flags as megasitelink bookkeeping). Employer PROFILE discovery does not
+# depend on this surface either — the sitemap emits /employer/<slug>/ directly.
+MAX_INDEX_PAGE = 10
 
-def encode_keyset_cursor(order_value: int, pk: int, direction: str = "next") -> str:
+# Salt scopes the signature to this use, so a cursor cannot be replayed into
+# any other signed-value context in the app.
+_KEYSET_SALT = "vb.pagination.keyset.v1"
+
+
+class KeysetCursor(NamedTuple):
+    """A decoded, signature-verified keyset position."""
+
+    direction: str  # "next" or "prev"
+    order_value: int
+    pk: int
+    page: int
+
+
+def encode_keyset_cursor(
+    order_value: int, pk: int, direction: str = "next", page: int = 1
+) -> str:
     """
-    Encode a keyset cursor for pagination. Opaque to callers.
+    Encode a SIGNED keyset cursor for pagination. Opaque to callers.
+
+    The cursor is signed (Django SECRET_KEY) and carries its own page depth.
+    Both properties are load-bearing for `MAX_INDEX_PAGE`: the cursor — not the
+    `page` query param — is what actually selects rows, so a cap enforced only
+    on `page` is bypassed by sending `page=1` alongside a hand-built deep
+    cursor. Signing means the only cursors the view honours are ones it issued,
+    and it issues none past the cap.
 
     Args:
         order_value: Value used for ordering (e.g. total count or total_lca_count).
         pk: Primary key of the row (for tiebreaker).
         direction: "next" or "prev" so the view knows how to apply the cursor.
+        page: 1-indexed depth this cursor lands on, bound into the signature.
 
     Returns:
-        Opaque cursor string (base64-encoded "direction:order_value:pk").
+        Opaque signed cursor string.
     """
-    raw = f"{direction}:{order_value}:{pk}"
-    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+    return signing.dumps(
+        {"d": direction, "o": order_value, "p": pk, "n": page},
+        salt=_KEYSET_SALT,
+        compress=True,
+    )
 
 
-def decode_keyset_cursor(cursor: str) -> tuple[str, int, int] | None:
+def decode_keyset_cursor(cursor: str) -> KeysetCursor | None:
     """
-    Decode a keyset cursor. Returns None if invalid.
+    Decode and verify a keyset cursor. Returns None if absent, forged or stale.
 
-    Returns:
-        (direction, order_value, pk) or None. direction is "next" or "prev".
+    None is a soft failure by design: the caller falls back to offset
+    pagination for the requested page, which is itself depth-capped. So a
+    visitor holding an old-format bookmark still lands on the right page, while
+    a forged deep cursor buys nothing.
     """
     if not cursor or not cursor.strip():
         return None
     try:
-        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        parts = raw.split(":", 2)
-        if len(parts) != 3:
-            return None
-        direction, order_value_str, pk_str = parts
+        data = signing.loads(cursor, salt=_KEYSET_SALT)
+        direction = data["d"]
         if direction not in ("next", "prev"):
             return None
-        return (direction, int(order_value_str), int(pk_str))
-    except (ValueError, UnicodeDecodeError):
+        return KeysetCursor(
+            direction=direction,
+            order_value=int(data["o"]),
+            pk=int(data["p"]),
+            page=int(data["n"]),
+        )
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
         return None
 
 
