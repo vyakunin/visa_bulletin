@@ -1548,3 +1548,19 @@ django_py_test(
     ],
 )
 
+
+django_py_test(
+    name = "test_dashboard_flat_horizon",
+    size = "small",
+    srcs = ["test_dashboard_flat_horizon.py"],
+    deps = [
+        "//webapp/views:views",
+        "//models:visa_cutoff_date",
+        "//models:bulletin",
+        "//models/enums:visa_category",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//django_config:urls",
+        "//webapp:urls",
+    ],
+)
