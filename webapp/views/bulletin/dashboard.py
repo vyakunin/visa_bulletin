@@ -455,6 +455,18 @@ def _build_unified_prediction_rows(
 
         has_vqs = bool(pred)
 
+        # A horizon forecast equal to today's cutoff is the model predicting no net
+        # movement out to that horizon — not a dated forecast. Step-function series
+        # (Dates for Filing especially) sit frozen most months and jump at the FY
+        # reset; the trajectory reproduces the ~80%/month no-move base rate but
+        # cannot call step TIMING, so it returns the current value at every horizon.
+        # Rendering that as a hard date reads as "the model expects this exact date
+        # 12 months out", which is a claim it does not make. Flag it so the template
+        # can say so instead. See Notion 3ac62b8d.
+        current = current_cutoffs.get(lbl)
+        cutoff_6m_flat = current is not None and pred.get("cutoff_6m") == current
+        cutoff_12m_flat = current is not None and pred.get("cutoff_12m") == current
+
         rows.append({
             "label": lbl,
             # Raw normalized class code ("1st".."5th" / "F1".."F4") — the stable,
@@ -467,6 +479,8 @@ def _build_unified_prediction_rows(
             "next_cutoff": pred.get("next_cutoff"),
             "cutoff_6m": pred.get("cutoff_6m"),
             "cutoff_12m": pred.get("cutoff_12m"),
+            "cutoff_6m_flat": cutoff_6m_flat,
+            "cutoff_12m_flat": cutoff_12m_flat,
             "confidence": pred.get("confidence"),
             "confidence_low": pred.get("confidence_low"),
             "confidence_high": pred.get("confidence_high"),
