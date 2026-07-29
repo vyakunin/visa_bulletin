@@ -244,6 +244,29 @@ py_binary(
 )
 
 py_binary(
+    name = "backtest_trajectory",
+    srcs = ["backtest_trajectory.py"],
+    main = "backtest_trajectory.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:metric_config",
+        "//lib/business/vqs:seasonal_predictor",
+        "//lib/business/vqs:solver",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "backtest_selector",
     srcs = ["backtest_selector.py"],
     main = "backtest_selector.py",
