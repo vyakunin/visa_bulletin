@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import Mock
 
+from django.conf import settings
+
 from webapp.views.seo.sitemaps import robots_view, sitemap_view
 
 _DASHBOARD_TEMPLATE = (
@@ -90,8 +92,13 @@ class TestRobotsTxtView(unittest.TestCase):
     """Test robots.txt view"""
 
     def test_robots_txt_returns_text(self):
-        """robots.txt returns text with sitemap"""
+        """robots.txt returns text with sitemap on a canonical host"""
+        # The view is host-gated (only a canonical host advertises a crawlable
+        # site), so the mock has to answer get_host() with a real one — a bare
+        # Mock returns a Mock, which is not a hostname. Host-by-host behaviour
+        # is covered in tests/test_robots_noncanonical_host.py.
         request = Mock()
+        request.get_host.return_value = sorted(settings.CANONICAL_HOSTS)[0]
         request.build_absolute_uri.return_value = "http://testserver/sitemap.xml"
 
         response = robots_view(request)

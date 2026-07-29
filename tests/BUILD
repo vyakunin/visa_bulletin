@@ -1217,6 +1217,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_robots_noncanonical_host",
+    size = "small",
+    srcs = ["test_robots_noncanonical_host.py"],
+    deps = [
+        "//django_config:urls",
+        "//webapp/views/seo:sitemaps",
+    ],
+)
+
+django_py_test(
     name = "test_sitemap_lastmod",
     size = "small",
     srcs = ["test_sitemap_lastmod.py"],
