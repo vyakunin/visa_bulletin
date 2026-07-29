@@ -192,7 +192,9 @@ class RecapBannerTest(TestCase):
             ),
         }
         with patch(self._LOADER, return_value=(preds, kd)):
-            return self.client.get("/predictions/2026-8/").content.decode()
+            # Canonical archive URL is the monthname slug; the bare-numeric form
+            # 301s to it. The recap banner is asserted on the canonical page.
+            return self.client.get("/predictions/august-2026/").content.decode()
 
     def test_banner_renders_with_real_numbers(self):
         html = self._get()

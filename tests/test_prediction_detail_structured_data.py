@@ -71,7 +71,11 @@ class PredictionDetailStructuredDataTest(TestCase):
         # Patch the loader so the archive page renders actuals without invoking
         # the backtest solver for unstored series (fast + deterministic).
         with patch(_LOADER, return_value=({}, date(2026, 7, 15))):
-            return self.client.get("/predictions/2026-8/")
+            # The monthname slug is the canonical archive URL; the bare-numeric
+            # form is a single-hop 301 alias to it (test_stable_prediction_url
+            # pins that redirect). Structured data is asserted on the canonical
+            # page, which is the one Google indexes.
+            return self.client.get("/predictions/august-2026/")
 
     def _graph(self, html: str) -> list:
         for block in _jsonld_blocks(html):
