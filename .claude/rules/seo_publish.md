@@ -61,7 +61,60 @@ post-launch counterpart to `docs/seo/SEO_OPTIMIZATION.md`.
    Notion ticket, and GSC-measure clicks/impressions/position after Google indexes
    (days→weeks). See `~/.claude/rules/revenue_growth_state_docs.md`.
 
+## Prediction pages ship on a PRE-drop cadence — live, indexed AND promoted ~1 week BEFORE the bulletin drops
+
+The next-month predictions page (`/predictions/<month>-<year>/`) is the site's
+biggest recurring traffic event, and its demand curve **peaks in the days before
+the State Department publishes**, not after. So the page must already be live,
+indexed and promoted **~1 week ahead of the expected drop** — Google needs that
+lead time to rank it before the anticipation wave arrives. Publishing at the drop
+moment is too late: the wave finds a page Google has not yet learned to trust.
+
+**The page itself is automatic.** `scripts/cron/refresh_bulletin.py` publishes the
+following month's predictions the moment the current bulletin ingests, and
+`upcoming_forecast_month()` rolls the sitemap + `/predictions/` links forward. So
+publication is normally DONE weeks early and free. The work that is NOT automatic,
+and that this cadence exists to force, is the **pre-drop half**:
+
+1. **Indexing verify** — `gsc_inspect_url` the page. Not indexed → submit the
+   sitemap AND re-render it (item 1 above; the sitemap is a static file, a code
+   deploy does not refresh it).
+2. **Internal links** — a "<Month> predictions are up" banner on the current
+   month's page, plus the `/predictions/` hub and the homepage.
+3. **Promotion** — the Reddit seed, owned by `visa_bulletin_platform` (Tier-3,
+   needs an explicit go). Timed to land ~1 week before the drop.
+
+**Estimate the drop from measured data, never from a rule of thumb.** Query prod:
+`SELECT publication_date, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
+Recent cadence is the 13th–19th of the prior month (Jul→Jun 16, Jun→May 13,
+May→Apr 16, Apr→Mar 17, Mar→Feb 19), but editions run late — Aug-2026 landed
+~Jul 20. Re-estimate every cycle; the promo window moves with it.
+
+**Keep the cadence armed durably, not in a session.** Each cycle schedules the
+next one via the `scheduled_actions` MCP: a `visa_bulletin` readiness inject ~10
+days before the expected drop, and a `visa_bulletin_platform` promo inject ~2 days
+after it. A cycle that ends without the next one queued is the failure mode — the
+work is invisible until the wave has already passed.
+
+### The URL-scheme trap — a numeric-slug 404 is NOT a missing page
+
+The live page is the **word-month slug**: `/predictions/september-2026/`. The
+numeric `/predictions/2026-9/` **404s by design** until an official bulletin exists
+for that month; `/predictions/2026-8/` resolves only because August is published,
+and `/predictions/august-2026/` 301s to it. So check the word-month slug before
+concluding a page is missing — the numeric variant returning 404 for a
+not-yet-official month is correct behavior. (Cost a false "page not published"
+finding in the 2026-07-29 digest.)
+
 ## Origin
+2026-07-29 — Vladimir, on a digest that flagged the September page as unpublished:
+*"we discussed before we want this page to be fresh for pre-drop cycle so google
+likes it, so it has to be published and promoted ~1 week before expected drop."*
+The page was in fact live (checked at the numeric slug, which 404s by design); the
+real gap was that nothing durable was scheduled to get it indexed and promoted
+before the drop. Cadence + the URL trap recorded here, injects queued, ticket
+`39962b8d409f81f1b900e2b2f247006d` reframed as the recurring cadence owner.
+
 2026-06-23 — priority-date pSEO launch (`/priority-date/<eb>/<country>/`).
 Vladimir: *"make sure all seo fluff is tight: sitemap, ping google, freshness.
 Include this in project rules if not already."*
