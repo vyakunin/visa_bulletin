@@ -2405,3 +2405,76 @@ Three items for the next planning session:
    confirmed, the graduation traded ~13d of blog-comparable composite for gains on
    the publish-path conditional objective — a trade worth making explicitly rather
    than discovering, and an argument for scoring future graduations on both.
+
+## 27. Step-Aware Horizon Trajectories on Persistence Series — Measured, Not Shipped (July 2026)
+
+### The question
+On a STALLED/RETRO series the 1-month selector picks `persistence`, whose
+trajectory is `[current] * steps` (`expert_pool.py` `trajectory_persistence`) —
+flat by construction. `solver.py` rolls the dashboard horizon with
+`ALL_EXPERT_TRAJECTORIES[traj_expert]`, so a 12-month forecast spans an October
+fiscal-year reset without modelling it, and the dashboard's 6m/12m cells repeat
+today's cutoff. Both FY-aware components are bypassed: `trajectory_fy_reset`
+runs only when `fy_reset` is the *selected* expert, and `predict_fy_transition`
+only for the *single-step* prediction.
+
+### Harness
+`scripts/vqs/backtest_trajectory.py` (new) — the multi-step counterpart to
+`backtest_selector.py` (which measures only the 1m selection). Walk-forward over
+1,212 knowledge-dates, 2017-01 → present, India/China EB-1/2/3 × filing +
+final_action, scoring every step h=1..12 against the realized bulletin
+(N=1,035 at h=12). Each candidate replaces *only* the persistence trajectory;
+step 0, the demand gate, and every other expert's trajectory are untouched, so
+the 578 knowledge-dates whose `traj_expert` is `demand_signal` score identically
+across variants by construction. Decision rule pre-registered in the module
+docstring before the first run.
+
+### Result — no candidate passes; none shipped
+
+Series-weighted MAE, days (Δ vs prod):
+
+| variant | h=3 | h=6 | h=12 | 12m MOVED | 12m FLAT |
+|---|---|---|---|---|---|
+| prod (= shape iii) | 182.2 | 302.2 | 448.3 | 467.5 | 108.7 |
+| oct_fyreset (shape i, literal) | +1 | +2 | **+5** | +4 | +18 |
+| oct_signed (shape i, corrected) | +0 | −0 | −4 | −5 | +24 |
+| oct_signed_recov | −1 | −3 | −12 | −15 | +48 |
+| hazard_ev (shape ii) | +8 | +0 | −24 | −36 | **+192** |
+| hazard_med (shape ii) | +8 | +1 | −24 | −35 | +179 |
+| hazard_seasonal | +22 | +25 | +1 | −12 | +225 |
+
+Three findings, in order of how much they change the decision:
+
+1. **Shape (i) as specified is a no-op by design, and a net regression in
+   practice.** `trajectory_fy_reset`'s October branch is
+   `get_median_october_retrogression`, which is `-move if move < 0 else 0` —
+   retrogression *only*. On a series whose October historically *advances* (EB-1
+   India DoF: +2.2m Oct 2024, +12m Oct 2025) it contributes nothing, and where a
+   retro median does exist it pushes the wrong way often enough to cost +5d at
+   12m. It was the recommended shape and is the worst of the three October
+   variants.
+
+2. **Every candidate makes the triggering series worse.** India EB-1/DoF, h=6/h=12
+   MAE: prod 344/454; oct_fyreset 350/463; oct_signed 353/466; oct_signed_recov
+   361/472; hazard_ev 365/465; hazard_seasonal 371/469. The change motivated by
+   that cell degrades that cell, at both horizons, under all six variants.
+
+3. **The gain is a trade the flat slice pays for.** The hazard models buy the
+   largest movement-slice win (−36d at 12m, −8%) by regressing the no-move slice
+   +192d (+177%) — and ~79% of month-transitions on these series are no-move.
+   The October variants make a smaller version of the same trade (−5 to −15d
+   moved, +24 to +48d flat). Nothing improved both slices; nothing improved 6m
+   and 12m together except `oct_signed*`, whose movement-slice gain (1–3%) is far
+   inside the noise of an N=973 sample with a ~460d MAE.
+
+### Decision
+Ship nothing model-side; keep shape (iii) (presentation only, `a39b468`), which
+is now measured as the accuracy-preserving option rather than assumed to be. The
+horizon columns' real problem is not the missing October step — it is that a
+12-month cutoff forecast carries a ~448d MAE regardless of trajectory shape, so
+no re-shaping of the point forecast makes that cell trustworthy. If the horizon
+is revisited, the honest direction is the one this measurement supports: stop
+publishing a bare date at 6m/12m (the shipped "No step predicted" label is the
+first step of exactly that), not a better guess at which date.
+
+Reproduce (~4 min): `scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_trajectory`
