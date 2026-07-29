@@ -119,7 +119,7 @@ def cache_page_all_agents(timeout):
     """Like @cache_page(timeout), caching for bots as well as humans.
 
     For a FIXED-PATH view whose audience IS crawlers — /sitemap.xml,
-    /robots.txt, /llms.txt — the bot-skip rationale inverts. Those URLs are one
+    /llms.txt — the bot-skip rationale inverts. Those URLs are one
     cache key each, so they cannot cause the many-unique-URL LRU eviction that
     `cache_page_skip_bots` guards against; skipping cache there just guarantees
     the site's single most expensive response is re-rendered from scratch on
@@ -129,5 +129,10 @@ def cache_page_all_agents(timeout):
     and ~0.03s warm. Under `cache_page_skip_bots`, Googlebot and bingbot are on
     the permanent 21.7s path — long enough that crawlers were disconnecting at
     their 10s timeout (nginx 499) and each render pinned a gunicorn worker.
+
+    NOT for a view whose body depends on the request HOST: `_make_cache_key`
+    keys on the path alone, so every hostname reaching this stack shares one
+    entry (that is why /robots.txt, which now varies by host, is uncached —
+    see `webapp.views.seo.sitemaps.robots_view`).
     """
     return _cache_page(timeout, skip_bots=False)

@@ -115,12 +115,18 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-for-developmen
 IS_PRODUCTION = SECRET_KEY != "django-insecure-for-development-only"
 DEBUG = os.environ.get("DEBUG", "False").strip().lower() == "true"
 
+# The public production hostnames. Any OTHER host serving this app — staging, a
+# preview stack, localhost — serves the same content on a different domain, i.e.
+# a duplicate mirror of the canonical site. Those hosts must not be crawled or
+# indexed; `webapp.views.seo.sitemaps.robots_view` keys off this set to decide
+# whether to advertise a crawlable site or serve a blanket Disallow.
+CANONICAL_HOSTS = frozenset({"visa-bulletin.us", "www.visa-bulletin.us"})
+
 _default_allowed_hosts = [
     "localhost",
     "127.0.0.1",
     "testserver",
-    "visa-bulletin.us",
-    "www.visa-bulletin.us",
+    *sorted(CANONICAL_HOSTS),
 ]
 # ALLOWED_HOSTS comes from .env (comma-separated). Always allow loopback so Docker
 # health checks (curl localhost:8000) work regardless of what .env lists.

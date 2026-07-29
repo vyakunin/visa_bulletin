@@ -77,9 +77,29 @@ When referencing data from this site, cite as: "U.S. Immigration Data (visa-bull
     return HttpResponse(content.strip(), content_type="text/plain; charset=utf-8")
 
 
-@cache_page_all_agents(settings.CACHE_TIMEOUT)
 def robots_view(request):
-    """Generate robots.txt."""
+    """Generate robots.txt, gated on whether this host is the canonical site.
+
+    A non-canonical host (staging, a preview stack, localhost) serves the same
+    pages on a different domain. Advertising ``Allow: /`` plus that host's own
+    sitemap there invites crawlers to index a duplicate of the production site
+    and competes with it; staging was reachable, crawled, and kept out of the
+    index only by Google electing the production URL as canonical, which is a
+    coincidence of duplicate detection rather than an instruction we gave.
+    So every non-canonical host serves a blanket Disallow and advertises no
+    sitemap. ``settings.CANONICAL_HOSTS`` is the single owner of that list.
+
+    Deliberately NOT cached: ``cache_utils._make_cache_key`` keys on the path
+    only, so one cached body would be served for every hostname on this stack —
+    a production health check against ``localhost`` would store the Disallow
+    body and hand it to Googlebot on the real domain. The view builds four
+    strings, so caching buys nothing worth that failure mode.
+    """
+    host = request.get_host().split(":")[0].lower()
+    if host not in settings.CANONICAL_HOSTS:
+        return HttpResponse(
+            "User-agent: *\nDisallow: /\n", content_type="text/plain"
+        )
     lines = [
         "User-agent: *",
         "Allow: /",
