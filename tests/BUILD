@@ -913,6 +913,7 @@ django_py_test(
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",
+        "//lib/business/salary:employer_stats",
         "//models:job_title",
         "//models:salary",
         "//models/enums:visa_program",
@@ -1495,6 +1496,18 @@ django_py_test(
         "//models:salary",
         "//models/enums:case_status",
         "//models/enums:visa_program",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_i129_demographic_pay",
+    size = "small",
+    srcs = ["test_i129_demographic_pay.py"],
+    deps = [
+        "//lib/business/i129:demographic_pay",
+        "//models:i129",
+        "//models:salary",
         requirement("pytest-django"),
     ],
 )

@@ -51,3 +51,12 @@ py_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "demographic_pay",
+    srcs = ["demographic_pay.py"],
+    deps = [
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)
