@@ -1,5 +1,12 @@
 # Filing Date Migration: From Publication Year to Filing Date
 
+> **Status: PROPOSAL — none of the five phases below has been implemented.**
+> `fiscal_year` is still the primary time filter (`webapp/views/salary/search.py`
+> applies `apply_fiscal_year_filter`), and there is no "Filing Year" dropdown.
+> Nothing here describes current behaviour; it is a plan that was written and not
+> executed. Re-verify the "Current State" tables against the code before acting on
+> any of it.
+
 ## Goal
 
 Migrate the primary time-axis filter from `fiscal_year` (an integer extracted from the source filename, e.g. "FY2024") to `case_submitted` (the actual date the employer filed the application). This gives users a more meaningful and accurate time dimension. `source_file_date` continues to serve its role in duplicate resolution but is not the end-user filter.

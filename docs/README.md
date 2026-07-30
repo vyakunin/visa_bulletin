@@ -18,7 +18,6 @@ This directory contains all project documentation organized by topic.
 - **BAZEL.md** - Bazel build system guide (dependencies, targets, runfiles)
 - **BAZEL_DEPENDENCIES.md** - Managing Bazel dependencies
 - **BAZEL_RUNFILES.md** - Working with Bazel runfiles
-- **BAZEL_RUNFILES_IMPLEMENTATION.md** - Runfiles implementation details
 
 **Reference:**
 - **PAGESPEED_OPTIMIZATIONS.md** - Performance optimization decisions and rationale
@@ -102,6 +101,11 @@ Design documents for features that are planned or partially implemented.
 ## Finding Documentation
 
 ### By Task
+
+**Running app or model code against real data (no deploy, no branch cut):**
+- `scripts/vqs/run_in_stg.sh` — the working tree, in the staging image, against a
+  prod-copy DB. See `DEV_SETUP.md` §"Running this project's code" and
+  `PREDICTION_SYSTEM_OVERVIEW.md` §4.
 
 **Setting up local development environment:**
 - Start with: `DEV_SETUP.md` (developer tools)

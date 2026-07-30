@@ -1,14 +1,22 @@
 # Developer Tools Setup Guide
 
-## Current Status
+## Running this project's code — read this before concluding you can't
 
-✅ **GitHub Authentication**: Working
-- `GITHUB_TOKEN` is set and accessible
-- Git can access GitHub repositories
-- Git credential helper is configured (osxkeychain)
+Nothing here needs a branch cut, a deploy, or a local Django install to exercise
+app or model code against real data:
 
-❌ **Homebrew**: Not installed
-❌ **GitHub CLI (gh)**: Not installed
+| To do this | Use |
+|---|---|
+| Run a script/module against a prod-copy DB, **with your uncommitted working tree** | `scripts/vqs/run_in_stg.sh -m scripts.vqs.<module> [args]` — mounts the working tree over `/app` in the same image the staging web container runs, joined to the staging compose network. Details: `PREDICTION_SYSTEM_OVERVIEW.md` §4. |
+| Render a page / hit a view with uncommitted code | the same script — drive the Django test client from a module or `-c`; the page renders with your edits, nothing is exposed publicly |
+| Build or test | `bazel build //...` / `bazel test //tests:...`. `MODULE.bazel` pins a **hermetic Python 3.11 toolchain**, so a system interpreter of another version is irrelevant. |
+
+"There's no local Django" / "bazel needs a Python I don't have" are statements
+about `$PATH`, not about this repo — both were asserted and both were wrong
+(2026-07-29). Check the runner before reporting a verification as out of reach.
+
+The rest of this file is workstation bootstrap for a **macOS** dev machine; the
+minipc that runs the fleet needs none of it.
 
 ## Quick Setup
 
