@@ -24,7 +24,12 @@ advertising. Don't draft, schedule, or re-post to them; don't modmail-appeal
   "EB2 does not allow advertising and frequent violators will be banned." No
   account ban yet, but one more promo post would trigger it. The deep links +
   donation block read as an ad here.
-- **r/h1b** — earlier promo removed (see §1 written-off list).
+- **r/h1b** — tolerated the FIRST promo and removed the REPEAT, which is the
+  escalation pattern rather than a one-off. Verified 2026-07-31: `1pbpp95`
+  (2025-12) is live at score 132 / 71 comments — the account's best-performing
+  post in any sub — while `1tiz1be` (2026-05) renders "[ Removed by moderator ]".
+  A third promo post is the one that gets the account banned. Do not read the
+  surviving post as permission.
 
 When a new sub is being considered, dry-run first and check its rules/AutoMod for
 a no-advertising / no-self-promotion clause before scheduling.
