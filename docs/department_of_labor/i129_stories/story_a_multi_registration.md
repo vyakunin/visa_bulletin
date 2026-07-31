@@ -87,7 +87,7 @@ This is the "before" picture of the FY2025 **beneficiary-centric** rule (one lot
 
 ## Deep-link targets for outreach
 
-Trend + pool tables → this page's anchors. Broader H-1B pay context → `/salaries/`. Forward context: the Dec-2025 weighted-selection proposed rule (Federal Register 2025-23853).
+Trend + pool tables → this page's anchors. Broader H-1B pay context → `/salaries/`. Forward context: the weighted-selection rule ([Federal Register 2025-23853](https://www.federalregister.gov/documents/2025/12/29/2025-23853/weighted-selection-process-for-registrants-and-petitioners-seeking-to-file-cap-subject-h-1b)) — **final** as of 2025-12-29, effective 2026-02-27, and already executed for FY2027 (registration 2026-03-04..19, selections by 03-31); wage level IV gets 4 lottery entries, III 3, II 2, I 1. The published page does not cite it and needs no correction — it links the FY2024 beneficiary-centric rule (FR 2024-01770), which is the right "after" for this story. FY2027 registration statistics were not yet published as of 2026-07-31, so the pool arc still ends at FY2026 (470k → 344k).
 
 ## Journalist hook (outreach email — Tier-3, held for approval)
 
