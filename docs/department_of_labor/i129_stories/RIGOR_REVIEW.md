@@ -46,7 +46,19 @@ FY21 99,610/8,148 = **8.2%** · FY22 89,535/15,159 = **16.9%** · FY23 91,832/20
 FY24 91,864/23,401 = **25.5%**. Matches the draft.
 
 **(ii) Composition test — within-country trends** (India share of filings is FLAT: 64.1% →
-67.2% → 70.2% → 66.7%, so the trend cannot be a country-mix shift):
+67.2% → 70.2% → 66.7%, so the trend cannot be a country-mix shift).
+`country_of_birth` holds ISO3 codes (`IND`, `CHN`) — a `LIKE 'INDIA%'` predicate silently
+matches nothing and collapses every row into "Other":
+```sql
+SELECT CASE WHEN country_of_birth='IND' THEN 'India'
+            WHEN country_of_birth='CHN' THEN 'China' ELSE 'Other' END AS grp,
+       fiscal_year, COUNT(*),
+       ROUND(100.0*AVG(CASE WHEN ben_multi_reg_ind THEN 1 ELSE 0 END),1)
+FROM i129_petition GROUP BY 1,2 ORDER BY 1,2;
+-- India share of filings per FY:
+SELECT fiscal_year, ROUND(100.0*AVG(CASE WHEN country_of_birth='IND' THEN 1 ELSE 0 END),1)
+FROM i129_petition GROUP BY 1 ORDER BY 1;
+```
 
 | Multi-reg rate among filed petitions | FY21 | FY22 | FY23 | FY24 |
 |---|---|---|---|---|
@@ -57,7 +69,18 @@ FY24 91,864/23,401 = **25.5%**. Matches the draft.
 The rise is *within* every group (India 3.3×, China 1.9×, other 1.4×) — a behavioral change,
 not composition.
 
-**(iii) Industry decomposition — India × NAICS 5415 (IT services), FY21–24 pooled:**
+**(iii) Industry decomposition — India × NAICS 5415 (IT services), FY21–24 pooled.**
+IT services is `naics_code LIKE '5415%'` (prefix, not equality — the column carries full
+6-digit codes):
+```sql
+SELECT country_of_birth='IND' AS india, naics_code LIKE '5415%' AS it_svc, COUNT(*),
+       ROUND(100.0*AVG(CASE WHEN ben_multi_reg_ind THEN 1 ELSE 0 END),1)
+FROM i129_petition GROUP BY 1,2 ORDER BY 1 DESC,2 DESC;          -- pooled 2x2
+SELECT fiscal_year, country_of_birth='IND', naics_code LIKE '5415%',
+       ROUND(100.0*AVG(CASE WHEN ben_multi_reg_ind THEN 1 ELSE 0 END),1)
+FROM i129_petition GROUP BY 1,2,3 ORDER BY 2 DESC,3 DESC,1;      -- per-FY
+```
+
 
 | | NAICS 5415 | Other NAICS |
 |---|---|---|
@@ -76,7 +99,25 @@ Cognizant 292/6,439 (4.5%), Microsoft 144/4,349 (3.3%), IBM 101/3,232 (3.1%). Th
 are tiny staffing shops: Aclat Inc. 88/88 (**100%**), Snowstack LLC 91/94 (96.8%), Petadigit LLC
 92/100 (92.0%), R2 Technologies 114/124 (91.9%), Tek Leaders 81/84 (96.4%).
 
-**Size gradient** (employer bucketed by total FY21–24 filings):
+**Size gradient** (employer bucketed by total FY21–24 filings). Bucketing is on raw
+`employer_name`, NOT `employer_cluster_id` — a firm spelled two ways (e.g. "Tek Leaders,
+Inc." 84 filings and "Tek Leaders Inc." 51) counts as two employers, which is what the
+published table reflects:
+```sql
+WITH e AS (SELECT employer_name, COUNT(*) n,
+                  SUM(CASE WHEN ben_multi_reg_ind THEN 1 ELSE 0 END) m
+           FROM i129_petition GROUP BY 1)
+SELECT CASE WHEN n>=1000 THEN '1000+' WHEN n>=200 THEN '200-999'
+            WHEN n>=50 THEN '50-199' WHEN n>=10 THEN '10-49' ELSE '1-9' END AS bucket,
+       COUNT(*) AS employers, SUM(n) AS petitions, ROUND(100.0*SUM(m)/SUM(n),1) AS pct
+FROM e GROUP BY 1 ORDER BY MIN(n);
+-- concentration: 1,815 employers with >=10 filings and a >=50% rate
+SELECT COUNT(*), SUM(m), ROUND(100.0*SUM(m)/(SELECT SUM(m) FROM e),1)
+FROM e WHERE n>=10 AND m::numeric/n>=0.5;
+-- share of all multi-reg petitions held by employers under 50 filings (79.4%)
+SELECT ROUND(100.0*SUM(m) FILTER (WHERE n<50)/SUM(m),1) FROM e;
+```
+
 
 | Employer size (filings) | Employers | Petitions | Multi-reg rate |
 |---|---|---|---|
@@ -157,6 +198,19 @@ multi-entries. The gaming lived in small staffing firms, not the big outsourcers
 Frame as the "before" picture of the FY2025 beneficiary-centric rule, with the flag's exact
 definition adjacent, both denominators (filed petitions vs registration pool) shown, and the
 size-gradient table as the novel contribution.
+
+---
+
+### 7. Re-verification log
+
+Story (a)'s figures are hardcoded literals in `scripts/oneoff/generate_i129_story_posts.py`,
+so this section is the only record of how they were derived — re-run §2's SQL, never a
+hand-rolled variant.
+
+| Date | Result |
+|---|---|
+| 2026-07-13 | Original derivation (all figures above). |
+| 2026-07-31 | Re-verified against live prod: FY trend, within-country, India share, India×5415 pooled + per-FY, size gradient, named large filers, named small firms, 1,815-employer concentration (46.3%), under-50 share (79.4%) — **all match to the published decimal, zero drift**. Published page body identical prod vs staging. |
 
 ---
 
