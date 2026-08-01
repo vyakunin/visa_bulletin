@@ -431,7 +431,14 @@
                             bulletins.
                         </small>
                     </div>
-                    <div id="chart-content">
+                    {% comment %}
+                      Reserve the chart's final height while it lazy-loads. The spinner
+                      alone is ~182px and the rendered Plotly chart is chart_height_px,
+                      so without this the swap pushes everything below down by the
+                      difference (CLS ~0.17 on mobile). The value comes from the chart
+                      builder's own layout height, so the two cannot drift apart.
+                    {% endcomment %}
+                    <div id="chart-content" style="min-height: {{ chart_data.chart_height_px|default:400 }}px;">
                         <div class="text-center py-5" id="chart-loading">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Loading chart...</span>

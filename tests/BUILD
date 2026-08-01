@@ -114,6 +114,16 @@ py_test(
 )
 
 py_test(
+    name = "test_chart_space_reservation_guard",
+    size = "small",
+    srcs = ["test_chart_space_reservation_guard.py"],
+    data = [
+        "//lib/business/bulletin:chart_builder.py",
+        "//webapp:templates",
+    ],
+)
+
+py_test(
     name = "test_wayback_cache",
     size = "small",
     srcs = ["test_wayback_cache.py"],

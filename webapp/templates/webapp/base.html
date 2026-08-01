@@ -291,6 +291,19 @@
             font-display: swap; /* Prevent layout shift during font load */
         }
 
+        /* Reserve every icon's box in the CRITICAL css, before the deferred
+           bootstrap-icons stylesheet arrives. That stylesheet draws icons from a
+           `::before` pseudo-element, so until it applies (~3.6s on throttled mobile,
+           since it loads via media="print" onload) an `<i class="bi …">` occupies
+           nothing at all. The icons then pop in, every nav item widens, the nav
+           rewraps and the page below drops ~24px — CLS 0.125 on the homepage.
+           1em is the icon font's own advance width, so the glyph lands exactly
+           inside the box reserved here and nothing moves when it does. */
+        .bi {
+            display: inline-block;
+            width: 1em;
+        }
+
         :root {
             --gov-navy: #003366;
             --gov-red: #B31942;
@@ -448,11 +461,10 @@
             min-height: 280px; /* Reserve space for projection cards - prevents CLS */
         }
         
-        /* Plotly chart container */
-        #chart-plot {
-            min-height: 350px;
-        }
-        
+        /* Plotly chart container.
+           No min-height on #chart-plot: it ships display:none until the chart
+           renders, so a reservation there occupies nothing. The space is reserved
+           on #chart-content instead (dashboard.html), which is always visible. */
         #chart-container {
             min-height: 400px;
         }
@@ -669,11 +681,7 @@
             #chart-container {
                 overflow: hidden;
             }
-            
-            #chart-plot {
-                min-height: 300px;
-            }
-            
+
             .plotly-graph-div {
                 max-width: 100vw !important;
             }
