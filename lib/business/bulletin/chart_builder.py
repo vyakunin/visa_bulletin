@@ -10,6 +10,11 @@ import plotly.graph_objects as go
 
 from models.enums.country import Country
 
+# Rendered height of the dashboard trend chart. The template reserves exactly this
+# many pixels on #chart-content while the chart lazy-loads, so the swap from spinner
+# to chart shifts nothing; the two must stay equal or CLS returns.
+DASHBOARD_CHART_HEIGHT_PX = 400
+
 # Color palette for multiple visa classes
 VISA_CLASS_COLORS = [
     "#0d6efd",  # Blue
@@ -86,6 +91,7 @@ def build_multi_class_chart_with_projections(
         "trace_info": trace_info,
         "priority_date_trace_idx": priority_date_trace_idx,
         "submission_date_formatted": submission_date.strftime("%b %d, %Y"),
+        "chart_height_px": DASHBOARD_CHART_HEIGHT_PX,
     }
 
 
@@ -262,7 +268,7 @@ def _apply_chart_layout(fig: go.Figure, category_label: str, country: str) -> No
         ),
         hovermode="closest",
         template="plotly_white",
-        height=400,
+        height=DASHBOARD_CHART_HEIGHT_PX,
         showlegend=False,
         margin=dict(t=30, r=10, b=35, l=45),
         autosize=True,

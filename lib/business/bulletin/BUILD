@@ -4,6 +4,10 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("@visa_bulletin_pip//:requirements.bzl", "requirement")
 
+# Consumed as data by //tests:test_chart_space_reservation_guard, which reads the
+# rendered chart height as source text rather than importing plotly.
+exports_files(["chart_builder.py"])
+
 py_library(
     name = "cutoff_projection",
     srcs = ["cutoff_projection.py"],
