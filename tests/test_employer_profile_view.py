@@ -11,7 +11,6 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from lib.business.salary.employer_stats import EMPLOYER_INDEXABLE_MIN_FILINGS
-
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
