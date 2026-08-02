@@ -38,6 +38,20 @@ Four fixes shipped together off the 2026-07-04 engagement dig:
    the requisition-id 1–3-filing pages Google landed searchers on — the
    scaled-content-abuse suspect for the June impression halving. Reversible
    (lift the constant) if the 07-11 re-measure exonerates thin pages.
+
+   **The same gate on `/employer/*`** — `EMPLOYER_INDEXABLE_MIN_FILINGS = 10`
+   (`lib/business/salary/employer_stats.py`), which owns the threshold both the
+   view and the sitemap read. A profile is thin when EITHER its lifetime count
+   (LCA + PERM) is below the floor OR it renders zero filings inside the default
+   5-fiscal-year window — the second condition is why the audit counted ~203k
+   "zero-filing" pages while only 3,550 clusters have a lifetime count of 0. Of
+   233,445 slugged clusters, ~217k fall below the floor. The two gates disagree
+   in one direction by construction: `EmployerCluster` stores no last-filing
+   year, so a cluster above the floor whose filings all predate the window is
+   advertised by the sitemap AND noindexed by the view (crawl budget, not a thin
+   page in the index) — pinned by
+   `tests/test_employer_profile_view.py::EmployerThinPageGateTest`.
+   Committed in 276a25c, live on deploy.
 3. **Mobile first-paint + tables** — Plotly was a **render-blocking `<head>`
    script** on both profile templates (job-title even shipped the full
    unversioned `plotly-latest`, ~3.5 MB); both now load
@@ -117,7 +131,7 @@ Sitemap: https://visa-bulletin.us/sitemap.xml
 | Priority-date landings | 12 | `/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Priority-date landings (Spanish) | 12 | `/es/priority-date/{eb1,eb2,eb3}/{india,china,philippines,mexico}/` | Latest bulletin date |
 | Priority-date hub + rollups | 4 | `/priority-date/` + `/priority-date/{eb1,eb2,eb3}/` (country-agnostic) | Latest bulletin `fetched_at` |
-| Employer profiles | ~3,900 | `EmployerCluster` with slug, `total_lca_count >= 5`, top 10k | Latest bulletin date |
+| Employer profiles | 10,000 (cap binds) | `EmployerCluster` with slug, `total_lca_count + total_perm_count >= EMPLOYER_INDEXABLE_MIN_FILINGS` (10 — the thin-page gate), top 10k by that combined count. ~16,100 clusters qualify, so the 10k cap is what sets the count. Live on deploy of visa_bulletin 276a25c; prod still serves the old `total_lca_count >= 5` / ~3,900 until then | Latest bulletin date |
 | Job title profiles | ~1,265 | `JobTitleCluster` with slug, `total_filings >= INDEXABLE_MIN_FILINGS` (100 — the thin-page gate; was `>= 10` / ~5,200 until 2026-07-04) | Latest bulletin date |
 | Blog posts | all published | `BlogPost.is_published=True` | Per-post `published_date` |
 | Prediction archive | all bulletin months | One URL per `Bulletin` month | Per-bulletin `publication_date` |
