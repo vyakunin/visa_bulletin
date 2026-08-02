@@ -20,6 +20,7 @@ py_library(
     deps = [
         "//django_config:cache_utils",
         "//lib/business/salary:h1b_salary_pair",
+        "//lib/business/salary:employer_stats",
         "//lib/business/salary:h1b_sponsors",
         "//lib/business/salary:job_title_stats",
         "//lib/business/salary:occupation_stats",

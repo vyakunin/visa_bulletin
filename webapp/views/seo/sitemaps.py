@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_all_agents
+from lib.business.salary.employer_stats import indexable_employer_clusters
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
     qualifying_slugs,
@@ -21,7 +22,6 @@ from models.blog import BlogPost
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.job_title import JobTitleCluster
-from models.salary import EmployerCluster
 
 logger = logging.getLogger(__name__)
 
@@ -280,14 +280,14 @@ def build_sitemap_xml(base_url: str) -> str:
             priority="0.6",
         ))
 
-    # Employer profile pages (top 10,000 by filing count)
+    # Employer profile pages — only above the thin-page gate (the view noindexes
+    # anything below it, so the sitemap must not advertise those). Ordered by the
+    # same COMBINED lifetime count the gate uses: the previous `total_lca_count`
+    # filter was inconsistent with it in both directions — it dropped PERM-heavy
+    # employers that carry plenty of data, and admitted LCA-only clusters that the
+    # view now noindexes.
     try:
-        employer_clusters = list(
-            EmployerCluster.objects.filter(
-                slug__isnull=False,
-                total_lca_count__gte=5,
-            ).order_by("-total_lca_count")[:10000]
-        )
+        employer_clusters = list(indexable_employer_clusters(limit=10000))
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load employer clusters for sitemap", exc_info=True)
         employer_clusters = []

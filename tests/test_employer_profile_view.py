@@ -4,9 +4,13 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from datetime import datetime
+
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
+
+from lib.business.salary.employer_stats import EMPLOYER_INDEXABLE_MIN_FILINGS
 
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
@@ -391,3 +395,143 @@ class SitemapTest(TestCase):
 
         # Should not include low-volume employer
         self.assertNotIn("/employer/low-volume-company/", content)
+
+
+class EmployerThinPageGateTest(TestCase):
+    """Thin employer profiles are noindexed, ad-suppressed and sitemap-excluded.
+
+    Covers BOTH thin conditions, which are not the same thing (see
+    lib/business/salary/employer_stats): a low LIFETIME count, and zero filings
+    in the RENDERED window (the profile defaults to the last 5 fiscal years, so
+    a cluster whose filings are all older renders an empty page even though its
+    lifetime count clears the threshold — that is the shape the 2026-07-27 audit
+    counted as ~203k "zero-filing" pages).
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+
+    def _make_cluster(self, slug, lifetime, fiscal_year, n_records=None):
+        cluster = EmployerCluster.objects.create(
+            canonical_name=slug.replace("-", " ").title(),
+            slug=slug,
+            total_lca_count=lifetime,
+            total_perm_count=0,
+        )
+        employer = Employer.objects.create(
+            name=cluster.canonical_name,
+            name_normalized=cluster.canonical_name.lower(),
+            city="San Francisco",
+            state="CA",
+            canonical_cluster=cluster,
+        )
+        for i in range(n_records if n_records is not None else lifetime):
+            SalaryRecord.objects.create(
+                case_number=f"{slug}-{i}",
+                employer=employer,
+                employer_name=cluster.canonical_name,
+                job_title="Software Engineer",
+                wage_annual=120000,
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=fiscal_year,
+                worksite_state="CA",
+            )
+        return cluster
+
+    def test_low_lifetime_count_is_noindexed_and_flagged_thin(self):
+        self._make_cluster(
+            "thin-employer-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS - 1,
+            fiscal_year=datetime.now().year - 1,
+        )
+        response = self.client.get("/employer/thin-employer-llc/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["thin_page"])
+        self.assertEqual(response.context["meta_robots"], "noindex, follow")
+        self.assertContains(
+            response, '<meta name="robots" content="noindex, follow">'
+        )
+        self.assertContains(response, 'data-vb-thin="1"')
+
+    def test_qualifying_employer_is_indexable_and_not_flagged_thin(self):
+        self._make_cluster(
+            "fat-employer-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS,
+            fiscal_year=datetime.now().year - 1,
+        )
+        response = self.client.get("/employer/fat-employer-llc/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["thin_page"])
+        self.assertIsNone(response.context["meta_robots"])
+        self.assertNotContains(response, 'data-vb-thin="1"')
+        self.assertNotContains(response, "noindex")
+
+    def test_zero_rendered_filings_is_thin_despite_high_lifetime_count(self):
+        """All filings outside the default 5-year window -> empty page -> thin."""
+        self._make_cluster(
+            "stale-employer-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS * 50,
+            fiscal_year=2005,
+            n_records=20,
+        )
+        response = self.client.get("/employer/stale-employer-llc/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["basic"]["total_filings"], 0)
+        self.assertTrue(response.context["thin_page"])
+        self.assertEqual(response.context["meta_robots"], "noindex, follow")
+        self.assertContains(response, 'data-vb-thin="1"')
+
+    def test_sitemap_excludes_thin_includes_qualifying(self):
+        self._make_cluster(
+            "sitemap-thin-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS - 1,
+            fiscal_year=datetime.now().year - 1,
+        )
+        self._make_cluster(
+            "sitemap-fat-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS,
+            fiscal_year=datetime.now().year - 1,
+        )
+        content = self.client.get("/sitemap.xml").content.decode("utf-8")
+
+        self.assertNotIn("/employer/sitemap-thin-llc/", content)
+        self.assertIn("/employer/sitemap-fat-llc/", content)
+
+    def test_sitemap_advertises_stale_window_cluster_that_view_noindexes(self):
+        """Pins the known gap between the two gates.
+
+        The sitemap sees only the lifetime counters — `EmployerCluster` carries
+        no last-filing year — so a cluster above the threshold whose filings all
+        predate the rendered window is advertised while the view noindexes it.
+        Wasted crawl budget, not a thin page in the index. If a denormalized
+        recency field ever closes this, that change should flip this assertion.
+        """
+        self._make_cluster(
+            "stale-but-listed-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS * 50,
+            fiscal_year=2005,
+            n_records=20,
+        )
+
+        profile = self.client.get("/employer/stale-but-listed-llc/")
+        self.assertTrue(profile.context["thin_page"])
+
+        content = self.client.get("/sitemap.xml").content.decode("utf-8")
+        self.assertIn("/employer/stale-but-listed-llc/", content)
+
+    def test_sitemap_counts_perm_filings_toward_the_gate(self):
+        """A PERM-heavy employer is real data; the old LCA-only filter dropped it."""
+        EmployerCluster.objects.create(
+            canonical_name="Perm Heavy Co",
+            slug="perm-heavy-co",
+            total_lca_count=0,
+            total_perm_count=EMPLOYER_INDEXABLE_MIN_FILINGS,
+        )
+        content = self.client.get("/sitemap.xml").content.decode("utf-8")
+
+        self.assertIn("/employer/perm-heavy-co/", content)

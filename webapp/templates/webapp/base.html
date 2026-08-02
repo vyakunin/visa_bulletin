@@ -744,7 +744,14 @@
 
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+{% comment %}
+  data-vb-thin marks a profile too thin to index (see lib/business/salary/employer_stats.py).
+  Nothing reads it yet: it is the seam for collapsing ad slots on thin pages, since AdSense
+  evaluates pages that SERVE ads (reached by Mediapartners-Google via the ad request itself)
+  and the meta-robots noindex set alongside it covers only the Search-side exposure. The
+  partials that would consume it are bind-mounted from the private ops repo.
+{% endcomment %}
+<body{% if thin_page %} data-vb-thin="1"{% endif %}>
     <div class="hero-section">
         <div class="container">
             {% if request.path != '/' %}<a href="{% url 'dashboard' %}" class="hero-home-link" aria-label="U.S. Visa Bulletin — home">{% endif %}

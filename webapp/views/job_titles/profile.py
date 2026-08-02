@@ -217,6 +217,10 @@ def job_title_profile_view(request, slug: str):
         "meta_robots": (
             "noindex, follow" if total_filings < INDEXABLE_MIN_FILINGS else None
         ),
+        # Same condition as meta_robots, exposed to the template as the seam for
+        # collapsing ad slots on thin pages (AdSense judges pages that SERVE ads,
+        # which noindex does not cover). No consumer yet — see employer_stats.py.
+        "thin_page": total_filings < INDEXABLE_MIN_FILINGS,
     }
 
     return render(request, "webapp/job_title_profile.html", context)

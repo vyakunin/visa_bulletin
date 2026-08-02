@@ -28,6 +28,7 @@ from lib.business.salary.common_stats import (
     calculate_yoy_trends,
 )
 from lib.business.salary.employer_renames import get_rename_link
+from lib.business.salary.employer_stats import is_thin_employer_profile
 from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
@@ -412,10 +413,19 @@ def employer_profile_view(request, slug):
     # when None.
     rename_link = get_rename_link(cluster)
 
+    # Thin-page gate: an employer whose cluster carries almost no data (or whose
+    # filings all fall outside the rendered window) renders all-zero stats and a
+    # blank chart. Keep it reachable (follow preserves link equity) but out of
+    # the index. The flag is also exposed to the template as the seam for ad
+    # suppression, which nothing consumes yet — see employer_stats.py.
+    thin_page = is_thin_employer_profile(cluster, stats["basic"]["total_filings"])
+
     context = {
         "cluster": cluster,
         "stats": stats,
         "rename_link": rename_link,
+        "meta_robots": "noindex, follow" if thin_page else None,
+        "thin_page": thin_page,
         "chart_data": chart_data,
         "pay_comparison": pay_comparison,
         "approval_stats": approval_stats,

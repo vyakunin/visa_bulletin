@@ -82,6 +82,15 @@ py_library(
 )
 
 py_library(
+    name = "employer_stats",
+    srcs = ["employer_stats.py"],
+    deps = [
+        "//models:salary",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "similar_titles",
     srcs = ["similar_titles.py"],
     deps = [
