@@ -923,7 +923,6 @@ django_py_test(
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",
-        "//lib/business/salary:employer_stats",
         "//models:job_title",
         "//models:salary",
         "//models/enums:visa_program",
