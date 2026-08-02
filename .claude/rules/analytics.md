@@ -93,12 +93,26 @@ The `mcp/daily_checkup_server.py` runs every morning and produces a structured r
 
 ## Auto-dispatch to Telegram bot on monitoring incidents
 
-### Two complementary alert paths
+### Three complementary alert paths
+
+The first two watch PRODUCTION; the third watches the repo, and a red repo is
+what lets a bad change reach production in the first place.
 
 | Watchdog | Covers | Blind to | Channel |
 |---|---|---|---|
 | **UptimeRobot** (external) | `visa-bulletin.us/` reachable / 200 | anything path-specific — it only pings `/`, so a 500 on `/salaries/?employer=X` is invisible | emails → `gmail_dispatcher` `uptimerobot-down` rule → visa_bulletin bot |
 | **5xx-spike watchdog** (homeserver cron, every 15 min) | per-path **500s** (app bug, ≥10/window) + gateway **502/503/504** burst (≥20 & rate ≥2%) on the live origin | sub-15-min blips below threshold; non-5xx regressions (wrong content, slow-but-200) | `alert_5xx_spike.sh` → **notify_chat sink** → visa_bulletin relay (agent reacts); Telegram fallback |
+| **GitHub Actions CI** (every push to `main`) | a red `Test` run — including the analysis-abort shape where **zero tests execute**, which looks like ordinary failure but means the entire suite went unrun | a commit that never reaches CI: commits made from a linked worktree skip the repo's pre-commit gate, and `branching.md`'s release flow cherry-picks through exactly those | `[vyakunin/visa_bulletin] Run failed` mail → `gmail_dispatcher` `github-ci-failed` rule → **`visa_bulletin_subscriptions`** sibling bot |
+
+The CI row exists because `main` sat red from 2026-07-30 to 2026-08-02 — five
+pushes, **zero tests executed** — and nothing told anyone: the mail lands outside
+Gmail's PRIMARY tab, so `/email_swipe` never sees it (primary-only by design), and
+no dispatcher rule claimed it. The rule is pinned by `List-Id:
+visa_bulletin.vyakunin.github.com`, NOT by subject text — Gmail tokenizes
+`visa_bulletin`, so a subject match would also sweep in
+`[vyakunin/visa_bulletin_platform]`. It has **not been test-fired yet**
+(tracked: Notion `3b062b8d409f8156a7c5eaa71b2af694`), so treat its coverage as
+asserted rather than observed until that lands.
 
 The 5xx watchdog exists because UptimeRobot's `/`-only check missed the
 2026-06-10 `/salaries/` EmptyResultSet 500 regression entirely (it was 0.53% of
