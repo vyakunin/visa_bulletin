@@ -67,7 +67,14 @@ vs ads-on 0.229 on the homepage, i.e. ads make it no worse). Use `cls` here
 only to notice a surface worth re-measuring properly.
 
 INPUTS  : GoatCounter token at ~/tokens/goatcounter.token (read by the MCP);
-          debug Chrome on :9222 (`agent_infra/scripts/launch_chrome_cdp.sh`).
+          debug Chrome on :9222 (`agent_infra/scripts/launch_chrome_cdp.sh`);
+          ~/tokens/vb_smoke_header — the WAF exemption. WAF rule 5 managed-
+          challenges /job-title/ and /employer/, and without this header those
+          surfaces capture the "Verify you are human" interstitial instead of
+          the site. Sent to our own origin ONLY (see `_add_smoke`): a page- or
+          context-wide header would leak the secret to googlesyndication and
+          every other third party the ad stack talks to. Missing file = a
+          stderr warning, not a crash.
 OUTPUTS : ~/.cache/vb_ad_screenshots/<YYYY-MM-DD>/<surface>__<device>.jpg
           + manifest.json (per-shot diagnostics) + a printed summary table.
           Exit 0 = captured; 2 = could not reach the debug Chrome / no surfaces.
