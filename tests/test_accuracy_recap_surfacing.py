@@ -210,9 +210,17 @@ class RecapBannerTest(TestCase):
         self.assertIn("beating the no-change baseline", html)
         self.assertIn("2 of 2 scored dates", html)
 
-    def test_banner_reciprocal_dashboard_link(self):
+    def test_banner_links_forward_to_the_upcoming_forecast(self):
+        """The recap's forward link names the next month and goes to ITS page.
+
+        It used to read "the next bulletin" and point at the dashboard, which
+        left the upcoming-month forecast page with no inbound internal link —
+        Google never discovered it before the drop. See
+        tests/test_stable_prediction_url.py::TestUpcomingForecastInboundLinks.
+        """
         html = self._get()
-        self.assertIn("See the live forecast for the next bulletin", html)
+        self.assertIn("See the live forecast for the September 2026 bulletin", html)
+        self.assertIn('href="/predictions/september-2026/"', html)
 
 
 class SitemapContainsAccuracyPagesTest(TestCase):

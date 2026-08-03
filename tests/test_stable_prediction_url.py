@@ -142,3 +142,48 @@ class TestStablePredictionUrl(TestCase):
             b'href="http://testserver/predictions/family_sponsored/2025-11/">',
             resp.content,
         )
+
+
+class TestUpcomingForecastInboundLinks(TestCase):
+    """The upcoming-month forecast page must be REACHABLE from indexed content.
+
+    A stable, self-canonical URL in the sitemap is not enough on its own: with no
+    inbound internal link, Google left ``/predictions/september-2026/`` at "URL is
+    unknown to Google" for two weeks while the already-indexed August archive page
+    pointed its own "See the live forecast for the next bulletin" link at the
+    homepage instead. The forecast has to be crawled and ranked BEFORE the
+    bulletin drops, because the anticipation wave peaks in the days before
+    publication — so the link is load-bearing SEO, not decoration.
+    """
+
+    def setUp(self):
+        self.aug = Bulletin.objects.create(publication_date=date(2026, 8, 1))
+        self.jun = Bulletin.objects.create(publication_date=date(2026, 6, 1))
+
+    def test_latest_archive_page_links_to_upcoming_forecast(self):
+        body = self.client.get("/predictions/august-2026/").content.decode()
+        self.assertIn('href="/predictions/september-2026/"', body)
+        # The prominent pre-drop banner, not just an inline link.
+        self.assertIn("September 2026 predictions are up", body)
+
+    def test_archive_forecast_link_does_not_point_at_the_homepage(self):
+        """The exact defect: the 'next bulletin forecast' link went to `/`."""
+        body = self.client.get("/predictions/august-2026/").content.decode()
+        self.assertNotIn(
+            '<a href="/?category=employment_based&country=all" class="small">', body
+        )
+
+    def test_older_archive_month_links_forward_without_the_banner(self):
+        body = self.client.get("/predictions/june-2026/").content.decode()
+        self.assertIn('href="/predictions/september-2026/"', body)
+        # The loud banner belongs only on the newest month.
+        self.assertNotIn("September 2026 predictions are up", body)
+
+    def test_homepage_links_to_upcoming_forecast(self):
+        body = self.client.get("/").content.decode()
+        self.assertIn('href="/predictions/september-2026/"', body)
+
+    def test_link_target_is_the_canonical_slug_not_the_numeric_alias(self):
+        """Link to the URL that holds the equity, never the 301'ing alias."""
+        body = self.client.get("/predictions/august-2026/").content.decode()
+        self.assertNotIn('href="/predictions/2026-9/"', body)
