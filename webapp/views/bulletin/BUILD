@@ -22,6 +22,7 @@ py_library(
     srcs = ["dashboard.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":prediction_month_forecast",
         ":priority_date_landing",
         ":retention",
         "//django_config:cache_utils",

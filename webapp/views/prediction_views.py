@@ -786,6 +786,31 @@ def prediction_detail(
         class_display,
     )
 
+    # The forecast for the NEXT bulletin, linked from every archive page. This is
+    # the only inbound internal link the upcoming-month forecast page gets from
+    # already-indexed content, and it is how Google discovers that page before the
+    # bulletin drops — the anticipation wave peaks days BEFORE publication, so the
+    # page has to be crawled and ranked by then. Imported locally: the forecast
+    # module imports prediction_detail from here, so a module-level import would
+    # be circular.
+    from webapp.views.bulletin.prediction_month_forecast import (
+        forecast_url_for,
+        upcoming_forecast_month,
+    )
+
+    upcoming = upcoming_forecast_month()
+    # Suppress on the month that IS the upcoming forecast's target (can't happen
+    # while a bulletin exists for it, but keeps the link from ever self-pointing).
+    if upcoming is not None and upcoming != target_date:
+        upcoming_forecast_url = forecast_url_for(upcoming)
+        upcoming_forecast_label = upcoming.strftime("%B %Y")
+    else:
+        upcoming_forecast_url = None
+        upcoming_forecast_label = None
+    # Only the newest archive month carries the prominent "next forecast is up"
+    # banner; older months keep the quieter inline link.
+    is_latest_month = nav_next is None
+
     context = {
         "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
@@ -815,6 +840,9 @@ def prediction_detail(
         # Headline-accuracy rollup banner (None when the month has nothing
         # scoreable — e.g. all Current/Unavailable — so the template omits it).
         "accuracy_rollup": accuracy_rollup,
+        "upcoming_forecast_url": upcoming_forecast_url,
+        "upcoming_forecast_label": upcoming_forecast_label,
+        "is_latest_month": is_latest_month,
     }
     return render(request, "vqs/prediction_detail.html", context)
 

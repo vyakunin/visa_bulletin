@@ -31,10 +31,26 @@
             </li>
         </ol>
     </nav>
+    {% if is_latest_month and upcoming_forecast_url %}
+    <div class="alert alert-primary py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="font-size: 0.95rem;">
+        <span>
+            <i class="bi bi-graph-up-arrow"></i>
+            <strong>{{ upcoming_forecast_label }} predictions are up.</strong>
+            The State Department publishes the {{ upcoming_forecast_label }} Visa Bulletin in the second half of {{ target_month|date:"F" }} — our forecast for it is already live.
+        </span>
+        <a href="{{ upcoming_forecast_url }}" class="btn btn-sm btn-primary">
+            See the {{ upcoming_forecast_label }} forecast <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
+    {% endif %}
     <div class="alert alert-info py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="font-size: 0.9rem;">
         <span>
             <i class="bi bi-clock-history"></i>
             This page is the <strong>accuracy archive</strong> — predictions that were made for {{ target_month|date:"F Y" }}, scored against what the State Department actually published.
+            {% if upcoming_forecast_url and not is_latest_month %}
+            The current forecast is for
+            <a href="{{ upcoming_forecast_url }}">{{ upcoming_forecast_label }}</a>.
+            {% endif %}
         </span>
         <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="btn btn-sm btn-primary">
             <i class="bi bi-arrow-left"></i> View the live Visa Bulletin for {{ category_label }}
@@ -67,9 +83,15 @@
             </p>
             {% endif %}
             {% endwith %}
+            {% if upcoming_forecast_url %}
+            <a href="{{ upcoming_forecast_url }}" class="small">
+                See the live forecast for the {{ upcoming_forecast_label }} bulletin &rarr;
+            </a>
+            {% else %}
             <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="small">
                 See the live forecast for the next bulletin &rarr;
             </a>
+            {% endif %}
         </div>
     </div>
     {% endif %}
