@@ -111,6 +111,15 @@ OUT_ROOT = Path.home() / ".cache" / "vb_ad_screenshots"
 CDP_URL = "http://127.0.0.1:9222"
 BASE = "https://visa-bulletin.us"
 
+# The WAF exemption the release scripts already use (hosting/promote.sh,
+# cutover.sh, graduate.sh). Rule 5 managed-challenges every /job-title/ and
+# /employer/ path, and an emulated-mobile client does NOT clear it silently —
+# on 2026-08-03 both profile surfaces captured the interactive "Verify you are
+# human" page instead of the site, and every guard metric read clean off it.
+# Same secret and mechanism as rule 3; see
+# visa_bulletin_platform/hosting/cloudflare/waf.md.
+SMOKE_HEADER_FILE = Path.home() / "tokens" / "vb_smoke_header"
+
 IPHONE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
@@ -321,9 +330,54 @@ def _prune(keep: int, dry_run: bool) -> list[Path]:
     return victims
 
 
+# A capture that fetched a WAF interstitial instead of the site must fail
+# LOUDLY. Every guard metric reads perfect off a page carrying none of our
+# markup — the 2026-08-03 run logged both challenged profile surfaces as
+# cls 0 / overflow_px 0 / slots 0, i.e. a row of zeros indistinguishable from a
+# clean surface. Under-reporting a defect is bad; fabricating a pass is worse.
+INTEGRITY_JS = """() => {
+  const body = document.body ? document.body.innerText.slice(0, 400) : '';
+  return {
+    title: document.title,
+    ours: !!document.querySelector('.hero-section, a[href*="/predictions"]'),
+    challenged: /just a moment|verify you are human|attention required|cf-browser-verification/i
+        .test(document.title + ' ' + body),
+  };
+}"""
+
+
+def _smoke_secret() -> str | None:
+    """The x-vb-smoke value, or None if the token file is absent.
+
+    Never printed or returned to a caller that logs it (env_and_security.md) —
+    it goes straight into a request header for our own origin.
+    """
+    try:
+        return SMOKE_HEADER_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
 def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
              geo: str) -> list[dict]:
     from playwright.sync_api import sync_playwright
+
+    smoke = _smoke_secret()
+    if smoke is None:
+        print(f"WARNING: {SMOKE_HEADER_FILE} missing — /job-title/ and /employer/ "
+              "will hit the WAF challenge and capture the interstitial, not the site.",
+              file=sys.stderr)
+
+    def _add_smoke(route):
+        """Attach the WAF exemption to OUR OWN origin only.
+
+        Scoped deliberately: a page-wide or context-wide extra header would ship
+        the secret to googlesyndication and every other third party the ad stack
+        talks to. Registered BEFORE _fake_trace so the more specific trace route
+        (registered later) still wins for /cdn-cgi/trace — Playwright uses the
+        last matching handler.
+        """
+        route.continue_(headers={**route.request.headers, "x-vb-smoke": smoke})
 
     def _fake_trace(route):
         """Answer ONLY /cdn-cgi/trace with a non-EEA loc, so the page's own EEA
@@ -352,6 +406,10 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     if ua:
                         cdp.send("Emulation.setUserAgentOverride", {"userAgent": ua})
                     cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
+                    # Order matters: broad smoke-header route first, specific
+                    # trace route second, so the later trace handler wins.
+                    if smoke:
+                        page.route(f"{BASE}/**", _add_smoke)
                     if geo != "EEA":
                         page.route("**/cdn-cgi/trace", _fake_trace)
                     url = f"{BASE}{path}"
@@ -360,6 +418,25 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     # `load` + an explicit settle is both faster and deterministic.
                     page.goto(url, wait_until="load", timeout=90_000)
                     page.wait_for_timeout(AD_SETTLE_MS)  # let slots fill or collapse
+                    integrity = page.evaluate(INTEGRITY_JS)
+                    if integrity["challenged"] or not integrity["ours"]:
+                        # Keep the image as evidence, but never emit guard
+                        # metrics for a page that is not ours — a row of zeros
+                        # here reads as a clean surface (see INTEGRITY_JS).
+                        fn = out_dir / f"{surf}__{dev}.jpg"
+                        page.screenshot(path=str(fn), full_page=False,
+                                        type="jpeg", quality=80)
+                        why = ("WAF challenge interstitial"
+                               if integrity["challenged"] else "no first-party markup")
+                        shots.append({
+                            "surface": surf, "label": SURFACE_LABELS.get(surf, surf),
+                            "url": url, "device": dev, "viewport": f"{w}x{h}",
+                            "file": str(fn), "captured": False,
+                            "capture_error": f"{why} (title={integrity['title']!r})",
+                        })
+                        print(f"  {surf:20s} {dev:7s} ⚠ NOT CAPTURED — {why}",
+                              file=sys.stderr)
+                        continue
                     try:
                         cls = page.evaluate(CLS_JS)
                     except Exception:
@@ -394,6 +471,7 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         "viewport": f"{w}x{h}",
                         "file": str(fn),
                         "size_kb": round(fn.stat().st_size / 1024) if fn.exists() else 0,
+                        "captured": True,
                         "cls": cls,
                         **diag,
                     }
@@ -479,13 +557,20 @@ def main() -> int:
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-    ok_shots = [s for s in shots if not s.get("error")]
+    ok_shots = [s for s in shots if not s.get("error") and s.get("captured") is not False]
+    uncaptured = [s for s in shots if s.get("captured") is False]
     issues = [s for s in shots if s.get("error") or s.get("overflow_px", 0) > 0
               or s.get("slots_reserved_empty", 0) > 0
-              or s.get("hero_ad_injected", 0) > 0 or s.get("content_below_fold")]
+              or s.get("hero_ad_injected", 0) > 0 or s.get("content_below_fold")
+              or s.get("captured") is False]
     print(f"\nWrote {len(ok_shots)} screenshots + manifest.json")
     print(f"Flagged {len(issues)} shot(s) with an error / overflow / reserved-empty slot / "
-          f"ad-in-hero / H1 below the fold.")
+          f"ad-in-hero / H1 below the fold / not captured.")
+    if uncaptured:
+        print(f"\n⚠ {len(uncaptured)} surface(s) DID NOT CAPTURE THE SITE — these are excluded "
+              "from the metrics above and were NOT inspected:", file=sys.stderr)
+        for s in uncaptured:
+            print(f"    {s['surface']:20s} {s['device']:7s} {s['capture_error']}", file=sys.stderr)
 
     # Silence is not success: with the gate told we are non-EEA, a run that finds
     # ZERO ad slots everywhere has measured nothing about the ad layer — the exact
