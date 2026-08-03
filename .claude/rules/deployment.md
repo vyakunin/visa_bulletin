@@ -71,10 +71,25 @@ docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
 # After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
 docker exec vb_redis redis-cli -n 1 FLUSHDB
-# Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
-# (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
+```
+
+Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s
+render (repopulates Django's `@cache_page` Redis entries; CF then re-caches at the
+edge). **Run this from a repo checkout, NOT on the prod box** — it curls the public
+URL, and neither form works there: the box has no `scripts/` checkout (`/opt/stack/
+visa_bulletin/` is the stack dir, not the repo), and `vb_web` ships **no `curl` and
+no `wget`**, so `docker exec vb_web bash /app/scripts/warm_cache.sh` fails every URL
+with `ERR` and reports `20/20 non-200` — a failure that reads like the site being
+down rather than a missing binary.
+
+```bash
+cd ~/cursor_projects/visa_bulletin
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
 ```
+
+`/predictions/<YYYY>-<M>/` answering **301** in the warmer's output is expected, not
+a miss — the numeric slug redirects to the canonical word-month URL, so the run's
+"1/20 non-200" line is the healthy result.
 
 ### Known issue: recreating `web` can strand nginx on the dead container's IP
 
