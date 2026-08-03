@@ -70,25 +70,49 @@ indexed and promoted **~1 week ahead of the expected drop** — Google needs tha
 lead time to rank it before the anticipation wave arrives. Publishing at the drop
 moment is too late: the wave finds a page Google has not yet learned to trust.
 
-**The page itself is automatic.** `scripts/cron/refresh_bulletin.py` publishes the
-following month's predictions the moment the current bulletin ingests, and
-`upcoming_forecast_month()` rolls the sitemap + `/predictions/` links forward. So
-publication is normally DONE weeks early and free. The work that is NOT automatic,
-and that this cadence exists to force, is the **pre-drop half**:
+**The page AND its internal links are automatic.** `scripts/cron/refresh_bulletin.py`
+publishes the following month's predictions the moment the current bulletin
+ingests; `upcoming_forecast_month()` rolls the sitemap + `/predictions/` links
+forward; and since `271983d` the archive pages and the homepage link forward to
+the upcoming forecast off that same helper — a prominent banner on the newest
+archive month, a compact inline link on older ones, one link on the homepage.
+**Do not hand-add a "<Month> predictions are up" banner: it is already there.**
+Verify it rendered (`curl` the current month's page and the homepage, grep for
+`href="/predictions/<month>-<year>/"` — expect 2 and 1); a MISSING link is a bug
+in that mesh, not a page to write. Pinned by
+`tests/test_stable_prediction_url.py::TestUpcomingForecastInboundLinks`.
+
+So the work that is NOT automatic, and that this cadence exists to force:
 
 1. **Indexing verify** — `gsc_inspect_url` the page. Not indexed → submit the
    sitemap AND re-render it (item 1 above; the sitemap is a static file, a code
    deploy does not refresh it).
-2. **Internal links** — a "<Month> predictions are up" banner on the current
-   month's page, plus the `/predictions/` hub and the homepage.
-3. **Promotion** — the Reddit seed, owned by `visa_bulletin_platform` (Tier-3,
+2. **Promotion** — the Reddit seed, owned by `visa_bulletin_platform` (Tier-3,
    needs an explicit go). Timed to land ~1 week before the drop.
+
+**A sitemap entry is a hint; an inbound link from an indexed page is the discovery
+path.** On 2026-08-03 `/predictions/september-2026/` was live, self-canonical, and
+present in a sitemap Google had downloaded that morning with 0 errors — and
+`gsc_inspect_url` still said *"URL is unknown to Google"*: never crawled, ~10 days
+before the drop. Nothing linked to it. The one forward link on the already-indexed
+August archive page read "See the live forecast for the next bulletin" and pointed
+at the **homepage**. So when a page is not indexed, check the inbound links before
+touching the sitemap — and never read "it's in the sitemap" as "Google will find
+it".
 
 **Estimate the drop from measured data, never from a rule of thumb.** Query prod:
 `SELECT publication_date, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
-Recent cadence is the 13th–19th of the prior month (Jul→Jun 16, Jun→May 13,
-May→Apr 16, Apr→Mar 17, Mar→Feb 19), but editions run late — Aug-2026 landed
-~Jul 20. Re-estimate every cycle; the promo window moves with it.
+Recent cadence is the 12th–19th of the prior month (Jul→Jun 16, Jun→May 13,
+May→Apr 16, Apr→Mar 17, Mar→Feb 19, Feb→Jan 12). Re-estimate every cycle; the
+promo window moves with it.
+
+**`released_on` can be NULL — do not substitute `fetched_at` for it.** The
+Aug-2026 row has no `released_on` (the bridge did not record one) and a
+`fetched_at` of Jul 20, which is when we ingested, not when State published; the
+GoatCounter daily series pins the actual release at ~Jul 15-16 (pageviews 12.3k /
+15.4k / 14.7k on Jul 15/16/17 against a ~2k baseline). Reading `fetched_at` as the
+release date pushes the estimate ~4 days late and shortens the promo lead by that
+much. When `released_on` is NULL, date the drop from the traffic spike instead.
 
 **Keep the cadence armed durably, not in a session.** Each cycle schedules the
 next one via the `scheduled_actions` MCP: a `visa_bulletin` readiness inject ~10
