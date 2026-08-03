@@ -30,6 +30,35 @@ advertising. Don't draft, schedule, or re-post to them; don't modmail-appeal
   post in any sub — while `1tiz1be` (2026-05) renders "[ Removed by moderator ]".
   A third promo post is the one that gets the account banned. Do not read the
   surviving post as permission.
+- **r/IndianH1Bs** — `1try18z` (2026-05-30) removed by moderator. Verified
+  2026-08-03; a 07-31 check had recorded it as surviving, which was a misread of
+  the submitted list, and it very nearly routed a campaign post there.
+- **r/IndiaTech** — `1u15rku` (2026-06-09) removed by moderator (verified 2026-08-03).
+- **r/DataHoarder** (`1uyz1n0`, 2026-07-17) and **r/selfhosted** (`1usmhod`,
+  2026-07-10) — both removed. Not immigration venues, but the account has burned
+  them, so don't reach for either as a "neutral tech" fallback.
+
+**Re-derive this list from the submitted page before every send — don't trust the
+last recorded check.** One command gives the whole picture, removals included:
+
+```bash
+UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+curl -sL -A "$UA" "https://old.reddit.com/user/CivilCandidate1349/submitted/" \
+  -o /tmp/rsub.html
+# then per candidate id — the <title> alone is dispositive:
+curl -sL -A "$UA" "https://old.reddit.com/comments/<id>/" | grep -oE '<title>[^<]*</title>'
+#   -> "[ Removed by moderator ] : <sub>"  = removed
+```
+
+Scraping the listing page for `data-subreddit` alone is what produced the 07-31
+misread: the removal marker sits in the thing block, so a grep that isn't split
+per-block attributes it to the wrong post. Fetch the individual permalink and read
+its `<title>` when the answer matters.
+
+**Surviving venues as of 2026-08-03:** r/USCIS (3 live, `1uo3ms6` at 56 comments),
+r/developersIndia (`1tqzncq`, 9/11), r/EB3VisaJourney (`1uquc2j`, 6/9),
+r/cscareerquestions (`1tsw5r6`, score 1).
 
 When a new sub is being considered, dry-run first and check its rules/AutoMod for
 a no-advertising / no-self-promotion clause before scheduling.
