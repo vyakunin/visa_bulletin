@@ -233,6 +233,13 @@ PROBE_JS = r"""
       ? hero.querySelectorAll('ins.adsbygoogle, .google-auto-placed').length : 0,
     nav_top_px: topOf(navEl),
     h1_top_px: topOf(h1El),
+    // Where OUR pos-1 unit sits, and whether ad_slot.html hoisted it at parse
+    // (data-vb-hi = the mobile viewability lift, or the hero displacement that
+    // occupies the above-fold band Auto-ads was taking on /predictions +
+    // /employer/). Without these two numbers "the manual unit moved" is an
+    // eyeball; with them a displacement run is a diff.
+    ad1_top_px: topOf(document.querySelector('.vb-ad-slot[data-ad-pos="1"]')),
+    ad1_hoisted: !!document.querySelector('.vb-ad-slot[data-ad-pos="1"][data-vb-hi]'),
     // the headline number: does ANY real content start above the fold?
     content_below_fold: (() => {
       const t = topOf(h1El);
@@ -366,7 +373,7 @@ def _smoke_secret() -> str | None:
 
 
 def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
-             geo: str) -> list[dict]:
+             geo: str, base: str = BASE) -> list[dict]:
     from playwright.sync_api import sync_playwright
 
     smoke = _smoke_secret()
@@ -416,10 +423,10 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     # Order matters: broad smoke-header route first, specific
                     # trace route second, so the later trace handler wins.
                     if smoke:
-                        page.route(f"{BASE}/**", _add_smoke)
+                        page.route(f"{base}/**", _add_smoke)
                     if geo != "EEA":
                         page.route("**/cdn-cgi/trace", _fake_trace)
-                    url = f"{BASE}{path}"
+                    url = f"{base}{path}"
                     # NOT networkidle: with the ad stack live, Google keeps polling and
                     # the network never goes idle — mobile captures timed out at 90s.
                     # `load` + an explicit settle is both faster and deterministic.
@@ -494,7 +501,7 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                           f"cls={cls}{flag}")
                 except Exception as e:  # one bad surface must not kill the sweep
                     print(f"  {surf:20s} {dev:7s} FAILED: {e}", file=sys.stderr)
-                    shots.append({"surface": surf, "device": dev, "url": f"{BASE}{path}",
+                    shots.append({"surface": surf, "device": dev, "url": f"{base}{path}",
                                   "error": str(e)})
                 finally:
                     page.close()  # campsite: never leak tabs into the shared debug Chrome
@@ -511,6 +518,11 @@ def main() -> int:
     ap.add_argument("--geo", default="US",
                     help="country the page's EEA gate should see: a 2-letter code to load the "
                          "ad stack (default US), or 'EEA' to capture the real ad-free EEA view")
+    ap.add_argument("--base", default=BASE,
+                    help="origin to capture (default prod). Point at the staging stack to "
+                         "validate an ad-layer change before it reaches prod — note staging "
+                         "never receives an Auto-ads placement, so it proves the manual "
+                         "layer's geometry, not what Google does with it.")
     ap.add_argument("--out", default=None, help="output dir (default ~/.cache/vb_ad_screenshots/<date>)")
     ap.add_argument("--keep", type=int, default=4, help="keep N newest run dirs (default 4; 0=never prune)")
     ap.add_argument("--prune-dry-run", action="store_true", help="show prune victims, capture nothing")
@@ -548,11 +560,11 @@ def main() -> int:
         print(f"  - {surf:20s} {path}")
     print()
 
-    shots = _capture(surfaces, out_dir, devices, args.geo)
+    shots = _capture(surfaces, out_dir, devices, args.geo, args.base)
 
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "base": BASE,
+        "base": args.base,
         "geo": args.geo,
         "geo_note": (
             "Ad requests originate from this box's real (German) IP, so fill rates are NOT "
