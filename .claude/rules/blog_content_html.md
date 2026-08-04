@@ -42,6 +42,17 @@ through this one template. When authoring a NEW blog HTML surface that does *not
   content renders correctly even before/without a template deploy (the DB row is
   self-contained + deploy-order-independent). Redundant with the template guard by
   design; don't "clean it up".
+- **That in-body `<style>` block is why `_text_excerpt` strips `<style>`/`<script>`
+  ELEMENTS WHOLE, not just their tags** (`webapp/views/blog_views.py`). The excerpt
+  feeds `<meta name="description">`, `og:`/`twitter:description` and the JSON-LD
+  `BlogPosting.description`; a tag-only strip left the CSS text behind, so all three
+  story pages shipped ~120 characters of `.blog-content table td{overflow-wrap:…}`
+  before the first real word of every SERP snippet and social unfurl (found + fixed
+  2026-08-04, `97fc396`). The two guards are coupled: keep the `<style>` prepend AND
+  the element-level strip, or the description regresses. Pinned by
+  `tests/test_blog_excerpt.py`, which is the thing to read before touching either.
+  It is invisible to any rendering test — the page looks perfect; the corruption is
+  only in the head.
 
 ## Trap 2: a data story must state the claim it counters, and read in isolation
 

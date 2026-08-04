@@ -94,6 +94,21 @@ A code-only promotion to prod **defaults to `hosting/cutover.sh --code <sha>`**,
 - **`promote.sh --prod` is a fallback only when the cutover is genuinely unavailable** (minipc below the RAM floor for the standby restore, standby stack down). It now refuses to run without an explicit `--accept-502` flag, precisely so the disruptive swap can't be taken by habit.
 - **Hotfix exception:** a true prod-down emergency (sustained 5xx, broken parser pre-publication) MAY take the fast disruptive swap — but say so; "it was just quicker" is not an emergency.
 - **Verify:** zero vb 502s during the swap is the end-state (`promote.sh --prod` would show the ~10–15 s window; the cutover shows none). `cutover.sh --code <sha> --dry` prints the plan + preflight first.
+- **Running it from an agent session — two things it refuses, both by design:**
+  1. **`GITHUB_TOKEN` must be in the environment** (`source ~/.shrc` first) — `standby-up` needs it
+     to pull the image, and the script exits at line ~482 with `set GITHUB_TOKEN (in ~/.shrc)`
+     before doing anything. A tool call that doesn't inherit an interactive shell won't have it.
+  2. **It refuses a launch with no controlling terminal** (`FATAL: no controlling terminal —
+     this looks like a detached/automated launch`), which a plain output redirect is enough to
+     trigger. From automation pass **`--detached-ok`**, and then honour what that flag promises:
+     **never kill the launcher.** A cutover killed mid-swap leaves the connector moved and prod
+     served from the wrong side; finish a dead run with `./cutover.sh --resume`, do not re-run it
+     from the top. In practice: `setsid` it with its own exit-code sentinel and poll for that
+     sentinel, so a harness timeout on the *watcher* can never reap the *swap*.
+- **The dry-run's fingerprint verdict tells you which strategy you're about to get.** `staging ==
+  prod` → staging serves the window; **diverged** → the standby stack serves from live prod pg
+  over an SSH tunnel (more moving parts, still zero-downtime). Diverged is the normal case
+  whenever staging's DB has drifted, so don't read it as a fault.
 
 Origin: 2026-06-24 — vb promotions kept disturbing prod with the `promote.sh --prod` / `docker compose up -d web` web-swap (~10–15 s 502s) even though the zero-downtime `cutover.sh --code` was built and is the documented no-downtime path. Vladimir: *"vb promotion keeps disturbing prod, ignoring no-downtime process. Tighten its rules to defer here for promotion."* → flipped the default to the cutover here + in `RELEASE_PATHS.md`, and guarded `promote.sh --prod` behind `--accept-502`.
 
