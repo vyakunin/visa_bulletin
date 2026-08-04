@@ -240,9 +240,14 @@ Read the live count and pass it:
 
 ```bash
 docker exec -w /app vb_web python3 -c \
-  "from models.blog import BlogPost; print(BlogPost.objects.filter(category='Analysis').count())"
+  "import django; django.setup(); from models.blog import BlogPost; \
+   print(BlogPost.objects.filter(category='Analysis').count())"
 # then pass that number (or more) as n
 ```
+
+Note the `django.setup()`: importing a builder from `generate_initial_blog_posts` does
+it for you (the module calls it at import), but a bare `from models.blog import …` does
+not and dies with `AppRegistryNotReady`.
 
 🚨 **Never run the module with `-m` / as a script.** Its `main()` calls
 `create_analysis_posts(n=2)`, which on a 10-post prod deletes eight published pages.

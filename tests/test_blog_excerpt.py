@@ -43,6 +43,19 @@ def test_script_block_contents_are_not_in_the_excerpt():
     assert out == "Real prose."
 
 
+def test_entities_are_decoded_so_the_meta_tag_is_not_double_escaped():
+    """Stored content carries `&mdash;`; leaving it makes the template ship `&amp;mdash;`,
+    and the SERP snippet then renders a literal "&mdash;" mid-sentence."""
+    out = _text_excerpt("<p>companies &mdash; mostly small firms &ndash; were gaming it</p>")
+    assert out == "companies — mostly small firms – were gaming it"
+    assert "&" not in out
+
+
+def test_escaped_markup_in_prose_does_not_become_a_tag():
+    """Unescaping happens after the tag strip, so `&lt;p&gt;` stays text."""
+    assert _text_excerpt("<p>use &lt;p&gt; for a paragraph</p>") == "use <p> for a paragraph"
+
+
 def test_prose_is_still_extracted_and_truncated():
     """The ordinary path is unchanged: tags out, whitespace collapsed, ellipsis at the cap."""
     assert _text_excerpt("<p>Hello   <b>world</b></p>") == "Hello world"

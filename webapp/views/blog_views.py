@@ -1,3 +1,4 @@
+import html
 import json
 import re
 
@@ -17,8 +18,13 @@ _WS_RE = re.compile(r"\s+")
 _CODE_EL_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.I | re.S)
 
 
-def _text_excerpt(html: str, max_len: int = 200) -> str:
-    text = _WS_RE.sub(" ", _TAG_RE.sub(" ", _CODE_EL_RE.sub(" ", html))).strip()
+def _text_excerpt(source_html: str, max_len: int = 200) -> str:
+    # Unescape AFTER stripping tags: stored content carries entities (`&mdash;`), and
+    # leaving them makes the template escape the ampersand again, so the meta tag ships
+    # `&amp;mdash;` and the SERP snippet renders a literal "&mdash;". Doing it after the
+    # strip also means an escaped `&lt;p&gt;` in prose can never become a real tag.
+    text = html.unescape(_TAG_RE.sub(" ", _CODE_EL_RE.sub(" ", source_html)))
+    text = _WS_RE.sub(" ", text).strip()
     if len(text) <= max_len:
         return text
     return text[: max_len - 1].rsplit(" ", 1)[0] + "…"
