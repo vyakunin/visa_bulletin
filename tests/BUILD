@@ -116,6 +116,13 @@ pytest_py_test(
     ],
 )
 
+django_py_test(
+    name = "test_blog_excerpt",
+    size = "small",
+    srcs = ["test_blog_excerpt.py"],
+    deps = ["//webapp/views:blog_views"],
+)
+
 pytest_py_test(
     name = "test_blog_table_wrap_guard",
     size = "small",

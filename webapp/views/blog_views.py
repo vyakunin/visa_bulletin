@@ -8,10 +8,17 @@ from models.blog import BlogPost
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+# Elements whose TEXT is code, not prose. Stripping tags alone leaves their bodies
+# behind: a post that opens with a <style> block (the i129 data stories prepend the
+# mobile table-wrap guard — see .claude/rules/blog_content_html.md) yielded a meta
+# description that began with ~120 characters of CSS before the first real word, on
+# every SERP snippet and social unfurl. Drop the whole element, contents included,
+# before the tag strip.
+_CODE_EL_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.I | re.S)
 
 
 def _text_excerpt(html: str, max_len: int = 200) -> str:
-    text = _WS_RE.sub(" ", _TAG_RE.sub(" ", html)).strip()
+    text = _WS_RE.sub(" ", _TAG_RE.sub(" ", _CODE_EL_RE.sub(" ", html))).strip()
     if len(text) <= max_len:
         return text
     return text[: max_len - 1].rsplit(" ", 1)[0] + "…"
