@@ -168,15 +168,40 @@ After deploying such a change, regenerate the affected published posts (the
 mechanical follow-up — do it, don't wait to be asked; cf. `vqs.md` "Run
 Mechanical Follow-Up Steps Automatically"):
 
+**Call the builder for the post you actually mean. They are different functions, and
+one of them deletes.**
+
+| Post | Function |
+|---|---|
+| `/analysis/how-my-prediction-model-works/` (Methodology) | `create_methodology_post()` |
+| `/analysis/visa-bulletin-analysis-<month>/` (the monthly narrator set) | `create_analysis_posts(n=…)` |
+| the i129 data stories | `create_i129_story_posts(only_slug="…")` |
+
 ```bash
-# validate on staging first, then run the SAME on prod (vb_web). n ≥ analysis-post
-# count (currently 9) so it regenerates all in place (update_or_create) + prunes none.
-docker exec -w /app vb_stg_web python3 -c "import django; django.setup(); \
-  from scripts.oneoff.generate_initial_blog_posts import create_analysis_posts; create_analysis_posts(n=9)"
+# Methodology post — regenerates one row, deletes nothing.
+docker exec -w /app vb_stg_web python3 -c \
+  "from scripts.oneoff.generate_initial_blog_posts import create_methodology_post; create_methodology_post()"
 docker exec vb_stg_redis redis-cli -n 1 FLUSHDB
 # verify the rendered page reflects the change, then repeat on prod (vb_web / vb_redis)
 # + CF-purge the /analysis/<slug>/ URLs (cloudflare.md).
 ```
+
+🚨 **`create_analysis_posts(n)` PRUNES: it deletes every `category="Analysis"` post
+outside the newest `n` it just built.** So `n` is not a "how many to refresh" knob — it
+is the number that SURVIVES. Never hardcode it (this rule said "currently 9" while prod
+had 10, i.e. following it would have deleted `visa-bulletin-analysis-november-2025`).
+Read the live count and pass it:
+
+```bash
+docker exec -w /app vb_web python3 -c \
+  "from models.blog import BlogPost; print(BlogPost.objects.filter(category='Analysis').count())"
+# then pass that number (or more) as n
+```
+
+🚨 **Never run the module with `-m` / as a script.** Its `main()` calls
+`create_analysis_posts(n=2)`, which on a 10-post prod deletes eight published pages.
+Always import the specific builder with `python3 -c`, as above. The module calls
+`django.setup()` at import, so no extra bootstrap is needed.
 
 Then **verify the rendered page actually changed** (`verify_end_state.md`) — a
 200 isn't enough; grep the rendered HTML for the expected delta. Origin:
