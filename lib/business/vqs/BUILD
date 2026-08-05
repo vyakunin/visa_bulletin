@@ -66,6 +66,12 @@ py_library(
 )
 
 py_library(
+    name = "interval_coverage",
+    srcs = ["interval_coverage.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "accuracy_metrics",
     srcs = ["accuracy_metrics.py"],
     visibility = ["//visibility:public"],

@@ -245,6 +245,27 @@ py_binary(
 )
 
 py_binary(
+    name = "backtest_interval_coverage",
+    srcs = ["backtest_interval_coverage.py"],
+    main = "backtest_interval_coverage.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:settings",
+        "//lib/business/vqs:interval_coverage",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "backtest_trajectory",
     srcs = ["backtest_trajectory.py"],
     main = "backtest_trajectory.py",

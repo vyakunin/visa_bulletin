@@ -22,7 +22,7 @@ Persistence is correct ~80% of months for EB-2/3 (cutoffs often don't move). A u
 | **6-month MAE (EB-2/3 India/China)** | Point forecast error at 6m horizon for the 4 key series | ≤190d (≥15% below persistence) | China EB-2: **176d** (GBM Gated); China EB-3: **159d ✓** (GBM Gated); India EB-2: **204d** (GBM Gated); India EB-3: **261d** (GBM Gated) | `evaluate_model.py --horizons 6` per-series |
 | **12-month MAE (EB-2/3 India/China)** | Point forecast error at 12m horizon | ≤300d (≥15% below persistence) | China EB-2: **231d ✓** (GBM Gated); China EB-3: **224d ✓** (GBM Gated); India EB-2: **303d** (GBM Gated); India EB-3: **499d** (GBM Gated) | `evaluate_model.py --horizons 12` per-series |
 | **Regime transition detection** | Correct identification of advancing→stalled or stalled→advancing within 1 month | ≥50% | **~12%** (Hybrid at 6m) — significantly below target | Stratified accuracy breakdown in spaghetti |
-| **Calibration** | % of actuals falling within stated 80% CI | 75–85% | ~80% (2025+ recent) | `compute_prediction_accuracy --metric both` |
+| **Calibration** | % of actuals falling within stated 80% CI | 75–85% | **86.7%** h=1 all-history (n=14,155); **78.0%** live/pre-registered only (n=282). ⚠️ Width is in band but the band is **mis-centred**: the two tails should hold 10% each and hold **2.0% low / 11.2% high** (§28 Fact 1), so the headline is partly bought by an over-covered low tail. Judge with the tails, not the single number. | `backtest_interval_coverage --horizon 1` (§28) |
 
 **Non-goals:**
 - Beating persistence on aggregate 1-month MAE across all series. Persistence is ~41d; getting to ~40d by averaging a few EB-1 wins across 6 series is not meaningful.
@@ -2478,3 +2478,152 @@ publishing a bare date at 6m/12m (the shipped "No step predicted" label is the
 first step of exactly that), not a better guess at which date.
 
 Reproduce (~4 min): `scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_trajectory`
+
+---
+
+## 28. Published-Interval Coverage: the 80% Band Is Mis-Centred, Not Too Narrow (August 2026)
+
+### Motivation
+
+Aug-2026 was the first bulletin month graded against a **publicly pre-registered**
+prediction set (Notion `3a362b8d409f81009496f42df1d8a8e2`). Two signals came out of
+that scorecard and neither had ever been measured across the whole graded history:
+
+1. The published 80% interval for EB-3 India Final Action missed **low** — actual
+   `01 Jan 2014` sat below the stated floor of `17 Jan 2014`.
+2. Five of the six point-misses were "called flat, actual advanced".
+
+The ticket asks a specific question the single month cannot answer: is the
+interval mis-specified (too narrow / wrongly centred / unable to represent zero
+movement), or is Aug-2026 inside normal tail behaviour? This section measures
+that. It targets the Section 0 **Calibration** metric, whose Current column had
+carried an unsourced "~80% (2025+ recent)".
+
+### What Was Implemented
+
+| Change | Files | Description |
+|--------|-------|-------------|
+| Interval scoring library | `lib/business/vqs/interval_coverage.py` | `coverage_metrics()` reports the two tails separately against `nominal_tail_pct`, plus interval shape (`degenerate_floor_pct`, `nochange_excluded_pct`) and `tail_imbalance_pts`. `flat_call_metrics()` splits flat calls into right/wrong against the previous-actual anchor. Pure functions, no ORM. |
+| Coverage backtest CLI | `scripts/vqs/backtest_interval_coverage.py` | Reads stored `PredictedCutoff` rows (no solver run) and reports coverage by horizon, mode, model and series. Separates `forward` (generated before the target bulletin published) from `backfilled`. |
+| Unit tests | `tests/test_vqs_interval_coverage.py` | Pin the discriminating case: a one-sided interval scoring **above** its nominal coverage while a tail holds 0%. |
+
+### Results (Facts)
+
+Source: prod `models_predictedcutoff` read 2026-08-05, all rows with
+`predicted_date`, `confidence_low`, `confidence_high` and `actual_date` non-null.
+Script verified to reproduce these on the staging prod-copy (n=14,085 there vs
+14,155 on prod; staging is an older copy).
+
+**Fact 1 — the interval is not too narrow. At h=1 it over-covers.**
+
+| Horizon | n | coverage | miss low | miss high | mean width | below point | above point |
+|---|---|---|---|---|---|---|---|
+| h=1 | 14,155 | **86.7%** | **2.0%** | **11.2%** | 199d | 70d | 129d |
+| h=7 | 4,451 | 76.5% | 6.8% | 16.7% | 540d | 270d | 270d |
+
+Nominal is 80% coverage with **10% in each tail**. At h=1 the low tail holds 2.0%
+of its nominal 10%; the high tail holds 11.2%. Tail imbalance +9.2 pts.
+
+**Fact 2 — the asymmetry holds in every stratum, and the signed error is positive everywhere.**
+(`h=1`; signed error = `actual - predicted`, positive = actual advanced past the call)
+
+| Model | chart | n | coverage | miss low | miss high | mean signed err | median |
+|---|---|---|---|---|---|---|---|
+| vqs_ensemble | final_action | 5,566 | 85.2% | 1.8% | 13.1% | +31d | +17d |
+| vqs_ensemble | filing | 3,100 | 87.9% | 0.1% | 12.0% | +26d | 0d |
+| regime_switched | final_action | 3,018 | 83.5% | 4.6% | 11.9% | +42d | +30d |
+| regime_switched | filing | 2,426 | 93.3% | 2.0% | 4.7% | +25d | +30d |
+| persistence | both | 45 | 60.0% | 0.0% | 40.0% | +83/+182d | — |
+
+**Fact 3 — the live (pre-registered) window behaves the same, with the imbalance larger.**
+Forward rows only (`generated_at` before the target bulletin published):
+
+| Slice | n | coverage | miss low | miss high |
+|---|---|---|---|---|
+| forward, all months | 282 | 78.0% | 1.1% | 20.9% |
+| backfilled | 13,873 | 86.9% | 2.1% | 11.0% |
+
+Per month, live window (n=70-71 cells each):
+
+| Target month | coverage | miss low | miss high | floor==point | called flat, actual advanced |
+|---|---|---|---|---|---|
+| 2026-05 | 77.5% | 0.0% | 22.5% | 78.9% | 42.3% |
+| 2026-06 | 87.3% | 1.4% | 11.3% | 81.7% | 25.4% |
+| 2026-07 | 74.3% | 1.4% | 24.3% | 87.1% | 47.1% |
+| **2026-08** | **72.9%** | **1.4%** | **25.7%** | 85.7% | **57.1%** |
+
+In Aug-2026 the low miss the ticket flagged is **1 cell of 70**; **18 cells of 70
+missed high** in the same month.
+
+**Fact 4 — for most rows the interval has no downside to express.**
+Distribution of `predicted_date - confidence_low` (the room below the point), h=1,
+n=14,155: **0 days on 9,551 rows (67.5%)**, exactly 30 days on 3,432 (24.2%),
+exactly 60 days on 1,262 (8.9%). Together 91.7% of rows carry a floor of 0, 30 or
+60 days below the point estimate.
+
+Code fact: `compute_calibrated_interval` (`lib/business/vqs/calibration.py:199-215`)
+sets the floor to `predicted_date + p10(signed errors)` and then, when that lands
+above the point estimate, replaces it with `predicted_date - 30d`. A signed-error
+distribution whose 10th percentile is exactly 0 therefore yields
+`confidence_low == predicted_date`.
+
+**Fact 5 — the no-change outcome is nonetheless inside the interval almost always.**
+The previous actual (the "series does not move" outcome) falls outside the published
+interval on **1.0%** of 14,155 anchored h=1 rows; below the floor on 0.6%. The
+Aug-2026 EB-3 India cell is one of those: the model called a +30d advance and the
+floor sat 14d below the point, so no-change was outside.
+
+**Fact 6 — "called flat, actual advanced" is the dominant behaviour, not an Aug-2026 event.**
+h=1, anchored on the previous actual, `|move| <= 7d` counts as flat:
+
+| Model | n | called flat | actual flat | called flat → advanced | mean pred move | mean actual move |
+|---|---|---|---|---|---|---|
+| vqs_ensemble | 8,666 | **99.1%** | 49.1% | **49.0%** | −1d | **+28d** |
+| regime_switched | 5,444 | **96.1%** | 34.1% | **60.2%** | +3d | **+37d** |
+| persistence | 45 | 100.0% | 31.1% | 68.9% | 0d | +138d |
+
+Per modelled series (h=1, the six China/India EB-1/2/3 dispatch slots):
+
+| Series | n | called flat | actual flat | flat → advanced | mean actual move | coverage |
+|---|---|---|---|---|---|---|
+| China EB-1 FD | 104 | 89.4% | 57.7% | 33.7% | +21d | 92.3% |
+| China EB-1 FA | 111 | 70.3% | 42.3% | 34.2% | +65d | 75.7% |
+| China EB-2 FD | 129 | 94.6% | 72.9% | 23.3% | +25d | 93.8% |
+| China EB-2 FA | 203 | 78.8% | 31.0% | 52.7% | +50d | 91.6% |
+| China EB-3 FD | 129 | 96.9% | 77.5% | 17.1% | +23d | 92.2% |
+| China EB-3 FA | 199 | 84.9% | 31.2% | 55.8% | +62d | 88.9% |
+| India EB-1 FD | 104 | 84.6% | 55.8% | 32.7% | +21d | 89.4% |
+| India EB-1 FA | 112 | 75.0% | 44.6% | 30.4% | +61d | 73.2% |
+| India EB-2 FD | 129 | 97.7% | 79.8% | 16.3% | +16d | 94.6% |
+| India EB-2 FA | 196 | 92.3% | 50.5% | 38.3% | +22d | 90.3% |
+| India EB-3 FD | 129 | 98.4% | 79.8% | 17.1% | +27d | 90.7% |
+| India EB-3 FA | 200 | 90.0% | 48.0% | 41.0% | +34d | 85.0% |
+
+Every one of the 12 modelled cells calls flat more often than the series is flat,
+and every one has a positive mean actual move.
+
+**Fact 7 — h=7 intervals carry no series-specific calibration.** All h=7 rows have
+a symmetric ±270d band, the series-independent fallback
+(`calibration.py:192-197`), i.e. no `(series, horizon=7, regime)` bucket ever
+reached the 5-error minimum.
+
+### Current Status
+
+Measurement only — **no solver, calibration or published-interval code was
+changed**. The two new modules are additive: nothing in the prediction or publish
+path imports them, so published intervals are byte-identical to before this
+section.
+
+Reproduce (~2 min, read-only):
+```
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --horizon 1 --by-series
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --horizon 1 --forward-only
+```
+
+Per the ticket's own gate (c) — "if mis-specified, that is a real model change and
+gets its own ticket + backtest — do not hand-tune the interval off one month" — the
+interval construction was left untouched and the follow-up is tracked separately.
+
+### Pending Planning Review
+
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.

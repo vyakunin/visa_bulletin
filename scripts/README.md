@@ -917,6 +917,16 @@ bazel run //scripts/vqs:compute_prediction_accuracy -- --metric bulletin --filte
 ```
 Output: JSON/CSV of raw rows; with `--plot`, Plotly HTML with drill-down by visa class and country.
 
+**`scripts/vqs/backtest_interval_coverage.py`** – Score the published 80% prediction intervals against realised actuals. Pure read of stored `PredictedCutoff` rows (no solver run), so it is safe against a live DB and reproduces exactly what was served.
+
+Reports both tails separately against the 10% each should hold — a headline coverage number cannot distinguish a correctly-centred interval from one that buys coverage on an over-covered tail. Also reports interval shape (how often the floor equals the point estimate; how often the no-change outcome is excluded) and flat-call scoring against the previous-actual anchor. Separates `forward` (generated before the target bulletin published) from `backfilled`.
+```bash
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --horizon 1 --by-series
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --horizon 1 --forward-only
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --since 2026-05-01 --modelled-only
+```
+Re-run after each newly graded bulletin month and append the numbers to the tracking ticket, so the next month compares against a recorded series instead of re-deriving the baseline. Baseline measurements: `docs/PREDICTIONS_ASSESSMENT.md` §28.
+
 ---
 
 ## Database Management

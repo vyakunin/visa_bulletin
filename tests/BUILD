@@ -1171,6 +1171,15 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_vqs_interval_coverage",
+    size = "small",
+    srcs = ["test_vqs_interval_coverage.py"],
+    deps = [
+        "//lib/business/vqs:interval_coverage",
+    ],
+)
+
+django_py_test(
     name = "test_vqs_reporting",
     size = "small",
     srcs = ["test_vqs_reporting.py"],
