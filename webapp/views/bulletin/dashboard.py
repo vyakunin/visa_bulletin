@@ -705,6 +705,22 @@ def dashboard_view(request, category=None, country=None):
     latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
     current_bulletin_date = latest_bulletin.publication_date if latest_bulletin else None
 
+    # Homepage link to the upcoming-month forecast. The homepage is the most
+    # frequently crawled page on the site, so this is the fastest path for Google
+    # to discover the forecast page while the pre-drop anticipation wave builds.
+    from webapp.views.bulletin.prediction_month_forecast import (
+        forecast_url_for,
+        upcoming_forecast_month,
+    )
+
+    upcoming_forecast = upcoming_forecast_month()
+    upcoming_forecast_url = (
+        forecast_url_for(upcoming_forecast) if upcoming_forecast else None
+    )
+    upcoming_forecast_label = (
+        upcoming_forecast.strftime("%B %Y") if upcoming_forecast else None
+    )
+
     # For family-sponsored, pre-select all series; for employment-based, use the default subset.
     if category == VisaCategory.FAMILY_SPONSORED.value and chart_data:
         visible_classes = frozenset(t["label"] for t in chart_data["trace_info"])
@@ -771,6 +787,8 @@ def dashboard_view(request, category=None, country=None):
         ),
         "latest_post": latest_post,
         "current_bulletin_date": current_bulletin_date,
+        "upcoming_forecast_url": upcoming_forecast_url,
+        "upcoming_forecast_label": upcoming_forecast_label,
         # Filter options
         "visa_categories": VisaCategory.choices,
         "countries": Country.choices,

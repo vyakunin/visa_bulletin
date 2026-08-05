@@ -18,6 +18,29 @@
         <a href="{% url 'dashboard' %}">View the live U.S. Visa Bulletin tracker &amp; predictions &rarr;</a>
     </p>
 
+    {% if scorecard %}
+    <div class="card border-success mb-3">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap align-items-baseline gap-2">
+                <span class="badge text-bg-success"><i class="bi bi-clipboard-check"></i> Latest scorecard</span>
+                <span>
+                    <strong>{{ scorecard.month_label }}</strong> — our forecast missed by
+                    <strong>&plusmn;{{ scorecard.mae_days }} days</strong> on average across
+                    {{ scorecard.n_scored }} scored date{{ scorecard.n_scored|pluralize }}{% if scorecard.baseline.total %}, {% if scorecard.baseline.beats_baseline %}beating{% else %}matching{% endif %} the naive no-change guess{% endif %}.
+                </span>
+            </div>
+            {% if scorecard.bands %}
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                {% for b in scorecard.bands %}
+                <span class="badge rounded-pill text-bg-light border" title="{{ b.n }} scored date{{ b.n|pluralize }}">{{ b.label }}: &plusmn;{{ b.mae_days }}d</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <a href="{{ scorecard.recap_url }}" class="small d-inline-block mt-2">See the full {{ scorecard.month_label }} scorecard &rarr;</a>
+        </div>
+    </div>
+    {% endif %}
+
     {% if forecast_url %}
     <div class="alert alert-primary">
         <i class="bi bi-graph-up-arrow"></i>
@@ -35,14 +58,39 @@
         <ul class="list-group list-group-flush">
             {% for month in months %}
             <li class="list-group-item">
-                <a href="{% url 'prediction_detail' year=month.year month=month.month %}">
-                    Predictions vs actuals for {{ month|date:"F Y" }}
+                <a href="{{ month.url }}">
+                    Predictions vs actuals for {{ month.date|date:"F Y" }}
                 </a>
             </li>
             {% empty %}
             <li class="list-group-item text-muted">No bulletins found.</li>
             {% endfor %}
         </ul>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">Model track record</div>
+        <div class="card-body">
+            {% if all_time %}
+            <p class="mb-2">
+                Across {{ all_time.months_covered }} month{{ all_time.months_covered|pluralize }} of live
+                predictions ({{ all_time.first_month|date:"M Y" }}&ndash;{{ all_time.last_month|date:"M Y" }}),
+                the model averaged <strong>{{ all_time.model_mean }}d</strong> of error versus a naive
+                &ldquo;no-change&rdquo; guess's <strong>{{ all_time.baseline_mean }}d</strong>
+                {% if all_time.beats_baseline %}(edging out{% else %}(roughly matching{% endif %} the baseline),
+                landing closer on {{ all_time.model_wins }} of {{ all_time.baseline_total }} scored dates.
+            </p>
+            <p class="small text-muted mb-2">
+                Accuracy varies enormously by category, country, and how far out you look —
+                <a href="{% url 'methodology' %}#accuracy">why we don't quote one &ldquo;% accurate&rdquo; number</a>.
+            </p>
+            {% endif %}
+            <p class="small text-muted mb-0">
+                Dig into the full backtest:
+                <a href="{% url 'spaghetti' %}">every prediction vs. actual (spaghetti chart)</a> &middot;
+                <a href="{% url 'metric_report' %}">per-series metric report</a>.
+            </p>
+        </div>
     </div>
 </div>
 {% endblock %}

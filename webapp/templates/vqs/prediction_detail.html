@@ -31,15 +31,70 @@
             </li>
         </ol>
     </nav>
+    {% if is_latest_month and upcoming_forecast_url %}
+    <div class="alert alert-primary py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="font-size: 0.95rem;">
+        <span>
+            <i class="bi bi-graph-up-arrow"></i>
+            <strong>{{ upcoming_forecast_label }} predictions are up.</strong>
+            The State Department publishes the {{ upcoming_forecast_label }} Visa Bulletin in the second half of {{ target_month|date:"F" }} — our forecast for it is already live.
+        </span>
+        <a href="{{ upcoming_forecast_url }}" class="btn btn-sm btn-primary">
+            See the {{ upcoming_forecast_label }} forecast <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
+    {% endif %}
     <div class="alert alert-info py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="font-size: 0.9rem;">
         <span>
             <i class="bi bi-clock-history"></i>
             This page is the <strong>accuracy archive</strong> — predictions that were made for {{ target_month|date:"F Y" }}, scored against what the State Department actually published.
+            {% if upcoming_forecast_url and not is_latest_month %}
+            The current forecast is for
+            <a href="{{ upcoming_forecast_url }}">{{ upcoming_forecast_label }}</a>.
+            {% endif %}
         </span>
         <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="btn btn-sm btn-primary">
             <i class="bi bi-arrow-left"></i> View the live Visa Bulletin for {{ category_label }}
         </a>
     </div>
+    {% if accuracy_rollup %}
+    <div class="card border-0 shadow-sm mb-3" aria-label="How our {{ target_month|date:'F Y' }} forecast scored">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
+                <span class="badge bg-dark"><i class="bi bi-bullseye"></i> How our {{ target_month|date:"F Y" }} forecast scored</span>
+                <span>
+                    Typical miss <strong>&plusmn;{{ accuracy_rollup.mae_days }} days</strong>
+                    across {{ accuracy_rollup.n_scored }} scored date{{ accuracy_rollup.n_scored|pluralize }}{% if accuracy_rollup.max_days %} (worst {{ accuracy_rollup.max_days }}d){% endif %}.
+                </span>
+            </div>
+            {% if accuracy_rollup.bands %}
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                {% for b in accuracy_rollup.bands %}
+                <span class="badge rounded-pill text-bg-light border" title="{{ b.n }} scored date{{ b.n|pluralize }}">{{ b.label }}: &plusmn;{{ b.mae_days }}d</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% with base=accuracy_rollup.baseline %}
+            {% if base.total %}
+            <p class="small text-muted mb-1">
+                Model averaged <strong>{{ base.model_mean }}d</strong> versus the naive
+                &ldquo;no-change&rdquo; guess's <strong>{{ base.baseline_mean }}d</strong> —
+                {% if base.beats_baseline %}beating{% else %}matching{% endif %} the no-change baseline;
+                the model landed closer on {{ base.model_wins }} of {{ base.total }} scored date{{ base.total|pluralize }}.
+            </p>
+            {% endif %}
+            {% endwith %}
+            {% if upcoming_forecast_url %}
+            <a href="{{ upcoming_forecast_url }}" class="small">
+                See the live forecast for the {{ upcoming_forecast_label }} bulletin &rarr;
+            </a>
+            {% else %}
+            <a href="{% url 'dashboard' %}?category={{ category }}&country=all" class="small">
+                See the live forecast for the next bulletin &rarr;
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h1 class="h4 mb-0">{{ formatted_title }}</h1>
         <div class="btn-group btn-group-sm shadow-sm">
@@ -68,6 +123,7 @@
     <p class="text-muted small mb-2">Knowledge Date: {{ knowledge_date|date:"F d, Y" }} &middot; <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" class="text-muted">Methodology</a></p>
     <div class="table-responsive">
         <table class="table table-bordered table-sm shadow-sm mb-2">
+            <caption class="visually-hidden">Official {{ target_month|date:"F Y" }} Visa Bulletin {{ category_label }} Final Action Dates and Dates for Filing, by preference category and country of chargeability, shown alongside our model's predictions.</caption>
             <thead class="table-dark">
                 <tr>
                     <th rowspan="2" class="align-middle text-center" style="width:60px;">Pref</th>
@@ -139,6 +195,20 @@
             <a href="{% url 'salary_search' %}">Salary Database</a>
         </div>
     </div>
+
+    {% if faq %}
+    <section class="mt-4" aria-labelledby="faq-heading">
+        <h2 id="faq-heading" class="h5 mb-3">{{ target_month|date:"F Y" }} Visa Bulletin — Frequently Asked Questions</h2>
+        <div class="accordion-flush">
+            {% for item in faq %}
+            <div class="mb-3">
+                <h3 class="h6 mb-1">{{ item.q }}</h3>
+                <p class="text-muted small mb-0">{{ item.a }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 </div>
 {% endblock %}
 {% block extra_scripts %}

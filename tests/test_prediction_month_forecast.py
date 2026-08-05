@@ -1,8 +1,9 @@
 """Tests for the evergreen per-month forecast landing pages.
 
 Locks: a future month with stored predictions renders 200 with the predicted
-cutoff + FAQPage schema + correct canonical; a published month 301s to the
-accuracy archive (no duplicate page); a future month with NO stored forecast
+cutoff + FAQPage schema + correct canonical; a published month renders the
+accuracy archive IN PLACE at the same slug (self-canonical, no 301 — see
+tests/test_stable_prediction_url.py); a future month with NO stored forecast
 404s (no thin page, no live solver); an invalid month slug 404s; and the tight
 URL pattern does not shadow the category/legacy prediction routes.
 """
@@ -237,13 +238,17 @@ class TestPredictionMonthForecast(TestCase):
             'rel="canonical" href="http://testserver/predictions/july-2026/"', body
         )
 
-    def test_published_month_redirects_to_archive(self):
-        # June 2026 has an actual bulletin -> forecast URL 301s straight to the
-        # canonical bare-numeric accuracy archive (not the employment_based alias,
-        # which would 301 again).
+    def test_published_month_renders_archive_in_place(self):
+        # June 2026 has an actual bulletin -> the SAME slug URL now renders the
+        # accuracy archive in place (self-canonical). No peak-intent 301 off the
+        # ranking-established forecast URL when the bulletin drops.
         resp = self.client.get("/predictions/june-2026/")
-        self.assertEqual(resp.status_code, 301)
-        self.assertEqual(resp["Location"], "/predictions/2026-6/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(
+            b'<link rel="canonical" href="http://testserver/predictions/june-2026/">',
+            resp.content,
+        )
+        self.assertIn(b"June 2026 Visa Bulletin", resp.content)
 
     def test_future_month_without_forecast_404(self):
         # September 2026: no stored predictions -> no thin page, no live solver.
@@ -255,7 +260,7 @@ class TestPredictionMonthForecast(TestCase):
     def test_route_does_not_shadow_category_landing(self):
         # /predictions/employment_based/ must still resolve to the category landing
         # (redirect to latest month), NOT be captured by the forecast pattern. The
-        # landing now redirects straight to the canonical bare-numeric month URL.
+        # landing now redirects straight to the canonical monthname slug.
         resp = self.client.get("/predictions/employment_based/")
         self.assertIn(resp.status_code, (301, 302))
-        self.assertIn("/predictions/2026-6/", resp["Location"])
+        self.assertIn("/predictions/june-2026/", resp["Location"])

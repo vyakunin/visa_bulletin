@@ -30,6 +30,7 @@ py_library(
         "//models/enums:country",
         "//models:job_title",
         "//models:salary",
+        "//webapp/views:prediction_views",
         "//webapp/views/bulletin:prediction_month_forecast",
         requirement("Django"),
     ],

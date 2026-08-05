@@ -82,6 +82,18 @@ py_library(
 )
 
 py_library(
+    name = "accuracy_surfacing",
+    srcs = ["accuracy_surfacing.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":accuracy_metrics",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+    ],
+)
+
+py_library(
     name = "reporting",
     srcs = ["reporting.py"],
     visibility = ["//visibility:public"],
