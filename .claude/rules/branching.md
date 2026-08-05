@@ -48,6 +48,44 @@ Origin: 2026-06-24 — the EB-dashboard worker-warmup fix needed `VQS_WARM=1` on
 
 Origin: 2026-07-01 — after the i129/privacy rollout, `prod` couldn't ff (20 hash-twin cherry-pick commits) and sat content-stale (missing the release's 18 files) while prod ran `staging-7797a89`. I flagged the needed force-push but framed it as a question. Vladimir: *"Tighten rule to always catch up staging to prod after roll out and (carefully) do now."* Reconciled by force-reset to the deployed SHA after proving (a) deployed image = `staging-7797a89` and (b) all 20 prod-only commits are patch-id twins.
 
+### Divergence can run BACKWARDS — check both directions before any promotion
+
+Everything above assumes staging/prod trail `main`. The dangerous case is the
+reverse: work authored **on a feature branch straight into staging/prod** that
+`main` never received. Then `main` is not merely behind on some files — it is
+*ahead* on others and *stale* on the ones it never got, so **promoting `main`
+silently REVERTS live behaviour**, and no commit count shows it.
+
+So before any promotion, diff CONTENT in **both** directions, not just
+`prod..main`:
+
+```bash
+git diff --numstat origin/prod origin/main | awk '$2 > 0 {print $2"\t"$3}' | sort -rn
+```
+
+Every file with deletions is content prod has that main lacks. Each one is either
+a **deliberate** main deletion (a retired cron, a deleted doc, a superseded query)
+— fine — or **prod work main never got**, which is a revert waiting to ship. There
+is no way to tell them apart except by reading each file's history on both sides
+(`git log <merge-base>..origin/main -- <file>` vs the same for prod); a file whose
+main-side commits are all hash-twins of prod's is safe, one with unique prod
+commits is not.
+
+**The fix is a real 3-way `git merge origin/prod`, not a cherry-pick campaign.**
+Git resolves the hash-twins itself and leaves only the genuinely contested files
+to resolve by hand. Resolve those per file by that same history check — never
+`--ours`/`--theirs` wholesale, because a single file can carry unique work on both
+sides (a sitemap that needs prod's canonical-URL logic AND main's thin-page gate).
+
+Origin: 2026-08-05 — the prediction/SEO workstream had shipped through feature
+branches (`seo/stable-prediction-url` → `seo/anon-pagination-cap`) straight into
+staging/prod and was never back-merged, so `main` lacked the stable canonical
+prediction URL (`b63f34f`) that is live. `main` was 119 commits "ahead" and a
+release from it would have reinstated the 301 prod deliberately removed, a week
+before the September drop. Resolved by back-porting prod → main (`5af7c2a`); the
+14 real conflicts each needed a different resolution and two of them needed both
+sides merged. Nothing in this file had told anyone to look backwards.
+
 ## Separation of Concerns
 
 Three independent operations — never conflate them:
