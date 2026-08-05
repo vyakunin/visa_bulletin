@@ -259,6 +259,89 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("static_meta", re.compile(r"^/(robots\.txt|sitemap\.xml|favicon)")),
 ]
 
+# ── The nginx side classifies by the SAME taxonomy, from a second scope ──────
+#
+# Per-surface LATENCY comes from an awk program running over the prod nginx log
+# on the homeserver (see _gather_homeserver_snapshot). awk cannot import the list
+# above, so the chain used to be hand-copied — and it drifted, silently, because
+# a surface the classifier cannot see is indistinguishable from a surface with no
+# traffic. By 2026-08-05 the awk chain was missing `bulletin_timing`, `spanish`,
+# `priority_date`, `occupation_salary` and `h1b_sponsors` outright: prod served
+# 679 hits across four of those in 24h while the digest reported "no nginx
+# traffic" for each, which is how a 4-6s cold render on `/h1b-salary/` sat
+# unnoticed. It had also missed the trailing-slash fix above, still hard-requiring
+# `/` on `predictions`, `worksites` and `employment-based`.
+#
+# So the chain is GENERATED from SURFACE_PATTERNS and the taxonomy has one owner.
+# Adding a bucket above now reaches both the GoatCounter and the nginx report
+# with no second edit.
+#
+# Buckets deliberately excluded — nginx cannot emit a line they would match:
+#   donation_click  GoatCounter `ext-*` event pseudo-paths, never an HTTP request
+#   api, static_meta  already removed by the `is_page` filter before classifying
+_AWK_SKIPPED_SURFACES = frozenset({"donation_click", "api", "static_meta"})
+
+# Python-only regex constructs mawk's ERE engine does not implement. A pattern
+# using one would match in the digest's GC report and NOT on the nginx side —
+# the same silent split this generator exists to remove — so it is rejected loudly
+# at generation time instead.
+_AWK_UNSUPPORTED_RE = re.compile(r"\(\?|\\[dwsbAZ]")
+
+
+def _awk_surface_literal(name: str, pattern: str) -> str:
+    """One SURFACE_PATTERNS regex as an awk ERE literal, or raise.
+
+    awk's `~` searches anywhere, while Python's `.match()` anchors at position 0,
+    so every pattern must carry its own `^` for the two scopes to agree. The only
+    character needing translation is `/`, which would otherwise close awk's regex
+    literal early.
+    """
+    if not pattern.startswith("^"):
+        raise ValueError(
+            f"surface {name!r}: pattern {pattern!r} is not anchored with '^'. "
+            "Python matches it with re.match (anchored) but awk's ~ searches "
+            "anywhere, so the two sides would classify differently."
+        )
+    if _AWK_UNSUPPORTED_RE.search(pattern):
+        raise ValueError(
+            f"surface {name!r}: pattern {pattern!r} uses a Python-only regex "
+            "construct (lookaround or a \\d/\\w/\\s class) that mawk's ERE engine "
+            "lacks. Rewrite it in plain ERE so both scopes agree."
+        )
+    if "'" in pattern:
+        # The awk program is embedded in a single-quoted shell string; one
+        # apostrophe terminates it and bash parses the rest of the program.
+        raise ValueError(f"surface {name!r}: pattern {pattern!r} contains an apostrophe.")
+    if "{" in pattern or "}" in pattern:
+        # The snapshot script is an f-string, and the awk body doubles its braces.
+        raise ValueError(f"surface {name!r}: pattern {pattern!r} contains a brace.")
+    return "/" + pattern.replace("/", r"\/") + "/"
+
+
+def _awk_surface_classifier(indent: str = "      ") -> str:
+    """SURFACE_PATTERNS rendered as an awk if/else-if chain, first match wins.
+
+    Emits awk regex *literals* (compiled once when awk parses the program) rather
+    than dynamic string regexes, so the per-line cost stays flat across the ~70k
+    lines of a 24h window.
+    """
+    clauses = [
+        (name, _awk_surface_literal(name, pat.pattern))
+        for name, pat in SURFACE_PATTERNS
+        if name not in _AWK_SKIPPED_SURFACES
+    ]
+    if not clauses:
+        raise ValueError("no nginx-visible surfaces — every bucket was skipped")
+    width = max(len(lit) for _, lit in clauses)
+    lines = []
+    for i, (name, lit) in enumerate(clauses):
+        kw = "if     " if i == 0 else "else if"
+        lines.append(f'{indent}{kw} (path ~ {lit.ljust(width)}) surf = "{name}"')
+    lines.append(f'{indent}else{" " * (len("if     ") - 4)}'
+                 f'{" " * (len("(path ~ ") + width + 1)}surf = "other"')
+    return "\n".join(lines).lstrip()
+
+
 # Finer-grained classifier for the combined "main entry" line (homepage + EB
 # dashboards + FS dashboards). The default SURFACE_PATTERNS lumps `/` and
 # `/employment-based/*` into one `dashboard` bucket — correct for traffic
@@ -362,6 +445,10 @@ def _gather_homeserver_snapshot() -> dict[str, str]:
         "-tA -F'|' -c"
     )
 
+    # One taxonomy, two scopes: the awk chain below is rendered from the same
+    # SURFACE_PATTERNS the GoatCounter report buckets by.
+    surface_classifier = _awk_surface_classifier()
+
     script = rf"""
 set +e
 printf '==SECTION:containers==\n'
@@ -424,23 +511,14 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
     if (is_scanner) scanner_path[path]++
     # Real-page hits = 2xx/3xx on something that is not API/static/scanner.
     is_page = (substr(status,1,1) ~ /^[23]$/) && path !~ /^\/(api|static|favicon|robots\.txt|sitemap\.xml|\.well-known)/ && !is_scanner
-    # Surface classification for per-property latency tracking. Mirror order of
-    # SURFACE_PATTERNS in Python; first match wins. Only count is_page (2xx/3xx
-    # real pages, scanner/api/static already filtered).
+    # Surface classification for per-property latency tracking. GENERATED from
+    # SURFACE_PATTERNS by _awk_surface_classifier() — do not hand-edit this chain,
+    # edit the Python list (a hand-maintained copy drifted and blinded the digest
+    # to four live pSEO surfaces; see the note above SURFACE_PATTERNS). First
+    # match wins. Only classifies is_page (2xx/3xx real pages; scanner/api/static
+    # already filtered out).
     if (is_page) {{
-      if      (path == "/" || path ~ /^\/employment-based\//) surf = "dashboard"
-      else if (path ~ /^\/job-title\//)                  surf = "job_title_profile"
-      else if (path ~ /^\/job-titles\/?$/)               surf = "job_title_directory"
-      else if (path ~ /^\/employer\//)                   surf = "employer_profile"
-      else if (path ~ /^\/employers\/rankings\/?$/)      surf = "employer_rankings"
-      else if (path ~ /^\/employers\/?$/)                surf = "employer_directory"
-      else if (path ~ /^\/predictions\//)                surf = "predictions"
-      else if (path ~ /^\/analysis\//)                   surf = "blog"
-      else if (path ~ /^\/salaries\/?/)                  surf = "salaries"
-      else if (path ~ /^\/worksites\//)                  surf = "worksites"
-      else if (path ~ /^\/family-sponsored\//)           surf = "seo_landing_fam"
-      else if (path ~ /^\/(faq|about|contact)\/?$/)      surf = "static_pages"
-      else                                                surf = "other"
+      {surface_classifier}
       rt = $11 + 0
       surf_count[surf]++
       surf_sum_ms[surf] += rt * 1000

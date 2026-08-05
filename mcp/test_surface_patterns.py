@@ -25,8 +25,11 @@ target).
 """
 
 import re
+import shutil
+import subprocess
 
 import daily_checkup_server as m
+import pytest
 
 # ── Trailing-slash contract: GC strips it, so hubs must still classify ───────
 
@@ -147,3 +150,102 @@ def test_patterns_compile_and_are_anchored():
     for name, pat in m.SURFACE_PATTERNS:
         assert isinstance(pat, re.Pattern), name
         assert pat.pattern.startswith("^"), f"{name} is unanchored — would match mid-path"
+
+
+# ── One taxonomy, two scopes: the awk classifier is GENERATED ────────────────
+#
+# Per-surface latency comes from an awk program over the prod nginx log, which
+# cannot import SURFACE_PATTERNS. That chain used to be hand-copied and drifted:
+# by 2026-08-05 it was missing `bulletin_timing`, `spanish`, `priority_date`,
+# `occupation_salary` and `h1b_sponsors`, so 679 real hits in 24h were reported
+# as "no nginx traffic" for four live pSEO families — which is how a 4-6s cold
+# render on /h1b-salary/ went unnoticed for weeks. The failure is silent by
+# construction: an unclassifiable surface is indistinguishable from an idle one.
+#
+# These tests run the GENERATED awk through the real awk binary and require it
+# to agree with `_bucket_path` path-for-path, so the two scopes cannot drift
+# again without a red test.
+
+# Representative of every bucket, in both the bare and trailing-slash forms
+# (nginx logs the real request path; GoatCounter strips the trailing slash).
+_CLASSIFIER_CASES = [
+    "/", "/?utm=x", "/employment-based", "/employment-based/", "/employment-based/india/",
+    "/job-title/software-engineer/", "/job-titles/", "/employer/google-llc/",
+    "/employers/", "/employers/rankings/", "/predictions", "/predictions/",
+    "/predictions/august-2026/", "/when-is-the-next-visa-bulletin",
+    "/when-is-the-next-visa-bulletin/", "/analysis/foo/", "/salaries/", "/salaries/?q=x",
+    "/worksites", "/worksites/", "/family-sponsored/", "/es", "/es/",
+    "/es/priority-date/eb2/india/", "/estimate", "/priority-date", "/priority-date/",
+    "/priority-date/eb2/india/", "/priority-date-calculator/", "/h1b-salary",
+    "/h1b-salary/", "/h1b-salary/nurse/", "/h1b-salary/google-llc/engineer/",
+    "/h1b-sponsors", "/h1b-sponsors/in/ny/", "/faq", "/faq/", "/methodology",
+    "/corrections", "/ai-citation", "/some-random-thing/", "/privacy/",
+]
+
+
+def _awk_bin() -> str:
+    # mawk is what the homeserver runs; prefer it so the test exercises the same
+    # ERE engine the generated program will actually meet in production.
+    for candidate in ("mawk", "gawk", "awk"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    pytest.skip("no awk binary available")
+
+
+def _classify_with_awk(paths: list[str]) -> list[str]:
+    chain = m._awk_surface_classifier(indent="")
+    prog = f'BEGIN{{FS="\\t"}} {{ path=$1; {chain} ; print surf }}'
+    res = subprocess.run(
+        [_awk_bin(), prog], input="\n".join(paths), capture_output=True, text=True
+    )
+    assert res.returncode == 0, f"generated awk did not parse: {res.stderr}"
+    return res.stdout.strip().split("\n")
+
+
+def test_generated_awk_agrees_with_python_on_every_bucket():
+    """The load-bearing test: both scopes must classify identically."""
+    got = _classify_with_awk(_CLASSIFIER_CASES)
+    mismatches = [
+        (p, m._bucket_path(p), a) for p, a in zip(_CLASSIFIER_CASES, got) if m._bucket_path(p) != a
+    ]
+    assert mismatches == [], (
+        "nginx-side and GoatCounter-side classifiers disagree: "
+        + "; ".join(f"{p} py={py} awk={aw}" for p, py, aw in mismatches)
+    )
+
+
+def test_the_four_blinded_pseo_surfaces_classify_in_awk():
+    """The exact 2026-08-05 regression: 679 hits/24h reported as no traffic."""
+    paths = ["/h1b-salary/nurse/", "/priority-date/eb2/india/", "/h1b-sponsors/in/ny/", "/es/"]
+    expected = ["occupation_salary", "priority_date", "h1b_sponsors", "spanish"]
+    assert _classify_with_awk(paths) == expected
+
+
+def test_every_nginx_visible_surface_reaches_the_awk_chain():
+    chain = m._awk_surface_classifier()
+    for name, _ in m.SURFACE_PATTERNS:
+        if name in m._AWK_SKIPPED_SURFACES:
+            assert f'surf = "{name}"' not in chain, f"{name} cannot occur in an nginx log"
+        else:
+            assert f'surf = "{name}"' in chain, (
+                f"{name} is classified for GoatCounter but not for nginx — its latency "
+                "would be reported as 'no nginx traffic'"
+            )
+
+
+def test_generated_awk_is_shell_and_fstring_safe():
+    """The chain is embedded in a single-quoted shell string inside an f-string."""
+    chain = m._awk_surface_classifier()
+    assert "'" not in chain, "an apostrophe terminates the shell-quoted awk program early"
+    assert "{" not in chain and "}" not in chain, "a brace breaks the f-string / awk block"
+
+
+def test_untranslatable_patterns_are_rejected_loudly():
+    """A Python-only construct must fail at generation, not silently misclassify."""
+    with pytest.raises(ValueError, match="not anchored"):
+        m._awk_surface_literal("x", r"/unanchored/")
+    with pytest.raises(ValueError, match="Python-only regex"):
+        m._awk_surface_literal("x", r"^/foo(?!bar)")
+    with pytest.raises(ValueError, match="Python-only regex"):
+        m._awk_surface_literal("x", r"^/foo\d+")
