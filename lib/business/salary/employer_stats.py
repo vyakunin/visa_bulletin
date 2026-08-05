@@ -42,13 +42,15 @@ URLs; it does not leak a thin page into the index. Closing it needs a
 denormalized last-filing year on the cluster — unmeasured, so the size of that
 set is unknown.
 
-Nothing consumes `data-vb-thin` yet. It exists as the seam for suppressing ad
-slots on thin pages — AdSense evaluates pages that SERVE ads, reached by
-Mediapartners-Google via the ad request itself, so the Search-side noindex does
-not cover that exposure. The partials that would read it (`ad_slot.html`,
-`affiliate_card.html`) live in the private ops repo and are bind-mounted in
-prod; whether to suppress ads across this surface is a monetization decision
-that has not been made.
+`data-vb-thin` is the seam for suppressing ads on thin pages, and it is load
+bearing: AdSense evaluates pages that SERVE ads, reached by Mediapartners-Google
+via the ad request itself, so the Search-side noindex does not cover that
+exposure. `ad_slot.html` — private ops repo, bind-mounted over
+`webapp/templates/webapp/includes/` in prod — reads the attribute and returns
+before the first `setupSlot()`, which withholds `adsbygoogle.js` from the page
+entirely and so takes AUTO ADS down alongside the two manual slots. Source ORDER
+is the whole property; the ops repo pins it with a static test. Removing the
+attribute here silently re-enables ads on ~217k profiles.
 """
 
 from models.salary import EmployerCluster
