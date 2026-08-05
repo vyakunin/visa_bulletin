@@ -14,6 +14,15 @@ class WebappConfig(AppConfig):
     verbose_name = "U.S. Immigration Data"
 
     def ready(self) -> None:
+        # INVARIANT: nothing here — or in anything it imports — may render a Django
+        # template. This runs in the gunicorn --preload master, and under DEBUG=False
+        # Django caches compiled templates per process, so a template compiled here is
+        # inherited copy-on-write by every forked worker. That would freeze the
+        # bind-mounted monetization partials at their boot-time content, and shipping
+        # one would again need a container recreate (~7.4s with the socket unbound)
+        # instead of a SIGHUP. Pinned by //tests:test_template_override_reload;
+        # mechanism + measurements in .claude/rules/deployment.md.
+        #
         # Eagerly import numpy at app load. Under gunicorn --preload the WSGI app
         # (and thus AppConfig.ready) runs once in the single-threaded master before
         # workers fork, so numpy is fully initialized and CoW-shared to every worker.

@@ -121,6 +121,63 @@ The release scripts handle this themselves since `hosting` commit `566369d` —
 **assert** its upstream matches the live container before continuing. You only need the
 manual recipe for a hand-run `docker compose up -d web`.
 
+### Monetization override partials reload on SIGHUP — a container recreate is not needed
+
+The three monetization partials (`ad_slot.html`, `affiliate_card.html`,
+`support_cta.html`) are `:ro` bind-mounts over
+`/app/webapp/templates/webapp/includes/`. With `DEBUG=False` + `APP_DIRS=True` and no
+explicit `loaders`, Django wraps the loader chain in `cached.Loader`, which compiles a
+template once per process and never re-stats the file — so an edited mount stays
+invisible to a worker that has already rendered it. That is the only reason shipping a
+partial ever needed a new container.
+
+The cache lives in the **worker**, not the `--preload` master, because nothing renders
+during preload. So a graceful SIGHUP — which replaces every worker with a fresh fork
+whose cache is empty — picks up the new file with no recreate and no unbound socket:
+
+| | `up -d --force-recreate web` | `docker kill --signal=HUP <web>` |
+|---|---|---|
+| new partial served after | a full boot | **0.23s** |
+| failed requests | the whole boot window | **1 reset in 205** |
+
+`kill` is **not in the image** (no coreutils, and it is not a builtin when `exec`'d), so
+`docker exec <web> kill -HUP 1` fails with `executable file not found`. Signal the
+container instead: `docker kill --signal=HUP <web>`.
+
+Boot profile, measured on staging — why the recreate costs what it does:
+
+| phase | duration |
+|---|---|
+| SIGTERM → master down | 1.1s |
+| container start → migrate starts (interpreter + Django import) | 0.9s |
+| `migrate --noinput` (nothing pending) | 0.02s |
+| `collectstatic --noinput` (0 copied, 13 unmodified) | 0.45s |
+| gunicorn `--preload` app import + VQS warmup | **4.5s** |
+| **total with the socket unbound** | **~7.4s** |
+
+Gunicorn binds the socket only *after* the preload import returns, so the entire window
+is connection-refused rather than slow — which is what turns into the 10-30 502s per
+override deploy at prod's request rate. The dominant term is the VQS warmup, and that is
+a deliberate trade (it removes an ~11s in-request cold penalty), so the lever is not
+booting faster; it is not restarting.
+
+**Template compilation appears nowhere in that profile** — it is lazy and per-worker.
+Removing `cached.Loader` therefore cannot shorten the boot window at all; it would only
+trade this bursty 502 class for a template compile on every render, paid mostly by
+crawlers, which deliberately skip the Redis page cache.
+
+Two properties this reload path depends on:
+
+- **Nothing may compile a template during preload.** If `AppConfig.ready()` (or an
+  import it triggers) rendered one, the master's cache would be populated and inherited
+  copy-on-write by every worker, and SIGHUP would silently stop reloading overrides.
+  Pinned by `//tests:test_template_override_reload`.
+- **`--max-requests 1000` already recycles workers**, so an override edit propagates on
+  its own within a worker's lifetime — which means that between the edit and full
+  propagation the site serves a **mix** of old and new partials (measured directly: a
+  worker that had never rendered the partial served the new file while its sibling still
+  served the old). SIGHUP is what makes the cut atomic; waiting is what makes it ragged.
+
 ### Rule: Capture a pre-deploy perf baseline + post-deploy verification window
 
 **Every prod deploy (code, schema, infra) MUST include a pre-deploy baseline snapshot AND a 30-minute post-deploy verification window** with the same signals. Latency / 5xx regressions after a deploy are common (planner picks a new plan after schema changes, a new view forgets to use `select_related`, a Redis cache clear cold-starts every page) and they are catastrophically cheap to detect early and expensive to detect via user reports. This rule exists because the 2026-05-17 staging-crawl incident showed that perf regressions silently degrade UX for hours unless deliberately monitored — and because that incident's own fix (trigram indexes) needed verification it wasn't trivially providing.

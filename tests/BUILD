@@ -1004,6 +1004,12 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_template_override_reload",
+    size = "small",
+    srcs = ["test_template_override_reload.py"],
+)
+
+django_py_test(
     name = "test_trust_pages",
     size = "small",
     srcs = ["test_trust_pages.py"],
