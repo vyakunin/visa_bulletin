@@ -76,6 +76,21 @@ ALLOWLIST: set[tuple[str, str]] = {
     # calibrate_queue_depth, run_monthly_loop) out of solver into a leaf module;
     # solver re-exports them so external call sites are untouched.
     ("//lib/business/vqs:expert_pool", "lib.business.vqs.solver"),
+    # prediction_month_forecast.py:428 -> prediction_views.prediction_detail, against
+    # prediction_views.py:318,414,796 -> prediction_month_forecast. Bazel already
+    # carries the prediction_views -> prediction_month_forecast direction, so the
+    # reverse cannot be declared. This is the stable-canonical-URL design: the
+    # monthname slug route renders the forecast pre-drop and delegates to
+    # prediction_detail (via _render_at_slug) post-drop, in place, so the
+    # ranking-established URL never 301s at peak intent. All four imports are lazy
+    # (in-function), so it fails at CALL time with ModuleNotFoundError for a target
+    # whose closure has only prediction_month_forecast.
+    # Fix: extract the shared URL surface — prediction_canonical_path and
+    # forecast_url_for — into a leaf module both import. That breaks this cycle AND
+    # removes the reason webapp/views/seo:sitemaps has to depend on prediction_views
+    # at all. Tracked separately; not done during the back-port because it reshapes
+    # live prediction routing.
+    ("//webapp/views/bulletin:prediction_month_forecast", "webapp.views.prediction_views"),
 }
 
 

@@ -47,6 +47,7 @@ py_library(
     name = "pagination",
     srcs = ["pagination.py"],
     visibility = ["//visibility:public"],
+    deps = [requirement("Django")],
 )
 
 py_library(

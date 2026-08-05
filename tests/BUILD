@@ -1585,3 +1585,94 @@ django_py_test(
         "//webapp:urls",
     ],
 )
+
+# Back-ported from the release branches (2026-08-05): these cover the stable
+# canonical prediction URL and the accuracy-rollup surface, which were authored
+# on staging/prod and never had a target here.
+
+django_py_test(
+    name = "test_stable_prediction_url",
+    size = "small",
+    srcs = ["test_stable_prediction_url.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        "//webapp/views/seo:sitemaps",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_prediction_detail_structured_data",
+    size = "small",
+    srcs = ["test_prediction_detail_structured_data.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_accuracy_surfacing",
+    size = "small",
+    srcs = ["test_accuracy_surfacing.py"],
+    deps = [
+        "//lib/business/vqs:accuracy_metrics",
+        "//lib/business/vqs:accuracy_surfacing",
+        "//models/enums:country",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_accuracy_recap_surfacing",
+    size = "medium",
+    srcs = ["test_accuracy_recap_surfacing.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/vqs:accuracy_surfacing",
+        "//lib/business/vqs:prediction_loader",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:prediction_views",
+        "//webapp/views:views",
+        "//webapp/views/seo:sitemaps",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_employer_index_depth_cap",
+    size = "medium",
+    srcs = ["test_employer_index_depth_cap.py"],
+    deps = [
+        "//django_config:urls",
+        "//django_config:context_processors",
+        "//lib/utils:pagination",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
+    ],
+)

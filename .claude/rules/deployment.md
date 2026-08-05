@@ -71,6 +71,9 @@ docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
 # After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
 docker exec vb_redis redis-cli -n 1 FLUSHDB
+# Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
+# (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
+./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
 ```
 
 Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s

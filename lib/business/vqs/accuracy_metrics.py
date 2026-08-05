@@ -654,6 +654,7 @@ def compare_to_no_change_baseline(
     exclude_eb4: bool = True,
     recent_only: bool = False,
     recent_cutoff: date | None = None,
+    prev_cutoff_lookup: dict[tuple[str, int, str, date], date] | None = None,
 ) -> dict:
     """
     Compare model predictions to the no-change baseline (prev cutoff = next cutoff).
@@ -662,8 +663,20 @@ def compare_to_no_change_baseline(
         model_mean_error, baseline_mean_error, model_wins, baseline_wins,
         ties, total, model_win_pct, rows_where_differ, model_mean_when_differ,
         baseline_mean_when_differ.
+
+    ``prev_cutoff_lookup``: optional {(visa_class, country, action_type,
+    bulletin_date): prev_actual_cutoff}. When provided, the previous-month actual
+    (the no-change baseline) is read from it instead of ``get_cutoff_at_date``.
+    This lets a request-path caller (which already holds the previous month's
+    actuals) score the baseline WITHOUT touching the process-global
+    ``data_cache`` — the memo caches there are never invalidated, so a web
+    request / test cannot rely on them being fresh. When omitted, behaviour is
+    unchanged (the batch script + post-ingest hook keep using ``data_cache``).
     """
-    from lib.business.vqs.data_cache import get_cutoff_at_date
+    if prev_cutoff_lookup is None:
+        from lib.business.vqs.data_cache import get_cutoff_at_date
+    else:
+        get_cutoff_at_date = None  # not used when a lookup is supplied
 
     if recent_cutoff is None and recent_only:
         recent_cutoff = date(2024, 1, 1)
@@ -686,10 +699,15 @@ def compare_to_no_change_baseline(
         if r.error_days is None or r.predicted_cutoff is None:
             continue
 
-        prev_cutoff = get_cutoff_at_date(
-            r.visa_class, r.country, r.action_type,
-            r.bulletin_date - timedelta(days=1),
-        )
+        if prev_cutoff_lookup is not None:
+            prev_cutoff = prev_cutoff_lookup.get(
+                (r.visa_class, r.country, r.action_type, r.bulletin_date)
+            )
+        else:
+            prev_cutoff = get_cutoff_at_date(
+                r.visa_class, r.country, r.action_type,
+                r.bulletin_date - timedelta(days=1),
+            )
         if prev_cutoff is None:
             continue
 

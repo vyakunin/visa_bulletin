@@ -1,5 +1,6 @@
 import calendar
 import functools
+import json
 import logging
 import re
 from datetime import date
@@ -35,9 +36,285 @@ _REGIME_DISPLAY = {
 _EB4_CLASSES = {"4th"}
 _OVERSUBSCRIBED_EB23_COUNTRIES = {Country.INDIA.value, Country.CHINA.value}
 
+# Short country labels for post-drop FAQ prose (schema.org FAQPage text).
+_COUNTRY_SHORT = {
+    Country.INDIA.value: "India",
+    Country.CHINA.value: "China",
+    Country.MEXICO.value: "Mexico",
+    Country.PHILIPPINES.value: "the Philippines",
+    Country.ALL.value: "all other countries",
+}
+
+_STATE_DEPT_BULLETIN_URL = (
+    "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html"
+)
+
+
+def _fmt_cell_actual(cell: dict) -> str | None:
+    """The user-visible actual value for a matrix final-action/filing cell:
+    'Current', 'Unavailable', a formatted date, or None when no actual exists.
+
+    Reads exactly the fields the visible table renders, so FAQ/JSON-LD answers
+    can never diverge from the page (no hardcoded/fabricated dates)."""
+    if cell.get("actual_is_current"):
+        return "Current"
+    if cell.get("actual_is_unavailable"):
+        return "Unavailable"
+    return cell.get("formatted_actual")
+
+
+def _movement_phrase(cell: dict) -> str:
+    """A plain-English tail describing month-over-month movement of a real date,
+    derived from the same actual_move the table shows. Empty when not applicable."""
+    move = cell.get("actual_move")
+    if not move:
+        return ""
+    mtype = cell.get("actual_move_type")
+    if move == "0":
+        return ", unchanged from the prior month"
+    if "Current" in move:
+        return ", newly Current this month"
+    amount = move.lstrip("↑↓ ").strip()
+    if mtype == "positive":
+        return f", an advance of {amount} versus the prior month"
+    if mtype == "negative":
+        return f", a retrogression of {amount} versus the prior month"
+    return ""
+
+
+def _detail_faq(
+    matrix: dict,
+    category: str,
+    class_display: dict,
+    month_label: str,
+    next_month_label: str | None,
+) -> list[dict]:
+    """Post-drop FAQ for the accuracy-archive page, built ENTIRELY from the
+    month's ACTUAL published cutoffs (the same `matrix` the table renders).
+
+    Targets the confirmed-bulletin intent ("what is the official date") that we
+    lose to travel.state.gov after a drop. Every answer is derived from real
+    rendered data — no hardcoded or fabricated dates. Returns a list of
+    {"q", "a"} dicts (answers are plain text, valid for FAQPage JSON-LD AND
+    rendered verbatim in the visible FAQ so the two never diverge)."""
+    if category == VisaCategory.FAMILY_SPONSORED.value:
+        target_countries = [
+            Country.INDIA.value,
+            Country.MEXICO.value,
+            Country.PHILIPPINES.value,
+        ]
+        flagship = None
+    else:
+        target_countries = [Country.INDIA.value, Country.CHINA.value]
+        flagship = ("2nd", Country.INDIA.value)  # EB-2 India — the headline series
+
+    faq: list[dict] = []
+
+    # Flagship "did it advance?" question, first — it maps to the highest-volume
+    # post-drop query for the oversubscribed headline series.
+    if flagship is not None:
+        vc, cval = flagship
+        cell = matrix.get(vc, {}).get(cval, {}).get("final_action")
+        val = _fmt_cell_actual(cell) if cell else None
+        if val:
+            cls_label = class_display.get(vc, vc)
+            country = _COUNTRY_SHORT.get(cval, "")
+            q = f"Did {cls_label} {country} advance in the {month_label} Visa Bulletin?"
+            if val == "Current":
+                a = (
+                    f"{cls_label} {country} is Current in the {month_label} Visa "
+                    f"Bulletin — every priority date in the category is authorized."
+                )
+            elif val == "Unavailable":
+                a = (
+                    f"No — {cls_label} {country} is Unavailable in the {month_label} "
+                    f"Visa Bulletin; no numbers are being issued this month."
+                )
+            elif cell.get("actual_move_type") == "positive":
+                amount = cell["actual_move"].lstrip("↑↓ ").strip()
+                a = (
+                    f"Yes — the official {cls_label} {country} Final Action Date "
+                    f"advanced {amount} to {val} in the {month_label} Visa Bulletin."
+                )
+            elif cell.get("actual_move_type") == "negative":
+                amount = cell["actual_move"].lstrip("↑↓ ").strip()
+                a = (
+                    f"No — the official {cls_label} {country} Final Action Date "
+                    f"retrogressed {amount} to {val} in the {month_label} Visa Bulletin."
+                )
+            else:
+                a = (
+                    f"No — the official {cls_label} {country} Final Action Date held "
+                    f"at {val}, unchanged from the prior month, in the {month_label} "
+                    f"Visa Bulletin."
+                )
+            faq.append({"q": q, "a": a})
+
+    # "What is the official <cat> Final Action Date for <country>?" for the
+    # highest-interest series that carry a real actual value.
+    for vc in matrix:
+        cls_label = class_display.get(vc, vc)
+        for cval in target_countries:
+            if len(faq) >= 6:
+                break
+            cell = matrix.get(vc, {}).get(cval, {}).get("final_action")
+            val = _fmt_cell_actual(cell) if cell else None
+            if not val:
+                continue
+            country = _COUNTRY_SHORT.get(cval, "")
+            q = f"What is the {cls_label} Final Action Date for {country} in {month_label}?"
+            if val == "Current":
+                a = (
+                    f"In the {month_label} Visa Bulletin, {cls_label} {country} is "
+                    f"Current for Final Action — all priority dates in the category "
+                    f"are authorized. This is the official status published by the "
+                    f"U.S. Department of State."
+                )
+            elif val == "Unavailable":
+                a = (
+                    f"In the {month_label} Visa Bulletin, {cls_label} {country} is "
+                    f"Unavailable for Final Action — no numbers are being issued this "
+                    f"month. This is the official status published by the U.S. "
+                    f"Department of State."
+                )
+            else:
+                a = (
+                    f"In the {month_label} Visa Bulletin, the official {cls_label} "
+                    f"{country} Final Action Date is {val}{_movement_phrase(cell)}. "
+                    f"Source: the U.S. Department of State Visa Bulletin."
+                )
+            faq.append({"q": q, "a": a})
+        if len(faq) >= 6:
+            break
+
+    # When is the next bulletin out? Only meaningful on the freshest published
+    # month (the page that inherits live "next bulletin" intent).
+    if next_month_label:
+        faq.append(
+            {
+                "q": f"When is the {next_month_label} Visa Bulletin expected?",
+                "a": (
+                    f"The U.S. Department of State typically publishes each Visa "
+                    f"Bulletin in the second or third week of the preceding month, so "
+                    f"the {next_month_label} Visa Bulletin is generally released in "
+                    f"the second half of {month_label}."
+                ),
+            }
+        )
+
+    return faq
+
+
+def _detail_structured_data(
+    faq: list[dict],
+    canonical_url: str,
+    category_label: str,
+    month_label: str,
+    actual_bulletin: Bulletin,
+) -> str:
+    """JSON-LD @graph for the accuracy-archive page: FAQPage (post-drop Q&A) +
+    BreadcrumbList (mirrors the visible trail) + a page-scoped Dataset framing
+    the tables as the official State Department bulletin dates."""
+    graph: list[dict] = []
+    if faq:
+        graph.append(
+            {
+                "@type": "FAQPage",
+                "@id": f"{canonical_url}#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": item["q"],
+                        "acceptedAnswer": {"@type": "Answer", "text": item["a"]},
+                    }
+                    for item in faq
+                ],
+            }
+        )
+    graph.append(
+        {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Home",
+                    "item": "https://visa-bulletin.us/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": "Prediction accuracy archive",
+                    "item": "https://visa-bulletin.us/predictions/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 3,
+                    "name": f"{category_label}: {month_label}",
+                    "item": canonical_url,
+                },
+            ],
+        }
+    )
+    graph.append(
+        {
+            "@type": "Dataset",
+            "@id": f"{canonical_url}#dataset",
+            "name": (
+                f"{month_label} U.S. Visa Bulletin — Official {category_label} "
+                f"Final Action & Filing Dates"
+            ),
+            "description": (
+                f"The official {category_label} Final Action Dates and Dates for "
+                f"Filing from the {month_label} U.S. Department of State Visa "
+                f"Bulletin, by preference category and country of chargeability."
+            ),
+            "url": canonical_url,
+            "temporalCoverage": actual_bulletin.publication_date.strftime("%Y-%m"),
+            "isAccessibleForFree": True,
+            "creator": {
+                "@type": "Organization",
+                "name": "U.S. Department of State",
+                "url": _STATE_DEPT_BULLETIN_URL,
+            },
+            "isBasedOn": _STATE_DEPT_BULLETIN_URL,
+        }
+    )
+    return json.dumps({"@context": "https://schema.org", "@graph": graph})
+
+
+def _archive_index_structured_data(canonical_url: str) -> str:
+    """BreadcrumbList JSON-LD for the /predictions/ accuracy archive index.
+
+    Mirrors the visible page position (Home -> Prediction accuracy archive) so
+    the archive index — previously carrying no canonical and no structured data
+    at all — emits a valid rich-result trail like the per-month recap pages do.
+    """
+    graph = [
+        {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Home",
+                    "item": "https://visa-bulletin.us/",
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": "Prediction accuracy archive",
+                    "item": canonical_url,
+                },
+            ],
+        }
+    ]
+    return json.dumps({"@context": "https://schema.org", "@graph": graph})
+
 
 def prediction_list(request: HttpRequest) -> HttpResponse:
     """List all bulletin months available for prediction browsing."""
+    from lib.business.vqs.accuracy_surfacing import archive_index_accuracy
     from webapp.views.bulletin.prediction_month_forecast import (
         forecast_url_for,
         upcoming_forecast_month,
@@ -47,13 +324,37 @@ def prediction_list(request: HttpRequest) -> HttpResponse:
         Bulletin.objects.order_by("-publication_date")
         .values_list("publication_date", flat=True)
     )
+    # Link each month at its CANONICAL employment_based URL (the monthname slug)
+    # so the archive index points straight at the canonical page — no numeric→slug
+    # 301 hop, and internal links agree with the canonical tag + sitemap.
+    month_links = [
+        {
+            "date": d,
+            "url": prediction_canonical_path(
+                VisaCategory.EMPLOYMENT_BASED.value, d.year, d.month
+            ),
+        }
+        for d in months
+    ]
     upcoming = upcoming_forecast_month()
+    canonical_url = request.build_absolute_uri("/predictions/")
+    # Scorecard (latest month headline accuracy) + all-time track record — real
+    # numbers from compute_bulletin_accuracy_summary / compare_to_no_change_baseline
+    # (cached). Decorative on top of the month list, so it degrades to empty.
+    accuracy = archive_index_accuracy()
     context = {
-        "months": list(months),
+        "months": month_links,
         "forecast_url": forecast_url_for(upcoming) if upcoming else None,
         "forecast_month_label": upcoming.strftime("%B %Y") if upcoming else None,
         "hreflang_en": request.build_absolute_uri("/predictions/"),
         "hreflang_es": request.build_absolute_uri("/es/predictions/"),
+        # Canonical tag (base.html renders it from canonical_url) — the archive
+        # index previously had none, so it self-canonicalises now.
+        "canonical_url": canonical_url,
+        # BreadcrumbList JSON-LD (base.html renders `structured_data|safe`).
+        "structured_data": _archive_index_structured_data(canonical_url),
+        "scorecard": accuracy.get("scorecard"),
+        "all_time": accuracy.get("all_time"),
     }
     return render(request, "vqs/prediction_list.html", context)
 
@@ -90,20 +391,29 @@ def _add_months(sourcedate: date, months: int) -> date:
 
 
 def prediction_canonical_path(category: str, year: int, month: int) -> str:
-    """The single canonical URL path for a published-month prediction page.
+    """The single canonical URL path for a prediction month.
 
-    We serve the same page under two URLs — the bare numeric
-    ``/predictions/<y>-<m>/`` (legacy default, employment_based) and
-    ``/predictions/employment_based/<y>-<m>/`` — so exactly one must be
-    canonical. We pick the bare numeric form: it's what the sitemap and the
-    archive index already link, and it's already indexed. Non-default
-    categories (family_sponsored) keep their category segment — they are
-    distinct content and self-canonical. This is the nearest thing the app has
-    to a ``get_absolute_url`` for a prediction month; route every internal
-    link, canonical tag, and sitemap entry through it.
+    For employment_based this is the keyword-rich monthname slug
+    ``/predictions/<monthname>-<year>/`` — the SAME URL the evergreen forecast
+    ranks on before the bulletin drops. Keeping it canonical across the whole
+    lifecycle means the ranking-established URL never changes at publication:
+    the slug route renders the forecast pre-drop and the accuracy archive
+    post-drop, in place, with no peak-intent 301. The bare-numeric
+    ``/predictions/<y>-<m>/`` and the ``/predictions/employment_based/<y>-<m>/``
+    alias each 301 here in a single hop.
+
+    family_sponsored keeps its own ``/predictions/family_sponsored/<y>-<m>/``
+    segment — distinct content, self-canonical, already stable across the
+    lifecycle (no forecast-slug→numeric flip to fix). This is the nearest thing
+    the app has to a ``get_absolute_url`` for a prediction month; route every
+    internal link, canonical tag, and sitemap entry through it.
     """
     if category == VisaCategory.EMPLOYMENT_BASED.value:
-        return f"/predictions/{year}-{month}/"
+        # Reuse the forecast slug builder so the archive canonical and the
+        # forecast URL are byte-identical (one URL, two lifecycle phases).
+        from webapp.views.bulletin.prediction_month_forecast import forecast_url_for
+
+        return forecast_url_for(date(year, month, 1))
     return f"/predictions/{category}/{year}-{month}/"
 
 
@@ -144,20 +454,35 @@ def _cache_historical_predictions_only(timeout: int):
 
 @_cache_historical_predictions_only(60 * 60)
 def prediction_detail(
-    request: HttpRequest, year: int, month: int, category: str = "employment_based"
+    request: HttpRequest,
+    year: int,
+    month: int,
+    category: str = "employment_based",
+    _render_at_slug: bool = False,
 ) -> HttpResponse:
-    """Detailed view: backtested predictions + actual bulletin for a month."""
-    # Collapse the duplicate employment_based/<y>-<m> URL onto the canonical
-    # bare numeric /predictions/<y>-<m>/ (301). Only when reached via the
-    # explicit category route — the bare numeric route lands here directly and
-    # must render, not loop. family_sponsored keeps its segment (distinct,
-    # self-canonical).
-    if (
-        request.resolver_match is not None
-        and request.resolver_match.url_name == "prediction_detail_category"
-        and category == VisaCategory.EMPLOYMENT_BASED.value
-    ):
-        return HttpResponsePermanentRedirect(f"/predictions/{year}-{month}/")
+    """Detailed view: backtested predictions + actual bulletin for a month.
+
+    The employment_based archive is CANONICAL at the keyword-rich monthname slug
+    (``/predictions/<monthname>-<year>/``), which the slug route
+    (``prediction_month_forecast_view``) renders in place once the bulletin
+    publishes. So every employment_based URL that lands here from a *route* — the
+    bare-numeric ``/predictions/<y>-<m>/`` and the ``employment_based/<y>-<m>/``
+    alias — 301s to that slug in a single hop. Only the slug route renders the
+    archive here, signalled by ``_render_at_slug`` (kept out of the URL conf so a
+    routed request can never set it). family_sponsored has no slug form: it
+    renders directly under its own segment, self-canonical.
+    """
+    if category == VisaCategory.EMPLOYMENT_BASED.value and not _render_at_slug:
+        target = date(year, month, 1)
+        if not Bulletin.objects.filter(publication_date=target).exists():
+            from django.http import Http404
+
+            raise Http404(f"No bulletin found for {target.strftime('%B %Y')}")
+        # Single hop straight to the canonical monthname slug (never chained
+        # through the bare-numeric URL).
+        return HttpResponsePermanentRedirect(
+            prediction_canonical_path(category, year, month)
+        )
 
     target_date = date(year, month, 1)
 
@@ -414,6 +739,78 @@ def prediction_detail(
         else None
     )
 
+    canonical_url = request.build_absolute_uri(
+        prediction_canonical_path(category, year, month)
+    )
+
+    # Post-drop structured data + visible FAQ. Only the freshest published month
+    # answers the "next bulletin" question (it inherits that live intent); older
+    # archived months omit it. Answers are generated from `matrix` — the same
+    # actuals the table renders — so nothing is hardcoded or fabricated.
+    next_month_label = (
+        _add_months(target_date, 1).strftime("%B %Y") if is_latest_published else None
+    )
+    detail_faq = _detail_faq(
+        matrix, category, class_display, month_label, next_month_label
+    )
+    structured_data = _detail_structured_data(
+        detail_faq, canonical_url, category_label, month_label, actual_bulletin
+    )
+
+    # Visible headline-accuracy rollup banner. Built from the same `matrix` the
+    # table renders (so it can never diverge from the grid) plus the previous
+    # month's REAL actuals as the no-change baseline — every number flows through
+    # compute_bulletin_accuracy_summary / compare_to_no_change_baseline, and the
+    # previous-month lookup keeps it off the process-global data_cache. Renders a
+    # per-category error band + a model-vs-no-change comparison, never one global
+    # "% accurate" (see docs methodology).
+    from lib.business.vqs.accuracy_surfacing import build_month_rollup
+
+    prev_real_cutoffs: dict[tuple[str, int, str], date] = {}
+    for vc in classes:
+        for c in countries:
+            for atype in action_types:
+                pkey = f"{vc}_{c.value}_{atype}"
+                pd = last_actual_cutoffs.get(pkey)
+                p_is_current, p_is_unavailable = last_actual_flags.get(
+                    pkey, (False, False)
+                )
+                if pd is not None and not p_is_current and not p_is_unavailable:
+                    prev_real_cutoffs[(vc, c.value, atype)] = pd
+    accuracy_rollup = build_month_rollup(
+        matrix,
+        target_date,
+        classes,
+        [c.value for c in countries],
+        prev_real_cutoffs,
+        class_display,
+    )
+
+    # The forecast for the NEXT bulletin, linked from every archive page. This is
+    # the only inbound internal link the upcoming-month forecast page gets from
+    # already-indexed content, and it is how Google discovers that page before the
+    # bulletin drops — the anticipation wave peaks days BEFORE publication, so the
+    # page has to be crawled and ranked by then. Imported locally: the forecast
+    # module imports prediction_detail from here, so a module-level import would
+    # be circular.
+    from webapp.views.bulletin.prediction_month_forecast import (
+        forecast_url_for,
+        upcoming_forecast_month,
+    )
+
+    upcoming = upcoming_forecast_month()
+    # Suppress on the month that IS the upcoming forecast's target (can't happen
+    # while a bulletin exists for it, but keeps the link from ever self-pointing).
+    if upcoming is not None and upcoming != target_date:
+        upcoming_forecast_url = forecast_url_for(upcoming)
+        upcoming_forecast_label = upcoming.strftime("%B %Y")
+    else:
+        upcoming_forecast_url = None
+        upcoming_forecast_label = None
+    # Only the newest archive month carries the prominent "next forecast is up"
+    # banner; older months keep the quieter inline link.
+    is_latest_month = nav_next is None
+
     context = {
         "knowledge_date": knowledge_date,
         "actual_bulletin": actual_bulletin,
@@ -434,9 +831,18 @@ def prediction_detail(
         "formatted_nav_next": formatted_nav_next,
         "category": category,
         "category_label": category_label,
-        "canonical_url": request.build_absolute_uri(
-            prediction_canonical_path(category, year, month)
-        ),
+        "canonical_url": canonical_url,
+        # FAQPage + BreadcrumbList + page Dataset JSON-LD (base.html renders it via
+        # the `structured_data` hook); `faq` drives the visible FAQ section whose
+        # text mirrors the FAQPage answers (Google requires visible content).
+        "structured_data": structured_data,
+        "faq": detail_faq,
+        # Headline-accuracy rollup banner (None when the month has nothing
+        # scoreable — e.g. all Current/Unavailable — so the template omits it).
+        "accuracy_rollup": accuracy_rollup,
+        "upcoming_forecast_url": upcoming_forecast_url,
+        "upcoming_forecast_label": upcoming_forecast_label,
+        "is_latest_month": is_latest_month,
     }
     return render(request, "vqs/prediction_detail.html", context)
 

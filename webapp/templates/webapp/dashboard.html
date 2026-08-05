@@ -371,12 +371,20 @@
                 <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
                 &nbsp;|&nbsp;
-                <a href="/predictions/employment_based/" style="color: #0066CC; text-decoration: underline;">How accurate were past predictions? See backtest →</a>
+                <a href="{% if current_bulletin_date %}/predictions/{{ current_bulletin_date.year }}-{{ current_bulletin_date.month }}/{% else %}/predictions/employment_based/{% endif %}" style="color: #0066CC; text-decoration: underline;">How did we score the {% if current_bulletin_date %}{{ current_bulletin_date|date:"M Y" }} {% endif %}forecast? See our track record →</a>
+                {% if upcoming_forecast_url %}
+                &nbsp;|&nbsp;
+                <a href="{{ upcoming_forecast_url }}" style="color: #0066CC; text-decoration: underline;">Our {{ upcoming_forecast_label }} Visa Bulletin predictions →</a>
+                {% endif %}
                 {% else %}
                 <em>Estimates use linear extrapolation from each Family-Sponsored category's historical advancement rate. The full Bulletin Forecast Model is currently calibrated on I-140 demand data and runs on Employment-Based series only; Family-Sponsored gets a simpler model. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
                 &nbsp;|&nbsp;
-                <a href="/predictions/family_sponsored/" style="color: #0066CC; text-decoration: underline;">How accurate were past predictions? See backtest →</a>
+                <a href="{% if current_bulletin_date %}/predictions/family_sponsored/{{ current_bulletin_date.year }}-{{ current_bulletin_date.month }}/{% else %}/predictions/family_sponsored/{% endif %}" style="color: #0066CC; text-decoration: underline;">How did we score the {% if current_bulletin_date %}{{ current_bulletin_date|date:"M Y" }} {% endif %}forecast? See our track record →</a>
+                {% if upcoming_forecast_url %}
+                &nbsp;|&nbsp;
+                <a href="{{ upcoming_forecast_url }}" style="color: #0066CC; text-decoration: underline;">Our {{ upcoming_forecast_label }} Visa Bulletin predictions →</a>
+                {% endif %}
                 {% endif %}
             </p>
 

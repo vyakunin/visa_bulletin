@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from django.conf import settings
-from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
@@ -406,22 +406,40 @@ def forecast_url_for(target: date) -> str:
     return f"/predictions/{_MONTH_NAMES[target.month - 1]}-{target.year}/"
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
 def prediction_month_forecast_view(request, slug: str) -> HttpResponse:
-    """Render the evergreen forecast landing page for one upcoming bulletin month."""
+    """Dispatch the monthname slug across its whole lifecycle at ONE stable URL.
+
+    Before the bulletin drops the slug renders the evergreen forecast; once the
+    actual bulletin publishes the SAME slug renders the accuracy archive in
+    place. The keyword-rich slug is canonical in both phases and NEVER 301s — so
+    the Reddit-seeded, ranking-established forecast URL keeps its equity exactly
+    when "visa bulletin <month> <year>" intent spikes at the drop.
+
+    The published-archive branch delegates to ``prediction_detail`` so its
+    historical-only caching applies (the latest, still-mutating month is served
+    fresh; older months are cached) and its canonical resolves to this slug. The
+    forecast branch keeps its own page cache (``_forecast_page``).
+    """
     target = _parse_slug(slug)
     if target is None:
         raise Http404("Unknown forecast month")
 
-    # Once the actual bulletin for this month exists, the forecast is history —
-    # send the URL to the accuracy archive so there's no duplicate page. Target
-    # the canonical bare-numeric URL directly (the employment_based/<y>-<m> alias
-    # would just 301 again — see prediction_canonical_path).
     if Bulletin.objects.filter(publication_date=target).exists():
-        return HttpResponsePermanentRedirect(
-            f"/predictions/{target.year}-{target.month}/"
-        )
+        from webapp.views.prediction_views import prediction_detail
 
+        return prediction_detail(
+            request,
+            year=target.year,
+            month=target.month,
+            category="employment_based",
+            _render_at_slug=True,
+        )
+    return _forecast_page(request, slug, target)
+
+
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+def _forecast_page(request, slug: str, target: date) -> HttpResponse:
+    """Render the evergreen forecast landing page for one upcoming bulletin month."""
     latest = Bulletin.objects.order_by("-publication_date").first()
     if latest is None:
         raise Http404("No bulletins available")

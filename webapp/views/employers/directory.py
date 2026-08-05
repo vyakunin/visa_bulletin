@@ -11,6 +11,7 @@ from django.urls import reverse
 from django_config.cache_utils import cache_page_skip_bots
 from lib.utils.location_utils import US_STATES
 from lib.utils.pagination import (
+    MAX_INDEX_PAGE,
     build_pagination_query_string,
     calculate_pagination_info,
     decode_keyset_cursor,
@@ -18,6 +19,12 @@ from lib.utils.pagination import (
 )
 from models.salary import Employer, EmployerCluster
 from webapp.views.seo.jsonld import build_dataset_jsonld
+
+_INDEX_CAP_GONE_BODY = (
+    f"This page is beyond the employer directory depth cap (page={MAX_INDEX_PAGE}). "
+    "Search or filter at /employers/, or browse an employer directly at "
+    "/employer/<slug>/ — every profile is listed in the sitemap."
+)
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -119,6 +126,17 @@ def employer_directory_view(request):
     except (ValueError, TypeError):
         page = 1
 
+    # Depth cap. Decode first so the cursor's OWN bound depth is what we judge —
+    # the cursor selects the rows, so trusting the `page` param alone would let
+    # `page=1` + a deep cursor walk the whole table. A forged cursor fails the
+    # signature check, decodes to None, and falls through to the capped offset
+    # path. See lib/utils/pagination.MAX_INDEX_PAGE for the measurements.
+    decoded = decode_keyset_cursor(cursor_param) if cursor_param else None
+    effective_page = decoded.page if decoded else page
+    if effective_page > MAX_INDEX_PAGE:
+        return HttpResponse(_INDEX_CAP_GONE_BODY, status=410, content_type="text/plain")
+    page = effective_page
+
     per_page = 50
 
     base = _employer_directory_base_queryset(query, state_filter)
@@ -135,10 +153,10 @@ def employer_directory_view(request):
         ).order_by("-total", "id")
 
     # Keyset pagination: if valid cursor, fetch that page instead of offset
-    decoded = decode_keyset_cursor(cursor_param) if cursor_param else None
+    # (decoded + depth-checked above).
     use_keyset = decoded is not None
     if use_keyset:
-        direction, order_value, pk = decoded
+        direction, order_value, pk = decoded.direction, decoded.order_value, decoded.pk
         if program_filter == "all":
             qs = base.annotate(total=F("total_lca_count") + F("total_perm_count"))
             if direction == "next":
@@ -191,7 +209,13 @@ def employer_directory_view(request):
     # Pagination metadata (page for display; total_pages from count)
     pagination = calculate_pagination_info(total_results, page, per_page)
 
-    # Build next_cursor and prev_cursor from current page rows
+    # The cap is also the last page we LINK to, so a crawler following the
+    # rendered "Next" chain simply runs out of links instead of hitting a 410.
+    has_next = len(employers) == per_page and has_next_keyset and page < MAX_INDEX_PAGE
+    has_prev = has_prev_keyset
+
+    # Build next_cursor and prev_cursor from current page rows. Each carries the
+    # depth it lands on, so it cannot be replayed at a different page number.
     next_cursor = None
     prev_cursor = None
     if employers:
@@ -199,11 +223,14 @@ def employer_directory_view(request):
         last_row = employers[-1]
         order_next = _order_value_for_row(last_row, program_filter)
         order_prev = _order_value_for_row(first_row, program_filter)
-        next_cursor = encode_keyset_cursor(order_next, last_row.id, "next")
-        prev_cursor = encode_keyset_cursor(order_prev, first_row.id, "prev")
-
-    has_next = len(employers) == per_page and has_next_keyset
-    has_prev = has_prev_keyset
+        if has_next:
+            next_cursor = encode_keyset_cursor(
+                order_next, last_row.id, "next", page=page + 1
+            )
+        if has_prev:
+            prev_cursor = encode_keyset_cursor(
+                order_prev, first_row.id, "prev", page=page - 1
+            )
 
     # Check if there are employers matching the query but without slugs (for helpful feedback)
     has_employers_without_slugs = False
