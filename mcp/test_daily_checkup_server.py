@@ -474,3 +474,94 @@ def test_parse_handles_missing_url_count():
     assert "urls" not in info
     _s, status = m._section_sitemap(info)
     assert status == "green", status
+
+
+# ── Per-property block: share% + distinct pages + the `other` row ─────────────
+# `_build_surface_deltas` computed share_pct and pages from full CSV coverage,
+# but `_format_property_block` never emitted them, so the digest composer
+# re-derived share by hand off the rounded 7d strings every morning (six runs
+# straight, 2026-07-25..08-04) and rendered pages as n/a. And with no `other`
+# row, a live surface with no SURFACE_PATTERNS bucket showed up only as a gap
+# between the rendered rows and the 7d total — indistinguishable from rounding.
+
+def _pcw_full() -> dict[str, dict[str, int]]:
+    """One representative this_7d window, 2008 views over 5 buckets + `other`."""
+    this = {
+        "/": 700, "/employment-based/india/": 300,            # dashboard 1000 / 2p
+        "/when-is-the-next-visa-bulletin": 400,               # bulletin_timing 400 / 1p
+        "/employer/a/": 20, "/employer/b/": 20, "/employer/c/": 20,
+        "/employer/d/": 20, "/employer/e/": 20,               # employer_profile 100 / 5p
+        "/job-title/x/": 60, "/job-title/y/": 40,             # job_title_profile 100 / 2p
+        "/salaries/": 8,                                      # salaries 8 / 1p
+        "/glossary/": 392, "/tiny-thing/": 8,                 # other 400 / 2p
+    }
+    return {"this_7d": this, "prev_7d": dict(this), "cycle_7d": dict(this),
+            "last_28d": {p: c * 4 for p, c in this.items()}}
+
+
+def _gc_from(pcw: dict[str, dict[str, int]] | None) -> dict:
+    """The gc payload the section reads, built through the real delta builder."""
+    return {
+        "surfaces": m._build_surface_deltas(
+            path_counts_by_window=pcw,
+            fallback_surf_this={"dashboard": 1000}, fallback_surf_cycle={"dashboard": 800}),
+        "surfaces_source": "csv_full" if pcw else "top100_hits",
+    }
+
+
+def test_property_block_emits_share_and_page_count():
+    """Each surface row carries share-of-total % and its distinct-path count."""
+    section, _status = m._section_top_properties({}, _gc_from(_pcw_full()))
+    body = section["body"]
+    assert "**1.0k** views 7d · 50% of site · 2 pages" in body, body
+    assert "5.0% of site · 5 pages" in body, body      # employer profiles: a real tail
+    assert "20% of site · 1 page" in body, body        # bulletin_timing, singular "page"
+
+
+def test_small_share_keeps_a_decimal():
+    """A 0.4% surface must not render as `0% of site`."""
+    body = m._section_top_properties({}, _gc_from(_pcw_full()))[0]["body"]
+    assert "0.4% of site · 1 page" in body, body
+
+
+def test_bulletin_timing_is_a_rendered_property():
+    """Bucketed by SURFACE_PATTERNS AND rendered — not classified into silence."""
+    assert "bulletin_timing" in m.TOP_PROPERTY_SURFACES
+    body = m._section_top_properties({}, _gc_from(_pcw_full()))[0]["body"]
+    assert "when-is-the-next-visa-bulletin" in body, body
+
+
+def test_unclassified_traffic_renders_an_other_row_naming_its_paths():
+    """`other` > 0 → its own row, with the biggest unbucketed paths named."""
+    body = m._section_top_properties({}, _gc_from(_pcw_full()))[0]["body"]
+    assert "Other (long-tail / unclassified)" in body, body
+    assert "20% of site · 2 pages" in body, body
+    assert "add a SURFACE_PATTERNS bucket" in body, body
+    assert "`/glossary/` 392" in body, body            # the one to go bucket
+    assert "`/tiny-thing/` 8" in body, body
+
+
+def test_no_other_row_when_everything_is_classified():
+    """A clean taxonomy renders no residual row at all."""
+    pcw = {"this_7d": {"/": 100}, "prev_7d": {"/": 100},
+           "cycle_7d": {"/": 100}, "last_28d": {"/": 400}}
+    body = m._section_top_properties({}, _gc_from(pcw))[0]["body"]
+    assert "unclassified" not in body.lower(), body
+
+
+def test_other_row_never_escalates_the_digest():
+    """A slow tail on the unclassified mix is not a property regression."""
+    nx = {"surface_latency": {"other": _lat(n10=m.PERF_RED_N10 * 4)}}
+    _section, status = m._section_top_properties(nx, _gc_from(_pcw_full()))
+    assert status == "green", status
+
+
+def test_fallback_rows_render_no_share_or_pages():
+    """top-100 path → share/pages are None, so neither is printed (never `None%`)."""
+    body = m._section_top_properties({}, _gc_from(None))[0]["body"]
+    gc_lines = [ln for ln in body.splitlines() if ln.strip().startswith("GC:")]
+    assert gc_lines, body
+    for ln in gc_lines:
+        assert "of site" not in ln, ln
+        assert "page" not in ln, ln
+        assert "None" not in ln, ln

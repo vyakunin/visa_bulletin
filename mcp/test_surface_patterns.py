@@ -249,3 +249,13 @@ def test_untranslatable_patterns_are_rejected_loudly():
         m._awk_surface_literal("x", r"^/foo(?!bar)")
     with pytest.raises(ValueError, match="Python-only regex"):
         m._awk_surface_literal("x", r"^/foo\d+")
+
+
+def test_privacy_is_a_static_page_not_unclassified():
+    """`/privacy/` is a flat informational route (webapp/urls.py), not `other`.
+
+    Found by the `other` row on its first real run (2026-08-05): the residual
+    named `/privacy` as the only unbucketed live path on the site.
+    """
+    assert m._bucket_path("/privacy") == "static_pages"     # GC strips the slash
+    assert m._bucket_path("/privacy/") == "static_pages"

@@ -251,10 +251,10 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     # Top-H-1B-sponsors leaderboards (`/h1b-sponsors/in/<state>/`,
     # `/h1b-sponsors/<role>/`).
     ("h1b_sponsors", re.compile(r"^/h1b-sponsors(/|$)")),
-    # Flat informational routes (webapp/urls.py). `methodology`, `corrections`
-    # and `ai-citation` are siblings of faq/about/contact — low-traffic but they
-    # are real pages, so they belong here rather than in `other`.
-    ("static_pages", re.compile(r"^/(faq|about|contact|methodology|corrections|ai-citation)/?$")),
+    # Flat informational routes (webapp/urls.py). `methodology`, `corrections`,
+    # `ai-citation` and `privacy` are siblings of faq/about/contact — low-traffic
+    # but they are real pages, so they belong here rather than in `other`.
+    ("static_pages", re.compile(r"^/(faq|about|contact|methodology|corrections|ai-citation|privacy)/?$")),
     ("api", re.compile(r"^/api/")),
     ("static_meta", re.compile(r"^/(robots\.txt|sitemap\.xml|favicon)")),
 ]
@@ -1390,6 +1390,7 @@ def _build_surface_deltas(
                 # share/pages need full coverage; never from a top-100 sum.
                 "share_pct": None,
                 "pages": None,
+                "top_paths": None,
             })
         rows.sort(key=lambda r: -r["this_week"])
         return rows
@@ -1400,12 +1401,20 @@ def _build_surface_deltas(
     # digest so a tiny per-page tail that nonetheless sums to a real share stays
     # legible (user 2026-06-17 wanted the section table with page counts).
     pages_this: dict[str, set[str]] = defaultdict(set)
+    # This-week counts for the paths NO pattern claimed, biggest first. Sizing the
+    # `other` bucket says a surface is missing; naming its top paths says WHICH —
+    # the difference between "there is a 4% gap" and "add a bucket for
+    # /when-is-the-next-visa-bulletin" (2026-07-26: that page took 778 views/wk
+    # while invisible in every per-surface row).
+    other_paths_this: dict[str, int] = defaultdict(int)
     for win_name, path_counts in path_counts_by_window.items():
         for path, cnt in path_counts.items():
             surf = _bucket_path(path)
             by_surface[surf][win_name] += cnt
             if win_name == "this_7d":
                 pages_this[surf].add(path)
+                if surf == "other":
+                    other_paths_this[path] += cnt
     total_this = sum(wm.get("this_7d", 0) for wm in by_surface.values())
     rows = []
     for surf, win_map in by_surface.items():
@@ -1426,6 +1435,13 @@ def _build_surface_deltas(
             # Full-coverage extras (CSV path only — None in the fallback above).
             "share_pct": (cur / total_this * 100) if total_this else None,
             "pages": len(pages_this[surf]),
+            # Populated for `other` only; every other bucket knows its own paths
+            # from its pattern.
+            "top_paths": (
+                [{"path": p, "count": c} for p, c in
+                 sorted(other_paths_this.items(), key=lambda kv: -kv[1])[:3]]
+                if surf == "other" else None
+            ),
         })
     rows.sort(key=lambda r: -r["this_week"])
     return rows
@@ -2224,6 +2240,12 @@ PERF_HEAVY_SPIKE_N10 = 30
 TOP_PROPERTY_SURFACES = [
     "dashboard",
     "predictions",
+    # `/when-is-the-next-visa-bulletin` — bucketed by SURFACE_PATTERNS since
+    # 2026-07 but absent from this list until 2026-08-05, so it was classified
+    # and then never rendered: out of `other` (where the digest would at least
+    # have flagged it) and out of the per-property block alike. It took 367-778
+    # views/wk through that window with its MoM/WoW reported nowhere.
+    "bulletin_timing",
     "salaries",
     "employer_profile",
     "employer_directory",
@@ -2314,6 +2336,17 @@ def _section_top_properties(
         )
         lines.extend(block)
 
+    # The residual, rendered whenever it has traffic. `other` is not a property,
+    # so it is deliberately NOT in TOP_PROPERTY_SURFACES and takes no part in the
+    # perf-status loop above — an unclassified mix must not escalate the digest.
+    # But left unrendered it is invisible: the only trace of a live surface with
+    # no pattern is a gap between the rendered rows and the reported 7d total,
+    # which is indistinguishable from rounding across 15 two-digit rows.
+    other_row = gc_by_surface.get("other")
+    if other_row and int(other_row.get("this_week") or 0) > 0:
+        lines.extend(_format_property_block(
+            surf="other", gc_row=other_row, lat_row=lat.get("other")))
+
     title_suffix = {"red": " — CRITICAL (slow tail)", "yellow": " — slow tail", "green": ""}[status]
     importance = {"red": 5, "yellow": 4, "green": 3}[status]
     return (
@@ -2343,10 +2376,17 @@ def _format_property_block(
 
     Layout per surface:
       - **<label>**
-          GC: <7d> · MoM · WoW · 28d-avg
+          GC: <7d> · <share>% of site · <n> pages · MoM · WoW · 28d-avg
           Perf: mean Xms over N hits 24h (n1>1s · n3>3s · n10>10s)
     Each sub-line is omitted (replaced with a one-word marker) when the
     source has no data — better to see the gap than to hide it.
+
+    share/pages carry the same contract as the row they come from: present on
+    the full-coverage CSV path, absent (and therefore not rendered) on the
+    top-100 fallback, where a share computed off a truncated total would be
+    wrong. The digest skill renders them as `n/a` in that case rather than
+    deriving them — which is why they must be EMITTED here and not left for the
+    composer to recompute from the rounded 7d strings.
     """
     label = SURFACE_LABELS.get(surf, surf)
     lines = [f"- **{label}**"]
@@ -2360,10 +2400,15 @@ def _format_property_block(
         delta_mom = gc_row.get("delta_pct")
         delta_wow = ((cur - prev) / prev * 100) if prev else None
         delta_28 = ((cur - l28_wk) / l28_wk * 100) if l28_wk else None
-        bits = [
-            f"**{_humanize(cur)}** views 7d",
-            f"vs {_humanize(cyc)} 4w ago {_fmt_pct_signed(delta_mom, 'MoM')}",
-        ]
+        bits = [f"**{_humanize(cur)}** views 7d"]
+        share = gc_row.get("share_pct")
+        if share is not None:
+            # One decimal under 10% — a 0.4% surface must not render as "0%".
+            bits.append(f"{share:.1f}% of site" if share < 10 else f"{share:.0f}% of site")
+        pages = gc_row.get("pages")
+        if pages is not None:
+            bits.append(f"{pages} page{'' if pages == 1 else 's'}")
+        bits.append(f"vs {_humanize(cyc)} 4w ago {_fmt_pct_signed(delta_mom, 'MoM')}")
         if prev is not None:
             bits.append(f"vs {_humanize(prev)} last wk {_fmt_pct_signed(delta_wow, 'WoW')}")
         if l28_wk:
@@ -2391,6 +2436,15 @@ def _format_property_block(
         lines.append(f"  Perf: {perf_bit}")
     else:
         lines.append("  Perf: no nginx traffic 24h")
+
+    # `other` only: name the biggest unclassified paths, so a live surface with
+    # no SURFACE_PATTERNS bucket is actionable from the digest itself.
+    top_paths = (gc_row or {}).get("top_paths")
+    if top_paths:
+        named = " · ".join(
+            f"`{t['path']}` {_humanize(t['count'])}" for t in top_paths
+        )
+        lines.append(f"  ⚠️ Unclassified — add a SURFACE_PATTERNS bucket: {named}")
 
     return lines
 
