@@ -106,6 +106,45 @@ All "no" (pure rendering/view/template/SEO/copy/config) → **Path 1** (image-ta
 - **`no schema migration` ≠ Path 1.** A data-population code change is Path 2 *even with no migration* and *even though the new code sits inert in the prod image until a refresh runs it* — validating it requires running the refresh against real data on the off-prod staging stack and checking the derived data + downstream effects, then graduating the DATA via the cutover. A quick Path 1 swap skips that and leaves the next refresh running unvalidated pipeline code at prod scale.
 - **A mixed batch is Path 2.** If even one commit in the promote set touches data-population, the whole promotion is Path 2 — or split the batch and ship only the pure-rendering commits via Path 1.
 
+### But `--data` is the wrong tool when there is no data to graduate — and it can REVERT prod
+
+Path 2 has two separable halves: **validate the pipeline change off-prod**, and
+**graduate the DATA**. They are not the same decision, and the second one is
+destructive when misapplied.
+
+`cutover.sh --data` resyncs the homeserver **FROM staging**. So it is correct only
+when staging holds a *newer, verified* dataset (a fresh DOL quarter, a re-cluster,
+a reprocess). If staging's DB is merely a stale copy of prod — which is its normal
+resting state between refreshes — `--data` **rolls prod backwards**, silently
+discarding whatever prod ingested since the copy.
+
+**So before choosing `--data`, check which side is ahead:**
+
+```bash
+hosting/scripts/db_fingerprint.sh staging prod     # or read the --dry advisory verdict
+```
+
+`cutover.sh --code --dry` prints the same fingerprint as an advisory. Staging
+behind prod on `bulletin` / `models_blogpost` / `predictedcutoff` means there is
+nothing to graduate — use `--code`, which never copies or replaces prod's DB
+(prod postgres stays up; only `vb_web` swaps).
+
+**Refine the trigger, too: `touches lib/ingest/` is necessary but not sufficient.**
+The Path-2 question is whether code **writes or derives** data. A change to
+*exit-code semantics, logging or alerting* inside the ingest scripts changes what
+gets REPORTED, not what gets written — it still wants off-prod validation, but it
+graduates no data. Read the diff before classifying; a BUILD-file-only change under
+`lib/ingest/` is not a data change at all.
+
+Origin: 2026-08-05 — a 126-commit release was classified Path 2 because it touched
+`lib/ingest/`, `run_pipeline.py`, `refresh_bulletin.py` and `employer_stats.py`. The
+diff showed BUILD-only ingest changes, exit-code semantics (a partial failure had
+been reporting success), pure deletions, and new read-path helpers — nothing
+reprocessed. The `--dry` fingerprint showed staging BEHIND prod (bulletin 290 vs
+291, `models_blogpost` 15 vs 16, `predictedcutoff` 50,330 vs 50,680), so `--data`
+would have destroyed the August bulletin and its auto-generated analysis post.
+Shipped `--code` instead: LAN strategy, zero DB copy, 0 5xx.
+
 ## 🚨 Promote the WHOLE staged tree by default — don't ship one change and PARK the rest
 
 **A staging→prod promotion promotes the ENTIRE staged tree (every commit in `git log prod..staging`), not just the change you came to ship.** The default is: everything sitting on staging goes to prod. Cherry-picking / force-pushing `staging` down to a subset to ship one change **while leaving the rest parked on staging is the anti-pattern** — a parked RC then sits release-ready-but-unshipped across sessions, the morning digest re-flags it "never promoted," and the next release either forgets it or has to untangle it from a fresh change.
