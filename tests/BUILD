@@ -51,14 +51,14 @@ py_library(
 
 django_py_test(
     name = "test_cache_bot_detection",
-    size = "small",
+    size = "medium",
     srcs = ["test_cache_bot_detection.py"],
     deps = ["//django_config:cache_utils"],
 )
 
 django_py_test(
     name = "test_sitemap_bot_cache",
-    size = "small",
+    size = "medium",
     srcs = ["test_sitemap_bot_cache.py"],
     deps = [
         "//django_config:cache_utils",
@@ -68,7 +68,7 @@ django_py_test(
 
 django_py_test(
     name = "test_render_sitemap",
-    size = "small",
+    size = "medium",
     srcs = ["test_render_sitemap.py"],
     deps = [
         "//scripts/seo:render_sitemap_lib",
@@ -88,7 +88,7 @@ pytest_py_test(
 
 django_py_test(
     name = "test_copy_schema",
-    size = "small",
+    size = "medium",
     srcs = ["test_copy_schema.py"],
     deps = [
         "//lib/ingest:schema",
@@ -98,7 +98,7 @@ django_py_test(
 
 django_py_test(
     name = "test_seo_page_heading",
-    size = "small",
+    size = "medium",
     srcs = ["test_seo_page_heading.py"],
     deps = [
         "//lib/business/bulletin:cutoff_data_aggregator",
@@ -118,7 +118,7 @@ pytest_py_test(
 
 django_py_test(
     name = "test_blog_excerpt",
-    size = "small",
+    size = "medium",
     srcs = ["test_blog_excerpt.py"],
     deps = ["//webapp/views:blog_views"],
 )
@@ -195,7 +195,7 @@ django_py_test(
 
 django_py_test(
     name = "test_worksite_record_copy_bug",
-    size = "small",
+    size = "medium",
     srcs = ["test_worksite_record_copy_bug.py"],
     deps = [
         "//models:salary",
@@ -205,7 +205,7 @@ django_py_test(
 
 django_py_test(
     name = "test_wage_unit_parsing",
-    size = "small",
+    size = "medium",
     srcs = ["test_wage_unit_parsing.py"],
     deps = [
         "//models/enums:visa_program",
@@ -215,7 +215,7 @@ django_py_test(
 
 django_py_test(
     name = "test_parser",
-    size = "small",
+    size = "medium",
     srcs = ["test_parser.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
@@ -232,7 +232,7 @@ django_py_test(
 # //models/enums:family_preference so runfiles include it (prod ModuleNotFoundError otherwise).
 django_py_test(
     name = "test_bulletin_parser_deps",
-    size = "small",
+    size = "medium",
     srcs = ["test_bulletin_parser_deps.py"],
     deps = [
         "//lib/ingest/plugins:visa_bulletin",
@@ -242,7 +242,7 @@ django_py_test(
 
 django_py_test(
     name = "test_legacy_row_label",
-    size = "small",
+    size = "medium",
     srcs = ["test_legacy_row_label.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
@@ -277,7 +277,7 @@ django_py_test(
 
 django_py_test(
     name = "test_extractor",
-    size = "small",
+    size = "medium",
     srcs = ["test_extractor.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
@@ -299,7 +299,7 @@ django_py_test(
 
 django_py_test(
     name = "test_integration",
-    size = "small",
+    size = "medium",
     srcs = ["test_integration.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
@@ -321,7 +321,7 @@ django_py_test(
 
 django_py_test(
     name = "test_country_header_parsing",
-    size = "small",
+    size = "medium",
     srcs = ["test_country_header_parsing.py"],
     data = [
         "//data/bulletin/saved_pages:test_data",
@@ -338,7 +338,7 @@ django_py_test(
 
 django_py_test(
     name = "test_projection",
-    size = "small",
+    size = "medium",
     srcs = ["test_projection.py"],
     deps = [
         "//lib/business/bulletin:cutoff_projection",
@@ -347,7 +347,7 @@ django_py_test(
 
 django_py_test(
     name = "test_chart_builder",
-    size = "small",
+    size = "medium",
     srcs = ["test_chart_builder.py"],
     deps = [
         "//lib/business/bulletin:chart_builder",
@@ -400,7 +400,7 @@ django_py_test(
 
 django_py_test(
     name = "test_cluster_merge",
-    size = "small",
+    size = "medium",
     srcs = ["test_cluster_merge.py"],
     deps = [
         "//lib/utils:db_utils",
@@ -419,7 +419,7 @@ django_py_test(
 
 django_py_test(
     name = "test_webapp_ui",
-    size = "small",
+    size = "medium",
     srcs = ["test_webapp_ui.py"],
     deps = [
         "//webapp/views:views",
@@ -430,7 +430,7 @@ django_py_test(
 
 django_py_test(
     name = "test_employment_preference",
-    size = "small",
+    size = "medium",
     srcs = ["test_employment_preference.py"],
     deps = [
         "//models/enums:employment_preference",
@@ -439,7 +439,7 @@ django_py_test(
 
 django_py_test(
     name = "test_visa_class_utils",
-    size = "small",
+    size = "medium",
     srcs = ["test_visa_class_utils.py"],
     deps = [
         "//lib/business/bulletin:visa_class_utils",
@@ -455,7 +455,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dashboard_integration",
-    size = "small",
+    size = "medium",
     srcs = ["test_dashboard_integration.py"],
     deps = [
         "//webapp/views:views",
@@ -484,7 +484,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dashboard_maturity_invariant",
-    size = "small",
+    size = "medium",
     srcs = ["test_dashboard_maturity_invariant.py"],
     deps = [
         "//webapp/views:views",
@@ -500,7 +500,7 @@ django_py_test(
 
 django_py_test(
     name = "test_salary",
-    size = "small",
+    size = "medium",
     srcs = ["test_salary.py"],
     deps = [
         "//lib/utils:location_utils",
@@ -513,7 +513,7 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_search_view",
-    size = "small",
+    size = "medium",
     srcs = ["test_salary_search_view.py"],
     deps = [
         "//django_config:urls",
@@ -577,7 +577,7 @@ django_py_test(
     # row errored before validation ran, so even the rejection tests failed. The 3
     # salary_search view tests also needed webapp views+urls (like
     # test_salary_real_data). Added all three deps.
-    size = "small",
+    size = "medium",
     srcs = ["test_salary_import.py"],
     data = [
         ":test_salary_data.csv",
@@ -615,7 +615,7 @@ django_py_test(
 
 django_py_test(
     name = "test_salary_real_data",
-    size = "small",
+    size = "medium",
     srcs = ["test_salary_real_data.py"],
     deps = [
         "//models:salary",
@@ -628,7 +628,7 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_models",
-    size = "small",
+    size = "medium",
     srcs = ["test_ingest_models.py"],
     deps = [
         ":conftest_lib",
@@ -642,7 +642,7 @@ django_py_test(
     name = "test_ingest_plugins",
     # Un-quarantined 2026-06-20: test_download was fixed in commit 04ea649 (the
     # last remaining failure); the target now runs fully green.
-    size = "small",
+    size = "medium",
     srcs = ["test_ingest_plugins.py"],
     deps = [
         ":conftest_lib",
@@ -661,7 +661,7 @@ django_py_test(
 
 django_py_test(
     name = "test_worksite_record",
-    size = "small",
+    size = "medium",
     srcs = ["test_worksite_record.py"],
     deps = [
         "//models:salary",
@@ -676,7 +676,7 @@ django_py_test(
     # on the DB-touching classes (TestLCATransformRouting/Parse/Validation); the
     # 6th was a stale fixture (a year-less filename -> _fiscal_year=None) fixed by
     # using an FY2024 filename. See umbrella "test suite false-green" ticket.
-    size = "small",
+    size = "medium",
     srcs = ["test_lca_plugin.py"],
     deps = [
         "//lib/ingest:base",
@@ -693,7 +693,7 @@ django_py_test(
 
 django_py_test(
     name = "test_ingest_versioning",
-    size = "small",
+    size = "medium",
     srcs = ["test_ingest_versioning.py"],
     tags = ["exclusive"],
     deps = [
@@ -713,7 +713,7 @@ django_py_test(
     # should_correct_wage_unit redesign to a single data-driven [MIN_ANNUAL,
     # MAX_ANNUAL] range was intentional (ticket 38462b8d); tests rewritten to the
     # new contract.
-    size = "small",
+    size = "medium",
     srcs = ["test_validation.py"],
     deps = [
         "//lib/utils:location_utils",
@@ -733,7 +733,7 @@ django_py_test(
     # used a 0.95 similarity threshold since commit 2ffb1ec, favoring precision).
     # Rewritten to the real contract + a precision-boundary non-match test. See
     # umbrella "test suite false-green" ticket.
-    size = "small",
+    size = "medium",
     srcs = ["test_employer_clustering.py"],
     deps = [
         "//lib/business/salary:employer_clustering",
@@ -748,7 +748,7 @@ django_py_test(
 
 django_py_test(
     name = "test_clustering_regression",
-    size = "small",
+    size = "medium",
     srcs = ["test_clustering_regression.py"],
     deps = [
         "//lib/business/salary:employer_clustering",
@@ -758,7 +758,7 @@ django_py_test(
 
 django_py_test(
     name = "test_clustering_precision",
-    size = "small",
+    size = "medium",
     srcs = ["test_clustering_precision.py"],
     deps = [
         "//lib/business/salary:employer_clustering",
@@ -768,7 +768,7 @@ django_py_test(
 
 django_py_test(
     name = "test_clustering_recall",
-    size = "small",
+    size = "medium",
     srcs = ["test_clustering_recall.py"],
     deps = [
         "//lib/business/salary:employer_clustering",
@@ -778,7 +778,7 @@ django_py_test(
 
 django_py_test(
     name = "test_perm_job_title_parsing",
-    size = "small",
+    size = "medium",
     srcs = ["test_perm_job_title_parsing.py"],
     deps = [
         "//lib/parsing/salary:db_importer",
@@ -787,7 +787,7 @@ django_py_test(
 
 django_py_test(
     name = "test_data_source_utils",
-    size = "small",
+    size = "medium",
     srcs = ["test_data_source_utils.py"],
     deps = [
         ":conftest_lib",
@@ -798,7 +798,7 @@ django_py_test(
 
 django_py_test(
     name = "test_orchestrator_upsert",
-    size = "small",
+    size = "medium",
     srcs = ["test_orchestrator_upsert.py"],
     deps = [
         ":conftest_lib",
@@ -811,7 +811,7 @@ django_py_test(
 
 django_py_test(
     name = "test_exception_utils",
-    size = "small",
+    size = "medium",
     srcs = ["test_exception_utils.py"],
     deps = [
         "//lib/utils:exception_utils",
@@ -862,7 +862,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dol_parsing_comprehensive",
-    size = "small",
+    size = "medium",
     srcs = ["test_dol_parsing_comprehensive.py"],
     deps = [
         "//lib/ingest:registry",
@@ -888,7 +888,7 @@ django_py_test(
 
 django_py_test(
     name = "test_cluster_utils",
-    size = "small",
+    size = "medium",
     srcs = ["test_cluster_utils.py"],
     deps = [
         "//lib/business/salary:cluster_utils",
@@ -897,7 +897,7 @@ django_py_test(
 
 django_py_test(
     name = "test_batched_updates_case_insensitive",
-    size = "small",
+    size = "medium",
     srcs = ["test_batched_updates_case_insensitive.py"],
     deps = [
         "//lib/utils:db_utils",
@@ -907,7 +907,7 @@ django_py_test(
 
 django_py_test(
     name = "test_clustering_cache_fix",
-    size = "small",
+    size = "medium",
     srcs = ["test_clustering_cache_fix.py"],
     deps = [
         "//lib/utils:db_utils",
@@ -925,7 +925,7 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_profile_view",
-    size = "small",
+    size = "medium",
     srcs = ["test_employer_profile_view.py"],
     deps = [
         "//django_config:context_processors",
@@ -941,7 +941,7 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_renames",
-    size = "small",
+    size = "medium",
     srcs = ["test_employer_renames.py"],
     deps = [
         "//django_config:context_processors",
@@ -955,7 +955,7 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_rankings_view",
-    size = "small",
+    size = "medium",
     srcs = ["test_employer_rankings_view.py"],
     deps = [
         "//django_config:context_processors",
@@ -970,7 +970,7 @@ django_py_test(
 
 django_py_test(
     name = "test_visa_program",
-    size = "small",
+    size = "medium",
     srcs = ["test_visa_program.py"],
     deps = [
         "//models/enums:visa_program",
@@ -979,7 +979,7 @@ django_py_test(
 
 django_py_test(
     name = "test_employer_directory_view",
-    size = "small",
+    size = "medium",
     srcs = ["test_employer_directory_view.py"],
     deps = [
         "//django_config:urls",
@@ -993,7 +993,7 @@ django_py_test(
 
 django_py_test(
     name = "test_single_h1",
-    size = "small",
+    size = "medium",
     srcs = ["test_single_h1.py"],
     deps = [
         "//django_config:urls",
@@ -1011,7 +1011,7 @@ django_py_test(
 
 django_py_test(
     name = "test_trust_pages",
-    size = "small",
+    size = "medium",
     srcs = ["test_trust_pages.py"],
     deps = [
         "//django_config:urls",
@@ -1023,7 +1023,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dataset_schema",
-    size = "small",
+    size = "medium",
     srcs = ["test_dataset_schema.py"],
     deps = [
         "//django_config:urls",
@@ -1035,7 +1035,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dashboard_content_depth",
-    size = "small",
+    size = "medium",
     srcs = ["test_dashboard_content_depth.py"],
     deps = [
         "//django_config:urls",
@@ -1054,7 +1054,7 @@ django_py_test(
 
 django_py_test(
     name = "test_debug_safety",
-    size = "small",
+    size = "medium",
     srcs = ["test_debug_safety.py"],
     deps = [
         "//django_config:debug_safety",
@@ -1063,7 +1063,7 @@ django_py_test(
 
 django_py_test(
     name = "test_job_title_profile_view",
-    size = "small",
+    size = "medium",
     srcs = ["test_job_title_profile_view.py"],
     deps = [
         "//models/ingest:ingest",
@@ -1197,7 +1197,7 @@ django_py_test(
 
 django_py_test(
     name = "test_prediction_audit_fixes",
-    size = "small",
+    size = "medium",
     srcs = ["test_prediction_audit_fixes.py"],
     deps = [
         "//lib/business/vqs:accuracy_metrics",
@@ -1238,7 +1238,7 @@ django_py_test(
 
 django_py_test(
     name = "test_solver_regime_display",
-    size = "small",
+    size = "medium",
     srcs = ["test_solver_regime_display.py"],
     deps = [
         "//lib/business/vqs:solver",
@@ -1249,7 +1249,7 @@ django_py_test(
 
 django_py_test(
     name = "test_profile_slug_redirects",
-    size = "small",
+    size = "medium",
     srcs = ["test_profile_slug_redirects.py"],
     deps = [
         "//django_config:context_processors",
@@ -1289,7 +1289,7 @@ django_py_test(
 
 django_py_test(
     name = "test_robots_noncanonical_host",
-    size = "small",
+    size = "medium",
     srcs = ["test_robots_noncanonical_host.py"],
     deps = [
         "//django_config:urls",
@@ -1299,7 +1299,7 @@ django_py_test(
 
 django_py_test(
     name = "test_sitemap_lastmod",
-    size = "small",
+    size = "medium",
     srcs = ["test_sitemap_lastmod.py"],
     deps = [
         "//django_config:urls",
@@ -1312,7 +1312,7 @@ django_py_test(
 
 django_py_test(
     name = "test_priority_date_landing",
-    size = "small",
+    size = "medium",
     srcs = ["test_priority_date_landing.py"],
     deps = [
         "//django_config:context_processors",
@@ -1329,7 +1329,7 @@ django_py_test(
 
 django_py_test(
     name = "test_spanish_cluster",
-    size = "small",
+    size = "medium",
     srcs = ["test_spanish_cluster.py"],
     deps = [
         "//django_config:context_processors",
@@ -1346,7 +1346,7 @@ django_py_test(
 
 django_py_test(
     name = "test_priority_date_calculator",
-    size = "small",
+    size = "medium",
     srcs = ["test_priority_date_calculator.py"],
     deps = [
         "//django_config:context_processors",
@@ -1363,7 +1363,7 @@ django_py_test(
 
 django_py_test(
     name = "test_h1b_sponsors_landing",
-    size = "small",
+    size = "medium",
     srcs = ["test_h1b_sponsors_landing.py"],
     deps = [
         "//django_config:context_processors",
@@ -1379,7 +1379,7 @@ django_py_test(
 
 django_py_test(
     name = "test_occupation_salary",
-    size = "small",
+    size = "medium",
     srcs = ["test_occupation_salary.py"],
     deps = [
         "//django_config:context_processors",
@@ -1394,7 +1394,7 @@ django_py_test(
 
 django_py_test(
     name = "test_h1b_sponsors_state_landing",
-    size = "small",
+    size = "medium",
     srcs = ["test_h1b_sponsors_state_landing.py"],
     deps = [
         "//django_config:context_processors",
@@ -1410,7 +1410,7 @@ django_py_test(
 
 django_py_test(
     name = "test_h1b_salary_pair_landing",
-    size = "small",
+    size = "medium",
     srcs = ["test_h1b_salary_pair_landing.py"],
     deps = [
         "//django_config:context_processors",
@@ -1426,7 +1426,7 @@ django_py_test(
 
 django_py_test(
     name = "test_priority_date_rollup",
-    size = "small",
+    size = "medium",
     srcs = ["test_priority_date_rollup.py"],
     deps = [
         "//django_config:context_processors",
@@ -1443,7 +1443,7 @@ django_py_test(
 
 django_py_test(
     name = "test_retention_banner",
-    size = "small",
+    size = "medium",
     srcs = ["test_retention_banner.py"],
     deps = [
         "//django_config:context_processors",
@@ -1462,7 +1462,7 @@ django_py_test(
 
 django_py_test(
     name = "test_prediction_month_forecast",
-    size = "small",
+    size = "medium",
     srcs = ["test_prediction_month_forecast.py"],
     deps = [
         "//django_config:context_processors",
@@ -1495,7 +1495,7 @@ django_py_test(
 
 django_py_test(
     name = "test_i129_plugin",
-    size = "small",
+    size = "medium",
     srcs = ["test_i129_plugin.py"],
     deps = [
         "//lib/ingest/plugins:uscis_i129",
@@ -1507,7 +1507,7 @@ django_py_test(
 
 django_py_test(
     name = "test_uscis_datahub_plugin",
-    size = "small",
+    size = "medium",
     srcs = ["test_uscis_datahub_plugin.py"],
     deps = [
         "//lib/ingest/plugins:uscis_datahub",
@@ -1519,7 +1519,7 @@ django_py_test(
 
 django_py_test(
     name = "test_i129_pay_comparison",
-    size = "small",
+    size = "medium",
     srcs = ["test_i129_pay_comparison.py"],
     deps = [
         "//lib/business/i129:pay_comparison",
@@ -1534,7 +1534,7 @@ django_py_test(
 
 django_py_test(
     name = "test_i129_demographic_pay",
-    size = "small",
+    size = "medium",
     srcs = ["test_i129_demographic_pay.py"],
     deps = [
         "//lib/business/i129:demographic_pay",
@@ -1546,7 +1546,7 @@ django_py_test(
 
 django_py_test(
     name = "test_i129_employer_linker",
-    size = "small",
+    size = "medium",
     srcs = ["test_i129_employer_linker.py"],
     deps = [
         "//lib/business/i129:employer_linker",
@@ -1559,7 +1559,7 @@ django_py_test(
 
 django_py_test(
     name = "test_i129_approval_stats",
-    size = "small",
+    size = "medium",
     srcs = ["test_i129_approval_stats.py"],
     deps = [
         "//lib/business/i129:approval_stats",
@@ -1572,7 +1572,7 @@ django_py_test(
 
 django_py_test(
     name = "test_dashboard_flat_horizon",
-    size = "small",
+    size = "medium",
     srcs = ["test_dashboard_flat_horizon.py"],
     deps = [
         "//webapp/views:views",
@@ -1592,7 +1592,7 @@ django_py_test(
 
 django_py_test(
     name = "test_stable_prediction_url",
-    size = "small",
+    size = "medium",
     srcs = ["test_stable_prediction_url.py"],
     deps = [
         "//django_config:context_processors",
@@ -1612,7 +1612,7 @@ django_py_test(
 
 django_py_test(
     name = "test_prediction_detail_structured_data",
-    size = "small",
+    size = "medium",
     srcs = ["test_prediction_detail_structured_data.py"],
     deps = [
         "//django_config:context_processors",
@@ -1630,7 +1630,7 @@ django_py_test(
 
 django_py_test(
     name = "test_accuracy_surfacing",
-    size = "small",
+    size = "medium",
     srcs = ["test_accuracy_surfacing.py"],
     deps = [
         "//lib/business/vqs:accuracy_metrics",
