@@ -4,7 +4,7 @@
 > Production migrated off Lightsail on 2026-05-08 and now sits behind a **Cloudflare
 > Tunnel** (the `vb_cloudflared` connector in the prod Docker Compose stack). There
 > is **no public origin IP** anymore, so the origin-firewall lock-down below
-> (Step 7 — Lightsail firewall, `aws lightsail` CLI, IP allowlisting) is **moot** —
+> (Step 7 — Lightsail firewall, `aws lightsail` CLI, IP allowlisting) **no longer applies** —
 > the tunnel makes the origin unreachable except through Cloudflare by construction.
 > The generic CF concepts here (edge cache, real-client-IP headers, WAF) still
 > apply, but the Lightsail/AWS-CLI-specific mechanics are dead. For the current
