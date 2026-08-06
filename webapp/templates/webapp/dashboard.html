@@ -239,10 +239,14 @@
                                     <td>{{ row.label }}</td>
                                     <td class="text-nowrap">{% if row.last_bulletin_date %}{{ row.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
                                     <td class="text-nowrap">
-                                        {% if row.current_cutoff %}
+                                        {% if row.cutoff_is_current %}
+                                            <span class="text-muted small">Current</span>
+                                        {% elif row.cutoff_is_unavailable %}
+                                            <span class="text-muted small">Unavailable</span>
+                                        {% elif row.current_cutoff %}
                                             {{ row.current_cutoff|date:"M d, Y" }}
                                         {% else %}
-                                            <span class="text-muted small">Current</span>
+                                            <span class="text-muted small">&mdash;</span>
                                         {% endif %}
                                     </td>
                                     {% if show_vqs_column %}

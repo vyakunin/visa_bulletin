@@ -4,7 +4,7 @@ Dashboard business logic service
 Extracts data aggregation and processing logic from views to keep them thin.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from itertools import groupby
 from operator import attrgetter
@@ -14,6 +14,11 @@ from django.core.cache import cache
 from lib.business.bulletin.cutoff_projection import calculate_projection
 from models.bulletin import Bulletin
 from models.enums.country import Country
+from models.enums.cutoff_state import (
+    CUTOFF_STATE_CURRENT,
+    CUTOFF_STATE_DATE,
+    CUTOFF_STATE_UNAVAILABLE,
+)
 from models.enums.employment_preference import EmploymentPreference
 from models.enums.family_preference import FamilyPreference
 from models.enums.visa_category import VisaCategory
@@ -41,13 +46,22 @@ def _latest_bulletin_month() -> date | None:
 
 @dataclass
 class VisaClassData:
-    """Data for a single visa class including historical cutoffs and projection"""
+    """Data for a single visa class including historical cutoffs and projection.
+
+    ``cutoff_dates`` holds a date only where the bulletin published one. Both
+    "Current" (no backlog) and "Unavailable" (no numbers this month) are states
+    rather than dates, so both are ``None`` there and ``cutoff_states`` — the
+    same length, same order — says which. Substituting a date for either one
+    (the bulletin month is the tempting choice) reads back downstream as a real
+    cutoff and invents movement that never happened.
+    """
 
     visa_class: str
     visa_class_label: str
     dates: list[date]
     cutoff_dates: list[date | None]
     bulletin_urls: list[str]
+    cutoff_states: list[str] = field(default_factory=list)
     projection: dict | None = None
 
     def to_dict(self) -> dict:
@@ -57,6 +71,7 @@ class VisaClassData:
             "visa_class_label": self.visa_class_label,
             "dates": self.dates,
             "cutoff_dates": self.cutoff_dates,
+            "cutoff_states": self.cutoff_states,
             "bulletin_urls": self.bulletin_urls,
             "projection": self.projection,
             "last_bulletin_date": self.dates[-1] if self.dates else None,
@@ -222,11 +237,16 @@ def _append_records_to_data(data: VisaClassData, records, category: str) -> None
         data.bulletin_urls.append(internal_url)
 
         if record.is_current:
-            data.cutoff_dates.append(pub_date)
+            data.cutoff_dates.append(None)
+            data.cutoff_states.append(CUTOFF_STATE_CURRENT)
         elif record.is_unavailable:
             data.cutoff_dates.append(None)
+            data.cutoff_states.append(CUTOFF_STATE_UNAVAILABLE)
         else:
             data.cutoff_dates.append(record.cutoff_date)
+            data.cutoff_states.append(
+                CUTOFF_STATE_DATE if record.cutoff_date is not None else CUTOFF_STATE_UNAVAILABLE
+            )
 
 
 # Minimum bulletin date to show a visa class (only show classes with updates after 2012)
@@ -245,10 +265,17 @@ def _finalize_aggregated_data(
         if max(data.dates) < _MIN_BULLETIN_DATE:
             continue
 
-        # Sort all lists by date
+        # Sort all lists by date. cutoff_states is index-aligned with the others,
+        # so it is reordered with them — a states list that somehow came in short
+        # is dropped rather than misaligned, since a state read against the wrong
+        # month is worse than no state at all.
         sorted_indices = sorted(range(len(data.dates)), key=lambda i: data.dates[i])
+        states_aligned = len(data.cutoff_states) == len(data.dates)
         data.dates = [data.dates[i] for i in sorted_indices]
         data.cutoff_dates = [data.cutoff_dates[i] for i in sorted_indices]
+        data.cutoff_states = (
+            [data.cutoff_states[i] for i in sorted_indices] if states_aligned else []
+        )
         data.bulletin_urls = [data.bulletin_urls[i] for i in sorted_indices]
 
         # Calculate projection

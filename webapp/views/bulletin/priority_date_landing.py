@@ -27,6 +27,7 @@ from lib.business.bulletin.cutoff_data_aggregator import (
 from models.bulletin import Bulletin
 from models.enums.action_type import ActionType
 from models.enums.country import Country
+from models.enums.cutoff_state import CUTOFF_STATE_CURRENT, CUTOFF_STATE_UNAVAILABLE
 from models.enums.employment_preference import EmploymentPreference
 from models.visa_cutoff_date import VisaCutoffDate
 
@@ -54,12 +55,27 @@ def _fmt_date(d: date | None) -> str | None:
     return d.strftime("%B %-d, %Y") if d else None
 
 
+# A dateless month is either Current or Unavailable — opposite meanings, so the
+# series carries which one and the label says it. Falls back to the ambiguous
+# pair only for a series built before cutoff_states existed.
+_STATE_LABELS = {CUTOFF_STATE_CURRENT: "Current", CUTOFF_STATE_UNAVAILABLE: "Unavailable"}
+_STATE_LABELS_ES = {CUTOFF_STATE_CURRENT: "Actual", CUTOFF_STATE_UNAVAILABLE: "No disponible"}
+
+
+def _states(series: dict) -> list[str]:
+    """Per-month cutoff states, padded when a caller supplies none."""
+    states = series.get("cutoff_states") or []
+    missing = len(series["dates"]) - len(states)
+    return list(states) + [""] * missing if missing > 0 else list(states)
+
+
 def _latest_status(country_value: int, action_type: str, full_label: str) -> dict:
     """Headline current cutoff for (EB class, country, action) from the latest bulletin.
 
-    Reads the raw latest row so we can distinguish a real date from "Current"
-    (C) / "Unavailable" (U) — a distinction the aggregator's date|None arrays
-    lose.
+    Reads the raw latest row for the headline, which needs the one authoritative
+    cell rather than a series. Where a series IS in hand, the same distinction
+    between a date, "Current" (C) and "Unavailable" (U) rides in its
+    ``cutoff_states``.
     """
     latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
     if latest_bulletin is None:
@@ -105,11 +121,12 @@ def _series(country_value: int, action_type: str, full_label: str) -> dict | Non
 def _trend(final_status: dict, series: dict | None) -> dict:
     """Month-over-month movement of the Final Action cutoff — Current/Unavailable aware.
 
-    The aggregated series collapses both "Current" and "Unavailable" to None, so the
-    headline status (which DOES distinguish them) drives the wording; the prior
-    bulletin's cutoff comes from the series. `text` is a verb phrase with no leading
-    capital and no trailing period — the template wraps it in a sentence. The full
-    "why" for the Unavailable case lives in the FAQ, not here, to avoid repetition.
+    The series carries None for both "Current" and "Unavailable" months, so the
+    headline status names which one this month is; the prior bulletin's cutoff comes
+    from the series, and a dateless prior month is what "moved to X this month" turns
+    on. `text` is a verb phrase with no leading capital and no trailing period — the
+    template wraps it in a sentence. The full "why" for the Unavailable case lives in
+    the FAQ, not here, to avoid repetition.
     """
     status = final_status["status"]  # "date" | "current" | "unavailable" | "unknown"
     cutoffs = series["cutoff_dates"] if series else []
@@ -143,13 +160,13 @@ def _recent_history(series: dict | None, n: int = 6) -> list[dict]:
     """Last n (bulletin month, cutoff) points, newest first."""
     if not series:
         return []
-    pairs = list(zip(series["dates"], series["cutoff_dates"]))[-n:]
+    pairs = list(zip(series["dates"], series["cutoff_dates"], _states(series)))[-n:]
     rows = []
-    for bulletin_month, cutoff in reversed(pairs):
+    for bulletin_month, cutoff, state in reversed(pairs):
         rows.append(
             {
                 "month": bulletin_month.strftime("%b %Y"),
-                "cutoff": _fmt_date(cutoff) or "Current/Unavailable",
+                "cutoff": _fmt_date(cutoff) or _STATE_LABELS.get(state, "Current/Unavailable"),
             }
         )
     return rows
@@ -448,13 +465,13 @@ def _recent_history_es(series: dict | None, n: int = 6) -> list[dict]:
     """Last n (bulletin month, cutoff) points in Spanish, newest first."""
     if not series:
         return []
-    pairs = list(zip(series["dates"], series["cutoff_dates"]))[-n:]
+    pairs = list(zip(series["dates"], series["cutoff_dates"], _states(series)))[-n:]
     rows = []
-    for bulletin_month, cutoff in reversed(pairs):
+    for bulletin_month, cutoff, state in reversed(pairs):
         rows.append(
             {
                 "month": f"{_ES_MONTHS_ABBR[bulletin_month.month]} {bulletin_month.year}",
-                "cutoff": _fmt_date_es(cutoff) or "Actual/No disponible",
+                "cutoff": _fmt_date_es(cutoff) or _STATE_LABELS_ES.get(state, "Actual/No disponible"),
             }
         )
     return rows

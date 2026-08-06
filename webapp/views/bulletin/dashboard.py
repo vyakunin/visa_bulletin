@@ -23,6 +23,11 @@ from lib.business.vqs.coupling import (
 from models.blog import BlogPost
 from models.enums.action_type import ActionType
 from models.enums.country import Country
+from models.enums.cutoff_state import (
+    CUTOFF_STATE_CURRENT,
+    CUTOFF_STATE_DATE,
+    CUTOFF_STATE_UNAVAILABLE,
+)
 from models.enums.visa_category import VisaCategory
 from webapp.views.bulletin.priority_date_landing import (
     _COUNTRIES as _PRIORITY_DATE_COUNTRY_SLUGS,
@@ -404,11 +409,22 @@ def _build_unified_prediction_rows(
     docs/fad_dff_coupling_design.md, reported via r/USCIS 2026-07-05 (EB-1 India
     PD 4/29/2025: FAD ~2027 vs Filing ~2029).
     """
-    # Build lookup: label → current cutoff (last non-None cutoff date)
+    # Build lookup: label → current cutoff (last non-None cutoff date), plus the
+    # STATE of the latest bulletin cell. "Current" and "Unavailable" are not
+    # dates, so neither may resolve to one: falling back to the last date on
+    # file would present a superseded cutoff as this month's, and the two states
+    # mean opposite things to a reader (no backlog vs no numbers published).
     current_cutoffs: dict[str, date | None] = {}
+    latest_states: dict[str, str] = {}
     for vcd in visa_class_data:
         lbl = vcd.get("visa_class_label") or vcd.get("visa_class") or ""
         cutoffs = vcd.get("cutoff_dates") or []
+        states = vcd.get("cutoff_states") or []
+        latest_state = states[-1] if states else CUTOFF_STATE_DATE
+        latest_states[lbl] = latest_state
+        if latest_state in (CUTOFF_STATE_CURRENT, CUTOFF_STATE_UNAVAILABLE):
+            current_cutoffs[lbl] = None
+            continue
         valid = [c for c in cutoffs if c is not None]
         current_cutoffs[lbl] = valid[-1] if valid else None
 
@@ -418,9 +434,12 @@ def _build_unified_prediction_rows(
         pred = vqs_predictions.get(lbl) or {}
         maturity = pred.get("maturity_month")
         linear = None
-        already_current = False
+        latest_state = latest_states.get(lbl, CUTOFF_STATE_DATE)
+        # A Current class has no backlog at all, so every priority date is already
+        # current — there is no cutoff to compare against and nothing to project.
+        already_current = latest_state == CUTOFF_STATE_CURRENT
 
-        if submission_date and current_cutoffs.get(lbl) is not None:
+        if not already_current and submission_date and current_cutoffs.get(lbl) is not None:
             already_current = current_cutoffs[lbl] >= submission_date
 
         if not already_current and maturity is None and submission_date:
@@ -476,6 +495,8 @@ def _build_unified_prediction_rows(
             "visa_class": vcd.get("visa_class") or "",
             "last_bulletin_date": vcd.get("last_bulletin_date"),
             "current_cutoff": current_cutoffs.get(lbl),
+            "cutoff_is_current": latest_state == CUTOFF_STATE_CURRENT,
+            "cutoff_is_unavailable": latest_state == CUTOFF_STATE_UNAVAILABLE,
             "next_cutoff": pred.get("next_cutoff"),
             "cutoff_6m": pred.get("cutoff_6m"),
             "cutoff_12m": pred.get("cutoff_12m"),

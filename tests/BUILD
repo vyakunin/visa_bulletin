@@ -1586,6 +1586,22 @@ django_py_test(
     ],
 )
 
+django_py_test(
+    name = "test_current_cutoff_state",
+    size = "medium",
+    srcs = ["test_current_cutoff_state.py"],
+    deps = [
+        "//lib/business/bulletin:cutoff_data_aggregator",
+        "//webapp/views:views",
+        "//models:visa_cutoff_date",
+        "//models:bulletin",
+        "//models/enums:visa_category",
+        "//models/enums:country",
+        "//django_config:urls",
+        "//webapp:urls",
+    ],
+)
+
 # Back-ported from the release branches (2026-08-05): these cover the stable
 # canonical prediction URL and the accuracy-rollup surface, which were authored
 # on staging/prod and never had a target here.

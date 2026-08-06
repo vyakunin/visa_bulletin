@@ -9,6 +9,7 @@ from datetime import date
 import plotly.graph_objects as go
 
 from models.enums.country import Country
+from models.enums.cutoff_state import CUTOFF_STATE_CURRENT
 
 # Rendered height of the dashboard trend chart. The template reserves exactly this
 # many pixels on #chart-content while the chart lazy-loads, so the swap from spinner
@@ -140,9 +141,17 @@ def _add_visa_class_traces(
     current_idx += 1
 
     # VQS model projection trace (dotted line + diamond marker at maturity)
+    # A class whose latest bulletin cell is Current has no backlog, so there is
+    # nothing to project toward — draw no queue line regardless of the priority
+    # date. (The last non-None cutoff is a superseded one and would otherwise
+    # produce a projection for a class that is already current.)
+    cutoff_states = data.get("cutoff_states") or []
+    latest_is_current = bool(cutoff_states) and cutoff_states[-1] == CUTOFF_STATE_CURRENT
     valid_cutoffs = [c for c in cutoff_dates if c is not None]
     current_cutoff = valid_cutoffs[-1] if valid_cutoffs else None
-    already_current = current_cutoff is not None and current_cutoff >= submission_date
+    already_current = latest_is_current or (
+        current_cutoff is not None and current_cutoff >= submission_date
+    )
 
     if vqs_pred and vqs_pred.get("trajectory") and dates and not already_current:
         trajectory = vqs_pred["trajectory"]  # list of (month_date, cutoff_date)

@@ -30,6 +30,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//models/enums:country",
+        "//models/enums:cutoff_state",
         requirement("plotly"),
     ],
 )
@@ -55,6 +56,7 @@ py_library(
         "//models:visa_cutoff_date",
         "//models/enums:action_type",
         "//models/enums:country",
+        "//models/enums:cutoff_state",
         "//models/enums:employment_preference",
         "//models/enums:family_preference",
         "//models/enums:visa_category",
