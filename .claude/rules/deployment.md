@@ -147,6 +147,12 @@ whose cache is empty — picks up the new file with no recreate and no unbound s
 `docker exec <web> kill -HUP 1` fails with `executable file not found`. Signal the
 container instead: `docker kill --signal=HUP <web>`.
 
+The prod ship path takes exactly this route — `visa_bulletin_platform/scripts/deploy_override.sh`
+HUPs the container rather than recreating it. Because a HUP that does not take is **silent**
+(site healthy, still serving the old partial), that script appends a content-hash marker to the
+deployed copy and polls the origin until the marker renders, failing loudly on timeout. Anything
+else that ships a partial owes the same check; a bare signal is not a deploy.
+
 Boot profile, measured on staging — why the recreate costs what it does:
 
 | phase | duration |
