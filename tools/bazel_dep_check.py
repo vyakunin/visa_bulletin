@@ -57,14 +57,6 @@ MACRO_DEPS = {
 # DIFFERENT ways — the fix for each is to break the cycle in code (extract the
 # shared surface into a third module), never to add a dep.
 ALLOWLIST: set[tuple[str, str]] = {
-    # expert_pool.py:130,196,667 <-> solver.py:446,548,588. All six are lazy
-    # (in-function), so this fails at CALL time with ModuleNotFoundError when a
-    # target depending only on expert_pool invokes the physics experts — reachable
-    # via predictors.py:7, not theoretical.
-    # Fix: extract the queue engine (SolverResult, get_historical_advancement_rate,
-    # calibrate_queue_depth, run_monthly_loop) out of solver into a leaf module;
-    # solver re-exports them so external call sites are untouched.
-    ("//lib/business/vqs:expert_pool", "lib.business.vqs.solver"),
     # prediction_month_forecast.py:428 -> prediction_views.prediction_detail, against
     # prediction_views.py:318,414,796 -> prediction_month_forecast. Bazel already
     # carries the prediction_views -> prediction_month_forecast direction, so the

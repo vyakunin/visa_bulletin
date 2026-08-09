@@ -35,6 +35,22 @@ py_library(
     ],
 )
 
+# Leaf: the deterministic queue simulation. expert_pool's physics experts need
+# exactly this surface, and solver needs expert_pool for the ensemble — keeping
+# the engine here is what stops that becoming an import cycle. Deps must stay
+# free of solver and expert_pool.
+py_library(
+    name = "queue_engine",
+    srcs = ["queue_engine.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_cache",
+        ":meta_params",
+        ":queue_snapshot",
+        "//models/enums:country",
+    ],
+)
+
 py_library(
     name = "solver",
     srcs = ["solver.py"],
@@ -42,6 +58,7 @@ py_library(
     deps = [
         ":demand",
         ":estimators",
+        ":queue_engine",
         ":fy_transition_model",
         ":queue_snapshot",
         ":regime",
@@ -152,8 +169,10 @@ py_library(
     srcs = ["expert_pool.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":demand",
         ":estimators",
         ":gbm_expert",  # lazy import at expert_pool.py:445
+        ":queue_engine",
         ":seasonal_predictor",
         ":data_cache",
         "//models:bulletin",

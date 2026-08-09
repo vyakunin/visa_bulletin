@@ -127,12 +127,9 @@ def _physics_prediction_impl(
 ) -> date | None:
     """Core logic of the physics engine (uncached)."""
     from lib.business.vqs.data_cache import get_cutoff_at_date
-    from lib.business.vqs.solver import (
-        build_virtual_queue_snapshot,
-        calibrate_queue_depth,
-        get_monthly_supply,
-        run_monthly_loop,
-    )
+    from lib.business.vqs.demand import build_virtual_queue_snapshot
+    from lib.business.vqs.estimators import get_monthly_supply
+    from lib.business.vqs.queue_engine import calibrate_queue_depth, run_monthly_loop
 
     current_cutoff = get_cutoff_at_date(visa_class, country, action_type, knowledge_date)
     if not current_cutoff:
@@ -193,7 +190,7 @@ def expert_supply_aware(
     if not current_cutoff:
         return None
 
-    from lib.business.vqs.solver import get_historical_advancement_rate
+    from lib.business.vqs.queue_engine import get_historical_advancement_rate
     from lib.business.vqs.supply import SupplyAllocator
 
     if knowledge_date.month == 12:
@@ -664,12 +661,9 @@ def trajectory_physics(
 ) -> list[date | None]:
     """Run the physics engine for N steps to get a full trajectory."""
     from lib.business.vqs.data_cache import get_cutoff_at_date
-    from lib.business.vqs.solver import (
-        build_virtual_queue_snapshot,
-        calibrate_queue_depth,
-        get_monthly_supply,
-        run_monthly_loop,
-    )
+    from lib.business.vqs.demand import build_virtual_queue_snapshot
+    from lib.business.vqs.estimators import get_monthly_supply
+    from lib.business.vqs.queue_engine import calibrate_queue_depth, run_monthly_loop
     if facts is None:
         from models.raw_facts import RawFactsLedger
         facts = list(RawFactsLedger.objects.filter(publication_date__lte=knowledge_date))
