@@ -377,6 +377,85 @@ class TestJobTitleProfileView(TestCase):
         # stats script now sets it with the same wage-bounded definition.
         self.assertEqual(jt.total_filings, 3)
 
+    def test_job_title_owning_no_records_is_zeroed_so_related_roles_sums_to_card(self):
+        """A JobTitle left with no records by a re-cluster must not keep its count.
+
+        Both queries driving the JobTitle update loop select FROM salary_record,
+        so a title whose records were all re-linked away appears in neither and
+        the loop never visits it. It kept its old total_filings forever, and
+        `related_titles` excludes only total_filings=0 — so it still rendered,
+        adding filings the Total Filings card does not count. Measured on
+        staging 2026-08-09: 7,776 such rows holding 17,396 phantom filings
+        across 1.9% of clusters.
+        """
+        cluster = JobTitleCluster.objects.create(
+            slug="orphan-zeroing",
+            canonical_title="Orphan Zeroing Role",
+            total_filings=0,
+        )
+        keeper = JobTitle.objects.create(
+            title_normalized="orphan zeroing role",
+            experience_level="",
+            title="Orphan Zeroing Role",
+            canonical_cluster=cluster,
+            total_filings=0,
+        )
+        # The orphan: a stale count and average, and zero records pointing at it.
+        orphan = JobTitle.objects.create(
+            title_normalized="orphan zeroing rol",  # the typo variant that got merged away
+            experience_level="",
+            title="Orphan Zeroing Rol",
+            canonical_cluster=cluster,
+            total_filings=7,
+            avg_salary=Decimal("99000.00"),
+        )
+        for i in range(2):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-JT-ORPHAN-{i}",
+                employer_name="Test Company Inc JT",
+                employer=self.employer,
+                job_title="Orphan Zeroing Role",
+                job_title_entity=keeper,
+                worksite_city="San Francisco",
+                worksite_state="CA",
+                wage_from=Decimal("120000.00"),
+                wage_unit=WageUnit.YEAR,
+                wage_annual=Decimal("120000.00"),
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=2024,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+
+        old_argv = sys.argv
+        try:
+            sys.argv = ["update_job_title_cluster_stats"]
+            update_job_title_cluster_stats_main()
+        finally:
+            sys.argv = old_argv
+
+        orphan.refresh_from_db()
+        keeper.refresh_from_db()
+        cluster.refresh_from_db()
+
+        self.assertEqual(
+            orphan.total_filings,
+            0,
+            "a JobTitle with no qualifying records must not keep a stale count",
+        )
+        self.assertIsNone(
+            orphan.avg_salary,
+            "a JobTitle with zero filings cannot carry an average salary",
+        )
+        self.assertEqual(keeper.total_filings, 2, "the real title must be untouched")
+        # The END STATE: the Related Roles column sums exactly to the card.
+        self.assertEqual(
+            keeper.total_filings + orphan.total_filings,
+            cluster.total_filings,
+            "Related Roles filings must sum to the cluster's Total Filings card",
+        )
+
     def test_related_roles_avg_salary_null_renders_dash_not_bare_dollar(self):
         """Template guards NULL avg_salary with an em-dash, never a bare '$'.
 

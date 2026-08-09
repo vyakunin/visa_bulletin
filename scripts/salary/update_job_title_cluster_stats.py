@@ -116,6 +116,37 @@ def _stats_per_job_title() -> list[tuple[int, int, Decimal | None]]:
         return [(row[0], row[1], row[2]) for row in cursor.fetchall()]
 
 
+def _zero_orphaned_job_titles() -> int:
+    """
+    Zero JobTitles that hold a stale total_filings but own no qualifying record.
+
+    Both queries that drive the JobTitle update loop read FROM salary_record, so
+    a JobTitle whose records were all re-linked away during a re-cluster appears
+    in neither and the loop never visits it — it keeps whichever total_filings
+    it last had. `related_titles` excludes only total_filings=0, so those rows
+    still render on the profile, each adding filings the Total Filings card does
+    not count. Driving this from the JobTitle side is what makes the Related
+    Roles column sum to the card.
+
+    Returns the number of rows zeroed.
+    """
+    sql = """
+    UPDATE salary_job_title AS jt
+    SET total_filings = 0, avg_salary = NULL
+    WHERE jt.total_filings > 0
+      AND NOT EXISTS (
+          SELECT 1 FROM salary_record sr
+          WHERE sr.job_title_entity_id = jt.id
+            AND sr.wage_annual IS NOT NULL
+            AND sr.wage_annual >= %s
+            AND sr.wage_annual <= %s
+      )
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [MIN_REASONABLE_SALARY, MAX_REASONABLE_SALARY])
+        return cursor.rowcount
+
+
 def _most_frequent_raw_title_per_cluster() -> list[tuple[int, str]]:
     """
     Return [(cluster_id, display_title), ...] using one query.
@@ -347,6 +378,12 @@ def main():
         f"{title_updated_count:,}",
         f"{avg_updated_count:,}",
     )
+
+    # The loop above only visits JobTitles that own a record, so orphans left by
+    # a re-cluster never reach it. Zero them from the JobTitle side.
+    logger.info("Zeroing orphaned JobTitles (stale total_filings, no records)...")
+    orphaned_zeroed = _zero_orphaned_job_titles()
+    logger.info("  Zeroed %s orphaned JobTitles", f"{orphaned_zeroed:,}")
 
     # 5) Batch-update JobTitleCluster (total_filings, avg_salary, canonical_title, total_filings_recent)
     # total_filings/avg_salary from stats_by_cluster; total_filings_recent for autocomplete ranking.
