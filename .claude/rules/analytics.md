@@ -24,12 +24,12 @@ Origin: 2026-06-22 — a digest reported "employer profiles −54% impr, job-tit
 | **Postgres (visa_bulletin DB)** | Product-side state: bulletin records, employer counts, salary record counts, ingest run history, VQS prediction cache hit rates | `docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin` on the production server |
 | **Cloudflare** | Edge metrics (cache hit %, requests by country, attacks) — via CF dashboard or API. Account id stored at `~/tokens/cloudflare_account_id`, API token at `~/tokens/cloudflare_api_token`. | Not yet wired into daily_checkup MCP — manual lookup if needed. |
 | **UptimeRobot** (uptime monitoring of `visa-bulletin.us`) | Synthetic uptime checks; DOWN/UP transitions; status pages. Currently emails `alert@uptimerobot.com` → `vyakunin@gmail.com` for each transition (subjects `Monitor is DOWN: visa-bulletin.us` / `Monitor is UP: visa-bulletin.us`). Verified active since pre-2026-05-08 Lightsail era. | Dashboard: `https://uptimerobot.com/dashboard`. Per-monitor history visible there. The current email path is the source of the daily_checkup MCP's `uptime` Gmail query — see `mcp/daily_checkup_server.py:GMAIL_QUERIES`. |
+| **Google Search Console** (`gsc` MCP) | Keyword/CTR/impressions/position per query and page; index status and last crawl for a URL (`gsc_inspect_url`); sitemap coverage. Read-only, owned properties only. | `mcp__gsc__*` — canonical per the global `mcps.md`. Token auto-refreshes; a dead one is a re-consent, not a missing tool. |
 
 ## What's NOT Installed (Verified Gaps)
 
 | Missing | Workaround | Tracking ticket |
 |---|---|---|
-| **Google Search Console MCP** | Manual UI lookup at `https://search.google.com/search-console` for keyword/CTR/impressions data | See memory `project_gsc_mcp_setup.md`; Notion follow-up for "build GSC MCP" |
 | **Outbound-click tracking** | None — no measurement of clicks to 3rd parties (e.g. lawyer affiliates) | Would need to add JS event tracking on outbound `<a>` tags; not yet built |
 | **GoatCounter unique-visitor counts** | GoatCounter dropped fingerprint dedup; `count_unique` equals `count`. Use nginx `CF-Connecting-IP` unique-IP count as a proxy (still includes bots). | Documented in `docs/deployment/goatcounter.md` §"What to Do If…" |
 | **Demographics beyond country** | GC only returns country-level location. No age/gender/income data. | Switch to Plausible/Umami/Matomo if needed — not currently a priority. |
