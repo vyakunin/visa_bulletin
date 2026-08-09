@@ -38,6 +38,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Runs before Bazel: stdlib-only, ~1.5s, and it catches a class Bazel cannot.
+      # An undeclared first-party import keeps working while some consumer's dep
+      # closure happens to supply the module, so `bazel test //tests/...` stays
+      # green through it — //tests:test_bazel_dep_check pins the checker's logic
+      # against synthetic BUILD trees, never against this repo. This step is the
+      # only thing that scans the real tree on a fresh clone; the pre-commit hook
+      # that also runs it lives in .git/hooks/, which is not version-controlled.
+      - name: Check Bazel deps declare every first-party import
+        run: python3 tools/bazel_dep_check.py
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.8.1
         with:

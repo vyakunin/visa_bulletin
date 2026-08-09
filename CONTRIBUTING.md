@@ -103,9 +103,15 @@ The Bazel-based pre-commit hook will automatically:
 
 The `.git/hooks/pre-commit` script runs automatically before each commit and:
 - Checks for Bazel installation
+- Runs `tools/bazel_dep_check.py` over staged `*.py` / `BUILD` / `*.bzl` (fast, before the test pass)
 - Runs the full test suite via Bazel
-- Blocks the commit if any tests fail
+- Blocks the commit if the dep check or any test fails
 - Provides fast execution through Bazel's caching
+
+`.git/hooks/` is not version-controlled, so a fresh clone has no hook until you add
+one. The dep check does not depend on that: the `Test` workflow runs
+`python3 tools/bazel_dep_check.py` as its own step, so an undeclared first-party
+import fails CI whether or not the local hook is installed.
 
 **Do not bypass the hook.** Never use `git commit --no-verify`. If the hook fails, fix the issues (ruff or tests) then commit again.
 
