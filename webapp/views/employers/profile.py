@@ -13,6 +13,7 @@ from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.i129.approval_stats import get_employer_approval_stats
+from lib.business.i129.demographic_pay_panel import get_employer_demographic_pay
 from lib.business.i129.pay_comparison import get_employer_pay_comparison
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
@@ -406,6 +407,12 @@ def employer_profile_view(request, slug):
     # USCIS I-129 petition approval rate (Data Hub) — the meaningful signal vs the
     # ~99% LCA cert rate. None when too thin (template hides the section).
     approval_stats = get_employer_approval_stats(cluster)
+    # Actual pay by beneficiary background (country of birth / education / gender),
+    # each gap shown raw AND within job title. Scoped by employer_cluster_id, so it is
+    # an index scan over this employer's petitions rather than the whole table. None for
+    # almost every employer — two values must clear the adjustment floors, which takes
+    # thousands of linked petitions (template hides the section).
+    demographic_pay = get_employer_demographic_pay(cluster)
 
     # Legal-successor cross-link (e.g. Facebook, Inc. -> Meta Platforms, Inc.).
     # None for the vast majority of employers (not in the curated rename map);
@@ -429,6 +436,7 @@ def employer_profile_view(request, slug):
         "chart_data": chart_data,
         "pay_comparison": pay_comparison,
         "approval_stats": approval_stats,
+        "demographic_pay": demographic_pay,
         "seo": seo,
         "page_title": seo["title"],
         "page_description": seo["description"],

@@ -29,6 +29,7 @@ py_library(
     deps = [
         "//django_config:cache_utils",
         "//lib/business/i129:approval_stats",
+        "//lib/business/i129:demographic_pay_panel",
         "//lib/business/i129:pay_comparison",
         "//lib/business/salary:common_stats",
         "//lib/business/salary:common_chart_builder",

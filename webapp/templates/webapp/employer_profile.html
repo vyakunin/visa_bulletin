@@ -316,6 +316,9 @@
             <!-- USCIS I-129 petition approval rate (Data Hub) — meaningful vs the ~99% LCA cert rate -->
             {% include "webapp/_i129_approval_rate.html" with employer_label=cluster.canonical_name %}
 
+            <!-- Actual pay by beneficiary background, raw vs within-job-title -->
+            {% include "webapp/_i129_demographic_pay.html" with scope_label=cluster.canonical_name %}
+
             <!-- Geographic Distribution -->
             {% if chart_data.state_filings or chart_data.state_median_salary %}
             <div class="row mb-4">

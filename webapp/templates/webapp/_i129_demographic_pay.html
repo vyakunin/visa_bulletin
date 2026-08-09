@@ -1,0 +1,97 @@
+{% load humanize %}
+{% comment %}
+  Actual pay by beneficiary background (country of birth, education, gender), with
+  every gap shown BOTH raw and measured within the same job title.
+
+  Expects `demographic_pay` (lib.business.i129.demographic_pay_panel.DemographicPayPanel)
+  and `scope_label` (the population, e.g. "all H-1B petitions" or "Google LLC").
+  Optional `sitewide` marks the unscoped panel, which is the only one allowed to state
+  the cross-dimension finding — an employer's own numbers need not follow it.
+  Renders nothing when demographic_pay is falsy (nothing cleared suppression, or the
+  site-wide cache is cold).
+
+  The within-occupation column leads and the raw one is labelled as what it corrects:
+  /analysis/h1b-gender-pay-gap-decomposition/ argues a raw median gap is a sorting
+  artifact, and a component presenting raw medians as pay differences would contradict
+  our own page. Attribution "sourced from USCIS, obtained by Bloomberg" is REQUIRED.
+{% endcomment %}
+{% if demographic_pay %}
+<h2 class="h4 mt-5 mb-2">What different H-1B workers are actually paid</h2>
+<p class="text-muted mb-3">
+  Across the {{ demographic_pay.overall_n|intcomma }} petitions we hold for
+  {{ scope_label }}, the I-129 filing records the beneficiary's
+  <strong>actual pay</strong> alongside their
+  country of birth, education and gender. A raw pay gap between two groups is mostly a
+  statement about <em>which jobs they hold</em> — so each gap below is shown twice: as
+  it looks raw, and again measured <strong>within the same job title</strong>. The
+  second number is the one to read.
+</p>
+{% if sitewide %}
+<p class="mb-3">
+  Gender is here as the control. Our
+  <a href="/analysis/h1b-gender-pay-gap-decomposition/">decomposition of the H-1B gender
+  pay gap</a> found that gap is sorting almost entirely — it survives the correction at
+  under a percent. Country of birth and education do not behave that way: part of each
+  gap is job mix, and a real difference is still standing after the correction.
+</p>
+{% endif %}
+
+{% for section in demographic_pay.sections %}
+<h3 class="h6 text-uppercase text-muted mt-4 mb-2">{{ section.dimension_label }}</h3>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle mb-2">
+    <thead>
+      <tr>
+        <th scope="col">Group</th>
+        <th scope="col" class="text-end">Petitions</th>
+        <th scope="col" class="text-end">Median actual pay</th>
+        <th scope="col" class="text-end">Raw gap<span class="d-none d-md-inline"> vs everyone</span></th>
+        <th scope="col" class="text-end">Within the same job title</th>
+        <th scope="col" class="text-end d-none d-md-table-cell">Explained by job mix</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in section.rows %}
+      <tr>
+        <th scope="row" class="fw-normal">{{ row.label }}</th>
+        <td class="text-end text-nowrap">{{ row.cell.n|intcomma }}</td>
+        <td class="text-end text-nowrap">${{ row.cell.median_pay|intcomma }}</td>
+        <td class="text-end text-nowrap text-muted">{{ row.raw_gap_display }}</td>
+        <td class="text-end text-nowrap fw-bold">{{ row.within_occupation_gap_display }}</td>
+        <td class="text-end text-nowrap d-none d-md-table-cell">
+          {% if row.sorting_share_pct %}{{ row.sorting_share_pct }}%{% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if section.withheld_values %}
+<p class="text-muted small mb-3">
+  {% if section.withheld_values == 1 %}
+    One other value ({{ section.withheld_petitions|intcomma }} petitions) is not shown,
+    because too few of its petitions sit in a job title big enough to compare within.
+  {% else %}
+    {{ section.withheld_values }} other values
+    ({{ section.withheld_petitions|intcomma }} petitions) are not shown, because too few
+    of their petitions sit in a job title big enough to compare within.
+  {% endif %}
+  Only a raw figure exists there — and a raw figure is the thing this table corrects, so
+  ranking it beside these would mislead rather than inform.
+</p>
+{% endif %}
+{% endfor %}
+
+<p class="text-muted small mb-4">
+  <strong>How to read this.</strong> The within-occupation figure compares people
+  holding the same job title, weighted by how many petitions sit in each title. Titles
+  encode seniority, so equal pay <em>within</em> a title does not rule out differences in
+  reaching that title — the same limitation that applies to any controlled pay-gap
+  number. Figures are <strong>base pay only</strong>: the I-129 reports prospective base
+  compensation, with no equity or bonus, so this is not total compensation. Coverage is
+  <strong>{{ demographic_pay.fy_coverage }} cap-subject H-1B lottery petitions</strong>
+  that carry both a pay figure and a job title — a one-time FOIA snapshot, not a live
+  feed. Aggregates only, with small counts suppressed. Source: I-129 petition data
+  sourced from USCIS, obtained by Bloomberg.
+</p>
+{% endif %}

@@ -415,6 +415,21 @@ bazel run //scripts/i129:backfill_employer_links -- --dry-run   # report match r
 bazel run //scripts/i129:backfill_employer_links                # apply
 ```
 
+**`scripts/i129/warm_demographic_pay.py`** - Warm the site-wide demographic actual-pay panel
+
+The "what different H-1B workers are actually paid" component on `/job-title/` reads its
+site-wide figures from cache ONLY — it never computes them on a request, because the three
+dimension queries cost ~3s each against `i129_petition` and that surface competes on speed.
+So **the section is hidden until this runs**. Run it after any cache flush: a prod deploy
+(next to the `redis-cli -n 1 FLUSHDB` step), the refresh pipeline's `cache.clear()`, or an
+I-129 load. Read-only against the database; must run inside the app container, where the
+cache the site reads lives.
+```bash
+ssh homeserver "docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay"
+ssh homeserver "docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay --check"
+bazel run //scripts/i129:warm_demographic_pay                   # local
+```
+
 **`scripts/ingest/ingest_and_cluster.sh`** - Shell script for ingest + clustering workflow
 ```bash
 ./scripts/ingest/ingest_and_cluster.sh

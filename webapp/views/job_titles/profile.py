@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.i129.demographic_pay_panel import get_sitewide_demographic_pay
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import role_h1b_stats, role_qualifies
 from lib.business.salary.job_title_chart_builder import build_job_title_profile_charts
@@ -182,6 +183,15 @@ def job_title_profile_view(request, slug: str):
     if total_filings < INDEXABLE_MIN_FILINGS:
         broader_role = find_broader_role(cluster.canonical_title, cluster.slug)
         salaries_q = salaries_search_token(cluster.canonical_title)
+    # Actual pay by beneficiary background. There is no link from an I-129 petition to a
+    # JobTitleCluster (i129_petition.job_title is free text), so this is the SITE-WIDE
+    # breakdown, not one for this role — the template says so. Read from cache only, so
+    # it can never add the ~9s the three queries cost; dark until the warmer has run
+    # (scripts/i129/warm_demographic_pay.py). Withheld from thin pages, which are
+    # noindexed for having too little of their own content to carry a shared block.
+    thin_page = total_filings < INDEXABLE_MIN_FILINGS
+    demographic_pay = None if thin_page else get_sitewide_demographic_pay()
+
     median_salary = stats["basic"].get("median_salary") or 0
     seo = {
         "title": f"{cluster.canonical_title} Salary Data & Market Analysis | Visa Bulletin",
@@ -214,14 +224,13 @@ def job_title_profile_view(request, slug: str):
         # Thin-page gate: hyper-specific low-filing titles stay reachable
         # (follow keeps link equity flowing) but are kept out of the index —
         # they're the scaled-content-abuse suspect on this surface.
-        "meta_robots": (
-            "noindex, follow" if total_filings < INDEXABLE_MIN_FILINGS else None
-        ),
+        "meta_robots": "noindex, follow" if thin_page else None,
         # Same condition as meta_robots, rendered as `data-vb-thin` on <body> and
         # read by the prod ad_slot.html override to withhold adsbygoogle.js from
         # the page (AdSense judges pages that SERVE ads, which noindex does not
         # cover). Dropping this suppresses nothing — see employer_stats.py.
-        "thin_page": total_filings < INDEXABLE_MIN_FILINGS,
+        "thin_page": thin_page,
+        "demographic_pay": demographic_pay,
     }
 
     return render(request, "webapp/job_title_profile.html", context)

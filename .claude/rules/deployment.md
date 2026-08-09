@@ -71,6 +71,10 @@ docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
 # After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
 docker exec vb_redis redis-cli -n 1 FLUSHDB
+# The FLUSHDB also empties the site-wide I-129 demographic-pay panel, which /job-title/
+# reads from cache ONLY (it is never computed on a request — ~3s per dimension). Re-warm it,
+# or that section stays hidden until the next run:
+docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay
 # Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
 # (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging

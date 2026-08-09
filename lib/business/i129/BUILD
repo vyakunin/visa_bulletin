@@ -60,3 +60,13 @@ py_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "demographic_pay_panel",
+    srcs = ["demographic_pay_panel.py"],
+    deps = [
+        ":demographic_pay",
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)

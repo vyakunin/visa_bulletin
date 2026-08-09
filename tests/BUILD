@@ -1572,6 +1572,22 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_i129_demographic_pay_panel",
+    size = "medium",
+    srcs = ["test_i129_demographic_pay_panel.py"],
+    data = [
+        "//webapp:templates",
+    ],
+    deps = [
+        "//lib/business/i129:demographic_pay",
+        "//lib/business/i129:demographic_pay_panel",
+        "//models:i129",
+        "//models:salary",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_i129_employer_linker",
     size = "medium",
     srcs = ["test_i129_employer_linker.py"],

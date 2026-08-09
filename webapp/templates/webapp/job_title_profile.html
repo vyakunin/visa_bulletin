@@ -401,6 +401,9 @@
             </div>
             {% endif %}
             
+            <!-- Actual pay by beneficiary background (site-wide, not role-specific) -->
+            {% include "webapp/_i129_demographic_pay.html" with scope_label="the H-1B cap lottery as a whole" sitewide=True %}
+
             <!-- F. Related Job Titles -->
             {% if related.all_titles|length > 0 %}
             <div class="card mb-4">
