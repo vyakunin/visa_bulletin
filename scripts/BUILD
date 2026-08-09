@@ -12,6 +12,16 @@ exports_files([
     "sync_bulletin_to_prod.sh",
 ])
 
+# Every top-level PEP-723 script, read as data by //tests:test_mcp_pin_guard. It is a
+# glob rather than a list so a NEW script that imports the daily_checkup MCP server is
+# swept into the guard automatically — the pin drift it checks for is exactly the kind
+# that arrives with a file nobody remembered to register.
+filegroup(
+    name = "toplevel_python_sources",
+    srcs = glob(["*.py"]),
+    visibility = ["//visibility:public"],
+)
+
 py_binary(
     name = "makemigrations_wrapper",
     srcs = ["makemigrations_wrapper.py"],

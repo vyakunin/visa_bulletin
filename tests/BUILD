@@ -143,6 +143,22 @@ pytest_py_test(
     ],
 )
 
+# The PEP-723 scripts under scripts/ import mcp/daily_checkup_server.py, which needs
+# mcp 1.x (`mcp.server.fastmcp`; removed in 2.0.0). Each script resolves its own uv env,
+# so an unbounded "mcp" dep kills them one at a time as caches rebuild — silently, while
+# the digest keeps working off its lockfile. This holds every importer to the locked line.
+pytest_py_test(
+    name = "test_mcp_pin_guard",
+    size = "small",
+    srcs = ["test_mcp_pin_guard.py"],
+    data = [
+        "//mcp:pyproject.toml",
+        "//mcp:uv.lock",
+        "//scripts:toplevel_python_sources",
+    ],
+    deps = [requirement("packaging")],
+)
+
 pytest_py_test(
     name = "test_wayback_cache",
     size = "small",

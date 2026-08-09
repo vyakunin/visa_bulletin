@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx", "mcp"]
+# dependencies = ["httpx", "mcp>=1.0.0,<2"]
 # ///
 """Run the visa_bulletin daily_checkup coroutine locally and dump its report JSON.
 
