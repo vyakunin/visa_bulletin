@@ -44,6 +44,7 @@ import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -400,93 +401,18 @@ SURFACE_LABELS: dict[str, str] = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SSH: gather everything in one round-trip with section markers
+# The nginx log reducer
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run_ssh(script: str, timeout: int = 45) -> str:
-    cmd = [
-        "ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR",
-        "-o", f"ConnectTimeout={timeout}",
-        SSH_ALIAS, "bash", "-s",
-    ]
-    res = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=timeout + 5)
-    if res.returncode != 0:
-        raise RuntimeError(f"ssh failed (rc={res.returncode}): {res.stderr.strip() or res.stdout.strip()}")
-    return res.stdout
-
-
-def _parse_sectioned(raw: str) -> dict[str, str]:
-    sections: dict[str, list[str]] = {}
-    current = None
-    for line in raw.splitlines():
-        if line.startswith("==SECTION:") and line.endswith("=="):
-            current = line[len("==SECTION:"):-2]
-            sections[current] = []
-        elif current is not None:
-            sections[current].append(line)
-    return {k: "\n".join(v) for k, v in sections.items()}
-
-
-def _gather_homeserver_snapshot() -> dict[str, str]:
-    """One SSH round-trip. Everything we want from the homeserver."""
-    # Single multi-line script. Each section marker is a `printf` so we can
-    # rely on exact form. `set +e` so a single failing command doesn't kill
-    # the whole snapshot — we want partial data.
-    # Off-box backup migrated to the shared backup_blob.sh cron (2026-06): it
-    # writes to /opt/stack/_shared/logs/, NOT the legacy {stack}/logs/cron/backup.log
-    # (which froze at 2026-06-17 and produced a daily false "backup FAILING" RED).
-    prod_bak_log = "/opt/stack/_shared/logs/backup_visa_bulletin.log"
-
-    # Postgres signals — run inside vb_postgres so we don't need a libpq on
-    # the host. We surface (a) newest published bulletin (data freshness),
-    # (b) last successful ingest_run.completed_at, (c) active connections.
-    psql = (
-        "docker exec vb_postgres psql -U visa_bulletin_user -d visa_bulletin "
-        "-tA -F'|' -c"
-    )
-
-    # One taxonomy, two scopes: the awk chain below is rendered from the same
-    # SURFACE_PATTERNS the GoatCounter report buckets by.
-    surface_classifier = _awk_surface_classifier()
-
-    script = rf"""
-set +e
-printf '==SECTION:containers==\n'
-docker ps -a --filter 'name=vb_' --format '{{{{.Names}}}}|{{{{.Status}}}}|{{{{.State}}}}'
-printf '==SECTION:resources==\n'
-df -h /
-free -m | grep -E '^Mem:'
-nproc
-cat /proc/loadavg
-printf '==SECTION:backup==\n'
-if [ -f {shlex.quote(prod_bak_log)} ]; then
-  stat -c '%Y' {shlex.quote(prod_bak_log)}
-  tail -50 {shlex.quote(prod_bak_log)}
-else
-  echo MISSING
-fi
-printf '==SECTION:sitemap==\n'
-if [ -f /opt/stack/visa_bulletin/staticfiles/sitemap.xml ]; then
-  stat -c '%Y|%s' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
-  grep -c '<loc>' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
-else
-  echo MISSING
-fi
-printf '==SECTION:postgres==\n'
-{psql} "SELECT MAX(publication_date) FROM bulletin;" 2>&1
-{psql} "SELECT MAX(completed_at) FROM ingest_run WHERE status=3;" 2>&1
-{psql} "SELECT count(*), max(EXTRACT(EPOCH FROM (now()-state_change))) FROM pg_stat_activity WHERE datname='visa_bulletin';" 2>&1
-printf '==SECTION:dol_sources==\n'
-{psql} "SELECT url FROM ingest_data_source WHERE source_type IN ('lca','perm','perm_disclosure');" 2>&1
-printf '==SECTION:nginx==\n'
-# nginx logs go to stdout (access.log is a symlink to /dev/stdout in
-# nginx:alpine), so the file is not seekable — read via `docker logs`.
-# `--since 24h` lets the daemon do time-window filtering (~1s for ~70k lines).
-# Single awk pass emits everything: status mix, top 5xx/4xx paths, scanner
-# probes, 429 count, bot-UA hits, AND unique-IP counts. $1 (remote_addr) is
-# now the real client IP since the real_ip_module rewrites it from
-# CF-Connecting-IP (config block in visa_bulletin.conf, added 2026-05-14).
-docker logs --since 24h vb_nginx 2>/dev/null | awk '
+# The single awk pass over a 24h `docker logs vb_nginx` window. Kept here, out of
+# the ssh script, so a test can render it and run it against a synthetic log —
+# the slow-tail grading downstream depends on the concentration fields this emits
+# (peak hour, distinct IPs), and there is no other way to exercise them.
+#
+# Braces are DOUBLED because the program is rendered with `str.format` (which is
+# also what substitutes `{surface_classifier}`) — the same escaping the enclosing
+# f-string used to require, so the body moved here verbatim.
+_NGINX_AWK_TEMPLATE = r"""
   {{
     total++
     # Fields: $1=real-client-IP $4=[date $5=tz] $6="METHOD $7=/uri $8=HTTP/x.x" $9=status $10=bytes $11=request_time $12=referer $13+ =UA
@@ -524,7 +450,19 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
       surf_sum_ms[surf] += rt * 1000
       if (rt >= 1)  surf_n1[surf]++
       if (rt >= 3)  surf_n3[surf]++
-      if (rt >= 10) surf_n10[surf]++
+      if (rt >= 10) {{
+        surf_n10[surf]++
+        # WHERE the >10s hits sit, not just how many: the busiest clock hour and
+        # the distinct clients. A one-hour cluster spread over many IPs is a
+        # concurrency burst (a proxy swarm saturating gunicorn workers), which is
+        # self-resolving; the same count spread over the day, or concentrated on a
+        # few clients, is a chronic slow path. The grader needs both to tell them
+        # apart — see _slow_tail_shape. Bucket by DAY+hour (substr past the
+        # opening bracket, e.g. 29/Jul/2026:16), because a 24h window straddles
+        # one clock hour twice and merging those two would understate the peak.
+        surf_n10_hour[surf, substr($4, 2, 14)]++
+        surf_n10_ip[surf, $1]++
+      }}
     }}
     # Bot/scraper UA heuristic. Legit search engines (Googlebot, Bingbot) match
     # intentionally -- we want bot visibility. UA fields are $12 and beyond.
@@ -603,12 +541,120 @@ docker logs --since 24h vb_nginx 2>/dev/null | awk '
     }}
     print "rate_limit_429=" rate_limit_429+0
     print "bot_hits=" bot_hits+0
+    # Collapse the per-(surface,hour) and per-(surface,ip) tallies of the >10s
+    # tail into the two scalars the grader reads: the busiest single hour, and
+    # how many distinct clients were involved. SUBSEP (not "|") is the key
+    # separator: split() treats its separator as a regex, where a literal "|"
+    # is alternation, and a surface name is not guaranteed pipe-free forever.
+    for (k in surf_n10_hour) {{
+      split(k, kp, SUBSEP)
+      if (surf_n10_hour[k] > n10_peak_hour[kp[1]]) n10_peak_hour[kp[1]] = surf_n10_hour[k]
+    }}
+    for (k in surf_n10_ip) {{ split(k, kp, SUBSEP); n10_ips[kp[1]]++ }}
     # Per-surface latency (page hits only). Format:
-    #   surf=<name>|count|sum_ms|n_over_1s|n_over_3s|n_over_10s
+    #   surf=<name>|count|sum_ms|n_over_1s|n_over_3s|n_over_10s|n10_peak_hour|n10_distinct_ips
     for (s in surf_count) {{
-      print "surf=" s "|" surf_count[s]+0 "|" surf_sum_ms[s]+0 "|" surf_n1[s]+0 "|" surf_n3[s]+0 "|" surf_n10[s]+0
+      print "surf=" s "|" surf_count[s]+0 "|" surf_sum_ms[s]+0 "|" surf_n1[s]+0 "|" surf_n3[s]+0 "|" surf_n10[s]+0 "|" n10_peak_hour[s]+0 "|" n10_ips[s]+0
     }}
   }}
+"""
+
+
+def _nginx_awk_program() -> str:
+    """The awk program, with the surface classifier rendered in."""
+    return _NGINX_AWK_TEMPLATE.format(
+        surface_classifier=_awk_surface_classifier()).strip("\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSH: gather everything in one round-trip with section markers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_ssh(script: str, timeout: int = 45) -> str:
+    cmd = [
+        "ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR",
+        "-o", f"ConnectTimeout={timeout}",
+        SSH_ALIAS, "bash", "-s",
+    ]
+    res = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=timeout + 5)
+    if res.returncode != 0:
+        raise RuntimeError(f"ssh failed (rc={res.returncode}): {res.stderr.strip() or res.stdout.strip()}")
+    return res.stdout
+
+
+def _parse_sectioned(raw: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current = None
+    for line in raw.splitlines():
+        if line.startswith("==SECTION:") and line.endswith("=="):
+            current = line[len("==SECTION:"):-2]
+            sections[current] = []
+        elif current is not None:
+            sections[current].append(line)
+    return {k: "\n".join(v) for k, v in sections.items()}
+
+
+def _gather_homeserver_snapshot() -> dict[str, str]:
+    """One SSH round-trip. Everything we want from the homeserver."""
+    # Single multi-line script. Each section marker is a `printf` so we can
+    # rely on exact form. `set +e` so a single failing command doesn't kill
+    # the whole snapshot — we want partial data.
+    # Off-box backup migrated to the shared backup_blob.sh cron (2026-06): it
+    # writes to /opt/stack/_shared/logs/, NOT the legacy {stack}/logs/cron/backup.log
+    # (which froze at 2026-06-17 and produced a daily false "backup FAILING" RED).
+    prod_bak_log = "/opt/stack/_shared/logs/backup_visa_bulletin.log"
+
+    # Postgres signals — run inside vb_postgres so we don't need a libpq on
+    # the host. We surface (a) newest published bulletin (data freshness),
+    # (b) last successful ingest_run.completed_at, (c) active connections.
+    psql = (
+        "docker exec vb_postgres psql -U visa_bulletin_user -d visa_bulletin "
+        "-tA -F'|' -c"
+    )
+
+    # One taxonomy, two scopes: the awk reducer classifies by the same
+    # SURFACE_PATTERNS the GoatCounter report buckets by.
+    nginx_awk = _nginx_awk_program()
+
+    script = rf"""
+set +e
+printf '==SECTION:containers==\n'
+docker ps -a --filter 'name=vb_' --format '{{{{.Names}}}}|{{{{.Status}}}}|{{{{.State}}}}'
+printf '==SECTION:resources==\n'
+df -h /
+free -m | grep -E '^Mem:'
+nproc
+cat /proc/loadavg
+printf '==SECTION:backup==\n'
+if [ -f {shlex.quote(prod_bak_log)} ]; then
+  stat -c '%Y' {shlex.quote(prod_bak_log)}
+  tail -50 {shlex.quote(prod_bak_log)}
+else
+  echo MISSING
+fi
+printf '==SECTION:sitemap==\n'
+if [ -f /opt/stack/visa_bulletin/staticfiles/sitemap.xml ]; then
+  stat -c '%Y|%s' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
+  grep -c '<loc>' /opt/stack/visa_bulletin/staticfiles/sitemap.xml
+else
+  echo MISSING
+fi
+printf '==SECTION:postgres==\n'
+{psql} "SELECT MAX(publication_date) FROM bulletin;" 2>&1
+{psql} "SELECT MAX(completed_at) FROM ingest_run WHERE status=3;" 2>&1
+{psql} "SELECT count(*), max(EXTRACT(EPOCH FROM (now()-state_change))) FROM pg_stat_activity WHERE datname='visa_bulletin';" 2>&1
+printf '==SECTION:dol_sources==\n'
+{psql} "SELECT url FROM ingest_data_source WHERE source_type IN ('lca','perm','perm_disclosure');" 2>&1
+printf '==SECTION:nginx==\n'
+# nginx logs go to stdout (access.log is a symlink to /dev/stdout in
+# nginx:alpine), so the file is not seekable — read via `docker logs`.
+# `--since 24h` lets the daemon do time-window filtering (~1s for ~70k lines).
+# Single awk pass emits everything: status mix, top 5xx/4xx paths, scanner
+# probes, 429 count, bot-UA hits, AND unique-IP counts. $1 (remote_addr) is
+# now the real client IP since the real_ip_module rewrites it from
+# CF-Connecting-IP (config block in visa_bulletin.conf, added 2026-05-14).
+docker logs --since 24h vb_nginx 2>/dev/null | awk '
+{nginx_awk}
 '
 printf '==SECTION:cloudflared==\n'
 docker inspect vb_cloudflared --format '{{{{.RestartCount}}}}|{{{{.State.Status}}}}' 2>/dev/null
@@ -881,7 +927,7 @@ def _parse_nginx(text: str) -> dict:
             except ValueError:
                 pass
         elif key == "surf":
-            # name|count|sum_ms|n_over_1s|n_over_3s|n_over_10s
+            # name|count|sum_ms|n_over_1s|n_over_3s|n_over_10s|n10_peak_hour|n10_distinct_ips
             parts = val.split("|")
             if len(parts) >= 6:
                 name = parts[0]
@@ -891,6 +937,12 @@ def _parse_nginx(text: str) -> dict:
                     n1 = int(parts[3])
                     n3 = int(parts[4])
                     n10 = int(parts[5])
+                    # The two concentration fields trail the original six so an
+                    # awk that predates them still parses; absent, they read 0,
+                    # which _slow_tail_shape treats as "no shape data" and grades
+                    # the strict old way. Missing data must not excuse a tail.
+                    peak_hour = int(parts[6]) if len(parts) >= 7 else 0
+                    n10_ips = int(parts[7]) if len(parts) >= 8 else 0
                 except ValueError:
                     continue
                 out["surface_latency"][name] = {
@@ -900,6 +952,8 @@ def _parse_nginx(text: str) -> dict:
                     "n_over_1s": n1,
                     "n_over_3s": n3,
                     "n_over_10s": n10,
+                    "n10_peak_hour": peak_hour,
+                    "n10_distinct_ips": n10_ips,
                 }
     out["scanner_paths"].sort(key=lambda x: -x[1])
     return out
@@ -2235,6 +2289,57 @@ PERF_RED_N10 = 5
 PERF_HEAVY_SURFACES = {"predictions"}
 PERF_HEAVY_SPIKE_N10 = 30
 
+# A slow tail is graded on CONCENTRATION, not on its raw count, because the two
+# things that produce one need opposite responses. A chronic latency regression
+# spreads its >10s hits across the day and often across few clients (one slow
+# query path, hit repeatedly). A concurrency burst — a residential-proxy swarm
+# hitting profile pages in parallel and saturating gunicorn workers, the
+# signature in analytics.md §5 — piles them into a single hour, one or two per
+# client, every one still returning 200, and is over before anyone reads the
+# digest. Grading the burst as a regression led the whole digest RED on
+# 2026-07-29 (101 >10s in 24h, 93 of them inside 16:00 UTC, ~90 distinct IPs,
+# max 5 per IP, 5xx flat at 0.01%, means outside the burst all healthy).
+#
+# So a tail is discounted only when BOTH hold: one hour dominates it, AND it
+# came from many distinct clients. Either alone still grades — a single hour
+# from three IPs is a slow path someone is hammering, and a well-spread tail is
+# chronic however many clients produced it.
+PERF_BURST_PEAK_HOUR_SHARE = 0.7   # >=70% of the >10s hits inside one clock hour
+PERF_BURST_MIN_DISTINCT_IPS = 5    # floor, so a 3-hit "burst" cannot excuse itself
+PERF_BURST_IP_RATIO = 0.5          # >=0.5 distinct clients per >10s hit
+
+
+class SlowTailShape(NamedTuple):
+    """How one surface's >10s tail is distributed in time and across clients."""
+    n10: int
+    peak_hour: int      # >10s hits inside the busiest single clock hour
+    distinct_ips: int   # distinct client IPs among the >10s hits
+    is_burst: bool      # short concurrency burst — informational, never graded
+
+
+def _slow_tail_shape(lat_row: dict | None) -> SlowTailShape:
+    """Classify a surface's >10s tail as a burst or a regression.
+
+    With no concentration data (`n10_peak_hour`/`n10_distinct_ips` absent or 0 —
+    an older awk on the box, or simply no slow tail) this returns
+    `is_burst=False`, i.e. the strict pre-2026-08 grading. The discount has to be
+    earned by evidence; missing evidence must never silence a tail.
+    """
+    if not lat_row:
+        return SlowTailShape(0, 0, 0, False)
+    n10 = int(lat_row.get("n_over_10s") or 0)
+    peak_hour = int(lat_row.get("n10_peak_hour") or 0)
+    distinct_ips = int(lat_row.get("n10_distinct_ips") or 0)
+    if n10 <= 0 or peak_hour <= 0 or distinct_ips <= 0:
+        return SlowTailShape(n10, peak_hour, distinct_ips, False)
+    is_burst = (
+        peak_hour >= n10 * PERF_BURST_PEAK_HOUR_SHARE
+        and distinct_ips >= PERF_BURST_MIN_DISTINCT_IPS
+        and distinct_ips >= n10 * PERF_BURST_IP_RATIO
+    )
+    return SlowTailShape(n10, peak_hour, distinct_ips, is_burst)
+
+
 # Surfaces we treat as user-facing "top properties" — the others (api,
 # static_meta, other) are not interesting in this section.
 TOP_PROPERTY_SURFACES = [
@@ -2295,6 +2400,13 @@ def _section_top_properties(
         lat_row = lat.get(surf)
         n3 = lat_row["n_over_3s"] if lat_row else 0
         n10 = lat_row["n_over_10s"] if lat_row else 0
+        if _slow_tail_shape(lat_row).is_burst:
+            # A one-hour, many-client cluster is a traffic event, not a
+            # regression: it takes no part in grading, on the heavy-surface
+            # branch or the strict one. The count is still rendered (with the
+            # burst shape beside it) in the per-property block below, so the
+            # reader sees it — it just does not colour the digest.
+            n10 = 0
         if surf in PERF_HEAVY_SURFACES:
             # Known-heavy Plotly render — routine slow tail is not a regression.
             # Never RED; only warn (yellow) on a genuine spike. The per-property
@@ -2431,6 +2543,12 @@ def _format_property_block(
             tail_bits.append(f"**{n10} >10s**")
         tail = ", ".join(tail_bits) if tail_bits else "no slow tail"
         perf_bit = f"mean **{mean_ms}ms** over {_humanize(cnt)} hits 24h ({tail})"
+        shape = _slow_tail_shape(lat_row)
+        if shape.is_burst:
+            perf_bit += (
+                f" — burst: {shape.peak_hour} of {shape.n10} landed in one hour "
+                f"across {shape.distinct_ips} client IPs, so the tail is not graded"
+            )
         if not gc_row and cnt > 1000:
             perf_bit += " ⚠️ **anomaly: nginx traffic but invisible to GC**"
         lines.append(f"  Perf: {perf_bit}")

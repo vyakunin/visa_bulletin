@@ -14,10 +14,13 @@ Two routine, healthy conditions used to escalate the digest every morning:
 Run: `uv run pytest test_daily_checkup_server.py` from this dir.
 """
 
+import shutil
+import subprocess
 import time
 
 import daily_checkup_server as m
 import httpx
+import pytest
 
 # ── Perf section: heavy-render surface must not false-alarm ──────────────────
 
@@ -565,3 +568,184 @@ def test_fallback_rows_render_no_share_or_pages():
         assert "of site" not in ln, ln
         assert "page" not in ln, ln
         assert "None" not in ln, ln
+
+
+# ── Slow tail: a concurrency burst is not a latency regression (2026-08-09) ───
+#
+# The 2026-07-29 digest led RED on the >10s tail. Nothing was wrong: 101 requests
+# over 10s in 24h, but 93 of them inside a single hour (16:00 UTC), spread over
+# ~90 distinct IPs at a max of 5 each — the residential-proxy-swarm signature in
+# analytics.md §5, hitting profile pages concurrently and saturating gunicorn
+# workers. Every one returned 200, 5xx stayed at 0.01%, and the means outside the
+# burst were healthy (job-title 245ms/26.8k, employer 208ms/22.8k, salaries
+# 168ms/16.5k). So the digest paged for a self-resolving traffic event.
+#
+# Both directions are pinned below, at both levels — through the real awk on a
+# synthetic log, and directly on the grading rule. A fix that only silences the
+# false positive is worthless if it also stops catching the true one.
+
+_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+
+def _log_line(ip: str, hour: int, rt: float, *, minute: int = 0, second: int = 0,
+              path: str = "/employer/acme-corp/") -> str:
+    """One nginx access line in the prod log_format (combined + $request_time)."""
+    return (f'{ip} - - [29/Jul/2026:{hour:02d}:{minute:02d}:{second:02d} +0000] '
+            f'"GET {path} HTTP/1.1" 200 51715 {rt} "-" "{_UA}"')
+
+
+def _run_awk(lines: list[str]) -> dict:
+    """Run the REAL awk reducer over a synthetic log and parse its output.
+
+    This is the only way to exercise the concentration fields end-to-end: they
+    are computed in awk on the box, and a parser that agrees with an awk nobody
+    ran is not evidence.
+    """
+    awk = shutil.which("awk")
+    if not awk:
+        pytest.skip("awk not on PATH")
+    proc = subprocess.run(
+        [awk, m._nginx_awk_program()],
+        input="\n".join(lines) + "\n", capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return m._parse_nginx(proc.stdout)
+
+
+def _healthy_background(n: int = 400) -> list[str]:
+    """Fast 200s so the surface has a realistic mean and hit count."""
+    return [_log_line(f"10.20.{i // 250}.{i % 250}", hour=i % 24, rt=0.208,
+                      minute=i % 60, second=i % 60)
+            for i in range(n)]
+
+
+def _burst_log() -> list[str]:
+    """The 2026-07-29 shape: 101 >10s, 93 inside 16:00 UTC, ~98 distinct clients.
+
+    Max 5 hits per IP, matching the measured swarm (top offender 209.249.178.250
+    with 5) — nobody is hammering one slow path; many clients each arrive once.
+    """
+    lines = _healthy_background()
+    # 93 in the 16:00 hour: 87 one-hit clients + 3 clients with 2 hits each.
+    for i in range(87):
+        lines.append(_log_line(f"209.249.{i // 250}.{i % 250 + 1}", hour=16,
+                               rt=12.4, minute=i % 60, second=i % 60))
+    for i in range(3):
+        for rep in range(2):
+            lines.append(_log_line(f"45.83.{i}.10", hour=16, rt=11.9,
+                                   minute=30 + rep, second=i))
+    # The 8 stragglers, spread over 01/02/04/14/19 as measured.
+    for i, hour in enumerate([1, 2, 2, 4, 14, 14, 19, 19]):
+        lines.append(_log_line(f"77.88.{i}.5", hour=hour, rt=10.7, minute=i))
+    return lines
+
+
+def _chronic_log() -> list[str]:
+    """The same 101 >10s hits, spread evenly across the 24h window.
+
+    Same raw count, opposite meaning: a slow path that is slow all day. Distinct
+    clients are deliberately kept HIGH (one per hit) so the only thing separating
+    this from the burst is the time distribution — if the rule leaned on the IP
+    count alone it would wrongly excuse this too.
+    """
+    lines = _healthy_background()
+    for i in range(101):
+        lines.append(_log_line(f"88.99.{i // 250}.{i % 250 + 1}", hour=i % 24,
+                               rt=12.4, minute=i % 60, second=i % 60))
+    return lines
+
+
+def test_replay_burst_does_not_grade_red():
+    """REPLAY: the 2026-07-29 swarm must not drive the digest RED.
+
+    It stays YELLOW, and that is the intended outcome, not a near-miss: 101 slow
+    requests did happen and the >3s watch line is entitled to say so. What it may
+    no longer do is claim a latency regression needing action today.
+    """
+    nx = _run_awk(_burst_log())
+    row = nx["surface_latency"]["employer_profile"]
+    assert row["n_over_10s"] == 101, row
+    assert row["n10_peak_hour"] == 93, row
+    assert row["n10_distinct_ips"] == 98, row
+    assert m._slow_tail_shape(row).is_burst
+
+    section, status = m._section_top_properties(nx, None)
+    assert status != "red", status
+    assert status == "yellow", status
+    # The raw count stays visible, with the shape that explains the grade.
+    assert "101 >10s" in section["body"], section["body"]
+    assert "93 of 101 landed in one hour across 98 client IPs" in section["body"]
+
+
+def test_replay_chronic_slow_tail_still_grades_red():
+    """REPLAY: the same 101 hits spread across the day is still a regression."""
+    nx = _run_awk(_chronic_log())
+    row = nx["surface_latency"]["employer_profile"]
+    assert row["n_over_10s"] == 101, row
+    assert row["n10_peak_hour"] <= 5, row       # ~4-5 per hour, no dominant hour
+    assert row["n10_distinct_ips"] == 101, row  # many clients, yet NOT excused
+    assert not m._slow_tail_shape(row).is_burst
+
+    _section, status = m._section_top_properties(nx, None)
+    assert status == "red", status
+
+
+def test_awk_emits_concentration_only_for_the_slow_tail():
+    """The new fields describe the >10s hits, not the surface's whole traffic."""
+    nx = _run_awk(_healthy_background())
+    row = nx["surface_latency"]["employer_profile"]
+    assert row["count"] == 400 and row["n_over_10s"] == 0
+    assert row["n10_peak_hour"] == 0 and row["n10_distinct_ips"] == 0
+
+
+# ── The grading rule itself, without the awk round-trip ──────────────────────
+
+def _tail(n10: int, peak_hour: int, distinct_ips: int, n3: int | None = None) -> dict:
+    row = _lat(n10=n10, n3=n10 if n3 is None else n3)
+    row["n10_peak_hour"] = peak_hour
+    row["n10_distinct_ips"] = distinct_ips
+    return row
+
+
+def test_single_hour_from_few_clients_is_a_slow_path_not_a_burst():
+    """One hour, 3 clients, 40 slow hits = someone hammering a slow query → RED.
+
+    This is the half a naive "it was all in one hour, ignore it" rule would miss.
+    """
+    row = _tail(n10=40, peak_hour=40, distinct_ips=3)
+    assert not m._slow_tail_shape(row).is_burst
+    _s, status = m._section_top_properties({"surface_latency": {"salaries": row}}, None)
+    assert status == "red", status
+
+
+def test_many_clients_but_spread_over_the_day_is_not_a_burst():
+    """Many distinct clients does not excuse a tail that never concentrates."""
+    assert not m._slow_tail_shape(_tail(n10=60, peak_hour=8, distinct_ips=60)).is_burst
+
+
+def test_tiny_tail_cannot_excuse_itself_as_a_burst():
+    """3 hits in one hour from 3 IPs clears the ratios but not the IP floor.
+
+    Without the floor, any handful of slow requests would self-classify as a
+    burst — the discount has to mean something.
+    """
+    assert not m._slow_tail_shape(_tail(n10=3, peak_hour=3, distinct_ips=3)).is_burst
+
+
+def test_missing_concentration_data_grades_the_strict_old_way():
+    """An awk that predates the fields (a stale box) must not silence the tail."""
+    row = _lat(n10=m.PERF_RED_N10 * 4)          # no n10_peak_hour / n10_distinct_ips
+    assert not m._slow_tail_shape(row).is_burst
+    _s, status = m._section_top_properties({"surface_latency": {"salaries": row}}, None)
+    assert status == "red", status
+
+
+def test_burst_on_the_heavy_render_surface_is_not_even_yellow():
+    """The carve-out this generalizes: predictions is already never RED, but a
+    burst there must not trip its spike-YELLOW either."""
+    row = _tail(n10=m.PERF_HEAVY_SPIKE_N10 + 20, peak_hour=m.PERF_HEAVY_SPIKE_N10 + 18,
+                distinct_ips=m.PERF_HEAVY_SPIKE_N10 + 15, n3=0)
+    assert m._slow_tail_shape(row).is_burst
+    _s, status = m._section_top_properties({"surface_latency": {"predictions": row}}, None)
+    assert status == "green", status
