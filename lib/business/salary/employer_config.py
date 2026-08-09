@@ -2,10 +2,14 @@
 Employer-specific clustering configuration.
 
 This module implements the EntityClusteringConfig protocol for employer clustering,
-delegating to the existing employer_clustering.py functions.
+so the generic engine in lib/business/clustering_engine.py can drive employers.
+
+It must not import employer_clustering: that module instantiates
+EmployerClusteringConfig at import time, so the pair would form a cycle. The
+name-comparison logic both need lives in the structural_words leaf.
 """
 
-from lib.business.salary import employer_clustering
+from lib.business.salary import structural_words
 from lib.business.salary.generic_words import VERY_GENERIC_WORDS
 from lib.utils.location_utils import normalize_state_code
 from models.salary import Employer, EmployerCluster, EmployerClusteringReview
@@ -20,11 +24,11 @@ class EmployerClusteringConfig:
 
     def extract_structural_words(self, name: str) -> set[str]:
         """Extract structural words that distinguish different employers."""
-        return employer_clustering._extract_structural_words(name)
+        return structural_words.extract_structural_words(name)
 
     def has_conflicting_structural_words(self, name1: str, name2: str) -> bool:
         """Check if two employer names have conflicting structural words."""
-        return employer_clustering._has_conflicting_structural_words(name1, name2)
+        return structural_words.has_conflicting_structural_words(name1, name2)
 
     def should_apply_additional_filter(
         self, entity1: Employer, entity2: Employer, norm1: str, norm2: str

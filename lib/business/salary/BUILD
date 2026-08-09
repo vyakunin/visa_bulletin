@@ -32,11 +32,23 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+# Leaf: the structural-word surface employer_config and employer_clustering share.
+# Keeps those two out of an import cycle, so keep its deps to generic_words.
+py_library(
+    name = "structural_words",
+    srcs = ["structural_words.py"],
+    deps = [
+        ":generic_words",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "employer_config",
     srcs = ["employer_config.py"],
     deps = [
         ":generic_words",
+        ":structural_words",
         "//lib/utils:location_utils",
         "//models:salary",
     ],
@@ -59,6 +71,7 @@ py_library(
     deps = [
         ":employer_config",
         ":generic_words",
+        ":structural_words",
         "//lib/business:clustering_engine",
         "//lib/utils:location_utils",
         "//models:salary",

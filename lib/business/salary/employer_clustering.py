@@ -1,12 +1,12 @@
 """Employer clustering logic for grouping similar employers"""
 
-import re
 from typing import Optional
 
 from rapidfuzz import fuzz
 
 from lib.business import clustering_engine
 from lib.business.salary.employer_config import EmployerClusteringConfig
+from lib.business.salary.structural_words import has_conflicting_structural_words
 from models.salary import Employer
 
 # Create config instance for use in public API functions
@@ -47,149 +47,6 @@ def _get_fuzzy_bucket_candidates(normalized_name: str) -> set[str]:
         candidates.add(f"{prefix}...{suffix}")
 
     return candidates
-
-
-def _extract_structural_words(name: str) -> set[str]:
-    """
-    Extract structural/generic words that could distinguish companies.
-
-    These are words that, if different between two names, suggest different entities.
-
-    Note: This includes GENERIC_WORDS plus additional distinguishing words (geographic,
-    distinguishing generic words, etc.) that can help identify different companies.
-    """
-    from lib.business.salary.generic_words import (
-        DISTINGUISHING_GENERIC_WORDS,
-        GENERIC_WORDS,
-    )
-
-    # Words that distinguish company types/structures
-    # Includes GENERIC_WORDS (which can distinguish when different) plus additional words
-    STRUCTURAL_WORDS = (  # noqa: N806
-        GENERIC_WORDS
-        | DISTINGUISHING_GENERIC_WORDS
-        | {
-            "north",
-            "south",
-            "east",
-            "west",  # Geographic qualifiers can distinguish
-            "america",
-            "americas",  # "North America" vs other regions
-        }
-    )
-
-    # Normalize and extract words
-    normalized = name.lower()
-    # Remove punctuation, keep words
-    words = set(re.findall(r"\b\w+\b", normalized))
-
-    # Return intersection with structural words
-    return words & STRUCTURAL_WORDS
-
-
-def _has_conflicting_structural_words(name1: str, name2: str) -> bool:
-    """
-    Check if two names have conflicting structural words that suggest different entities.
-
-    Examples:
-    - "Macro Consultants" vs "Macro International" → True (Consultants ≠ International)
-    - "SYNAPSE GROUP" vs "SYNAPSE TECHNOLOGIES" → True (Group ≠ Technologies)
-    - "Edgesoft Corp" vs "Edgesoft Inc" → False (Corp/Inc are equivalent corporate suffixes)
-    """
-    structural1 = _extract_structural_words(name1)
-    structural2 = _extract_structural_words(name2)
-
-    # Equivalent corporate suffixes - these don't conflict (all mean "company")
-    # Use subset of GENERIC_WORDS for corporate suffixes
-    equivalent_suffixes = {
-        "corporation",
-        "corp",
-        "incorporated",
-        "inc",
-        "llc",
-        "limited",
-        "ltd",
-        "company",
-        "co",
-    }  # Subset of GENERIC_WORDS - corporate entity types
-
-    # Equivalent word variants (singular/plural, verb forms, etc.)
-    # PRECISION FIX: Reduced equivalent variants - many of these should actually conflict
-    # Only keep truly equivalent variants (singular/plural, verb forms of same word)
-    equivalent_variants = [
-        {
-            "consultants",
-            "consulting",
-            "consultant",
-        },  # Same concept: consulting business
-        {"technologies", "technology", "tech"},  # Same concept: tech company
-        {"industries", "industry"},  # Same concept: industry
-        {"enterprises", "enterprise"},  # Same concept: enterprise
-        {"holdings", "holding"},  # Same concept: holding company
-        {"groups", "group"},  # Same concept: group
-        {"solutions", "solution"},  # Same concept: solution provider
-        {"services", "service"},  # Same concept: service provider
-        {"systems", "system"},  # Same concept: system provider
-        {"america", "americas"},  # Same concept: geographic region
-        {"us", "usa"},  # Same concept: United States (BBC News US vs BBC News USA)
-        {"global", "international"},  # Same concept: worldwide operations
-    ]
-
-    # PRECISION FIX: Add conflicting word pairs that indicate different companies
-    # These words should NOT be treated as equivalent - they distinguish companies
-    # Format: each set contains words that conflict with each other
-    conflicting_word_groups = [
-        # Business type conflicts - these indicate different company types
-        {"management", "holdings"},  # Management company vs holding company
-        {"management", "corporation"},  # Management vs corporation (when both present)
-        {"technologies", "consulting"},  # Tech company vs consulting firm
-        {"technologies", "partners"},  # Tech company vs partnership
-        {"consulting", "partners"},  # Consulting vs partnership
-        {"management", "partners"},  # Management vs partnership
-        # Industry/domain conflicts
-        {"capital", "holdings"},  # Capital management vs holdings
-        {"capital", "partners"},  # Capital vs partnership
-    ]
-
-    # Normalize: replace equivalent words with a canonical form
-    def normalize_group(word_set: set[str], equiv_groups: list[set[str]]) -> set[str]:
-        """Replace equivalent words with first item in group"""
-        normalized = set(word_set)
-        for equiv_group in equiv_groups:
-            if normalized & equiv_group:
-                # Replace all variants with canonical (first one, sorted for determinism)
-                canonical = sorted(equiv_group)[0]
-                normalized = normalized - equiv_group
-                normalized.add(canonical)
-        return normalized
-
-    # Remove equivalent suffixes (they don't distinguish companies)
-    structural1_no_suffix = structural1 - equivalent_suffixes
-    structural2_no_suffix = structural2 - equivalent_suffixes
-
-    # Normalize equivalent variants
-    structural1_normalized = normalize_group(structural1_no_suffix, equivalent_variants)
-    structural2_normalized = normalize_group(structural2_no_suffix, equivalent_variants)
-
-    # PRECISION FIX: Check for conflicting word groups
-    # If one name has a word from a conflict group and the other name has a different word
-    # from the same conflict group, it's a conflict
-    for conflict_group in conflicting_word_groups:
-        words1_in_group = conflict_group & structural1_normalized
-        words2_in_group = conflict_group & structural2_normalized
-        # If both names have words from the same conflict group, but different words
-        # (e.g., one has "management", other has "holdings" from {management, holdings})
-        if words1_in_group and words2_in_group and words1_in_group != words2_in_group:
-            return True
-
-    # If both have structural words remaining and they differ, it's a conflict
-    if structural1_normalized and structural2_normalized:
-        # Check if they have different structural words
-        if structural1_normalized != structural2_normalized:
-            # Different structural words suggest different entities
-            return True
-
-    return False
 
 
 def _check_hyphen_variation(
@@ -340,7 +197,7 @@ def _check_substring_match(
             "Substring match rejected: different geographic qualifiers (indicates different entities)",
         )
 
-    has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
+    has_conflict = has_conflicting_structural_words(employer1.name, employer2.name)
     if has_conflict:
         return (
             False,
@@ -403,7 +260,7 @@ def _check_similarity_match(
     else:
         similarity = fuzz.ratio(norm1, norm2) / 100.0
 
-    has_conflict = _has_conflicting_structural_words(employer1.name, employer2.name)
+    has_conflict = has_conflicting_structural_words(employer1.name, employer2.name)
     if has_conflict and similarity < 0.95:
         return (False, 0.0, "Conflicting structural words indicate different entities")
 

@@ -57,17 +57,6 @@ MACRO_DEPS = {
 # DIFFERENT ways — the fix for each is to break the cycle in code (extract the
 # shared surface into a third module), never to add a dep.
 ALLOWLIST: set[tuple[str, str]] = {
-    # employer_config.py:8 <-> employer_clustering.py:9. Fails at IMPORT time, and
-    # only in one direction: importing employer_config first raises ImportError
-    # ("cannot import name 'EmployerClusteringConfig' from partially initialized
-    # module"), because employer_clustering.py:13 instantiates the class at module
-    # level. Importing employer_clustering first works — employer_config binds the
-    # module object, not a name, and only touches attributes at call time. Nothing
-    # in the repo imports employer_config directly except employer_clustering, so
-    # the failing direction is never exercised today.
-    # Fix: move _extract_structural_words / _has_conflicting_structural_words
-    # (the only two symbols employer_config uses) into a leaf module.
-    ("//lib/business/salary:employer_config", "lib.business.salary.employer_clustering"),
     # expert_pool.py:130,196,667 <-> solver.py:446,548,588. All six are lazy
     # (in-function), so this fails at CALL time with ModuleNotFoundError when a
     # target depending only on expert_pool invokes the physics experts — reachable
