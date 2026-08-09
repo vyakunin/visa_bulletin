@@ -12,12 +12,23 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 
 from lib.business.i129.pay_comparison import (
     MIN_COMPARISON_N,
     get_employer_pay_comparison,
     get_soc_pay_comparison,
+)
+
+# The SQL-correctness tests below all query the SAME occupation slug against
+# different fixtures, so the result cache in get_soc_pay_comparison would serve
+# the first test's answer to the rest. They are about the query, not the cache.
+_NO_CACHE = override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+)
+_LOCMEM_CACHE = override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 )
 from lib.business.salary.soc_occupations import Occupation
 from models.enums.case_status import CaseStatus
@@ -60,6 +71,7 @@ def _pair(
     )
 
 
+@_NO_CACHE
 class TestI129PayComparison(TestCase):
     def test_matched_cell_computes_three_way(self):
         # 60 matched pairs, all paid 10% above the posted LCA wage.
@@ -117,6 +129,7 @@ class TestI129PayComparison(TestCase):
         assert cmp.median_actual == 110000
 
 
+@_NO_CACHE
 class TestI129EmployerPayComparison(TestCase):
     def test_scopes_to_the_employer_cluster(self):
         cluster_a = EmployerCluster.objects.create(canonical_name="Acme", slug="acme")
@@ -144,3 +157,36 @@ class TestI129EmployerPayComparison(TestCase):
 
     def test_none_cluster_returns_none(self):
         assert get_employer_pay_comparison(None) is None
+
+
+@_LOCMEM_CACHE
+class TestSocComparisonResultCache(TestCase):
+    """The matched-triple aggregate costs ~1.7-2.0s whatever the occupation, and
+    `/h1b-salary/` serves crawlers straight past the rendered-page cache — so a
+    repeat request must not re-run it.
+    """
+
+    def setUp(self):
+        cache.clear()
+
+    def test_repeat_call_does_not_rerun_the_aggregate(self):
+        for i in range(60):
+            _pair(f"CASE-{i}", actual=110000, lca=100000)
+
+        first = get_soc_pay_comparison(_OCC)
+        assert first is not None and first.n == 60
+        with self.assertNumQueries(0):
+            again = get_soc_pay_comparison(_OCC)
+        assert again == first
+
+    def test_suppressed_result_is_cached_not_recomputed(self):
+        # A suppressed cell returns None, which is also what a cache miss looks
+        # like. Most occupations fall under MIN_COMPARISON_N, so storing a bare
+        # None would leave exactly them re-running the page's most expensive
+        # query on every request.
+        for i in range(MIN_COMPARISON_N - 1):
+            _pair(f"THIN-{i}", actual=110000, lca=100000)
+
+        assert get_soc_pay_comparison(_OCC) is None
+        with self.assertNumQueries(0):
+            assert get_soc_pay_comparison(_OCC) is None
