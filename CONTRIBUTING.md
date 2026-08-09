@@ -14,6 +14,11 @@
 bazel --version
 ```
 
+2b. Install the git hooks (git does not clone `.git/hooks`, so a fresh clone has none):
+```bash
+./scripts/install_git_hooks.sh
+```
+
 3. Activate the virtual environment (for running scripts):
 ```bash
 source ~/visa-bulletin-venv/bin/activate
@@ -101,17 +106,36 @@ The Bazel-based pre-commit hook will automatically:
 
 ### Pre-Commit Hook
 
-The `.git/hooks/pre-commit` script runs automatically before each commit and:
-- Checks for Bazel installation
-- Runs `tools/bazel_dep_check.py` over staged `*.py` / `BUILD` / `*.bzl` (fast, before the test pass)
-- Runs the full test suite via Bazel
-- Blocks the commit if the dep check or any test fails
-- Provides fast execution through Bazel's caching
+The gate is tracked at **`tools/hooks/pre-commit`** — edit it there, not in `.git/`.
+Install it into your clone with:
 
-`.git/hooks/` is not version-controlled, so a fresh clone has no hook until you add
-one. The dep check does not depend on that: the `Test` workflow runs
-`python3 tools/bazel_dep_check.py` as its own step, so an undeclared first-party
-import fails CI whether or not the local hook is installed.
+```bash
+./scripts/install_git_hooks.sh          # symlink, so it cannot drift
+./scripts/install_git_hooks.sh --check  # verify it is installed and current
+```
+
+It symlinks rather than copies, so the hook you run is always the one on your
+branch. It installs into `$GIT_COMMON_DIR/hooks` (shared by every linked
+worktree) and deliberately does **not** set `core.hooksPath`: a repo-local
+setting there would shadow a machine-global hooks directory and silently
+disable whatever else it runs.
+
+Before each commit the hook:
+- Runs ruff on staged `*.py`
+- Runs `tools/bazel_dep_check.py` when any `*.py` / `BUILD` / `*.bzl` is staged
+  (fast, and before the slow test pass)
+- Runs the full test suite via Bazel
+- Blocks the commit if any of them fails
+
+It fails **closed**: a non-zero Bazel exit it cannot positively attribute to a
+known shape (test failures, timeouts, `NO STATUS`, shutdown segfaults, an
+analysis error) stops the commit rather than being reported as a pass. Its
+classification and file selection are pinned by `//tests:test_pre_commit_hook`.
+
+Because `.git/hooks` is not version-controlled, a clone that skips the installer
+has no local gate. The dep check does not depend on it either way: the `Test`
+workflow runs `python3 tools/bazel_dep_check.py` as its own step, so an
+undeclared first-party import fails CI regardless.
 
 **Do not bypass the hook.** Never use `git commit --no-verify`. If the hook fails, fix the issues (ruff or tests) then commit again.
 

@@ -86,6 +86,17 @@ pytest_py_test(
     ],
 )
 
+# No Django, no DB, no real bazel — drives the tracked hook against a throwaway
+# git repo with a stub `bazel` on PATH. Pins the pathspec that made nested BUILD
+# files invisible, and the exit-classification that twice reported a broken run
+# as a passing one.
+pytest_py_test(
+    name = "test_pre_commit_hook",
+    size = "small",
+    srcs = ["test_pre_commit_hook.py"],
+    data = ["//tools:hooks/pre-commit"],
+)
+
 django_py_test(
     name = "test_copy_schema",
     size = "medium",

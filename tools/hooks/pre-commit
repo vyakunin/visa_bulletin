@@ -1,0 +1,191 @@
+#!/bin/bash
+#
+# Pre-commit gate: ruff, then the Bazel dep check, then the test suite.
+#
+# THIS FILE IS THE CANONICAL COPY. Install it with:
+#     ./scripts/install_git_hooks.sh
+# which links it into $GIT_COMMON_DIR/hooks/pre-commit — the path the machine's
+# global core.hooksPath dispatcher chains to, if one is configured. Do not edit
+# the installed hook: the installer links rather than copies, so the file you
+# want is this one, and an edit there would be untracked and lost on reinstall.
+#
+# git does not version .git/hooks, so a fresh clone has NO gate until someone
+# runs the installer. That is why CI runs tools/bazel_dep_check.py as its own
+# step (.github/workflows/test.yml) — the dep check is enforced either way, and
+# this hook exists to catch it a push earlier.
+#
+
+set -e
+
+echo "🧪 Running pre-commit checks..."
+echo ""
+
+# Change to repository root
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+# Run ruff only on staged .py files (avoids blocking on pre-existing errors)
+STAGED_PY_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' | sed "s|^|$REPO_ROOT/|")
+if [ -n "$STAGED_PY_FILES" ]; then
+    echo "Running ruff on staged Python files..."
+    if echo "$STAGED_PY_FILES" | xargs bazel run //tools:ruff -- check --fix; then
+        echo "✅ Ruff checks passed!"
+    else
+        echo ""
+        echo "❌ Ruff checks failed! Please fix the issues before committing."
+        echo ""
+        exit 1
+    fi
+else
+    echo "No staged Python files — skipping ruff."
+fi
+echo ""
+
+# Check that every py target declares the first-party modules it imports.
+# Bazel does not enforce this for Python: an undeclared import keeps working
+# until a narrower target is built. Stdlib-only and ~1.5s, so it runs before the
+# slow test pass. See tools/bazel_dep_check.py for why it is not a bazel test.
+STAGED_DEP_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' '*BUILD' '*.bzl')
+# This hook lives in $GIT_COMMON_DIR/hooks, so every WORKTREE runs it — including
+# the staging/prod release worktrees, whose branches predate this tool and do not
+# ship it. Without this guard the hook aborted every commit made in those trees
+# with a bare "can't open file", which reads as a broken repo rather than a
+# branch that simply has no such gate. Skip loudly where the tool is absent; the
+# gate stays fully active on every branch that carries it.
+if [ -n "$STAGED_DEP_FILES" ] && [ ! -f tools/bazel_dep_check.py ]; then
+    echo "⏭️  Bazel dep check SKIPPED — tools/bazel_dep_check.py is not on this branch."
+    echo "   (Expected in the staging/prod release worktrees; never on main.)"
+    echo ""
+    STAGED_DEP_FILES=""
+fi
+if [ -n "$STAGED_DEP_FILES" ]; then
+    echo "Checking Bazel dep declarations..."
+    if python3 tools/bazel_dep_check.py; then
+        echo "✅ Bazel deps declared!"
+    else
+        echo ""
+        echo "❌ Undeclared first-party imports (see above)."
+        echo "   Add each listed dep to that target's BUILD entry."
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
+
+# Run tests only when Python/BUILD files are staged
+STAGED_CODE_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' '*BUILD' '*.bzl' 'MODULE.bazel')
+if [ -n "$STAGED_CODE_FILES" ]; then
+    echo "Running all tests with Bazel..."
+    set +e
+    TEST_OUTPUT=$(bazel test //tests:all --test_output=errors 2>&1)
+    TEST_EXIT=$?
+    set -e
+
+    if [ $TEST_EXIT -eq 0 ]; then
+        echo ""
+        echo "✅ All tests passed!"
+    else
+        # ---------------------------------------------------------------------
+        # Attribute the non-zero exit, or FAIL CLOSED.
+        #
+        # This block used to infer the meaning of a failed run by grepping for
+        # one word, so every exit shape that word did not cover was silently
+        # reclassified as whichever branch caught it last. It swallowed two
+        # separate incidents:
+        #   - an ANALYSIS error (dangling dep) prints no per-target line at all,
+        #     matched no FAILED, and was reported as "0 segfaults ✅" — that is
+        #     how a broken commit reached main on 2026-07-30 and left CI red and
+        #     untested for three days;
+        #   - a TIMEOUT prints "TIMEOUT", never "FAILED", and was reported as
+        #     "No test ran" over a run where 112 tests passed and 13 timed out
+        #     (2026-08-06). All three claims in that message were false.
+        #
+        # Both are the same defect. So: classify every per-target status line
+        # bazel printed, report each shape BY NAME, and treat anything that
+        # cannot be positively attributed as a failure. A shape nobody
+        # anticipated now stops the commit and prints the raw output, instead of
+        # inheriting the verdict of an unrelated branch.
+        # ---------------------------------------------------------------------
+        status_lines() {
+            echo "$TEST_OUTPUT" | grep -E "^[[:space:]]*//[^[:space:]]+[[:space:]]+$1" || true
+        }
+
+        SEGFAULTS=$(status_lines 'FAILED TO BUILD')
+        REAL_FAILURES=$(status_lines 'FAILED' | grep -v 'FAILED TO BUILD' || true)
+        TIMEOUTS=$(status_lines 'TIMEOUT')
+        NO_STATUS=$(status_lines 'NO STATUS')
+        PASSES=$(status_lines 'PASSED')
+
+        count() { [ -z "$1" ] && echo 0 || echo "$1" | wc -l | tr -d ' '; }
+
+        echo ""
+        echo "Bazel exited $TEST_EXIT. Per-target status:"
+        echo "   passed:        $(count "$PASSES")"
+        echo "   failed:        $(count "$REAL_FAILURES")"
+        echo "   timed out:     $(count "$TIMEOUTS")"
+        echo "   no status:     $(count "$NO_STATUS")"
+        echo "   failed to build: $(count "$SEGFAULTS")"
+        echo ""
+
+        if [ -n "$REAL_FAILURES" ]; then
+            echo "$TEST_OUTPUT"
+            echo ""
+            echo "❌ $(count "$REAL_FAILURES") test(s) FAILED. Fix them before committing."
+            echo ""
+            echo "$REAL_FAILURES"
+            exit 1
+        fi
+
+        if [ -n "$TIMEOUTS" ]; then
+            echo "❌ $(count "$TIMEOUTS") test(s) TIMED OUT (not an assertion failure):"
+            echo "$TIMEOUTS"
+            echo ""
+            echo "   The DB-backed tests share one test database and serialize on it, so under"
+            echo "   parallelism they can exceed their timeout while doing nothing wrong — the"
+            echo "   hang is in pytest COLLECTION, before any test body runs."
+            echo "   Re-run the listed targets alone to tell contention from a real hang:"
+            echo "       bazel test <targets> --local_test_jobs=1"
+            echo "   Pass there = contention; they cache green and this hook then reuses them."
+            echo "   Fail there = a real hang; fix it. Never bypass this hook either way."
+            echo ""
+            exit 1
+        fi
+
+        if [ -n "$NO_STATUS" ]; then
+            echo "$TEST_OUTPUT"
+            echo ""
+            echo "❌ $(count "$NO_STATUS") target(s) reported NO STATUS — the run was cut short."
+            echo "   Those tests did not report a result. Re-run; do not bypass this."
+            echo ""
+            exit 1
+        fi
+
+        # The one tolerated shape, and only when tests demonstrably RAN: a
+        # Python process crashing during interpreter shutdown (macOS sandbox / C
+        # extension). Requiring at least one PASSED line is what keeps this from
+        # becoming the catch-all it used to be — a run where nothing passed is
+        # never "just segfaults".
+        if [ -n "$SEGFAULTS" ] && [ -n "$PASSES" ]; then
+            echo "⚠️  $(count "$SEGFAULTS") test(s) crashed during process shutdown (known macOS"
+            echo "   C-extension issue), alongside $(count "$PASSES") that passed."
+            echo "✅ All actual test assertions passed!"
+        elif [ -z "$PASSES" ] && [ -z "$SEGFAULTS" ]; then
+            echo "$TEST_OUTPUT"
+            echo ""
+            echo "❌ Bazel did not complete: no target reported any status."
+            echo "   This is an analysis/build error (dangling dep, BUILD syntax, no such"
+            echo "   target), NOT a passing run. No test ran. Fix it — do not bypass this."
+            echo ""
+            exit 1
+        else
+            echo "$TEST_OUTPUT"
+            echo ""
+            echo "❌ Bazel exited $TEST_EXIT and this hook cannot attribute the failure to a"
+            echo "   known shape. Failing closed on purpose — read the output above."
+            echo ""
+            exit 1
+        fi
+    fi
+else
+    echo "No staged Python/BUILD files — skipping tests."
+fi

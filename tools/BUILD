@@ -8,6 +8,11 @@ exports_files([
     "bazel_dep_check.py",
 ])
 
+# The tracked pre-commit gate. Installed into $GIT_COMMON_DIR/hooks by
+# scripts/install_git_hooks.sh; exported so //tests:test_pre_commit_hook can run
+# the real script rather than a copy of its logic.
+exports_files(["hooks/pre-commit"])
+
 # Undeclared-Bazel-dep checker. Stdlib only, so the pre-commit hook can run it
 # with plain python3 against the real working tree — Bazel's glob() cannot cross
 # package boundaries, so a sandboxed target can never see all 45 BUILD files.

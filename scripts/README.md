@@ -1190,6 +1190,30 @@ Exit 0 on a produced report, 1 on gather failure. Requires `~/tokens/goatcounter
 
 ## Development Utilities
 
+### Git Hooks
+
+**`scripts/install_git_hooks.sh`** — install the repo's tracked pre-commit gate
+
+**Purpose:** git does not clone `.git/hooks`, so a fresh clone runs no gate at
+all. This installs the tracked hook (`tools/hooks/pre-commit`) into
+`$GIT_COMMON_DIR/hooks`, where a machine-global `core.hooksPath` dispatcher (if
+configured) chains it from.
+
+Symlinks by default so the installed hook cannot drift from the tracked one.
+It does **not** set a repo-local `core.hooksPath` — that would shadow a global
+hooks directory and silently disable whatever else it runs.
+
+**Usage:**
+```bash
+./scripts/install_git_hooks.sh            # symlink (default)
+./scripts/install_git_hooks.sh --copy     # copy, for filesystems without symlinks
+./scripts/install_git_hooks.sh --check    # verify only; exit 1 if missing or stale
+```
+
+The hook runs ruff, then `tools/bazel_dep_check.py`, then `bazel test //tests:all`,
+and fails closed on any Bazel exit it cannot attribute. Pinned by
+`//tests:test_pre_commit_hook`.
+
 ### File Inspection
 
 **`scripts/ingest/inspect_source_columns.py`** - Inspect columns and sample data in DOL source files
