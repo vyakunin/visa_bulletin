@@ -86,3 +86,6 @@ VERY_GENERIC_WORDS = {
 
 # All generic words (for filtering/exclusion purposes)
 ALL_GENERIC_WORDS = GENERIC_WORDS | DISTINGUISHING_GENERIC_WORDS
+
+# deliberate CI-proof violation: first-party import not declared in BUILD
+from lib.utils.location_utils import normalize_state_code  # noqa: F401
