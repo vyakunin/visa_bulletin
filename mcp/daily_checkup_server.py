@@ -52,7 +52,7 @@ from mcp.server.fastmcp import FastMCP
 # Shared transport-aware MCP-call helper (agent_infra) — handles stdio (gsc) AND
 # the google_workspace HTTP daemon. See ~/.claude/rules/daily_checkup.md.
 sys.path.insert(0, str(Path.home() / "cursor_projects" / "agent_infra" / "daily_checkup"))
-from mcp_call import call_mcp_tools  # noqa: E402
+from mcp_call import call_mcp_tool, call_mcp_tools  # noqa: E402
 
 logger = logging.getLogger("visa_bulletin_daily_checkup")
 logging.basicConfig(
@@ -93,6 +93,44 @@ GA4_SURFACES: list[tuple[str, str | None]] = [
 ]
 GA4_ENGAGE_DROP_YELLOW_PT = 10.0  # WoW engagement-rate drop (points) → yellow
 GA4_MIN_SESSIONS = 50             # below this N the rate is noise; never flag
+
+# When GA4 stops reporting engagedSessions, the number does not go missing — it
+# goes to nearly zero, which reads exactly like the audience walking out. On
+# 2026-08-06 property 539743892 did this: engaged fell 550 -> 25 -> 15 -> 8 over
+# three days while sessions (865 -> 742), pageviews (2215 -> 1450) and engagement
+# duration (44577s -> 25225s) all held. Site instrumentation was proven healthy at
+# the time — a live production probe returned gcs=G101, wrote the _ga_* cookie
+# with the engaged flag set, and sent seg=1 — so the fault is inside GA4's own
+# processing and no site fix exists. Left ungraded it would report an organic
+# engagement collapse every morning until Google repairs itself.
+#
+# The guard is the internal CONTRADICTION, never a date skip (which would be wrong
+# the moment GA4 recovers) and never a threshold on the engagement rate alone (a
+# genuinely bad day and a broken metric are the same number). GA4's own definition
+# is the anchor: a session is engaged if it lasts >10s OR has 2+ pageviews OR
+# converts. Each half of that gives an arithmetic floor the reported count can
+# contradict:
+#
+#   Duration. A session with more than 10s of engagement IS engaged, so every
+#   NON-engaged session contributes at most 10s. Whatever is left of the total
+#   must be carried by the engaged ones, and dividing it among them gives the mean
+#   each would have to hold. On 2026-08-08 that was (25225 - 10*734)/8 = 2236s —
+#   37 minutes per session, against 75s on the last healthy day.
+#
+#   Pageviews. A session with 2+ pageviews IS engaged, so every non-engaged
+#   session has at most 1. With engaged sessions capped at a sane page count M,
+#   P <= (S - E) + E*M, i.e. E >= (P - S)/(M - 1). On 2026-08-08 the pageviews
+#   alone force at least 24 engaged sessions; GA4 reported 8.
+#
+# BOTH must contradict before the metric is called broken. Either alone can happen
+# for real — a genuine decline drags duration down with it — and the cost of a
+# false fault label is silencing a real engagement collapse, which is the one
+# direction that must not fail. Measured against the break: the healthy day clears
+# both by a wide margin, all three broken days fail both.
+GA4_ENGAGED_MIN_DURATION_S = 10       # GA4's own rule: >10s alone qualifies a session
+GA4_MAX_PAGES_PER_SESSION = 30        # a single organic session above this is a crawler
+GA4_IMPLIED_ENGAGED_S_CEILING = 600   # mean engaged-session time that cannot be real
+GA4_FAULT_MIN_SESSIONS = 50           # below this N the arithmetic is noise, not proof
 
 # Thresholds
 DISK_YELLOW_PCT = 70  # small SSD; want headroom for Postgres growth.
@@ -1528,6 +1566,76 @@ def _ga4_report_args(start: str, end: str) -> dict:
     }
 
 
+def _ga4_daily_args(start: str, end: str) -> dict:
+    """runReport args: one row per DAY, organic site-wide — the plausibility series.
+
+    Deliberately a separate, tiny call rather than a `date` dimension on the
+    landing-page report: the fault is property-wide, so it is diagnosed once
+    site-wide, and adding a second dimension there would multiply ~2-3k rows by
+    seven for a question that needs seven. `screenPageViews` is fetched only here,
+    because only this test reads it.
+
+    Day granularity is the point. The graded windows are 7d aggregates, and an
+    aggregate spanning healthy and broken days is NOT internally contradictory —
+    it is honestly reporting that half the week collapsed. A break is only
+    provable one day at a time.
+    """
+    return {
+        "property_id": GA4_PROPERTY_ID,
+        "start_date": start,
+        "end_date": end,
+        "dimensions": ["date"],
+        "metrics": ["sessions", "engagedSessions", "screenPageViews",
+                    "userEngagementDuration"],
+        "dimension_filter": {"filter": {
+            "fieldName": "sessionDefaultChannelGroup",
+            "stringFilter": {"value": "Organic Search"},
+        }},
+        "row_limit": 100,
+    }
+
+
+class Ga4DayPlausibility(NamedTuple):
+    """One day's engaged-session count checked against what the rest of that day forces."""
+    date: str
+    sessions: int
+    engaged: int
+    pageviews: int
+    eng_dur: float
+    implied_engaged_s: float  # mean engagement each reported engaged session must carry
+    pageview_floor: float     # engaged sessions the pageview count alone forces
+    implausible: bool
+
+
+def _ga4_day_plausibility(row: dict) -> Ga4DayPlausibility:
+    """Check one day's engagedSessions against GA4's own definition of engaged.
+
+    See the GA4_* constants above for the derivation. Returns `implausible=True`
+    only when BOTH the duration and the pageview evidence contradict the reported
+    count — the conservative direction, since a false fault label would silence a
+    real collapse.
+    """
+    sessions = int(row.get("sessions") or 0)
+    engaged = int(row.get("engagedSessions") or 0)
+    pageviews = int(row.get("screenPageViews") or 0)
+    eng_dur = float(row.get("userEngagementDuration") or 0)
+    day = str(row.get("date") or "")
+
+    # Whatever the non-engaged sessions cannot account for at 10s each, the
+    # engaged ones must carry between them.
+    unengaged_ceiling = GA4_ENGAGED_MIN_DURATION_S * max(sessions - engaged, 0)
+    implied = ((eng_dur - unengaged_ceiling) / engaged) if engaged else float("inf")
+    floor = (pageviews - sessions) / (GA4_MAX_PAGES_PER_SESSION - 1)
+
+    implausible = (
+        sessions >= GA4_FAULT_MIN_SESSIONS
+        and implied > GA4_IMPLIED_ENGAGED_S_CEILING
+        and engaged < floor
+    )
+    return Ga4DayPlausibility(day, sessions, engaged, pageviews, eng_dur,
+                              implied, floor, implausible)
+
+
 def _ga4_bucket(rows: list[dict]) -> dict[str, dict]:
     """Aggregate landing-page rows into the monitored surface buckets."""
     out: dict[str, dict] = {
@@ -1554,14 +1662,33 @@ async def _gather_ga4_engagement() -> dict:
         ("ga4_run_report", _ga4_report_args("14daysAgo", "8daysAgo")),
     ]
     this_raw, prior_raw = await call_mcp_tools("ga4", calls, timeout=GA4_TIMEOUT)
+    # The plausibility series rides in its OWN call, because a failure here must
+    # cost only the guard. Folded into the batch above it would abort the two
+    # reports the section is actually built from — trading a false alarm for no
+    # section at all, which is the worse of the two.
+    try:
+        daily_raw = await call_mcp_tool(
+            "ga4", "ga4_run_report", _ga4_daily_args("7daysAgo", "yesterday"),
+            timeout=GA4_TIMEOUT)
+    except Exception as e:  # noqa: BLE001 — degrade to "no guard", never to "no section"
+        logger.warning("ga4 daily plausibility series unavailable: %s", e)
+        daily_raw = None
     return {
         "this_7d": _ga4_bucket((this_raw or {}).get("rows") or []),
         "prior_7d": _ga4_bucket((prior_raw or {}).get("rows") or []),
+        "daily": (daily_raw or {}).get("rows") or [],
     }
 
 
 def _ga4_rate_pct(b: dict) -> float:
     return b["engaged"] / b["sessions"] * 100 if b["sessions"] else 0.0
+
+
+def _ga4_fmt_date(yyyymmdd: str) -> str:
+    """GA4's `date` dimension is bare YYYYMMDD; render it readably."""
+    if len(yyyymmdd) == 8 and yyyymmdd.isdigit():
+        return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}"
+    return yyyymmdd
 
 
 def _section_ga4_engagement(ga4: dict) -> tuple[dict, str]:
@@ -1570,6 +1697,37 @@ def _section_ga4_engagement(ga4: dict) -> tuple[dict, str]:
     status = "green"
     flags: list[str] = []
     lines: list[str] = []
+
+    # A property-wide reporting fault poisons every surface's aggregate, so it is
+    # diagnosed once, before any surface is graded. An absent daily series (an
+    # older payload, or the third GA4 call failing) leaves the guard off and the
+    # section grading exactly as it did before — missing evidence may leave a
+    # false alarm standing, never silence a real one.
+    broken = [d for d in (_ga4_day_plausibility(r) for r in ga4.get("daily") or [])
+              if d.implausible]
+    if broken:
+        worst = max(broken, key=lambda d: d.implied_engaged_s)
+        lines.append(
+            "- ⚠️ **INSTRUMENTATION FAULT: GA4 is not reporting engagedSessions** on "
+            f"{len(broken)} of the last 7 days "
+            f"({', '.join(_ga4_fmt_date(d.date) for d in broken)})."
+        )
+        lines.append(
+            f"  Why it cannot be real, worst day {_ga4_fmt_date(worst.date)}: GA4 counts "
+            f"a session engaged on >10s OR 2+ pageviews alone, so its "
+            f"{worst.engaged} engaged would each have to carry "
+            f"{worst.implied_engaged_s / 60:.0f} min "
+            f"({worst.eng_dur:.0f}s over {worst.sessions} sessions), and its "
+            f"{worst.pageviews} pageviews force ≥{worst.pageview_floor:.0f} engaged "
+            f"on their own."
+        )
+        lines.append(
+            "  The metric is broken, not the audience — the fault is inside GA4's "
+            "processing (site instrumentation verified healthy), so there is nothing "
+            "to fix and nothing to do but wait for Google. Engagement grading is "
+            "suppressed meanwhile; the counts below are unaffected."
+        )
+
     for label, _ in GA4_SURFACES:
         c, p = cur[label], prev[label]
         c_dur = c["eng_dur"] / c["sessions"] if c["sessions"] else 0.0
@@ -1579,13 +1737,17 @@ def _section_ga4_engagement(ga4: dict) -> tuple[dict, str]:
             f"({_ga4_rate_pct(c):.0f}%), {c_dur:.0f}s engaged-time/sess | prior 7d: "
             f"{p['sessions']} sess, {p['engaged']} engaged ({_ga4_rate_pct(p):.0f}%), {p_dur:.0f}s"
         )
-        if c["sessions"] >= GA4_MIN_SESSIONS and p["sessions"] >= GA4_MIN_SESSIONS:
+        if (not broken
+                and c["sessions"] >= GA4_MIN_SESSIONS
+                and p["sessions"] >= GA4_MIN_SESSIONS):
             drop_pt = _ga4_rate_pct(p) - _ga4_rate_pct(c)
             if drop_pt >= GA4_ENGAGE_DROP_YELLOW_PT:
                 status = "yellow"
                 flags.append(f"{label} engagement −{drop_pt:.0f}pt WoW")
     title = "GA4 engagement — organic landings (long-click proxy)"
-    if flags:
+    if broken:
+        title += ": engagedSessions unreliable (GA4-side fault, not a regression)"
+    elif flags:
         title += ": " + "; ".join(flags)
     lines.append(
         "Engaged = >10s / 2+ pages / conversion. Watch list: /job-title/ + "
@@ -1594,7 +1756,9 @@ def _section_ga4_engagement(ga4: dict) -> tuple[dict, str]:
     section = {
         "title": title,
         "body": "\n".join(lines),
-        "importance": 3 if status == "yellow" else 2,
+        # A broken metric is worth reading but needs no action from anyone, so it
+        # rides at the same visibility as a flagged drop while status stays green.
+        "importance": 3 if (status == "yellow" or broken) else 2,
     }
     return section, status
 

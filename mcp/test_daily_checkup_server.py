@@ -419,6 +419,154 @@ def test_ga4_small_n_never_flags():
     assert "20 sess" in sec["body"] and "30 sess" in sec["body"]
 
 
+# ── GA4 stopped reporting engagedSessions on 2026-08-06 (property 539743892) ──
+#
+# The metric did not go missing, it went to nearly zero — which reads exactly like
+# the audience walking out. Measured, organic site-wide:
+#
+#   date    sessions  engaged  pageviews  engagementDuration(s)
+#   Aug 05     865      550      2215        44577
+#   Aug 06     839       25      2001        35946   <- break
+#   Aug 07     813       15      1809        32482
+#   Aug 08     742        8      1450        25225
+#
+# A live production probe returned gcs=G101, wrote the _ga_* cookie with the
+# engaged flag set and sent seg=1, so the site is innocent and the fault is inside
+# GA4's processing — there is no fix to ship and no action to take, but the digest
+# would report an organic engagement collapse every morning until Google recovers.
+#
+# The guard is the arithmetic contradiction, not a date skip: see the GA4_*
+# constants for the derivation from GA4's own >10s / 2+ pageviews definition.
+
+_GA4_BREAK_DAYS = [
+    ("20260805", 865, 550, 2215, 44577),
+    ("20260806", 839, 25, 2001, 35946),
+    ("20260807", 813, 15, 1809, 32482),
+    ("20260808", 742, 8, 1450, 25225),
+]
+
+
+def _ga4_daily(*rows) -> list[dict]:
+    return [{"date": d, "sessions": str(s), "engagedSessions": str(e),
+             "screenPageViews": str(p), "userEngagementDuration": str(dur)}
+            for d, s, e, p, dur in rows]
+
+
+def test_ga4_break_days_are_implausible_and_the_healthy_day_is_not():
+    """The measured break, day by day, against the day before it."""
+    by_date = {d.date: d for d in
+               (m._ga4_day_plausibility(r) for r in _ga4_daily(*_GA4_BREAK_DAYS))}
+
+    healthy = by_date["20260805"]
+    assert not healthy.implausible
+    assert round(healthy.implied_engaged_s) == 75    # 41427s over 550 engaged
+
+    for day in ("20260806", "20260807", "20260808"):
+        assert by_date[day].implausible, by_date[day]
+    # 8 engaged would each need 37 min, and 1450 pageviews force at least 24.
+    worst = by_date["20260808"]
+    assert round(worst.implied_engaged_s) == 2236
+    assert round(worst.pageview_floor) == 24
+
+
+def test_ga4_break_is_reported_as_a_fault_and_does_not_grade():
+    """REPLAY: the Aug 6-8 shape must be labelled a fault, not an engagement drop.
+
+    The 7d buckets carry the collapsed rate that would otherwise read as a −25pt
+    WoW regression on every surface; the daily series is what proves it cannot be
+    real, so the section stays green with the numbers still on the page.
+    """
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 800, 20, 30000)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 820, 520, 42000)))
+    ga4 = {"this_7d": cur, "prior_7d": prev, "daily": _ga4_daily(*_GA4_BREAK_DAYS)}
+
+    sec, status = m._section_ga4_engagement(ga4)
+    assert status == "green", status
+    assert "INSTRUMENTATION FAULT" in sec["body"]
+    assert "unreliable (GA4-side fault" in sec["title"]
+    assert "engagement −" not in sec["title"], "must not read as a regression"
+    # 3 of the 4 supplied days, named, and the raw counts still rendered.
+    assert "2026-08-06, 2026-08-07, 2026-08-08" in sec["body"]
+    assert "800 sess" in sec["body"] and "20 engaged" in sec["body"]
+    assert sec["importance"] == 3, "a broken metric is worth reading"
+
+
+def test_ga4_genuine_engagement_decline_still_grades_yellow():
+    """REPLAY: engaged down WITH pages/session and duration down is REAL.
+
+    The same collapsed engaged-session count as the fault case, but the rest of
+    the day collapses with it — which is what a real decline looks like and what
+    the guard must never absorb.
+    """
+    real_decline = [
+        ("20260805", 800, 480, 1900, 40000),
+        ("20260806", 780, 150, 900, 9000),
+        ("20260807", 760, 120, 830, 7000),
+        ("20260808", 742, 100, 800, 6000),
+    ]
+    for row in _ga4_daily(*real_decline):
+        assert not m._ga4_day_plausibility(row).implausible, row
+
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 800, 130, 8000)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 820, 520, 42000)))
+    sec, status = m._section_ga4_engagement(
+        {"this_7d": cur, "prior_7d": prev, "daily": _ga4_daily(*real_decline)})
+    assert status == "yellow", status
+    assert "INSTRUMENTATION FAULT" not in sec["body"]
+    assert "engagement −" in sec["title"], sec["title"]
+
+
+def test_ga4_duration_collapse_alone_is_not_a_fault():
+    """Half the contradiction is not the contradiction.
+
+    Engaged near-zero with pageviews near-zero too: the pageview floor is not
+    breached, so this is a real (if odd) day and must still grade.
+    """
+    row = _ga4_daily(("20260808", 742, 8, 760, 25225))[0]
+    day = m._ga4_day_plausibility(row)
+    assert day.implied_engaged_s > m.GA4_IMPLIED_ENGAGED_S_CEILING  # duration half fires
+    assert day.engaged >= day.pageview_floor                        # pageview half does not
+    assert not day.implausible
+
+
+def test_ga4_pageview_evidence_alone_is_not_a_fault():
+    """The mirror: pageviews force more engaged sessions than reported, but the
+    duration is consistent with the low count, so nothing is contradictory."""
+    row = _ga4_daily(("20260808", 742, 8, 1450, 200))[0]
+    day = m._ga4_day_plausibility(row)
+    assert day.engaged < day.pageview_floor                          # pageview half fires
+    assert day.implied_engaged_s <= m.GA4_IMPLIED_ENGAGED_S_CEILING  # duration half does not
+    assert not day.implausible
+
+
+def test_ga4_low_traffic_day_cannot_prove_a_fault():
+    """Below GA4_FAULT_MIN_SESSIONS the arithmetic is noise, not proof."""
+    row = _ga4_daily(("20260808", 40, 0, 90, 1500))[0]
+    assert not m._ga4_day_plausibility(row).implausible
+
+
+def test_ga4_missing_daily_series_grades_the_old_way():
+    """No daily rows (older payload, or the third GA4 call failed) → guard off.
+
+    The safe direction: a missing series may leave a false alarm standing, but it
+    must never silence a real collapse.
+    """
+    cur = m._ga4_bucket(_ga4_rows(("/job-title/x", 800, 20, 30000)))
+    prev = m._ga4_bucket(_ga4_rows(("/job-title/x", 820, 520, 42000)))
+    sec, status = m._section_ga4_engagement({"this_7d": cur, "prior_7d": prev})
+    assert status == "yellow", status
+    assert "INSTRUMENTATION FAULT" not in sec["body"]
+
+
+def test_ga4_daily_report_fetches_the_metrics_the_guard_reads():
+    """The guard needs screenPageViews, which only this report asks for."""
+    args = m._ga4_daily_args("7daysAgo", "yesterday")
+    assert args["dimensions"] == ["date"]
+    for metric in ("sessions", "engagedSessions", "screenPageViews",
+                   "userEngagementDuration"):
+        assert metric in args["metrics"], metric
+
+
 # ── Pre-rendered sitemap freshness (2026-07-19) ─────────────────────────────
 #
 # /sitemap.xml is now a static file vb_nginx serves off disk. Its failure mode is
