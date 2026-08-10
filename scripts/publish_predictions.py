@@ -21,6 +21,11 @@ if not settings.configured:
     sys.path.append(".")
     django.setup()
 
+from lib.business.bulletin.eb_series import (
+    EB_CLASSES,
+    EB_SHORT_LABELS,
+    resolve_cutoff_label,
+)
 from lib.business.vqs.aggregator import ExpertAggregator
 from lib.business.vqs.calibration import compute_calibrated_interval
 from lib.business.vqs.data_cache import (
@@ -106,10 +111,13 @@ _MOVEMENT_PROB_SERIES = frozenset([
 # Employment-based preference classes (the EB regime/GBM/Pace dispatch above is
 # tuned for these). Family-sponsored classes (F1..F4) are stored separately via
 # the physics solver — see the FS branch in publish_predictions.
-_EB_CLASSES = ["1st", "2nd", "3rd", "4th", "5th"]
+# Series keys and their labels are owned by lib/business/bulletin/eb_series.py;
+# predictions stay keyed by the series key, which is also all PredictedCutoff's
+# 10-char visa_class column can hold.
+_EB_CLASSES = list(EB_CLASSES)
 _FS_CLASSES = [f.value for f in FamilyPreference]
 
-_EB_LABEL = {"1st": "EB-1", "2nd": "EB-2", "3rd": "EB-3", "4th": "EB-4", "5th": "EB-5"}
+_EB_LABEL = EB_SHORT_LABELS
 
 # Cache of historical U->October-reset events per action_type (enumerated from the
 # full cutoff history; independent of knowledge_date). Populated lazily so the
@@ -305,6 +313,21 @@ def publish_predictions(
         for action in action_types:
             for country in countries:
                 for visa_class in visa_classes:
+                    # A series key whose published heading cannot be found has no
+                    # data at all at this knowledge date. Publish NOTHING rather
+                    # than falling through to the Current branch — an absent row
+                    # renders as "—" on the forecast grid, while a Current row
+                    # would assert "no backlog" on the strength of a failed
+                    # lookup. That is precisely how a 2011 EB-5 row came to be
+                    # served as today's answer.
+                    if resolve_cutoff_label(visa_class, action, knowledge_date) is None:
+                        logger.error(
+                            "No published cutoff heading for %s/%s/%s at %s — "
+                            "publishing no prediction for this series.",
+                            visa_class, country, action, knowledge_date,
+                        )
+                        continue
+
                     # Skip "Current" series: no meaningful cutoff to predict.
                     # Without this check, persistence returns a stale date from
                     # years ago (the last month that had a real cutoff).

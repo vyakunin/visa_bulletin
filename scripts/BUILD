@@ -412,6 +412,7 @@ py_binary(
     srcs = ["publish_predictions.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:eb_series",
         "//django_config:settings",
         "//webapp:apps",
         "//lib/business/vqs:solver",
@@ -445,6 +446,7 @@ py_library(
     srcs = ["publish_predictions.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:eb_series",
         "//django_config:settings",
         "//webapp:apps",
         "//lib/business/vqs:solver",
