@@ -225,3 +225,16 @@ def qualifying_occupation_slugs() -> list[str]:
     ]
     cache.set(_QUALIFYING_SLUGS_CACHE_KEY, slugs, _OCCUPATION_CACHE_TTL)
     return slugs
+
+
+def occupation_stats_cached(slug: str, years: int = RECENT_YEARS) -> bool:
+    """Whether this occupation's stats are already cached, without computing them.
+
+    Lets a warmer report coldness. Reading it through ``get_occupation_stats`` would
+    fill the entry as a side effect, which is the opposite of a check.
+
+    ``years`` is part of the key, so it must match what the page asks for — the
+    default is the same ``RECENT_YEARS`` the view uses.
+    """
+    key = f"{_STATS_CACHE_KEY.format(slug=slug)}.{years}"
+    return cache.get(key) is not None

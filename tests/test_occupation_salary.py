@@ -22,6 +22,7 @@ from django.urls import reverse
 from lib.business.salary.occupation_stats import (
     get_occupation_stats,
     occupation_filing_count,
+    occupation_stats_cached,
 )
 from lib.business.salary.soc_occupations import get_occupation
 from models.enums.visa_program import VisaProgram
@@ -170,3 +171,37 @@ class TestOccupationStatsResultCache(TestCase):
             resp = self.client.get("/h1b-salary/software-engineer/", **bot)
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Software Engineer H-1B", resp.content.decode())
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
+class TestOccupationWarmthProbe(TestCase):
+    """`occupation_stats_cached` reports coldness WITHOUT filling the entry.
+
+    A warmer needs to answer "is this cold?" cheaply. Reading the answer through
+    `get_occupation_stats` would compute and store it as a side effect, so a
+    --check run would warm the cache it was only supposed to measure and would
+    then report warm on its second call whatever the truth.
+    """
+
+    def setUp(self):
+        cache.clear()
+        for idx in range(10):
+            _add_records(
+                _make_employer(idx), soc_code="15-1252.00", n=12,
+                start_case=f"SE-{idx}", wage=120000 + idx * 3000,
+            )
+        self.occ = get_occupation("software-engineer")
+
+    def test_probe_reports_cold_without_filling_the_entry(self):
+        self.assertFalse(occupation_stats_cached(self.occ.slug))
+        # Still cold after probing — the side effect a naive check would have.
+        self.assertFalse(occupation_stats_cached(self.occ.slug))
+        # And the real call still has to scan, proving the probe stored nothing.
+        self.assertEqual(get_occupation_stats(self.occ).total_filings, 120)
+
+    def test_probe_reports_warm_once_the_stats_are_filled(self):
+        get_occupation_stats(self.occ)
+        with self.assertNumQueries(0):
+            self.assertTrue(occupation_stats_cached(self.occ.slug))

@@ -179,6 +179,15 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
     return comparison
 
 
+def soc_pay_comparison_cached(slug: str) -> bool:
+    """Whether this occupation's SOC comparison is cached, without computing it.
+
+    A suppressed result is a cached ``(None,)``, so this reports warm for it too —
+    which is correct: the page renders without the section and pays no query.
+    """
+    return cache.get(_SOC_COMPARISON_CACHE_KEY.format(slug=slug)) is not None
+
+
 def get_employer_pay_comparison(cluster) -> PayComparison | None:
     """Three-way pay comparison for one employer cluster.
 

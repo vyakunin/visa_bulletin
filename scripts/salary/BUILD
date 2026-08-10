@@ -1319,3 +1319,26 @@ py_binary(
         "DJANGO_SETTINGS_MODULE": "django_config.settings",
     },
 )
+
+py_binary(
+    name = "warm_occupations",
+    srcs = ["warm_occupations.py"],
+    main = "warm_occupations.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/business/i129:pay_comparison",
+        "//lib/business/salary:occupation_stats",
+        "//lib/business/salary:soc_occupations",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
