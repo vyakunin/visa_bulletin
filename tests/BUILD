@@ -127,6 +127,22 @@ pytest_py_test(
     ],
 )
 
+# The runtime half of test_base_overflow_guard: that guard pins `overflow-x: clip`
+# on base.html, and clip is precisely what stops the ad sweep's `overflow_px` from
+# ever seeing a recurrence. This pins the sweep's own metrics instead — the
+# reserved-empty rule that measured the CSS-hidden `ins` and so read 0 on 27
+# consecutive shots, and the over-wide rule that must ignore scroll-contained
+# tables. Pure python: it imports the sweep script by path and exercises the
+# derivation, no browser and no network.
+pytest_py_test(
+    name = "test_ad_guard_metrics",
+    size = "small",
+    srcs = ["test_ad_guard_metrics.py"],
+    data = [
+        "//scripts:toplevel_python_sources",
+    ],
+)
+
 django_py_test(
     name = "test_blog_excerpt",
     size = "medium",

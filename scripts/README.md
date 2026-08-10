@@ -66,6 +66,31 @@ and hero geometry — `hero_ad_injected` / `hero_h` / `nav_top_px` / `h1_top_px`
 `content_below_fold`). Retention: keeps the 4 newest run dirs (`--keep`,
 `--prune-dry-run`).
 
+**Two metrics under-reported until 2026-08-10 — do not compare an older manifest
+against a newer one on these fields.** Both read clean off a visibly broken page:
+
+- **`reserved_empty_px`** counted unfilled `ins` elements taller than 1px, but
+  `ad_slot.html` gives an unfilled unit `display:none`, so the rule could never
+  fire — it read 0 on all 27 shots from 2026-07-27 to 2026-08-10, 20 of which had
+  unfilled slots, while the screenshots showed labelled 280-300px voids. The band
+  is reserved by the `.vb-ad-slot` **wrapper**, which is what is measured now.
+  `labelled_empty_px` splits out the subset showing an "ADVERTISEMENT" caption
+  over blank — a bare band is a deliberate trade and is reported but not flagged;
+  a labelled one is the bug (`ad_slot.html`'s own rule).
+- **`over_wide_px`** is new and replaces `overflow_px` as the horizontal-overflow
+  signal. `overflow_px` is `scrollWidth - clientWidth`, which `base.html`'s
+  `overflow-x: clip` pins to 0 **by design**, so the guard that exists to catch
+  the 2026-07 sitewide scrollbar could not see a recurrence. It derives from
+  `escaping_el_px` (widest element not contained by a scroller below `body`) and
+  **not** from `widest_el_px`, which counts wide tables inside their own
+  `overflow-x:auto` scrollers — legitimate behaviour reading 462-839px against a
+  390px mobile viewport. `escaping_el` names the culprit element.
+
+`.vb-ad-slot` / `vb-ad-collapsed` / `vb-ad-live` / `data-vb-hi` are a **cross-repo
+contract** with `visa_bulletin_platform/monetization/ad_slot.html`. A rename there
+silently zeroes these metrics again; `//tests:test_ad_guard_metrics` pins this
+side only.
+
 A **filled** slot can still be the defect: 2026-07-20 found Google Auto-ads
 injecting a filled 390×390 unit *inside* `div.hero-section` on mobile, which
 scored clean on fill, reserved-empty and overflow alike while pushing the H1 to

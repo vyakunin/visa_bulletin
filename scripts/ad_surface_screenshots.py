@@ -29,6 +29,42 @@ WHAT IT DOES
      hero_ad_injected / nav_top_px / h1_top_px / content_below_fold) into a JSON
      manifest, so a regression is a number and not a matter of opinion.
 
+⚠️ TWO METRICS READ CLEAN OFF A BROKEN PAGE UNTIL 2026-08-10 — what changed.
+Both under-reported for months, which is worth knowing before comparing a new
+manifest against an old one:
+
+  reserved-empty  Counted unfilled `ins` elements taller than 1px. ad_slot.html
+                  hides an unfilled unit outright
+                  (`ins.adsbygoogle[data-ad-status="unfilled"]{display:none}`),
+                  so that rule could never fire: it read 0 on all 27 shots from
+                  2026-07-27 to 2026-08-10, 20 of which had unfilled slots, while
+                  the screenshots showed labelled 280-300px voids. The reserved
+                  band belongs to the WRAPPER (`.vb-ad-slot`), so that is what is
+                  measured now — `slots_reserved_empty` / `reserved_empty_px`,
+                  plus `labelled_empty_*` for the subset showing an
+                  "ADVERTISEMENT" caption over blank.
+  over-wide       `overflow_px` is `scrollWidth - clientWidth`, which base.html's
+                  `overflow-x: clip` pins to 0 by design — so the guard that
+                  exists to catch the 2026-07 sitewide scrollbar cannot see a
+                  recurrence. `over_wide_px` now flags it independently. It is
+                  derived from `escaping_el_px` (the widest element NOT contained
+                  by a scroller below body), NOT from `widest_el_px`, which
+                  counts wide tables inside their own `overflow-x:auto` scrollers
+                  — legitimate responsive behaviour that reads 462-839px against
+                  a 390px mobile viewport. `escaping_el` names the culprit.
+
+A bare reserved band is reported but NOT flagged: holding an empty hoisted box on
+a no-fill is a deliberate trade (collapsing it yanks ~320px out from under the
+page). `labelled_empty_px` is the flagged one, per ad_slot.html's own rule that a
+label over blank space "is not a trade, it is a bug".
+
+⚠️ CLASS NAMES ARE A CROSS-REPO CONTRACT. `.vb-ad-slot`, `vb-ad-collapsed`,
+`vb-ad-live` and `data-vb-hi` are defined in
+visa_bulletin_platform/monetization/ad_slot.html and consumed by PROBE_JS here.
+Nothing in this repo can import them, so a rename there silently zeroes these
+metrics again — exactly the failure this rewrite fixed. //tests:test_ad_guard_metrics
+pins our side; the other side has no guard.
+
 Runs against the headed debug Chrome over CDP (:9222) — a real profile is what
 makes Google serve ads; headless is both ad-hostile and fingerprint-walled (see
 `~/.claude/rules/browser.md`).
@@ -100,19 +136,12 @@ import shutil
 import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
-import httpx
-
-# Reuse the MCP's full-coverage GC machinery verbatim — single source of truth
-# for the export pull, the row filtering, and the surface taxonomy.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp"))
-from daily_checkup_server import (  # noqa: E402
-    SURFACE_LABELS,
-    _aggregate_csv_path_counts,
-    _bucket_path,
-    _gc_export_full_csv,
-    _gc_export_max_ts,
-)
+# httpx, playwright and the daily_checkup MCP machinery are imported INSIDE the
+# functions that need them (as playwright always has been), so the pure metric
+# derivation below can be imported by //tests:test_ad_guard_metrics without
+# resolving this script's PEP-723 environment.
 
 OUT_ROOT = Path.home() / ".cache" / "vb_ad_screenshots"
 CDP_URL = "http://127.0.0.1:9222"
@@ -206,8 +235,25 @@ PROBE_JS = r"""
   const status = (e) => e.getAttribute('data-ad-status') || 'none';
   const filled = slots.filter(e => status(e) === 'filled');
   const unfilled = slots.filter(e => status(e) === 'unfilled');
-  // A slot that did NOT fill but still reserves vertical space = a visible hole.
-  const reservedEmpty = unfilled.filter(e => box(e).h > 1);
+  // A slot that did NOT fill but still reserves vertical space is a visible hole
+  // — and the space is reserved by the WRAPPER, not the ins. ad_slot.html hides
+  // an unfilled ins outright (display:none), so measuring the ins finds nothing
+  // while the reader is looking at a 280-304px blank band. Report the wrapper
+  // facts raw and let Python derive the counts (derive_guard_metrics), so the
+  // rule is unit-testable instead of only observable in a live browser.
+  const adSlots = [...document.querySelectorAll('.vb-ad-slot')].map(w => {
+    const inner = [...w.querySelectorAll('ins.adsbygoogle')];
+    return {
+      pos: w.getAttribute('data-ad-pos') || '?',
+      height_px: Math.round(w.getBoundingClientRect().height),
+      collapsed: w.classList.contains('vb-ad-collapsed'),
+      label_shown: w.classList.contains('vb-ad-live'),
+      hoisted: w.hasAttribute('data-vb-hi'),
+      filled_px: inner.filter(e => status(e) === 'filled')
+                      .reduce((a, e) => a + box(e).h, 0),
+      ins_px: inner.reduce((a, e) => a + box(e).h, 0),
+    };
+  });
   const iframes = [...document.querySelectorAll('iframe')];
   const adIframes = iframes.filter(f => /^(aswift|google_ads|ad_iframe)/.test(f.id || '') ||
                                         /doubleclick|googlesyndication/.test(f.src || ''));
@@ -252,13 +298,47 @@ PROBE_JS = r"""
     slots_total: slots.length,
     slots_filled: filled.length,
     slots_unfilled: unfilled.length,
-    slots_reserved_empty: reservedEmpty.length,
-    reserved_empty_px: reservedEmpty.reduce((a, e) => a + box(e).h, 0),
+    ad_slots: adSlots,
     ad_iframes: adIframes.length,
     anchor_present: anchor,
+    viewport_width: de.clientWidth,
+    // Kept unchanged so the metric stays comparable with earlier manifests, but
+    // it is NOT the overflow signal: it counts scroll-contained elements too.
     widest_el_px: Math.max(0, ...[...document.querySelectorAll('body *')].map(e => {
       const r = e.getBoundingClientRect(); return Math.round(r.right);
     })),
+    // The widest element that ESCAPES to the page — nothing between it and body
+    // clips or scrolls it. This is the one that gives the viewport a horizontal
+    // scrollbar (or would, without base.html's overflow-x:clip, which is exactly
+    // why overflow_px cannot be trusted to catch a recurrence). A wide table
+    // inside its own overflow-x:auto scroller is correct and must not count.
+    ...(() => {
+      let worst = 0, desc = null;
+      for (const e of document.querySelectorAll('body *')) {
+        const r = e.getBoundingClientRect();
+        const right = Math.round(r.right);
+        if (right <= de.clientWidth || right <= worst) continue;
+        let contained = false;
+        for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+          const ox = getComputedStyle(a).overflowX;
+          if (ox === 'auto' || ox === 'scroll' || ox === 'hidden' || ox === 'clip') {
+            if (Math.round(a.getBoundingClientRect().right) <= de.clientWidth) {
+              contained = true; break;
+            }
+          }
+        }
+        if (contained) continue;
+        worst = right;
+        desc = e.tagName.toLowerCase()
+             + (e.id ? '#' + e.id : '')
+             + ((e.className || '').toString().trim()
+                 ? '.' + (e.className || '').toString().trim().split(/\s+/).join('.')
+                 : '');
+      }
+      // Attribution, not just a number: "something is 1913px wide" is not
+      // actionable, "div.google-auto-placed is" is.
+      return {escaping_el_px: worst, escaping_el: desc};
+    })(),
     title: document.title,
   };
 }
@@ -277,9 +357,97 @@ CLS_JS = r"""
 """
 
 
+class AdSlotFacts(NamedTuple):
+    """One `.vb-ad-slot` wrapper, as measured in-page.
+
+    The wrapper — not the `ins` — is what reserves the visible band, so it is
+    what the reader sees when a unit does not fill.
+    """
+
+    pos: str
+    height_px: int       # the wrapper's rendered height
+    collapsed: bool      # .vb-ad-collapsed — a no-fill that left no hole
+    label_shown: bool    # .vb-ad-live, i.e. the "ADVERTISEMENT" caption is visible
+    hoisted: bool        # data-vb-hi — keeps its band on a no-fill, by design
+    filled_px: int       # summed height of FILLED ins inside this wrapper
+    ins_px: int          # summed height of ALL ins inside (0 when CSS hides them)
+
+    @classmethod
+    def from_probe(cls, raw: dict) -> AdSlotFacts:
+        return cls(
+            pos=str(raw.get("pos") or "?"),
+            height_px=int(raw.get("height_px") or 0),
+            collapsed=bool(raw.get("collapsed")),
+            label_shown=bool(raw.get("label_shown")),
+            hoisted=bool(raw.get("hoisted")),
+            filled_px=int(raw.get("filled_px") or 0),
+            ins_px=int(raw.get("ins_px") or 0),
+        )
+
+
+class GuardMetrics(NamedTuple):
+    """The derived numbers a human compares against the screenshot."""
+
+    slots_reserved_empty: int
+    reserved_empty_px: int
+    labelled_empty_slots: int
+    labelled_empty_px: int
+    over_wide_px: int
+
+
+def derive_guard_metrics(slots: list[AdSlotFacts], escaping_el_px: int,
+                         viewport_width: int) -> GuardMetrics:
+    """Turn the in-page facts into the numbers a human checks the screenshot against.
+
+    Measured on the WRAPPER, never the `ins`. ad_slot.html hides an unfilled unit
+    (`ins.adsbygoogle[data-ad-status="unfilled"]{display:none}`), so the `ins`
+    reports 0px while the wrapper still holds its 280px (304px hoisted) band —
+    which is the blank the reader sees. Counting the `ins` scored every weekly
+    run 0 for reserved-empty, 27 shots in a row, 20 of which had unfilled slots.
+
+    A bare reserved band and a LABELLED one are counted separately on purpose.
+    Holding an empty band above the fold is a deliberate trade (collapsing it
+    yanks ~320px out from under the page — the shift the hoist exists to remove),
+    but ad_slot.html's own rule is that the caption must go with the creative
+    that never came: "a label over blank space is not a trade, it is a bug." So
+    `labelled_empty_px` is the number that means something is wrong, while
+    `reserved_empty_px` is the number that has to agree with the screenshot.
+    """
+    empty = [s for s in slots if not s.collapsed and s.height_px > 1 and s.filled_px <= 1]
+    labelled = [s for s in empty if s.label_shown]
+    return GuardMetrics(
+        slots_reserved_empty=len(empty),
+        reserved_empty_px=sum(s.height_px for s in empty),
+        labelled_empty_slots=len(labelled),
+        labelled_empty_px=sum(s.height_px for s in labelled),
+        # NOT `widest_el_px - viewport_width`: that counts a wide table sitting
+        # inside its own overflow-x:auto scroller, which is correct responsive
+        # behaviour (real mobile runs read 837/839/821/462px against a 390
+        # viewport). `escaping_el_px` is the widest element NOT contained by a
+        # scroller below body — the one that actually reaches the page edge, and
+        # the shape that caused the 2026-07 sitewide scrollbar.
+        over_wide_px=max(0, escaping_el_px - viewport_width),
+    )
+
+
+def _gc_machinery():
+    """The daily_checkup MCP's GC helpers — single source of truth for the export
+    pull, the row filtering and the surface taxonomy. Imported lazily so this
+    module stays importable (and testable) outside its PEP-723 env."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp"))
+    import daily_checkup_server as dcs
+    return dcs
+
+
+def _surface_label(surface: str) -> str:
+    return _gc_machinery().SURFACE_LABELS.get(surface, surface)
+
+
 async def _load_csv() -> Path | None:
+    import httpx
+    dcs = _gc_machinery()
     async with httpx.AsyncClient() as client:
-        return await _gc_export_full_csv(client)
+        return await dcs._gc_export_full_csv(client)
 
 
 def _derive_top_surfaces(n: int) -> list[tuple[str, str]]:
@@ -288,17 +456,18 @@ def _derive_top_surfaces(n: int) -> list[tuple[str, str]]:
     Full export coverage — a top-100 query would silently drop the profile long
     tail and mis-rank the surfaces this sweep is supposed to watch.
     """
+    dcs = _gc_machinery()
     csv_path = asyncio.run(_load_csv())
     if not csv_path or not csv_path.exists():
         return []
-    cutoff_ts = _gc_export_max_ts(csv_path)
+    cutoff_ts = dcs._gc_export_max_ts(csv_path)
     cutoff = cutoff_ts.date() if cutoff_ts else date.today()
     anchor = cutoff - timedelta(days=1)  # last COMPLETE day (today is partial)
     start, end = anchor - timedelta(days=6), anchor
-    counts = _aggregate_csv_path_counts(csv_path, [("this_7d", start, end)])["this_7d"]
+    counts = dcs._aggregate_csv_path_counts(csv_path, [("this_7d", start, end)])["this_7d"]
     by_surface: dict[str, dict[str, int]] = {}
     for path, hits in counts.items():
-        surf = _bucket_path(path)
+        surf = dcs._bucket_path(path)
         if surf in SKIP_SURFACES:
             continue
         by_surface.setdefault(surf, {})[path] = hits
@@ -443,7 +612,7 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         why = ("WAF challenge interstitial"
                                if integrity["challenged"] else "no first-party markup")
                         shots.append({
-                            "surface": surf, "label": SURFACE_LABELS.get(surf, surf),
+                            "surface": surf, "label": _surface_label(surf),
                             "url": url, "device": dev, "viewport": f"{w}x{h}",
                             "file": str(fn), "captured": False,
                             "capture_error": f"{why} (title={integrity['title']!r})",
@@ -477,9 +646,14 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     # sit; compare the two before reporting any overlap.
                     fold = out_dir / f"{surf}__{dev}__viewport.jpg"
                     page.screenshot(path=str(fold), full_page=False, type="jpeg", quality=80)
+                    metrics = derive_guard_metrics(
+                        [AdSlotFacts.from_probe(s) for s in diag.get("ad_slots", [])],
+                        escaping_el_px=diag.get("escaping_el_px", 0),
+                        viewport_width=diag.get("viewport_width", w),
+                    )
                     rec = {
                         "surface": surf,
-                        "label": SURFACE_LABELS.get(surf, surf),
+                        "label": _surface_label(surf),
                         "url": url,
                         "device": dev,
                         "viewport": f"{w}x{h}",
@@ -488,16 +662,31 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         "captured": True,
                         "cls": cls,
                         **diag,
+                        **metrics._asdict(),
                     }
                     shots.append(rec)
                     flag = "" if rec["overflow_px"] <= 0 else f"  ⚠ OVERFLOW {rec['overflow_px']}px"
+                    if metrics.over_wide_px > 0:
+                        flag += (f"  ⚠ OVER-WIDE {metrics.over_wide_px}px "
+                                 f"({rec.get('escaping_el')} reaches "
+                                 f"{rec.get('escaping_el_px')}px)")
+                    if metrics.labelled_empty_px > 0:
+                        flag += (f"  ⚠ LABELLED BLANK {metrics.labelled_empty_px}px "
+                                 f"({metrics.labelled_empty_slots} slot(s))")
                     if rec.get("hero_ad_injected"):
                         flag += (f"  ⚠ AD-IN-HERO (hero {rec.get('hero_h')}px, "
                                  f"h1 at y={rec.get('h1_top_px')})")
                     if rec.get("content_below_fold"):
                         flag += "  ⚠ H1 BELOW FOLD"
+                    if rec.get("anchor_present"):
+                        # Anchor ads were turned OFF site-wide on 2026-08-03 and have
+                        # read false on all 17 shots since (9/10 were true before), so
+                        # a true here now means the unit came back, not a flake.
+                        flag += "  ⚠ ANCHOR PRESENT (anchor ads are off site-wide)"
                     print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']} "
-                          f"filled={rec['slots_filled']} empty-reserved={rec['slots_reserved_empty']} "
+                          f"filled={rec['slots_filled']} "
+                          f"empty-reserved={metrics.slots_reserved_empty}"
+                          f"/{metrics.reserved_empty_px}px "
                           f"cls={cls}{flag}")
                 except Exception as e:  # one bad surface must not kill the sweep
                     print(f"  {surf:20s} {dev:7s} FAILED: {e}", file=sys.stderr)
@@ -543,7 +732,7 @@ def main() -> int:
         surfaces = []
         for spec in args.urls:
             path, _, label = spec.partition("=")
-            surfaces.append((label or _bucket_path(path), path))
+            surfaces.append((label or _gc_machinery()._bucket_path(path), path))
     else:
         print("Deriving top surfaces from the full GoatCounter export (100% coverage)...")
         surfaces = _derive_top_surfaces(args.surfaces)
@@ -578,13 +767,23 @@ def main() -> int:
 
     ok_shots = [s for s in shots if not s.get("error") and s.get("captured") is not False]
     uncaptured = [s for s in shots if s.get("captured") is False]
+    # A bare reserved band is a deliberate trade (see derive_guard_metrics), so it
+    # is reported but not flagged; a LABELLED blank and an escaping element are
+    # defects. Flagging the deliberate case would fire on every employer /
+    # predictions run and train the reader to ignore the whole column.
     issues = [s for s in shots if s.get("error") or s.get("overflow_px", 0) > 0
-              or s.get("slots_reserved_empty", 0) > 0
+              or s.get("over_wide_px", 0) > 0
+              or s.get("labelled_empty_px", 0) > 0
+              or s.get("anchor_present")
               or s.get("hero_ad_injected", 0) > 0 or s.get("content_below_fold")
               or s.get("captured") is False]
     print(f"\nWrote {len(ok_shots)} screenshots + manifest.json")
-    print(f"Flagged {len(issues)} shot(s) with an error / overflow / reserved-empty slot / "
-          f"ad-in-hero / H1 below the fold / not captured.")
+    print(f"Flagged {len(issues)} shot(s) with an error / overflow / over-wide element / "
+          f"labelled blank / anchor unit / ad-in-hero / H1 below the fold / not captured.")
+    blank_px = sum(s.get("reserved_empty_px", 0) for s in ok_shots)
+    if blank_px:
+        print(f"Reserved-but-empty ad space across all shots: {blank_px}px "
+              f"(a bare band is by design; see the LABELLED BLANK flag for the bug).")
     if uncaptured:
         print(f"\n⚠ {len(uncaptured)} surface(s) DID NOT CAPTURE THE SITE — these are excluded "
               "from the metrics above and were NOT inspected:", file=sys.stderr)
