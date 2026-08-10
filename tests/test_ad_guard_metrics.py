@@ -158,6 +158,44 @@ def test_probe_js_collects_the_fields_the_metrics_derive_from(field):
     )
 
 
+# ── The same false all-clear, one device wide ────────────────────────────────
+
+def _shot(device, slots_total, **kw):
+    return {"device": device, "slots_total": slots_total, "captured": True, **kw}
+
+
+def test_a_device_class_rendering_no_slots_is_a_blackout():
+    """2026-08-10: 5/5 desktop shots captured the real site with 0 slots.
+
+    Mobile rendered 4-9, so the all-shots-zero gate stayed quiet and the run
+    reported clean while half of it had measured nothing about the ad layer.
+    """
+    shots = [_shot("desktop", 0) for _ in range(5)] + [
+        _shot("mobile", 9), _shot("mobile", 4), _shot("mobile", 0)]
+    assert sweep.blackout_devices(shots) == ["desktop"]
+
+
+def test_no_blackout_when_every_device_rendered_something():
+    shots = [_shot("desktop", 3), _shot("desktop", 0), _shot("mobile", 9)]
+    assert sweep.blackout_devices(shots) == []
+
+
+def test_blackout_ignores_shots_that_never_captured_the_site():
+    """A WAF-challenged shot has no opinion about the ad layer either way.
+
+    Counting its zero would turn one blocked surface into a fake device-wide
+    blackout, which is the inverse of the bug and just as misleading.
+    """
+    shots = [{"device": "desktop", "captured": False, "capture_error": "WAF challenge"},
+             _shot("desktop", 7)]
+    assert sweep.blackout_devices(shots) == []
+
+
+def test_blackout_reports_both_devices_when_the_whole_run_is_dark():
+    shots = [_shot("desktop", 0), _shot("mobile", 0)]
+    assert sweep.blackout_devices(shots) == ["desktop", "mobile"]
+
+
 def test_probe_js_still_measures_the_wrapper_not_only_the_ins():
     """Guard the class-name contract with the private repo's ad_slot.html.
 

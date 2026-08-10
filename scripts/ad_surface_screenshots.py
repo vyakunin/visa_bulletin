@@ -430,6 +430,30 @@ def derive_guard_metrics(slots: list[AdSlotFacts], escaping_el_px: int,
     )
 
 
+def blackout_devices(shots: list[dict]) -> list[str]:
+    """Devices where every captured shot rendered ZERO ad slots.
+
+    The all-shots-zero gate in main() only fires when the WHOLE run is empty, so
+    it cannot see one device class going dark: on 2026-08-10 all five desktop
+    shots captured the real site (right titles, `captured: true`) with 0 slots
+    and 0 ad iframes, while mobile rendered 4-9 — and the run reported clean.
+    That is gap 4's shape again (a row of zeros reading as a healthy surface),
+    one device wide, so it gets a number rather than another manual noticing.
+
+    Per-device and not per-surface on purpose: a single surface can legitimately
+    carry no slots (ad_slot.html excludes /about, /contact, /faq, /privacy,
+    /terms), but an entire device class rendering none across every surface is
+    the ad stack failing to load.
+    """
+    by_device: dict[str, list[dict]] = {}
+    for s in shots:
+        if s.get("error") or s.get("captured") is False:
+            continue
+        by_device.setdefault(s.get("device", "?"), []).append(s)
+    return sorted(dev for dev, got in by_device.items()
+                  if got and all(g.get("slots_total", 0) == 0 for g in got))
+
+
 def _gc_machinery():
     """The daily_checkup MCP's GC helpers — single source of truth for the export
     pull, the row filtering and the surface taxonomy. Imported lazily so this
@@ -799,6 +823,16 @@ def main() -> int:
               "gate in overrides/ad_slot.html, the /cdn-cgi/trace intercept, and that "
               "pagead2.googlesyndication.com is reachable.", file=sys.stderr)
         return 2
+    # The same false all-clear, one device wide: mobile carrying slots is enough
+    # to satisfy the gate above while every desktop shot measured nothing.
+    if args.geo != "EEA" and len(devices) > 1:
+        dark = blackout_devices(shots)
+        if dark:
+            print(f"\nERROR: no ad slots rendered on ANY {'/'.join(dark)} surface, though "
+                  "other devices got them — that device's shots measured nothing about the "
+                  "ad layer and must not be read as clean. Re-run that device before "
+                  "trusting this manifest.", file=sys.stderr)
+            return 2
     if args.keep:
         print(f"\nPruning run dirs beyond keep={args.keep}:")
         if not _prune(args.keep, dry_run=False):
