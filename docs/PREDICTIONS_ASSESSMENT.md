@@ -2646,7 +2646,7 @@ mis-weighted input but an absent mechanism.
 |--------|-------|-------------|
 | `PublishedFloor` model + migration `0057` | `models/published_floor.py`, `models/migrations/0057_publishedfloor_and_more.py` | Source bulletin, target period, series (category/class/action/country), floor date, verbatim quote, section. Unique on (source, target, series) → idempotent upsert. Manager method `floor_for()` filters `source_bulletin__publication_date <= knowledge_date` and takes the latest source. |
 | Floor applied to the reset distribution | `lib/business/vqs/october_reset.py` | `estimate_from_precedents(..., floor=)` truncates: precedent deltas below the floor move up to it, and the point estimate cannot sit below it. All arithmetic in delta space, so `floor=None` is the pre-change path exactly. `estimate_october_reset` looks the floor up for `target = Oct 1 of reset_year`. |
-| Public explainer cites the floor | `lib/business/vqs/october_reset.py` `describe_reset` | With a floor present, the sentence leads with the published bound and the historical-spread clause (which named the 2012 EB-2 India retrogression) is not emitted. |
+| Public explainer cites the floor | `lib/business/vqs/october_reset.py` `describe_reset` | With a floor present, the sentence leads with the published bound and the historical-spread clause is not emitted. (That clause named the 2012 EB-2 India retrogression as a hardcoded literal; §30 replaced it with the pool's own deepest precedent.) |
 | Recording entry point | `scripts/bulletin/record_published_floor.py` | Hand-entered per bulletin; validates and upserts; `--effect` reports the resulting estimate; `--list`, `--dry-run`. |
 | Tests | `tests/test_published_floor.py` | 9 cases: the below-floor baseline, point/interval clamping, diagnostics, walk-forward invisibility, latest-source supersession, series isolation, both explainer branches. |
 
@@ -2689,15 +2689,82 @@ throughout.
 
 ### Current Status
 
-Committed to `main`, **not deployed and not applied to prod** — a schema migration
-is a Path-2 release. The mechanism is inert until a floor row exists: with no
-`PublishedFloor` on file every code path is byte-identical to before. One floor is
-recorded on the local dev DB only.
+Committed to `main` as `723d7b8` and released in `staging-fb3f352`; migration 0057
+is applied on prod (verified: `to_regclass('public.published_floor')` absent before
+the swap, present after). It rode a `--code` cutover safely because it is purely
+additive — CreateModel on a new empty table plus its index and unique constraint,
+zero ALTER on any existing table.
+
+**No floor row exists on prod**, so the mechanism is inert there: with no
+`PublishedFloor` on file every code path is byte-identical to before. The one
+bootstrap floor is recorded on the local dev DB only, deliberately — recording it
+on prod and republishing the affected month is the next step, held pending the
+three design decisions below.
 
 Three design questions were escalated rather than settled here — whether the floor
 should bound the interval as well as the point (the shipped default truncates
 both), what happens to a floor a realised outcome later violates, and whether a
 floor applies to the filing chart. They are stated as options on the ticket.
+
+### Pending Planning Review
+
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+
+## 30. The Reset Explainer Named a Precedent It Did Not Have (August 2026)
+
+### Motivation
+
+§29 left a defect recorded but unfixed on ticket
+`3b662b8d409f8165a85af4c0126e37ac`: `describe_reset`'s historical-spread clause
+named the 2012 EB-2 India retrogression as a **string literal**, emitted whenever
+the pooled `p10_delta_days` fell below −120 days. That p10 is computed over the
+cross-series precedent pool (§29: `find_reset_events` enumerates all 5 EB classes ×
+5 countries, and `estimate_from_precedents` pools the deltas with no conditioning),
+so the gate is a property of the pool and not of the series being rendered.
+
+### What Was Implemented
+
+| Change | Files | Description |
+|--------|-------|-------------|
+| Precedent identity survives pooling | `lib/business/vqs/october_reset.py` | `estimate_from_precedents` keeps each delta paired with the `ResetEvent` that produced it instead of reducing to bare floats, and records the deepest retrogression as `diagnostics["deepest_precedent"]` = {series label, reset year, delta days}. Floor truncation applies before the pick, so a floored pool names a floored precedent. |
+| Clause derived, not hardcoded | `lib/business/vqs/october_reset.py` `describe_reset` | Renders the pool's deepest precedent, labelled as *the employment-based record* rather than this series' own history. The sibling literal "a retrogression of a year or more" is likewise replaced by the named precedent's own span (`_humanize_span`). |
+| Regression + boundary tests | `tests/test_october_reset.py` | Three cases; `tests/test_published_floor.py`'s assertion on the `2012` literal re-pinned to the property it was standing in for. |
+
+### Results (Facts)
+
+Commit `21787cc`, 3 files, +107/−15. Script: `bazel test //tests:all`.
+
+Rendered clause, before and after, for a series whose pool's deepest precedent is
+EB-3 China FY2018 (−214 days):
+
+| | Text |
+|---|---|
+| Before | "…to a retrogression of a year or more (EB-2 India reset about three years earlier in 2012), so treat any specific October date as a rough guess." |
+| After | "…to a substantial retrogression: the deepest in the employment-based record is **EB-3 China in 2018**, which came back about 7 months earlier than its own pre-Unavailable cutoff. Treat any specific October date as a rough guess." |
+
+Reproduction, measured against the pre-fix code by stashing the change: EB-1 India
+— a series with no Unavailable spell of its own — rendered "the last cutoff before
+it went Unavailable was **March 1, 2019**" followed by the EB-2 India 2012 clause.
+
+Test status: `//tests:test_october_reset` red on 2 of the 3 new assertions before
+the change (`'EB-3 China in 2018' not found`, on both the EB-2 India and EB-1 India
+cases), green after. The third — a shallow pool (−22 days) names no precedent at
+all — passes both before and after by construction; it exists to fail if the
+derivation over-reaches into claiming a retrogression the pool does not support.
+Full suite 133/133 through the pre-commit gate (ruff, Bazel dep check over 449
+targets, all tests).
+
+Against prod's own pool the deepest precedent is EB-2 India 2012 (≈ −1067 days →
+"about three years"), so the EB-2 India page keeps the same substance it had, now
+attributed, while every other series stops claiming it.
+
+### Current Status
+
+On `main`, **not released**. `explanation_markdown` is written onto
+`PredictedCutoff` at publish time, so the live page keeps the old clause until
+`publish_predictions` re-runs. Republishing alone would ship this explainer without
+the §29 floor (whose bootstrap row is still dev-only), so the two are held to
+graduate together.
 
 ### Pending Planning Review
 
