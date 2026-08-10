@@ -71,14 +71,34 @@ docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
 # After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
 docker exec vb_redis redis-cli -n 1 FLUSHDB
-# The FLUSHDB also empties the site-wide I-129 demographic-pay panel, which /job-title/
-# reads from cache ONLY (it is never computed on a request — ~3s per dimension). Re-warm it,
-# or that section stays hidden until the next run:
+# The FLUSHDB also empties TWO cache-ONLY surfaces. Neither is computed on a request, so
+# an empty cache does not make them slow — it makes one WRONG and hands the other's full
+# render to a crawler. ORDER MATTERS: flush FIRST, then warm, then warm_cache.sh.
+#
+# (a) the site-wide I-129 demographic-pay panel on /job-title/ (~3s per dimension, ~9s total).
+#     Cold, the section silently DISAPPEARS — the page still returns 200 and looks perfect.
 docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay
+# (b) the 41 /h1b-salary/<occupation>/ pages. Their aggregates cache on FIRST MISS with a 24h
+#     TTL, and the view is cache_page_skip_bots, so that first hit is Googlebot essentially
+#     every time. Measured 2026-08-10: 36 of 41 took 5.9-9.2s cold, 0.13s after.
+docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
 # Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
 # (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
 ```
+
+**Do not warm and then flush.** Both warmers write into the same Redis DB the page cache
+lives in, so a FLUSHDB after warming wipes them — and the failure is silent in the worst
+way: `/job-title/` still returns 200 and renders fully, with only the JSON-LD occurrences of
+"Country of birth" left in the HTML, which reads exactly like a panel that is half-working.
+Re-warming afterwards does NOT fix it either, because the page cache has by then been
+populated with the panel-less render and is served unchanged (an identical byte count
+between two fetches is the tell). Both traps cost a wrong reading each on 2026-08-10.
+
+A daily cron re-warms both at 05:10 Berlin (`hosting/homeserver/crontab.sample`), because
+the occupation TTL is 24h and the cold fills therefore RECUR rather than only following a
+deploy. That cron does not cover a deploy — a FLUSHDB at any other hour leaves both surfaces
+cold until the next morning, so run them by hand as above.
 
 Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s
 render (repopulates Django's `@cache_page` Redis entries; CF then re-caches at the
