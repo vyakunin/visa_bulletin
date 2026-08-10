@@ -412,19 +412,37 @@ Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`
 */30 * * * * .../visa_bulletin/scripts/sync_bulletin_to_prod.sh >> .../logs/sync_bulletin_to_prod.log 2>&1
 ```
 
-**Wedged debug Chrome (self-healing since 2026-07-27):** Chrome can wedge while still
-looking alive — `/json/version` answers, the CDP websocket connects, and then
-`connect_over_cdp` hangs to its 180s timeout because no page target responds. A naive
-"is :9222 up?" check passes throughout, so this reads as the Akamai wall failing. Seen
-after Chrome had been up 10 days with 8 leaked heavy-SPA tabs (one renderer alive for
-eight page targets); every run failed for ~12h. The bridge now detects that exact
-signature (ws connected + `connect_over_cdp` timeout — which proves the browser is
-unusable by *any* agent, so restarting the shared service is safe), restarts
-`debug_chrome_cdp.service` once, retries the fetch, and reports passively. Kill switch:
-`BULLETIN_CDP_AUTOHEAL=0`. A browser that stays wedged still falls through to the normal
-failure streak + alert. Diagnose by hand with a per-target `Runtime.evaluate` probe — if
-every target times out the browser is wedged, not the wall. Pinned by
-`//tests:test_bulletin_sync_alerting`.
+**Wedged debug Chrome (self-healing):** Chrome can wedge while still looking alive —
+`/json/version` answers, the CDP websocket connects, and then `connect_over_cdp` hangs
+to its 180s timeout. A naive "is :9222 up?" check passes throughout, so this reads as
+the Akamai wall failing.
+
+**One hung target is enough**, because `connect_over_cdp` attaches to *every* target.
+So the signature does NOT mean the browser is unusable — it means at least one target
+is. Seen both ways: 2026-07-27, all 8 targets dead after 10 days of uptime; 2026-08-10,
+two hung Zillow renderers while seven tabs answered in ~1ms.
+
+The bridge therefore heals in two steps, ordered by blast radius. It first **reaps only
+the targets that fail to answer** (`cdp_tabs.py reap`, which probes each target
+individually and closes just the non-responders) and retries. It restarts
+`debug_chrome_cdp.service` **only when no target is alive at all** (`all_dead`), then
+retries once. Both rungs report passively; kill switch `BULLETIN_CDP_AUTOHEAL=0`.
+
+A browser with live tabs is serving a human, so that path alerts instead of restarting:
+on 2026-08-10 the seven live tabs held three checkouts with cart tokens, a logged-in
+banking session and two staged bookings, and a restart would have destroyed all of it to
+clear two dead tabs (`browser_personal.md` § "sweep only YOUR OWN leftovers"). One missed
+30-min cycle is the cheaper loss.
+
+Note the restart needs the session bus: `systemctl --user` under cron has neither
+`XDG_RUNTIME_DIR` nor `DBUS_SESSION_BUS_ADDRESS` and dies on "Failed to connect to bus:
+No medium found", so it goes through `user_systemctl()`. That gap silently made the
+restart a no-op from cron for two weeks while working by hand.
+
+A browser that stays wedged still falls through to the normal failure streak + alert.
+Diagnose by hand with `cdp_tabs.py reap --dry-run` (or a per-target `Runtime.evaluate`
+probe): if some targets answer, the wall is not the problem and neither is the browser
+as a whole. Pinned by `//tests:test_bulletin_sync_alerting`.
 
 **Monitoring:** the bridge is the only bulletin ingest path and self-alerts to the visa_bulletin bot via `notify_chat` — a fetch-failure *streak* (single misses are transient: the Akamai challenge fails ~1 run in 6 and the next recovers), an immediate alert on never-transient breaks (refresh non-zero, discovered-but-unignested, stream-to-vb_web failure), and an `inject` when a new bulletin lands. Its one structural blind spot — the cron never firing at all — is backstopped by the daily_checkup MCP, which grades the age of `~/.local/state/visa_bulletin/last_success`. `//tests:test_bulletin_sync_alerting` pins that state-file contract; the prod-side `logs/cron/bulletin_refresh.log` is frozen by design and its staleness is **not** an ingest failure.
 
