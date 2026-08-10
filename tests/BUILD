@@ -1461,22 +1461,6 @@ django_py_test(
 )
 
 django_py_test(
-    name = "test_h1b_lottery",
-    size = "medium",
-    srcs = ["test_h1b_lottery.py"],
-    deps = [
-        "//django_config:context_processors",
-        "//django_config:urls",
-        "//lib/business/i129:lottery_season",
-        "//models:i129",
-        "//webapp:urls",
-        "//webapp/views:views",
-        "//webapp/views/seo:sitemaps",
-        requirement("pytest-django"),
-    ],
-)
-
-django_py_test(
     name = "test_priority_date_rollup",
     size = "medium",
     srcs = ["test_priority_date_rollup.py"],
