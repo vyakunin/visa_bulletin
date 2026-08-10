@@ -174,14 +174,16 @@ class TestPublishedFloorReset(TestCase):
 
     # ---- the public sentence -------------------------------------------------
 
-    def test_explainer_cites_the_floor_and_drops_the_2012_precedent(self):
+    def test_explainer_cites_the_floor_and_drops_the_precedent_framing(self):
         self.record_floor()
         text = describe_reset(self.estimate(), "EB-2 India")
         self.assertIn("July 15, 2014", text)
         self.assertIn("at least", text)
-        # The 2012-retrogression framing is what the pooled distribution justified.
-        # With a published floor above it, citing it contradicts the same paragraph.
-        self.assertNotIn("2012", text)
+        # The deep-retrogression framing is what the pooled distribution justified.
+        # With a published floor above it, quoting a precedent that retrogressed
+        # below that floor contradicts the same paragraph.
+        self.assertNotIn("deepest", text)
+        self.assertNotIn("rough guess", text)
 
     def test_explainer_without_a_floor_is_unchanged(self):
         text = describe_reset(self.estimate(), "EB-2 India")

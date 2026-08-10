@@ -122,3 +122,40 @@ class TestOctoberReset(TestCase):
         self.assertIn("October 1, 2020", text)
         self.assertIn("rough guess", text)          # honest uncertainty
         self.assertIn("January 1, 2015", text)       # pre-U reference date
+
+    def test_named_precedent_comes_from_the_pool_and_carries_its_own_series(self):
+        # The pool is cross-series, so the precedent quoted for EB-2 India is the
+        # deepest reset on record (EB-3 China FY2018), named as such. A precedent
+        # quoted bare would read as EB-2 India's own history.
+        est = estimate_october_reset("2nd", self.india, "final_action", date(2020, 8, 1))
+        text = describe_reset(est, "EB-2 India")
+        self.assertIn("EB-3 China in 2018", text)
+        self.assertIn("employment-based record", text)
+        self.assertNotIn("2012", text)  # no hardcoded example
+
+    def test_precedent_is_named_for_a_series_that_has_none_of_its_own(self):
+        # EB-1 India has never gone Unavailable in this fixture, so every precedent
+        # it can quote belongs to another series — and must say so.
+        for m in (5, 7, 8, 9):
+            b = Bulletin.objects.get(publication_date=date(2020, m, 1))
+            _row(b, self.india, "1st", date(2019, 3, 1) if m == 5 else None,
+                 unavailable=(m != 5))
+        _clear_caches()
+        est = estimate_october_reset("1st", self.india, "final_action", date(2020, 8, 1))
+        text = describe_reset(est, "EB-1 India")
+        self.assertIn("EB-3 China in 2018", text)
+        self.assertNotIn("EB-1 India in", text)
+
+    def test_shallow_pool_names_no_precedent(self):
+        # The boundary the fix must not over-reach: a pool whose deepest move is a
+        # few weeks supports no "substantial retrogression" claim at all.
+        shallow = [
+            e for e in find_reset_events("final_action")
+            if e.visa_class == "3rd"
+        ]
+        shallow[0].reset_cutoff = date(2009, 12, 10)  # -22 days instead of -214
+        est = estimate_from_precedents(date(2015, 1, 1), 2020, shallow)
+        text = describe_reset(est, "EB-2 India")
+        self.assertNotIn("deepest", text)
+        self.assertNotIn("EB-3 China", text)
+        self.assertIn("rough guess", text)

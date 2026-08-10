@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from lib.business.bulletin.eb_series import EB_CLASSES as _EB_CLASSES
-from lib.business.bulletin.eb_series import resolve_cutoff_label
+from lib.business.bulletin.eb_series import EB_SHORT_LABELS, resolve_cutoff_label
 
 # Months in which an active Unavailable state is an end-of-fiscal-year annual-limit
 # exhaustion (→ resets in October).  U states earlier in the FY are different
@@ -248,6 +248,19 @@ def _published_floor(
     )
 
 
+def _precedent_label(event: ResetEvent) -> str:
+    """Human label for a precedent, e.g. ``EB-3 China``.
+
+    Local Country import so the module keeps loading before Django's app
+    registry is ready, matching ``_full_series``.
+    """
+    from models.enums.country import Country
+
+    series = EB_SHORT_LABELS.get(event.visa_class, event.visa_class)
+    country = Country(event.country).label.split(" (")[0]
+    return f"{series} {country}"
+
+
 def _percentile(sorted_vals: list[float], q: float) -> float:
     """Linear-interpolated percentile (q in [0,1]) on a pre-sorted list."""
     if not sorted_vals:
@@ -294,14 +307,29 @@ def estimate_from_precedents(
     """
     from datetime import timedelta
 
-    deltas = sorted(float(e.delta_days) for e in precedents)
+    # Keep each delta paired with the event that produced it, so the deepest
+    # retrogression can be named in user-facing copy as the series it actually
+    # happened to. The pool is cross-series, so a precedent quoted without its
+    # own label reads as this series' own history — which it usually is not.
+    scored = [(float(e.delta_days), e) for e in precedents]
 
     floor_delta: float | None = None
     n_below_floor = 0
     if floor is not None:
         floor_delta = float((floor - pre_u_cutoff).days)
-        n_below_floor = sum(1 for d in deltas if d < floor_delta)
-        deltas = sorted(max(d, floor_delta) for d in deltas)
+        n_below_floor = sum(1 for d, _ in scored if d < floor_delta)
+        scored = [(max(d, floor_delta), e) for d, e in scored]
+    scored.sort(key=lambda pair: pair[0])
+    deltas = [d for d, _ in scored]
+
+    deepest: dict | None = None
+    if scored and scored[0][0] < 0:
+        deepest_delta, deepest_event = scored[0]
+        deepest = {
+            "series": _precedent_label(deepest_event),
+            "reset_year": deepest_event.spell_fy,
+            "delta_days": round(deepest_delta),
+        }
 
     def _floor_diagnostics() -> dict:
         if floor is None:
@@ -375,6 +403,7 @@ def estimate_from_precedents(
             # scripts/vqs/backtest_october_reset.py.
             "p10_delta_days": round(lo_delta),
             "p90_delta_days": round(hi_delta),
+            **({"deepest_precedent": deepest} if deepest else {}),
             **_floor_diagnostics(),
         },
     )
@@ -465,6 +494,21 @@ def _fmt_month(d: date) -> str:
     return d.strftime("%B %-d, %Y")
 
 
+_SPAN_WORDS = {
+    2: "two", 3: "three", 4: "four", 5: "five",
+    6: "six", 7: "seven", 8: "eight", 9: "nine",
+}
+
+
+def _humanize_span(days: int) -> str:
+    """Plain-language length of a reset move, e.g. ``about three years``."""
+    months = round(abs(days) / 30.44)
+    if months < 18:
+        return f"about {months} months"
+    years = round(abs(days) / 365.25)
+    return f"about {_SPAN_WORDS.get(years, years)} years"
+
+
 def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
     """Honest markdown explainer for a currently-Unavailable EB series.
 
@@ -474,6 +518,11 @@ def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
     reset magnitude is genuinely uncertain (history: near-flat to multi-year
     retrogression). Deliberately does NOT assert a precise reset date or a
     calibrated CI — the backtest shows neither is reliable.
+
+    Any precedent it quotes is the deepest in the pool, named with the series it
+    actually happened to and labelled as the employment-based record rather than
+    this series' own history — the pool is cross-series, so an unlabelled
+    precedent reads as a claim about the category the reader is looking at.
 
     Where the State Department has published a floor for this reset, the floor
     leads and the historical-spread caveat is dropped: quoting a precedent that
@@ -510,20 +559,24 @@ def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
             f"Where it resets to is uncertain. For reference, the last cutoff before "
             f"it went Unavailable was **{ref}**."
         )
-        # If precedents show meaningful downside, name the historical range honestly.
+        # If precedents show meaningful downside, name the historical range honestly —
+        # from the pool, with the precedent's OWN series attached.
         p10 = est.diagnostics.get("p10_delta_days")
-        if p10 is not None and p10 < -120:
+        deepest = est.diagnostics.get("deepest_precedent")
+        if p10 is not None and p10 < -120 and deepest:
             note += (
                 " Historically the October reset for an exhausted category has ranged "
-                "from near that date to a retrogression of a year or more (EB-2 India "
-                "reset about three years earlier in 2012), so treat any specific "
-                "October date as a rough guess."
+                "from near that date to a substantial retrogression: the deepest in the "
+                f"employment-based record is **{deepest['series']} in "
+                f"{deepest['reset_year']}**, which came back "
+                f"{_humanize_span(deepest['delta_days'])} earlier than its own "
+                "pre-Unavailable cutoff. Treat any specific October date as a rough guess."
             )
         else:
             note += (
                 " Historically the October reset has landed anywhere from near that "
-                "date to a retrogression of a year or more, so treat any specific "
-                "October date as a rough guess."
+                "date to a retrogression, so treat any specific October date as a "
+                "rough guess."
             )
         parts.append(note)
     return " ".join(parts)
