@@ -36,6 +36,15 @@ py_library(
 )
 
 py_library(
+    name = "eb_series",
+    srcs = ["eb_series.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//models:visa_cutoff_date",
+    ],
+)
+
+py_library(
     name = "visa_class_utils",
     srcs = ["visa_class_utils.py"],
     visibility = ["//visibility:public"],

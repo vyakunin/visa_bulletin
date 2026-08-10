@@ -30,6 +30,7 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
+from lib.business.bulletin.eb_series import EB_SHORT_LABELS, resolve_cutoff_label
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
@@ -42,8 +43,11 @@ from webapp.views.bulletin.retention import (
     make_record,
 )
 
-# EB preference visa_class -> short display label (the stored visa_class values).
-_EB_CLASSES = {"1st": "EB-1", "2nd": "EB-2", "3rd": "EB-3", "4th": "EB-4", "5th": "EB-5"}
+# EB series key -> short display label. Grid rows and PredictedCutoff rows are
+# keyed by the series key; the bulletin's own heading for that series is a
+# separate string resolved per bulletin (EB-5 is renamed every few years) —
+# see lib/business/bulletin/eb_series.py.
+_EB_CLASSES = EB_SHORT_LABELS
 
 # Countries shown in the forecast grid (the per-country-limited + "All" buckets).
 _COUNTRIES = [
@@ -197,8 +201,27 @@ def _forecast_from_row(
 
 
 def _load_current_actuals(bulletin: Bulletin) -> dict[tuple[str, int, str], VisaCutoffDate]:
-    rows = VisaCutoffDate.objects.filter(bulletin=bulletin)
-    return {(r.visa_class, r.country, r.action_type): r for r in rows}
+    """Latest actual cutoffs, keyed by SERIES KEY so the grid can look them up.
+
+    Most rows are already stored under their series key. EB-5 is not: the
+    bulletin prints the sub-category in the heading, so the row for the EB-5
+    grid line has to be found by resolving that heading for this bulletin and
+    re-keying it. Without this the lookup missed and every EB-5 cell rendered
+    with no baseline to compare against.
+    """
+    rows = list(VisaCutoffDate.objects.filter(bulletin=bulletin))
+    actuals = {(r.visa_class, r.country, r.action_type): r for r in rows}
+
+    pub = bulletin.publication_date
+    for series_key in _EB_CLASSES:
+        for action in (_FINAL, _FILING):
+            label = resolve_cutoff_label(series_key, action, as_of=pub)
+            if label is None or label == series_key:
+                continue
+            for r in rows:
+                if r.visa_class == label and r.action_type == action:
+                    actuals[(series_key, r.country, action)] = r
+    return actuals
 
 
 def _load_stored_forecast(target: date) -> tuple[dict[tuple[str, int, str], PredictedCutoff], date | None]:

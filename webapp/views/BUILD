@@ -27,6 +27,7 @@ py_library(
     srcs = ["prediction_views.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:eb_series",
         "//lib/business/vqs:accuracy_surfacing",
         "//lib/business/vqs:prediction_loader",
         "//models:bulletin",

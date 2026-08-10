@@ -1548,6 +1548,27 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_eb5_series_label",
+    size = "medium",
+    srcs = ["test_eb5_series_label.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/bulletin:eb_series",
+        "//lib/business/vqs:data_cache",
+        "//models:bulletin",
+        "//models:visa_cutoff_date",
+        "//models:vqs",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views:prediction_views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_october_reset",
     size = "medium",
     srcs = ["test_october_reset.py"],

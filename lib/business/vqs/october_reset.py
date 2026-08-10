@@ -33,8 +33,8 @@ import statistics
 from dataclasses import dataclass, field
 from datetime import date
 
-# Employment-based classes that are subject to annual limits + October reset.
-_EB_CLASSES = ("1st", "2nd", "3rd", "4th", "5th")
+from lib.business.bulletin.eb_series import EB_CLASSES as _EB_CLASSES
+from lib.business.bulletin.eb_series import resolve_cutoff_label
 
 # Months in which an active Unavailable state is an end-of-fiscal-year annual-limit
 # exhaustion (→ resets in October).  U states earlier in the FY are different
@@ -101,17 +101,29 @@ class OctoberResetEstimate:
         }
 
 
-def _full_series(visa_class: str, country: int, action_type: str) -> list:
+def _full_series(
+    visa_class: str, country: int, action_type: str, as_of: date | None = None
+) -> list:
     """All VisaCutoffDate rows for a series (incl. U/C null-cutoff rows), ordered.
 
     Not cached in data_cache's non-null cache; queried directly (called at
     publish/backtest time, not in the hot solver loop).
+
+    ``visa_class`` is a series key; ``as_of`` picks which published heading it
+    resolves to for the keys that have had several (EB-5). The series therefore
+    covers one heading's era, so an EB-5 spell that straddles a rename is not
+    seen as one run — enumerating the full EB-5 lineage is the open question in
+    the EB-4/EB-5 coverage work, not something to infer here.
     """
     from models.visa_cutoff_date import VisaCutoffDate
 
+    label = resolve_cutoff_label(visa_class, action_type, as_of)
+    if label is None:
+        return []
+
     return list(
         VisaCutoffDate.objects.filter(
-            visa_class=visa_class, country=country, action_type=action_type
+            visa_class=label, country=country, action_type=action_type
         )
         .select_related("bulletin")
         .order_by("bulletin__publication_date")
@@ -318,8 +330,10 @@ def estimate_october_reset(
 
     reset_year = _fiscal_year(knowledge_date)  # Oct 1 of this year opens the new FY
 
-    # Pre-U cutoff: last real cutoff strictly before the current U spell.
-    rows = _full_series(visa_class, country, action_type)
+    # Pre-U cutoff: last real cutoff strictly before the current U spell. Resolve
+    # the heading as of the knowledge date so a backtest reads the series the way
+    # it was published then, matching the entry checked just above.
+    rows = _full_series(visa_class, country, action_type, as_of=knowledge_date)
     pre_u_cutoff = None
     in_current_u = False
     for row in reversed(rows):

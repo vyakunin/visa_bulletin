@@ -13,6 +13,11 @@ from django.http import (
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import cache_page
 
+from lib.business.bulletin.eb_series import (
+    EB_CLASSES,
+    EB_SHORT_LABELS,
+    resolve_cutoff_label,
+)
 from lib.business.vqs.prediction_loader import (
     PredictionResult,
     get_all_predictions_for_month,
@@ -417,6 +422,44 @@ def prediction_canonical_path(category: str, year: int, month: int) -> str:
     return f"/predictions/{category}/{year}-{month}/"
 
 
+def _actuals_by_series_key(
+    bulletin: Bulletin | None,
+) -> tuple[dict[str, date], dict[str, tuple[bool, bool]]]:
+    """One bulletin's cutoffs, keyed ``<series_key>_<country>_<action_type>``.
+
+    The archive matrix is keyed by series key ("1st".."5th", "F1".."F4"), but
+    the bulletin stores EB-5 under the sub-category heading it printed that
+    month — a string that is renamed every few years. Re-key that row onto its
+    series key here, or the EB-5 line renders empty for every country.
+
+    Returns (cutoff_date by key, (is_current, is_unavailable) by key).
+    """
+    cutoffs: dict[str, date] = {}
+    flags: dict[str, tuple[bool, bool]] = {}
+    if bulletin is None:
+        return cutoffs, flags
+
+    rows = list(VisaCutoffDate.objects.filter(bulletin=bulletin))
+    for row in rows:
+        key = f"{row.visa_class}_{row.country}_{row.action_type}"
+        cutoffs[key] = row.cutoff_date
+        flags[key] = (row.is_current, row.is_unavailable)
+
+    pub = bulletin.publication_date
+    for series_key in EB_CLASSES:
+        for action in ("final_action", "filing"):
+            label = resolve_cutoff_label(series_key, action, as_of=pub)
+            if label is None or label == series_key:
+                continue
+            for row in rows:
+                if row.visa_class != label or row.action_type != action:
+                    continue
+                key = f"{series_key}_{row.country}_{action}"
+                cutoffs[key] = row.cutoff_date
+                flags[key] = (row.is_current, row.is_unavailable)
+    return cutoffs, flags
+
+
 def _cache_historical_predictions_only(timeout: int):
     """Cache prediction_detail ONLY for months strictly older than the latest
     published bulletin.
@@ -516,35 +559,18 @@ def prediction_detail(
     # a real cutoff), so differencing it month-over-month fabricates a spurious
     # "↑ 1m" advance. An Unavailable ("U") cutoff is stored as NULL. Both must be
     # kept out of the numeric movement/error math below.
-    last_actual_cutoffs: dict[str, date] = {}
-    last_actual_flags: dict[str, tuple[bool, bool]] = {}
-    if last_actual_bulletin:
-        for cutoff in VisaCutoffDate.objects.filter(bulletin=last_actual_bulletin):
-            key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
-            last_actual_cutoffs[key] = cutoff.cutoff_date
-            last_actual_flags[key] = (cutoff.is_current, cutoff.is_unavailable)
+    last_actual_cutoffs, last_actual_flags = _actuals_by_series_key(last_actual_bulletin)
 
     # Current month's actual cutoffs
-    current_actual_cutoffs: dict[str, date] = {}
-    current_actual_flags: dict[str, tuple[bool, bool]] = {}
-    for cutoff in VisaCutoffDate.objects.filter(bulletin=actual_bulletin):
-        key = f"{cutoff.visa_class}_{cutoff.country}_{cutoff.action_type}"
-        current_actual_cutoffs[key] = cutoff.cutoff_date
-        current_actual_flags[key] = (cutoff.is_current, cutoff.is_unavailable)
+    current_actual_cutoffs, current_actual_flags = _actuals_by_series_key(actual_bulletin)
 
     if category == VisaCategory.FAMILY_SPONSORED.value:
         classes = [f[0] for f in FamilyPreference.choices]
         class_display = {f[0]: f[1].split(":")[0] for f in FamilyPreference.choices}
         category_label = "Family-Sponsored"
     else:
-        classes = ["1st", "2nd", "3rd", "4th", "5th"]
-        class_display = {
-            "1st": "EB-1",
-            "2nd": "EB-2",
-            "3rd": "EB-3",
-            "4th": "EB-4",
-            "5th": "EB-5",
-        }
+        classes = list(EB_CLASSES)
+        class_display = dict(EB_SHORT_LABELS)
         category_label = "Employment-Based"
 
     countries = [

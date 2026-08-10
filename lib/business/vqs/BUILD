@@ -148,6 +148,7 @@ py_library(
     srcs = ["data_cache.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:eb_series",
         "//models:bulletin",
         "//models:visa_cutoff_date",
     ],
@@ -159,6 +160,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":data_cache",
+        # october_reset.py imports eb_series (EB_CLASSES / resolve_cutoff_label).
+        "//lib/business/bulletin:eb_series",
         "//models:visa_cutoff_date",
         "//models/enums:country",
     ],

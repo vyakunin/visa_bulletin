@@ -7,10 +7,18 @@ during high-frequency expert evaluation loops.
 Performance: all lookups by date use bisect (O(log n)) instead of linear scans.
 A parallel _PUB_DATE_CACHE stores extracted publication dates for each series
 so bisect_right can operate on a flat list of dates.
+
+Callers address a series by its stable SERIES KEY ("1st".."5th", "F1".."F4").
+EB-5 is published under a heading DOS renames every few years, so the key is
+translated to the live ``visa_class`` label here rather than at each call site —
+see lib/business/bulletin/eb_series.py. Every cache below is keyed by the
+RESOLVED label, so two keys that resolve to the same heading share one entry.
 """
 
 import bisect
 from datetime import date
+
+from lib.business.bulletin.eb_series import resolve_cutoff_label
 
 # Cache for Bulletins: ordered list by publication_date
 _BULLETIN_CACHE: list | None = None
@@ -46,19 +54,29 @@ def get_all_bulletins() -> list:
 
 
 def get_cutoffs_for_series(
-    visa_class: str, country: int, action_type: str
+    visa_class: str, country: int, action_type: str, as_of: date | None = None
 ) -> list:
     """
     Get all historical cutoffs for a specific series, ordered by bulletin date.
     Cached in memory. Also populates _PUB_DATE_CACHE for bisect lookups.
+
+    ``as_of`` selects which published heading the series key resolves to, for
+    the keys that have more than one (EB-5). It does NOT filter the rows — use
+    ``get_cutoffs_up_to`` for that.
     """
     from models.visa_cutoff_date import VisaCutoffDate
 
-    key = (visa_class, country, action_type)
+    label = resolve_cutoff_label(visa_class, action_type, as_of)
+    if label is None:
+        # The series has no published row under any known heading. Missing data,
+        # not an empty backlog — the caller must not read this as Current.
+        return []
+
+    key = (label, country, action_type)
     if key not in _CUTOFF_CACHE:
         qs = (
             VisaCutoffDate.objects.filter(
-                visa_class=visa_class,
+                visa_class=label,
                 country=country,
                 action_type=action_type,
                 cutoff_date__isnull=False,
@@ -72,12 +90,17 @@ def get_cutoffs_for_series(
     return _CUTOFF_CACHE[key]
 
 
-def _get_pub_dates(visa_class: str, country: int, action_type: str) -> list[date]:
+def _get_pub_dates(
+    visa_class: str, country: int, action_type: str, as_of: date | None = None
+) -> list[date]:
     """Return sorted publication dates for the series (populates cache if needed)."""
-    key = (visa_class, country, action_type)
+    label = resolve_cutoff_label(visa_class, action_type, as_of)
+    if label is None:
+        return []
+    key = (label, country, action_type)
     if key not in _PUB_DATE_CACHE:
-        get_cutoffs_for_series(visa_class, country, action_type)
-    return _PUB_DATE_CACHE[key]
+        get_cutoffs_for_series(visa_class, country, action_type, as_of)
+    return _PUB_DATE_CACHE.get(key, [])
 
 
 def get_cutoff_at_date(
@@ -92,8 +115,8 @@ def get_cutoff_at_date(
     Finds the latest bulletin with publication_date <= as_of via O(log n) bisect,
     then returns cutoff_date for (visa_class, country, action_type). Returns None if no data.
     """
-    cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-    pub_dates = _get_pub_dates(visa_class, country, action_type)
+    cutoffs = get_cutoffs_for_series(visa_class, country, action_type, as_of)
+    pub_dates = _get_pub_dates(visa_class, country, action_type, as_of)
     idx = _find_index_up_to(pub_dates, as_of)
     if idx < 0:
         return None
@@ -114,11 +137,15 @@ def _latest_full_entry_at_date(
     """
     from models.visa_cutoff_date import VisaCutoffDate
 
-    key = (visa_class, country, action_type)
+    label = resolve_cutoff_label(visa_class, action_type, as_of)
+    if label is None:
+        return None
+
+    key = (label, country, action_type)
     if key not in _CURRENT_CACHE:
         qs = (
             VisaCutoffDate.objects.filter(
-                visa_class=visa_class,
+                visa_class=label,
                 country=country,
                 action_type=action_type,
             )
@@ -175,8 +202,8 @@ def get_cutoffs_up_to(
     as_of: date,
 ) -> list:
     """Return all cutoffs with publication_date <= as_of. O(log n) via bisect."""
-    cutoffs = get_cutoffs_for_series(visa_class, country, action_type)
-    pub_dates = _get_pub_dates(visa_class, country, action_type)
+    cutoffs = get_cutoffs_for_series(visa_class, country, action_type, as_of)
+    pub_dates = _get_pub_dates(visa_class, country, action_type, as_of)
     idx = _find_index_up_to(pub_dates, as_of)
     if idx < 0:
         return []

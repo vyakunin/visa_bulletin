@@ -103,6 +103,7 @@ py_library(
     deps = [
         ":retention",
         "//django_config:cache_utils",
+        "//lib/business/bulletin:eb_series",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:vqs",
