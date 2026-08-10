@@ -74,50 +74,6 @@ def _gbm_surfaces() -> list[tuple[str, int, int]]:
     return surfaces
 
 
-def _apply_params(params: dict) -> dict:
-    """Override the gbm_expert module _GBM_* constants with candidate params.
-
-    Mirrors what graduating the constants into gbm_expert.py would do: the
-    training functions read the module globals at call time. Accepts both bare
-    keys (n_estimators) and the tuner's gbm_-prefixed keys (gbm_n_estimators).
-    Returns the effective (movement_threshold, gate_threshold) among the full
-    applied set — expert_gbm_gated's defaults are bound at import time, so the
-    caller must pass thresholds explicitly.
-    """
-    from lib.business.vqs import gbm_expert as g
-
-    def _get(key, default):
-        return params.get(key, params.get(f"gbm_{key}", default))
-
-    g._model_cache.clear()
-    g._classifier_cache.clear()
-    g._quantile_cache.clear()
-    g._GBM_N_ESTIMATORS = int(_get("n_estimators", g._GBM_N_ESTIMATORS))
-    g._GBM_MAX_DEPTH = int(_get("max_depth", g._GBM_MAX_DEPTH))
-    g._GBM_NUM_LEAVES = max(15, 2 ** g._GBM_MAX_DEPTH - 1)
-    g._GBM_LEARNING_RATE = float(_get("learning_rate", g._GBM_LEARNING_RATE))
-    g._GBM_MIN_CHILD_SAMPLES = int(_get("min_child_samples", g._GBM_MIN_CHILD_SAMPLES))
-    g._GBM_REG_ALPHA = float(_get("reg_alpha", g._GBM_REG_ALPHA))
-    g._GBM_REG_LAMBDA = float(_get("reg_lambda", g._GBM_REG_LAMBDA))
-    g._GBM_DEFAULT_MOVEMENT_THRESHOLD = int(
-        _get("movement_threshold", g._GBM_DEFAULT_MOVEMENT_THRESHOLD)
-    )
-    g._GBM_DEFAULT_GATE_THRESHOLD = float(
-        _get("gate_threshold", g._GBM_DEFAULT_GATE_THRESHOLD)
-    )
-    return {
-        "n_estimators": g._GBM_N_ESTIMATORS,
-        "max_depth": g._GBM_MAX_DEPTH,
-        "num_leaves": g._GBM_NUM_LEAVES,
-        "learning_rate": g._GBM_LEARNING_RATE,
-        "min_child_samples": g._GBM_MIN_CHILD_SAMPLES,
-        "reg_alpha": g._GBM_REG_ALPHA,
-        "reg_lambda": g._GBM_REG_LAMBDA,
-        "movement_threshold": g._GBM_DEFAULT_MOVEMENT_THRESHOLD,
-        "gate_threshold": g._GBM_DEFAULT_GATE_THRESHOLD,
-    }
-
-
 def collect_rows(action_type: str, movement_threshold: int, gate_threshold: float) -> list[dict]:
     """Walk-forward: one row per (surface, bulletin) with pred/actual/baseline deltas."""
     from lib.business.vqs.data_cache import get_all_bulletins, get_cutoff_at_date
@@ -212,13 +168,10 @@ def main() -> None:
     args = parser.parse_args()
     script_logger.log_call(args=vars(args), context="Publish-dispatch GBM graduation gate")
 
-    params_in = {}
-    if args.params_json:
-        with open(args.params_json) as f:
-            params_in = json.load(f)
-        if "best_params" in params_in:
-            params_in = params_in["best_params"]
-    effective = _apply_params(params_in)
+    from lib.business.vqs.gbm_expert import apply_params, load_params_file
+
+    params_in = load_params_file(args.params_json) if args.params_json else {}
+    effective = apply_params(params_in)
     logger.info("effective GBM params: %s", effective)
 
     rows = collect_rows(

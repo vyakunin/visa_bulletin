@@ -12,6 +12,13 @@ Usage:
     bazel run //scripts/vqs:evaluate_model -- --quick
     bazel run //scripts/vqs:evaluate_model -- --series "India EB-2"
     bazel run //scripts/vqs:evaluate_model -- --horizons 1,3,6,12
+
+--params-json scores a candidate or historical GBM hyperparameter set instead of
+the committed _GBM_* constants, so a change to those constants can be attributed
+on this composite rather than only on the publish-path objective that
+backtest_publish_dispatch measures:
+    scripts/vqs/run_in_stg.sh -m scripts.vqs.evaluate_model --horizons 1,3,6,12 \
+        --gbm --params-json /app/logs/pre_s25_params.json
 """
 
 import argparse
@@ -36,9 +43,11 @@ from lib.business.vqs.direction_metrics import MovePair, direction_metrics
 from lib.business.vqs.gbm_expert import (
     _GBM_DEFAULT_GATE_THRESHOLD,
     _GBM_DEFAULT_MOVEMENT_THRESHOLD,
+    apply_params,
     expert_gbm,
     expert_gbm_direct,
     expert_gbm_gated,
+    load_params_file,
 )
 from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.prediction_loader import (
@@ -810,7 +819,7 @@ def print_stratified_table(all_stratified: dict[str, dict], horizons: list[int])
 _CROSS_SERIES_EXPERTS = frozenset({"cross_series", "gbm"})
 
 
-def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, ablate_group: str | None = None, dir_gate: bool = False):
+def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, diagnostic=False, ablate=False, gbm=False, gate_threshold: float = _GBM_DEFAULT_GATE_THRESHOLD, movement_threshold: int = _GBM_DEFAULT_MOVEMENT_THRESHOLD, ablate_group: str | None = None, dir_gate: bool = False):
     """Run evaluation across all series and horizons, return chart data and metrics."""
     chart_data = {}
     all_metrics = []
@@ -870,6 +879,7 @@ def run_evaluation(start_date, end_date, horizons, series_filter=None, step=1, d
         if gbm:
             gbm_cache, gbm_direct_cache, gbm_gated_cache = build_gbm_caches(
                 visa_class, country, sorted(all_kd_for_rs), horizons, ACTION_TYPE,
+                movement_threshold=movement_threshold,
                 gate_threshold=gate_threshold,
                 ablate_group=ablate_group,
             )
@@ -1662,9 +1672,18 @@ def main():
              "faithful Dispatch baseline.",
     )
     parser.add_argument("--gbm", action="store_true", help="Include GBM standalone, GBM Direct, and GBM Gated models (slower)")
-    parser.add_argument("--gate-threshold", type=float, default=_GBM_DEFAULT_GATE_THRESHOLD,
-                        help=f"GBM Gated gate threshold (default: {_GBM_DEFAULT_GATE_THRESHOLD}). "
-                             "Used for gate sweep experiments.")
+    parser.add_argument("--gate-threshold", type=float, default=None,
+                        help=f"GBM Gated gate threshold (default: {_GBM_DEFAULT_GATE_THRESHOLD}, "
+                             "or the value in --params-json). Used for gate sweep experiments.")
+    parser.add_argument(
+        "--params-json", default=None,
+        help="JSON file of candidate _GBM_* hyperparameters to evaluate instead of the "
+             "committed constants (same format as backtest_publish_dispatch --params-json: "
+             "n_estimators / max_depth / learning_rate / min_child_samples / reg_alpha / "
+             "reg_lambda / movement_threshold / gate_threshold, bare or gbm_-prefixed, "
+             "optionally wrapped in a best_params block). Lets this composite be scored "
+             "against a past or candidate parameter set. Requires --gbm to change anything.",
+    )
     parser.add_argument(
         "--ablate-group", type=str, default=None,
         choices=list(_GBM_FEATURE_GROUPS),
@@ -1683,12 +1702,25 @@ def main():
         settings.BASE_DIR, "webapp", "templates", "spaghetti.html"
     )
 
+    # Candidate params first: they set the module constants the GBM experts read,
+    # and supply the threshold defaults an explicit flag may still override.
+    effective = apply_params(
+        load_params_file(args.params_json) if args.params_json else {}
+    )
+    if args.params_json:
+        logger.info("effective GBM params: %s", effective)
+    gate_threshold = (
+        args.gate_threshold if args.gate_threshold is not None
+        else effective["gate_threshold"]
+    )
+
     chart_data, metrics, stratified = run_evaluation(
         start, end, horizons,
         series_filter=args.series, step=step,
         diagnostic=args.diagnostic, ablate=args.ablate,
         gbm=args.gbm,
-        gate_threshold=args.gate_threshold,
+        gate_threshold=gate_threshold,
+        movement_threshold=effective["movement_threshold"],
         ablate_group=args.ablate_group,
         dir_gate=args.dir_gate,
     )

@@ -1204,6 +1204,15 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_vqs_gbm_params",
+    size = "small",
+    srcs = ["test_vqs_gbm_params.py"],
+    deps = [
+        "//lib/business/vqs:gbm_expert",
+    ],
+)
+
+django_py_test(
     name = "test_vqs_interval_coverage",
     size = "small",
     srcs = ["test_vqs_interval_coverage.py"],
@@ -1447,6 +1456,22 @@ django_py_test(
         "//models/enums:visa_program",
         "//webapp:urls",
         "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_h1b_lottery",
+    size = "medium",
+    srcs = ["test_h1b_lottery.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/business/i129:lottery_season",
+        "//models:i129",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//webapp/views/seo:sitemaps",
         requirement("pytest-django"),
     ],
 )

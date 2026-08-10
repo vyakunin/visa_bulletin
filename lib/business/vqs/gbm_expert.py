@@ -100,6 +100,78 @@ _GBM_DEFAULT_MOVEMENT_THRESHOLD: int = 49
 _GBM_DEFAULT_GATE_THRESHOLD: float = 0.48805562655785184
 
 
+def load_params_file(path: str) -> dict:
+    """Read a candidate hyperparameter set from a JSON file written by the tuner.
+
+    `scripts/vqs/tune_params.py` wraps its winner in a `best_params` block, while
+    a hand-written override file is the bare mapping; both are accepted so a
+    caller never has to know which produced the file.
+    """
+    import json
+
+    with open(path) as f:
+        params = json.load(f)
+    if "best_params" in params:
+        params = params["best_params"]
+    return params
+
+
+def apply_params(params: dict) -> dict:
+    """Override the module's _GBM_* constants with a candidate hyperparameter set.
+
+    Mirrors what graduating a tuned set into this module would do: the training
+    functions read these globals at call time, so a backtest that applies a set
+    here evaluates exactly the code a graduation would ship. Accepts both bare
+    keys (n_estimators) and the tuner's gbm_-prefixed keys (gbm_n_estimators);
+    an absent key keeps the committed value.
+
+    Returns the full effective set. Callers must pass movement_threshold and
+    gate_threshold on to expert_gbm_gated explicitly: its own defaults are bound
+    at function definition, so mutating the globals does not reach them.
+
+    Lives here rather than in a backtest script because this module owns the
+    constants — two scripts apply candidate params (evaluate_model,
+    backtest_publish_dispatch) and a second copy of the key list would drift
+    from the constants it sets.
+    """
+    def _get(key, default):
+        return params.get(key, params.get(f"gbm_{key}", default))
+
+    global _GBM_N_ESTIMATORS, _GBM_MAX_DEPTH, _GBM_NUM_LEAVES, _GBM_LEARNING_RATE
+    global _GBM_MIN_CHILD_SAMPLES, _GBM_REG_ALPHA, _GBM_REG_LAMBDA
+    global _GBM_DEFAULT_MOVEMENT_THRESHOLD, _GBM_DEFAULT_GATE_THRESHOLD
+
+    # Models trained under the previous constants are stale for the new set.
+    _model_cache.clear()
+    _classifier_cache.clear()
+    _quantile_cache.clear()
+
+    _GBM_N_ESTIMATORS = int(_get("n_estimators", _GBM_N_ESTIMATORS))
+    _GBM_MAX_DEPTH = int(_get("max_depth", _GBM_MAX_DEPTH))
+    _GBM_NUM_LEAVES = max(15, 2 ** _GBM_MAX_DEPTH - 1)
+    _GBM_LEARNING_RATE = float(_get("learning_rate", _GBM_LEARNING_RATE))
+    _GBM_MIN_CHILD_SAMPLES = int(_get("min_child_samples", _GBM_MIN_CHILD_SAMPLES))
+    _GBM_REG_ALPHA = float(_get("reg_alpha", _GBM_REG_ALPHA))
+    _GBM_REG_LAMBDA = float(_get("reg_lambda", _GBM_REG_LAMBDA))
+    _GBM_DEFAULT_MOVEMENT_THRESHOLD = int(
+        _get("movement_threshold", _GBM_DEFAULT_MOVEMENT_THRESHOLD)
+    )
+    _GBM_DEFAULT_GATE_THRESHOLD = float(
+        _get("gate_threshold", _GBM_DEFAULT_GATE_THRESHOLD)
+    )
+    return {
+        "n_estimators": _GBM_N_ESTIMATORS,
+        "max_depth": _GBM_MAX_DEPTH,
+        "num_leaves": _GBM_NUM_LEAVES,
+        "learning_rate": _GBM_LEARNING_RATE,
+        "min_child_samples": _GBM_MIN_CHILD_SAMPLES,
+        "reg_alpha": _GBM_REG_ALPHA,
+        "reg_lambda": _GBM_REG_LAMBDA,
+        "movement_threshold": _GBM_DEFAULT_MOVEMENT_THRESHOLD,
+        "gate_threshold": _GBM_DEFAULT_GATE_THRESHOLD,
+    }
+
+
 def _get_i140_ratio(country: int, knowledge_date: date, facts: list | None = None) -> float:
     """Ratio of recent I-140 receipts to historical average. 1.0 = no change."""
     from models.raw_facts import RawFactsLedger
