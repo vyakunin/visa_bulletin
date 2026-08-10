@@ -1,0 +1,82 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block extra_head %}
+<style>
+  .lottery-table td, .lottery-table th { overflow-wrap: normal; word-break: normal; }
+</style>
+{% endblock %}
+
+{% block hero_heading %}<div class="hero-masthead mb-2 display-5"><i class="bi bi-calendar-event"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}: cap season calendar</h1>
+    <p class="text-muted mb-2">The H-1B cap runs on a fixed annual cycle. This is where FY{{ season.cap_fy }} stands today, {{ season.today|date:"F j, Y" }}.</p>
+    <p class="lead mb-4">{{ lead_answer }}</p>
+
+    <h2 class="h4 mb-3">The FY{{ season.cap_fy }} cap season, phase by phase</h2>
+    <div class="list-group mb-4">
+      {% for p in season.phases %}
+      <div class="list-group-item {% if p.is_current %}border-start border-4 border-primary bg-light{% endif %}">
+        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+          <h3 class="h6 mb-0 fw-semibold">
+            {{ p.label }}
+            {% if p.is_current %}<span class="badge text-bg-primary ms-2">Now</span>{% endif %}
+          </h3>
+          <span class="text-muted small">{{ p.window }}</span>
+        </div>
+        <p class="mb-0 mt-1 text-muted small">{{ p.detail }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="text-muted small mb-4">
+      April 1 and October 1 are fixed: petitions cannot be filed before the first, and cap
+      employment cannot begin before the second. The registration dates and any additional
+      selection round are announced by USCIS season by season, so no date here is a forecast
+      of an announcement.
+    </p>
+
+    <h2 class="h4 mt-5 mb-3">Recent selection rates</h2>
+    <div class="table-responsive mb-2">
+      <table class="table table-striped align-middle lottery-table">
+        <thead>
+          <tr>
+            <th>Cap FY</th>
+            <th class="text-end">Eligible registrations</th>
+            <th class="text-end">Selected</th>
+            <th class="text-end">Selection rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in recent_seasons %}
+          <tr>
+            <td>FY{{ s.cap_fy }}</td>
+            <td class="text-end">{{ s.eligible_registrations|intcomma }}</td>
+            <td class="text-end">{{ s.selected_registrations|intcomma }}</td>
+            <td class="text-end fw-semibold">{{ s.selection_rate_pct }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-4">
+      FY{{ latest.cap_fy }} is the most recent season we hold published USCIS figures for.
+      <a href="/h1b-lottery/odds/">Every season back to FY{{ first_season_fy }}, and what the FY2025 rule change did &rarr;</a>
+    </p>
+
+    {% if waves_with_later %}
+    <h2 class="h4 mt-5 mb-3">Has there been a second round?</h2>
+    <p class="mb-3">
+      In {{ waves_with_later|length }} of the {{ waves|length }} cap seasons our petition data covers, a
+      second wave of petitions arrived months after the initial filing window closed — the trace an
+      additional selection round leaves.
+      <a href="/h1b-lottery/second-round/">See the season-by-season history &rarr;</a>
+    </p>
+    {% endif %}
+
+    {% include "webapp/includes/_lottery_footer.html" %}
+  </div>
+</div>
+{% endblock %}

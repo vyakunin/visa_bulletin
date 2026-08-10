@@ -31,6 +31,11 @@ from webapp.views.job_titles.directory import (
     job_title_directory_view,
 )
 from webapp.views.job_titles.profile import job_title_profile_view
+from webapp.views.lottery.h1b_lottery import (
+    h1b_lottery_hub_view,
+    h1b_lottery_odds_view,
+    h1b_lottery_second_round_view,
+)
 from webapp.views.prediction_views import (
     metric_report_view,
     prediction_category_landing,
@@ -176,6 +181,17 @@ urlpatterns = [
         "h1b-sponsors/<slug:slug>/",
         h1b_sponsors_landing_view,
         name="h1b_sponsors_landing",
+    ),
+    # H-1B cap ("lottery") season cluster. The cap's demand waves — registration,
+    # results, any additional selection round, the October 1 start — are the same
+    # anticipation-window shape the prediction pages serve, on an annual cycle.
+    # Distinct prefix from h1b-sponsors/ and h1b-salary/, so no shadowing.
+    path("h1b-lottery/", h1b_lottery_hub_view, name="h1b_lottery_hub"),
+    path("h1b-lottery/odds/", h1b_lottery_odds_view, name="h1b_lottery_odds"),
+    path(
+        "h1b-lottery/second-round/",
+        h1b_lottery_second_round_view,
+        name="h1b_lottery_second_round",
     ),
     # {occupation} salary landing pages (SEO: "software engineer h1b salary",
     # "data scientist salary"). Keyed off the clean DOL SOC code, not the mangled

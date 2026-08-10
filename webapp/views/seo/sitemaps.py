@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_all_agents
+from lib.business.i129.lottery_season import SELECTION_HISTORY_UPDATED
 from lib.business.salary.employer_stats import indexable_employer_clusters
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
@@ -282,6 +283,20 @@ def build_sitemap_xml(base_url: str) -> str:
             f"{base_url}{forecast_url_for(upcoming)}",
             lastmod=bulletin_lastmod,
             changefreq="weekly",
+            priority="0.7",
+        ))
+
+    # H-1B cap ("lottery") season cluster. Mirrors the routes in webapp/urls.py /
+    # webapp/views/lottery/h1b_lottery.py — three fixed URLs, no gate to mirror.
+    # lastmod is the selection-history dataset's own revision date, NOT today:
+    # the rendered phase banner advances daily, and a lastmod that says "changed
+    # today" every day is the drift _lastmod_capped exists to prevent.
+    lottery_lastmod = _lastmod_capped(SELECTION_HISTORY_UPDATED, today)
+    for path in ("/h1b-lottery/", "/h1b-lottery/odds/", "/h1b-lottery/second-round/"):
+        xml_parts.extend(_url_entry(
+            f"{base_url}{path}",
+            lastmod=lottery_lastmod,
+            changefreq="monthly",
             priority="0.7",
         ))
 

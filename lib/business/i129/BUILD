@@ -70,3 +70,13 @@ py_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "lottery_season",
+    srcs = ["lottery_season.py"],
+    deps = [
+        "//models:i129",
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)

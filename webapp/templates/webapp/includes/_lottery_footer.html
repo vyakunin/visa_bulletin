@@ -1,0 +1,38 @@
+{% comment %}
+Shared tail for the three /h1b-lottery/ pages: the FAQ (whose items are also
+emitted as FAQPage JSON-LD from the view, so the visible copy and the schema
+never diverge), the sibling links that keep the cluster meshed, and the source
+note. Context: faq, siblings, uscis_registration_url, history_updated.
+{% endcomment %}
+<h2 class="h4 mt-5 mb-3">Frequently asked questions</h2>
+{% for item in faq %}
+<div class="mb-3">
+  <h3 class="h6 fw-semibold mb-1">{{ item.q }}</h3>
+  <p class="text-muted mb-0">{{ item.a }}</p>
+</div>
+{% endfor %}
+
+<h2 class="h4 mt-5 mb-2">More on the H-1B cap</h2>
+<p class="mb-3">
+  {% for s in siblings %}<a href="{{ s.url }}">{{ s.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+</p>
+
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a href="/salaries/?program=h1b" class="btn btn-outline-secondary btn-sm"><i class="bi bi-cash-stack"></i> H-1B salaries by employer and role</a>
+  <a href="/employers/rankings/" class="btn btn-outline-secondary btn-sm">Top H-1B sponsors</a>
+  <a href="/analysis/h1b-lottery-odds-by-year/" class="btn btn-outline-secondary btn-sm">The odds analysis in depth</a>
+  <a href="/priority-date/" class="btn btn-outline-secondary btn-sm">Green card priority dates</a>
+</div>
+
+<hr>
+<h2 class="h5 mt-4 mb-2">Sources</h2>
+<p class="text-muted small mb-1">
+  Registration and selection totals are USCIS's own published
+  <a href="{{ uscis_registration_url }}" rel="nofollow">H-1B electronic registration</a>
+  statistics; the change of selection basis is the
+  <a href="{{ beneficiary_rule_url }}" rel="nofollow">FY2025 beneficiary-centric rule</a>.
+  Petition receipt dates come from the I-129 microdata released under the Freedom of
+  Information Act — sourced from USCIS, obtained by Bloomberg — covering cap-subject
+  petitions that were selected and filed in FY2021&ndash;FY2024.
+</p>
+<p class="text-muted small mb-0">Selection figures last revised {{ history_updated|date:"F j, Y" }}. Nothing on this page is legal advice.</p>

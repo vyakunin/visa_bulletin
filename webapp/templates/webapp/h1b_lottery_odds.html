@@ -1,0 +1,82 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block extra_head %}
+<style>
+  /* .table-responsive lets the table scroll, but Bootstrap's break-word rule
+     splits "343,981" and "34.9%" mid-token in a narrow numeric column. */
+  .lottery-table td, .lottery-table th { overflow-wrap: normal; word-break: normal; }
+</style>
+{% endblock %}
+
+{% block hero_heading %}<div class="hero-masthead mb-2 display-5"><i class="bi bi-dice-5"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+    <h1 class="mb-2">{{ page_heading }}</h1>
+    <p class="text-muted mb-2">USCIS's published registration statistics, cap season by cap season.</p>
+    <p class="lead mb-4">{{ lead_answer }}</p>
+
+    <div class="table-responsive mb-2">
+      <table class="table table-striped align-middle lottery-table">
+        <thead>
+          <tr>
+            <th>Cap FY</th>
+            <th class="text-end">Eligible registrations</th>
+            <th class="text-end">Selected</th>
+            <th class="text-end">Selection rate</th>
+            <th class="text-end">Selections per cap slot</th>
+            <th>Selected by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in seasons %}
+          <tr>
+            <td class="fw-semibold">FY{{ s.cap_fy }}</td>
+            <td class="text-end">{{ s.eligible_registrations|intcomma }}</td>
+            <td class="text-end">{{ s.selected_registrations|intcomma }}</td>
+            <td class="text-end fw-semibold">{{ s.selection_rate_pct }}%</td>
+            <td class="text-end">{{ s.over_selection_multiple }}&times;</td>
+            <td class="small">{{ s.basis.label }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-4">
+      Selection rate is selections divided by eligible registrations. "Selections per cap slot"
+      is the same selections against the {{ annual_cap|intcomma }} statutory cap: USCIS deliberately selects
+      more than the cap because not every selected registrant files and not every petition is
+      approved, and a season that needed a larger multiple is one where more selections were
+      required to fill the same slots. Selections are counted across all rounds a season ran.
+    </p>
+
+    <h2 class="h4 mt-5 mb-3">What each season's numbers carry</h2>
+    <div class="list-group mb-4">
+      {% for s in seasons %}{% if s.note %}
+      <div class="list-group-item">
+        <h3 class="h6 fw-semibold mb-1">FY{{ s.cap_fy }}</h3>
+        <p class="mb-0 text-muted small">{{ s.note }}</p>
+      </div>
+      {% endif %}{% endfor %}
+    </div>
+
+    <h2 class="h4 mt-5 mb-3">Selection is not a visa</h2>
+    <p>
+      Every rate above is a rate of <em>selection</em>. A selected registration earns the right to
+      file the I-129 petition inside the filing window; the petition still has to be filed and
+      approved, and a real share are denied. The FY2021 and FY2022 rates are also inflated by the
+      extra selection rounds those seasons ran after too few selectees filed, so they overstate
+      what a single draw was worth.
+    </p>
+    <p>
+      What the single yearly rate hides is what set the odds before FY2025: how many employers
+      registered the same person. Conditioned on that, the one rate splits in two —
+      <a href="/analysis/h1b-lottery-odds-by-year/">the full decomposition, built from these same USCIS totals</a>.
+    </p>
+
+    {% include "webapp/includes/_lottery_footer.html" %}
+  </div>
+</div>
+{% endblock %}

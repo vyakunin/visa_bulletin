@@ -11,6 +11,7 @@ py_library(
         "//webapp/views/employers:rankings",
         "//webapp/views/job_titles:directory",
         "//webapp/views/job_titles:profile",
+        "//webapp/views/lottery:h1b_lottery",
         "//webapp/views/salary:by_state",
         "//webapp/views/salary:h1b_salary_pair",
         "//webapp/views/salary:h1b_sponsors",

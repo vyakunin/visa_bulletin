@@ -429,7 +429,10 @@ the whole point.</li>
 </ul>
 
 <h2>Explore the data yourself</h2>
-<p>The multi-registration behavior behind these odds is broken down in
+<p>The per-year selection rates above, the cap-season calendar and the history of
+additional selection rounds are kept current on
+<a href="/h1b-lottery/">the H-1B lottery pages</a>.
+The multi-registration behavior behind these odds is broken down in
 <a href="/analysis/h1b-multi-registration-lottery-gaming/">the multi-registration
 story</a>, and the pay side in
 <a href="/analysis/h1b-gender-pay-gap-decomposition/">the H-1B pay decomposition</a>.

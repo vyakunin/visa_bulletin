@@ -1,0 +1,85 @@
+{% extends "webapp/base.html" %}
+{% load humanize %}
+
+{% block extra_head %}
+<style>
+  .lottery-table td, .lottery-table th { overflow-wrap: normal; word-break: normal; }
+</style>
+{% endblock %}
+
+{% block hero_heading %}<div class="hero-masthead mb-2 display-5"><i class="bi bi-arrow-repeat"></i> {{ page_heading }}</div>{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-10 offset-lg-1">
+    <h1 class="mb-2">Will there be a second H-1B lottery round?</h1>
+    <p class="text-muted mb-2">Measured in the I-129 petition microdata, not announced schedules.</p>
+    <p class="lead mb-4">{{ lead_answer }}</p>
+
+    <h2 class="h4 mt-4 mb-3">How a second round works</h2>
+    <p>
+      USCIS selects more registrations than the {{ annual_cap|intcomma }} cap because not every selected
+      registrant files a petition. When the petitions that do arrive will not fill the cap, it
+      selects again from the registrations already submitted that March. There is nothing to
+      re-submit and no second registration period: a registration that was not selected the first
+      time stays in the pool for the rest of that cap season, and anyone newly selected is notified
+      in their USCIS online account.
+    </p>
+
+    {% if waves %}
+    <h2 class="h4 mt-5 mb-3">When each season's petitions actually arrived</h2>
+    <div class="table-responsive mb-2">
+      <table class="table table-striped align-middle lottery-table">
+        <thead>
+          <tr>
+            <th>Cap FY</th>
+            <th class="text-end">Initial window<br><span class="fw-normal text-muted small">April&ndash;July</span></th>
+            <th class="text-end">After it closed<br><span class="fw-normal text-muted small">August onward</span></th>
+            <th class="text-end">Share arriving later</th>
+            <th>Later wave?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in waves %}
+          <tr>
+            <td class="fw-semibold">FY{{ w.cap_fy }}</td>
+            <td class="text-end">{{ w.initial_window|intcomma }}</td>
+            <td class="text-end">{{ w.later_window|intcomma }}</td>
+            <td class="text-end fw-semibold">{{ w.later_share_pct }}%</td>
+            <td>
+              {% if w.had_later_wave %}<span class="text-danger fw-semibold">Yes</span>
+              {% else %}<span class="text-muted">No</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-4">
+      Counts are cap-subject petitions that were selected and filed, bucketed by the date USCIS
+      received them. The split is sharp rather than borderline: July is the trough in every season,
+      and the seasons that ran an additional round show tens of thousands of receipts in August and
+      later while the seasons that did not show a few hundred. This measures arrival dates, which is
+      the trace a later round leaves, rather than an announcement of one.
+    </p>
+    {% endif %}
+
+    <h2 class="h4 mt-5 mb-3">What this does and does not tell you about FY{{ season.cap_fy }}</h2>
+    <p>
+      It does not predict one. Whether USCIS runs another round for FY{{ season.cap_fy }} turns on how
+      many selectees filed during the initial window — a count only USCIS holds, and one it acts on
+      before publishing. What the table above gives is the base rate: how often an additional round
+      has happened in the seasons we can measure, and how much of a season came through it when it
+      did. Treat anyone quoting a probability for the current season as quoting a guess.
+    </p>
+    {% if first_wave_fy %}
+    <p class="text-muted small">
+      Our petition data covers FY{{ first_wave_fy }}&ndash;FY{{ last_wave_fy }} as a frozen FOIA snapshot, so
+      seasons after it are outside what this page can measure.
+    </p>
+    {% endif %}
+
+    {% include "webapp/includes/_lottery_footer.html" %}
+  </div>
+</div>
+{% endblock %}
