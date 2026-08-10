@@ -24,8 +24,11 @@
 #     notify_chat inject -> the agent investigates.
 #   * Recovery after an alerting streak sends a passive all-clear.
 #   * A WEDGED debug Chrome (CDP answers HTTP, ws connects, then connect_over_cdp
-#     hangs — no page target responds) self-heals: the run restarts
-#     debug_chrome_cdp.service once and retries the fetch, then reports passively.
+#     hangs) self-heals in two steps, because connect_over_cdp attaches to EVERY
+#     target and one hung target hangs it: the run first reaps only the targets
+#     that fail to answer (cdp_tabs.py reap) and retries; it restarts
+#     debug_chrome_cdp.service only when NO target is alive. A browser with live
+#     tabs is serving a human whose staged work outranks one missed cycle.
 #     See cdp_is_wedged(). Kill switch: BULLETIN_CDP_AUTOHEAL=0.
 #   * A NEW bulletin landing injects too (rare, ~12/yr): the agent verifies the site,
 #     predictions, and the generated post.
@@ -156,35 +159,74 @@ run_fetch() {
 # tabs unresponsive, one renderer alive for eight page targets. Every run failed for
 # ~12h until a human restarted the service.
 #
-# That signature — ws CONNECTED, then a connect_over_cdp timeout — means the browser
-# is unusable by ANY agent, not just this one (a co-tenant's tabs are already dead),
-# so restarting it is strictly better than leaving it wedged. Narrow on purpose: a
-# refused/absent endpoint is a DIFFERENT failure (service down, port moved) and is
-# left to the alert path rather than papered over with a restart.
+# That signature does NOT mean the browser is unusable by any agent — it means at
+# least ONE target is hung, because connect_over_cdp attaches to every target and a
+# single dead one hangs the whole connection. This file used to claim the stronger
+# thing and restart the service on it; 2026-08-10 falsified that. Two Zillow
+# renderers were hung while the other seven tabs answered Runtime.evaluate in
+# milliseconds, and those seven were three live checkouts holding cart tokens, a
+# logged-in banking session, and two staged bookings. The restart would have
+# destroyed all of it to clear two dead tabs (browser_personal.md § "sweep only
+# YOUR OWN leftovers"). Narrow on purpose: a refused/absent endpoint is a DIFFERENT
+# failure (service down, port moved) and is left to the alert path.
 cdp_is_wedged() {
   grep -q 'connect_over_cdp' "$FETCH_ERR" \
     && grep -q 'Timeout .* exceeded' "$FETCH_ERR" \
     && grep -q '<ws connected>' "$FETCH_ERR"
 }
 
+# `systemctl --user` needs the session bus, and cron gives us neither
+# XDG_RUNTIME_DIR nor DBUS_SESSION_BUS_ADDRESS — without them it fails with
+# "Failed to connect to bus: No medium found". That is exactly how the restart
+# below silently never worked from cron on 2026-08-10 while working by hand.
+user_systemctl() {
+  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus}" \
+  systemctl --user "$@"
+}
+
+wait_for_cdp() {
+  for _ in $(seq 1 15); do
+    curl -sf --max-time 5 http://127.0.0.1:9222/json/version >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+
 run_fetch
 if [ "$FETCH_RC" -ne 0 ] && cdp_is_wedged \
    && [ "${BULLETIN_CDP_AUTOHEAL:-1}" != "0" ] && [ -z "${BULLETIN_FETCH_CDP:-}" ]; then
-  # BULLETIN_FETCH_CDP set = pointed at a stub/dead endpoint by a test; never restart
+  # BULLETIN_FETCH_CDP set = pointed at a stub/dead endpoint by a test; never touch
   # the real shared browser on that path.
-  log "CDP wedged (ws connected, connect_over_cdp timed out) — restarting debug Chrome and retrying once"
-  if systemctl --user restart debug_chrome_cdp.service; then
-    for _ in $(seq 1 15); do
-      curl -sf --max-time 5 http://127.0.0.1:9222/json/version >/dev/null 2>&1 && break
-      sleep 2
-    done
+  #
+  # Remedy ladder, cheapest and least destructive first. Reaping closes ONLY targets
+  # that fail to answer, so it cannot take a co-tenant's staged work with it; the
+  # restart is reserved for the case where nothing is alive to lose.
+  REAP="$(~/cursor_projects/agent_infra/scripts/cdp_tabs.py reap --json 2>&1 | tail -1)"
+  log "CDP wedged — reaped hung targets: ${REAP}"
+  if echo "$REAP" | grep -q '"dead": [1-9]'; then
     run_fetch
     if [ "$FETCH_RC" -eq 0 ] && echo "$SUMMARY" | grep -q '"index_ok": true'; then
       alert passive "bulletin-sync:cdp-autoheal" 60 \
-        "🔧 Bulletin bridge: debug Chrome was wedged (CDP alive but no target responding); restarted it and the fetch succeeded on retry. No action needed."
+        "🔧 Bulletin bridge: hung browser tab(s) were hanging connect_over_cdp; closed only the dead ones and the fetch succeeded on retry. Live tabs untouched. No action needed."
     fi
-  else
-    log "WARN: debug Chrome restart failed; falling through to the alert path"
+  fi
+
+  # Still wedged with EVERY target dead: a genuinely wedged browser, nothing to
+  # lose, so restart. If some targets are alive the browser is serving a human —
+  # a missed 30-min cycle costs less than their staged work, so alert instead.
+  if { [ "$FETCH_RC" -ne 0 ] || ! echo "$SUMMARY" | grep -q '"index_ok": true'; } \
+     && echo "$REAP" | grep -q '"all_dead": true'; then
+    log "every target dead — restarting debug Chrome and retrying once"
+    if user_systemctl restart debug_chrome_cdp.service && wait_for_cdp; then
+      run_fetch
+      if [ "$FETCH_RC" -eq 0 ] && echo "$SUMMARY" | grep -q '"index_ok": true'; then
+        alert passive "bulletin-sync:cdp-autoheal" 60 \
+          "🔧 Bulletin bridge: debug Chrome was fully wedged (no target responding); restarted it and the fetch succeeded on retry. No action needed."
+      fi
+    else
+      log "WARN: debug Chrome restart failed; falling through to the alert path"
+    fi
   fi
 fi
 

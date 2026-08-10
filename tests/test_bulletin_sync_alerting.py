@@ -242,19 +242,20 @@ def test_new_bulletin_injects_an_agent_pass() -> None:
 
 
 def test_cdp_wedge_detection_requires_the_full_signature() -> None:
-    """The auto-restart must fire ONLY on a genuinely wedged browser.
+    """The self-heal must fire ONLY on a genuinely wedged browser.
 
     Regression (2026-07-27): Chrome had been up 10 days with 8 stale tabs; the CDP HTTP
     endpoint still answered /json/version and the websocket still connected, but no page
     target responded, so connect_over_cdp hung to its 180s timeout on every run for ~12h
     until a human restarted the service.
 
-    That exact triple — ws CONNECTED, then a connect_over_cdp TIMEOUT — is what proves
-    the browser is unusable by every agent (a co-tenant's tabs are dead too), which is
-    what makes an unattended restart of a SHARED service safe. A looser match (any
-    non-zero exit, or a bare "Timeout") would restart the browser out from under other
-    projects on an unrelated failure — e.g. a refused endpoint, which is a different
-    fault entirely and belongs to the alert path.
+    That exact triple — ws CONNECTED, then a connect_over_cdp TIMEOUT — proves at least
+    ONE target is hung, because connect_over_cdp attaches to every target and a single
+    dead one hangs the whole connection. It does NOT prove the browser is unusable by
+    every agent; see test_cdp_autoheal_reaps_before_restarting for the 2026-08-10 case
+    that falsified the stronger reading. A looser match (any non-zero exit, or a bare
+    "Timeout") would trip the self-heal on an unrelated failure — e.g. a refused
+    endpoint, which is a different fault entirely and belongs to the alert path.
     """
     src = _sync_src()
     fn = re.search(r"^cdp_is_wedged\(\)\s*\{.*?^\}", src, re.MULTILINE | re.DOTALL)
@@ -290,8 +291,45 @@ def test_cdp_autoheal_never_restarts_chrome_on_the_test_path() -> None:
     )
 
 
+def test_cdp_autoheal_reaps_before_restarting() -> None:
+    """Close only the hung targets first; restart only when nothing is alive.
+
+    Regression (2026-08-10): two hung Zillow renderers hung connect_over_cdp for three
+    consecutive runs. The other seven tabs answered Runtime.evaluate in milliseconds,
+    and they held three live checkouts with cart tokens, a logged-in banking session,
+    and two staged bookings. The self-heal as written restarted the whole browser on
+    that signature, which would have destroyed all of it to clear two dead tabs.
+
+    So the ladder is ordered by blast radius: reap (closes only targets that fail to
+    answer, so it can never take a co-tenant's staged work) and retry; escalate to a
+    restart only on all_dead, the one case where there is nothing alive to lose. A
+    browser with live tabs is serving a human, and one missed 30-min cycle costs less
+    than their work — that path alerts instead.
+    """
+    src = _sync_src()
+    heal = re.search(r"cdp_is_wedged \\\n?.*?^fi", src, re.MULTILINE | re.DOTALL)
+    assert heal, "The CDP self-heal block is gone from the fetch path."
+    block = heal.group(0)
+
+    reap_at = block.find("cdp_tabs.py reap")
+    assert reap_at != -1, (
+        "The self-heal no longer reaps hung targets. Without it the only remedy is a "
+        "full restart, which destroys co-tenant staged work to clear one dead tab."
+    )
+    restart_at = block.find("restart debug_chrome_cdp.service")
+    assert restart_at != -1, "The restart escalation is gone; a fully wedged browser would never heal."
+    assert reap_at < restart_at, (
+        "The restart now precedes the reap. The cheap, non-destructive remedy must be "
+        "tried first — otherwise the destructive one runs on a browser full of live tabs."
+    )
+    assert '"all_dead": true' in block, (
+        "The restart is no longer gated on all_dead, so it can fire while live tabs "
+        "(a human's staged checkouts/sessions) are open. That is the 2026-08-10 bug."
+    )
+
+
 def test_cdp_autoheal_retries_at_most_once() -> None:
-    """One restart per run — never a retry loop against a browser that will not come back.
+    """One retry per remedy rung — never a retry loop against a browser that will not come back.
 
     A loop here would hammer a shared service every cron tick and could mask a real,
     persistent fault (bad profile, port taken) behind endless restarts instead of letting
@@ -301,12 +339,37 @@ def test_cdp_autoheal_retries_at_most_once() -> None:
     heal = re.search(r"cdp_is_wedged \\\n?.*?^fi", src, re.MULTILINE | re.DOTALL)
     assert heal, "The CDP self-heal block is gone from the fetch path."
     block = heal.group(0)
-    assert block.count("systemctl --user restart debug_chrome_cdp.service") == 1, (
+    assert block.count("restart debug_chrome_cdp.service") == 1, (
         "More than one restart in the self-heal block — it must restart at most once, "
         "then fall through to the streak/alert path."
     )
-    assert block.count("run_fetch") == 1, (
-        "The self-heal must re-run the fetch exactly once after the restart."
+    assert block.count("run_fetch") == 2, (
+        "The self-heal must re-run the fetch exactly once per remedy rung (once after "
+        "the reap, once after the restart) — never in a loop."
+    )
+
+
+def test_user_systemctl_supplies_the_session_bus() -> None:
+    """`systemctl --user` must carry the session bus, or it cannot work from cron.
+
+    Regression (2026-08-10): the restart ran as a bare `systemctl --user restart` and
+    cron provides neither XDG_RUNTIME_DIR nor DBUS_SESSION_BUS_ADDRESS, so every
+    unattended attempt died on "Failed to connect to bus: No medium found" and logged
+    "restart failed". It worked by hand, which is exactly what kept it hidden: the
+    self-heal was inert in the only context it existed for.
+    """
+    src = _sync_src()
+    fn = re.search(r"^user_systemctl\(\)\s*\{.*?^\}", src, re.MULTILINE | re.DOTALL)
+    assert fn, (
+        "user_systemctl() is gone. A bare `systemctl --user` from cron cannot reach the "
+        "session bus, so the self-heal silently never fires unattended."
+    )
+    body = fn.group(0)
+    for var in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
+        assert var in body, f"user_systemctl() no longer sets {var}; cron loses the session bus."
+    assert "systemctl --user restart debug_chrome_cdp.service" not in src, (
+        "A bare `systemctl --user` call is back in the script — route it through "
+        "user_systemctl() so it carries the bus env under cron."
     )
     # The fall-through matters as much as the retry: a failed heal must still alert.
     assert re.search(r'if \[ "\$FETCH_RC" -ne 0 \] \|\| ! echo "\$SUMMARY"', src), (
