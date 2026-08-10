@@ -2627,3 +2627,78 @@ interval construction was left untouched and the follow-up is tracked separately
 ### Pending Planning Review
 
 Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+
+---
+
+## 29. Published Floors: Bulletin Prose as a Constraint on the October Reset (August 2026)
+
+### Motivation
+
+Ticket `3b662b8d409f8165a85af4c0126e37ac`. The October 2026 EB-2 India forecast
+contradicts a bound the State Department published in the July 2026 bulletin's
+section F. The reset estimator is an empirical distribution over past October
+resets and had **no channel of any kind** for a statement made in prose — not a
+mis-weighted input but an absent mechanism.
+
+### What Was Implemented
+
+| Change | Files | Description |
+|--------|-------|-------------|
+| `PublishedFloor` model + migration `0057` | `models/published_floor.py`, `models/migrations/0057_publishedfloor_and_more.py` | Source bulletin, target period, series (category/class/action/country), floor date, verbatim quote, section. Unique on (source, target, series) → idempotent upsert. Manager method `floor_for()` filters `source_bulletin__publication_date <= knowledge_date` and takes the latest source. |
+| Floor applied to the reset distribution | `lib/business/vqs/october_reset.py` | `estimate_from_precedents(..., floor=)` truncates: precedent deltas below the floor move up to it, and the point estimate cannot sit below it. All arithmetic in delta space, so `floor=None` is the pre-change path exactly. `estimate_october_reset` looks the floor up for `target = Oct 1 of reset_year`. |
+| Public explainer cites the floor | `lib/business/vqs/october_reset.py` `describe_reset` | With a floor present, the sentence leads with the published bound and the historical-spread clause (which named the 2012 EB-2 India retrogression) is not emitted. |
+| Recording entry point | `scripts/bulletin/record_published_floor.py` | Hand-entered per bulletin; validates and upserts; `--effect` reports the resulting estimate; `--list`, `--dry-run`. |
+| Tests | `tests/test_published_floor.py` | 9 cases: the below-floor baseline, point/interval clamping, diagnostics, walk-forward invisibility, latest-source supersession, series isolation, both explainer branches. |
+
+### Results (Facts)
+
+Measured on the local dev DB (bulletins through 2026-07; prod has 2026-08).
+Series EB-2 India final_action, knowledge date 2026-07-31, 45 precedents pooled.
+
+Script: `bazel run //scripts/bulletin:record_published_floor -- --effect --visa-class 2nd --country india --knowledge-date 2026-07-31`
+
+| Quantity | Before | After |
+|---|---|---|
+| method | `anchor` | `anchor_floored` |
+| pre-U anchor | 2013-09-01 | 2013-09-01 |
+| point estimate | **2013-09-01** | **2014-07-15** |
+| 80% range low | 2009-06-03 | 2014-07-15 |
+| 80% range high | 2014-07-21 | 2014-07-26 |
+| precedents below the floor | n/a | 40 of 45 |
+| explainer names the DOS floor | no | yes |
+| explainer cites the 2012 reset | yes | no |
+
+DOS floor: 2014-07-15 (July 2026 bulletin §F, resolved via the May 2026 EB-2 India
+final action date, independently confirmed in the local `visa_cutoff_date` rows:
+2026-05 = 2014-07-15, 2026-06 = 2013-09-01, 2026-07 = U).
+
+Prod's stored distribution for the same series (from the ticket, knowledge date
+2026-08-31, 50 precedents) was p10 2010-04-03 / median 2013-11-01 / p90 2014-07-05
+against the same 2014-07-15 floor. **Not re-measured against prod in this session
+— nothing was applied to prod.**
+
+Idempotency and validation, measured: a second identical invocation reports
+`unchanged` and the row count stays 1; five rejected inputs (target not after
+source, floor date not before target, uningested source bulletin, unknown country,
+quote under 40 chars) each exit 2 with the corrective message.
+
+Test status: `//tests:test_published_floor` red on 4 assertions before the change
+(point 2013-09-01 < floor, ci_low 2010-11-28 < floor, floor diagnostics absent,
+explainer missing the floor), green after. `//tests:test_october_reset` green
+throughout.
+
+### Current Status
+
+Committed to `main`, **not deployed and not applied to prod** — a schema migration
+is a Path-2 release. The mechanism is inert until a floor row exists: with no
+`PublishedFloor` on file every code path is byte-identical to before. One floor is
+recorded on the local dev DB only.
+
+Three design questions were escalated rather than settled here — whether the floor
+should bound the interval as well as the point (the shipped default truncates
+both), what happens to a floor a realised outcome later violates, and whether a
+floor applies to the filing chart. They are stated as options on the ticket.
+
+### Pending Planning Review
+
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.

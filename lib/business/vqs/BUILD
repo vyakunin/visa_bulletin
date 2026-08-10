@@ -162,6 +162,7 @@ py_library(
         ":data_cache",
         # october_reset.py imports eb_series (EB_CLASSES / resolve_cutoff_label).
         "//lib/business/bulletin:eb_series",
+        "//models:published_floor",
         "//models:visa_cutoff_date",
         "//models/enums:country",
     ],

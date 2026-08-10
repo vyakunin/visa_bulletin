@@ -68,6 +68,20 @@ py_library(
 )
 
 py_library(
+    name = "published_floor",
+    srcs = ["published_floor.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bulletin",
+        "//models/enums:action_type",
+        "//models/enums:country",
+        "//models/enums:visa_category",
+        requirement("Django"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
+py_library(
     name = "salary",
     srcs = ["salary.py"],
     visibility = ["//visibility:public"],

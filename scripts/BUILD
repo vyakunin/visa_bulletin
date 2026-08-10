@@ -44,6 +44,7 @@ py_binary(
         "//models:raw_facts",
         "//models:salary",
         "//models:i129",
+        "//models:published_floor",
         "//models:uscis_employer",
         "//models/ingest:ingest",
         "//models/enums:visa_program",

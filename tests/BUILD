@@ -1583,6 +1583,21 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_published_floor",
+    size = "medium",
+    srcs = ["test_published_floor.py"],
+    deps = [
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:october_reset",
+        "//models:bulletin",
+        "//models:published_floor",
+        "//models:visa_cutoff_date",
+        "//models/enums:country",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_i129_plugin",
     size = "medium",
     srcs = ["test_i129_plugin.py"],

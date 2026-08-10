@@ -85,6 +85,10 @@ class OctoberResetEstimate:
     ci_high: date | None = None
     n_precedents: int = 0
     method: str = "none"
+    # Lower bound the State Department published in a bulletin's notes section for
+    # this reset, if one was recorded (models.PublishedFloor). None = no statement.
+    floor: date | None = None
+    floor_source_period: date | None = None
     diagnostics: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -97,6 +101,10 @@ class OctoberResetEstimate:
             "reset_reference": self.pre_u_cutoff.isoformat() if self.pre_u_cutoff else None,
             "n_precedents": self.n_precedents,
             "method": self.method,
+            "floor": self.floor.isoformat() if self.floor else None,
+            "floor_source_period": (
+                self.floor_source_period.isoformat() if self.floor_source_period else None
+            ),
             "diagnostics": self.diagnostics,
         }
 
@@ -220,6 +228,26 @@ def find_reset_events(action_type: str = "final_action") -> list[ResetEvent]:
     return events
 
 
+def _published_floor(
+    visa_class: str,
+    country: int,
+    action_type: str,
+    target_period: date,
+    knowledge_date: date,
+):
+    """The published lower bound for this reset, or None.
+
+    Local import so the module keeps loading before Django's app registry is
+    ready, matching ``_full_series``. Walk-forward safety lives in the manager:
+    a floor is invisible until its source bulletin has published.
+    """
+    from models.published_floor import PublishedFloor
+
+    return PublishedFloor.objects.floor_for(
+        visa_class, country, action_type, target_period, knowledge_date
+    )
+
+
 def _percentile(sorted_vals: list[float], q: float) -> float:
     """Linear-interpolated percentile (q in [0,1]) on a pre-sorted list."""
     if not sorted_vals:
@@ -240,6 +268,8 @@ def estimate_from_precedents(
     *,
     coverage: float = 0.80,
     apply_median_shift: bool = False,
+    floor: date | None = None,
+    floor_source_period: date | None = None,
 ) -> OctoberResetEstimate:
     """Build a reset estimate from a pre-U cutoff + a pool of precedent deltas.
 
@@ -248,24 +278,65 @@ def estimate_from_precedents(
     (reset_cutoff - pre_u_cutoff). ``apply_median_shift`` optionally nudges the
     point by the median historical delta (evaluated in the backtest; off in prod
     unless it demonstrably beats the pure anchor).
+
+    ``floor`` is a lower bound the State Department published in a bulletin's
+    notes section (models.PublishedFloor). The precedent pool is empirical and
+    cross-series, so on its own it can — and for October 2026 EB-2 India does —
+    put the outcome DOS called likely outside its own 80% band. A floor is applied
+    by **truncating the distribution**: every precedent outcome below it is moved
+    up to it, and the point estimate cannot sit below it either. Truncation rather
+    than a shift, because the statement bounds the outcome from below and says
+    nothing about the upside — so the spread above the floor stays whatever the
+    precedents supported, and a floor that does not bind changes nothing at all.
+
+    Everything is computed in delta space, so ``floor=None`` is exactly the
+    pre-floor arithmetic.
     """
     from datetime import timedelta
 
     deltas = sorted(float(e.delta_days) for e in precedents)
+
+    floor_delta: float | None = None
+    n_below_floor = 0
+    if floor is not None:
+        floor_delta = float((floor - pre_u_cutoff).days)
+        n_below_floor = sum(1 for d in deltas if d < floor_delta)
+        deltas = sorted(max(d, floor_delta) for d in deltas)
+
+    def _floor_diagnostics() -> dict:
+        if floor is None:
+            return {}
+        return {
+            "floor_date": floor.isoformat(),
+            "floor_source_period": (
+                floor_source_period.isoformat() if floor_source_period else None
+            ),
+            "floor_delta_days": round(floor_delta),
+            "n_precedents_below_floor": n_below_floor,
+        }
+
     n = len(deltas)
     if n == 0:
         # No precedents: structural statement only, point = anchor, no CI.
+        point = pre_u_cutoff
+        if floor is not None and floor > point:
+            point = floor
         return OctoberResetEstimate(
             is_unavailable=True,
             reset_year=reset_year,
             pre_u_cutoff=pre_u_cutoff,
-            point=pre_u_cutoff,
+            point=point,
             n_precedents=0,
-            method="anchor_no_ci",
+            method="anchor_no_ci_floored" if floor is not None else "anchor_no_ci",
+            floor=floor,
+            floor_source_period=floor_source_period,
+            diagnostics=_floor_diagnostics(),
         )
 
     median_delta = statistics.median(deltas)
     shift = median_delta if apply_median_shift else 0.0
+    if floor_delta is not None:
+        shift = max(shift, floor_delta)
     point = pre_u_cutoff + timedelta(days=round(shift))
 
     tail = (1.0 - coverage) / 2.0
@@ -273,6 +344,13 @@ def estimate_from_precedents(
     hi_delta = _percentile(deltas, 1.0 - tail)
     ci_low = pre_u_cutoff + timedelta(days=round(lo_delta))
     ci_high = pre_u_cutoff + timedelta(days=round(hi_delta))
+
+    if floor is not None:
+        method = "anchor_floored"
+    elif apply_median_shift:
+        method = "anchor_median_shift"
+    else:
+        method = "anchor"
 
     return OctoberResetEstimate(
         is_unavailable=True,
@@ -282,7 +360,9 @@ def estimate_from_precedents(
         ci_low=ci_low,
         ci_high=ci_high,
         n_precedents=n,
-        method="anchor_median_shift" if apply_median_shift else "anchor",
+        method=method,
+        floor=floor,
+        floor_source_period=floor_source_period,
         diagnostics={
             "median_delta_days": round(median_delta),
             "lo_delta_days": round(lo_delta),
@@ -295,6 +375,7 @@ def estimate_from_precedents(
             # scripts/vqs/backtest_october_reset.py.
             "p10_delta_days": round(lo_delta),
             "p90_delta_days": round(hi_delta),
+            **_floor_diagnostics(),
         },
     )
 
@@ -363,12 +444,20 @@ def estimate_october_reset(
         )
     ]
 
+    floor_row = _published_floor(
+        visa_class, country, action_type, date(reset_year, 10, 1), knowledge_date
+    )
+
     return estimate_from_precedents(
         pre_u_cutoff,
         reset_year,
         precedents,
         coverage=coverage,
         apply_median_shift=apply_median_shift,
+        floor=floor_row.floor_date if floor_row else None,
+        floor_source_period=(
+            floor_row.source_bulletin.publication_date if floor_row else None
+        ),
     )
 
 
@@ -385,6 +474,11 @@ def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
     reset magnitude is genuinely uncertain (history: near-flat to multi-year
     retrogression). Deliberately does NOT assert a precise reset date or a
     calibrated CI — the backtest shows neither is reliable.
+
+    Where the State Department has published a floor for this reset, the floor
+    leads and the historical-spread caveat is dropped: quoting a precedent that
+    retrogressed below a bound State has already announced contradicts the rest
+    of the same paragraph.
     """
     reset_year = est.reset_year
     parts: list[str] = []
@@ -398,6 +492,18 @@ def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
             f"a cutoff date returns on **October 1, {reset_year}**, when the new "
             f"fiscal year's visa quota opens."
         )
+    if est.floor:
+        source = ""
+        if est.floor_source_period:
+            source = f" the {est.floor_source_period.strftime('%B %Y')} bulletin's notes say"
+        parts.append(
+            f"The State Department has published a floor for this reset:{source} "
+            f"the date is expected to advance to **at least "
+            f"{_fmt_month(est.floor)}**. The forecast below is bounded by that "
+            f"statement, which is a lower bound rather than a guarantee — State "
+            f"ties it to demand and to the new fiscal year's limits."
+        )
+        return " ".join(parts)
     if est.pre_u_cutoff:
         ref = _fmt_month(est.pre_u_cutoff)
         note = (

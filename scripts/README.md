@@ -330,6 +330,50 @@ Consumed by `lib/business/bulletin/release_schedule.py` → the
 `/when-is-the-next-visa-bulletin/` page (projected release date, countdown, and the
 "X% of past August bulletins were out by this point" line).
 
+### Record a floor DOS published in a bulletin's notes (`PublishedFloor`)
+
+**`scripts/bulletin/record_published_floor.py`** — stores a lower bound the State
+Department stated in a bulletin's *prose* about a **future** month, so the forecast
+cannot contradict it.
+
+The parser reads only the four named cutoff tables and the prose is persisted
+nowhere (the fetched HTML is transient), so this is deliberately **not** a parser:
+an agent reads the notes section, resolves the referenced date, and passes the
+values in. The script validates and writes. Statements look like this — July 2026,
+section F:
+
+> It is likely that in October the final action date will advance to at least the
+> final action date announced in the May 2026 Visa Bulletin
+
+Note that the sentence names a *bulletin*, not a date: look up that bulletin's own
+cell for the series (here May 2026 EB-2 India final action = 15 Jul 2014) and pass
+the result to `--floor-date`.
+
+```bash
+# record (idempotent: same source+target+series updates in place)
+bazel run //scripts/bulletin:record_published_floor -- \
+    --source-bulletin 2026-07 --target 2026-10 \
+    --visa-class 2nd --country india --action-type final_action \
+    --floor-date 2014-07-15 --section F --quote-file /tmp/quote.txt
+
+bazel run //scripts/bulletin:record_published_floor -- --list
+bazel run //scripts/bulletin:record_published_floor -- --dry-run ...   # validate only
+# what the floor does to the forecast, without writing anything:
+bazel run //scripts/bulletin:record_published_floor -- --effect \
+    --visa-class 2nd --country india --knowledge-date 2026-08-31
+```
+
+Rejects (exit 2) a target that is not after the source bulletin, a floor date not
+earlier than the target, an uningested source bulletin, an unknown country/action
+type, and a quote under 40 characters — the verbatim sentence is the audit trail
+for a hand-entered claim, so it is mandatory.
+
+Consumed by `lib/business/vqs/october_reset.py`: a floor **truncates** the reset
+distribution (every precedent outcome below it moves up to it) and the point
+estimate cannot sit below it, so a published forecast cannot fall under a bound
+State has announced. Reading a floor is walk-forward safe — it is invisible until
+its source bulletin has published, so backtests cannot see the future.
+
 ### Import Visa Bulletin Data from CSV
 
 **`scripts/import_visa_bulletin_data.py`** – Import Visa Bulletin data from CSV files exported from another instance (e.g. production to development). Not part of the automated pipeline; use for one-off data transfers.

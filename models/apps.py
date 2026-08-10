@@ -26,6 +26,7 @@ class ModelsConfig(AppConfig):
             JobTitleCluster,
             JobTitleClusteringReview,
         )
+        from .published_floor import PublishedFloor  # noqa: F401
         from .raw_facts import RawFactsLedger  # noqa: F401
         from .salary import Employer, SalaryRecord, WorksiteRecord  # noqa: F401
         from .uscis_employer import UscisEmployerApproval  # noqa: F401

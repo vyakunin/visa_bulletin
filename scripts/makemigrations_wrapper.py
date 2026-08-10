@@ -66,6 +66,7 @@ from models.ingest.rejection_stats import (  # noqa: F401  (for makemigrations)
     RejectionReason,
 )
 from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
+from models.published_floor import PublishedFloor  # noqa: F401  (for makemigrations)
 from models.raw_facts import RawFactsLedger
 from models.salary import Employer, SalaryRecord
 from models.uscis_employer import (
