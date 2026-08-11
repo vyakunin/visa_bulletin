@@ -49,6 +49,7 @@ def _predict(
     confidence_high=None,
     movement_probability=None,
     expert_predictions=None,
+    explanation_markdown="",
 ):
     PredictedCutoff.objects.create(
         bulletin=pred_bulletin,
@@ -61,7 +62,34 @@ def _predict(
         confidence_high=confidence_high,
         movement_probability=movement_probability,
         expert_predictions=expert_predictions or {},
+        explanation_markdown=explanation_markdown,
     )
+
+
+# The two shapes describe_reset emits, stored verbatim as publish_predictions writes
+# them. The page renders THESE — it must not restate the prose in template markup.
+_UNFLOORED_EXPLAINER = (
+    "**EB-2 China is Unavailable** — it reached its fiscal-year annual limit "
+    "(INA §203(b) numerical caps). It is expected to stay Unavailable through "
+    "**September 2026**; a cutoff date returns on **October 1, 2026**, when the new "
+    "fiscal year's visa quota opens. Where it resets to is uncertain. For reference, "
+    "the last cutoff before it went Unavailable was **September 1, 2013**. Historically "
+    "the October reset for an exhausted category has ranged from near that date to a "
+    "substantial retrogression: the deepest in the employment-based record is "
+    "**EB-3 India in 2007**, which came back about six years earlier than its own "
+    "pre-Unavailable cutoff. Treat any specific October date as a rough guess."
+)
+
+_FLOORED_EXPLAINER = (
+    "**EB-3 China is Unavailable** — it reached its fiscal-year annual limit "
+    "(INA §203(b) numerical caps). It is expected to stay Unavailable through "
+    "**September 2026**; a cutoff date returns on **October 1, 2026**, when the new "
+    "fiscal year's visa quota opens. The State Department has published a floor for "
+    "this reset: the July 2026 bulletin's notes say the date is expected to advance to "
+    "**at least July 15, 2014**. The forecast below is bounded by that statement, which "
+    "is a lower bound rather than a guarantee — State ties it to demand and to the new "
+    "fiscal year's limits."
+)
 
 
 class TestPredictionMonthForecast(TestCase):
@@ -87,12 +115,13 @@ class TestPredictionMonthForecast(TestCase):
 
         # EB-2 China (a modeled series + headline card): Unavailable — hit the FY
         # annual limit, so predicted_date is None and model_name == "unavailable".
-        # Carries the October-reset metadata the publish path attaches: structural
-        # "resets Oct 1" + pre-Unavailable reference + downside caveat.
+        # Its stored explainer names a DEEP downside precedent (EB-3 India 2007) and
+        # carries NO published floor — the unfloored shape.
         _actual(self.latest, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", date(2020, 1, 1))
         _predict(
             self.pb, ActionType.FINAL_ACTION.value, Country.CHINA.value, "2nd", None,
             model_name="unavailable",
+            explanation_markdown=_UNFLOORED_EXPLAINER,
             expert_predictions={
                 "october_reset": {
                     "is_unavailable": True,
@@ -103,6 +132,27 @@ class TestPredictionMonthForecast(TestCase):
                     "n_precedents": 50,
                     "method": "anchor",
                     "diagnostics": {"p10_delta_days": -1247, "p90_delta_days": 307},
+                }
+            },
+        )
+
+        # EB-3 China: Unavailable AND bounded by a floor DOS published in a bulletin's
+        # notes. The page must carry that bound — it is the whole point of PublishedFloor.
+        _actual(self.latest, ActionType.FINAL_ACTION.value, Country.CHINA.value, "3rd", date(2020, 1, 1))
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.CHINA.value, "3rd", None,
+            model_name="unavailable",
+            explanation_markdown=_FLOORED_EXPLAINER,
+            expert_predictions={
+                "october_reset": {
+                    "is_unavailable": True,
+                    "reset_year": 2026,
+                    "stays_u_through": "September",
+                    "pre_u_cutoff": "2013-09-01",
+                    "method": "anchor_floored",
+                    "floor": "2014-07-15",
+                    "n_precedents": 45,
+                    "diagnostics": {"p10_delta_days": 317, "p90_delta_days": 328},
                 }
             },
         )
@@ -148,15 +198,49 @@ class TestPredictionMonthForecast(TestCase):
         # The October-reset / U-transition model: an Unavailable series states the
         # structural reset date (Oct 1), gives the pre-Unavailable cutoff as a
         # labelled reference, and honestly caveats that the reset target is uncertain
-        # (no false-precise date). Regression guard for tickets-1 model work.
+        # (no false-precise date). The words come from the STORED explainer.
         body = self.client.get("/predictions/july-2026/").content.decode()
-        self.assertIn("October 1, 2026", body)      # structural reset date
-        self.assertIn("September 2013", body)        # pre-Unavailable reference
+        self.assertIn("October 1, 2026", body)       # structural reset date
+        self.assertIn("September 1, 2013", body)     # pre-Unavailable reference
         self.assertIn("rough guess", body)           # honest uncertainty caveat
-        # Downside precedent named (p10 < -120 -> the 2012 example branch).
-        self.assertIn("2012", body)
+        self.assertIn("EB-3 India in 2007", body)    # precedent, named with its own series
         # It must NOT publish a fabricated precise reset cutoff as the prediction.
         self.assertNotIn("Predicted reset date", body)
+
+    def test_floored_series_renders_its_published_floor(self):
+        # The bound DOS published in a bulletin's notes must reach the reader. It did
+        # not: the box was hand-written template markup built from three fields
+        # (reset_year, pre_u_cutoff, p10_delta_days) and could not see a floor at all,
+        # so a page kept saying the reset might retrogress below a date State had
+        # already announced it would clear.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("at least July 15, 2014", body)
+        self.assertIn("has published a floor", body)
+
+    def test_reset_prose_is_not_restated_in_template_markup(self):
+        # The boundary this fix must not over-reach into, and the defect that made it
+        # necessary: the template used to emit "(EB-2 India reset about three years
+        # earlier in 2012)" for ANY series whose pooled p10 was below -120 — a literal
+        # about one series rendered as every series' own history. Nothing on the page
+        # may name a precedent the stored explainer did not name.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn("2012", body)
+        self.assertNotIn("reset about three years earlier", body)
+        # ...and the surviving prose is the stored explainer's, not a second copy:
+        # the old markup's own wording is gone.
+        self.assertNotIn("new numbers are being issued", body)
+        # The per-card summary line carried the same blind claim in miniature — it
+        # asserted the reset date was uncertain even for a series State had floored.
+        self.assertNotIn("reset date uncertain", body)
+        self.assertNotIn("Last cutoff before Unavailable:", body)
+
+    def test_card_keeps_the_structural_reset_line(self):
+        # The boundary in the other direction: dropping the prose from the card must
+        # not take the STRUCTURAL fact with it. When the category comes back is not
+        # narrative — it is Oct 1 of the reset year, and it stays on the card.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("Stays Unavailable through September 2026", body)
+        self.assertIn("a cutoff returns", body)
 
     def test_baseline_series_marked_modeled_series_not(self):
         # A non-China/India series is a persistence baseline -> "baseline" marker;

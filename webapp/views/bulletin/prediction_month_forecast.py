@@ -22,12 +22,15 @@ for the same month).
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date
 
 from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.eb_series import EB_SHORT_LABELS, resolve_cutoff_label
@@ -102,14 +105,38 @@ class _Forecast:
     is_baseline: bool = False          # no dedicated model — no-change fallback
     ci_low: date | None = None         # calibrated 80% CI lower bound
     ci_high: date | None = None        # calibrated 80% CI upper bound
-    # October-reset / U-transition framing (Unavailable series only)
-    reset_year: int | None = None            # calendar year the Oct 1 reset happens
-    reset_pre_u_label: str | None = None     # pre-Unavailable cutoff, e.g. "September 2013"
-    reset_uncertain: bool = False            # history shows meaningful downside on reset
+    # October-reset framing (Unavailable series only). reset_year is a STRUCTURAL
+    # fact (Oct 1 of which year opens the new FY) and stays a field. The PROSE is
+    # the stored explainer, rendered as safe HTML: describe_reset owns it, and
+    # restating it here cost the page its floor awareness and let one series'
+    # precedent render as every series' history.
+    reset_year: int | None = None
+    reset_explainer_html: str | None = None
 
 
 def _fmt(d: date | None) -> str:
     return d.strftime("%B %-d, %Y") if d else "—"
+
+
+_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+
+
+def _explainer_html(markdown: str | None) -> str | None:
+    """The stored reset explainer as safe HTML — escaped, then `**bold**` honoured.
+
+    describe_reset (lib/business/vqs/october_reset.py) is the single owner of this
+    prose, and publish_predictions stores its output on the row. Rendering it here
+    is what keeps a published floor, and the pool-derived precedent, on the page:
+    the template used to restate the narrative in markup, which could not see a
+    floor and named one series' 2012 reset as every series' own history.
+
+    Escaped before the bold pass, so a future explainer carrying a stray angle
+    bracket cannot inject markup.
+    """
+    text = (markdown or "").strip()
+    if not text:
+        return None
+    return mark_safe(_BOLD.sub(r"<strong>\1</strong>", escape(text)))
 
 
 def _parse_slug(slug: str) -> date | None:
@@ -182,20 +209,11 @@ def _forecast_from_row(
     # Null prediction: model_name distinguishes Unavailable from Current/no-backlog.
     if (row.model_name or "") == "unavailable":
         reset = (row.expert_predictions or {}).get("october_reset") or {}
-        pre_u_label = None
-        pre_u_iso = reset.get("pre_u_cutoff")
-        if pre_u_iso:
-            try:
-                pre_u_label = date.fromisoformat(pre_u_iso).strftime("%B %Y")
-            except (ValueError, TypeError):
-                pre_u_label = None
-        p10 = (reset.get("diagnostics") or {}).get("p10_delta_days")
         return _Forecast(
             display="Unavailable", predicted_date=None, movement=None, movement_type="na",
             is_unavailable=True, is_baseline=baseline,
             reset_year=reset.get("reset_year"),
-            reset_pre_u_label=pre_u_label,
-            reset_uncertain=(p10 is not None and p10 < -120),
+            reset_explainer_html=_explainer_html(row.explanation_markdown),
         )
     return _Forecast(display="Current", predicted_date=None, movement=None, movement_type="na", is_baseline=baseline)
 

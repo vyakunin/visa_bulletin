@@ -2695,16 +2695,26 @@ the swap, present after). It rode a `--code` cutover safely because it is purely
 additive — CreateModel on a new empty table plus its index and unique constraint,
 zero ALTER on any existing table.
 
-**No floor row exists on prod**, so the mechanism is inert there: with no
-`PublishedFloor` on file every code path is byte-identical to before. The one
-bootstrap floor is recorded on the local dev DB only, deliberately — recording it
-on prod and republishing the affected month is the next step, held pending the
-three design decisions below.
+The bootstrap floor is **on prod** (EB-2 India / final_action / target 2026-10 /
+2014-07-15, source July 2026 §F), and October is republished against it. Measured
+on prod, knowledge date 2026-09-30, 45 precedents: method `anchor` → `anchor_floored`,
+point 2013-09-01 → **2014-07-15**, 80% range 2009-06-03..2014-07-21 →
+2014-07-15..2014-07-26, 40 of 45 precedents below the floor. This reproduces the dev
+table above exactly.
 
-Three design questions were escalated rather than settled here — whether the floor
-should bound the interval as well as the point (the shipped default truncates
-both), what happens to a floor a realised outcome later violates, and whether a
-floor applies to the filing chart. They are stated as options on the ticket.
+The three design questions are settled: a floor truncates **both** the interval and
+the point (a point outside its own interval is incoherent, and the collapse to an
+11-day range is the honest reading — precedent supports nothing above the floor); a
+floor a realised outcome later violates is **kept as recorded history** with no
+superseded flag, because a floor targets a single month and is spent by construction
+once that month's bulletin exists; and a floor is **per-chart**, since `action_type`
+is part of the key and July's §F speaks to the final action date only. Each was the
+already-shipped behaviour, so none changed code.
+
+A floor's effect on the *interval* has no user-visible expression today: an
+Unavailable cell renders "Unavailable" with no date and no range, so the truncation
+is carried by the stored distribution, the diagnostics and the explainer prose. See
+§31 for how that prose reaches the page.
 
 ### Pending Planning Review
 
@@ -2765,6 +2775,63 @@ On `main`, **not released**. `explanation_markdown` is written onto
 `publish_predictions` re-runs. Republishing alone would ship this explainer without
 the §29 floor (whose bootstrap row is still dev-only), so the two are held to
 graduate together.
+
+### Pending Planning Review
+
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+
+## 31. The Reset Prose Had Two Owners, and the Page Read the Wrong One (August 2026)
+
+### Motivation
+
+§29 recorded that recording the floor on prod and republishing the month would
+clear the contradiction on `/predictions/october-2026/`. Both were done and the
+contradiction remained. The sentence a reader sees is not the one
+`publish_predictions` writes: `explanation_markdown` was rendered nowhere on that
+page. Its only consumer site-wide was a `title=` tooltip in
+`vqs/prediction_detail.html`, gated on a `regime_label` an Unavailable row does not
+carry.
+
+`/predictions/<month>/` built its own narrative in Django template markup from
+three fields the view lifted out of `expert_predictions["october_reset"]` —
+`reset_year`, `pre_u_cutoff`, `p10_delta_days`. That second copy could not see a
+`PublishedFloor` at all, and carried its own stale literals.
+
+### What Was Implemented
+
+| Change | Files | Description |
+|--------|-------|-------------|
+| One owner for the prose | `webapp/views/bulletin/prediction_month_forecast.py` | `_explainer_html` escapes the stored `explanation_markdown` and honours `**bold**` only, returning `mark_safe` HTML. `_Forecast` drops `reset_pre_u_label` and `reset_uncertain` and gains `reset_explainer_html`; `reset_year` stays, being a structural fact rather than prose. |
+| Template stops restating it | `webapp/templates/webapp/prediction_month_forecast.html` | The hand-written "Why is X Unavailable?" narrative is deleted and replaced by the stored explainer. The per-card summary line keeps its structural sentence and loses "Last cutoff before Unavailable: … (reset date uncertain)", which asserted uncertainty about a series State had floored. |
+| Tests | `tests/test_prediction_month_forecast.py` | A floored series renders its floor; the page names no precedent the stored explainer did not name; the structural card line survives the prose removal. Fixtures now carry the two shapes `describe_reset` emits. |
+
+### Results (Facts)
+
+Rendered box for EB-2 India on `/predictions/october-2026/`, before and after, read
+from the prod origin (bypassing the edge):
+
+| | Text |
+|---|---|
+| Before | "Where it resets to is uncertain — for reference, the last cutoff before it went Unavailable was **September 2013**. Historically the October reset has landed anywhere from near that date to a retrogression of a year or more, so treat any specific October date as a rough guess." |
+| After | "**EB-2 India is Unavailable** — … The State Department has published a floor for this reset: the July 2026 bulletin's notes say the date is expected to advance to **at least July 15, 2014**. The forecast below is bounded by that statement, which is a lower bound rather than a guarantee." |
+
+Occurrence counts on the live page, before this change and after the §29/§30
+rollout alone: `"July 15, 2014"` 0, `"published a floor"` 0,
+`"retrogression of a year or more"` 1.
+
+The `2012` literal had already stopped rendering, but as a **side effect rather
+than a fix**: the template gated it on `p10_delta_days < -120`, and flooring moved
+that diagnostic to **+317**, so the branch went untaken. The literal remained in the
+markup and would have rendered for the next Unavailable series with a deep pool.
+
+Three Unavailable rows exist for October 2026 on prod (EB-2 India final_action ×2
+prediction dates, EB-5 India final_action), each carrying a stored explainer of
+605 / 571 / 684 chars, so no series loses its box under the new render gate.
+
+Test status: 3 of the file's assertions red before the change
+(`test_floored_series_renders_its_published_floor`,
+`test_reset_prose_is_not_restated_in_template_markup`,
+`test_unavailable_shows_october_reset_framing`), green after.
 
 ### Pending Planning Review
 

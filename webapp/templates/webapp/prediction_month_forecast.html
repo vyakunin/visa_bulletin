@@ -23,7 +23,7 @@
             {% if card.final.is_unavailable %}
             <div class="fs-5 fw-bold">Unavailable</div>
             {% if card.final.reset_year %}
-            <div class="text-muted small mb-2">Stays Unavailable through September {{ card.final.reset_year }}; a cutoff returns <strong>October 1, {{ card.final.reset_year }}</strong>.{% if card.final.reset_pre_u_label %} Last cutoff before Unavailable: {{ card.final.reset_pre_u_label }} (reset date uncertain).{% endif %}</div>
+            <div class="text-muted small mb-2">Stays Unavailable through September {{ card.final.reset_year }}; a cutoff returns <strong>October 1, {{ card.final.reset_year }}</strong>.</div>
             {% else %}
             <div class="text-muted small mb-2">This category hit its fiscal-year annual limit; new visa numbers become available October 1.</div>
             {% endif %}
@@ -52,23 +52,13 @@
       Badges show the model's estimated probability of a more-than-50-day move next month.
       &ldquo;80% range&rdquo; is the model's calibrated 80% confidence interval.
     </p>
-    {% for card in cards %}{% if card.final.is_unavailable and card.final.reset_year %}
-    <div class="alert alert-warning border mb-4">
-      <strong>Why is {{ card.label }} &ldquo;Unavailable&rdquo;?</strong>
-      {{ card.label }} reached its fiscal-year annual limit (the INA §203(b) numerical cap), so no
-      new numbers are being issued. It is expected to stay Unavailable through
-      <strong>September {{ card.final.reset_year }}</strong>; a cutoff date returns on
-      <strong>October 1, {{ card.final.reset_year }}</strong>, when the new fiscal year's quota opens.
-      {% if card.final.reset_pre_u_label %}
-      Where it resets to is uncertain — for reference, the last cutoff before it went Unavailable was
-      <strong>{{ card.final.reset_pre_u_label }}</strong>.
-      {% if card.final.reset_uncertain %}Historically the October reset for an exhausted category has ranged
-      from near that date to a retrogression of a year or more (EB-2 India reset about three years earlier
-      in 2012), so treat any specific October date as a rough guess.{% else %}Historically the October reset
-      has landed anywhere from near that date to a retrogression of a year or more, so treat any specific
-      October date as a rough guess.{% endif %}
-      {% endif %}
-    </div>
+    {% comment %}
+    The reset narrative is NOT written here. describe_reset owns it and
+    publish_predictions stores it on the row; restating it in markup is what made
+    this box floor-blind and let one series' precedent read as every series'.
+    {% endcomment %}
+    {% for card in cards %}{% if card.final.is_unavailable and card.final.reset_explainer_html %}
+    <div class="alert alert-warning border mb-4">{{ card.final.reset_explainer_html }}</div>
     {% endif %}{% endfor %}
     {% endif %}
 
