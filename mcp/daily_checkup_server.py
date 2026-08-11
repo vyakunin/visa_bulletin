@@ -94,15 +94,24 @@ GA4_SURFACES: list[tuple[str, str | None]] = [
 GA4_ENGAGE_DROP_YELLOW_PT = 10.0  # WoW engagement-rate drop (points) → yellow
 GA4_MIN_SESSIONS = 50             # below this N the rate is noise; never flag
 
-# When GA4 stops reporting engagedSessions, the number does not go missing — it
-# goes to nearly zero, which reads exactly like the audience walking out. On
-# 2026-08-06 property 539743892 did this: engaged fell 550 -> 25 -> 15 -> 8 over
-# three days while sessions (865 -> 742), pageviews (2215 -> 1450) and engagement
-# duration (44577s -> 25225s) all held. Site instrumentation was proven healthy at
-# the time — a live production probe returned gcs=G101, wrote the _ga_* cookie
-# with the engaged flag set, and sent seg=1 — so the fault is inside GA4's own
-# processing and no site fix exists. Left ungraded it would report an organic
-# engagement collapse every morning until Google repairs itself.
+# GA4 finalizes engagedSessions at ~4 days of ROW AGE on property 539743892. A
+# younger row does not read as missing — it reads as ~1.3% engaged, which looks
+# exactly like the audience walking out, and the 3-day-old row is absent from the
+# API entirely. So the 7d window below always carries 2-3 rows that are stale
+# rather than bad, and left ungraded it reports an organic engagement collapse
+# every single morning.
+#
+# Measured twice, two days apart, aligning exactly by row age (site-wide
+# sessions/engaged): at age 4-6d, 58-64%; at age 3d, no row; at age 2d and 1d,
+# ~1.2-1.8%. A day reaching age 4 backfills to its true value, session count
+# included (2026-08-06 read 839/25 fresh and 875/545 once finalized).
+#
+# This is NOT a fault and there is nothing to fix on either side of the wire. The
+# site tag stamps session_engaged correctly (a live production probe returned
+# gcs=G101 and sent seg=1) and the property's audit log has no entry since
+# 2026-06-29. An earlier reading of this signature as a GA4 break starting
+# 2026-08-06 was wrong — it caught the rolling edge of the lag once and mistook it
+# for a step change. See ticket 3b762b8d409f816ab746c073b0c84474.
 #
 # The guard is the internal CONTRADICTION, never a date skip (which would be wrong
 # the moment GA4 recovers) and never a threshold on the engagement rate alone (a
@@ -122,11 +131,21 @@ GA4_MIN_SESSIONS = 50             # below this N the rate is noise; never flag
 #   P <= (S - E) + E*M, i.e. E >= (P - S)/(M - 1). On 2026-08-08 the pageviews
 #   alone force at least 24 engaged sessions; GA4 reported 8.
 #
-# BOTH must contradict before the metric is called broken. Either alone can happen
+# BOTH must contradict before the metric is called stale. Either alone can happen
 # for real — a genuine decline drags duration down with it — and the cost of a
 # false fault label is silencing a real engagement collapse, which is the one
-# direction that must not fail. Measured against the break: the healthy day clears
-# both by a wide margin, all three broken days fail both.
+# direction that must not fail.
+#
+# KNOWN HOLE: the duration half DILUTES AS TRAFFIC GROWS, because the unengaged
+# ceiling is 10*(S-E) and so scales with sessions. Measured 2026-08-11 on organic
+# rows: an un-finalized 522-session day gave implied 652s and tripped the ceiling,
+# while an un-finalized 1227-session day at the same ~1.3% engaged gave only 513s
+# and PASSED. The guard is weakest on the busiest days, which are the ones that
+# matter. It is the wrong instrument for what turned out to be a deterministic
+# staleness boundary: excluding un-finalized rows from the window is, and would
+# leave this as a backstop that should never fire. Pending that change (ticket
+# 3b762b8d409f816ab746c073b0c84474), do not read a clean run as proof the window
+# held only finalized days.
 GA4_ENGAGED_MIN_DURATION_S = 10       # GA4's own rule: >10s alone qualifies a session
 GA4_MAX_PAGES_PER_SESSION = 30        # a single organic session above this is a crawler
 GA4_IMPLIED_ENGAGED_S_CEILING = 600   # mean engaged-session time that cannot be real
