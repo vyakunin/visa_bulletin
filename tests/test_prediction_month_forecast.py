@@ -214,8 +214,11 @@ class TestPredictionMonthForecast(TestCase):
         # so a page kept saying the reset might retrogress below a date State had
         # already announced it would clear.
         body = self.client.get("/predictions/july-2026/").content.decode()
-        self.assertIn("at least July 15, 2014", body)
         self.assertIn("has published a floor", body)
+        # As rendered HTML, not raw markdown — a substring check on the date alone
+        # passes just as well when "**at least July 15, 2014**" leaks onto the page.
+        self.assertIn("<strong>at least July 15, 2014</strong>", body)
+        self.assertNotIn("**", body)
 
     def test_reset_prose_is_not_restated_in_template_markup(self):
         # The boundary this fix must not over-reach into, and the defect that made it
