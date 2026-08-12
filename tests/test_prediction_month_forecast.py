@@ -84,11 +84,9 @@ _FLOORED_EXPLAINER = (
     "**EB-3 China is Unavailable** — it reached its fiscal-year annual limit "
     "(INA §203(b) numerical caps). It is expected to stay Unavailable through "
     "**September 2026**; a cutoff date returns on **October 1, 2026**, when the new "
-    "fiscal year's visa quota opens. The State Department has published a floor for "
-    "this reset: the July 2026 bulletin's notes say the date is expected to advance to "
-    "**at least July 15, 2014**. The forecast below is bounded by that statement, which "
-    "is a lower bound rather than a guarantee — State ties it to demand and to the new "
-    "fiscal year's limits."
+    "fiscal year's visa quota opens. The July 2026 bulletin's notes say the date is "
+    "expected to advance to **at least July 15, 2014**. State ties that to demand and "
+    "to the new fiscal year's limits, so the date can land below it."
 )
 
 
@@ -214,7 +212,12 @@ class TestPredictionMonthForecast(TestCase):
         # so a page kept saying the reset might retrogress below a date State had
         # already announced it would clear.
         body = self.client.get("/predictions/july-2026/").content.decode()
-        self.assertIn("has published a floor", body)
+        # Split around the apostrophe: Django escapes it to &#x27; in the rendered page,
+        # so an assertion carrying "bulletin's" fails on correct output.
+        self.assertIn("The July 2026 bulletin", body)
+        self.assertIn("notes say the date is expected to advance to", body)
+        # The floor is a floor, so the page must say the date can miss it downward.
+        self.assertIn("the date can land below it", body)
         # As rendered HTML, not raw markdown — a substring check on the date alone
         # passes just as well when "**at least July 15, 2014**" leaks onto the page.
         self.assertIn("<strong>at least July 15, 2014</strong>", body)

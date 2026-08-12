@@ -542,15 +542,14 @@ def describe_reset(est: OctoberResetEstimate, series_label: str) -> str:
             f"fiscal year's visa quota opens."
         )
     if est.floor:
-        source = ""
         if est.floor_source_period:
-            source = f" the {est.floor_source_period.strftime('%B %Y')} bulletin's notes say"
+            said = f"The {est.floor_source_period.strftime('%B %Y')} bulletin's notes say"
+        else:
+            said = "The State Department says"
         parts.append(
-            f"The State Department has published a floor for this reset:{source} "
-            f"the date is expected to advance to **at least "
-            f"{_fmt_month(est.floor)}**. The forecast below is bounded by that "
-            f"statement, which is a lower bound rather than a guarantee — State "
-            f"ties it to demand and to the new fiscal year's limits."
+            f"{said} the date is expected to advance to **at least "
+            f"{_fmt_month(est.floor)}**. State ties that to demand and to the new "
+            f"fiscal year's limits, so the date can land below it."
         )
         return " ".join(parts)
     if est.pre_u_cutoff:
