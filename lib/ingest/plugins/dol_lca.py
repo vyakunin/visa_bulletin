@@ -811,10 +811,15 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         if salary_result.warnings:
             warnings.extend(salary_result.warnings)
 
-        # Validate WorksiteRecords
+        # Validate WorksiteRecords across every program. transform() reads the
+        # program off the case-number prefix, so a standalone worksite file lands
+        # under whatever its cases say: lca_worksites_* is I-2xx -> H1B, but
+        # pw_worksites_* is P-... (prevailing wage) -> PERM. Pinning this lookup
+        # to H1B counted zero rows for every pw_worksites file and failed the run
+        # as "expected data but got none" while the rows sat committed.
         worksite_result = validate_salary_records_post_ingest(
             run=run,
-            visa_program=VisaProgram.H1B,
+            visa_program=None,
             program_name="Worksite",
             model_class=WorksiteRecord,
         )

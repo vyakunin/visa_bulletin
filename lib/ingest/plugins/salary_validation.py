@@ -25,21 +25,27 @@ HIGH_WAGE_REVIEW_THRESHOLD_PCT = (
 
 
 def _get_records_for_run(
-    run: IngestRun, visa_program: VisaProgram, model_class
+    run: IngestRun, visa_program: VisaProgram | None, model_class
 ) -> tuple[models.QuerySet, str | None]:
-    """Get records created in this run."""
+    """Get records created in this run.
+
+    `visa_program=None` counts rows of any program. Use it where the program is
+    derived from the DATA rather than fixed by the plugin: a worksite file's
+    program comes from its case-number prefix, so a `pw_worksites_*` file lands
+    as PERM even though the LCA plugin read it.
+    """
     source_file = (
         Path(run.checkpoint.get("filepath", "")).name
         if run.checkpoint.get("filepath")
         else None
     )
 
+    program_filter = {} if visa_program is None else {"visa_program": visa_program}
+
     if source_file:
-        records = model_class.objects.filter(
-            source_file=source_file, visa_program=visa_program
-        )
+        records = model_class.objects.filter(source_file=source_file, **program_filter)
     else:
-        records = model_class.objects.filter(visa_program=visa_program).order_by("-id")
+        records = model_class.objects.filter(**program_filter).order_by("-id")
         if run.records_created:
             records = records[: run.records_created]
 
@@ -202,7 +208,7 @@ def _validate_state_codes(
 
 def validate_salary_records_post_ingest(
     run: IngestRun,
-    visa_program: VisaProgram,
+    visa_program: VisaProgram | None,
     program_name: str,
     model_class=SalaryRecord,
 ) -> ValidationResult:
@@ -211,7 +217,7 @@ def validate_salary_records_post_ingest(
 
     Args:
         run: IngestRun instance
-        visa_program: VisaProgram enum value
+        visa_program: VisaProgram enum value, or None to count any program
         program_name: Human-readable program name (e.g., "PERM", "H-1B LCA")
         model_class: Model class to validate (SalaryRecord or WorksiteRecord)
 

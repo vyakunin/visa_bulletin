@@ -13,6 +13,7 @@ import pytest
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin
 from lib.ingest.registry import PluginRegistry
+from models.enums.visa_program import VisaProgram
 from models.ingest.data_source import DataSource
 from models.ingest.enums import DataDomain, FormatVersion, IngestStatus, SourceType
 from models.ingest.ingest_run import IngestRun
@@ -545,3 +546,77 @@ class TestWorksiteFileTransformFy2026:
         assert result.soc_code == "15-1252"
         # job_title falls back to SOC title when the file omits JOB_TITLE.
         assert result.job_title == "Software Developers"
+
+
+@pytest.mark.django_db
+class TestWorksiteFileValidationFy2026:
+    """Regression: a `pw_worksites_*` file's rows carry PREVAILING-WAGE case
+    numbers (`P-...`), which transform() maps to VisaProgram.PERM. The
+    post-ingest validator looked the rows up filtered on VisaProgram.H1B, found
+    none, and failed the run with "expected data but got none" while the rows
+    sat committed in the table. That made every quarter's DOL ingest exit 1.
+
+    The worksite lookup is program-agnostic now: a worksite file's program is a
+    property of its case numbers, not of the plugin that read it.
+    """
+
+    SOURCE_FILE = "pw_worksites_fy2026_q3.xlsx"
+
+    def _run_for(self, filename):
+        source = DataSource.objects.create(
+            url=f"https://www.dol.gov/sites/dolgov/files/eta/oflc/pdfs/fy26q3/{filename}",
+            domain=DataDomain.DOL,
+            source_type=SourceType.LCA,
+        )
+        return IngestRun.objects.create(
+            source=source,
+            status=IngestStatus.RUNNING,
+            checkpoint={"filepath": f"/tmp/{filename}"},
+        )
+
+    def _worksite_row(self, case_number, source_file):
+        # Shaped like a real pw_worksites row: no employer, no wage, SOC title
+        # standing in for the absent JOB_TITLE column.
+        return WorksiteRecord.objects.create(
+            case_number=case_number,
+            visa_program=VisaProgram.PERM,
+            worksite_city="SANTA CLARA",
+            worksite_state="CA",
+            job_title="Software Developers",
+            soc_code="15-1252",
+            soc_title="Software Developers",
+            fiscal_year=2026,
+            source_file=source_file,
+        )
+
+    def test_prevailing_wage_worksite_rows_validate_clean(self):
+        """The defect: PERM-programmed worksite rows exist, so the run must pass."""
+        run = self._run_for(self.SOURCE_FILE)
+        for n in range(3):
+            self._worksite_row(f"P-100-25024-64097{n}", self.SOURCE_FILE)
+
+        result = H1BSalaryDataSourcePlugin().validate_post_ingest(run)
+
+        assert result.passed, (
+            "worksite rows are committed under VisaProgram.PERM (P- case numbers); "
+            f"the validator must count them, not fail the run: {result.errors}"
+        )
+        assert not any("expected data but got none" in e for e in result.errors)
+
+    def test_source_file_that_created_nothing_still_fails(self):
+        """The boundary: the fix must not turn the validator into a rubber stamp.
+
+        Same code path, no rows -> the run must still fail. Without this, a
+        program-agnostic lookup could pass any run that touched a table with
+        rows in it from some other file.
+        """
+        run = self._run_for("pw_worksites_fy2026_q4.xlsx")
+        # Rows exist, but from a DIFFERENT source file — they must not be counted.
+        self._worksite_row("P-100-25024-999999", self.SOURCE_FILE)
+
+        result = H1BSalaryDataSourcePlugin().validate_post_ingest(run)
+
+        assert not result.passed, "a source file that created no rows must fail"
+        assert any("expected data but got none" in e for e in result.errors), (
+            f"expected the no-records error, got: {result.errors}"
+        )
