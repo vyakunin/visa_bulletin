@@ -37,28 +37,37 @@ advertising. Don't draft, schedule, or re-post to them; don't modmail-appeal
 - **r/DataHoarder** (`1uyz1n0`, 2026-07-17) and **r/selfhosted** (`1usmhod`,
   2026-07-10) — both removed. Not immigration venues, but the account has burned
   them, so don't reach for either as a "neutral tech" fallback.
+- **r/cscareerquestions** — `1tsw5r6` is REMOVED. It was recorded here as a
+  surviving venue until 2026-08-17 and story B was routed to it on that basis.
+- **r/ITCareerQuestions** — `1twppqh` (2026-06) removed by moderator.
 
-**Re-derive this list from the submitted page before every send — don't trust the
-last recorded check.** One command gives the whole picture, removals included:
+**Re-derive this list before every send with the COMMAND — never by eye, and never
+from the last recorded check:**
 
 ```bash
-UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
-(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-curl -sL -A "$UA" "https://old.reddit.com/user/CivilCandidate1349/submitted/" \
-  -o /tmp/rsub.html
-# then per candidate id — the <title> alone is dispositive:
-curl -sL -A "$UA" "https://old.reddit.com/comments/<id>/" | grep -oE '<title>[^<]*</title>'
-#   -> "[ Removed by moderator ] : <sub>"  = removed
+cd ~/cursor_projects/overheard
+uv run scripts/fetch_reddit.py --user CivilCandidate1349 --limit 40 --transport cdp
+#   -> one row per post with `removed`, read from Reddit's own
+#      removed_by_category == "moderator" on the account's own session.
 ```
 
-Scraping the listing page for `data-subreddit` alone is what produced the 07-31
-misread: the removal marker sits in the thing block, so a grep that isn't split
-per-block attributes it to the wrong post. Fetch the individual permalink and read
-its `<title>` when the answer matters.
+**Three of the hand-run checks were wrong, in the same way, which is why this is a
+command and not a procedure.** `1try18z` was recorded as surviving on 2026-07-31
+and `1tsw5r6` as SAFE on 2026-08-04; both were removed. Each time the listing page
+was scraped and the removal marker — which sits inside the per-post block — was
+attributed to the wrong row. The mechanical sweep reproduces all eight
+independently-known verdicts and found the two the eye missed.
 
-**Surviving venues as of 2026-08-03:** r/USCIS (3 live, `1uo3ms6` at 56 comments),
-r/developersIndia (`1tqzncq`, 9/11), r/EB3VisaJourney (`1uquc2j`, 6/9),
-r/cscareerquestions (`1tsw5r6`, score 1).
+**The old anonymous curl recipe cannot do this any more and fails SILENTLY**: since
+2026-08-11 old.reddit answers the logged-out wall with HTTP 200, so a curl of the
+submitted page parses to zero posts and reads as "nothing removed" (`reddit_read.md`).
+`--transport cdp` goes through the logged-in debug Chrome, which is the only path
+that sees the marker; the HTML path reports `removed: null` rather than guessing.
+
+**Surviving venues as of 2026-08-17** (same sweep): r/USCIS (`1uo3ms6` 5/55,
+`1pbpki2` 17/33, `1togz6h` 0/13, `1vixkxk` 0/22), r/developersIndia (`1tqzncq`,
+11/11), r/EB3VisaJourney (`1uquc2j` 6/9, `1vlj53z` 5/7), r/h1b `1pbpp95` (130/71 —
+the account's best post anywhere, and the sub is still no-go per the repeat above).
 
 When a new sub is being considered, dry-run first and check its rules/AutoMod for
 a no-advertising / no-self-promotion clause before scheduling.
