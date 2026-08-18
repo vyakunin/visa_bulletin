@@ -128,22 +128,26 @@
                    withholds it rather than print a headline nobody can check. Where
                    it is shown, the subtext carries the two counts it divides. #}
                 {% if stats.show_yoy_growth %}
-                    {% with base_str=stats.growth_base_filings|intcomma end_str=stats.growth_end_filings|intcomma %}
-                        {% with growth_subtext=base_str|add:" → "|add:end_str|add:" filings" %}
+                    {% with start_str=stats.growth_start_year|stringformat:"s" end_str=stats.growth_end_year|stringformat:"s" %}
+                    {% with base_str=stats.growth_base_filings|intcomma final_str=stats.growth_end_filings|intcomma %}
+                        {% with partial_note=stats.used_partial_year|yesno:" (latest year appears partial)," %}
+                        {% with growth_subtext=base_str|add:" → "|add:final_str|add:" filings, FY"|add:start_str|add:" to FY"|add:end_str|add:partial_note %}
                             {% if stats.yoy_growth >= 10 %}
                                 {% with growth_class="text-success" %}
-                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" prefix="+" %}
                                 {% endwith %}
                             {% elif stats.yoy_growth >= 0 %}
                                 {% with growth_class="text-info" %}
-                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" prefix="+" %}
                                 {% endwith %}
                             {% else %}
                                 {% with growth_class="text-danger" %}
-                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" %}
                                 {% endwith %}
                             {% endif %}
                         {% endwith %}
+                        {% endwith %}
+                    {% endwith %}
                     {% endwith %}
                 {% endif %}
             </div>

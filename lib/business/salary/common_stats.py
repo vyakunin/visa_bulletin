@@ -175,6 +175,39 @@ def growth_endpoint_counts(
     return growth_counts[0][1], growth_counts[-1][1]
 
 
+def growth_headline(
+    yoy_trends: list[dict],
+    start_year: int,
+    min_ratio: float = 0.6,
+) -> dict:
+    """A growth percentage together with the gate and counts a tile needs.
+
+    Every surface that renders a growth headline goes through this, so the
+    `show` gate cannot be left off a new one: the percentage is not available
+    without it. tests/test_growth_tile_guard.py holds that as the enumeration
+    -- outside this module nothing calls calculate_yoy_growth directly.
+
+    `show` is false whenever there is no growth figure at all (fewer than two
+    qualifying years leaves base at 0), so a caller that honours it never has
+    to test the years for None separately.
+    """
+    growth, growth_start_year, growth_end_year, used_partial_year = (
+        calculate_yoy_growth(yoy_trends, start_year, min_ratio=min_ratio)
+    )
+    base_filings, end_filings = growth_endpoint_counts(
+        yoy_trends, start_year, min_ratio=min_ratio
+    )
+    return {
+        "yoy_growth": growth,
+        "growth_start_year": growth_start_year,
+        "growth_end_year": growth_end_year,
+        "used_partial_year": used_partial_year,
+        "growth_base_filings": base_filings,
+        "growth_end_filings": end_filings,
+        "show_yoy_growth": base_filings >= GROWTH_MIN_BASE_FILINGS,
+    }
+
+
 def calculate_geographic_distributions(
     queryset,
     limit: int = 20,

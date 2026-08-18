@@ -4,11 +4,14 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from datetime import datetime
+
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils.html import escape
 
+from lib.business.salary.common_stats import GROWTH_MIN_BASE_FILINGS
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -86,6 +89,70 @@ class SalarySearchLandingViewTest(TestCase):
         self.assertTrue(response.context["has_filters"])
         self.assertIsNone(response.context["market_stats"])
         self.assertEqual(response.context["market_chart_data"], {})
+
+
+class MarketOverviewGrowthGateTest(TestCase):
+    """The site-wide growth tile carries the same base-year gate as the profiles.
+
+    Site-wide the base year is six figures, so the floor is not expected to bite
+    here. It is on anyway: the class this closes is "a growth percentage rendered
+    without the count it divides by", and leaving one surface out is how it
+    reopens. tests/test_growth_tile_guard.py holds the enumeration.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        self.current_year = datetime.now().year
+        cluster = EmployerCluster.objects.create(
+            canonical_name="Market Growth Co",
+            slug="market-growth-co",
+        )
+        self.employer = Employer.objects.create(
+            name="Market Growth Co",
+            name_normalized="market growth co",
+            canonical_cluster=cluster,
+        )
+
+    def _file(self, counts_by_year):
+        seq = 0
+        for year, count in counts_by_year.items():
+            for _ in range(count):
+                SalaryRecord.objects.create(
+                    case_number=f"MARKET-GROWTH-{seq}",
+                    employer=self.employer,
+                    employer_name="Market Growth Co",
+                    job_title="Market Engineer",
+                    wage_annual=120000,
+                    visa_program=VisaProgram.H1B,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=year,
+                    worksite_state="CA",
+                    is_worksite=False,
+                )
+                seq += 1
+
+    def test_tiny_base_year_withholds_the_market_growth_tile(self):
+        self._file({self.current_year - 4: 1, self.current_year - 1: 38})
+
+        response = self.client.get(reverse("salary_search"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["market_stats"]["show_yoy_growth"])
+        self.assertNotContains(response, "Filing Growth")
+
+    def test_base_year_at_the_floor_renders_it_with_its_counts(self):
+        base = GROWTH_MIN_BASE_FILINGS
+        end = base * 2
+        self._file({self.current_year - 4: base, self.current_year - 1: end})
+
+        response = self.client.get(reverse("salary_search"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["market_stats"]["show_yoy_growth"])
+        self.assertContains(response, "Filing Growth")
+        self.assertContains(response, f"{base} \u2192 {end} filings")
+        self.assertNotContains(response, "YoY Growth")
 
 
 class SalarySearchSEOTest(TestCase):

@@ -12,8 +12,8 @@ from lib.business.salary.common_stats import (
     calculate_geographic_distributions,
     calculate_market_overview_stats,
     calculate_salary_percentiles,
-    calculate_yoy_growth,
     calculate_yoy_trends,
+    growth_headline,
 )
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
@@ -40,12 +40,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
     basic_stats = calculate_market_overview_stats(records)
     salary_percentiles = calculate_salary_percentiles(records)
     yoy_trends = calculate_yoy_trends(records)
-    yoy_growth, growth_start_year, growth_end_year, used_partial_year = (
-        calculate_yoy_growth(
-            yoy_trends,
-            start_year,
-        )
-    )
+    growth = growth_headline(yoy_trends, start_year)
     geographic_dist, geographic_dist_by_median = calculate_geographic_distributions(
         records,
         limit=20,
@@ -79,12 +74,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
         "basic": basic_stats,
         "salary_percentiles": salary_percentiles,
         "yoy_trends": yoy_trends,
-        "yoy_growth": yoy_growth,
-        "growth_period": {
-            "start_year": growth_start_year,
-            "end_year": growth_end_year,
-            "used_partial_year": used_partial_year,
-        },
+        **growth,
         "geographic_dist": geographic_dist,
         "geographic_dist_by_median": geographic_dist_by_median,
         "top_employers": top_employers,

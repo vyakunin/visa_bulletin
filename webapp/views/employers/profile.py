@@ -17,7 +17,6 @@ from lib.business.i129.demographic_pay_panel import get_employer_demographic_pay
 from lib.business.i129.pay_comparison import get_employer_pay_comparison
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
-    GROWTH_MIN_BASE_FILINGS,
     calculate_filing_pace,
     calculate_filing_pace_by_fiscal_year,
     calculate_latency_trend,
@@ -26,9 +25,8 @@ from lib.business.salary.common_stats import (
     calculate_recent_filing_activity,
     calculate_salary_histogram_with_overlays,
     calculate_salary_percentiles,
-    calculate_yoy_growth,
     calculate_yoy_trends,
-    growth_endpoint_counts,
+    growth_headline,
 )
 from lib.business.salary.employer_renames import get_rename_link
 from lib.business.salary.employer_stats import is_thin_employer_profile
@@ -191,10 +189,7 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
         slug,
         time.perf_counter() - t0,
     )
-    yoy_growth, _, _, _ = calculate_yoy_growth(yoy_trends, start_year)
-    growth_base_filings, growth_end_filings = growth_endpoint_counts(
-        yoy_trends, start_year
-    )
+    growth = growth_headline(yoy_trends, start_year)
 
     t0 = time.perf_counter()
     program_breakdown = calculate_program_breakdown(records)
@@ -246,10 +241,7 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
     return {
         "basic": basic_stats,
         "approval_rate": approval_rate,
-        "yoy_growth": yoy_growth,
-        "growth_base_filings": growth_base_filings,
-        "growth_end_filings": growth_end_filings,
-        "show_yoy_growth": growth_base_filings >= GROWTH_MIN_BASE_FILINGS,
+        **growth,
         "top_titles": top_titles,
         "salary_percentiles": salary_percentiles,
         "salary_histogram": histogram_data,

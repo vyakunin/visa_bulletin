@@ -149,58 +149,33 @@
             <div class="row mb-4">
                 {% include "webapp/includes/stat_card.html" with value=cluster.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext="All time (charts below use selected years)" %}
                 {% include "webapp/includes/stat_card.html" with value=stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="National Average" prefix="$" %}
-                {% if stats.growth_period.start_year and stats.growth_period.end_year %}
-                    {% with growth_start_str=stats.growth_period.start_year|stringformat:"s" %}
-                    {% with growth_end_str=stats.growth_period.end_year|stringformat:"s" %}
-                    {% with growth_subtext="Growth "|add:growth_start_str|add:"-"|add:growth_end_str|add:" (Filing Volume)" %}
-                    {% if stats.growth_period.used_partial_year %}
-                        {% with growth_subtext=growth_subtext|add:" (latest year appears partial)" %}
-                        {% if stats.yoy_growth >= 10 %}
-                            {% with growth_class="text-success" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                {# Below GROWTH_MIN_BASE_FILINGS base-year filings the percentage is
+                   base noise (one filing moves it 100/base points), so the view
+                   withholds it rather than print a headline nobody can check. The
+                   gate is false whenever there is no growth figure at all, so the
+                   years below are never None here. #}
+                {% if stats.show_yoy_growth %}
+                    {% with start_str=stats.growth_start_year|stringformat:"s" end_str=stats.growth_end_year|stringformat:"s" %}
+                        {% with base_str=stats.growth_base_filings|intcomma final_str=stats.growth_end_filings|intcomma %}
+                            {% with partial_note=stats.used_partial_year|yesno:" (latest year appears partial)," %}
+                                {% with growth_subtext=base_str|add:" → "|add:final_str|add:" filings, FY"|add:start_str|add:" to FY"|add:end_str|add:partial_note %}
+                                    {% if stats.yoy_growth >= 10 %}
+                                        {% with growth_class="text-success" %}
+                                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                        {% endwith %}
+                                    {% elif stats.yoy_growth >= 0 %}
+                                        {% with growth_class="text-info" %}
+                                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                        {% endwith %}
+                                    {% else %}
+                                        {% with growth_class="text-danger" %}
+                                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Filing Growth" subtext=growth_subtext suffix="%" %}
+                                        {% endwith %}
+                                    {% endif %}
+                                {% endwith %}
                             {% endwith %}
-                        {% elif stats.yoy_growth >= 0 %}
-                            {% with growth_class="text-info" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" prefix="+" %}
-                            {% endwith %}
-                        {% else %}
-                            {% with growth_class="text-danger" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" %}
-                            {% endwith %}
-                        {% endif %}
                         {% endwith %}
-                    {% else %}
-                        {% if stats.yoy_growth >= 10 %}
-                            {% with growth_class="text-success" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" prefix="+" %}
-                            {% endwith %}
-                        {% elif stats.yoy_growth >= 0 %}
-                            {% with growth_class="text-info" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" prefix="+" %}
-                            {% endwith %}
-                        {% else %}
-                            {% with growth_class="text-danger" %}
-                                {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext=growth_subtext suffix="%" %}
-                            {% endwith %}
-                        {% endif %}
-                    {% endif %}
                     {% endwith %}
-                    {% endwith %}
-                    {% endwith %}
-                {% else %}
-                    {% if stats.yoy_growth >= 10 %}
-                        {% with growth_class="text-success" %}
-                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
-                        {% endwith %}
-                    {% elif stats.yoy_growth >= 0 %}
-                        {% with growth_class="text-info" %}
-                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
-                        {% endwith %}
-                    {% else %}
-                        {% with growth_class="text-danger" %}
-                            {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="Growth" subtext="Filing Volume" suffix="%" %}
-                        {% endwith %}
-                    {% endif %}
                 {% endif %}
                 {% include "webapp/includes/stat_card.html" with value=stats.top_employers|length value_class="text-info" label="Top Employers" subtext="Hiring This Role" %}
             </div>

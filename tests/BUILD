@@ -170,6 +170,19 @@ pytest_py_test(
     ],
 )
 
+# Scans first-party sources, so it needs them in its runfiles rather than on the
+# import path: //webapp/views:views pulls every view package transitively.
+pytest_py_test(
+    name = "test_growth_tile_guard",
+    size = "small",
+    srcs = ["test_growth_tile_guard.py"],
+    data = [
+        "//lib/business/salary:all_py",
+        "//webapp:templates",
+        "//webapp/views:views",
+    ],
+)
+
 # The PEP-723 scripts under scripts/ import mcp/daily_checkup_server.py, which needs
 # mcp 1.x (`mcp.server.fastmcp`; removed in 2.0.0). Each script resolves its own uv env,
 # so an unbounded "mcp" dep kills them one at a time as caches rebuild — silently, while
@@ -559,6 +572,7 @@ django_py_test(
     size = "medium",
     srcs = ["test_salary_search_view.py"],
     deps = [
+        "//lib/business/salary:common_stats",
         "//django_config:urls",
         "//django_config:context_processors",
         "//models:salary",
@@ -1115,6 +1129,7 @@ django_py_test(
         "//models:job_title",
         "//models/enums:visa_program",
         "//models/ingest:ingest_version",
+        "//lib/business/salary:common_stats",
         "//lib/business/salary:job_title_stats",
         "//lib/business/salary:job_title_chart_builder",
         "//scripts/salary:update_job_title_cluster_stats_lib",

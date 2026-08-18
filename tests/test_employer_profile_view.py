@@ -596,7 +596,7 @@ class GrowthTileBaseFloorTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["stats"]["show_yoy_growth"])
-        self.assertNotContains(response, "YoY Growth")
+        self.assertNotContains(response, "Filing Growth")
         self.assertNotContains(response, "3700.0")
 
     def test_base_year_at_the_floor_still_renders_the_growth_tile(self):
@@ -613,7 +613,7 @@ class GrowthTileBaseFloorTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["stats"]["show_yoy_growth"])
-        self.assertContains(response, "YoY Growth")
+        self.assertContains(response, "Filing Growth")
 
     def test_rendered_growth_carries_the_counts_it_divides(self):
         """A shown percentage is checkable: the raw endpoint counts sit beside it."""

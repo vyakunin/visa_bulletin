@@ -7,11 +7,13 @@ setup_django_for_tests()
 import json
 import sys
 import unittest
+from datetime import datetime
 from decimal import Decimal
 
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
+from lib.business.salary.common_stats import GROWTH_MIN_BASE_FILINGS
 from models.enums.visa_program import CaseStatus, VisaProgram, WageUnit
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -1561,6 +1563,137 @@ class TestFiscalYearChartAxis(TestCase):
             fig = json.loads(builder(trends, "t"))
             self.assertEqual(fig["layout"]["xaxis"]["dtick"], 1)
             self.assertEqual(fig["layout"]["xaxis"]["tickformat"], "d")
+
+
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        }
+    }
+)
+class GrowthTileBaseFloorTest(TestCase):
+    """The growth headline is withheld when its base year is too small to carry it.
+
+    Measured on prod 2026-08-18 over the 23,782 job-title clusters that render a
+    growth figure at all in the default 5-year window: 22,485 of them (94.5%) sit
+    on a base year under 10 filings, and 2,141 of the 2,200 rendering +200% or
+    more do. /job-title/systems-analystdeveloper-b/ rendered "+79000.0%" off one
+    FY2022 filing against 791 in FY2024. The distribution behind the floor is in
+    common_stats.GROWTH_MIN_BASE_FILINGS.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.client = Client()
+        self.current_year = datetime.now().year
+
+    def _make_cluster(self, slug, counts_by_year):
+        """Create a cluster whose window carries `counts_by_year` filings."""
+        total = sum(counts_by_year.values())
+        cluster = JobTitleCluster.objects.create(
+            canonical_title=slug.replace("-", " ").title(),
+            slug=slug,
+            total_filings=total,
+            avg_salary=Decimal("120000.00"),
+        )
+        entity = JobTitle.objects.create(
+            title=cluster.canonical_title,
+            title_normalized=cluster.canonical_title.lower(),
+            experience_level="",
+            canonical_cluster=cluster,
+            total_filings=total,
+            avg_salary=Decimal("120000.00"),
+        )
+        seq = 0
+        for year, count in counts_by_year.items():
+            for _ in range(count):
+                SalaryRecord.objects.create(
+                    case_number=f"{slug}-{seq}",
+                    employer_name="Test Company Inc JT",
+                    employer=self.employer_for_records(),
+                    job_title=cluster.canonical_title,
+                    job_title_entity=entity,
+                    worksite_city="San Francisco",
+                    worksite_state="CA",
+                    wage_annual=Decimal("120000.00"),
+                    wage_unit=WageUnit.YEAR,
+                    visa_program=VisaProgram.H1B,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=year,
+                    source_file="test.xlsx",
+                    is_worksite=False,
+                )
+                seq += 1
+        return cluster
+
+    def employer_for_records(self):
+        cluster, _ = EmployerCluster.objects.get_or_create(
+            slug="growth-floor-co",
+            defaults={"canonical_name": "Growth Floor Co"},
+        )
+        employer, _ = Employer.objects.get_or_create(
+            name="Growth Floor Co",
+            defaults={
+                "name_normalized": "growth floor co",
+                "city": "San Francisco",
+                "state": "CA",
+                "canonical_cluster": cluster,
+            },
+        )
+        return employer
+
+    def test_tiny_base_year_withholds_the_growth_tile(self):
+        """The defect: one base-year filing rendering a +3700%-shaped headline."""
+        self._make_cluster(
+            "one-filing-base-title",
+            {self.current_year - 4: 1, self.current_year - 1: 38},
+        )
+
+        response = self.client.get("/job-title/one-filing-base-title/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["stats"]["show_yoy_growth"])
+        self.assertNotContains(response, "Filing Growth")
+        self.assertNotContains(response, "3700.0")
+
+    def test_base_year_at_the_floor_still_renders_the_growth_tile(self):
+        """The boundary: the floor must not swallow titles that do carry data."""
+        self._make_cluster(
+            "solid-base-title",
+            {
+                self.current_year - 4: GROWTH_MIN_BASE_FILINGS,
+                self.current_year - 1: GROWTH_MIN_BASE_FILINGS * 2,
+            },
+        )
+
+        response = self.client.get("/job-title/solid-base-title/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["stats"]["show_yoy_growth"])
+        self.assertContains(response, "Filing Growth")
+
+    def test_rendered_growth_carries_the_counts_it_divides(self):
+        """A shown percentage is checkable: the raw endpoint counts sit beside it."""
+        base = GROWTH_MIN_BASE_FILINGS + 2
+        end = base * 3
+        self._make_cluster(
+            "checkable-growth-title",
+            {self.current_year - 4: base, self.current_year - 1: end},
+        )
+
+        response = self.client.get("/job-title/checkable-growth-title/")
+
+        stats = response.context["stats"]
+        self.assertEqual(stats["growth_base_filings"], base)
+        self.assertEqual(stats["growth_end_filings"], end)
+        self.assertContains(
+            response,
+            f"{base} \u2192 {end} filings, FY{self.current_year - 4} "
+            f"to FY{self.current_year - 1}",
+        )
 
 
 if __name__ == "__main__":

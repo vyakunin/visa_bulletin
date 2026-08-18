@@ -22,8 +22,8 @@ from lib.business.salary.common_stats import (
     calculate_salary_histogram_with_experience_overlays,
     calculate_salary_histogram_with_overlays,
     calculate_salary_percentiles,
-    calculate_yoy_growth,
     calculate_yoy_trends,
+    growth_headline,
 )
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import SalaryRecord
@@ -307,13 +307,10 @@ def get_job_title_statistics(
     # G. Year-over-Year Trends
     yoy_trends = calculate_yoy_trends(records)
 
-    # Growth calculation (use latest non-partial year when possible)
-    (
-        yoy_growth,
-        growth_start_year,
-        growth_end_year,
-        used_partial_year,
-    ) = calculate_yoy_growth(
+    # Growth headline (use latest non-partial year when possible). The gate
+    # travels with the figure: below GROWTH_MIN_BASE_FILINGS base-year filings
+    # the percentage is base noise and the tile is withheld.
+    growth = growth_headline(
         yoy_trends,
         start_year,
         min_ratio=GROWTH_PARTIAL_YEAR_MIN_RATIO,
@@ -348,12 +345,7 @@ def get_job_title_statistics(
     # Compile all stats
     stats = {
         "basic": basic_stats,
-        "yoy_growth": yoy_growth,
-        "growth_period": {
-            "start_year": growth_start_year,
-            "end_year": growth_end_year,
-            "used_partial_year": used_partial_year,
-        },
+        **growth,
         "salary_percentiles": salary_percentiles,
         "salary_histogram": salary_histogram,
         "top_employers": top_employers,
