@@ -61,6 +61,15 @@ py_library(
 )
 
 py_library(
+    name = "index_audit",
+    srcs = ["index_audit.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Django"),
+    ],
+)
+
+py_library(
     name = "db_utils",
     srcs = ["db_utils.py"],
     visibility = ["//visibility:public"],

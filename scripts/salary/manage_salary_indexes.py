@@ -40,6 +40,7 @@ from django.db import connection
 
 from django_config.logging_config import setup_logging
 from lib.utils.http_utils import get_workspace_dir
+from lib.utils.index_audit import audit
 from lib.utils.logging_utils import ScriptLogger
 from models.ingest.enums import IngestStatus
 from models.ingest.ingest_run import IngestRun
@@ -199,32 +200,51 @@ def recreate_indexes(snapshot_path: Path, force: bool = False) -> None:
             cursor.execute(indexdef)
 
     logger.info("Recreated %d indexes.", len(indexes))
+    # The snapshot records what existed, so anything already absent when it was taken
+    # stays absent for every cycle after — which is how salary_record lost thirteen
+    # model-declared indexes. Reconciling against the models afterwards makes the
+    # restore converge on the declaration instead of on the previous run's losses.
+    ensure_declared_indexes()
+
+
+def ensure_declared_indexes() -> int:
+    """Create every model-declared index the target tables lack. Returns the count."""
+    created = 0
+    previous = connection.get_autocommit()
+    connection.set_autocommit(True)  # CONCURRENTLY cannot run inside a transaction
+    try:
+        for table in TARGET_TABLES:
+            for entry in audit(table):
+                for index in entry.missing:
+                    logger.info(
+                        "Declared but absent, creating: %s.%s", entry.table, index.name
+                    )
+                    with connection.cursor() as cursor:
+                        cursor.execute(index.concurrent_sql())
+                    created += 1
+    finally:
+        connection.set_autocommit(previous)
+    if created:
+        logger.warning(
+            "Recreated %d index(es) the snapshot did not carry; "
+            "run scripts/db/audit_indexes to see the full picture.",
+            created,
+        )
+    else:
+        logger.info("Every model-declared index on %s is present.", ", ".join(TARGET_TABLES))
+    return created
 
 
 def create_clustering_indexes() -> None:
-    """Create minimal indexes required for clustering and employer profile performance."""
+    """Rebuild the declared index set — the fallback when the snapshot is gone.
+
+    This used to build a hand-written list under names Django does not derive
+    (``salary_record_job_title_idx``), so a run through it left the tables holding
+    indexes no model declared and missing ones every model did. The model layer is
+    the only list that cannot drift from what the code expects.
+    """
     _ensure_no_running_ingests()
-
-    clustering_indexes = [
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_idx ON salary_record(job_title)",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_name_idx ON salary_record(employer_name)",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_visa_program_idx ON salary_record(visa_program)",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_employer_job_title_idx ON salary_record(employer_name, job_title)",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS salary_record_job_title_state_idx ON salary_record(job_title, worksite_state)",
-        # Covering index for employer profile percentiles/histogram (index-only scan, no heap fetches)
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS sr_emp_wk_fy_inc_wage ON salary_record(employer_id, is_worksite, fiscal_year) INCLUDE (wage_annual)",
-    ]
-
-    logger.info("Creating %d clustering indexes...", len(clustering_indexes))
-
-    with connection.cursor() as cursor:
-        for indexdef in clustering_indexes:
-            # Extract index name from SQL
-            index_name = indexdef.split("EXISTS ")[1].split(" ON ")[0]
-            logger.info("Creating index: %s", index_name)
-            cursor.execute(indexdef)
-
-    logger.info("Created clustering indexes successfully.")
+    ensure_declared_indexes()
 
 
 def main() -> None:

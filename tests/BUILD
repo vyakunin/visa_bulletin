@@ -1827,6 +1827,17 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_index_declarations",
+    size = "medium",
+    srcs = ["test_index_declarations.py"],
+    deps = [
+        "//lib/utils:index_audit",
+        "//models:salary",
+        requirement("pytest_django"),
+    ],
+)
+
+django_py_test(
     name = "test_employer_index_depth_cap",
     size = "medium",
     srcs = ["test_employer_index_depth_cap.py"],

@@ -279,6 +279,15 @@ print(connection.queries[-1]['sql'][:300])
 
 A query that's <100ms via literal psql but >1s via this Django path is a planner-LIMIT-pessimization signature: the index exists but the planner picks Index Scan Backward on `wage_annual` instead. Trigram indexes alone do not fix this — needs a code-level subquery rewrite (force a Bitmap path). **Implemented** for the salary / worksite list views by `lib/utils/filter_utils.py:fenced_page_ids` (an `OFFSET 0` fence resolves the ordered page of pks via a Bitmap Heap Scan, then the ≤50 rows are fetched by pk with `select_related`). Measured on prod: `ENGINEERS` p4 5959→1614ms, `Architect` 2444→479ms, `CASHIER` 39→6ms. If you reintroduce a `.order_by('-wage_annual','-fiscal_year')[slice]` over a trigram-filtered queryset anywhere, route it through `fenced_page_ids` or it will pessimize again. Since 2026-07-04 the COLD `/salaries/` filtered-search path uses `fenced_page_and_aggregate` instead — one `AS MATERIALIZED` fenced scan yields both the ordered page and the count/avg/min/max (the old `fenced_aggregate` + `fenced_page_ids` pair scanned the 55k-391k-row match set twice; prod ENGINEERS 3196→1965ms). A view needing page + aggregate over the same filter should use the combined resolver, not the pair.
 
+**An index the models declare is not an index the database has.** The bulk-load
+drop/restore replays a snapshot of what existed, so a loss ratchets — that is how
+`salary_record` lost thirteen declared indexes (`docs/PERFORMANCE_IMPROVEMENTS.md` §
+"Model-declared indexes that were not there"). Ask a stack directly rather than reading
+the models: `ssh homeserver "docker exec -w /app vb_web python3 -m scripts.db.audit_indexes"`
+(exit 1 = divergence; `--sql` prints the repair DDL, `--create-missing` builds it
+CONCURRENTLY). The morning digest runs the same check against prod. A test cannot: its
+database is built by the migrations, so it always agrees.
+
 **Heavy mutations (CREATE INDEX, ALTER TABLE, schema migrations) MUST use the CONCURRENTLY form so reads + writes continue.** A non-concurrent ALTER on `salary_record` (1.5M rows) acquires AccessExclusiveLock and blocks every reader for the duration → effective outage. See migrations 0044, 0046, 0047 for examples of the `RunSQL(... atomic=False)` pattern.
 
 **Rollback triggers — if any of these fire in the verification window, roll back immediately, don't try to fix forward in prod:**

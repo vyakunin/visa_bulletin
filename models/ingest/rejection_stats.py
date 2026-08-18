@@ -31,9 +31,14 @@ class IngestRejectionStats(models.Model):
     This helps identify data quality issues and potential format mismatches.
     """
 
+    # db_index=False: three indexes below already lead with run_id — the
+    # unique_together and both Meta indexes — so the FK's own would be a fourth
+    # copy of the same key. The table was recreated out of band without it
+    # (see migration 0055), and nothing has missed it since.
     run = models.ForeignKey(
         IngestRun,
         on_delete=models.CASCADE,
+        db_index=False,
         related_name="rejection_stats",
         help_text="Ingest run these rejections occurred in",
     )

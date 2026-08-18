@@ -285,3 +285,68 @@ employer-directory and cluster pages. The new
 `search_avg_salary` field added in #3 is correctly record-weighted —
 worth migrating other consumers to it (or replacing `avg_salary`
 itself) once we've validated the new field on staging.
+
+## Model-declared indexes that were not there
+
+Thirteen indexes `SalaryRecord` declared did not exist on either stack, plus one on
+`ingest_rejection_stats` — audited 2026-08-18 with
+`bazel run //scripts/db:audit_indexes`, which compares Django's own
+`_model_indexes_sql` against `pg_indexes`. Staging and prod were identical, so the
+divergence predates the split.
+
+### Why nothing noticed
+
+`scripts/salary/manage_salary_indexes.py --drop` snapshots the indexes that exist and
+drops them; `--recreate` replays that snapshot. So the snapshot is not a description of
+what should exist, it is a description of what did — and an index missing at snapshot
+time is missing from every cycle after. The restore now reconciles against the model
+layer once the snapshot is replayed, and `--create-clustering-indexes`, the fallback for
+a lost snapshot, builds the declared set instead of a hand-written list under names
+(`salary_record_job_title_idx`) that Django never derives.
+
+Migrations cannot catch this: they replay a history, they never re-check state changed
+outside it. Neither can a test, since a test database is built by those migrations and
+therefore always agrees. `tests/test_index_declarations.py` pins migrations-vs-models;
+only the audit run against a live stack sees the rest, which is why the daily checkup
+now asks prod.
+
+### The decisions
+
+Measured on staging (prod-copy data, 1,664,411 rows, 1.36 GB) with a warm cache, so the
+absolute numbers are optimistic against prod's colder buffers; the ratios hold.
+
+| Declared index | Decision | Evidence |
+|---|---|---|
+| `employer_name`, and its `_like` companion | drop the declaration | the site resolves an employer through `employer.canonical_cluster_id`; the only predicate left on the column is `.exclude(employer_name="Unknown")`, which no index serves |
+| `job_title`, and its `_like` companion | drop the declaration | every served predicate is `__icontains`, which compiles to `UPPER(job_title::text) LIKE …` and is served by `sr_job_title_upper_trgm` (migration 0047) |
+| `soc_code` plain btree | drop the declaration | `sr_soc_code_pattern` (0058) answers equality as well as prefix: `soc_code = '15-1252.00'` is an Index Only Scan on it, 5.2 ms |
+| `soc_code` `_like` | keep, re-declared as `sr_soc_code_pattern` | `soc_code__startswith` over the occupation pages: 102 ms parallel seq scan → 38 ms bitmap index scan, per aggregate, nine aggregates per page |
+| `source_file` plain btree | drop the declaration | the `varchar_pattern_ops` index already serves the ingest dedup path's `source_file = %s` — Index Only Scan, 1.4 ms |
+| `source_file` `_like` | keep, renamed to `sr_source_file_pattern` | as above; renamed rather than rebuilt, since dropping `db_index` would otherwise make Django drop and recreate it under an AccessExclusiveLock |
+| `source_file_date` | drop the declaration | dedup selects the column beside `case_number` and compares it in Python; nothing filters or orders by it |
+| `ingest_version_id` | **create** | the rollback path deletes through it — 55 versions, ~30k rows each. `WHERE ingest_version_id = 252` (125,631 rows): 119–145 ms across five parallel workers → **12.3–12.8 ms** on one, Index Only Scan |
+| `(employer_name, job_title)` | drop the declaration | no query filters on both |
+| `(job_title, worksite_state)` | drop the declaration | no query filters on both |
+| `(soc_code, worksite_state)` | drop the declaration | no query filters on both |
+| `(employer_id, is_worksite)` | drop the declaration | those are the leading keys of `sr_emp_wk_fy_inc_wage`, which the planner already uses for that predicate alone — Index Only Scan, 1.8 ms |
+| `ingest_rejection_stats.run_id` | drop the declaration (`db_index=False`) | the `unique_together` and both Meta indexes already lead with `run_id` |
+
+### What it costs
+
+11 MB for the `ingest_version_id` btree, plus 11 MB for `sr_soc_code_pattern` from
+0058 — against 749 MB of indexes over a 1.24 GB table on prod. `sr_source_file_pattern`
+is a rename and adds nothing.
+
+The write side is below the noise floor. Inserting 50,000 rows inside a rolled-back
+transaction ran 3.9–8.2 s with the new index and 4.0–5.1 s without it, over eight runs;
+the run-to-run spread is several times any effect one more btree has among the twenty-six
+the table now carries.
+
+### The trap in the migration
+
+`AlterField` dropping `db_index` makes Django drop every index it *introspects* on that
+column except those the model already declares — so a `AddIndex` placed after it in the
+same migration is dropped before it is declared. Written that way, 0059 reported OK and
+silently removed the `sr_soc_code_pattern` that 0058 had built one second earlier. The
+declaration has to come first; `tests/test_index_declarations.py` would have caught the
+result but not the cause.

@@ -713,6 +713,10 @@ printf '==SECTION:nginx==\n'
 docker logs --since 24h vb_nginx 2>/dev/null | awk '
 {nginx_awk}
 '
+printf '==SECTION:index_audit==\n'
+# Model-declared indexes the live schema does not have. Prod is the only place
+# this can be asked: a test database is built by migrations and so always agrees.
+docker exec -w /app vb_web python3 -m scripts.db.audit_indexes --json 2>/dev/null
 printf '==SECTION:cloudflared==\n'
 docker inspect vb_cloudflared --format '{{{{.RestartCount}}}}|{{{{.State.Status}}}}' 2>/dev/null
 # Force success: we ran with `set +e` to tolerate per-command failures and
@@ -876,6 +880,60 @@ def _gather_bulletin_sync() -> dict:
     else:
         info["success_age_min"] = None
     return info
+
+
+def _parse_index_audit(text: str) -> dict:
+    """{"available": bool, "missing": [(table, index_name), ...]}.
+
+    Absent or unparseable means the prod image predates scripts/db/audit_indexes;
+    that reads as "no signal", never as "no divergence".
+    """
+    raw = (text or "").strip()
+    if not raw.startswith("["):
+        return {"available": False, "missing": []}
+    try:
+        rows = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"available": False, "missing": []}
+    missing = [
+        (row.get("table", "?"), item.get("name", "?"))
+        for row in rows
+        for item in row.get("missing", [])
+    ]
+    return {"available": True, "missing": missing}
+
+
+def _section_index_audit(info: dict) -> tuple[dict | None, str]:
+    """An index the models declare and the database lacks is silent until it is slow.
+
+    Nothing re-checks schema changed out of band, so the only way this surfaces is a
+    query that got slower months later — soc_code sat unindexed long enough for the
+    occupation pages to be built on top of the gap.
+    """
+    if not info.get("available"):
+        return (None, "green")
+    missing = info["missing"]
+    if not missing:
+        return (None, "green")
+    by_table: dict[str, list[str]] = {}
+    for table, name in missing:
+        by_table.setdefault(table, []).append(name)
+    body = [
+        f"- `{table}`: {', '.join(f'`{n}`' for n in sorted(names))}"
+        for table, names in sorted(by_table.items())
+    ]
+    body.append(
+        "- Repair: `docker exec -w /app vb_web python3 -m scripts.db.audit_indexes "
+        "--sql` to read the DDL, `--create-missing` to build it CONCURRENTLY."
+    )
+    return (
+        {
+            "title": f"{len(missing)} model-declared index(es) missing from prod",
+            "body": "\n".join(body),
+            "importance": 3,
+        },
+        "yellow",
+    )
 
 
 def _parse_postgres(text: str) -> dict:
@@ -3068,6 +3126,11 @@ async def daily_checkup(since: str | None = None) -> str:
         statuses.append(st)
         # Pre-rendered sitemap.xml (nginx serves it off disk; cron 02:40)
         s, st = _section_sitemap(_parse_sitemap(snap.get("sitemap", "")))
+        if s:
+            sections.append(s)
+        statuses.append(st)
+        # Schema: indexes the models declare and prod does not have
+        s, st = _section_index_audit(_parse_index_audit(snap.get("index_audit", "")))
         if s:
             sections.append(s)
         statuses.append(st)

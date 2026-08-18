@@ -897,3 +897,43 @@ def test_burst_on_the_heavy_render_surface_is_not_even_yellow():
     assert m._slow_tail_shape(row).is_burst
     _s, status = m._section_top_properties({"surface_latency": {"predictions": row}}, None)
     assert status == "green", status
+
+
+# ── Index audit: prod schema vs what the models declare ─────────────────────
+
+def test_index_audit_absent_from_the_image_is_no_signal():
+    # A prod image predating scripts/db/audit_indexes prints nothing. That must
+    # read as "could not ask", never as a clean bill of health.
+    info = m._parse_index_audit("")
+    assert info == {"available": False, "missing": []}
+    assert m._section_index_audit(info) == (None, "green")
+
+
+def test_index_audit_non_json_output_is_no_signal():
+    info = m._parse_index_audit("Traceback (most recent call last):\n  ...")
+    assert info["available"] is False
+
+
+def test_index_audit_clean_schema_is_silent():
+    raw = '[{"table": "salary_record", "declared": 25, "present": 29, "missing": []}]'
+    info = m._parse_index_audit(raw)
+    assert info == {"available": True, "missing": []}
+    assert m._section_index_audit(info) == (None, "green")
+
+
+def test_index_audit_reports_each_missing_index_by_name():
+    raw = (
+        '[{"table": "salary_record", "declared": 25, "present": 27, "missing": ['
+        '{"name": "salary_record_ingest_version_id_ad9dc99b", "sql": "CREATE INDEX ...",'
+        ' "covering": []}]},'
+        '{"table": "worksite_record", "declared": 23, "present": 23, "missing": []}]'
+    )
+    info = m._parse_index_audit(raw)
+    assert info["missing"] == [
+        ("salary_record", "salary_record_ingest_version_id_ad9dc99b")
+    ]
+    section, status = m._section_index_audit(info)
+    assert status == "yellow"
+    assert "1 model-declared index" in section["title"]
+    assert "salary_record_ingest_version_id_ad9dc99b" in section["body"]
+    assert "--create-missing" in section["body"]

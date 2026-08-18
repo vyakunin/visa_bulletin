@@ -133,6 +133,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/utils:http_utils",
+        "//lib/utils:index_audit",
         "//lib/utils:logging_utils",
         "//models/ingest:ingest",
         "//django_config:settings",

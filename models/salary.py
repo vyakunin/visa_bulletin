@@ -1,5 +1,6 @@
 """Salary database models for DOL PERM and LCA disclosure data"""
 
+from django.contrib.postgres.indexes import OpClass
 from django.db import models
 
 from .enums.visa_program import CaseStatus, VisaProgram, WageUnit
@@ -404,8 +405,11 @@ class SalaryRecord(models.Model):
         blank=True,
     )
 
+    # No db_index: the site resolves an employer through employer.canonical_cluster_id,
+    # and the only predicate on this column is `.exclude(employer_name="Unknown")`,
+    # which no index can serve.
     employer_name = models.CharField(
-        max_length=255, db_index=True, help_text="Employer name from DOL data"
+        max_length=255, help_text="Employer name from DOL data"
     )
 
     # Job details
@@ -418,14 +422,18 @@ class SalaryRecord(models.Model):
         help_text="Link to normalized job title entity",
     )
 
-    job_title = models.CharField(max_length=255, db_index=True, help_text="Job title")
+    # No db_index: every served predicate is __icontains, which compiles to
+    # UPPER(job_title::text) LIKE ... and is served by sr_job_title_upper_trgm (0047).
+    job_title = models.CharField(max_length=255, help_text="Job title")
 
+    # No db_index: the only predicate is soc_code__startswith, which needs the
+    # varchar_pattern_ops index sr_soc_code_pattern below — under the en_US.utf8
+    # collation a default-opclass btree cannot serve a LIKE prefix at all.
     soc_code = models.CharField(
         # 50 (not 20): some DOL files put "15-1252 - Software Developers"
         # (code + title) in the SOC_CODE column, which overflows varchar(20).
         max_length=50,
         blank=True,
-        db_index=True,
         help_text="Standard Occupational Classification code",
     )
 
@@ -520,8 +528,10 @@ class SalaryRecord(models.Model):
     )
 
     # Data source tracking
+    # No db_index: sr_source_file_pattern below is the varchar_pattern_ops index the
+    # ingest dedup path's `source_file = %s` lookups already resolve through.
     source_file = models.CharField(
-        max_length=255, blank=True, db_index=True, help_text="Source CSV file name"
+        max_length=255, blank=True, help_text="Source CSV file name"
     )
 
     # Performance optimization: boolean flag for worksite records (indexed)
@@ -546,10 +556,11 @@ class SalaryRecord(models.Model):
     )
 
     # Source file date tracking (for duplicate resolution)
+    # No db_index: dedup selects this column alongside case_number and compares it in
+    # Python; nothing filters or orders by it.
     source_file_date = models.DateTimeField(
         null=True,
         blank=True,
-        db_index=True,
         help_text="Date when source file was created/modified (for duplicate resolution)",
     )
 
@@ -560,10 +571,19 @@ class SalaryRecord(models.Model):
         db_table = "salary_record"
         ordering = ["-decision_date", "-case_submitted"]
         indexes = [
-            # Primary search indexes
-            models.Index(fields=["employer_name", "job_title"]),
-            models.Index(fields=["job_title", "worksite_state"]),
-            models.Index(fields=["soc_code", "worksite_state"]),
+            # Prefix search on the occupation pages: soc_code__startswith compiles to
+            # `soc_code::text LIKE '15-1252%'`, which only a varchar_pattern_ops btree
+            # serves under this database's en_US.utf8 collation. Built by migration 0058.
+            models.Index(
+                OpClass(models.F("soc_code"), name="varchar_pattern_ops"),
+                name="sr_soc_code_pattern",
+            ),
+            # Ingest dedup looks a batch up by source_file; the same opclass answers
+            # equality as well as LIKE, so this is the column's only index.
+            models.Index(
+                OpClass(models.F("source_file"), name="varchar_pattern_ops"),
+                name="sr_source_file_pattern",
+            ),
             # Filter indexes
             models.Index(fields=["visa_program", "fiscal_year"]),
             models.Index(fields=["worksite_state", "fiscal_year"]),
@@ -574,8 +594,6 @@ class SalaryRecord(models.Model):
             # Date-based indexes
             models.Index(fields=["decision_date"]),
             models.Index(fields=["fiscal_year", "decision_date"]),
-            # Performance: Composite index for employer filtering with worksite exclusion
-            models.Index(fields=["employer", "is_worksite"]),
             # Employer-profile percentile/histogram: (employer, is_worksite, fiscal_year) + INCLUDE(wage_annual)
             # so SELECT wage_annual WHERE employer_id IN (...) AND is_worksite=false AND fiscal_year>=?
             # can use index-only scan and avoid 30k+ heap fetches (scan was ~6s, Python 0s).

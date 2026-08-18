@@ -1086,6 +1086,22 @@ bazel run //scripts/salary:manage_salary_indexes -- --list
 bazel run //scripts/salary:manage_salary_indexes -- --drop
 bazel run //scripts/salary:manage_salary_indexes -- --recreate
 ```
+`--recreate` replays the snapshot and then reconciles against the model layer, so an
+index the snapshot did not carry is rebuilt rather than lost for good. `--drop` writes
+the snapshot before dropping anything.
+
+**`scripts/db/audit_indexes.py`** - Indexes the models declare vs the ones the database has
+```bash
+bazel run //scripts/db:audit_indexes                      # exit 1 if any are absent
+bazel run //scripts/db:audit_indexes -- --table salary_record --show-undeclared
+bazel run //scripts/db:audit_indexes -- --sql             # the repair DDL, run nothing
+bazel run //scripts/db:audit_indexes -- --create-missing  # build them, CONCURRENTLY
+```
+Ask a deployed stack directly, since a test database is built by migrations and so
+always agrees:
+```bash
+ssh homeserver "docker exec -w /app vb_web python3 -m scripts.db.audit_indexes"
+```
 
 ---
 
