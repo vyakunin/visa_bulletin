@@ -13,7 +13,9 @@ from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
 
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 
 from lib.business.i129.pay_comparison import (
     MIN_COMPARISON_N,
@@ -190,3 +192,50 @@ class TestSocComparisonResultCache(TestCase):
         assert get_soc_pay_comparison(_OCC) is None
         with self.assertNumQueries(0):
             assert get_soc_pay_comparison(_OCC) is None
+
+
+@_NO_CACHE
+class SocScopeIsIndexableTests(TestCase):
+    """The SOC scope must stay a shape the planner can turn into an index scan.
+
+    ``worksite_record`` carries a varchar_pattern_ops index on ``soc_code``, and
+    PostgreSQL uses it for ``soc_code LIKE 'prefix%'`` — but NOT for
+    ``soc_code LIKE ANY(array)``, where the pattern is an opaque array element. The
+    two forms return identical rows, so every correctness test above passes either
+    way; the only difference is the plan. Measured on prod 2026-08-18 for
+    operations-manager: 1828ms with ANY, 171ms without.
+
+    That makes this a silent 10x regression nothing else would catch, hence a test
+    on the emitted SQL rather than on the result.
+    """
+
+    def test_soc_scope_emits_one_plain_like_per_prefix(self):
+        multi = Occupation(
+            slug="test-multi",
+            display="Test Multi",
+            soc6=("15-1252", "15-1132", "15-1133"),
+        )
+        with CaptureQueriesContext(connection) as captured:
+            get_soc_pay_comparison(multi)
+
+        comparisons = [q["sql"] for q in captured.captured_queries if "matched" in q["sql"]]
+        assert len(comparisons) == 1, comparisons
+        sql = comparisons[0]
+
+        assert "LIKE ANY" not in sql.upper(), (
+            "the SOC scope regressed to LIKE ANY(array), which cannot use "
+            f"worksite_record's soc_code pattern index: {sql}"
+        )
+        assert sql.upper().count("SOC_CODE LIKE") == len(multi.soc6), (
+            "expected one plain LIKE per SOC-6 prefix so each is independently "
+            f"index-searchable: {sql}"
+        )
+
+    def test_marker_is_always_replaced(self):
+        # __SCOPE__ is deliberately invalid SQL so an unscoped template cannot run:
+        # a query reaching the database with it still in place would aggregate over
+        # every petition rather than one occupation's.
+        with CaptureQueriesContext(connection) as captured:
+            get_soc_pay_comparison(_OCC)
+        for query in captured.captured_queries:
+            assert "__SCOPE__" not in query["sql"], query["sql"]

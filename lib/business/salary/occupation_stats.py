@@ -44,19 +44,24 @@ TOP_EMPLOYERS = 20
 TOP_STATES = 12
 TOP_TITLES = 12
 
-# Every aggregate below scans the whole salary_record heap: the occupation filter
-# is `soc_code LIKE '15-1252%'` and the heaviest occupations match ~28% of the
-# 1.6M-row / 1.19 GB table, so PostgreSQL correctly picks a Parallel Seq Scan and
-# no index can change that. One page needs nine such scans, which is affordable
-# once and not once per request — so the per-occupation results are cached, not
-# just the qualifying-slug set. The occupation registry is a fixed 41 entries, so
-# the key space is bounded and cannot pressure Redis's LRU the way an
-# employer/job-title key space would.
+# The occupation filter is `soc_code LIKE '15-1252%'`, served by the
+# `sr_soc_code_pattern` index (migration 0058). Only software-engineer (28% of the
+# 1.66M-row / 1.24 GB table) and systems-analyst (5.8%) are broad enough that
+# PostgreSQL correctly prefers a Parallel Seq Scan; the other 39 occupations match
+# under 5% and index-scan. One page needs nine of these aggregates, so on the two
+# broad occupations that is still nine seq scans (~490ms each, measured 2026-08-18).
 #
 # This matters because `/h1b-salary/` is served by `cache_page_skip_bots`: crawler
-# traffic bypasses the rendered-page cache by design and would otherwise pay the
-# full nine scans on every hit. Measured on prod 2026-08-09 before this cache:
-# software-engineer 11.5s, data-scientist 7.9s, accountant 6.7s per request.
+# traffic bypasses the rendered-page cache by design and pays the aggregates on
+# every hit.
+#
+# The results are cached per occupation, but treat that as a latency floor rather
+# than a guarantee. vb_redis runs allkeys-lru over ~65k keys (salary_search,
+# job_title_*, employer_page_*), and these 41 read-rarely entries are among the
+# first evicted: measured 2026-08-18 at 08:22 UTC, 34 of 41 were absent five hours
+# after the nightly warm, and the seven present had all been written minutes
+# earlier by crawler cold-fills. So the uncached cost is what a crawler actually
+# pays, which is why it has to be affordable rather than merely cached.
 #
 # The refresh pipeline's cache.clear() on each ingest refreshes all of them.
 _QUALIFYING_SLUGS_CACHE_KEY = "occupation_salary.qualifying_slugs.v1"
@@ -105,9 +110,10 @@ def occupation_base_qs(occ: Occupation):
 def occupation_filing_count(occ: Occupation) -> int:
     """Total qualifying filings for the occupation — the 404-gate input.
 
-    A full heap scan (see the cache note above), so it is cached per occupation.
-    ``qualifying_occupation_slugs`` reads through the same entries, so a page
-    view and the sitemap warm each other rather than each paying their own scan.
+    Index-scanned for all but the two broadest occupations (see the note above),
+    and cached per occupation. ``qualifying_occupation_slugs`` reads through the
+    same entries, so a page view and the sitemap warm each other rather than each
+    paying their own scan.
     """
     key = _FILING_COUNT_CACHE_KEY.format(slug=occ.slug)
     cached = cache.get(key)
@@ -172,9 +178,8 @@ def _top_titles(qs, limit: int = TOP_TITLES) -> list[dict]:
 def get_occupation_stats(occ: Occupation, years: int = RECENT_YEARS) -> OccupationStats:
     """Full statistics for the occupation page. Assumes the gate already passed.
 
-    Cached per (occupation, years) — the eight aggregates below are eight full
-    heap scans (see the cache note above), and the page's crawler traffic never
-    reads the rendered-page cache.
+    Cached per (occupation, years) — eight aggregates over the same rows, and the
+    page's crawler traffic never reads the rendered-page cache.
     """
     key = f"{_STATS_CACHE_KEY.format(slug=occ.slug)}.{years}"
     cached = cache.get(key)

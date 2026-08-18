@@ -499,17 +499,26 @@ ssh homeserver "docker exec -w /app vb_web python3 -m scripts.i129.warm_demograp
 bazel run //scripts/i129:warm_demographic_pay                   # local
 ```
 
-**`scripts/salary/warm_occupations.py`** - Fill the per-occupation caches `/h1b-salary/` reads
+**`scripts/salary/warm_occupations.py`** - Warm the per-occupation caches `/h1b-salary/`
+reads, then assert the pages actually render fast
 
-Each `/h1b-salary/<occupation>/` page costs nine full scans of `salary_record` plus the
-I-129 matched-triple aggregate. `occupation_stats` caches that per occupation, but fills
-it ON THE FIRST MISS — and the view is `cache_page_skip_bots`, so that first request is
-almost always a crawler paying the whole bill. The entries carry a 24h TTL, so the cold
-fills **recur daily**, not just after a deploy. Measured on prod 2026-08-10 right after
-the fix shipped: 36 of 41 occupations took 5.9-9.2s on first hit, 0.13s thereafter.
-Run it after any cache flush AND on a daily schedule ahead of the crawl window.
+Each `/h1b-salary/<occupation>/` page runs nine aggregates over `salary_record` plus the
+I-129 matched-triple aggregate. `occupation_stats` caches that per occupation but fills it
+ON THE FIRST MISS — and the view is `cache_page_skip_bots`, so that first request is almost
+always a crawler paying the whole bill.
+
+**The verdict is the rendered page, not the cache key.** Warming is not a guarantee:
+vb_redis runs allkeys-lru over ~65k keys, so these 41 read-rarely entries are among the
+first evicted. Measured on prod 2026-08-18, five hours after the nightly warm, 34 of 41
+were gone and the seven present had been written minutes earlier by crawler cold-fills —
+while this script logged "warmed 41 occupations in 0.2s — 0 were cold fills" and the pages
+rendered 5-13s. So it now probes each page with a crawler User-Agent (the path with no
+rendered-page cache in front of it) and **exits 1 if any renders slower than
+`--max-render-ms`, default 1500ms**, so cron surfaces a regression instead of a reassuring
+line about cache keys.
 ```bash
 ssh homeserver "docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations"
+# probe only — measures the surface as a crawler finds it, no warming to mask the answer
 ssh homeserver "docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations --check"
 bazel run //scripts/salary:warm_occupations                     # local
 ```

@@ -29,12 +29,18 @@ from lib.business.salary.soc_occupations import Occupation
 
 logger = logging.getLogger(__name__)
 
-# The matched-triple aggregate drives a parallel seq scan of i129_petition
-# (373k rows) with a per-row index probe into worksite_record, so it costs
-# ~1.7-2.0s regardless of how selective the occupation is (measured on prod
-# 2026-08-09). `/h1b-salary/<slug>/` is served by `cache_page_skip_bots`, so the
-# crawler traffic that is nearly all of its hits bypasses the rendered-page cache
-# and would pay that on every request — hence a result cache here.
+# Measured on prod 2026-08-18: ~170ms for a selective occupation (the planner
+# scans worksite_record by soc_code and probes i129_petition on its dol_eta
+# index) and ~1.9s for one that matches a large share of the petitions, where a
+# seq scan of i129_petition (373k rows) is correctly cheaper. `/h1b-salary/<slug>/`
+# is served by `cache_page_skip_bots`, so the crawler traffic that is nearly all
+# of its hits bypasses the rendered-page cache and would pay that on every
+# request — hence a result cache here.
+#
+# The cache is a latency floor, not a guarantee: vb_redis runs allkeys-lru against
+# a keyspace of ~65k page/profile entries, so these 41 read-rarely keys are among
+# the first evicted and are routinely gone within hours of being written. The
+# query has to be affordable uncached, which is what the shape above buys.
 #
 # Only the SOC (occupation) variant is cached: the occupation registry is a fixed
 # 41 entries, whereas keying the employer variant by cluster would put thousands
@@ -56,11 +62,13 @@ FY_COVERAGE = "FY2021–FY2024"
 # Certified-Withdrawn (4). Denied/withdrawn-before-certification wages are noise.
 _CERTIFIED_STATUSES = (1, 4)
 
-# The matched-triple aggregate. ``%s`` params: (soc_like_array,). The
-# certified-status list is inlined (trusted constant). ``pay_annual`` is the
-# canonical annualized actual pay; ``wage_annual`` the LCA-posted position wage;
-# ``prevailing_wage`` the prevailing-wage floor. Ratios use a ±1% band so
-# rounding on either side of an exactly-matched wage isn't miscounted.
+# The matched-triple aggregate. ``__SCOPE__`` is a marker every caller replaces
+# with its own scoping predicate (see ``_run_comparison``); it is deliberately not
+# valid SQL, so the template can never be executed unscoped. The certified-status
+# list is inlined (trusted constant). ``pay_annual`` is the canonical annualized
+# actual pay; ``wage_annual`` the LCA-posted position wage; ``prevailing_wage``
+# the prevailing-wage floor. Ratios use a ±1% band so rounding on either side of
+# an exactly-matched wage isn't miscounted.
 _COMPARISON_SQL = """
 WITH matched AS (
     SELECT i.pay_annual AS actual,
@@ -68,7 +76,7 @@ WITH matched AS (
            w.prevailing_wage AS prev
     FROM i129_petition i
     JOIN worksite_record w ON w.case_number = i.dol_eta_case_number
-    WHERE w.soc_code LIKE ANY(%s)
+    WHERE __SCOPE__
       AND w.case_status IN (1, 4)
       AND i.pay_annual IS NOT NULL AND i.pay_annual > 0
       AND w.wage_annual IS NOT NULL AND w.wage_annual > 0
@@ -131,10 +139,10 @@ class PayComparison:
 def _run_comparison(where_sql: str, params: list) -> PayComparison | None:
     """Execute the matched-triple aggregate; return None if suppressed/empty.
 
-    ``where_sql`` is spliced into the CTE's WHERE in place of the SOC clause by
-    the public helpers, so callers never build SQL themselves.
+    ``where_sql`` is spliced into the CTE's WHERE in place of the ``__SCOPE__``
+    marker by the public helpers, so callers never build SQL themselves.
     """
-    sql = _COMPARISON_SQL.replace("w.soc_code LIKE ANY(%s)", where_sql)
+    sql = _COMPARISON_SQL.replace("__SCOPE__", where_sql)
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         row = cursor.fetchone()
@@ -159,7 +167,7 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
 
     Returns None when fewer than ``MIN_COMPARISON_N`` petitions match (thin cell
     suppressed) — the view then hides the section entirely. Cached per occupation
-    (see the cache note above; the query costs ~1.7-2.0s whatever the occupation).
+    (see the cache note above), though the cache is a floor rather than a guarantee.
 
     The cached value is wrapped in a 1-tuple so a **suppressed** result — a
     legitimate ``None``, and the common case, since most occupations fall under
@@ -174,7 +182,17 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
     cached = cache.get(key)
     if cached is not None:
         return cached[0]
-    comparison = _run_comparison("w.soc_code LIKE ANY(%s)", [like_params])
+    # An OR of plain ``LIKE`` predicates, NOT ``LIKE ANY(array)``: the planner
+    # can turn ``soc_code LIKE 'prefix%%'`` into an index condition on the
+    # existing ``worksite_record_soc_code_..._like`` index, but it cannot do that
+    # through ``ANY``, where the pattern is an opaque array element. With ``ANY``
+    # it seq-scans i129_petition (373k rows) and probes worksite_record per row;
+    # without it, it scans worksite_record by soc_code and probes i129_petition on
+    # its dol_eta index. Measured on prod for operations-manager: 1828 ms -> 171 ms,
+    # identical results. Non-selective occupations (software-engineer matches 140k
+    # petitions) plan the same either way and are unchanged.
+    soc_clause = " OR ".join(["w.soc_code LIKE %s"] * len(like_params))
+    comparison = _run_comparison(f"({soc_clause})", like_params)
     cache.set(key, (comparison,), _SOC_COMPARISON_TTL)
     return comparison
 

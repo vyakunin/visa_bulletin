@@ -1320,6 +1320,27 @@ py_binary(
     },
 )
 
+# Library form so //tests:test_warm_occupations_probe can import the page-latency
+# probe without depending on an executable.
+py_library(
+    name = "warm_occupations_lib",
+    srcs = ["warm_occupations.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:cache_utils",
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/business/i129:pay_comparison",
+        "//lib/business/salary:occupation_stats",
+        "//lib/business/salary:soc_occupations",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+)
+
 py_binary(
     name = "warm_occupations",
     srcs = ["warm_occupations.py"],
