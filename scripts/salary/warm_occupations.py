@@ -35,8 +35,10 @@ container, which is where the cache the site reads actually lives:
     docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
     bazel run //scripts/salary:warm_occupations -- [--check]
 
---check probes the pages and writes nothing — use it to measure the surface as a
-crawler finds it, decoupled from a warm that would mask the answer.
+--check probes the pages without warming the expensive per-occupation aggregates, so
+it measures the surface as a crawler finds it rather than one this run just made
+fast. It does resolve which occupations are published, which fills the cheap
+filing-count entries if they are cold; nothing else is written.
 
 Exit status is the check: 0 when every page renders under --max-render-ms, 1 when
 any page is slower (or unreachable), so cron surfaces a regression instead of
@@ -188,7 +190,7 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="probe the pages and report; compute and write nothing",
+        help="probe the pages without warming the aggregates (see --help notes)",
     )
     parser.add_argument(
         "--base-url",
