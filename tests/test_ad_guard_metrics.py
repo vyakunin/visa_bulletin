@@ -196,6 +196,24 @@ def test_blackout_reports_both_devices_when_the_whole_run_is_dark():
     assert sweep.blackout_devices(shots) == ["desktop", "mobile"]
 
 
+def test_a_device_that_only_loads_its_ads_on_scroll_is_not_a_blackout():
+    """Both units are IntersectionObserver-gated, so desktop's first paint is zero.
+
+    Nothing hoists pos-1 above the fold there, so it loads at ~1,800px of scroll and
+    pos-2 at its own mid-content anchor. Read at first paint that is a device-wide
+    blackout; read after the scroll pass it is an ordinary lazy-loaded page. The gate
+    reads the post-scroll count so the sweep stops calling a lazy load an outage.
+    """
+    shots = [_shot("desktop", 0, slots_total_scrolled=2) for _ in range(5)]
+    assert sweep.blackout_devices(shots) == []
+
+
+def test_a_device_dark_after_the_scroll_pass_is_still_a_blackout():
+    shots = [_shot("desktop", 0, slots_total_scrolled=0),
+             _shot("mobile", 0, slots_total_scrolled=6)]
+    assert sweep.blackout_devices(shots) == ["desktop"]
+
+
 def test_probe_js_still_measures_the_wrapper_not_only_the_ins():
     """Guard the class-name contract with the private repo's ad_slot.html.
 

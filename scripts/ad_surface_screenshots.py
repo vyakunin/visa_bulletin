@@ -196,22 +196,27 @@ def _scroll_through(page) -> None:
     try:
         step = int(page.evaluate("() => window.innerHeight") * LAZY_SCROLL_STEP_FRAC)
         for _ in range(LAZY_SCROLL_MAX_STEPS):
+            # behavior:'instant' is load-bearing. base.html sets `scroll-behavior: smooth`
+            # on <html>, so a plain scrollBy ANIMATES: window.scrollY is unchanged when read
+            # in the same tick, the at-end test below saw before === after on the very first
+            # step, and the loop broke immediately and returned to the top. So this pass has
+            # never scrolled — which is why the charts needed the loadPlotly fallback below,
+            # and why every desktop capture read zero ad units (both are
+            # IntersectionObserver-gated) and reported the device dark. Measured on staging
+            # 2026-08-18: smooth 0/0/0 per step against 632/1226/1997 once settled.
             at_end = page.evaluate(
                 "(s) => { const before = window.scrollY;"
-                " window.scrollBy(0, s);"
+                " window.scrollBy({top: s, left: 0, behavior: 'instant'});"
                 " return window.scrollY === before; }",
                 step,
             )
             page.wait_for_timeout(LAZY_SCROLL_PAUSE_MS)
             if at_end:
                 break
-        page.evaluate("() => window.scrollTo(0, 0)")
-        # Scrolling alone is not enough: under CDP setDeviceMetricsOverride the
-        # page does not actually scroll (scrollY stays 0) and IntersectionObserver
-        # never fires, so the observer-gated charts stay on their spinner. Call
-        # the site's own loader directly as the fallback — verified in the headed
-        # debug Chrome that a real user DOES get these charts, so forcing them
-        # makes the capture more faithful, not less.
+        page.evaluate("() => window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
+        # Belt and braces for the observer-gated charts: call the site's own loader
+        # directly. Verified in the headed debug Chrome that a real user DOES get these
+        # charts, so forcing them makes the capture more faithful, not less.
         page.evaluate(
             "() => { if (typeof window.loadPlotly === 'function') {"
             "   window.loadPlotly(() => document.dispatchEvent(new Event('plotlyLoaded')));"
@@ -444,14 +449,24 @@ def blackout_devices(shots: list[dict]) -> list[str]:
     carry no slots (ad_slot.html excludes /about, /contact, /faq, /privacy,
     /terms), but an entire device class rendering none across every surface is
     the ad stack failing to load.
+
+    Counts the POST-SCROLL probe, falling back to first paint on a run that has none.
+    Both units are IntersectionObserver-gated, so a desktop first paint reads zero
+    wherever no hoist lifts pos-1 above the fold — dark to this gate, and serving ads
+    to every reader who scrolls. What it is meant to catch is a device that renders
+    nothing even once the whole page has been through the viewport.
     """
+    def slots(shot: dict) -> int:
+        got = shot.get("slots_total_scrolled")
+        return shot.get("slots_total", 0) if got is None else got
+
     by_device: dict[str, list[dict]] = {}
     for s in shots:
         if s.get("error") or s.get("captured") is False:
             continue
         by_device.setdefault(s.get("device", "?"), []).append(s)
     return sorted(dev for dev, got in by_device.items()
-                  if got and all(g.get("slots_total", 0) == 0 for g in got))
+                  if got and all(slots(g) == 0 for g in got))
 
 
 def _gc_machinery():
@@ -661,6 +676,18 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                     # the CLS + probe evaluate() calls so their numbers keep
                     # measuring the unscrolled first paint.
                     _scroll_through(page)
+                    # Second probe, AFTER the scroll. Both slots load lazily on an
+                    # IntersectionObserver, so on desktop — where nothing hoists pos-1 above the
+                    # fold — the first-paint probe legitimately reads zero ad slots and a reader
+                    # who scrolls still gets both. Judging presence on the first-paint numbers
+                    # alone reported the whole desktop class dark for two Mondays while desktop
+                    # was serving ads all week (2026-08-06..17). The first-paint numbers stay the
+                    # manifest's primary ones — CLS and overflow are first-paint properties and
+                    # must not be measured after a scroll — and the ad-presence gate reads these.
+                    try:
+                        diag_scrolled = page.evaluate(PROBE_JS)
+                    except Exception:
+                        diag_scrolled = {}
                     fn = out_dir / f"{surf}__{dev}.jpg"
                     page.screenshot(path=str(fn), full_page=True, type="jpeg", quality=80)
                     # A full-page shot stitches the scrolled page but leaves position:fixed
@@ -687,6 +714,8 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         "cls": cls,
                         **diag,
                         **metrics._asdict(),
+                        "slots_total_scrolled": diag_scrolled.get("slots_total"),
+                        "slots_filled_scrolled": diag_scrolled.get("slots_filled"),
                     }
                     shots.append(rec)
                     flag = "" if rec["overflow_px"] <= 0 else f"  ⚠ OVERFLOW {rec['overflow_px']}px"
@@ -707,8 +736,10 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         # read false on all 17 shots since (9/10 were true before), so
                         # a true here now means the unit came back, not a flake.
                         flag += "  ⚠ ANCHOR PRESENT (anchor ads are off site-wide)"
-                    print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']} "
-                          f"filled={rec['slots_filled']} "
+                    print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']}"
+                          f"->{rec['slots_total_scrolled']} "
+                          f"filled={rec['slots_filled']}"
+                          f"->{rec['slots_filled_scrolled']} "
                           f"empty-reserved={metrics.slots_reserved_empty}"
                           f"/{metrics.reserved_empty_px}px "
                           f"cls={cls}{flag}")
