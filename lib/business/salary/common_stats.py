@@ -12,6 +12,38 @@ from models.enums.visa_program import VisaProgram
 
 logger = logging.getLogger(__name__)
 
+# Filing count the base year of a growth percentage must reach before that
+# percentage is worth rendering as a headline.
+#
+# A growth figure is a ratio, so the count it divides by sets its resolution:
+# at a base of N filings one filing moves the headline by 100/N percentage
+# points. Measured on prod 2026-08-18 over the 29,301 employer profiles that
+# have two or more qualifying years in the default 5-year window, i.e. that
+# render a growth figure at all:
+#
+#     base-year filings │ profiles │ one filing moves it │ render >= +1000%
+#     ──────────────────┼──────────┼─────────────────────┼─────────────────
+#     1                 │   17,076 │           100.0 pts │              235
+#     2                 │    5,219 │            50.0 pts │               31
+#     3-4               │    3,305 │            33.3 pts │               21
+#     5-9               │    2,032 │            20.0 pts │               14
+#     10-24             │    1,107 │            10.0 pts │                6
+#     25-99             │      456 │             4.0 pts │                4
+#     100+              │      106 │             1.0 pts │                0
+#
+# 94.3% of those profiles carry a base under 10, and 235 of the 311 profiles
+# rendering +1000% or more sit at a base of exactly 1 — Anthropic, PBC has one
+# FY2021 filing and 52 in FY2026, rendered as "+5100.0%". At 10 the headline
+# moves by at most 10 points per filing, which is the coarsest step the one
+# decimal place the tile prints can honestly survive.
+#
+# This is NOT employer_stats.EMPLOYER_INDEXABLE_MIN_FILINGS. That gate counts a
+# cluster's LIFETIME filings across both programs and decides indexing and ads;
+# this one counts a single base year inside a window the reader picks with
+# `?years=` / `?program=` / `?level=`, and decides one tile. Equal today by
+# coincidence; they move for different reasons.
+GROWTH_MIN_BASE_FILINGS = 10
+
 
 def calculate_market_overview_stats(queryset) -> dict:
     """Aggregate basic market stats for a salary queryset."""
@@ -96,23 +128,51 @@ def calculate_growth_from_counts(
     return growth, start_year, end_year
 
 
+def growth_window(
+    yoy_trends: list[dict],
+    start_year: int,
+    min_ratio: float = 0.6,
+) -> tuple[list[tuple[int, int]], bool]:
+    """The fiscal-year counts a growth percentage is computed over."""
+    current_year = datetime.now().year
+    growth_counts = filter_growth_years(yoy_trends, start_year)
+    return drop_partial_latest_year(
+        growth_counts,
+        current_year,
+        min_ratio=min_ratio,
+    )
+
+
 def calculate_yoy_growth(
     yoy_trends: list[dict],
     start_year: int,
     min_ratio: float = 0.6,
 ) -> tuple[float, int | None, int | None, bool]:
     """Calculate growth from a YoY trend list with partial-year handling."""
-    current_year = datetime.now().year
-    growth_counts = filter_growth_years(yoy_trends, start_year)
-    growth_counts, used_partial_year = drop_partial_latest_year(
-        growth_counts,
-        current_year,
-        min_ratio=min_ratio,
+    growth_counts, used_partial_year = growth_window(
+        yoy_trends, start_year, min_ratio=min_ratio
     )
     yoy_growth, growth_start_year, growth_end_year = calculate_growth_from_counts(
         growth_counts
     )
     return yoy_growth, growth_start_year, growth_end_year, used_partial_year
+
+
+def growth_endpoint_counts(
+    yoy_trends: list[dict],
+    start_year: int,
+    min_ratio: float = 0.6,
+) -> tuple[int, int]:
+    """Filing counts at the two years the growth percentage is derived from.
+
+    The first is the base the percentage divides by, so it sets the figure's
+    resolution: see GROWTH_MIN_BASE_FILINGS. Returns (0, 0) when fewer than two
+    years qualify, i.e. when there is no growth figure.
+    """
+    growth_counts, _ = growth_window(yoy_trends, start_year, min_ratio=min_ratio)
+    if len(growth_counts) < 2:
+        return 0, 0
+    return growth_counts[0][1], growth_counts[-1][1]
 
 
 def calculate_geographic_distributions(

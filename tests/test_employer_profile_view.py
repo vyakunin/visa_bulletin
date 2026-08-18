@@ -10,6 +10,7 @@ from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
 
+from lib.business.salary.common_stats import GROWTH_MIN_BASE_FILINGS
 from lib.business.salary.employer_stats import EMPLOYER_INDEXABLE_MIN_FILINGS
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
@@ -534,3 +535,196 @@ class EmployerThinPageGateTest(TestCase):
         content = self.client.get("/sitemap.xml").content.decode("utf-8")
 
         self.assertIn("/employer/perm-heavy-co/", content)
+
+
+class GrowthTileBaseFloorTest(TestCase):
+    """The growth headline is withheld when its base year is too small to carry it.
+
+    A growth percentage divides by the base year's filing count, so at a base of
+    N one filing moves the headline by 100/N points. Anthropic, PBC renders
+    "+5100.0%" off a single FY2021 filing; 94.3% of the employer profiles that
+    render a growth figure at all sit below a base of 10 (the distribution is in
+    common_stats.GROWTH_MIN_BASE_FILINGS).
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        self.current_year = datetime.now().year
+
+    def _make_employer(self, slug, counts_by_year):
+        """Create a cluster whose window carries `counts_by_year` filings."""
+        total = sum(counts_by_year.values())
+        cluster = EmployerCluster.objects.create(
+            canonical_name=slug.replace("-", " ").title(),
+            slug=slug,
+            total_lca_count=max(total, EMPLOYER_INDEXABLE_MIN_FILINGS),
+            total_perm_count=0,
+        )
+        employer = Employer.objects.create(
+            name=cluster.canonical_name,
+            name_normalized=cluster.canonical_name.lower(),
+            city="San Francisco",
+            state="CA",
+            canonical_cluster=cluster,
+        )
+        seq = 0
+        for year, count in counts_by_year.items():
+            for _ in range(count):
+                SalaryRecord.objects.create(
+                    case_number=f"{slug}-{seq}",
+                    employer=employer,
+                    employer_name=cluster.canonical_name,
+                    job_title="Software Engineer",
+                    wage_annual=120000,
+                    visa_program=VisaProgram.H1B,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=year,
+                    worksite_state="CA",
+                )
+                seq += 1
+        return cluster
+
+    def test_tiny_base_year_withholds_the_growth_tile(self):
+        """The defect: one base-year filing rendering a +3700%-shaped headline."""
+        self._make_employer(
+            "one-filing-base-co",
+            {self.current_year - 4: 1, self.current_year - 1: 38},
+        )
+
+        response = self.client.get("/employer/one-filing-base-co/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["stats"]["show_yoy_growth"])
+        self.assertNotContains(response, "YoY Growth")
+        self.assertNotContains(response, "3700.0")
+
+    def test_base_year_at_the_floor_still_renders_the_growth_tile(self):
+        """The boundary: the floor must not swallow employers that do carry data."""
+        self._make_employer(
+            "solid-base-co",
+            {
+                self.current_year - 4: GROWTH_MIN_BASE_FILINGS,
+                self.current_year - 1: GROWTH_MIN_BASE_FILINGS * 2,
+            },
+        )
+
+        response = self.client.get("/employer/solid-base-co/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["stats"]["show_yoy_growth"])
+        self.assertContains(response, "YoY Growth")
+
+    def test_rendered_growth_carries_the_counts_it_divides(self):
+        """A shown percentage is checkable: the raw endpoint counts sit beside it."""
+        base = GROWTH_MIN_BASE_FILINGS + 2
+        end = base * 3
+        self._make_employer(
+            "checkable-growth-co",
+            {self.current_year - 4: base, self.current_year - 1: end},
+        )
+
+        response = self.client.get("/employer/checkable-growth-co/")
+
+        stats = response.context["stats"]
+        self.assertEqual(stats["growth_base_filings"], base)
+        self.assertEqual(stats["growth_end_filings"], end)
+        self.assertContains(response, f"{base} \u2192 {end} filings")
+
+    def test_floor_is_measured_against_the_base_year_not_the_lifetime_count(self):
+        """A big employer with a one-filing base year is still withheld.
+
+        The two are different contracts: the lifetime count drives indexing and
+        ads (employer_stats.EMPLOYER_INDEXABLE_MIN_FILINGS), the base-year count
+        drives whether one percentage means anything.
+        """
+        self._make_employer(
+            "big-but-lumpy-co",
+            {self.current_year - 4: 1, self.current_year - 1: 400},
+        )
+
+        response = self.client.get("/employer/big-but-lumpy-co/")
+
+        self.assertFalse(response.context["thin_page"])
+        self.assertFalse(response.context["stats"]["show_yoy_growth"])
+
+
+class EmployerProfileRetiredPermClaimTest(TestCase):
+    """No employer profile presents a PERM share as green-card intent.
+
+    .claude/rules/perm_messaging.md retired that inference: PERM filings
+    collapsed, so a per-employer count no longer supports it. The raw count is a
+    fact about the disclosure data and stays; the ratio and the "commitment"
+    caption are the claim, and they go.
+    """
+
+    RETIRED = (
+        "Higher = stronger green card commitment",
+        "Green Card Ratio",
+        "Sponsorship Breakdown",
+    )
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+
+    def _make_employer(self, slug, h1b, perm):
+        cluster = EmployerCluster.objects.create(
+            canonical_name=slug.replace("-", " ").title(),
+            slug=slug,
+            total_lca_count=h1b,
+            total_perm_count=perm,
+        )
+        employer = Employer.objects.create(
+            name=cluster.canonical_name,
+            name_normalized=cluster.canonical_name.lower(),
+            city="San Francisco",
+            state="CA",
+            canonical_cluster=cluster,
+        )
+        year = datetime.now().year - 1
+        for program, count in ((VisaProgram.H1B, h1b), (VisaProgram.PERM, perm)):
+            for i in range(count):
+                SalaryRecord.objects.create(
+                    case_number=f"{slug}-{program}-{i}",
+                    employer=employer,
+                    employer_name=cluster.canonical_name,
+                    job_title="Software Engineer",
+                    wage_annual=120000,
+                    visa_program=program,
+                    case_status=CaseStatus.CERTIFIED,
+                    fiscal_year=year,
+                    worksite_state="CA",
+                )
+        return cluster
+
+    def test_zero_perm_employer_renders_no_intent_claim(self):
+        """The reported shape: 0 PERM filings read as weak commitment."""
+        self._make_employer("h1b-only-co", h1b=40, perm=0)
+
+        response = self.client.get("/employer/h1b-only-co/")
+
+        self.assertEqual(response.status_code, 200)
+        for phrase in self.RETIRED:
+            self.assertNotContains(response, phrase)
+
+    def test_perm_heavy_employer_renders_no_intent_claim_either(self):
+        """The flattering direction is the same claim and goes with it."""
+        self._make_employer("perm-heavy-co", h1b=10, perm=30)
+
+        response = self.client.get("/employer/perm-heavy-co/")
+
+        for phrase in self.RETIRED:
+            self.assertNotContains(response, phrase)
+
+    def test_program_filing_counts_survive(self):
+        """The boundary: a count is a fact about the data and stays on the page."""
+        self._make_employer("counts-kept-co", h1b=40, perm=7)
+
+        response = self.client.get("/employer/counts-kept-co/")
+
+        breakdown = response.context["stats"]["program_breakdown"]
+        self.assertEqual(breakdown["h1b_count"], 40)
+        self.assertEqual(breakdown["perm_count"], 7)
+        self.assertContains(response, "H-1B Filings")
+        self.assertContains(response, "PERM Filings")

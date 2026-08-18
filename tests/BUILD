@@ -973,6 +973,7 @@ django_py_test(
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",
+        "//lib/business/salary:common_stats",
         "//lib/business/salary:employer_stats",
         "//models:job_title",
         "//models:salary",
@@ -1633,6 +1634,17 @@ django_py_test(
         "//models/enums:case_status",
         "//models/enums:visa_program",
         requirement("pytest-django"),
+    ],
+)
+
+# No DB: canned probe results exercise the pass/fail verdict directly.
+django_py_test(
+    name = "test_warm_occupations_probe",
+    size = "small",
+    srcs = ["test_warm_occupations_probe.py"],
+    deps = [
+        "//django_config:cache_utils",
+        "//scripts/salary:warm_occupations_lib",
     ],
 )
 

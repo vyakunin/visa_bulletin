@@ -123,47 +123,49 @@
                     {% endwith %}
                 {% endif %}
                 {% include "webapp/includes/stat_card.html" with value=stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="Across All Roles" prefix="$" %}
-                {% if stats.yoy_growth >= 10 %}
-                    {% with growth_class="text-success" %}
-                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
-                    {% endwith %}
-                {% elif stats.yoy_growth >= 0 %}
-                    {% with growth_class="text-info" %}
-                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" prefix="+" %}
-                    {% endwith %}
-                {% else %}
-                    {% with growth_class="text-danger" %}
-                        {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext="Filing Volume" suffix="%" %}
+                {# Below GROWTH_MIN_BASE_FILINGS base-year filings the percentage is
+                   base noise (one filing moves it 100/base points), so the view
+                   withholds it rather than print a headline nobody can check. Where
+                   it is shown, the subtext carries the two counts it divides. #}
+                {% if stats.show_yoy_growth %}
+                    {% with base_str=stats.growth_base_filings|intcomma end_str=stats.growth_end_filings|intcomma %}
+                        {% with growth_subtext=base_str|add:" → "|add:end_str|add:" filings" %}
+                            {% if stats.yoy_growth >= 10 %}
+                                {% with growth_class="text-success" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                {% endwith %}
+                            {% elif stats.yoy_growth >= 0 %}
+                                {% with growth_class="text-info" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" prefix="+" %}
+                                {% endwith %}
+                            {% else %}
+                                {% with growth_class="text-danger" %}
+                                    {% include "webapp/includes/stat_card.html" with value=stats.yoy_growth|floatformat:1 value_class=growth_class label="YoY Growth" subtext=growth_subtext suffix="%" %}
+                                {% endwith %}
+                            {% endif %}
+                        {% endwith %}
                     {% endwith %}
                 {% endif %}
             </div>
             
-            <!-- H-1B vs Green Card Breakdown -->
+            <!-- Filings by program -->
+            {# Counts only. A PERM share is not evidence of green-card intent —
+               .claude/rules/perm_messaging.md. #}
             {% if stats.program_breakdown %}
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0">Sponsorship Breakdown</h5>
+                    <h5 class="mb-0">Filings by Program</h5>
                 </div>
                 <div class="card-body">
                     <div class="row text-center">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="fs-3 fw-bold text-primary">{{ stats.program_breakdown.h1b_count|intcomma }}</div>
                             <div class="text-muted">H-1B Filings</div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="fs-3 fw-bold" style="color: rgb(26, 118, 255)">{{ stats.program_breakdown.perm_count|intcomma }}</div>
-                            <div class="text-muted">Green Card Filings</div>
-                        </div>
-                        <div class="col-md-4">
-                            {% if stats.program_breakdown.perm_ratio >= 20 %}
-                            <div class="fs-3 fw-bold text-success">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
-                            {% elif stats.program_breakdown.perm_ratio >= 5 %}
-                            <div class="fs-3 fw-bold text-warning">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
-                            {% else %}
-                            <div class="fs-3 fw-bold text-danger">{{ stats.program_breakdown.perm_ratio|floatformat:1 }}%</div>
-                            {% endif %}
-                            <div class="text-muted">Green Card Ratio</div>
-                            <small class="text-muted">Higher = stronger green card commitment</small>
+                            <div class="text-muted">PERM Filings</div>
+                            <small class="text-muted">Labor certification, the first green card step</small>
                         </div>
                     </div>
                 </div>
