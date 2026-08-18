@@ -331,6 +331,18 @@ absolute numbers are optimistic against prod's colder buffers; the ratios hold.
 | `(employer_id, is_worksite)` | drop the declaration | those are the leading keys of `sr_emp_wk_fy_inc_wage`, which the planner already uses for that predicate alone — Index Only Scan, 1.8 ms |
 | `ingest_rejection_stats.run_id` | drop the declaration (`db_index=False`) | the `unique_together` and both Meta indexes already lead with `run_id` |
 
+### The one real counter-case, measured
+
+Job-title clustering's phase 1 is `SELECT DISTINCT job_title FROM salary_record ORDER BY
+job_title`, and that is the one query a default-collation btree on `job_title` would
+serve that the trigram index cannot — a `varchar_pattern_ops` index sorts bytewise, so it
+cannot answer an `ORDER BY` either. Measured without one: a sequential scan of 1,664,411
+rows and a 34 MB quicksort, **2.1 s**, yielding 263,099 distinct titles. It runs once a
+week, and the refresh drops every index before ingest and restores them after
+`cluster_job_titles`, so the index would not be present for it even if it were declared.
+A ~40 MB index maintained on every ingested row to save two seconds a week is the wrong
+trade; recorded here so nobody re-derives it as a gap.
+
 ### What it costs
 
 11 MB for the `ingest_version_id` btree, plus 11 MB for `sr_soc_code_pattern` from
