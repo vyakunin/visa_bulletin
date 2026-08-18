@@ -7,13 +7,20 @@ as do 27,632 of the 29,301 employer profiles. The fix is a floor
 (common_stats.GROWTH_MIN_BASE_FILINGS) plus the endpoint counts beside the figure.
 
 Three surfaces render one, and this file is the enumeration: a fourth has to come
-here and declare itself. Two mechanisms hold it, because a rule that lives only in
+here and declare itself. Three nets hold it, because a rule that lives only in
 prose reopens the next time someone adds a tile:
 
   * common_stats.growth_headline is the only way to obtain the percentage outside
     that module, and it returns the gate in the same dict -- so the gate cannot be
     forgotten, only ignored;
-  * the templates that render it are listed below and each must consult that gate.
+  * the templates rendering yoy_growth are exactly the three listed below, and
+    each must consult the gate and carry the endpoint counts;
+  * no other template labels a stat tile as Growth, which catches a surface that
+    computes the figure its own way under a different context key.
+
+The first net is only as wide as this test's runfiles and covers
+lib/business/salary plus every view module; the two template nets glob every
+template there is, so they cannot miss a file.
 
 What this CANNOT verify (a rendering test can): that the gate actually withholds
 the tile. That is GrowthTileBaseFloorTest in test_job_title_profile_view.py and
@@ -54,9 +61,17 @@ _MUST_BE_SCANNED = (
 
 
 def _python_sources():
-    """Every first-party .py under the dirs that can build a growth tile."""
+    """The packages a growth tile can be computed in.
+
+    lib/business/salary is where the primitives live and is complete by
+    construction (//lib/business/salary:all_py globs the package); webapp
+    arrives through //webapp:urls + //webapp/views:views, which is every view
+    module. The rest of lib/ is the ingest, parsing and VQS side, which renders
+    no HTML — the template scan below is what covers a surface reached some
+    other way, and that one globs every template there is.
+    """
     found = []
-    for root in ("lib", "webapp"):
+    for root in ("lib/business/salary", "webapp"):
         base = _REPO / root
         assert base.is_dir(), (
             f"{root}/ is absent from the test's runfiles — add its sources to the "
@@ -129,6 +144,29 @@ def test_the_shown_figure_carries_the_counts_it_divides():
                 f"{rel} renders a growth percentage without {field}. The endpoint "
                 "counts are what make the figure checkable against the page."
             )
+
+
+def test_no_other_template_labels_a_tile_as_growth():
+    """The net that does not depend on the context key a new surface picks.
+
+    //webapp:templates globs every template, so unlike the source scan this one
+    cannot miss a file. A growth tile is a stat card whose label says Growth, so
+    a fourth one shows up here even if it computes the figure its own way and
+    calls it something other than yoy_growth.
+    """
+    labelled = {
+        str(p.relative_to(_REPO))
+        for p in sorted((_REPO / "webapp/templates").rglob("*.html"))
+        if re.search(r'label="[^"]*Growth[^"]*"', p.read_text(encoding="utf-8"))
+    }
+    assert labelled == set(_GROWTH_TEMPLATES), (
+        "the set of templates labelling a stat tile as Growth changed.\n"
+        f"  found:    {sorted(labelled)}\n"
+        f"  declared: {sorted(_GROWTH_TEMPLATES)}\n"
+        "A new growth tile must be gated on a base-year floor before it ships — "
+        "see common_stats.GROWTH_MIN_BASE_FILINGS — and listed in "
+        "_GROWTH_TEMPLATES."
+    )
 
 
 def test_no_surface_still_calls_the_figure_year_over_year():

@@ -179,6 +179,7 @@ pytest_py_test(
     data = [
         "//lib/business/salary:all_py",
         "//webapp:templates",
+        "//webapp:urls",
         "//webapp/views:views",
     ],
 )
