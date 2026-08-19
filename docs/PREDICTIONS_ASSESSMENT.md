@@ -2172,7 +2172,12 @@ regenerated on staging pre-cutover with tuned constants: targets 2026-08
 (h=1), 2026-10 (h=4), 2027-01 (h=7), 2027-07 (h=13) — 160 rows unchanged,
 190 changed, 210 new (multi-horizon filing/FS rows now populated per Theme 4),
 0 disappeared. Verified serving on prod (e.g. India EB-1 @12m final_action
-2023-06-07 → 2023-10-08 on /predictions/july-2027/). The 3 i129 story posts
+2023-06-07 → 2023-10-08 on /predictions/july-2027/ — that URL 404s since
+2026-08-19: the 2027-01 and 2027-07 row-sets were deleted on the owner's call
+because no refresh path ever republished them, so they served June-knowledge
+forecasts deltaed against a later actual; see Notion
+3b662b8d409f81b79d2dd642da8a7b7a. The h=7 / h=13 measurement above stands as
+recorded). The 3 i129 story posts
 were explicitly kept staging-only through the cutover (unpublished for the DB
 graduation, re-published on staging after) per the locked B→A→C campaign
 schedule. Candidate follow-up: with tuned params, India EB-1 @6m final_action
