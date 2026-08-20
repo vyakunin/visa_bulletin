@@ -457,6 +457,69 @@ SURFACE_LABELS: dict[str, str] = {
     "other":               "Other (long-tail / unclassified)",
 }
 
+# ── Declared crawlers: one owner, mirroring the nginx throttle map ───────────
+#
+# Two lists decide what happens to a declared crawler, and they must agree:
+# nginx's `$bot_key` map (visa_bulletin_platform/hosting/*/nginx/rate-limit.conf)
+# decides who gets THROTTLED, and this one decides who the digest reports as a
+# crawler rather than as a client IP to flag. This one was hand-typed inside the
+# awk and had drifted to about half the throttle map, so OpenAI's OAI-SearchBot —
+# throttled by nginx since it was added there — was unknown to the digest, and
+# its five /16 neighbours (~2.5k req/24h, 2,172 on /employer/ and 1,930 on
+# /job-title/, all under a full Chrome UA with the token appended) rendered as
+# the top five "real" client IPs.
+#
+# A token matches anywhere in the lowercased log line. Keep it in step with the
+# nginx map when either side changes; test_known_crawlers.py holds the shape.
+KNOWN_CRAWLER_UA_TOKENS = (
+    # Search
+    "googlebot", "bingbot", "applebot", "duckduckbot", "yandexbot",
+    "baiduspider", "petalbot", "amazonbot", "amzn-searchbot", "seznambot",
+    # Answer engines / LLM crawlers
+    "gptbot", "oai-searchbot", "chatgpt-user", "claudebot", "claude-searchbot",
+    "anthropic-ai", "perplexitybot", "google-extended", "bytespider", "ttspider",
+    # Social / preview unfurlers
+    "facebookexternalhit", "facebookbot", "meta-externalagent", "linkedinbot",
+    "pinterestbot", "twitterbot", "slackbot", "telegrambot",
+    # SEO / archival
+    "ahrefsbot", "semrushbot", "mj12bot", "dotbot", "diffbot",
+    "backlinksextendedbot", "ia_archiver", "archive.org_bot",
+)
+
+# Publisher IP ranges for crawlers whose UA is worth corroborating (Googlebot
+# publishes gstatic.com/ipranges/googlebot.json; 66.249.64-95.* is the bulk).
+# Bingbot 40.77.* / 207.46.*; Claude-SearchBot AWS 216.73.216-219.*.
+_KNOWN_CRAWLER_IP_ERES = (
+    r"^66\.249\.(6[4-9]|[7-8][0-9]|9[0-5])\.",
+    r"^40\.77\.",
+    r"^207\.46\.",
+    r"^216\.73\.21[6-9]\.",
+)
+
+_AWK_UNSAFE_TOKEN = re.compile(r"[/'{}()|\\^$*+?\[\]]")
+
+
+def _awk_known_crawler_test() -> str:
+    """The `is_known_bot` awk expression, generated from the list above.
+
+    One line by construction: mawk chokes on a multi-line parenthesized
+    assignment, and this is embedded in a single-quoted shell string, so a token
+    carrying a quote or a regex metacharacter is rejected here rather than
+    silently truncating the program.
+    """
+    for token in KNOWN_CRAWLER_UA_TOKENS:
+        if _AWK_UNSAFE_TOKEN.search(token):
+            raise ValueError(
+                f"crawler token {token!r} carries a character that would break the "
+                "awk regex literal or the single-quoted shell string it rides in"
+            )
+        if token != token.lower():
+            raise ValueError(f"crawler token {token!r} must be lowercase (the awk lowercases the line)")
+    ua = "|".join(KNOWN_CRAWLER_UA_TOKENS)
+    ips = " || ".join(f"ip ~ /{ere}/" for ere in _KNOWN_CRAWLER_IP_ERES)
+    return f"(tolower($0) ~ /({ua})/ || {ips})"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # The nginx log reducer
 # ─────────────────────────────────────────────────────────────────────────────
@@ -521,22 +584,24 @@ _NGINX_AWK_TEMPLATE = r"""
         surf_n10_ip[surf, $1]++
       }}
     }}
-    # Bot/scraper UA heuristic. Legit search engines (Googlebot, Bingbot) match
-    # intentionally -- we want bot visibility. UA fields are $12 and beyond.
-    is_bot = (tolower($0) ~ /(curl|wget|python-requests|python-urllib|libwww|httpclient|scrapy|java\/|go-http|bot[ )\/]|crawler|spider|httrack|nikto|sqlmap|nmap|masscan|zmeu)/)
-    if (is_bot) bot_hits++
     ip = $1
     # Skip docker-internal IPs (cloudflared sidecar / internal probes). These
     # appear in older log windows pre-2026-05-14 (before real_ip_module config)
     # and continue to appear for internal /health hits. Anything in private
     # ranges is uninteresting for client-IP analysis.
     is_internal = (ip ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ || ip ~ /^10\./ || ip ~ /^192\.168\./)
-    # Well-known crawler allowlist — UA OR known subnets. Googlebot publishes
-    # ranges at gstatic.com/ipranges/googlebot.json; 66.249.64-95.* covers the
-    # bulk. Bingbot 40.77.* / 207.46.*. Claude-SearchBot AWS 216.73.216-219.*.
-    # Kept on one line because mawk on the homeserver chokes on multi-line
-    # parenthesized assignments.
-    is_known_bot = (tolower($0) ~ /(googlebot|bingbot|claude-searchbot|gptbot|chatgpt-user|perplexitybot|applebot|duckduckbot|yandexbot|baiduspider|petalbot|amazonbot|facebookexternalhit)/ || ip ~ /^66\.249\.(6[4-9]|[7-8][0-9]|9[0-5])\./ || ip ~ /^40\.77\./ || ip ~ /^207\.46\./ || ip ~ /^216\.73\.21[6-9]\./)
+    # Declared-crawler allowlist — UA token OR publisher subnet. GENERATED from
+    # KNOWN_CRAWLER_UA_TOKENS, which mirrors the nginx throttle map; do not
+    # hand-edit this line, edit the Python list. One line because mawk chokes on
+    # a multi-line parenthesized assignment.
+    is_known_bot = {known_crawler_test}
+    # Bot/scraper UA heuristic. Legit search engines (Googlebot, Bingbot) match
+    # intentionally -- we want bot visibility. UA fields are $12 and beyond. A
+    # declared crawler counts here too: several announce themselves without the
+    # word "bot" (anthropic-ai, meta-externalagent, ia_archiver), and one of
+    # those in the human column is what the split exists to prevent.
+    is_bot = (tolower($0) ~ /(curl|wget|python-requests|python-urllib|libwww|httpclient|scrapy|java\/|go-http|bot[ )\/]|crawler|spider|httrack|nikto|sqlmap|nmap|masscan|zmeu)/ || is_known_bot)
+    if (is_bot) bot_hits++
     if (!is_internal) {{ if (is_known_bot) bot_ip_hits[ip]++; else ip_hits[ip]++ }}
     if (is_page) {{
       page_hits++
@@ -620,7 +685,8 @@ _NGINX_AWK_TEMPLATE = r"""
 def _nginx_awk_program() -> str:
     """The awk program, with the surface classifier rendered in."""
     return _NGINX_AWK_TEMPLATE.format(
-        surface_classifier=_awk_surface_classifier()).strip("\n")
+        surface_classifier=_awk_surface_classifier(),
+        known_crawler_test=_awk_known_crawler_test()).strip("\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
