@@ -19,11 +19,14 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
-from django.test import TestCase
+from django.test import Client, TestCase
 
 from lib.business.bulletin import eb_series
 from lib.business.vqs import data_cache
-from lib.business.vqs.accuracy_surfacing import latest_month_scorecard
+from lib.business.vqs.accuracy_surfacing import (
+    all_time_track_record,
+    latest_month_scorecard,
+)
 from models.bulletin import Bulletin
 from models.enums.action_type import ActionType
 from models.enums.country import Country
@@ -252,6 +255,53 @@ class TestScorecardScoresEb5(Eb5LabelFixture):
             predicted_date=date(2020, 1, 1), model_name="persistence",
         )
         self.assertEqual(latest_month_scorecard()["n_scored"], 1)
+
+
+class TestEb5BandNamesItsWindow(Eb5LabelFixture):
+    """The all-time record says from when EB-5 is scored, and why it is short.
+
+    EB-5 is joined on the unreserved heading, which the bulletin has only
+    printed since 2022; EB-1/2/3 run from 2006. Shown side by side with no
+    window, an EB-5 band reads as covering the same history as the others.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # EB-2 enters the record in 2011, fifteen years before EB-5 can.
+        _cutoff(self.b2011, "2nd", Country.CHINA.value,
+                ActionType.FINAL_ACTION.value, date(2006, 1, 1))
+        for month, vc, predicted in (
+            (date(2011, 4, 1), "2nd", date(2006, 1, 11)),
+            (date(2023, 6, 1), "5th", date(2015, 12, 25)),
+            (date(2026, 8, 1), "5th", date(2016, 12, 11)),
+        ):
+            pb = PredictedBulletin.objects.create(
+                target_bulletin_month=month, prediction_date=month
+            )
+            PredictedCutoff.objects.create(
+                bulletin=pb, visa_class=vc, country=Country.CHINA.value,
+                action_type=ActionType.FINAL_ACTION.value,
+                predicted_date=predicted, model_name="persistence",
+            )
+
+    def _bands(self):
+        return {b["label"]: b for b in all_time_track_record()["bands"]}
+
+    def test_the_eb5_band_is_scored_from_its_first_published_unreserved_month(self):
+        self.assertEqual(self._bands()["EB-5"]["scored_from"], date(2023, 6, 1))
+
+    def test_the_eb5_band_carries_the_reason_its_history_is_short(self):
+        self.assertIn("unreserved EB-5 row", self._bands()["EB-5"]["window_note"])
+
+    def test_the_older_series_names_no_window(self):
+        self.assertIsNone(self._bands()["EB-2"]["scored_from"])
+
+    def test_the_archive_index_states_the_window_on_the_page(self):
+        html = Client().get("/predictions/").content.decode()
+        self.assertIn("EB-5 is scored from June 2023", html)
+        self.assertIn("unreserved EB-5 row", html)
+        # ...and the band it qualifies is rendered beside it.
+        self.assertIn("EB-5: &plusmn;10d", html)
 
 
 class TestEb5StateReadFromLiveBulletin(Eb5LabelFixture):

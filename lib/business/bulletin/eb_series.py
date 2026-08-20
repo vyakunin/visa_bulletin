@@ -142,6 +142,25 @@ def series_key_for_label(label: str) -> str | None:
     return label if label in EB_CLASSES else None
 
 
+# Why a series' published history starts when it does, for a page that shows it
+# beside EB-1/2/3's much longer run. Owned here, next to the heading table above
+# that is the reason.
+_WINDOW_NOTE_BY_SERIES: dict[str, str] = {
+    "5th": (
+        "when the bulletin began publishing a separate unreserved EB-5 row; the "
+        "earlier regional-center rows are a different split, not a rename"
+    ),
+}
+
+
+def window_note(series_key: str) -> str | None:
+    """Why this series' published history starts where it does, or ``None``.
+
+    Reads as a clause after "scored from <month>", so it starts with "when".
+    """
+    return _WINDOW_NOTE_BY_SERIES.get(series_key)
+
+
 def cutoff_label_q(series_keys):
     """A ``VisaCutoffDate`` filter matching these series under every heading.
 

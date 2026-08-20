@@ -1568,6 +1568,7 @@ django_py_test(
     name = "test_eb5_series_label",
     size = "medium",
     srcs = ["test_eb5_series_label.py"],
+    data = ["//webapp:templates"],
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",

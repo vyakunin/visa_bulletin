@@ -80,6 +80,18 @@
                 {% if all_time.beats_baseline %}(edging out{% else %}(roughly matching{% endif %} the baseline),
                 landing closer on {{ all_time.model_wins }} of {{ all_time.baseline_total }} scored dates.
             </p>
+            {% if all_time.bands %}
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                {% for b in all_time.bands %}
+                <span class="badge rounded-pill text-bg-light border" title="{{ b.n }} scored date{{ b.n|pluralize }}, {{ b.first_month|date:"M Y" }}&ndash;{{ b.last_month|date:"M Y" }}">{{ b.label }}: &plusmn;{{ b.mae_days }}d</span>
+                {% endfor %}
+            </div>
+            {% for b in all_time.bands %}{% if b.scored_from %}
+            <p class="small text-muted mb-2">
+                {{ b.label }} is scored from {{ b.scored_from|date:"F Y" }}{% if b.window_note %}, {{ b.window_note }}{% endif %}.
+            </p>
+            {% endif %}{% endfor %}
+            {% endif %}
             <p class="small text-muted mb-2">
                 Accuracy varies enormously by category, country, and how far out you look —
                 <a href="{% url 'methodology' %}#accuracy">why we don't quote one &ldquo;% accurate&rdquo; number</a>.

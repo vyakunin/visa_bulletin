@@ -129,6 +129,65 @@ class StoredScorecardTest(TestCase):
         self.assertIsNone(latest_month_scorecard())
 
 
+class BandWindowTest(TestCase):
+    """A band names the window it covers when that window is short.
+
+    Categories enter the record at different months, so two bands side by side
+    can span histories that differ by years and still read as comparable. The
+    band that starts after the record does says from when; the ones that cover
+    the whole record stay silent, and a single-month rollup flags nothing at all
+    (every band there shares the one month).
+    """
+
+    def setUp(self):
+        cache.clear()
+        first = Bulletin.objects.create(publication_date=date(2026, 6, 1))
+        _actual(first, "2nd", date(2019, 10, 1))
+        target = Bulletin.objects.create(publication_date=_TARGET)
+        _actual(target, "2nd", date(2019, 12, 1))
+        _actual(target, "3rd", date(2013, 2, 1))
+
+        # EB-2 is predicted from the first month; EB-3 only enters in the last.
+        for month, preds in (
+            (date(2026, 6, 1), {"2nd": date(2019, 10, 6)}),
+            (_TARGET, {"2nd": date(2019, 12, 6), "3rd": date(2013, 2, 6)}),
+        ):
+            pb = PredictedBulletin.objects.create(
+                target_bulletin_month=month, prediction_date=month
+            )
+            for vc, pd in preds.items():
+                PredictedCutoff.objects.create(
+                    bulletin=pb, visa_class=vc, country=_INDIA, action_type=_FA,
+                    predicted_date=pd, model_name="ensemble",
+                )
+
+    def _bands(self):
+        return {b["label"]: b for b in all_time_track_record()["bands"]}
+
+    def test_the_late_entrant_names_the_month_it_is_scored_from(self):
+        self.assertEqual(self._bands()["EB-3"]["scored_from"], _TARGET)
+
+    def test_a_band_spanning_the_whole_record_names_no_window(self):
+        # Saying "scored from June 2026" under every band would be noise, and it
+        # would stop the one short window standing out.
+        self.assertIsNone(self._bands()["EB-2"]["scored_from"])
+
+    def test_each_band_carries_its_own_span_and_count(self):
+        eb2 = self._bands()["EB-2"]
+        self.assertEqual((eb2["first_month"], eb2["last_month"]), (date(2026, 6, 1), _TARGET))
+        self.assertEqual((eb2["n"], self._bands()["EB-3"]["n"]), (2, 1))
+
+    def test_a_single_month_rollup_flags_no_window(self):
+        # The scorecard scores one month, so every band covers it. A window note
+        # there would be true and useless.
+        bands = latest_month_scorecard()["bands"]
+        self.assertEqual([b["label"] for b in bands], ["EB-2", "EB-3"])
+        self.assertEqual([b["scored_from"] for b in bands], [None, None])
+
+    def test_a_series_the_bulletin_does_not_rename_carries_no_note(self):
+        self.assertIsNone(self._bands()["EB-3"]["window_note"])
+
+
 class ArchiveIndexTest(TestCase):
     def setUp(self):
         self.client = Client()

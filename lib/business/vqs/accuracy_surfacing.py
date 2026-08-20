@@ -23,8 +23,15 @@ import logging
 from collections import defaultdict
 from datetime import date
 
-from lib.business.bulletin.eb_series import cutoff_label_q, series_key_for_label
+from lib.business.bulletin.eb_series import (
+    EB_CLASSES,
+    EB_SHORT_LABELS,
+    cutoff_label_q,
+    series_key_for_label,
+    window_note,
+)
 from lib.business.vqs.accuracy_metrics import (
+    QUEUE_DRIVEN_CLASSES,
     BulletinAccuracyRow,
     compare_to_no_change_baseline,
     compute_bulletin_accuracy_summary,
@@ -32,18 +39,57 @@ from lib.business.vqs.accuracy_metrics import (
 
 logger = logging.getLogger(__name__)
 
-# EB display labels + the order/set we score (EB-4 is policy-driven and excluded
-# from the headline, mirroring accuracy_metrics.QUEUE_DRIVEN_CLASSES).
-_EB_CLASS_DISPLAY = {
-    "1st": "EB-1",
-    "2nd": "EB-2",
-    "3rd": "EB-3",
-    "4th": "EB-4",
-    "5th": "EB-5",
-}
-_EB_SCORED_CLASSES = ["1st", "2nd", "3rd", "5th"]
+# Scored EB series in display order: WHICH classes score is owned by
+# accuracy_metrics (EB-4 is policy-driven, not queue-driven), the ORDER by
+# eb_series, and the display label by eb_series.EB_SHORT_LABELS.
+_EB_SCORED_CLASSES = [c for c in EB_CLASSES if c in QUEUE_DRIVEN_CLASSES]
 _ACTION_TYPES = ("final_action", "filing")
 _CACHE_TTL_S = 60 * 60 * 24
+
+
+def _bands(
+    rows: list[BulletinAccuracyRow], class_display: dict[str, str]
+) -> list[dict]:
+    """Per-category error bands, each carrying the window it was scored over.
+
+    ``error_days`` is already absolute (see the row builders), so a plain mean is
+    the MAE; countries aggregate into their class.
+
+    A band whose window starts after the record's own first scored month carries
+    ``scored_from`` and the reason, so a reader is not comparing spans that
+    differ by years without being told. EB-5 needs it: it joins on a heading the
+    bulletin has only printed since 2022, where EB-1/2/3 run from 2006. On a
+    single-month rollup every band shares the month, so nothing is flagged.
+    """
+    errs_by_class: dict[str, list[int]] = defaultdict(list)
+    months_by_class: dict[str, list[date]] = defaultdict(list)
+    for r in rows:
+        if r.error_days is None or r.visa_class not in QUEUE_DRIVEN_CLASSES:
+            continue
+        errs_by_class[r.visa_class].append(r.error_days)
+        months_by_class[r.visa_class].append(r.bulletin_date)
+    if not errs_by_class:
+        return []
+    record_start = min(min(months) for months in months_by_class.values())
+
+    bands: list[dict] = []
+    for vc in _EB_SCORED_CLASSES:
+        errs = errs_by_class.get(vc)
+        if not errs:
+            continue
+        first = min(months_by_class[vc])
+        bands.append(
+            {
+                "label": class_display.get(vc, vc),
+                "mae_days": round(sum(errs) / len(errs)),
+                "n": len(errs),
+                "first_month": first,
+                "last_month": max(months_by_class[vc]),
+                "scored_from": first if first > record_start else None,
+                "window_note": window_note(vc),
+            }
+        )
+    return bands
 
 
 def _format_rollup(
@@ -67,31 +113,12 @@ def _format_rollup(
         rows, exclude_eb4=True, prev_cutoff_lookup=prev_cutoff_lookup
     )
 
-    # Per-category (per visa class, aggregated across countries) bands — the
-    # "bands not one global %" the methodology page insists on. error_days is
-    # already absolute (see the row builders), so a plain mean is the MAE.
-    by_class: dict[str, list[int]] = defaultdict(list)
-    for r in rows:
-        if r.error_days is None or r.visa_class == "4th":
-            continue
-        by_class[r.visa_class].append(r.error_days)
-    bands = [
-        {
-            "label": class_display.get(vc, vc),
-            "mae_days": round(sum(errs) / len(errs)),
-            "n": len(errs),
-        }
-        for vc in _EB_SCORED_CLASSES
-        for errs in [by_class.get(vc)]
-        if errs
-    ]
-
     return {
         "month_label": month_label,
         "n_scored": n,
         "mae_days": round(overall["mean_abs_error_days"]),
         "max_days": overall["max_abs_error_days"],
-        "bands": bands,
+        "bands": _bands(rows, class_display),
         "baseline": {
             "total": baseline["total"],
             "model_wins": baseline["model_wins"],
@@ -279,7 +306,7 @@ def latest_month_scorecard() -> dict | None:
         return None
     rows, prev_lookup = _stored_eb_rows(months={latest})
     roll = _format_rollup(
-        rows, prev_lookup, _EB_CLASS_DISPLAY, month_label=latest.strftime("%B %Y")
+        rows, prev_lookup, EB_SHORT_LABELS, month_label=latest.strftime("%B %Y")
     )
     if roll is None:
         return None
@@ -306,6 +333,7 @@ def all_time_track_record() -> dict | None:
     months = sorted({r.bulletin_date for r in rows if r.error_days is not None})
     return {
         "n_scored": overall["count"],
+        "bands": _bands(rows, EB_SHORT_LABELS),
         "months_covered": len(months),
         "first_month": months[0] if months else None,
         "last_month": months[-1] if months else None,
