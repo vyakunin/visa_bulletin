@@ -23,6 +23,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 
+from lib.business.bulletin.eb_series import cutoff_label_q, series_key_for_label
 from lib.business.vqs.accuracy_metrics import (
     BulletinAccuracyRow,
     compare_to_no_change_baseline,
@@ -198,25 +199,29 @@ def _stored_eb_rows(
     if not stored:
         return [], {}
 
+    # Actuals are keyed by the heading DOS printed, predictions by the series
+    # key. They differ for EB-5, so the filter spans its renames and every row
+    # is re-keyed onto its series before the join (see eb_series).
     act_qs = (
         VisaCutoffDate.objects.filter(
+            cutoff_label_q(_EB_SCORED_CLASSES),
             visa_category="employment_based",
-            visa_class__in=_EB_SCORED_CLASSES,
         ).select_related("bulletin")
     )
     actuals: dict[tuple[str, int, str, date], tuple] = {}
     series_hist: dict[tuple[str, int, str], list[tuple[date, date]]] = defaultdict(list)
     for a in act_qs:
+        vc = series_key_for_label(a.visa_class)
+        if vc is None:
+            continue
         pub = a.bulletin.publication_date
-        actuals[(a.visa_class, a.country, a.action_type, pub)] = (
+        actuals[(vc, a.country, a.action_type, pub)] = (
             a.cutoff_date,
             a.is_current,
             a.is_unavailable,
         )
         if a.cutoff_date is not None and not a.is_current and not a.is_unavailable:
-            series_hist[(a.visa_class, a.country, a.action_type)].append(
-                (pub, a.cutoff_date)
-            )
+            series_hist[(vc, a.country, a.action_type)].append((pub, a.cutoff_date))
     for key in series_hist:
         series_hist[key].sort()
 

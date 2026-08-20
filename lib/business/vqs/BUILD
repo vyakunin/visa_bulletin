@@ -97,6 +97,7 @@ py_library(
         ":metric_config",
         ":seasonal_predictor",
         ":solver",
+        "//lib/business/bulletin:eb_series",
         "//models:bulletin",
         "//models:raw_facts",
         "//models:visa_cutoff_date",
@@ -110,6 +111,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":accuracy_metrics",
+        "//lib/business/bulletin:eb_series",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:vqs",

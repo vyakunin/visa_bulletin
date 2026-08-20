@@ -122,3 +122,40 @@ def resolve_cutoff_label(
     )
     _LABEL_CACHE[cache_key] = label
     return label
+
+
+def series_key_for_label(label: str) -> str | None:
+    """The series key a published cutoff heading belongs to.
+
+    The inverse of :func:`resolve_cutoff_label`, and pure: a row carries its own
+    heading, so re-keying a set of rows onto series keys needs no bulletin date
+    and no query.
+
+    Returns ``None`` for a heading outside the five preference series. An EB-5
+    *set-aside* chart (Rural, High Unemployment, Infrastructure) is its own
+    category and is deliberately not folded into ``"5th"``, which means the
+    residual (Unreserved) queue only.
+    """
+    for key, prefix in _LABEL_PREFIX_BY_SERIES.items():
+        if label.startswith(prefix):
+            return key
+    return label if label in EB_CLASSES else None
+
+
+def cutoff_label_q(series_keys):
+    """A ``VisaCutoffDate`` filter matching these series under every heading.
+
+    ``visa_class__in=("1st", ..., "5th")`` is the shape that silently drops
+    EB-5: it matches the bare ``"5th"`` era that ended in April 2011 and nothing
+    since. Filter with this instead, then re-key each row through
+    :func:`series_key_for_label`.
+    """
+    from django.db.models import Q
+
+    keys = list(series_keys)
+    q = Q(visa_class__in=keys)
+    for key in keys:
+        prefix = _LABEL_PREFIX_BY_SERIES.get(key)
+        if prefix:
+            q |= Q(visa_class__startswith=prefix)
+    return q

@@ -1572,6 +1572,7 @@ django_py_test(
         "//django_config:context_processors",
         "//django_config:urls",
         "//lib/business/bulletin:eb_series",
+        "//lib/business/vqs:accuracy_surfacing",
         "//lib/business/vqs:data_cache",
         "//models:bulletin",
         "//models:visa_cutoff_date",

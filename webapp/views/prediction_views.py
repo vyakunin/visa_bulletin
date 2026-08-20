@@ -16,7 +16,7 @@ from django.views.decorators.cache import cache_page
 from lib.business.bulletin.eb_series import (
     EB_CLASSES,
     EB_SHORT_LABELS,
-    resolve_cutoff_label,
+    series_key_for_label,
 )
 from lib.business.vqs.prediction_loader import (
     PredictionResult,
@@ -439,24 +439,19 @@ def _actuals_by_series_key(
     if bulletin is None:
         return cutoffs, flags
 
-    rows = list(VisaCutoffDate.objects.filter(bulletin=bulletin))
+    # Ascending label order so that in May 2022 — the one month DOS split
+    # Unreserved across two headings — the higher heading wins the series key,
+    # matching resolve_cutoff_label's own `-visa_class` tiebreak.
+    rows = sorted(
+        VisaCutoffDate.objects.filter(bulletin=bulletin), key=lambda r: r.visa_class
+    )
     for row in rows:
-        key = f"{row.visa_class}_{row.country}_{row.action_type}"
-        cutoffs[key] = row.cutoff_date
-        flags[key] = (row.is_current, row.is_unavailable)
-
-    pub = bulletin.publication_date
-    for series_key in EB_CLASSES:
-        for action in ("final_action", "filing"):
-            label = resolve_cutoff_label(series_key, action, as_of=pub)
-            if label is None or label == series_key:
+        for name in (row.visa_class, series_key_for_label(row.visa_class)):
+            if name is None:
                 continue
-            for row in rows:
-                if row.visa_class != label or row.action_type != action:
-                    continue
-                key = f"{series_key}_{row.country}_{action}"
-                cutoffs[key] = row.cutoff_date
-                flags[key] = (row.is_current, row.is_unavailable)
+            key = f"{name}_{row.country}_{row.action_type}"
+            cutoffs[key] = row.cutoff_date
+            flags[key] = (row.is_current, row.is_unavailable)
     return cutoffs, flags
 
 

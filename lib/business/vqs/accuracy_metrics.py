@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from lib.business.bulletin.eb_series import cutoff_label_q, series_key_for_label
 from lib.business.vqs.metric_config import MetricConfig
 from lib.business.vqs.solver import (
     predict_next_bulletin_and_maturity,
@@ -267,9 +268,9 @@ def compute_bulletin_accuracy(
         # existing Unavailable exclusion.
         cutoffs = (
             VisaCutoffDate.objects.filter(
+                cutoff_label_q(target_classes),
                 bulletin__publication_date=t,
                 visa_category=visa_category,
-                visa_class__in=target_classes,
             )
             .exclude(cutoff_date__isnull=True)
             .exclude(is_current=True)
@@ -280,9 +281,13 @@ def compute_bulletin_accuracy(
             cutoffs = cutoffs.filter(action_type=action_type)
 
         for row in cutoffs:
+            # Rows carry the heading DOS printed; every model, stored
+            # prediction and metric row is keyed by the series key. They differ
+            # for EB-5, so re-key here or EB-5 evaluates nothing (eb_series).
+            series_key = series_key_for_label(row.visa_class) or row.visa_class
             outcome = predict_next_bulletin_and_maturity(
                 knowledge_date=knowledge_date,
-                visa_class=row.visa_class,
+                visa_class=series_key,
                 country=row.country,
                 action_type=row.action_type,
                 monthly_supply=monthly_supply,
@@ -317,7 +322,7 @@ def compute_bulletin_accuracy(
                 from lib.business.vqs.data_cache import get_cutoff_at_date
 
                 actual = get_cutoff_at_date(
-                    visa_class=row.visa_class,
+                    visa_class=series_key,
                     country=row.country,
                     action_type=row.action_type,
                     as_of=future_pub_est,
@@ -331,7 +336,7 @@ def compute_bulletin_accuracy(
                 # get_cutoff_at_date and may land on a Current sentinel, so guard.
                 actual_as_of = t if horizon == 1 else future_pub_est
                 if not is_current_at_date(
-                    row.visa_class, row.country, row.action_type, actual_as_of
+                    series_key, row.country, row.action_type, actual_as_of
                 ):
                     error_days = abs((pred_cutoff - actual).days)
 
@@ -345,7 +350,7 @@ def compute_bulletin_accuracy(
             # weight learning is done (correctly, on past data) by warmup_history.
             if aggregator and actual is not None and horizon == 1:
                 aggregator.update(
-                    row.visa_class,
+                    series_key,
                     row.country,
                     knowledge_date,
                     actual,
@@ -362,7 +367,7 @@ def compute_bulletin_accuracy(
             rows.append(
                 BulletinAccuracyRow(
                     bulletin_date=t,
-                    visa_class=row.visa_class,
+                    visa_class=series_key,
                     country=row.country,
                     action_type=row.action_type,
                     predicted_cutoff=pred_cutoff,
@@ -448,16 +453,25 @@ def compute_longterm_accuracy(
     if not last_bulletin_date:
         return []
 
-    # Clear default ordering to avoid including bulletin FK in DISTINCT
-    distinct_series = list(
+    # Clear default ordering to avoid including bulletin FK in DISTINCT. Rows
+    # carry the heading DOS printed, so each is re-keyed onto its series before
+    # the set is built — EB-5 is published under a heading that is renamed every
+    # few years and matches no bare series key (see eb_series).
+    published = (
         VisaCutoffDate.objects.filter(
+            cutoff_label_q(EVALUABLE_VISA_CLASSES),
             visa_category=visa_category,
-            visa_class__in=EVALUABLE_VISA_CLASSES,
         )
         .values_list("visa_class", "country")
         .order_by("visa_class", "country")
         .distinct()
     )
+    series_set = set()
+    for label, country in published:
+        series_key = series_key_for_label(label)
+        if series_key is not None:
+            series_set.add((series_key, country))
+    distinct_series = sorted(series_set)
 
     total_months = len(months)
     total_iterations = total_months * len(distinct_series)
@@ -563,8 +577,8 @@ def compute_longterm_accuracy(
             actual_ready_month = None
             first_row = (
                 VisaCutoffDate.objects.filter(
+                    cutoff_label_q([visa_class]),
                     visa_category=visa_category,
-                    visa_class=visa_class,
                     country=country,
                     action_type=action_type,
                     bulletin__publication_date__gt=knowledge_date,
@@ -851,9 +865,9 @@ def compute_multi_horizon_accuracy(
         # sentinel, not a real cutoff) — mirrors the Unavailable exclusion.
         cutoffs = (
             VisaCutoffDate.objects.filter(
+                cutoff_label_q(target_classes),
                 bulletin__publication_date=pub_date,
                 visa_category=visa_category,
-                visa_class__in=target_classes,
             )
             .exclude(cutoff_date__isnull=True)
             .exclude(is_current=True)
@@ -863,6 +877,10 @@ def compute_multi_horizon_accuracy(
             cutoffs = cutoffs.filter(action_type=action_type)
 
         for row in cutoffs:
+            # Rows carry the heading DOS printed; every model, stored
+            # prediction and metric row is keyed by the series key. They differ
+            # for EB-5, so re-key here or EB-5 evaluates nothing (eb_series).
+            series_key = series_key_for_label(row.visa_class) or row.visa_class
             current_cutoff = row.cutoff_date
 
             if use_contextual_ensemble:
@@ -871,7 +889,7 @@ def compute_multi_horizon_accuracy(
                 # but ContextualTrajectoryAggregator doesn't have a fast path yet.
                 # Actually, we can just call it.
                 aggregator.warmup_history(
-                    visa_class=row.visa_class,
+                    visa_class=series_key,
                     country=row.country,
                     action_type=row.action_type,
                     knowledge_date=knowledge_date,
@@ -881,7 +899,7 @@ def compute_multi_horizon_accuracy(
                 for h in horizons:
                     target_month = _add_months(pub_date, h - 1)
                     pred, _ = aggregator.predict(
-                        visa_class=row.visa_class,
+                        visa_class=series_key,
                         country=row.country,
                         action_type=row.action_type,
                         target_date=target_month,
@@ -889,7 +907,7 @@ def compute_multi_horizon_accuracy(
                     )
 
                     actual = get_cutoff_at_date(
-                        visa_class=row.visa_class,
+                        visa_class=series_key,
                         country=row.country,
                         action_type=row.action_type,
                         as_of=target_month,
@@ -901,7 +919,7 @@ def compute_multi_horizon_accuracy(
                     # bulletin-month sentinel, so differencing it fabricates a
                     # spurious error / movement.
                     actual_is_current = is_current_at_date(
-                        row.visa_class, row.country, row.action_type, target_month
+                        series_key, row.country, row.action_type, target_month
                     )
                     if pred is not None and actual is not None and not actual_is_current:
                         error = abs((pred - actual).days)
@@ -914,7 +932,7 @@ def compute_multi_horizon_accuracy(
                         MultiHorizonRow(
                             knowledge_date=knowledge_date,
                             bulletin_date=target_month,
-                            visa_class=row.visa_class,
+                            visa_class=series_key,
                             country=row.country,
                             action_type=row.action_type,
                             horizon=h,
@@ -929,7 +947,7 @@ def compute_multi_horizon_accuracy(
 
             outcome = predict_next_bulletin_and_maturity(
                 knowledge_date=knowledge_date,
-                visa_class=row.visa_class,
+                visa_class=series_key,
                 country=row.country,
                 action_type=row.action_type,
                 monthly_supply=monthly_supply,
@@ -952,7 +970,7 @@ def compute_multi_horizon_accuracy(
                 # Actual cutoff at horizon h
                 target_pub = _add_months(pub_date, h - 1)
                 actual = get_cutoff_at_date(
-                    visa_class=row.visa_class,
+                    visa_class=series_key,
                     country=row.country,
                     action_type=row.action_type,
                     as_of=target_pub,
@@ -964,7 +982,7 @@ def compute_multi_horizon_accuracy(
                 # bulletin-month sentinel, so differencing it fabricates a
                 # spurious error / movement.
                 actual_is_current = is_current_at_date(
-                    row.visa_class, row.country, row.action_type, target_pub
+                    series_key, row.country, row.action_type, target_pub
                 )
                 if pred is not None and actual is not None and not actual_is_current:
                     error = abs((pred - actual).days)
@@ -978,7 +996,7 @@ def compute_multi_horizon_accuracy(
                     MultiHorizonRow(
                         knowledge_date=knowledge_date,
                         bulletin_date=target_pub,
-                        visa_class=row.visa_class,
+                        visa_class=series_key,
                         country=row.country,
                         action_type=row.action_type,
                         horizon=h,

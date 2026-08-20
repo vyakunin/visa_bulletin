@@ -33,7 +33,7 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 
 from django_config.cache_utils import cache_page_skip_bots
-from lib.business.bulletin.eb_series import EB_SHORT_LABELS, resolve_cutoff_label
+from lib.business.bulletin.eb_series import EB_SHORT_LABELS, series_key_for_label
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
@@ -222,23 +222,22 @@ def _load_current_actuals(bulletin: Bulletin) -> dict[tuple[str, int, str], Visa
     """Latest actual cutoffs, keyed by SERIES KEY so the grid can look them up.
 
     Most rows are already stored under their series key. EB-5 is not: the
-    bulletin prints the sub-category in the heading, so the row for the EB-5
-    grid line has to be found by resolving that heading for this bulletin and
-    re-keying it. Without this the lookup missed and every EB-5 cell rendered
-    with no baseline to compare against.
+    bulletin prints the sub-category in the heading, so that row is stored under
+    both the heading it carries and the series key that heading belongs to.
+    Without this the lookup missed and every EB-5 cell rendered with no baseline
+    to compare against.
     """
-    rows = list(VisaCutoffDate.objects.filter(bulletin=bulletin))
-    actuals = {(r.visa_class, r.country, r.action_type): r for r in rows}
-
-    pub = bulletin.publication_date
-    for series_key in _EB_CLASSES:
-        for action in (_FINAL, _FILING):
-            label = resolve_cutoff_label(series_key, action, as_of=pub)
-            if label is None or label == series_key:
-                continue
-            for r in rows:
-                if r.visa_class == label and r.action_type == action:
-                    actuals[(series_key, r.country, action)] = r
+    # Ascending label order so that in May 2022 — the one month DOS split
+    # Unreserved across two headings — the higher heading wins the series key,
+    # matching resolve_cutoff_label's own `-visa_class` tiebreak.
+    rows = sorted(
+        VisaCutoffDate.objects.filter(bulletin=bulletin), key=lambda r: r.visa_class
+    )
+    actuals = {}
+    for r in rows:
+        for name in (r.visa_class, series_key_for_label(r.visa_class)):
+            if name is not None:
+                actuals[(name, r.country, r.action_type)] = r
     return actuals
 
 

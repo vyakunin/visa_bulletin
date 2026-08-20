@@ -23,6 +23,7 @@ from django.test import TestCase
 
 from lib.business.bulletin import eb_series
 from lib.business.vqs import data_cache
+from lib.business.vqs.accuracy_surfacing import latest_month_scorecard
 from models.bulletin import Bulletin
 from models.enums.action_type import ActionType
 from models.enums.country import Country
@@ -148,6 +149,109 @@ class TestResolveCutoffLabel(Eb5LabelFixture):
         self.assertIsNone(
             eb_series.resolve_cutoff_label("5th", ActionType.FINAL_ACTION.value)
         )
+
+
+class TestSeriesKeyForLabel(Eb5LabelFixture):
+    """The inverse map: the series a published heading belongs to.
+
+    ``resolve_cutoff_label`` answers "which heading do I query for this series";
+    this answers "which series does this row I already have belong to", which is
+    what a join over a *set* of rows needs — no bulletin date, no query.
+    """
+
+    def test_every_unreserved_heading_maps_back_to_the_series(self):
+        for label in (LABEL_2022, LABEL_2025_FINAL, "5th Unreserved (I5 and R5)"):
+            self.assertEqual(eb_series.series_key_for_label(label), "5th")
+
+    def test_it_round_trips_resolve_cutoff_label(self):
+        for action in (ActionType.FINAL_ACTION.value, ActionType.FILING.value):
+            label = eb_series.resolve_cutoff_label("5th", action)
+            self.assertEqual(eb_series.series_key_for_label(label), "5th")
+
+    def test_a_set_aside_chart_is_not_folded_into_eb5(self):
+        # The over-reach side of the same predicate. Rural / High Unemployment /
+        # Infrastructure are separate categories with their own queues and their
+        # own cutoffs; folding one into "5th" would score the residual model
+        # against another category's actual and call the result EB-5 accuracy.
+        for label in (
+            "5th Set Aside: (Rural - 20%)",
+            "5th Set Aside: Rural (20%, including NR, RR)",
+            "5th Set Aside: (High Unemployment - 10%)",
+            "5th Set Aside: (Infrastructure - 2%)",
+            "5th Regional Center (I5 and R5)",
+            "5th Non-Regional Center (C5 and T5)",
+        ):
+            self.assertIsNone(eb_series.series_key_for_label(label))
+
+    def test_plain_series_keys_are_themselves_and_anything_else_is_nothing(self):
+        for key in ("1st", "2nd", "3rd", "4th", "5th"):
+            self.assertEqual(eb_series.series_key_for_label(key), key)
+        self.assertIsNone(eb_series.series_key_for_label("F2A"))
+
+    def test_the_query_filter_spans_the_renames_without_the_set_asides(self):
+        _cutoff(self.latest, "5th Set Aside: (Rural - 20%)", Country.CHINA.value,
+                ActionType.FINAL_ACTION.value, date(2018, 1, 1))
+        labels = set(
+            VisaCutoffDate.objects.filter(eb_series.cutoff_label_q(["5th"]))
+            .values_list("visa_class", flat=True)
+        )
+        self.assertEqual(labels, {"5th", LABEL_2022, LABEL_2025_FINAL})
+
+
+class TestScorecardScoresEb5(Eb5LabelFixture):
+    """The published accuracy figures — the last surface joining on a bare key.
+
+    The scorecard reads STORED predictions (keyed by series) against published
+    actuals (keyed by heading). Joining those on ``visa_class__in=["1st", ...,
+    "5th"]`` matched no EB-5 actual since April 2011, so every EB-5 prediction
+    fell out of the join — and an empty join is indistinguishable from a series
+    that was never predicted: the scorecard simply showed no EB-5 band.
+    """
+
+    def setUp(self):
+        super().setUp()
+        pb = PredictedBulletin.objects.create(
+            target_bulletin_month=date(2026, 8, 1),
+            prediction_date=date(2026, 7, 15),
+        )
+        # China EB-5 final action: actual 1 Dec 2016 (under the 2025 heading),
+        # predicted 11 Dec 2016 -> a 10-day miss.
+        PredictedCutoff.objects.create(
+            bulletin=pb, visa_class="5th", country=Country.CHINA.value,
+            action_type=ActionType.FINAL_ACTION.value,
+            predicted_date=date(2016, 12, 11), model_name="persistence",
+        )
+
+    def test_the_eb5_prediction_is_scored(self):
+        sc = latest_month_scorecard()
+        self.assertIsNotNone(sc)
+        self.assertEqual(sc["n_scored"], 1)
+        self.assertEqual(sc["mae_days"], 10)
+        self.assertEqual(
+            [(b["label"], b["mae_days"]) for b in sc["bands"]], [("EB-5", 10)]
+        )
+
+    def test_the_no_change_baseline_reads_the_previous_heading(self):
+        # June 2023 published China EB-5 under the older heading. The baseline is
+        # that month's cutoff, so the previous-month lookup has to re-key a row
+        # whose heading is not the one in use today: 15 Dec 2015 -> 1 Dec 2016 is
+        # a 352-day no-change error against the model's 10.
+        base = latest_month_scorecard()["baseline"]
+        self.assertEqual(base["total"], 1)
+        self.assertEqual(base["model_wins"], 1)
+        self.assertEqual(base["baseline_mean"], 352.0)
+        self.assertTrue(base["beats_baseline"])
+
+    def test_an_unavailable_eb5_actual_is_still_not_scored(self):
+        # India is Unavailable this month. Scoring against the sentinel would
+        # fabricate an error, so widening the join must not widen THAT.
+        PredictedCutoff.objects.create(
+            bulletin=PredictedBulletin.objects.get(),
+            visa_class="5th", country=Country.INDIA.value,
+            action_type=ActionType.FINAL_ACTION.value,
+            predicted_date=date(2020, 1, 1), model_name="persistence",
+        )
+        self.assertEqual(latest_month_scorecard()["n_scored"], 1)
 
 
 class TestEb5StateReadFromLiveBulletin(Eb5LabelFixture):
