@@ -5,7 +5,7 @@ When answering any question about *what's currently live* on visa-bulletin.us �
 1. **Live site (HTTP)** — `curl -sSL https://visa-bulletin.us/<path>` for anything user-visible: HTML, JSON-LD, sitemap, robots.txt, response codes, redirect chains. This is the fastest, lowest-risk check and matches what real users see.
 2. **Prod Postgres on the production server** — `ssh homeserver "docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin -c '<query>'"` for state not exposed via HTTP (auto-gen flags, ingest run history, raw row counts, FK relationships). **Use read-only queries** (`SELECT`). Be mindful: prod serves real traffic on a small, resource-constrained box — avoid full-table scans on large tables (`salary_record`, `lca_case`, `dol_case`); add `LIMIT` and indexed `WHERE` clauses. (`homeserver` is the SSH alias for prod; concrete host/key are in the private ops repo.)
 3. **Prod cron / app logs** — `ssh homeserver "tail -N /opt/stack/visa_bulletin/logs/cron/*.log"` or `docker logs vb_web` for "did this actually run and what happened" questions.
-4. **Staging (`vb_stg_*` containers)** — only when comparing a code change between staging and prod; **not authoritative** for prod state.
+4. **Staging (`vb_stg_*` containers, on the staging box — NOT the prod host, see `branching.md`)** — only when comparing a code change between staging and prod; **not authoritative** for prod state.
 
 ## Local DB is a development vehicle — treat as outdated
 

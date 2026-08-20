@@ -66,7 +66,7 @@ Find table names: query `pg_tables` (fastest), check migrations for `CREATE TABL
 ```bash
 ssh homeserver "docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin \
   -c 'SELECT COUNT(*) FROM salary_job_title'"
-# staging DB is a SEPARATE container: vb_stg_postgres — never mix the two (ground_truth.md)
+# staging DB is a SEPARATE container on the staging box: vb_stg_postgres — never mix the two (ground_truth.md)
 ```
 
 - **Read-only `SELECT` only.** Add `LIMIT` + indexed `WHERE` on big tables (`salary_record`, `lca_case`, `dol_case`); the box serves live traffic. Don't `EXPLAIN ANALYZE` heavy queries without telling the user first.
@@ -92,7 +92,9 @@ ssh homeserver "docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin
 
 ## SSH Access
 
-**Production + staging run on the homeserver** (migrated off AWS Lightsail 2026-05-08). Use the `homeserver` SSH alias (host/user/key configured in your private `~/.ssh/config`; concrete values live in the private ops repo). The old `prod_2Gb_vm` / `backup_0_5Gb_vm` Lightsail aliases and the `/opt/visa_bulletin` path are **retired** — current paths are `/opt/stack/visa_bulletin` (prod) and the staging stack (`vb_stg_*` containers).
+**Production runs on the homeserver** (migrated off AWS Lightsail 2026-05-08) at `/opt/stack/visa_bulletin`. Use the `homeserver` SSH alias (host/user/key configured in your private `~/.ssh/config`; concrete values live in the private ops repo). The old `prod_2Gb_vm` / `backup_0_5Gb_vm` Lightsail aliases and the `/opt/visa_bulletin` path are **retired**.
+
+**Staging does NOT run on the homeserver** — it runs off-prod on the separate staging box (`branching.md` §"Staging runs OFF the prod box"). So `ssh homeserver "docker ps"` shows no `vb_stg_*` container, and that means you are querying the wrong host — never that staging is down.
 
 ```bash
 ssh homeserver                                                       # Connect

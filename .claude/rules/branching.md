@@ -161,7 +161,9 @@ Origin: 2026-07-03 — an SEO Path-1 ship was isolated by force-pushing staging 
 
 ## Staging runs OFF the prod box — always
 
-The production server is resource-constrained (it serves live load); a co-resident staging stack competes with prod for CPU/RAM on *every* release, not just heavy ones. **Staging belongs on a separate box (the data-pipeline/staging server), never on the prod-serving host.** A staging stack currently co-resident with prod is a stopgap to retire, not the design. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
+The production server is resource-constrained (it serves live load); a co-resident staging stack would compete with prod for CPU/RAM on *every* release, not just heavy ones. **Staging runs off-prod on the separate data-pipeline/staging box, never on the prod-serving host** — and that box is also what serves prod traffic during a zero-downtime cutover, which it could not do if it were the prod host.
+
+The `vb_stg_*` containers therefore live on the staging box: `ssh homeserver "docker ps"` shows none of them, and that means you are querying the wrong host, NOT that staging is down. Concrete topology + the cutover engine: the private ops repo (`visa_bulletin_platform/hosting/RELEASE_PATHS.md`).
 
 ## Promote via the ZERO-DOWNTIME cutover — never the 502 web-swap by default
 
