@@ -26,7 +26,7 @@
                 <span>
                     <strong>{{ scorecard.month_label }}</strong> — our forecast missed by
                     <strong>&plusmn;{{ scorecard.mae_days }} days</strong> on average across
-                    {{ scorecard.n_scored }} scored date{{ scorecard.n_scored|pluralize }}{% if scorecard.baseline.total %}, {% if scorecard.baseline.beats_baseline %}beating{% else %}matching{% endif %} the naive no-change guess{% endif %}.
+                    {{ scorecard.n_scored }} scored date{{ scorecard.n_scored|pluralize }}{% if scorecard.baseline.total %}, {% if scorecard.baseline.beats_baseline %}beating{% else %}behind{% endif %} the naive no-change guess{% endif %}.
                 </span>
             </div>
             {% if scorecard.bands %}
@@ -77,7 +77,7 @@
                 predictions ({{ all_time.first_month|date:"M Y" }}&ndash;{{ all_time.last_month|date:"M Y" }}),
                 the model averaged <strong>{{ all_time.model_mean }}d</strong> of error versus a naive
                 &ldquo;no-change&rdquo; guess's <strong>{{ all_time.baseline_mean }}d</strong>
-                {% if all_time.beats_baseline %}(edging out{% else %}(roughly matching{% endif %} the baseline),
+                {% if all_time.beats_baseline %}(edging out{% else %}(falling behind{% endif %} the baseline),
                 landing closer on {{ all_time.model_wins }} of {{ all_time.baseline_total }} scored dates.
             </p>
             {% if all_time.bands %}

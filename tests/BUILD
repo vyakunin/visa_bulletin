@@ -1810,6 +1810,7 @@ django_py_test(
     name = "test_accuracy_recap_surfacing",
     size = "medium",
     srcs = ["test_accuracy_recap_surfacing.py"],
+    data = ["//webapp:templates"],
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",

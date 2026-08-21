@@ -226,6 +226,40 @@ class ArchiveIndexTest(TestCase):
         self.assertIn('href="/metric-report/"', html)
 
 
+class BaselineVerdictTest(TestCase):
+    """A model that loses to the no-change baseline is said to be losing.
+
+    `beats_baseline` is strict (model mean < baseline mean), so its false branch
+    covers both "level with" and "far worse" — and the copy called both of them
+    matching. That reads as honest while the page is at parity and becomes a
+    false claim the moment the mean moves, which is exactly when a reader is
+    relying on it.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        prev = Bulletin.objects.create(publication_date=_PREV)
+        _actual(prev, "2nd", date(2019, 11, 15))
+        target = Bulletin.objects.create(publication_date=_TARGET)
+        _actual(target, "2nd", date(2019, 12, 1))  # a 16-day no-change error
+        pb = PredictedBulletin.objects.create(
+            target_bulletin_month=_TARGET, prediction_date=date(2026, 7, 15)
+        )
+        PredictedCutoff.objects.create(
+            bulletin=pb, visa_class="2nd", country=_INDIA, action_type=_FA,
+            predicted_date=date(2020, 6, 1), model_name="ensemble",
+        )  # 183 days out — an order worse than doing nothing
+
+    def test_the_model_is_reported_as_losing_not_matching(self):
+        self.assertFalse(all_time_track_record()["beats_baseline"])
+        html = self.client.get("/predictions/").content.decode()
+        self.assertIn("falling behind", html)
+        self.assertIn("behind the naive no-change guess", html)
+        self.assertNotIn("roughly matching", html)
+        self.assertNotIn("matching the naive no-change guess", html)
+
+
 class RecapBannerTest(TestCase):
     """The per-month recap renders the accuracy rollup banner. Loader is patched
     (as in test_prediction_detail_structured_data) so the page renders the two

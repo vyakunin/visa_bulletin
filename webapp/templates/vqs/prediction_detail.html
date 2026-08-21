@@ -78,7 +78,7 @@
             <p class="small text-muted mb-1">
                 Model averaged <strong>{{ base.model_mean }}d</strong> versus the naive
                 &ldquo;no-change&rdquo; guess's <strong>{{ base.baseline_mean }}d</strong> —
-                {% if base.beats_baseline %}beating{% else %}matching{% endif %} the no-change baseline;
+                {% if base.beats_baseline %}beating{% else %}falling behind{% endif %} the no-change baseline;
                 the model landed closer on {{ base.model_wins }} of {{ base.total }} scored date{{ base.total|pluralize }}.
             </p>
             {% endif %}
