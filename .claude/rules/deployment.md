@@ -436,6 +436,8 @@ The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, inde
 
 Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`, cronned on the **minipc**: it browser-fetches via the debug Chrome on `:9222`, streams the HTML into `vb_web`, and runs the unchanged `scripts.cron.refresh_bulletin` there with `BULLETIN_HTML_CACHE_DIR` set, so parse/load/predict still happen prod-side. Idempotent (dedup by `DataSource`).
 
+**A landed bulletin leaves the two cache-only surfaces COLD — warm them by hand until the ingest does it itself.** `refresh_bulletin` ends with `cache.clear()` and no re-warm, so the `/job-title/` demographic-pay panel and the 41 `/h1b-salary/` occupation pages are empty from the drop until the next 05:10 Berlin cron. The panel failure is silent: the page still returns 200 and renders fully, minus the section. Run the clear → warm → warm → `warm_cache.sh` sequence from the deploy section above, then purge Cloudflare **after** the warm — the pipeline's own purge fires while the origin is still serving the panel-less render, so the edge re-caches it. Tracked as internal ticket `3c462b8d409f81eea8b1f2d8621c0a2c`.
+
 ```bash
 # on the MINIPC (not prod) — cadence: */30 while awaiting a bulletin, 0 */4 otherwise
 */30 * * * * .../visa_bulletin/scripts/sync_bulletin_to_prod.sh >> .../logs/sync_bulletin_to_prod.log 2>&1
