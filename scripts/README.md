@@ -41,6 +41,7 @@ This directory contains all project scripts organized by functionality. All scri
 12. [Testing and Verification Utilities](#testing-and-verification-utilities)
 13. [Investigation/Debugging](#investigationdebugging)
 14. [Ad-surface visual sweep](#ad-surface-visual-sweep)
+15. [Origin route checks](#origin-route-checks-bypassing-cloudflare)
 
 ---
 
@@ -1513,6 +1514,35 @@ bazel run //scripts/salary:verify_filtered_cases
 ```bash
 bazel run //scripts/salary:examine_unknown_files
 ```
+
+---
+
+### Origin route checks (bypassing Cloudflare)
+
+**`scripts/origin_check.py`** — fetch a prod/staging route from the ORIGIN, i.e.
+nginx inside the container, with the `Host:` header set. Reach for this instead of
+hand-assembling `ssh homeserver "docker exec vb_nginx sh -c \"wget --header=...\""`.
+
+A public fetch of `https://visa-bulletin.us/...` answers from Cloudflare's cache and
+challenges automated clients, so it says nothing about what the app just served. The
+origin has no TLS vhost, hence the `Host:` header. The historical hand-rolled form
+nests three levels of shell quoting, where a path holding `?`/`&` silently loses its
+query string and an under-quoted `Host:` header splits in two (nginx then serves the
+default vhost) — this builds one remote argv and quotes it once.
+
+```bash
+uv run scripts/origin_check.py status / /salaries/ /predictions/september-2026/
+uv run scripts/origin_check.py status --expect 404 '/salaries/?q=ZZZNONEXISTENT999'
+uv run scripts/origin_check.py status --env staging /employers/
+uv run scripts/origin_check.py status --ua googlebot /h1b-salary/software-engineer/
+uv run scripts/origin_check.py body /job-title/software-engineer/ | grep -c 'Country of birth'
+uv run scripts/origin_check.py status --local /          # already ON homeserver
+uv run scripts/origin_check.py status --print-command /  # show the argv, run nothing
+```
+
+Exit `0` every path matched `--expect` · `1` a status mismatch · `2` transport failure
+(ssh/docker/wget never reached a response) — so it drops straight into a deploy gate.
+Tests: `bazel test //tests:test_origin_check`.
 
 ---
 

@@ -1854,3 +1854,13 @@ django_py_test(
         "//webapp/views:views",
     ],
 )
+
+# The origin fetch (ssh -> docker exec -> wget with an explicit Host:) was hand-assembled
+# ~35 times in one week, three levels of shell deep, where a space in the header or a `?`
+# in the path is lost silently. `scripts/origin_check.py` quotes it once; this pins that.
+pytest_py_test(
+    name = "test_origin_check",
+    size = "small",
+    srcs = ["test_origin_check.py"],
+    data = ["//scripts:toplevel_python_sources"],
+)
