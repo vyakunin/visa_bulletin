@@ -122,7 +122,7 @@ Reddit/F5Bot is marketing, and marketing lives in the platform project). Rules i
   minus AutoModerator → DMs, modmail (mute/ban/removal notices), username mentions.
 - **`f5bot-mentions`** — `from:admin@f5bot.com subject:"F5Bot found something"` → keyword
   hits on Reddit/HN/Lobsters. F5Bot account: f5bot.com, login `vyakunin@gmail.com`, password
-  at `~/tokens/f5bot` (mode 600; reset 2026-05-30 — not in LastPass). Keywords are literal
+  at `~/tokens/f5bot` (mode 600; reset 2026-05-30 — not in the vault). Keywords are literal
   case-insensitive substrings (no OR; one phrase per alert). **Every enabled keyword carries
   the `no-url=/r/immigration/` flag** — CivilCandidate1349 is permanently banned there, so
   alerts from that sub are useless noise (the free `no-url=/r/<sub>/` flag does the exclusion;
