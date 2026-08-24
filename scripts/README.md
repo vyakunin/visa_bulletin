@@ -62,22 +62,29 @@ uv run scripts/ad_surface_screenshots.py --prune-dry-run # retention preview
 ```
 
 Output: `~/.cache/vb_ad_screenshots/<date>/<surface>__<device>[__viewport].jpg`
-plus `manifest.json` (overflow_px, slot fill, reserved-empty px, CLS, doc height,
-and hero geometry — `hero_ad_injected` / `hero_h` / `nav_top_px` / `h1_top_px` /
+plus `manifest.json` (overflow_px, slot fill, reserved-empty px, the tallest
+near-white band in the image, CLS at first paint and settled, doc height, and
+masthead geometry — `ads_above_h1_px` / `hero_h` / `nav_top_px` / `h1_top_px` /
 `content_below_fold`). Retention: keeps the 4 newest run dirs (`--keep`,
 `--prune-dry-run`).
 
-**Two metrics under-reported until 2026-08-10 — do not compare an older manifest
-against a newer one on these fields.** Both read clean off a visibly broken page:
+**Metrics that under-reported until the date given — do not compare an older
+manifest against a newer one on these fields.** Each read clean off a visibly
+broken page:
 
 - **`reserved_empty_px`** counted unfilled `ins` elements taller than 1px, but
   `ad_slot.html` gives an unfilled unit `display:none`, so the rule could never
   fire — it read 0 on all 27 shots from 2026-07-27 to 2026-08-10, 20 of which had
   unfilled slots, while the screenshots showed labelled 280-300px voids. The band
-  is reserved by the `.vb-ad-slot` **wrapper**, which is what is measured now.
+  is reserved by the **container**, which is what is measured now.
   `labelled_empty_px` splits out the subset showing an "ADVERTISEMENT" caption
   over blank — a bare band is a deliberate trade and is reported but not flagged;
   a labelled one is the bug (`ad_slot.html`'s own rule).
+  **Until 2026-08-24 the container meant `.vb-ad-slot` alone**, i.e. our two
+  wrappers on a page carrying 5-10 `ins.adsbygoogle`, so every unit Google placed
+  itself went unmeasured — `/when-is-the-next-visa-bulletin` at 390px scored 0
+  through 1,236px of white with a caption floating in it. `ad_units` now covers
+  `.vb-ad-slot`, `.google-auto-placed` and any bare `ins` in neither.
 - **`over_wide_px`** is new and replaces `overflow_px` as the horizontal-overflow
   signal. `overflow_px` is `scrollWidth - clientWidth`, which `base.html`'s
   `overflow-x: clip` pins to 0 **by design**, so the guard that exists to catch
@@ -86,17 +93,33 @@ against a newer one on these fields.** Both read clean off a visibly broken page
   **not** from `widest_el_px`, which counts wide tables inside their own
   `overflow-x:auto` scrollers — legitimate behaviour reading 462-839px against a
   390px mobile viewport. `escaping_el` names the culprit element.
+- **`blank_run_px`** (2026-08-24) is the one hole-detector with no markup contract
+  behind it: it scans the captured jpg for the tallest near-white band, bridging a
+  caption thinner than 32px between two bands that are each already holes. Flagged
+  past one full viewport height, which leaves the deliberate 280-330px reserved
+  band quiet. `blank_run_ads` names the containers overlapping it. Every DOM-side
+  rule above has been wrong twice in the same direction; this one survives a
+  rename.
+- **Everything above is read AFTER the scroll pass** (2026-08-24), which is the
+  state the screenshot shows. At first paint a below-fold unit has not activated,
+  so its label, its no-fill and any late Auto-ads placement are all invisible.
+  `cls` stays the comparable first-paint series and `cls_settled` is the same
+  observer read again at the end — four surfaces score 0.198-0.474 settled while
+  reading 0 at first paint.
 
 `.vb-ad-slot` / `vb-ad-collapsed` / `vb-ad-live` / `data-vb-hi` are a **cross-repo
 contract** with `visa_bulletin_platform/monetization/ad_slot.html`. A rename there
-silently zeroes these metrics again; `//tests:test_ad_guard_metrics` pins this
-side only.
+silently zeroes the per-unit metrics; `blank_run_px` is the backstop that survives
+it, and `//tests:test_ad_guard_metrics` pins this side only.
 
-A **filled** slot can still be the defect: 2026-07-20 found Google Auto-ads
+A **filled** unit can still be the defect: 2026-07-20 found Google Auto-ads
 injecting a filled 390×390 unit *inside* `div.hero-section` on mobile, which
 scored clean on fill, reserved-empty and overflow alike while pushing the H1 to
-y=755 in an 844px viewport. Hence the hero fields above and the `⚠ AD-IN-HERO`
-flag (ticket `3a362b8d409f81769212e5e503b62f95`).
+y=755 in an 844px viewport. The rule written for that was scoped to
+`.hero-section` and so missed the same defect one element over — a ~285px banner
+between the nav and the H1 of `/job-title/`. `ads_above_h1_px` counts an injection
+wherever it lands (`⚠ AD ABOVE H1`); tickets
+`3a362b8d409f81769212e5e503b62f95` and `3c662b8d409f81a58daef49bd3571e26`.
 
 **Three traps this script exists to document — read before interpreting output:**
 
