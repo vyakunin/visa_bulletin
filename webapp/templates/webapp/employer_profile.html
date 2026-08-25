@@ -122,7 +122,7 @@
                         {% include "webapp/includes/stat_card.html" with value=stats.approval_rate|floatformat:1 value_class=approval_class label="Approval Rate" subtext="Certified Cases" suffix="%" %}
                     {% endwith %}
                 {% endif %}
-                {% include "webapp/includes/stat_card.html" with value=stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="Across All Roles" prefix="$" %}
+                {% include "webapp/includes/stat_card.html" with value=stats.salary_percentiles.p50|default:0|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="Across All Roles" prefix="$" %}
                 {# Below GROWTH_MIN_BASE_FILINGS base-year filings the percentage is
                    base noise (one filing moves it 100/base points), so the view
                    withholds it rather than print a headline nobody can check. Where

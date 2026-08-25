@@ -192,7 +192,10 @@ def job_title_profile_view(request, slug: str):
     thin_page = total_filings < INDEXABLE_MIN_FILINGS
     demographic_pay = None if thin_page else get_sitewide_demographic_pay()
 
-    median_salary = stats["basic"].get("median_salary") or 0
+    # The p50 the distribution card renders, not stats["basic"]["median_salary"] —
+    # that key is an Avg(), so the meta description used to advertise a mean as the
+    # median and disagree with the page's own percentile ladder.
+    median_salary = (stats.get("salary_percentiles") or {}).get("p50") or 0
     seo = {
         "title": f"{cluster.canonical_title} Salary Data & Market Analysis | Visa Bulletin",
         "description": f"{cluster.canonical_title} visa sponsorship statistics: {total_filings:,} filings, ${median_salary:,.0f} median salary. Top employers, salary trends, and geographic data.",

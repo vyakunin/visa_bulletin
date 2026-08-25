@@ -1736,6 +1736,15 @@ django_py_test(
     ],
 )
 
+pytest_py_test(
+    name = "test_median_cards_show_the_median",
+    size = "small",
+    srcs = ["test_median_cards_show_the_median.py"],
+    data = [
+        "//webapp:templates",
+    ],
+)
+
 django_py_test(
     name = "test_current_cutoff_state",
     size = "medium",

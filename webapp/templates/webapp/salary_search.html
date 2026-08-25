@@ -229,7 +229,7 @@
                         {% include "webapp/includes/stat_card.html" with value=market_stats.basic.total_filings|intcomma value_class="text-primary" label="Total Filings" subtext=filings_subtext %}
                     {% endwith %}
                 {% endwith %}
-                {% include "webapp/includes/stat_card.html" with value=market_stats.basic.median_salary|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="All Employers" prefix="$" %}
+                {% include "webapp/includes/stat_card.html" with value=market_stats.salary_percentiles.p50|default:0|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="All Employers" prefix="$" %}
                 {# Same base-year floor as the profile tiles: a growth percentage
                    divides by its base year, so below GROWTH_MIN_BASE_FILINGS
                    filings it is base noise. Site-wide the base is six figures, so
