@@ -701,7 +701,12 @@ def dashboard_view(request, category=None, country=None):
             else category
         )
         chart_data = build_multi_class_chart_with_projections(
-            visa_class_data, submission_date_for_chart, country, cat_label, vqs_predictions=vqs_predictions
+            visa_class_data,
+            submission_date_for_chart,
+            country,
+            cat_label,
+            vqs_predictions=vqs_predictions,
+            action_type_label=action_type_display,
         )
 
     # Build unified prediction rows for the combined table (all categories)
