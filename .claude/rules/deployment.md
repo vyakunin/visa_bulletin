@@ -89,11 +89,22 @@ docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
 
 **Do not warm and then flush.** Both warmers write into the same Redis DB the page cache
 lives in, so a FLUSHDB after warming wipes them — and the failure is silent in the worst
-way: `/job-title/` still returns 200 and renders fully, with only the JSON-LD occurrences of
-"Country of birth" left in the HTML, which reads exactly like a panel that is half-working.
+way: `/job-title/` still returns 200 and renders fully, with the panel simply absent, which
+reads exactly like a page that is fine.
 Re-warming afterwards does NOT fix it either, because the page cache has by then been
 populated with the panel-less render and is served unchanged (an identical byte count
 between two fetches is the tell). Both traps cost a wrong reading each on 2026-08-10.
+
+**Check the panel by its heading, never by counting a phrase.** Measured 2026-08-25 on a
+healthy `/job-title/software-engineer/`: `Country of birth` appears twice, both times in
+visible markup — once in the section's prose, once as the `<h3>` heading — and **zero times
+in JSON-LD**. So a count is not a verdict in either direction. Read the heading and the row
+beneath it:
+
+```bash
+uv run scripts/origin_check.py body /job-title/software-engineer/ \
+  | grep -A2 '<h3[^>]*>Country of birth</h3>'   # heading + a data row => panel is live
+```
 
 A daily cron re-warms both at 05:10 Berlin (`hosting/homeserver/crontab.sample`), because
 the occupation TTL is 24h and the cold fills therefore RECUR rather than only following a
@@ -245,19 +256,19 @@ docker logs vb_nginx --since 5m 2>&1 | grep -cE '\] "[A-Z]+'
 **Adversarial-input smoke (run once at T+5, on any deploy that touches a view/query/filter).** A 200-status smoke on canonical URLs does NOT exercise empty/zero-result paths — the exact shape that 500'd on 2026-06-10 (`/salaries/?employer=<name-that-matches-no-cluster>` → `records.none()` → uncaught `EmptyResultSet`). Probe the zero-result + degenerate branches explicitly:
 
 ```bash
-BASE="https://visa-bulletin.us"
-for u in \
+uv run scripts/origin_check.py status \
   "/salaries/?employer=ZZZNONEXISTENTEMPLOYER999" \
   "/salaries/?q=ZZZNONEXISTENTTITLE999" \
   "/salaries/?employer=ZZZNONEXISTENT&q=ZZZNONEXISTENT&state=NY" \
   "/salaries/?employer=GOOGLE+LLC&page=99999" \
   "/employers/?q=ZZZNONEXISTENT" \
-  "/job-titles/?q=ZZZNONEXISTENT" ; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$BASE$u")
-  printf "%-60s %s\n" "$u" "$code"   # every line MUST be 200 (empty result page), never 5xx
-done
+  "/job-titles/?q=ZZZNONEXISTENT"
 ```
 Any 5xx here = an uncaught exception on the empty/degenerate branch → roll back, don't fix forward. Add the analogous zero-result URL for any new filterable list view you ship.
+
+**Go to the ORIGIN, not the public URL — a `curl` of these paths measures Cloudflare.** The managed challenge covers `/salaries/` with a query string as well as the profile surfaces, and it fingerprints the TLS handshake, so a public `curl` of the four `/salaries/?…` lines answers **403** whatever User-Agent it carries. Read as a smoke result that is four failures on a healthy site (`ground_truth.md`, which had named the profile paths but not this one). `/employers/` and `/job-titles/` are not challenged, which makes the output look selectively broken and is exactly what sends a session hunting a regression that is not there.
+
+`/salaries/?employer=GOOGLE+LLC&page=99999` answers **410**, not 200 — that is the anonymous deep-pagination cap doing its job, not a defect. Only a **5xx** is the rollback trigger.
 
 **For DB-touching deploys** (schema changes, new indexes, query rewrites): also EXPLAIN ANALYZE the affected query path **inside Django** (parameterized) — not just literal psql, because Django's `__icontains` emits `UPPER(field) LIKE UPPER(%s)` and the planner gives different plans for parameterized vs literal strings. SSH to the production server and run:
 
