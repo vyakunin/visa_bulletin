@@ -6,7 +6,7 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, Count, Max, Min, Q
+from django.db.models import Count, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -17,6 +17,7 @@ from lib.business.i129.demographic_pay_panel import get_employer_demographic_pay
 from lib.business.i129.pay_comparison import get_employer_pay_comparison
 from lib.business.salary.common_chart_builder import build_salary_histogram_chart
 from lib.business.salary.common_stats import (
+    Median,
     calculate_filing_pace,
     calculate_filing_pace_by_fiscal_year,
     calculate_latency_trend,
@@ -106,7 +107,6 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
     basic_stats = records.aggregate(
         total_filings=Count("id"),
         approved_filings=Count("id", filter=Q(case_status=1)),
-        median_salary=Avg("wage_annual"),
         min_salary=Min("wage_annual"),
         max_salary=Max("wage_annual"),
     )
@@ -134,7 +134,7 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
         )
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             min_salary=Min("wage_annual"),
             max_salary=Max("wage_annual"),
         )
@@ -148,6 +148,8 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
 
     t0 = time.perf_counter()
     salary_percentiles = calculate_salary_percentiles(records)
+    # basic_stats carries no median of its own — same number, same rows, one sort.
+    basic_stats["median_salary"] = salary_percentiles["p50"]
     logger.info(
         "[employer_profile] salary_percentiles slug=%s took %.3fs",
         slug,
@@ -173,7 +175,7 @@ def _compute_employer_stats(records, slug: str, start_year: int) -> dict:
     t0 = time.perf_counter()
     state_dist = list(
         records.values("worksite_state")
-        .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
+        .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:15]
     )
     logger.info(
@@ -332,21 +334,17 @@ def _get_or_compute_page_payload(
     return (stats, chart_data, False)
 
 
-def _employer_salary_phrase(stats: dict, avg_salary) -> str:
-    """SERP-snippet salary phrase for the meta description: real p50 median +
-    p10–p90 range (the basic ``median_salary`` stat is an Avg, so prefer the true
-    percentile median); falls back to the average, then to a generic phrase when
-    no salary data exists."""
+def _employer_salary_phrase(stats: dict) -> str:
+    """SERP-snippet salary phrase for the meta description: p50 median + p10-p90
+    range, or a generic phrase when the profile has no salary data."""
     pct = stats.get("salary_percentiles") or {}
     p50, p10, p90 = pct.get("p50") or 0, pct.get("p10") or 0, pct.get("p90") or 0
-    if p50:
-        phrase = f"${p50:,.0f} median salary"
-        if p10 and p90:
-            phrase += f" (${p10:,.0f}–${p90:,.0f})"
-        return phrase
-    if avg_salary is not None:
-        return f"${avg_salary:,.0f} average salary"
-    return "certified DOL wage data"
+    if not p50:
+        return "certified DOL wage data"
+    phrase = f"${p50:,.0f} median salary"
+    if p10 and p90:
+        phrase += f" (${p10:,.0f}–${p90:,.0f})"
+    return phrase
 
 
 @cache_page_skip_bots(settings.CACHE_TIMEOUT)
@@ -383,17 +381,14 @@ def employer_profile_view(request, slug):
     # "<employer> h1b / salary / sponsorship" searcher actually wants — real
     # median + range + filing volume — to lift CTR on the pos 6-8 employer-name
     # rankings (GSC-validated as independent organic rankings, NOT sitelinks;
-    # Notion /salaries ticket). Use the true p50 median (the basic
-    # "median_salary" stat is computed via Avg); fall back to the average only
-    # if percentiles are unavailable. The old description led with a generic
+    # Notion /salaries ticket). The old description led with a generic
     # "visa sponsorship statistics:" label + the ~99% LCA certification
     # ("approval") rate, which is non-differentiating and slightly misleading.
-    median_salary = stats["basic"].get("median_salary")
     seo = {
         "title": f"{cluster.canonical_name} H-1B & PERM Sponsorship Data | Visa Bulletin",
         "description": (
             f"{cluster.canonical_name}: {stats['basic']['total_filings']:,} "
-            f"H-1B & PERM filings, {_employer_salary_phrase(stats, median_salary)}. "
+            f"H-1B & PERM filings, {_employer_salary_phrase(stats)}. "
             f"Free certified DOL wage data by job title, year & state."
         ),
         "canonical_url": request.build_absolute_uri(request.path),

@@ -1736,12 +1736,23 @@ django_py_test(
     ],
 )
 
-pytest_py_test(
+django_py_test(
     name = "test_median_cards_show_the_median",
-    size = "small",
+    size = "medium",
     srcs = ["test_median_cards_show_the_median.py"],
     data = [
         "//webapp:templates",
+    ],
+    deps = [
+        "//django_config:urls",
+        "//lib/business/salary:common_stats",
+        "//lib/business/salary:job_title_stats",
+        "//lib/business/salary:market_overview",
+        "//models:salary",
+        "//models/enums:visa_program",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
     ],
 )
 

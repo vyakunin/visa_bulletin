@@ -13,6 +13,7 @@ from django.urls import reverse
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.salary.common_stats import (
+    Median,
     calculate_program_breakdown,
     calculate_salary_percentiles,
 )
@@ -81,7 +82,7 @@ def salary_by_state_view(request, state: str):
             "employer__canonical_cluster__canonical_name",
             "employer__canonical_cluster__slug",
         )
-        .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
+        .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:25]
     )
 
@@ -92,7 +93,7 @@ def salary_by_state_view(request, state: str):
             "job_title_entity__canonical_cluster__canonical_title",
             "job_title_entity__canonical_cluster__slug",
         )
-        .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
+        .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:25]
     )
 

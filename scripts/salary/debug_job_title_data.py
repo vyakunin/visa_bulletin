@@ -63,7 +63,7 @@ def main():
         filtered_records.values("fiscal_year")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
         )
         .order_by("fiscal_year")
     )
@@ -80,7 +80,7 @@ def main():
         .values("worksite_state")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
         )
         .order_by("-count")[:10]
     )
@@ -93,6 +93,8 @@ def main():
 
 
 if __name__ == "__main__":
-    from django.db.models import Avg, Count
+    from django.db.models import Count
+
+    from lib.business.salary.common_stats import Median
 
     main()

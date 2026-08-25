@@ -14,9 +14,10 @@ Provides comprehensive statistics for job title clusters including:
 from datetime import datetime
 
 from django.core.cache import cache
-from django.db.models import Avg, Count, Max, Min, Q, StdDev
+from django.db.models import Count, Max, Min, Q, StdDev
 
 from lib.business.salary.common_stats import (
+    Median,
     apply_program_filter,
     calculate_geographic_distributions,
     calculate_salary_histogram_with_experience_overlays,
@@ -116,7 +117,6 @@ def get_job_title_statistics(
     # A. Market Overview - Check if we got any results
     basic_stats = records.aggregate(
         total_filings=Count("id"),
-        median_salary=Avg("wage_annual"),
         min_salary=Min("wage_annual"),
         max_salary=Max("wage_annual"),
         std_salary=StdDev("wage_annual"),
@@ -173,7 +173,6 @@ def get_job_title_statistics(
             # Recalculate basic stats with expanded data
             basic_stats = records.aggregate(
                 total_filings=Count("id"),
-                median_salary=Avg("wage_annual"),
                 min_salary=Min("wage_annual"),
                 max_salary=Max("wage_annual"),
                 std_salary=StdDev("wage_annual"),
@@ -186,6 +185,9 @@ def get_job_title_statistics(
 
     # B. Salary Distribution (percentiles)
     salary_percentiles = calculate_salary_percentiles(records)
+    # basic_stats carries no median of its own — this is the same number over the same
+    # rows, so computing it twice would just sort the set twice.
+    basic_stats["median_salary"] = salary_percentiles["p50"]
 
     # C. Top Employers for This Role
     # Note: Records with employer=None or employer.canonical_cluster=None group under
@@ -198,7 +200,7 @@ def get_job_title_statistics(
         )
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             min_salary=Min("wage_annual"),
             max_salary=Max("wage_annual"),
             approval_rate=Count("id", filter=Q(case_status=1)) * 100.0 / Count("id"),
@@ -227,7 +229,7 @@ def get_job_title_statistics(
         records.values("job_title_entity__experience_level")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             min_salary=Min("wage_annual"),
             max_salary=Max("wage_annual"),
         )
@@ -291,7 +293,7 @@ def get_job_title_statistics(
         .values("worksite_city", "worksite_state")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
         )
         .order_by("-count")[:10]
     )
@@ -330,7 +332,7 @@ def get_job_title_statistics(
         )
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             approval_rate=Count("id", filter=Q(case_status=1)) * 100.0 / Count("id"),
         )
         .order_by("-count")
