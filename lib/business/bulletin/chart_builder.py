@@ -35,6 +35,7 @@ def build_multi_class_chart_with_projections(
     country: str,
     category_label: str,
     vqs_predictions: dict | None = None,
+    action_type_label: str | None = None,
 ) -> dict:
     """
     Build Plotly chart data with multiple visa classes, each with projection
@@ -45,6 +46,9 @@ def build_multi_class_chart_with_projections(
         country: Country code (e.g., 'china', 'all')
         category_label: Category display name (e.g., 'Family-Sponsored')
         vqs_predictions: Optional dict of {visa_class_label: {trajectory: [...], maturity_month: ...}}
+        action_type_label: Which chart these cutoffs come from ('Final Action' /
+            'Dates for Filing'). Named in the title, since the two charts give the
+            same category different dates.
 
     Returns:
         Dict with 'chart_json' and 'trace_info' for checkbox controls
@@ -85,7 +89,7 @@ def build_multi_class_chart_with_projections(
         )
 
     # Configure layout
-    _apply_chart_layout(fig, category_label, country)
+    _apply_chart_layout(fig, category_label, country, action_type_label)
 
     return {
         "chart_json": fig.to_json(),
@@ -250,11 +254,21 @@ def _add_priority_date_line(
     )
 
 
-def _apply_chart_layout(fig: go.Figure, category_label: str, country: str) -> None:
+def _apply_chart_layout(
+    fig: go.Figure,
+    category_label: str,
+    country: str,
+    action_type_label: str | None = None,
+) -> None:
     """Apply mobile-optimized layout to chart"""
     country_label = _get_country_label(country)
     # Title on left to avoid modebar overlap
     title_text = f"{category_label} ({country_label})"
+    # The Final Action and Filing charts give one category different dates, so an
+    # unnamed cutoff line reads as contradicting the prediction pages, which are
+    # explicitly headed Final Action.
+    if action_type_label:
+        title_text = f"{title_text} — {action_type_label}"
 
     fig.update_layout(
         title=dict(

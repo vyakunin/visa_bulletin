@@ -182,9 +182,11 @@
                         <span class="badge bg-info text-dark ms-2" style="font-size:0.65em;">Beta</span>{% endif %}
                     </h2>
                     <p class="text-muted small mb-2">
-                        Current priority date cutoffs (Final Action Dates and Dates for Filing) for each
-                        {{ country_display }} {{ category_display }} green card category, with predicted
+                        Current priority date cutoffs from the <strong>{{ action_type_display }}</strong> chart
+                        for each {{ country_display }} {{ category_display }} green card category, with predicted
                         next-bulletin movement and an estimate of when the backlog clears.
+                        The bulletin publishes two charts and they carry different dates for the same
+                        category — switch the Action Type filter above to read the other one.
                     </p>
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0">
@@ -192,7 +194,7 @@
                                 <tr>
                                     <th scope="col">Visa Type</th>
                                     <th scope="col">Bulletin</th>
-                                    <th scope="col">Current Cutoff</th>
+                                    <th scope="col">Current Cutoff ({{ action_type_display }})</th>
                                     {% if show_vqs_column %}
                                     <th scope="col">
                                         Next Bulletin

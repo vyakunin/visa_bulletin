@@ -198,7 +198,7 @@ class TestDashboardTemplateCutoffCell(unittest.TestCase):
 
     def setUp(self):
         self.template = _DASHBOARD_TEMPLATE.read_text()
-        start = self.template.index('<th scope="col">Current Cutoff</th>')
+        start = self.template.index('<th scope="col">Current Cutoff (')
         body = self.template.index("{% for row in unified_rows %}", start)
         self.cell = self.template[body : body + 900]
 
@@ -208,6 +208,36 @@ class TestDashboardTemplateCutoffCell(unittest.TestCase):
     def test_unavailable_is_labelled_unavailable(self):
         self.assertIn("row.cutoff_is_unavailable", self.cell)
         self.assertIn("Unavailable", self.cell)
+
+
+class TestCutoffColumnNamesItsChart(unittest.TestCase):
+    """The column rendered whichever chart the Action Type filter selected and said
+    only "Current Cutoff", so EB-3 ROW read "Current" here and "September 1, 2024" on
+    the prediction pages, which are explicitly headed Final Action.
+
+    The header interpolates action_type_display rather than naming a chart literally:
+    the table follows the filter (dashboard_view defaults it to Dates for Filing), so
+    a hardcoded "(Dates for Filing)" would lie whenever a reader selects Final Action.
+
+    See Notion 3bf62b8d409f81e7bfa7eccb685fb870."""
+
+    def setUp(self):
+        self.template = _DASHBOARD_TEMPLATE.read_text()
+
+    def test_header_names_the_selected_chart(self):
+        self.assertIn(
+            '<th scope="col">Current Cutoff ({{ action_type_display }})</th>',
+            self.template,
+        )
+
+    def test_header_does_not_hardcode_a_chart_name(self):
+        self.assertNotIn("Current Cutoff (Dates for Filing)", self.template)
+        self.assertNotIn("Current Cutoff (Final Action)", self.template)
+
+    def test_intro_does_not_claim_both_charts_are_shown(self):
+        self.assertNotIn(
+            "(Final Action Dates and Dates for Filing)", self.template
+        )
 
 
 if __name__ == "__main__":
