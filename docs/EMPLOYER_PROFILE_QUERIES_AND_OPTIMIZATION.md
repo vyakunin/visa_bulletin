@@ -184,12 +184,14 @@ So effectively:
    - Iterates in Python to fill bins and per-title histograms.
 
 5. **state_dist** – One query:
-   - `records.values('worksite_state').annotate(count=Count('id'), median_salary=Avg('wage_annual')).order_by('-count')[:15]`.
+   - `records.values('worksite_state').annotate(count=Count('id'), median_salary=Median('wage_annual')).order_by('-count')[:15]`.
 
 6. **yoy_trends** – One query:
-   - `records.values('fiscal_year').annotate(count=Count('id'), median_salary=Avg('wage_annual'), approval_rate=...) order_by('fiscal_year')`.
+   - `records.values('fiscal_year').annotate(count=Count('id'), median_salary=Median('wage_annual'), approval_rate=...) order_by('fiscal_year')`.
 
 So on a cold request we have **at least 6 DB round-trips** (plus possibly 2 full scans of the same record set for percentiles and histograms).
+
+`Median` (`lib.business.salary.common_stats`) is `percentile_cont(0.5) WITHIN GROUP`, not `Avg` — every column this site labels "Median Salary" is a median. It sorts each group, so it costs more than the mean it replaced; measured at prod scale the per-employer groups here do not move outside noise, while the market-wide groupings behind `/salaries/` go 225ms->909ms (by state) and 105ms->385ms (by year), both behind the `salary_market_overview` cache. `basic_stats` computes no median of its own — the view assigns it the p50 from `calculate_salary_percentiles` over the same queryset, so that set is sorted once rather than twice.
 
 ---
 
