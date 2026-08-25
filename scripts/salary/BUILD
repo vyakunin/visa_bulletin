@@ -1219,6 +1219,7 @@ py_binary(
     main = "debug_job_title_data.py",
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/salary:common_stats",
         "//models:salary",
         "//models:job_title",
         "//django_config:settings",

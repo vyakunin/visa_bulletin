@@ -5,12 +5,40 @@ Shared salary statistics utilities for profile and landing pages.
 import logging
 from datetime import datetime
 
-from django.db.models import Avg, Count, F, Max, Min, Q, StdDev
+from django.db.models import (
+    Aggregate,
+    Count,
+    F,
+    FloatField,
+    Max,
+    Min,
+    Q,
+    StdDev,
+)
 from django.db.models.functions import TruncQuarter
 
 from models.enums.visa_program import VisaProgram
 
 logger = logging.getLogger(__name__)
+
+
+class Median(Aggregate):
+    """A true median, for the columns this site labels "Median Salary".
+
+    Every one of those columns used to be ``Avg("wage_annual")`` aliased to the key
+    ``median_salary``. Wage distributions are right-skewed, so a mean sits above the
+    median on essentially every group — measured on prod for the senior-software-engineer
+    cluster, mean 141,112 against a p50 of 135,000 over the same 14,614 rows.
+
+    ``percentile_cont`` is an ordered-set aggregate, so it takes WITHIN GROUP rather
+    than ordinary arguments and Django ships no expression for it. Postgres-only, which
+    is what prod and the test database both run.
+    """
+
+    function = "PERCENTILE_CONT"
+    name = "median"
+    template = "%(function)s(0.5) WITHIN GROUP (ORDER BY %(expressions)s)"
+    output_field = FloatField()
 
 # Filing count the base year of a growth percentage must reach before that
 # percentage is worth rendering as a headline.
@@ -46,10 +74,14 @@ GROWTH_MIN_BASE_FILINGS = 10
 
 
 def calculate_market_overview_stats(queryset) -> dict:
-    """Aggregate basic market stats for a salary queryset."""
+    """Aggregate basic market stats for a salary queryset.
+
+    No median here: every caller runs calculate_salary_percentiles over the same
+    queryset, so the caller fills `median_salary` from that p50. A second ordered-set
+    aggregate would sort the whole set again for a number already in hand.
+    """
     return queryset.aggregate(
         total_filings=Count("id"),
-        median_salary=Avg("wage_annual"),
         min_salary=Min("wage_annual"),
         max_salary=Max("wage_annual"),
         std_salary=StdDev("wage_annual"),
@@ -71,7 +103,7 @@ def calculate_yoy_trends(queryset) -> list[dict]:
         queryset.values("fiscal_year")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             approval_rate=Count("id", filter=Q(case_status=1)) * 100.0 / Count("id"),
         )
         .order_by("fiscal_year")
@@ -218,7 +250,7 @@ def calculate_geographic_distributions(
         .values("worksite_state")
         .annotate(
             count=Count("id"),
-            median_salary=Avg("wage_annual"),
+            median_salary=Median("wage_annual"),
             min_salary=Min("wage_annual"),
             max_salary=Max("wage_annual"),
         )

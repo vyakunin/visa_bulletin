@@ -5,9 +5,10 @@ Market overview statistics for salary landing pages.
 from datetime import datetime
 
 from django.core.cache import cache
-from django.db.models import Avg, Count
+from django.db.models import Count
 
 from lib.business.salary.common_stats import (
+    Median,
     apply_program_filter,
     calculate_geographic_distributions,
     calculate_market_overview_stats,
@@ -39,6 +40,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
 
     basic_stats = calculate_market_overview_stats(records)
     salary_percentiles = calculate_salary_percentiles(records)
+    basic_stats["median_salary"] = salary_percentiles["p50"]
     yoy_trends = calculate_yoy_trends(records)
     growth = growth_headline(yoy_trends, start_year)
     geographic_dist, geographic_dist_by_median = calculate_geographic_distributions(
@@ -56,7 +58,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
             "employer__canonical_cluster__canonical_name",
             "employer__canonical_cluster__slug",
         )
-        .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
+        .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:25]
     )
 
@@ -66,7 +68,7 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
             "job_title_entity__canonical_cluster__canonical_title",
             "job_title_entity__canonical_cluster__slug",
         )
-        .annotate(count=Count("id"), median_salary=Avg("wage_annual"))
+        .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:25]
     )
 
