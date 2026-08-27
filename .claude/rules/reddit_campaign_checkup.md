@@ -238,6 +238,13 @@ Standing rules learned from his edits:
   AutoMod-removal history** (e.g. r/greencard, whose v3.1 pattern mandates zero deep links
   in body) get only the bare `visa-bulletin.us` domain in the body, not deep links — flag
   the tension to the user rather than overriding the anti-AutoMod design.
+- **A posted comment quoting a cutoff date goes stale, and that is accepted.** The page
+  moves when a later `prediction_date` row is published; a live comment describing an
+  older forecast then misdescribes it. Quote numbers freely, do not edit posted comments
+  to track the page, and do not raise a drifted comment as a defect — settled 2026-08-27
+  after `p2mjkbm` (r/USCIS) called the October page "nearly as flat" quoting Jan 5 2014
+  against a page carrying Apr 3 2014. The alternatives — link-only, or dating every
+  quote to its edition — were declined; the pitch depends on quoting the number.
 
 ## Origin
 2026-05-30 — user asked for a documented checkup after a live r/IndianH1Bs post shipped
