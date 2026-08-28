@@ -13,6 +13,7 @@ This directory contains all project scripts organized by functionality. All scri
 > | Lab CLS/perf for a URL (PageSpeed Insights, no browser) | `scripts/check_cls.sh` | here |
 > | Field CLS after an ad-density/placement change (live CDP + ad slots, the <0.05 monetization gate) | `scripts/measure_cls.py` | platform |
 > | Traffic share **per section/path** (full-coverage GoatCounter export) | `scripts/gc_section_shares.py` | here |
+> | Was that traffic a PERSON? (referrer mix + automated-client share per surface) | `scripts/gc_traffic_provenance.py` | here |
 > | Traffic **channel/referrer mix** (organic vs Reddit vs direct) | `scripts/channel_mix.py` | platform |
 >
 > SEO docs split the same way: implementation here (`docs/seo/SEO_OPTIMIZATION.md`),
@@ -1318,6 +1319,23 @@ uv run scripts/gc_section_shares.py --window last_28d        # this_7d|prev_7d|c
 uv run scripts/gc_section_shares.py --start 2026-06-01 --end 2026-06-16 --paths
 ```
 Exit 2 if the export is unavailable (does NOT fall back to top-100). For a **known** path set (affiliate SubIds), use the chunked-`include_paths` path in `visa_bulletin_platform/monetization/affiliate_epv_reconcile.py` instead.
+
+### GoatCounter traffic provenance (is it a person?)
+
+**`scripts/gc_traffic_provenance.py`** — weekly referrer mix + automated-client share per surface.
+
+**Purpose:** `gc_section_shares.py` says how much traffic a surface got; this says whether it was human. GoatCounter's `Bot` column is **0 for 100% of rows** on `/job-title/` and `/employer/`, so a headless-Chrome farm that runs the JS beacon is counted as human by every other instrument. Measured in the week to 2026-08-27: the farm fingerprint (System `Linux` + screen `1920,0,1`) was **80% of `/job-title/` and 44% of `/employer/` pageviews, against 1-7% on every human surface** — so a trend read off the unsplit number is a trend in the farm, not in readers. Run this before concluding anything from a profile-surface traffic movement.
+
+**The referrer column is client-set and has been forged here.** In the week to 2026-07-23, `Referrer=Google` on the profile surfaces ran **57x** GSC's clicks for the same pages (2,062 vs 36) while the site-wide ratio was 1.2x (21,237 vs 17,207) — i.e. site-wide Google referrals are real, the profile ones were fabricated, and the farm dropped the forged referrer for internal ones on 2026-07-28/29. Always run the ratio test the script prints (`GC(search) / GSC(clicks)`; ~1 real, >>1 forged) before reading `search` as discovery.
+
+**Usage:**
+```bash
+uv run scripts/gc_traffic_provenance.py                   # profile surfaces, 6 weeks
+uv run scripts/gc_traffic_provenance.py --weeks 9
+uv run scripts/gc_traffic_provenance.py --by-surface      # farm% per surface (validates the fingerprint)
+uv run scripts/gc_traffic_provenance.py --surface all --weeks 4
+```
+`--by-surface` is the honesty check on the fingerprint: a signature that were really just Linux users would be flat across surfaces, not 80/44% on two and 1-7% elsewhere. Re-run it before trusting the split. Exit 2 if the export is unavailable (never falls back to top-100).
 
 ### Daily Checkup — run the report locally
 
