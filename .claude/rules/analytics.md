@@ -19,7 +19,7 @@ Origin: 2026-06-22 — a digest reported "employer profiles −54% impr, job-tit
 
 | Source | What it answers | Auth / location |
 |---|---|---|
-| **GoatCounter** | Bot-filtered pageviews, unique-ish visits, top paths, geo (country), referrers, browser/OS — JS beacon only, no no-JS visits | API token at `~/tokens/goatcounter.token`; dashboard at `https://vyakunin.goatcounter.com/`; playbook at `docs/deployment/goatcounter.md` |
+| **GoatCounter** | Pageviews, unique-ish visits, top paths, geo (country), referrers, browser/OS — JS beacon only, no no-JS visits. **Its `Bot` column is NOT a bot filter you can rely on** — see "Step 8" below; it is 0 for 100% of rows on the profile surfaces, where most traffic is automated | API token at `~/tokens/goatcounter.token`; dashboard at `https://vyakunin.goatcounter.com/`; playbook at `docs/deployment/goatcounter.md` |
 | **Origin nginx logs (`vb_nginx`)** | Every HTTP request including bots, status codes, latency, real IPs via `CF-Connecting-IP`, full UA strings | SSH to the production server, then `docker logs vb_nginx 2>&1`. **Log retention is short** (10MB × 3 files per `daemon.json`); typical span ~18-24h. |
 | **Postgres (visa_bulletin DB)** | Product-side state: bulletin records, employer counts, salary record counts, ingest run history, VQS prediction cache hit rates | `docker exec vb_postgres psql -U visa_bulletin_user visa_bulletin` on the production server |
 | **Cloudflare** | Edge metrics (cache hit %, requests by country, attacks) — via CF dashboard or API. Account id stored at `~/tokens/cloudflare_account_id`, API token at `~/tokens/cloudflare_api_token`. | Not yet wired into daily_checkup MCP — manual lookup if needed. |
@@ -312,6 +312,35 @@ So before reporting **any** GC MoM/WoW delta as a finding:
 Do NOT reason "metric fell + an infra change exists nearby ⇒ the change caused it" (`~/.claude/rules/be_human_in_drafts.md` §14 — inventing mechanism). Check the daily series for a **step at the change date** first; no step means no causal link, whatever the MoM says.
 
 Origin: 2026-07-25 + 2026-07-28 — the morning digest twice pinned a `/salaries` GC collapse on the Cloudflare managed-challenge rule. Both times wrong: the baseline window (Jun 22-28) contained a four-day residential-proxy swarm spike GA4 never saw, and no series showed a step at the rule's 07-04 landing. Full measurement series + the rule's identity: Notion ticket `3a862b8d409f81229f70f95dba21ca53`.
+
+### Step 8 — GC's `Bot` column catches nothing here, and the `Referrer` is client-set
+
+Two independent trust failures in the GoatCounter data, both measured 2026-08-28. Either one
+turns a surface's traffic trend into a trend in somebody's scraper.
+
+**1. The `Bot` column is 0 for 100% of rows on `/job-title/` and `/employer/`.** A headless
+Chrome that executes the JS beacon is indistinguishable from a reader to every instrument we
+have — GC, and anything derived from it (the digest, `gc_section_shares.py`). The working
+fingerprint is `System == "Linux"` AND `Screen size == "1920,0,1"`: single-hit sessions, one
+browser build, hundreds of distinct long-tail profile paths. In the week to 2026-08-27 it was
+**80% of `/job-title/` and 44% of `/employer/` pageviews, against 1-7% on every human surface**
+(predictions 2%, dashboard 2%, home 1%, salaries 7%). That asymmetry is also the honesty check
+on the fingerprint — real Linux users would be flat across surfaces, so if a future run shows it
+flat, the fingerprint has stopped meaning what it meant.
+
+**2. `Referrer` is set by the client and has been forged on these surfaces.** Week to 07-23,
+`/job-title/`: GC `Referrer=Google` 2,062 hits vs GSC 36 clicks on the same pages = **57x**;
+site-wide the same ratio was **1.2x** (21,237 vs 17,207). So the site-wide Google referrer is
+real and tracks GSC, and the profile one was fabricated. The farm dropped the fake Google
+referrer on 2026-07-28/29 and switched to internal `visa-bulletin.us/...` referrers without a
+break in population. **The ratio IS the test** — `GC(Referrer=Google, surface) / GSC(clicks,
+that surface)`: ~1 real organic, >>1 forged. Never read a GC referrer as discovery without it.
+
+**Run `uv run scripts/gc_traffic_provenance.py` before concluding anything from a profile-surface
+movement** (`--by-surface` for the asymmetry check). Worked example of getting this wrong: the
+job-title/employer "discovery halved" investigation, where the entire recorded decline
+(job-title 2,905 -> 1,068/wk) was the farm decaying while the human series stayed flat at
+~210-250/wk — ticket `3c262b8d409f81599488f58f35897866`.
 
 ## Rule: Check This Inventory Before Answering "Do We Have X?"
 
