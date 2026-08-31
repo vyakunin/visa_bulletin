@@ -161,6 +161,13 @@ pytest_py_test(
 )
 
 pytest_py_test(
+    name = "test_template_comment_guard",
+    size = "small",
+    srcs = ["test_template_comment_guard.py"],
+    data = ["//webapp:templates"],
+)
+
+pytest_py_test(
     name = "test_chart_space_reservation_guard",
     size = "small",
     srcs = ["test_chart_space_reservation_guard.py"],
