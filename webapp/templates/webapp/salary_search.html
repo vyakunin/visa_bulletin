@@ -230,11 +230,13 @@
                     {% endwith %}
                 {% endwith %}
                 {% include "webapp/includes/stat_card.html" with value=market_stats.salary_percentiles.p50|default:0|floatformat:0|intcomma value_class="text-success" label="Median Salary" subtext="All Employers" prefix="$" %}
-                {# Same base-year floor as the profile tiles: a growth percentage
-                   divides by its base year, so below GROWTH_MIN_BASE_FILINGS
-                   filings it is base noise. Site-wide the base is six figures, so
-                   this gate is never expected to bite here — it is on so the class
-                   is closed at every surface rather than at the ones that need it. #}
+                {% comment %}
+                Same base-year floor as the profile tiles: a growth percentage
+                divides by its base year, so below GROWTH_MIN_BASE_FILINGS
+                filings it is base noise. Site-wide the base is six figures, so
+                this gate is never expected to bite here — it is on so the class
+                is closed at every surface rather than at the ones that need it.
+                {% endcomment %}
                 {% if market_stats.show_yoy_growth %}
                     {% with start_str=market_stats.growth_start_year|stringformat:"s" end_str=market_stats.growth_end_year|stringformat:"s" %}
                         {% with base_str=market_stats.growth_base_filings|intcomma final_str=market_stats.growth_end_filings|intcomma %}
