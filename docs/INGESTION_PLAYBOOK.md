@@ -152,6 +152,31 @@ bazel run //scripts/ingest:run_pipeline -- discover
 bazel run //scripts/ingest:run_pipeline -- discover-and-ingest
 ```
 
+**dol.gov 403s a plain download — the file comes through the debug Chrome.** The
+DOL disclosure files sit behind the same Akamai wall as travel.state.gov, so
+`discover`'s own fetch and any `curl` get a 477-byte HTML 403 saved under the
+`.xlsx` name. Fetch through the browser on :9222 (navigate to
+`https://www.dol.gov/agencies/eta/foreign-labor/performance` first, then let
+Chrome download the link), drop the file into `hosting/staging/data/salary/dol_data/`
+— which the staging container mounts at `/app/data/...` — and point the source's
+`local_file_path` there before running it. Every `local_file_path` inherited from
+before the Lightsail retirement names a path that no longer exists, so a re-ingest
+always repoints or re-fetches.
+
+**A source whose only runs FAILED is invisible to `--all-pending`, so a broken
+file is never retried.** `discover-and-ingest` and `refresh_staging.sh
+discover` both exclude it, and the latter then reports "actionable pending DOL
+sources: 0" while the data is missing. That is how PERM FY2025 stayed empty for
+seven months after a February parser gap (tracker 3cd62b8d409f811189f8c568f9388de9).
+List failures explicitly before trusting a zero:
+
+```bash
+# what failed and was never re-run
+bazel run //scripts/ingest:run_pipeline -- run --retry-failed --domain dol
+# or target one file after repointing it
+bazel run //scripts/ingest:run_pipeline -- run --source-id <id>
+```
+
 ### Monitoring Long-Running Ingests
 
 For files with 100k+ records:
