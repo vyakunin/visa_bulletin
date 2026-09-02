@@ -100,19 +100,40 @@ at the **homepage**. So when a page is not indexed, check the inbound links befo
 touching the sitemap — and never read "it's in the sitemap" as "Google will find
 it".
 
-**Estimate the drop from measured data, never from a rule of thumb.** Query prod:
-`SELECT publication_date, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
-Recent cadence is the 12th–19th of the prior month (Jul→Jun 16, Jun→May 13,
-May→Apr 16, Apr→Mar 17, Mar→Feb 19, Feb→Jan 12). Re-estimate every cycle; the
-promo window moves with it.
+**Read the band off the cadence ticket first; recompute only to CHECK it.** The
+measured band lives on ticket `39962b8d409f81f1b900e2b2f247006d`, which is the
+authority for the cycle. Three consecutive runs (2026-09-01, the 09-02 digest, the
+09-02 readiness inject) each re-derived a band from `bulletin` without reading it
+and each got a different answer — that is a class, not a slip. If your recomputed
+number disagrees with the ticket, say so ON the ticket rather than quietly
+preferring your own.
 
-**`released_on` can be NULL — do not substitute `fetched_at` for it.** The
-Aug-2026 row has no `released_on` (the bridge did not record one) and a
-`fetched_at` of Jul 20, which is when we ingested, not when State published; the
-GoatCounter daily series pins the actual release at ~Jul 15-16 (pageviews 12.3k /
-15.4k / 14.7k on Jul 15/16/17 against a ~2k baseline). Reading `fetched_at` as the
-release date pushes the estimate ~4 days late and shortens the promo lead by that
-much. When `released_on` is NULL, date the drop from the traffic spike instead.
+The check, against prod:
+`SELECT publication_date, fetched_at, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
+Recent editions release on the 12th–21st of the prior month and the spread is
+real — the Sep-2026 edition landed on day 21, the latest in the series, while the
+trailing-12 median sits near day 16. Re-estimate every cycle; the promo window
+moves with it.
+
+**`released_on` can be NULL — do not substitute `fetched_at` for it, and know
+that two code paths already do.** Both the Aug-2026 and Sep-2026 rows have no
+`released_on` (the minipc bridge records none). `fetched_at` is when WE ingested,
+not when State published, and the bias is always LATE because a bridge can only
+fetch after a release: Aug-2026 reads Jul 20 against an actual ~Jul 15-16
+(GoatCounter daily pageviews 12.3k / 15.4k / 14.7k on Jul 15/16/17 vs a ~2k
+baseline), and Sep-2026 reads Aug 22 against an actual Aug 21 22:00-22:30 ET.
+
+The substitution is not just a reading habit — it is a live defect, tracked as
+`3cf62b8d409f81fbaf0be401b573270b`:
+`lib/business/bulletin/release_schedule.py:_record_from_bulletin` falls back to
+`fetched_at.date()`, so the public `/when-is-the-next-visa-bulletin/` estimator
+already uses it; and `scripts/bulletin/backfill_release_dates.py` would WRITE it
+(dry-run 2026-09-02 resolved both rows from source `live`, Wayback contributing
+nothing). **Do not run that backfill without `--dry-run` against recent rows** —
+leaving a row NULL is strictly better than writing a known-late value, which is
+the script's own stated philosophy. When `released_on` is NULL, bound the release
+from the bridge log's discover-absent/discover-present bracket, or from the
+GoatCounter daily spike.
 
 **Keep the cadence armed durably, not in a session.** Each cycle schedules the
 next one via the `scheduled_actions` MCP: a `visa_bulletin` readiness inject ~10
