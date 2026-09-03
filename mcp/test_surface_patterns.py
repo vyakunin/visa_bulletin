@@ -178,7 +178,9 @@ _CLASSIFIER_CASES = [
     "/es/priority-date/eb2/india/", "/estimate", "/priority-date", "/priority-date/",
     "/priority-date/eb2/india/", "/priority-date-calculator/", "/h1b-salary",
     "/h1b-salary/", "/h1b-salary/nurse/", "/h1b-salary/google-llc/engineer/",
-    "/h1b-sponsors", "/h1b-sponsors/in/ny/", "/faq", "/faq/", "/methodology",
+    "/h1b-sponsors", "/h1b-sponsors/in/ny/", "/h1b-lottery", "/h1b-lottery/",
+    "/h1b-lottery/odds/", "/h1b-lottery/second-round/",
+    "/faq", "/faq/", "/methodology",
     "/corrections", "/ai-citation", "/some-random-thing/", "/privacy/",
 ]
 

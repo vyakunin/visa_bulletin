@@ -309,6 +309,10 @@ SURFACE_PATTERNS: list[tuple[str, re.Pattern]] = [
     # Top-H-1B-sponsors leaderboards (`/h1b-sponsors/in/<state>/`,
     # `/h1b-sponsors/<role>/`).
     ("h1b_sponsors", re.compile(r"^/h1b-sponsors(/|$)")),
+    # H-1B cap ("lottery") season pages: hub `/h1b-lottery/`, `/h1b-lottery/odds/`,
+    # `/h1b-lottery/second-round/` (webapp/urls.py). Shipped without a bucket, so
+    # they landed in `other` — which is the one row that cannot show a MoM.
+    ("h1b_lottery", re.compile(r"^/h1b-lottery(/|$)")),
     # Flat informational routes (webapp/urls.py). `methodology`, `corrections`,
     # `ai-citation` and `privacy` are siblings of faq/about/contact — low-traffic
     # but they are real pages, so they belong here rather than in `other`.
@@ -451,6 +455,7 @@ SURFACE_LABELS: dict[str, str] = {
     "priority_date":       "Priority-date pSEO `/priority-date/<eb>/<country>/` + hub/rollup/calculator",
     "occupation_salary":   "{occupation} H-1B-salary pSEO `/h1b-salary/<...>`",
     "h1b_sponsors":        "Top-H-1B-sponsors leaderboards `/h1b-sponsors/<state|role>/`",
+    "h1b_lottery":         "H-1B lottery season `/h1b-lottery/` + odds/second-round",
     "static_pages":        "Static pages `/faq`, `/about`, `/contact`, `/methodology`, `/corrections`, `/ai-citation`",
     "api":                 "API `/api/<...>`",
     "static_meta":         "Static meta (robots/sitemap/favicon)",
@@ -2668,6 +2673,7 @@ TOP_PROPERTY_SURFACES = [
     "priority_date",
     "occupation_salary",
     "h1b_sponsors",
+    "h1b_lottery",
     "spanish",
     "blog",
     "static_pages",
