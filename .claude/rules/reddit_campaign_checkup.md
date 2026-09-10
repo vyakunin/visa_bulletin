@@ -1,5 +1,20 @@
 # Reddit Promo Campaign Checkup
 
+## ⏸ THE CAMPAIGN IS PAUSED — monthly promos are OFF indefinitely (2026-09-10)
+
+Vladimir: *"mark in rules/tix etc that monthly promos are also on pause – I won't
+do them."* So do **not** run this checkup on a schedule, draft a pre-drop seed,
+schedule a post, or surface an unarmed/unscheduled promo as a finding — nothing
+here is outstanding work. It is a standing decision, separate from the
+2026-08-25 project pause, and it does not lapse when that pause lifts; resuming
+needs his word.
+
+Everything below stays as the playbook for **when he asks**, and for the one thing
+still worth doing unprompted: answering a comment on a post that is already live,
+if he asks for it. `visa_bulletin`'s `seo_publish.md` carries the surviving half
+of the cadence — the page must be live, indexed and factually correct, and only a
+site problem that wants a fix gets reported.
+
 How to "check in on the Reddit posts" for the visa-bulletin.us promo campaign. The
 campaign posts from the Reddit account **CivilCandidate1349** via the `reddit_post`
 MCP / `submit_reddit_via_browser.py`, scheduled through launchd. Drafts + the

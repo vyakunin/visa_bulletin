@@ -61,14 +61,34 @@ post-launch counterpart to `docs/seo/SEO_OPTIMIZATION.md`.
    Notion ticket, and GSC-measure clicks/impressions/position after Google indexes
    (days→weeks). See `~/.claude/rules/revenue_growth_state_docs.md`.
 
-## Prediction pages ship on a PRE-drop cadence — live, indexed AND promoted ~1 week BEFORE the bulletin drops
+## Prediction pages ship on a PRE-drop cadence — live, indexed and CORRECT before the bulletin drops
+
+### The promo half is OFF, indefinitely — do not arm one, do not report one missing
+
+**Monthly promos are paused: Vladimir will not do them** (2026-09-10 — *"mark in
+rules/tix etc that monthly promos are also on pause – I won't do them"*). That is
+a standing decision, not the 2026-08-25 project pause it arrived alongside, and it
+does **not** lapse when that pause lifts. Resuming needs his word.
+
+So, every cycle, from now on:
+
+- **Do not arm a promo inject, draft a Reddit seed, or queue a drop-watcher.**
+- **An unarmed promo is the expected state — never a finding.** Do not report it,
+  do not chase it, do not put it in a digest or a ticket STATUS as an open item.
+  The three September runs that reported it daily were following the old rule; the
+  rule is what changed.
+- **The one thing worth bringing up is the site being WRONG and wanting a fix** —
+  including the CONTENT of a prediction page. A clean check is a no-op, not a
+  report.
+
+What survives is the page half, which is cheap and mostly automatic.
 
 The next-month predictions page (`/predictions/<month>-<year>/`) is the site's
 biggest recurring traffic event, and its demand curve **peaks in the days before
 the State Department publishes**, not after. So the page must already be live,
-indexed and promoted **~1 week ahead of the expected drop** — Google needs that
-lead time to rank it before the anticipation wave arrives. Publishing at the drop
-moment is too late: the wave finds a page Google has not yet learned to trust.
+indexed and factually right **before the drop** — the anticipation wave lands on
+whatever is there, and a discoverable page that is wrong is worse than one Google
+has not found yet.
 
 **The page AND its internal links are automatic.** `scripts/cron/refresh_bulletin.py`
 publishes the following month's predictions the moment the current bulletin
@@ -87,8 +107,14 @@ So the work that is NOT automatic, and that this cadence exists to force:
 1. **Indexing verify** — `gsc_inspect_url` the page. Not indexed → submit the
    sitemap AND re-render it (item 1 above; the sitemap is a static file, a code
    deploy does not refresh it).
-2. **Promotion** — the Reddit seed, owned by `visa_bulletin_platform` (Tier-3,
-   needs an explicit go). Timed to land ~1 week before the drop.
+2. **Correctness against the latest bulletin** — read the rendered cells, not just
+   the HTTP status. On 2026-08-10 `/predictions/september-2026/` served EB-5 as
+   Current across the board while India was actually Unavailable, and Google had
+   been invited to crawl that version. A 200 with a populated table is shape, not
+   truth: compare the baseline cells against the published bulletin's own values
+   and check each forecast moves forward from its baseline. This is now the
+   cadence's main reason to exist, and it is the one class of finding that gets
+   surfaced.
 
 **A sitemap entry is a hint; an inbound link from an indexed page is the discovery
 path.** On 2026-08-03 `/predictions/september-2026/` was live, self-canonical, and
@@ -112,7 +138,7 @@ The check, against prod:
 `SELECT publication_date, fetched_at, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
 Recent editions release on the 12th–21st of the prior month and the spread is
 real — the Sep-2026 edition landed on day 21, the latest in the series, while the
-trailing-12 median sits near day 16. Re-estimate every cycle; the promo window
+trailing-12 median sits near day 16. Re-estimate every cycle; the check window
 moves with it.
 
 **`released_on` can be NULL — do not substitute `fetched_at` for it, and know
@@ -136,10 +162,12 @@ from the bridge log's discover-absent/discover-present bracket, or from the
 GoatCounter daily spike.
 
 **Keep the cadence armed durably, not in a session.** Each cycle schedules the
-next one via the `scheduled_actions` MCP: a `visa_bulletin` readiness inject ~10
-days before the expected drop, and a `visa_bulletin_platform` promo inject ~2 days
-after it. A cycle that ends without the next one queued is the failure mode — the
-work is invisible until the wave has already passed.
+next one via the `scheduled_actions` MCP: a single `visa_bulletin` readiness
+inject ~10 days before the expected drop. There is no second inject — the
+`visa_bulletin_platform` promo half was cancelled 2026-08-25 and retired
+2026-09-10 (above); do not re-add it. A cycle that ends without the readiness
+inject queued is the failure mode, since a wrong page is invisible until the wave
+has already hit it.
 
 ### The URL-scheme trap — a numeric-slug 404 is NOT a missing page
 
@@ -152,6 +180,13 @@ not-yet-official month is correct behavior. (Cost a false "page not published"
 finding in the 2026-07-29 digest.)
 
 ## Origin
+2026-09-10 — the promo half retired. The October seed had sat unarmed since the
+2026-08-17 pause and every daily run surfaced it as the cadence's open item, right
+up to the day the drop band opened. Vladimir: *"mark in rules/tix etc that monthly
+promos are also on pause – I won't do them. Bring up only if something on site it
+wrong and wants a fix (including content of prediction pages)."* The cadence kept
+its page half and lost its reporting default: a clean check says nothing.
+
 2026-07-29 — Vladimir, on a digest that flagged the September page as unpublished:
 *"we discussed before we want this page to be fresh for pre-drop cycle so google
 likes it, so it has to be published and promoted ~1 week before expected drop."*
