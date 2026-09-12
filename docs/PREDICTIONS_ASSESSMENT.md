@@ -1915,17 +1915,42 @@ historical end-of-FY U→reset events** (EB-1..5 × ROW/China/India/Mexico/Phili
 - **A calibrated 80% CI is not achievable**: empirical-percentile band coverage is
   **25-37%** (vs 75-85% target). The reset is genuinely regime-dependent (the 2007
   numbers-fiasco recovery vs a normal annual exhaustion vs the 2025 EB-4 run-out),
-  and median |reset move| is 92-273d. → **we present the pre-U reference + a
-  qualitative historical range, and deliberately publish no CI or precise reset
-  date.** Anchoring a wrong precise date would erode exactly the credibility the
-  §5/6 presentation fixes protect.
+  and median |reset move| is 92-273d. → **absent a published floor (below), we
+  present the pre-U reference + a qualitative historical range, and deliberately
+  publish no CI or precise reset date.** Anchoring a wrong precise date would erode
+  exactly the credibility the §5/6 presentation fixes protect.
 - EB-2 India ground truth (the two same-series precedents disagree, illustrating
   the irreducible uncertainty): **2006** reset ≈ flat (2003-01 → 2003-01);
   **2012** retrogressed ~3 years (pre-U 2007-08 → reset 2004-09).
 
+### Published floors — the one reset number this design does publish
+State sometimes bounds a reset in a bulletin's notes. The July 2026 bulletin on
+EB-2 India: *"expected to advance to at least July 15, 2014."* Such statements are
+parsed into `models.PublishedFloor` and applied by **truncating** the precedent
+pool — every precedent outcome below the floor moves up to it and the point cannot
+sit below it, while the spread above it stays whatever the precedents supported.
+Truncation rather than a shift, because the statement bounds the outcome from below
+and says nothing about the upside; a floor that does not bind changes nothing.
+Walk-forward safe: a floor is invisible until its source bulletin has published
+(`PublishedFloor.objects.floor_for`).
+
+Measured on EB-2 India October 2026: the delta band collapses from -2261..+335 days
+to **+317..+335** (Jul 15 – Aug 2, 2014), 40 of 45 precedents below the floor. Note
+the floor sits ABOVE the anchor — June 2026 retrogressed final action to 2013-09-01
+before it went U, so State's statement is a return to the May 2026 level (+317d).
+Publishing the anchor alone understated it.
+
+The backtest above does not bear on a floor — it is State's own statement, not an
+estimate fitted to 2-3 precedents — so a floor IS published as the forecast, while
+the anchor and the band stay a reference. `october_reset.floor_for_target` maps one
+onto a target month: a forecast for the reset October and after, and for an earlier
+month the category is still Unavailable and the cell stays "Unavailable". The row
+keeps `predicted_date=None` either way, so a bound never enters MAE or the
+calibration pool (every consumer there selects `predicted_date__isnull=False`).
+
 ### Current Status
 Live design decision: **structural statement + honest uncertainty, no fitted
-reset date.** Ships with the forecast-page render + unit tests
+reset date — except a floor State has published, which is shown as a bound.** Ships with the forecast-page render + unit tests
 (`tests/test_october_reset.py`, `tests/test_prediction_month_forecast.py::
 test_unavailable_shows_october_reset_framing`). The methodology/blog surface still
 describes the ensemble; the U-explainer is a forecast-page feature, not a scored
@@ -1937,6 +1962,16 @@ model. Iteration runner for all VQS backtests against the staging (prod-copy) DB
 `/predictions/august-2026/` — EB-2 India final-action renders the "Why is EB-2
 India Unavailable?" alert + Oct-1 structural reset framing. Predictions
 regenerated on prod post-cutover so live data == committed-code output.
+
+**FLOOR PUBLISHED AS THE CELL 2026-09-12** (image `staging-9633832`, zero-downtime
+`cutover.sh --code`, strategy `staging`, vb never 502'd).
+`/predictions/october-2026/` renders "At least July 15, 2014" for EB-2 India where
+it read "Unavailable" while the same page's explainer said a cutoff returns Oct 1.
+No republish: the winning October row already stored the floor, so the target-month
+mapping is a read. EB-5 Unreserved India has no published floor (precedents spanning
+Feb 2018 – Mar 2023), so its cell stays Unavailable — and its uncertainty paragraph
+now renders at all: the explainer was gated on the four headline cards, which kept a
+non-headline series' caveat off the page entirely.
 
 ---
 
