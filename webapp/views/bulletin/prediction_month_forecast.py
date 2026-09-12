@@ -125,6 +125,16 @@ def _fmt(d: date | None) -> str:
     return d.strftime("%B %-d, %Y") if d else "—"
 
 
+def _sentence_case(text: str) -> str:
+    """Upper-case the first character and leave the rest alone.
+
+    ``str.capitalize`` lower-cases everything after it, which turned "the EB-2
+    India Final Action Date" into "The eb-2 india final action date" — in the
+    visible FAQ answer and in the FAQPage JSON-LD.
+    """
+    return text[:1].upper() + text[1:]
+
+
 def _parse_iso(value: str | None) -> date | None:
     """An ISO date out of stored JSON, or None for anything unparseable."""
     try:
@@ -447,7 +457,7 @@ def _faq(month_label: str, cards: list[dict]) -> list[dict]:
         # the difference between this page saying "Unavailable" to the largest
         # organic audience it gets all year and saying what State said.
         bound_a = (
-            f"{_EB2_SUBJECT.capitalize()} is Unavailable — the category reached "
+            f"{_sentence_case(_EB2_SUBJECT)} is Unavailable — the category reached "
             f"its fiscal-year annual limit — and a cutoff returns on October 1, "
             f"{eb2_fa.reset_year}, when the new fiscal year's visa numbers become "
             f"available. The State Department has said it expects the date to "
@@ -461,8 +471,8 @@ def _faq(month_label: str, cards: list[dict]) -> list[dict]:
                 "q": f"Will EB-2 India advance in the {month_label} Visa Bulletin?",
                 "a": bound_a,
                 "a_html": bound_a.replace(
-                    _EB2_SUBJECT.capitalize(),
-                    f'<a href="{_EB2_INDIA_URL}">{_EB2_SUBJECT.capitalize()}</a>',
+                    _sentence_case(_EB2_SUBJECT),
+                    f'<a href="{_EB2_INDIA_URL}">{_sentence_case(_EB2_SUBJECT)}</a>',
                 ),
             }
         )

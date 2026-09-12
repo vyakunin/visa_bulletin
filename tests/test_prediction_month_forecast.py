@@ -474,6 +474,14 @@ class TestPredictionMonthForecastPublishedFloorCell(TestCase):
         # ...and does not claim the model forecast it.
         self.assertNotIn("Our model forecasts the EB-2 India Final Action Date", body)
 
+    def test_faq_subject_keeps_its_capitals(self):
+        # str.capitalize() lower-cases the tail, so the sentence-opening subject
+        # shipped as "The eb-2 india final action date" — in the visible answer
+        # AND in the FAQPage JSON-LD, which is what Google reads.
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn("The EB-2 India Final Action Date is Unavailable", body)
+        self.assertNotIn("eb-2 india final action date", body)
+
     def test_page_renders_a_bound_from_a_row_carrying_no_predicted_date(self):
         # What this pins: the page renders a bound WITHOUT the row asserting a
         # cutoff, so nothing it displays can reach accuracy scoring — every
