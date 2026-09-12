@@ -155,6 +155,26 @@ class TestPredictionMonthForecast(TestCase):
             },
         )
 
+        # EB-5 India: Unavailable, NOT a headline card, and NOT floored — the
+        # shape the card-gated explainer used to drop entirely. Its cell says
+        # "Unavailable", which is the state; the caveat is the paragraph.
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.INDIA.value, "5th", None,
+            model_name="unavailable",
+            explanation_markdown=_UNFLOORED_EXPLAINER.replace(
+                "EB-2 China", "EB-5 India"
+            ).replace("EB-3 India in 2007", "EB-3 Philippines in 2007"),
+            expert_predictions={
+                "october_reset": {
+                    "is_unavailable": True,
+                    "reset_year": 2026,
+                    "pre_u_cutoff": "2013-09-01",
+                    "method": "anchor",
+                    "diagnostics": {"p10_delta_days": -1247},
+                }
+            },
+        )
+
         # EB-2 Other Countries (NOT a modeled series): a persistence baseline with
         # a real predicted date, so the grid tags it with the "baseline" marker.
         _actual(self.latest, ActionType.FINAL_ACTION.value, Country.ALL.value, "2nd", date(2024, 1, 1))
@@ -223,6 +243,16 @@ class TestPredictionMonthForecast(TestCase):
         self.assertIn("<strong>at least July 15, 2014</strong>", body)
         self.assertNotIn("**", body)
 
+    def test_floor_for_an_earlier_target_month_is_prose_only(self):
+        # EB-3 China carries a floor for the October 2026 reset, but this page is
+        # the JULY 2026 bulletin — a month in which the category is still
+        # Unavailable. The floor belongs to a later bulletin, so it stays in the
+        # explainer and must NOT become the cell. Same stored row, different
+        # month: october_reset.floor_for_target is what tells them apart.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertNotIn("At least July 15, 2014", body)
+        self.assertIn("Stays Unavailable through September 2026", body)
+
     def test_reset_prose_is_not_restated_in_template_markup(self):
         # The boundary this fix must not over-reach into, and the defect that made it
         # necessary: the template used to emit "(EB-2 India reset about three years
@@ -239,6 +269,21 @@ class TestPredictionMonthForecast(TestCase):
         # asserted the reset date was uncertain even for a series State had floored.
         self.assertNotIn("reset date uncertain", body)
         self.assertNotIn("Last cutoff before Unavailable:", body)
+
+    def test_unfloored_non_headline_series_still_gets_its_caveat(self):
+        # EB-5 India is Unavailable with no published floor, so the only honest
+        # thing to say is that the reset target is uncertain. That paragraph is
+        # written and stored; gating the explainer on the four headline cards is
+        # what kept it off the page.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertIn("EB-5 India is Unavailable", body)
+        self.assertIn("EB-3 Philippines in 2007", body)  # its own pooled precedent
+
+    def test_each_reset_note_is_rendered_once(self):
+        # EB-2 China is both a headline card and a grid cell; its paragraph is one
+        # note, not two stacked alerts.
+        body = self.client.get("/predictions/july-2026/").content.decode()
+        self.assertEqual(body.count("<strong>EB-2 China is Unavailable</strong>"), 1)
 
     def test_card_keeps_the_structural_reset_line(self):
         # The boundary in the other direction: dropping the prose from the card must
@@ -354,3 +399,103 @@ class TestPredictionMonthForecast(TestCase):
         resp = self.client.get("/predictions/employment_based/")
         self.assertIn(resp.status_code, (301, 302))
         self.assertIn("/predictions/june-2026/", resp["Location"])
+
+
+class TestPredictionMonthForecastPublishedFloorCell(TestCase):
+    """The October page for a category State has floored.
+
+    The defect: the headline cell read "Unavailable" while the same page's own
+    explainer said a cutoff returns on October 1 — a contradiction in two places
+    a reader sees together, on the biggest organic audience the site takes all
+    year. Where State published a bound for that reset, the cell is the bound.
+
+    Same stored row as the July fixture above, read on a later page: the floor is
+    reset-scoped, so which months it describes is a rendering question, not a
+    second thing to store. The bound is NOT a point estimate — the row keeps
+    predicted_date NULL,
+    so it never reaches accuracy scoring or the calibration pool (every consumer
+    there filters predicted_date__isnull=False). The backtest is why — anchor MAE
+    261.8d and an 80% band covering 25-37% refute a fitted October point.
+    """
+
+    def setUp(self):
+        self.latest = Bulletin.objects.create(publication_date=date(2026, 9, 1))
+        # Baseline: EB-2 India is Unavailable in the September edition.
+        VisaCutoffDate.objects.create(
+            bulletin=self.latest, visa_category="employment_based", visa_class="2nd",
+            action_type=ActionType.FINAL_ACTION.value, country=Country.INDIA.value,
+            cutoff_value="U", cutoff_date=None, is_current=False, is_unavailable=True,
+        )
+        self.pb = PredictedBulletin.objects.create(
+            target_bulletin_month=date(2026, 10, 1),
+            prediction_date=date(2026, 9, 30),
+        )
+        _predict(
+            self.pb, ActionType.FINAL_ACTION.value, Country.INDIA.value, "2nd", None,
+            model_name="unavailable",
+            explanation_markdown=_FLOORED_EXPLAINER.replace("EB-3 China", "EB-2 India"),
+            expert_predictions={
+                "october_reset": {
+                    "is_unavailable": True,
+                    "reset_year": 2026,
+                    "pre_u_cutoff": "2013-09-01",
+                    "method": "anchor_floored",
+                    "floor": "2014-07-15",
+                    "n_precedents": 45,
+                }
+            },
+        )
+
+    def test_cell_is_the_bound_not_unavailable(self):
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn("At least July 15, 2014", body)
+        # The word still appears in the explainer prose ("...is Unavailable — it
+        # reached its annual limit"), so assert on the CELL's own markup instead:
+        # the Unavailable tooltip is what a bound cell must not carry.
+        self.assertNotIn("This category hit its fiscal-year annual limit; new visa", body)
+
+    def test_state_s_own_sentence_survives_the_cell_change(self):
+        # The explainer alert used to be gated on is_unavailable. A bound cell is
+        # not "unavailable", so gating it that way would have taken State's
+        # sentence off the page in the act of publishing State's number.
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn("notes say the date is expected to advance to", body)
+        self.assertIn("the date can land below it", body)
+
+    def test_card_says_where_the_number_came_from(self):
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn("floor the State Department published", body)
+        self.assertIn("October 1, 2026", body)
+
+    def test_faq_answers_with_the_bound(self):
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn("Will EB-2 India advance in the October 2026 Visa Bulletin?", body)
+        self.assertIn("expects the date to advance to at least July 15, 2014", body)
+        # ...and does not claim the model forecast it.
+        self.assertNotIn("Our model forecasts the EB-2 India Final Action Date", body)
+
+    def test_page_renders_a_bound_from_a_row_carrying_no_predicted_date(self):
+        # What this pins: the page renders a bound WITHOUT the row asserting a
+        # cutoff, so nothing it displays can reach accuracy scoring — every
+        # consumer there selects on predicted_date__isnull=False, the query run
+        # below. It does not pin publish_predictions' own write; that branch sets
+        # predicted_date=None for every Unavailable row and is where a future
+        # change would have to break the contract.
+        row = PredictedCutoff.objects.get(
+            bulletin=self.pb, visa_class="2nd", country=Country.INDIA.value,
+            action_type=ActionType.FINAL_ACTION.value,
+        )
+        self.assertIsNone(row.predicted_date)
+        self.assertEqual(row.model_name, "unavailable")
+        self.assertFalse(
+            PredictedCutoff.objects.filter(
+                bulletin=self.pb, predicted_date__isnull=False
+            ).exists()
+        )
+
+    def test_returning_visitor_sees_a_date_not_an_unavailable(self):
+        # The retention baseline: a visitor who saw "Unavailable" last month must
+        # get the "now shows a date" banner, keyed on the bound.
+        body = self.client.get("/predictions/october-2026/").content.decode()
+        self.assertIn('"s": "date"', body)
+        self.assertIn('"d": "2014-07-15"', body)

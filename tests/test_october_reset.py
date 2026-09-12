@@ -21,6 +21,7 @@ from lib.business.vqs.october_reset import (
     estimate_from_precedents,
     estimate_october_reset,
     find_reset_events,
+    floor_for_target,
 )
 from models.bulletin import Bulletin
 from models.enums.country import Country
@@ -159,3 +160,37 @@ class TestOctoberReset(TestCase):
         self.assertNotIn("deepest", text)
         self.assertNotIn("EB-3 China", text)
         self.assertIn("rough guess", text)
+
+
+class TestFloorForTarget(TestCase):
+    """Which target months a published floor is a forecast FOR.
+
+    A floor bounds the October reset, so it is reset-scoped rather than
+    month-scoped. Showing it as the cell for an earlier month would forecast a
+    date for a bulletin in which the category is still Unavailable — the mirror
+    of the defect this mechanism fixes.
+    """
+
+    FLOOR = date(2014, 7, 15)
+
+    def test_reset_month_takes_the_floor(self):
+        self.assertEqual(floor_for_target(self.FLOOR, 2026, date(2026, 10, 1)), self.FLOOR)
+
+    def test_month_after_the_reset_takes_the_floor(self):
+        self.assertEqual(floor_for_target(self.FLOOR, 2026, date(2026, 11, 1)), self.FLOOR)
+
+    def test_month_before_the_reset_does_not(self):
+        # September 2026 is still inside the exhausted fiscal year: the cell is
+        # Unavailable and the floor belongs to a later bulletin.
+        self.assertIsNone(floor_for_target(self.FLOOR, 2026, date(2026, 9, 1)))
+
+    def test_a_later_fiscal_year_does_not_reach_back(self):
+        self.assertIsNone(floor_for_target(self.FLOOR, 2027, date(2026, 10, 1)))
+
+    def test_no_floor_is_no_bound(self):
+        self.assertIsNone(floor_for_target(None, 2026, date(2026, 10, 1)))
+
+    def test_no_reset_year_is_no_bound(self):
+        # Without a reset year there is no October to compare the target against,
+        # so the floor cannot be placed on a month at all.
+        self.assertIsNone(floor_for_target(self.FLOOR, None, date(2026, 10, 1)))

@@ -104,6 +104,7 @@ py_library(
         ":retention",
         "//django_config:cache_utils",
         "//lib/business/bulletin:eb_series",
+        "//lib/business/vqs:october_reset",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:vqs",
