@@ -34,6 +34,7 @@ from django.utils.safestring import mark_safe
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.eb_series import EB_SHORT_LABELS, series_key_for_label
+from lib.business.vqs.october_reset import floor_for_target
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
@@ -112,10 +113,24 @@ class _Forecast:
     # precedent render as every series' history.
     reset_year: int | None = None
     reset_explainer_html: str | None = None
+    # A lower bound the State Department published for the reset, on a page whose
+    # month it describes (october_reset.floor_for_target maps the reset-scoped
+    # floor onto this target). It is NOT predicted_date: the row carries no point
+    # estimate, so the bound never reaches accuracy scoring, and the cell reads
+    # "At least <date>" rather than asserting a cutoff.
+    lower_bound: date | None = None
 
 
 def _fmt(d: date | None) -> str:
     return d.strftime("%B %-d, %Y") if d else "—"
+
+
+def _parse_iso(value: str | None) -> date | None:
+    """An ISO date out of stored JSON, or None for anything unparseable."""
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
 
 
 _BOLD = re.compile(r"\*\*([^*]+)\*\*")
@@ -181,7 +196,11 @@ def _forecast_from_row(
     current: VisaCutoffDate | None,
     visa_class: str = "",
     country: int = 0,
+    *,
+    target: date,
 ) -> _Forecast:
+    # target is the month this page forecasts; it decides whether a reset-scoped
+    # published floor is this row's forecast (october_reset.floor_for_target).
     """Build a display forecast from a stored prediction + the current actual baseline."""
     baseline = _is_baseline(visa_class, country)
     if row is None:
@@ -209,6 +228,25 @@ def _forecast_from_row(
     # Null prediction: model_name distinguishes Unavailable from Current/no-backlog.
     if (row.model_name or "") == "unavailable":
         reset = (row.expert_predictions or {}).get("october_reset") or {}
+        bound = floor_for_target(
+            _parse_iso(reset.get("floor")), reset.get("reset_year"), target
+        )
+        if bound is not None:
+            # State published a floor for the reset and this page's month is at
+            # or after it, so the forecast is that bound rather than
+            # "Unavailable" — the cell used to say Unavailable while the same
+            # page's explainer said a date returns on October 1, a contradiction
+            # in two places a reader sees together.
+            return _Forecast(
+                display=f"At least {_fmt(bound)}",
+                predicted_date=None,
+                lower_bound=bound,
+                movement=None,
+                movement_type="na",
+                is_baseline=baseline,
+                reset_year=reset.get("reset_year"),
+                reset_explainer_html=_explainer_html(row.explanation_markdown),
+            )
         return _Forecast(
             display="Unavailable", predicted_date=None, movement=None, movement_type="na",
             is_unavailable=True, is_baseline=baseline,
@@ -264,13 +302,15 @@ def _build_grid(
     class_map: dict[str, str],
     stored: dict[tuple[str, int, str], PredictedCutoff],
     actuals: dict[tuple[str, int, str], VisaCutoffDate],
+    target: date,
 ) -> list[dict]:
     """One row per visa class; Final Action forecast cells in _COUNTRIES order."""
     rows = []
     for vc, short in class_map.items():
         cells = [
             _forecast_from_row(
-                stored.get((vc, c.value, _FINAL)), actuals.get((vc, c.value, _FINAL)), vc, c.value
+                stored.get((vc, c.value, _FINAL)), actuals.get((vc, c.value, _FINAL)), vc, c.value,
+                target=target,
             )
             for c in _COUNTRIES
         ]
@@ -281,14 +321,17 @@ def _build_grid(
 def _headline_cards(
     stored: dict[tuple[str, int, str], PredictedCutoff],
     actuals: dict[tuple[str, int, str], VisaCutoffDate],
+    target: date,
 ) -> list[dict]:
     cards = []
     for vc, country in _HEADLINE_SERIES:
         fa = _forecast_from_row(
-            stored.get((vc, country.value, _FINAL)), actuals.get((vc, country.value, _FINAL)), vc, country.value
+            stored.get((vc, country.value, _FINAL)), actuals.get((vc, country.value, _FINAL)), vc, country.value,
+            target=target,
         )
         filing = _forecast_from_row(
-            stored.get((vc, country.value, _FILING)), actuals.get((vc, country.value, _FILING)), vc, country.value
+            stored.get((vc, country.value, _FILING)), actuals.get((vc, country.value, _FILING)), vc, country.value,
+            target=target,
         )
         cards.append(
             {
@@ -300,10 +343,36 @@ def _headline_cards(
     return cards
 
 
+def _reset_notes(
+    eb_grid: list[dict], cards: list[dict]
+) -> list:
+    """The stored reset explainer for every EB series carrying one, deduped.
+
+    Gated on the four headline cards, this reached EB-2/EB-3 China and India and
+    nothing else — so a series like EB-5 India went Unavailable with its honest
+    paragraph ("where it resets to is uncertain … treat any specific October date
+    as a rough guess") written, stored, and rendered nowhere. The grid cell it did
+    reach says only "Unavailable", which is the state, not the caveat.
+
+    Each explainer names its own series in its first words, so the prose is its own
+    label and identical text from the card and the grid is one note.
+    """
+    notes = []
+    for fc in [c["final"] for c in cards] + [
+        cell for row in eb_grid for cell in row["cells"]
+    ]:
+        if fc.reset_explainer_html and fc.reset_year and fc.reset_explainer_html not in notes:
+            notes.append(fc.reset_explainer_html)
+    return notes
+
+
 def _retention_status(fc: _Forecast) -> str:
     if fc.is_unavailable:
         return STATUS_UNAVAILABLE
-    if fc.predicted_date is not None:
+    # A bound is a date as far as a returning visitor is concerned: the banner
+    # they want is "it no longer says Unavailable", and the value they compare
+    # on next visit is the bound itself.
+    if fc.predicted_date is not None or fc.lower_bound is not None:
         return STATUS_DATE
     return STATUS_CURRENT
 
@@ -311,6 +380,7 @@ def _retention_status(fc: _Forecast) -> str:
 def _retention_records(
     stored: dict[tuple[str, int, str], PredictedCutoff],
     actuals: dict[tuple[str, int, str], VisaCutoffDate],
+    target: date,
 ) -> list[dict]:
     """localStorage-comparable records for the headline oversubscribed series
     (Final Action + Filing) — the dates visitors return to check."""
@@ -322,6 +392,7 @@ def _retention_records(
                 actuals.get((vc, country.value, action)),
                 vc,
                 country.value,
+                target=target,
             )
             if fc.display == "—":
                 continue  # no forecast for this series — nothing to remember
@@ -332,7 +403,7 @@ def _retention_records(
                     vc,
                     action,
                     status=_retention_status(fc),
-                    predicted_date=fc.predicted_date,
+                    predicted_date=fc.predicted_date or fc.lower_bound,
                 )
             )
     return records
@@ -342,6 +413,10 @@ _METHODOLOGY_URL = "/analysis/how-my-prediction-model-works/"
 _ARCHIVE_URL = "/predictions/"
 _FILING_EXPLAINER_URL = "/analysis/uscis-visa-bulletin-filing-dates-explained/"
 _NEXT_BULLETIN_URL = "/when-is-the-next-visa-bulletin/"
+_EB2_INDIA_URL = "/priority-date/eb2/india/"
+# The phrase both EB-2 India answers open on and both link — one string, so the
+# plain FAQPage text and the linked visible answer cannot drift apart.
+_EB2_SUBJECT = "the EB-2 India Final Action Date"
 
 
 def _faq(month_label: str, cards: list[dict]) -> list[dict]:
@@ -365,9 +440,35 @@ def _faq(month_label: str, cards: list[dict]) -> list[dict]:
             ),
         },
     ]
-    if india_eb2 and india_eb2["final"].predicted_date is not None:
+    eb2_fa = india_eb2["final"] if india_eb2 else None
+    if eb2_fa is not None and eb2_fa.lower_bound is not None and eb2_fa.reset_year:
+        # The category is Unavailable, so there is no model point to quote — but
+        # there IS a number, and it is State's own. Answering with the bound is
+        # the difference between this page saying "Unavailable" to the largest
+        # organic audience it gets all year and saying what State said.
+        bound_a = (
+            f"{_EB2_SUBJECT.capitalize()} is Unavailable — the category reached "
+            f"its fiscal-year annual limit — and a cutoff returns on October 1, "
+            f"{eb2_fa.reset_year}, when the new fiscal year's visa numbers become "
+            f"available. The State Department has said it expects the date to "
+            f"advance to at least {_fmt(eb2_fa.lower_bound)}, which is the figure "
+            f"shown above: a floor State published, not a model forecast. State "
+            f"ties it to demand and to the new year's limits, so the date can "
+            f"land below it."
+        )
+        faq.append(
+            {
+                "q": f"Will EB-2 India advance in the {month_label} Visa Bulletin?",
+                "a": bound_a,
+                "a_html": bound_a.replace(
+                    _EB2_SUBJECT.capitalize(),
+                    f'<a href="{_EB2_INDIA_URL}">{_EB2_SUBJECT.capitalize()}</a>',
+                ),
+            }
+        )
+    elif eb2_fa is not None and eb2_fa.predicted_date is not None:
         eb2_a = (
-            f"Our model forecasts the EB-2 India Final Action Date for the "
+            f"Our model forecasts {_EB2_SUBJECT} for the "
             f"{month_label} bulletin at {india_eb2['final'].display}"
             + (
                 f" ({india_eb2['final'].movement} vs the current bulletin)."
@@ -382,8 +483,9 @@ def _faq(month_label: str, cards: list[dict]) -> list[dict]:
                 "q": f"Will EB-2 India advance in the {month_label} Visa Bulletin?",
                 "a": eb2_a,
                 "a_html": eb2_a.replace(
-                    "the EB-2 India Final Action Date",
-                    'the <a href="/priority-date/eb2/india/">EB-2 India Final Action Date</a>',
+                    _EB2_SUBJECT,
+                    f'the <a href="{_EB2_INDIA_URL}">'
+                    f'{_EB2_SUBJECT.removeprefix("the ")}</a>',
                 ),
             }
         )
@@ -496,9 +598,9 @@ def _forecast_page(request, slug: str, target: date) -> HttpResponse:
 
     fs_class_map = {f.value: f.label.split(":")[0] for f in FamilyPreference}
     country_headers = [Country(c.value).label.split(" (")[0] for c in _COUNTRIES]
-    cards = _headline_cards(stored, actuals)
-    eb_grid = _build_grid(_EB_CLASSES, stored, actuals)
-    fs_grid = _build_grid(fs_class_map, stored, actuals)
+    cards = _headline_cards(stored, actuals, target)
+    eb_grid = _build_grid(_EB_CLASSES, stored, actuals, target)
+    fs_grid = _build_grid(fs_class_map, stored, actuals, target)
     faq = _faq(month_label, cards)
 
     canonical_url = request.build_absolute_uri(request.path)
@@ -536,6 +638,7 @@ def _forecast_page(request, slug: str, target: date) -> HttpResponse:
         "fs_grid": fs_grid,
         "country_headers": country_headers,
         "faq": faq,
-        "retention_records": _retention_records(stored, actuals),
+        "reset_notes": _reset_notes(eb_grid, cards),
+        "retention_records": _retention_records(stored, actuals, target),
     }
     return render(request, "webapp/prediction_month_forecast.html", context)

@@ -490,6 +490,27 @@ def estimate_october_reset(
     )
 
 
+def floor_for_target(
+    floor: date | None, reset_year: int | None, target_month: date
+) -> date | None:
+    """A published floor, iff it describes ``target_month``'s bulletin.
+
+    A floor is RESET-scoped: it is what State said the category will clear when
+    the new fiscal year opens, so it is a forecast for the reset month and the
+    months after it. For an earlier target the category is still Unavailable and
+    the floor describes a later bulletin. The stored estimate is the same either
+    way, which is why this maps it onto a month rather than baking a month into
+    the row.
+
+    A floor is the only number this module offers as a forecast. The anchor point
+    and the precedent band stay a reference: the backtest puts anchor MAE at
+    261.8d and an 80% band's coverage at 25-37%.
+    """
+    if floor is None or reset_year is None:
+        return None
+    return floor if target_month >= date(reset_year, 10, 1) else None
+
+
 def _fmt_month(d: date) -> str:
     return d.strftime("%B %-d, %Y")
 

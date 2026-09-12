@@ -29,6 +29,9 @@
             {% endif %}
             {% else %}
             <div class="fs-5 fw-bold">{{ card.final.display }}</div>
+            {% if card.final.lower_bound %}
+            <div class="text-muted small mb-2">The floor the State Department published for the <strong>October 1, {{ card.final.reset_year }}</strong> fiscal-year reset — not a model forecast. The date can land below it.</div>
+            {% endif %}
             {% if card.final.ci_low and card.final.ci_high %}
             <div class="text-muted small">80% range: {{ card.final.ci_low|date:'M j, Y' }} – {{ card.final.ci_high|date:'M j, Y' }}</div>
             {% endif %}
@@ -52,15 +55,18 @@
       Badges show the model's estimated probability of a more-than-50-day move next month.
       &ldquo;80% range&rdquo; is the model's calibrated 80% confidence interval.
     </p>
+    {% endif %}
     {% comment %}
     The reset narrative is NOT written here. describe_reset owns it and
     publish_predictions stores it on the row; restating it in markup is what made
     this box floor-blind and let one series' precedent read as every series'.
+    The notes come from the whole EB grid, not the four headline cards — a card
+    gate left a series like EB-5 India with its uncertainty caveat stored and
+    rendered nowhere.
     {% endcomment %}
-    {% for card in cards %}{% if card.final.is_unavailable and card.final.reset_explainer_html %}
-    <div class="alert alert-warning border mb-4">{{ card.final.reset_explainer_html }}</div>
-    {% endif %}{% endfor %}
-    {% endif %}
+    {% for note in reset_notes %}
+    <div class="alert alert-warning border mb-4">{{ note }}</div>
+    {% endfor %}
 
     <h2 class="h4 mt-4 mb-2">Employment-based Final Action forecast</h2>
     <p class="text-muted small mb-2">Predicted Final Action Date by category and country for the {{ month_label }} bulletin. Movement is vs the current ({{ current_label }}) cutoff.</p>
