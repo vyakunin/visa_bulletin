@@ -45,6 +45,7 @@ from webapp.views.bulletin.retention import (
     STATUS_DATE,
     STATUS_UNAVAILABLE,
     make_record,
+    retention_key,
 )
 
 # EB series key -> short display label. Grid rows and PredictedCutoff rows are
@@ -348,6 +349,13 @@ def _headline_cards(
                 "label": f"{_EB_CLASSES[vc]} {Country(country.value).label.split(' (')[0]}",
                 "final": fa,
                 "filing": filing,
+                # Where these two series are rendered, for the return banner: it
+                # announces only a change the reader cannot see, and this card is
+                # what it would otherwise be announcing on top of.
+                "retention_keys": " ".join(
+                    retention_key("employment_based", country.value, vc, action)
+                    for action in (_FINAL, _FILING)
+                ),
             }
         )
     return cards

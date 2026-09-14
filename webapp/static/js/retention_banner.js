@@ -8,6 +8,14 @@
  * (no accounts, no cookies, no backend). Degrades silently when JS records are
  * absent or localStorage is unavailable (private mode / disabled).
  *
+ * A change the reader can already SEE is not announced. The page marks the card or
+ * row that renders each series with data-retention-key: a series whose anchor is in
+ * the viewport is skipped, and a banner already up leaves as soon as its own anchor
+ * scrolls in. That is what keeps a bottom-anchored banner off the card it is about —
+ * on /predictions/<month>/ the cards reach the bottom of the first screen once ads
+ * render above the H1 (measured y 730-900 at 1440x900), and the banner sat across
+ * them, cutting the published-floor caveat mid-sentence.
+ *
  * CLS: the banner is position:fixed (out of normal flow), so showing it never
  * reflows page content — zero layout shift, even on the chart-hydration pages
  * flagged for CLS (/ and /employment-based/india).
@@ -81,13 +89,27 @@
     return { text: "changed since your last visit", weight: 50000 };
   }
 
-  // Pick the single most significant changed series seen before.
+  // Is this series rendered where the reader is looking right now? Anchors are
+  // emitted by the page (the forecast cards, the dashboard rows) and carry a
+  // whitespace-separated list, because one card shows both of its action types.
+  function onScreen(key) {
+    var anchor = document.querySelector('[data-retention-key~="' + key + '"]');
+    if (!anchor) return false;
+    var r = anchor.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;   // display:none / collapsed
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+  }
+
+  // Pick the single most significant changed series the reader CANNOT see.
   var best = null;
   for (var i = 0; i < records.length; i++) {
     var rec = records[i];
     if (!rec || !rec.k) continue;
     var change = describeChange(prior[rec.k], rec);
     if (!change) continue;
+    if (onScreen(rec.k)) continue;   // it is on the page in front of them
     if (!best || change.weight > best.weight) {
       best = { rec: rec, text: change.text, weight: change.weight };
     }
@@ -118,9 +140,22 @@
 
     var msg = document.createElement("span");
     msg.className = "retention-banner__msg";
-    // Sentence-case the subject phrase ("the EB-2 India ..." -> "The EB-2 ...").
-    var subject = b.rec.l.charAt(0).toUpperCase() + b.rec.l.slice(1);
-    msg.textContent = "Since your last visit, " + subject + " " + b.text + ".";
+    // The label is a mid-sentence subject phrase ("the EB-2 India Final Action
+    // cutoff"), so it keeps its lower-case article.
+    msg.textContent = "Since your last visit, " + b.rec.l + " " + b.text + ".";
+
+    function remove() {
+      window.removeEventListener("scroll", onScroll);
+      banner.parentNode && banner.parentNode.removeChild(banner);
+    }
+
+    // The load-time check holds the promise on the first screen; this holds it for
+    // the rest of the visit. The moment the card this is about scrolls into view
+    // the banner has nothing left to say, so it gets out of its way rather than
+    // sitting across it.
+    function onScroll() {
+      if (onScreen(b.rec.k)) remove();
+    }
 
     var close = document.createElement("button");
     close.type = "button";
@@ -129,11 +164,12 @@
     close.textContent = "×";
     close.addEventListener("click", function () {
       lsSet(DISMISS_KEY, dismissSig);
-      banner.parentNode && banner.parentNode.removeChild(banner);
+      remove();
     });
 
     banner.appendChild(msg);
     banner.appendChild(close);
     document.body.appendChild(banner);
+    window.addEventListener("scroll", onScroll, { passive: true });
   }
 })();

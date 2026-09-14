@@ -1537,6 +1537,9 @@ django_py_test(
     name = "test_retention_banner",
     size = "medium",
     srcs = ["test_retention_banner.py"],
+    # The anchor tests read rendered markup, so a template edit must invalidate
+    # this target — without it bazel reports a cached PASS over changed templates.
+    data = ["//webapp:templates"],
     deps = [
         "//django_config:context_processors",
         "//django_config:urls",

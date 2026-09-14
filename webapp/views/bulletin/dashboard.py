@@ -39,6 +39,7 @@ from webapp.views.bulletin.retention import (
     STATUS_CURRENT,
     STATUS_DATE,
     make_record,
+    retention_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -514,6 +515,24 @@ def _build_unified_prediction_rows(
 
 
 
+def _annotate_retention_keys(
+    category: str,
+    country: int,
+    action_type: str,
+    unified_rows: list[dict],
+) -> None:
+    """Mark each row with the key its series is recorded under.
+
+    The return banner reads these to tell whether the reader can already see the
+    change it would otherwise announce over the top of — see retention_banner.js.
+    A row carrying no record still gets its key; nothing looks that key up.
+    """
+    for row in unified_rows:
+        vc = row.get("visa_class") or ""
+        if vc:
+            row["retention_key"] = retention_key(category, country, vc, action_type)
+
+
 def _dashboard_retention_records(
     category: str,
     country: int,
@@ -719,6 +738,7 @@ def dashboard_view(request, category=None, country=None):
             counterpart_maturity=counterpart_maturity,
             is_filing=(action_type == ActionType.FILING.value),
         )
+        _annotate_retention_keys(category, country, action_type, unified_rows)
 
     latest_post = BlogPost.objects.filter(is_published=True).order_by("-published_date").first()
 

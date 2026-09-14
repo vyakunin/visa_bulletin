@@ -237,7 +237,7 @@
                             </thead>
                             <tbody>
                                 {% for row in unified_rows %}
-                                <tr>
+                                <tr{% if row.retention_key %} data-retention-key="{{ row.retention_key }}"{% endif %}>
                                     <td>{{ row.label }}</td>
                                     <td class="text-nowrap">{% if row.last_bulletin_date %}{{ row.last_bulletin_date|date:"M Y" }}{% else %}—{% endif %}</td>
                                     <td class="text-nowrap">

@@ -10,6 +10,10 @@ run under bazel, so these tests lock the SERVER contract that feeds it:
     IDENTICAL across two different URL forms of the same page (the URL-scheme
     stability the ticket requires);
   * pages with no predictions bake nothing (graceful no-op);
+  * every baked record has an ANCHOR in the markup carrying the same key — the JS
+    skips a change whose anchor is in the viewport, which is what keeps the banner
+    off the card it would otherwise announce over the top of. A key that reaches
+    the banner with no anchor on the page silently re-opens that;
   * the shipped JS is CLS-safe (position:fixed — out of flow, no layout shift).
 
 The JS logic (localStorage diff, forward/back/unchanged phrasing) is exercised by
@@ -57,6 +61,16 @@ def _retention_payload(html: str):
     return json.loads(m.group(1)) if m else None
 
 
+def _anchor_keys(html: str) -> set[str]:
+    """Every key the markup marks a rendered series with (the attribute holds a
+    whitespace-separated list, matched by the JS with `[data-retention-key~=...]`)."""
+    return {
+        key
+        for attr in re.findall(r'data-retention-key="([^"]*)"', html)
+        for key in attr.split()
+    }
+
+
 class RetentionKeyUnitTest(TestCase):
     """Pure helpers — no DB, no request."""
 
@@ -79,6 +93,13 @@ class RetentionKeyUnitTest(TestCase):
             series_label("employment_based", Country.INDIA.value, "2nd", "final_action"),
             "the EB-2 India Final Action cutoff",
         )
+
+    def test_series_label_is_a_mid_sentence_phrase(self):
+        # It is interpolated after "Since your last visit, ", so the article stays
+        # lower-case. Re-casing it at the join produced "Since your last visit, The
+        # EB-2 India Final Action cutoff reopened — now July 15, 2014."
+        label = series_label("employment_based", Country.INDIA.value, "2nd", "final_action")
+        self.assertTrue(label[:1].islower(), label)
 
     def test_make_record_date(self):
         rec = make_record(
@@ -129,6 +150,19 @@ class ForecastPageBakesRecordsTest(TestCase):
         self.assertEqual(rec["s"], STATUS_DATE)
         self.assertEqual(rec["d"], "2020-03-01")
 
+    def test_every_recorded_series_has_an_anchor_in_the_markup(self):
+        # The banner announces only what the reader cannot see, and it finds the
+        # series by this attribute. A record with no anchor always reads as
+        # off-screen, so the banner fires over the top of the very card it is about
+        # — the defect this anchor exists to close.
+        html = self.client.get("/predictions/july-2026/").content.decode()
+        recorded = {r["k"] for r in _retention_payload(html)}
+        self.assertTrue(recorded)
+        self.assertTrue(
+            recorded <= _anchor_keys(html),
+            f"no anchor for {sorted(recorded - _anchor_keys(html))}",
+        )
+
     def test_forecast_includes_the_banner_script(self):
         html = self.client.get("/predictions/july-2026/").content.decode()
         self.assertIn("js/retention_banner.js", html)
@@ -167,6 +201,15 @@ class DashboardBakesRecordsTest(TestCase):
         self.assertIsNotNone(rec)
         self.assertEqual(rec["d"], "2020-03-01")
 
+    def test_every_recorded_series_has_an_anchor_in_the_markup(self):
+        html = self._get("/employment-based/india/")
+        recorded = {r["k"] for r in _retention_payload(html)}
+        self.assertTrue(recorded)
+        self.assertTrue(
+            recorded <= _anchor_keys(html),
+            f"no anchor for {sorted(recorded - _anchor_keys(html))}",
+        )
+
     def test_key_identical_across_url_forms(self):
         # The ticket's hard requirement: the "prediction changed" key must not vary
         # with the URL canonicalization. /employment-based/india/ (slug path) and
@@ -200,6 +243,19 @@ class BannerJsIsClsSafeTest(TestCase):
         # (CLS-safe on / and /employment-based/india). Locks the reasoning in code.
         src = _JS.read_text()
         self.assertIn('id = "retention-banner"', src)
+
+    def test_js_does_not_recase_the_subject_phrase(self):
+        # series_label already reads as a mid-sentence phrase; the banner must
+        # interpolate it verbatim (see test_series_label_is_a_mid_sentence_phrase).
+        self.assertNotIn("toUpperCase", _JS.read_text())
+
+    def test_js_never_sits_across_the_card_it_announces(self):
+        # Two halves: the series is skipped at load if its anchor is already in the
+        # viewport, and a banner already up is removed when that anchor scrolls in.
+        src = _JS.read_text()
+        self.assertIn("data-retention-key", src)
+        self.assertIn("onScreen(rec.k)", src)
+        self.assertIn("onScreen(b.rec.k)", src)
 
     def test_css_pins_banner_fixed(self):
         base = (
