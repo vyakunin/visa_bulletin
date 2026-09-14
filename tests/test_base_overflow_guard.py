@@ -6,8 +6,10 @@ the host starts mid-page (left~713) and runs to ~1913px on a 1440px window, givi
 the whole page a horizontal scrollbar. Observed on `/`, `/employers/rankings/` and
 `/predictions/*` (the ad markup is Google's, so the fix must live on our side).
 
-`base.html` pins this with `html, body { overflow-x: clip }`. This asserts the guard
-stays wired — every page renders through base.html, so the rule lives there once.
+`base.html` fixes it at the source — `ins.adsbygoogle:not([data-ad-status="filled"])
+{ overflow: hidden }` clips a no-fill to the slot that owns it — and keeps
+`html, body { overflow-x: clip }` as the backstop under it. This asserts both stay
+wired; every page renders through base.html, so the rules live there once.
 
 Why `clip` and not `hidden` is load-bearing, not style: `hidden` makes the viewport a
 scrollport and breaks every `position: sticky` element on the site (measured: a sticky
@@ -52,4 +54,35 @@ def test_overflow_guard_uses_clip_not_hidden():
         "into a scrollport and breaks every position:sticky element on the site "
         "(e.g. .results-table th); `clip` only establishes a clip container, so sticky "
         "and nested overflow-x:auto table scrollers keep working."
+    )
+
+
+def _slot_clip_selector(css_source: str) -> str | None:
+    """Return the selector of the rule clipping an ad slot's own overflow, if any."""
+    match = re.search(
+        r"(?P<selector>ins\.adsbygoogle[^{,]*)\{[^}]*overflow:\s*hidden",
+        css_source,
+    )
+    return match.group("selector").strip() if match else None
+
+
+def test_a_no_fill_slot_clips_its_own_host():
+    selector = _slot_clip_selector(_BASE.read_text(encoding="utf-8"))
+    assert selector is not None, (
+        "base.html must clip a no-fill ad slot's own overflow. Without it the aswift "
+        "host escapes ~490px past the viewport and only the html/body clip stands "
+        "between that and a site-wide horizontal scrollbar — which Safari <16 does "
+        "not honour."
+    )
+
+
+def test_slot_clip_never_reaches_a_filled_unit():
+    # The value of inverting the test rather than listing no-fill statuses: Google
+    # ships more than the two it documents (`unfill-optimized` was live on the
+    # employer profile when this landed), so an enumeration goes stale silently.
+    # And a bare `ins.adsbygoogle { overflow: hidden }` would clip paying ads.
+    selector = _slot_clip_selector(_BASE.read_text(encoding="utf-8"))
+    assert ':not([data-ad-status="filled"])' in selector, (
+        f"the slot clip must exempt filled units, found `{selector}`. Clipping a unit "
+        "that carries an ad is revenue-bearing markup hidden by our own stylesheet."
     )
