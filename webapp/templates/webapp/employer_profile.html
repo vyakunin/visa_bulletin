@@ -195,7 +195,7 @@
                                 <tr>
                                     <th>Program</th>
                                     <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last Year{% endif %}</th>
-                                    <th class="text-end">Total ({{ start_year }}–Present)</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Dated filings{% else %}Total{% endif %} ({{ start_year }}–Present)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -215,6 +215,9 @@
                             </tbody>
                         </table>
                     </div>
+                    {% if stats.recent_activity.has_exact_dates %}
+                    <small class="text-muted d-block mb-3">Counts only filings that carry a submission date, so these totals run below the Filings by Program counts above.</small>
+                    {% endif %}
                     {% endif %}
                     {% if stats.recent_activity.by_title %}
                     <h6>By Role (Most Recent)</h6>
@@ -224,7 +227,7 @@
                                 <tr>
                                     <th>Role</th>
                                     <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Last Filing{% else %}Last Year{% endif %}</th>
-                                    <th class="text-end">Total ({{ start_year }}–Present)</th>
+                                    <th class="text-end">{% if stats.recent_activity.has_exact_dates %}Dated filings{% else %}Total{% endif %} ({{ start_year }}–Present)</th>
                                 </tr>
                             </thead>
                             <tbody>
