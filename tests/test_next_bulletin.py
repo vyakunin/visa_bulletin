@@ -1,6 +1,6 @@
 """Tests for the "When does the next Visa Bulletin come out?" page + release projection."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from tests.django_setup import setup_django_for_tests
 
@@ -144,6 +144,65 @@ class TestReleasedOnPreferredOverFetchedAt(TestCase):
         _make_released(date(2015, 8, 1), date(2017, 12, 3))  # lead is hugely negative
         _make_released(date(2020, 5, 1), date(2020, 5, 1))   # lead 0 — sparse crawl
         self.assertEqual(recent_live_releases(), [])
+
+
+class TestEstimateIsAlwaysAPossibleReleaseDay(TestCase):
+    """The hero of /when-is-the-next-visa-bulletin/ is this date, so it must never
+    name a day a release cannot happen on: not one already past, not a weekend."""
+
+    def setUp(self):
+        # Release days 15, 16, 17 -> median 16. Next governing month is Aug 2025,
+        # so the release month is July 2025 and the base estimate is Jul 16 (Wed).
+        _make_released(date(2025, 5, 1), date(2025, 4, 16))
+        _make_released(date(2025, 6, 1), date(2025, 5, 15))
+        _make_released(date(2025, 7, 1), date(2025, 6, 17))
+
+    def test_estimate_rolls_forward_once_the_typical_day_has_passed(self):
+        """An edition running late must not leave the page naming a past date.
+        Live on 2026-09-19: "Next expected release Wednesday, September 16" — three
+        days gone, for the days the wait-window traffic peaks."""
+        sched = get_release_schedule(today=date(2025, 7, 22))  # Tue, past Jul 16
+        self.assertEqual(sched.next_release_estimate, date(2025, 7, 22))
+
+    def test_estimate_skips_a_weekend(self):
+        sched = get_release_schedule(today=date(2025, 7, 1))
+        self.assertEqual(sched.typical_release_dom, 16)
+        self.assertEqual(sched.next_release_estimate, date(2025, 7, 16))  # Wed, untouched
+
+        # Shift the sample so the median lands on Sat Jul 12 -> expect Mon Jul 14.
+        Bulletin.objects.all().delete()
+        _make_released(date(2025, 5, 1), date(2025, 4, 11))
+        _make_released(date(2025, 6, 1), date(2025, 5, 12))
+        _make_released(date(2025, 7, 1), date(2025, 6, 13))
+        sched = get_release_schedule(today=date(2025, 7, 1))
+        self.assertEqual(sched.typical_release_dom, 12)
+        self.assertEqual(sched.next_release_estimate.strftime("%a"), "Mon")
+        self.assertEqual(sched.next_release_estimate, date(2025, 7, 14))
+
+    def test_both_constraints_at_once(self):
+        """A Saturday ``today`` past the typical day needs the clamp BEFORE the
+        snap; snapping first leaves the estimate on the weekend."""
+        sched = get_release_schedule(today=date(2025, 7, 19))  # Sat, past Jul 16
+        self.assertEqual(sched.next_release_estimate, date(2025, 7, 21))  # Mon
+
+    def test_holds_across_the_whole_cycle(self):
+        """The two cases above are one class, so assert the class rather than the
+        instances: no day of a cycle may produce a past or weekend estimate."""
+        for offset in range(70):  # through the release month and past the drop
+            today = date(2025, 6, 20) + timedelta(days=offset)
+            estimate = get_release_schedule(today=today).next_release_estimate
+            self.assertGreaterEqual(estimate, today, f"past estimate on {today}")
+            self.assertLess(
+                estimate.weekday(), 5, f"{estimate:%A} estimate on {today}"
+            )
+
+    def test_the_window_describes_history_and_does_not_roll(self):
+        """The template renders the window as "typically the 15th-17th" — a claim
+        about the observed spread, not a forecast, so today must not move it."""
+        early = get_release_schedule(today=date(2025, 7, 1)).next_release_window
+        late = get_release_schedule(today=date(2025, 7, 28)).next_release_window
+        self.assertEqual(early, late)
+        self.assertEqual(early, (date(2025, 7, 15), date(2025, 7, 17)))
 
 
 class TestReleaseOdds(TestCase):

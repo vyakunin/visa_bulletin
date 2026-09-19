@@ -21,7 +21,7 @@ it keeps working on a database that predates the backfill.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from statistics import median
 
 from dateutil.relativedelta import relativedelta
@@ -39,6 +39,11 @@ _MAX_LEAD_DAYS = 45
 # Release-timing practice drifts, and archive coverage thins out the further
 # back you go, so the public-facing stats default to the recent era.
 DEFAULT_LOOKBACK_YEARS = 10
+
+# FOOTGUN: do not re-derive this from the observed days. 7 of 93 backfilled rows
+# carry a weekend date, every one from an upper-bound source (an archive capture,
+# a bridge fetch) rather than the publication; every release we timed lands Mon-Fri.
+_SATURDAY = 5
 
 
 @dataclass(frozen=True)
@@ -67,8 +72,8 @@ class ReleaseSchedule:
     latest_governing_month: date
     latest_released_on: date
     next_governing_month: date
-    next_release_estimate: date
-    next_release_window: tuple[date, date]  # (earliest, latest) plausible day
+    next_release_estimate: date  # soonest day the release can still land
+    next_release_window: tuple[date, date]  # observed spread of release days
     typical_release_dom: int  # median release day-of-month
     recent_history: list[ReleaseRecord]
 
@@ -160,8 +165,10 @@ def recent_live_releases(limit: int = 12) -> list[ReleaseRecord]:
 def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     """Project the next Visa Bulletin release from recent release history.
 
+    ``today`` anchors the estimate, which never names a day already past.
     Returns None when there is not yet enough observed history to estimate.
     """
+    today = today or date.today()
     history = observed_releases(limit=12)
     if not history:
         return None
@@ -175,7 +182,8 @@ def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     typical_dom = int(round(median(doms)))
     lo_dom, hi_dom = doms[0], doms[-1]
 
-    estimate = _clamp_dom(release_month_first, typical_dom)
+    estimate = _next_possible_release_day(release_month_first, typical_dom, today)
+    # The window states history ("typically the 12th-22nd"), so today does not move it.
     window = (_clamp_dom(release_month_first, lo_dom), _clamp_dom(release_month_first, hi_dom))
     return ReleaseSchedule(
         latest_governing_month=latest.governing_month,
@@ -225,6 +233,18 @@ def release_odds(
         n_released_by_now=n_released,
         years_covered=(min(years), max(years)),
     )
+
+
+def _next_possible_release_day(month_first: date, typical_dom: int, today: date) -> date:
+    """The soonest day the release can still land: not past, not a weekend.
+
+    FOOTGUN: clamp to today BEFORE snapping. Snapping first leaves a Sunday
+    ``today`` to overtake it, which puts the estimate back on the weekend.
+    """
+    day = max(_clamp_dom(month_first, typical_dom), today)
+    while day.weekday() >= _SATURDAY:
+        day += timedelta(days=1)
+    return day
 
 
 def _clamp_dom(month_first: date, day: int) -> date:
