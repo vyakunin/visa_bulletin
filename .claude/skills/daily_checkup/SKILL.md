@@ -26,8 +26,9 @@ preface it with plumbing narration ("Composing the digest", "Relay mode — I em
 my reply", "the relay delivers to the <X> bot", naming the bot/chat) — that internal
 kitchen leaks into the chat. Reason about delivery silently; output only the digest.
 
-The gather side is the same `daily_checkup_server.py` under
-`~/cursor_projects/visa_bulletin/mcp/`. If a fresh enough reports JSON (≤30 min
+The gather side is the orchestrator's single-project run (`main.py --project
+visa_bulletin --print`), which spawns `mcp/daily_checkup_server.py` the same way
+the 07:00 run does. If a fresh enough reports JSON (≤30 min
 old) exists in `agent_infra/daily_checkup/logs/`, reuse it; otherwise run fresh.
 
 ## Steps
@@ -38,20 +39,10 @@ old) exists in `agent_infra/daily_checkup/logs/`, reuse it; otherwise run fresh.
 NEWEST=$(ls -1t ~/cursor_projects/agent_infra/daily_checkup/logs/reports_*.json 2>/dev/null | head -1)
 AGE_MIN=$(( ( $(date +%s) - $(stat -f%m "$NEWEST" 2>/dev/null || stat -c%Y "$NEWEST") ) / 60 ))
 if [ -z "$NEWEST" ] || [ "$AGE_MIN" -gt 30 ]; then
-  cd ~/cursor_projects/visa_bulletin/mcp
-  REPORT_JSON=$(uv run python -c '
-import asyncio, json
-from daily_checkup_server import daily_checkup
-print(asyncio.run(daily_checkup()))
-')
+  REPORT_JSON=$(cd ~/cursor_projects/agent_infra/daily_checkup && \
+    uv run python main.py --project visa_bulletin --print 2>/dev/null)
 else
-  REPORT_JSON=$(python3 -c "
-import json
-with open('$NEWEST') as f:
-    r = json.load(f)
-vb = next(e for e in r if e['project'] == 'visa_bulletin')
-print(json.dumps(vb))
-")
+  REPORT_JSON=$(jq -c '.[] | select(.project == "visa_bulletin")' "$NEWEST")
 fi
 ```
 
