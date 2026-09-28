@@ -19,8 +19,10 @@
       <div class="col-md-6">
         <div class="card border-primary h-100">
           <div class="card-body text-center">
-            <div class="text-muted text-uppercase small mb-1">Final Action Date</div>
-            <div class="display-6 fw-bold mb-1">{{ final_status.display }}</div>
+            <p class="mb-1">
+              <span class="text-muted text-uppercase small">Final Action Date</span><br>
+              <span class="display-6 fw-bold">{{ final_status.display }}</span>
+            </p>
             <div class="text-muted small">When the green card can be issued</div>
           </div>
         </div>
@@ -28,8 +30,10 @@
       <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body text-center">
-            <div class="text-muted text-uppercase small mb-1">Dates for Filing</div>
-            <div class="display-6 fw-bold mb-1">{{ filing_status.display }}</div>
+            <p class="mb-1">
+              <span class="text-muted text-uppercase small">Dates for Filing</span><br>
+              <span class="display-6 fw-bold">{{ filing_status.display }}</span>
+            </p>
             <div class="text-muted small">When you may submit the application</div>
           </div>
         </div>
