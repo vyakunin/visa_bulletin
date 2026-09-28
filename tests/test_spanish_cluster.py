@@ -8,6 +8,7 @@ ES sibling; the sitemap lists the ES URLs. Mirrors the slug sets in
 webapp/views/bulletin/priority_date_landing.py.
 """
 
+import re
 from datetime import date
 
 from tests.django_setup import setup_django_for_tests
@@ -55,6 +56,15 @@ class TestSpanishPriorityDateLanding(TestCase):
         self.assertIn("1 de julio de 2013", body)  # current Dates for Filing
         self.assertIn("avanzó", body)  # Spanish trend copy (advance)
         self.assertIn('lang="es"', body)
+
+    def test_answer_card_label_and_date_share_one_element(self):
+        # Same Auto-ads placement as the English page: one element per label + date.
+        body = self.client.get("/es/priority-date/eb2/india/").content.decode()
+        for label, value in (("Fecha de Acción Final", "1 de febrero de 2013"),
+                             ("Fechas de Presentación", "1 de julio de 2013")):
+            self.assertRegex(body, re.compile(
+                r"<p[^>]*>\s*<span[^>]*>" + label + r"</span><br>\s*<span[^>]*>" + value
+                + r"</span>\s*</p>"))
 
     def test_faqpage_schema_and_spanish_questions(self):
         body = self.client.get("/es/priority-date/eb2/india/").content.decode()

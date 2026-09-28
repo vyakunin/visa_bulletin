@@ -6,6 +6,7 @@ correct canonical; unknown class/country 404s; a combo with no cutoff data 404s
 webapp/views/bulletin/priority_date_landing.py.
 """
 
+import re
 from datetime import date
 
 from tests.django_setup import setup_django_for_tests
@@ -66,6 +67,16 @@ class TestPriorityDateLanding(TestCase):
         self.assertIn("EB-2 India Priority Date", body)  # H1 / heading
         self.assertIn("February 1, 2013", body)  # current Final Action cutoff
         self.assertIn("July 1, 2013", body)  # current Dates for Filing cutoff
+
+    def test_answer_card_label_and_date_share_one_element(self):
+        # Auto-ads appends a unit into a text block; a label in its own block let it land
+        # between "FINAL ACTION DATE" and the date, pushing the answer below a phone screen.
+        body = self.client.get("/priority-date/eb2/india/").content.decode()
+        for label, value in (("Final Action Date", "February 1, 2013"),
+                             ("Dates for Filing", "July 1, 2013")):
+            self.assertRegex(body, re.compile(
+                r"<p[^>]*>\s*<span[^>]*>" + label + r"</span><br>\s*<span[^>]*>" + value
+                + r"</span>\s*</p>"))
 
     def test_faqpage_schema_present(self):
         body = self.client.get("/priority-date/eb2/india/").content.decode()
