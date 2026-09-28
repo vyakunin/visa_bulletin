@@ -101,6 +101,10 @@ broken page:
   band quiet. `blank_run_ads` names the containers overlapping it. Every DOM-side
   rule above has been wrong twice in the same direction; this one survives a
   rename.
+  **Footgun (2026-09-28): the full-page capture leaves every ad iframe that sits wholly
+  below the first viewport WHITE**, so a filled unit reads as a blank band here. The
+  same units paint real creatives when scrolled into a real viewport. A band over a
+  unit the DOM calls filled is not a hole; ticket 3cd62b8d409f81beaa0fc9e3cbbce744.
 - **Everything above is read AFTER the scroll pass** (2026-08-24), which is the
   state the screenshot shows. At first paint a below-fold unit has not activated,
   so its label, its no-fill and any late Auto-ads placement are all invisible.
