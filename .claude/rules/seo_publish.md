@@ -137,9 +137,11 @@ preferring your own.
 The check, against prod:
 `SELECT publication_date, fetched_at, released_on FROM bulletin ORDER BY publication_date DESC LIMIT 12;`
 Recent editions release on the 12th–21st of the prior month and the spread is
-real — the Sep-2026 edition landed on day 21, the latest in the series, while the
-trailing-12 median sits near day 16. Re-estimate every cycle; the check window
-moves with it.
+real: the trailing-12 median sits near day 16, while the Oct-2026 edition landed on
+day 29, the latest in the series. Re-estimate every cycle; the check window moves
+with it. A release under 3 days before its month is dropped from
+`release_schedule`'s history (`_MIN_LEAD_DAYS`), so it never moves the typical-day
+estimate.
 
 **`released_on` can be NULL — do not substitute `fetched_at` for it, and know
 that two code paths already do.** Both the Aug-2026 and Sep-2026 rows have no
