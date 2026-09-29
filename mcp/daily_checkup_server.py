@@ -849,6 +849,7 @@ def _parse_log_age(
     text: str,
     latest_run_marker: str | None = None,
     error_re: re.Pattern[str] | None = None,
+    run_end_re: re.Pattern[str] | None = None,
 ) -> dict:
     """Section format: first line = epoch mtime, rest = tail of log.
 
@@ -862,6 +863,9 @@ def _parse_log_age(
 
     `error_re`: override the error-line matcher for logs that don't use Django's
     `[ERROR]` bracket form (e.g. the bulletin bridge's plain `ERROR ...`).
+
+    `run_end_re`: for a log whose runs share no start banner but end on a verdict
+    line (the backup log). Errors are counted only after the previous run's verdict.
     """
     lines = text.strip().splitlines()
     if not lines or lines[0] == "MISSING":
@@ -888,6 +892,13 @@ def _parse_log_age(
     scan = tail
     if latest_run_marker and latest_run_marker in tail:
         scan = tail[tail.rindex(latest_run_marker):]
+    if run_end_re:
+        tail_lines = tail.splitlines()
+        ends = [i for i, line in enumerate(tail_lines) if run_end_re.search(line)]
+        if ends and ends[-1] == len(tail_lines) - 1:
+            ends.pop()
+        if ends:
+            scan = "\n".join(tail_lines[ends[-1] + 1:])
     err_pat = error_re or re.compile(r"\[ERROR\]|\[CRITICAL\]|\bFAILED\b")
     error_lines = [
         line for line in scan.splitlines()
@@ -2208,6 +2219,12 @@ def _section_bulletin_refresh(info: dict) -> tuple[dict | None, str]:
              "importance": 5 if status == "red" else 3}, status)
 
 
+# backup_blob.sh closes every run with one of these; a run can open on a pre-flight
+# ERROR, so the boundary is the previous run's verdict, not a start banner.
+BACKUP_RUN_END_RE = re.compile(r"OK — backup complete|\] FAILED: ")
+BACKUP_ERROR_RE = re.compile(r"\bERROR\b|\bFAILED\b")
+
+
 def _section_backup(info: dict) -> tuple[dict | None, str]:
     if not info.get("present"):
         return ({"title": "GDrive backup log MISSING",
@@ -3192,7 +3209,9 @@ async def daily_checkup(since: str | None = None) -> str:
             sections.append(s)
         statuses.append(st)
         # Backup cron
-        s, st = _section_backup(_parse_log_age(snap.get("backup", "")))
+        s, st = _section_backup(
+            _parse_log_age(snap.get("backup", ""), run_end_re=BACKUP_RUN_END_RE,
+                           error_re=BACKUP_ERROR_RE))
         if s:
             sections.append(s)
         statuses.append(st)

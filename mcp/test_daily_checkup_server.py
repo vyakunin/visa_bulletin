@@ -94,6 +94,40 @@ def test_no_marker_falls_back_to_full_tail():
     assert len(info["tail_errors"]) == 1, info["tail_errors"]
 
 
+_BAK_FAIL = (
+    "[2026-09-27T23:00:02Z] [visa_bulletin] ERROR: marker minipc_usb:/mnt/data/_backups/"
+    ".backup-dest-marker not found — SKIPPING dest\n"
+    "[2026-09-27T23:01:59Z] [visa_bulletin] received 468286660 bytes on stdin\n"
+    "[2026-09-27T23:02:09Z] [visa_bulletin] FAILED: at least one destination tier did not "
+    "receive the backup\n"
+)
+_BAK_OK = (
+    "[2026-09-28T23:01:57Z] [visa_bulletin] received 468286666 bytes on stdin\n"
+    "[2026-09-28T23:02:03Z] [visa_bulletin] OK — backup complete\n"
+)
+
+
+def test_backup_failed_run_healed_by_latest_ok_run_is_green():
+    info = m._parse_log_age(_log(_BAK_FAIL + _BAK_OK), run_end_re=m.BACKUP_RUN_END_RE,
+                            error_re=m.BACKUP_ERROR_RE)
+    assert info["tail_errors"] == [], info["tail_errors"]
+    assert m._section_backup(info) == (None, "green")
+
+
+def test_backup_latest_run_failing_counts_its_preflight_error_too():
+    info = m._parse_log_age(_log(_BAK_OK + _BAK_FAIL), run_end_re=m.BACKUP_RUN_END_RE,
+                            error_re=m.BACKUP_ERROR_RE)
+    assert len(info["tail_errors"]) == 2, info["tail_errors"]
+    assert m._section_backup(info)[1] == "red"
+
+
+def test_backup_run_without_a_verdict_yet_is_scanned():
+    unfinished = "[2026-09-29T23:00:02Z] [visa_bulletin] ERROR: pg_dump exited 1\n"
+    info = m._parse_log_age(_log(_BAK_OK + unfinished), run_end_re=m.BACKUP_RUN_END_RE,
+                            error_re=m.BACKUP_ERROR_RE)
+    assert len(info["tail_errors"]) == 1, info["tail_errors"]
+
+
 # ── Bulletin ingest bridge backstop (2026-07-16) ─────────────────────────────
 # The prod-side hourly refresh cron was retired (Akamai 403'd every run); the
 # minipc browser bridge is now the only ingest path. It self-alerts on failure
