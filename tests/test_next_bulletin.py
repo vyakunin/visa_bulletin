@@ -61,6 +61,17 @@ class TestReleaseSchedule(TestCase):
         self.assertLessEqual(lo, sched.next_release_estimate)
         self.assertGreaterEqual(hi, sched.next_release_estimate)
 
+    def test_release_inside_min_lead_still_advances_the_next_month(self):
+        # Released 2 days before its governing month: too close to trust as a release
+        # date, but the bulletin is out, so the page must name the one after it.
+        _make(date(2025, 8, 1), _dt(2025, 7, 30))
+        sched = get_release_schedule(today=date(2025, 7, 30))
+        self.assertEqual(sched.latest_governing_month, date(2025, 8, 1))
+        self.assertEqual(sched.latest_released_on, date(2025, 7, 30))
+        self.assertEqual(sched.next_governing_month, date(2025, 9, 1))
+        self.assertEqual(sched.next_release_estimate, date(2025, 8, 18))  # the 16th is a Saturday
+        self.assertNotIn(date(2025, 8, 1), {r.governing_month for r in sched.recent_history})
+
     def test_none_when_no_live_history(self):
         Bulletin.objects.all().delete()
         # Only a synthetic backfill-style row -> no live history -> None.
