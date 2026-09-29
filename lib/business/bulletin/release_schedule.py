@@ -173,8 +173,10 @@ def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     if not history:
         return None
 
-    latest = history[0]
-    next_governing = latest.governing_month + relativedelta(months=1)
+    # The newest bulletin, not the newest one with a usable release date: a release
+    # landing inside _MIN_LEAD_DAYS is dropped from history but is still published.
+    newest = Bulletin.objects.order_by("-publication_date").first()
+    next_governing = newest.publication_date + relativedelta(months=1)
     # The next bulletin posts in the month BEFORE the month it governs.
     release_month_first = next_governing - relativedelta(months=1)
 
@@ -186,8 +188,8 @@ def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     # The window states history ("typically the 12th-22nd"), so today does not move it.
     window = (_clamp_dom(release_month_first, lo_dom), _clamp_dom(release_month_first, hi_dom))
     return ReleaseSchedule(
-        latest_governing_month=latest.governing_month,
-        latest_released_on=latest.released_on,
+        latest_governing_month=newest.publication_date,
+        latest_released_on=newest.released_on or newest.fetched_at.date(),
         next_governing_month=next_governing,
         next_release_estimate=estimate,
         next_release_window=window,
