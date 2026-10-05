@@ -3,7 +3,7 @@ Shared salary statistics utilities for profile and landing pages.
 """
 
 import logging
-from datetime import datetime
+from datetime import date
 
 from django.db.models import (
     Aggregate,
@@ -18,6 +18,7 @@ from django.db.models import (
 from django.db.models.functions import TruncQuarter
 
 from models.enums.visa_program import VisaProgram
+from models.salary import SalaryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -121,27 +122,37 @@ def filter_growth_years(
     ]
 
 
+# DOL publishes a fiscal year (Oct 1 - Sep 30) in quarterly files, so a year whose
+# newest ingested decision falls before September is still missing its last quarter.
+FISCAL_YEAR_FINAL_MONTH_START = (9, 1)
+
+
+def fiscal_year_is_complete(fiscal_year: int) -> bool:
+    """Whether the ingested data reaches the final month of `fiscal_year`.
+
+    Read off the newest decision date site-wide for that year, not off the year's
+    own count against the prior year: nine months of a flat series sit at 75% of the
+    year before, and no ratio threshold separates that from a real decline. A year
+    with no decision dates at all cannot be judged and counts as complete.
+    """
+    decided_through = SalaryRecord.objects.filter(fiscal_year=fiscal_year).aggregate(
+        latest=Max("decision_date")
+    )["latest"]
+    if decided_through is None:
+        return True
+    return decided_through >= date(fiscal_year, *FISCAL_YEAR_FINAL_MONTH_START)
+
+
 def drop_partial_latest_year(
     growth_counts: list[tuple[int, int]],
-    current_year: int,
-    min_ratio: float,
 ) -> tuple[list[tuple[int, int]], bool]:
-    """
-    Drop the latest year if it looks partial vs the prior year.
-
-    Uses a conservative ratio check to avoid showing large declines driven
-    by incomplete recent-year data.
-    """
-    if len(growth_counts) < 2:
+    """Drop the latest year when the data does not cover it to its end."""
+    if not growth_counts:
         return growth_counts, False
-
-    last_year, last_count = growth_counts[-1]
-    prev_year, prev_count = growth_counts[-2]
-    if last_year >= current_year - 1 and prev_count > 0:
-        ratio = last_count / prev_count
-        if ratio < min_ratio and len(growth_counts) >= 3:
-            return growth_counts[:-1], True
-    return growth_counts, False
+    last_year, _ = growth_counts[-1]
+    if fiscal_year_is_complete(last_year):
+        return growth_counts, False
+    return growth_counts[:-1], True
 
 
 def calculate_growth_from_counts(
@@ -163,27 +174,17 @@ def calculate_growth_from_counts(
 def growth_window(
     yoy_trends: list[dict],
     start_year: int,
-    min_ratio: float = 0.6,
 ) -> tuple[list[tuple[int, int]], bool]:
     """The fiscal-year counts a growth percentage is computed over."""
-    current_year = datetime.now().year
-    growth_counts = filter_growth_years(yoy_trends, start_year)
-    return drop_partial_latest_year(
-        growth_counts,
-        current_year,
-        min_ratio=min_ratio,
-    )
+    return drop_partial_latest_year(filter_growth_years(yoy_trends, start_year))
 
 
 def calculate_yoy_growth(
     yoy_trends: list[dict],
     start_year: int,
-    min_ratio: float = 0.6,
 ) -> tuple[float, int | None, int | None, bool]:
     """Calculate growth from a YoY trend list with partial-year handling."""
-    growth_counts, used_partial_year = growth_window(
-        yoy_trends, start_year, min_ratio=min_ratio
-    )
+    growth_counts, used_partial_year = growth_window(yoy_trends, start_year)
     yoy_growth, growth_start_year, growth_end_year = calculate_growth_from_counts(
         growth_counts
     )
@@ -193,7 +194,6 @@ def calculate_yoy_growth(
 def growth_endpoint_counts(
     yoy_trends: list[dict],
     start_year: int,
-    min_ratio: float = 0.6,
 ) -> tuple[int, int]:
     """Filing counts at the two years the growth percentage is derived from.
 
@@ -201,7 +201,7 @@ def growth_endpoint_counts(
     resolution: see GROWTH_MIN_BASE_FILINGS. Returns (0, 0) when fewer than two
     years qualify, i.e. when there is no growth figure.
     """
-    growth_counts, _ = growth_window(yoy_trends, start_year, min_ratio=min_ratio)
+    growth_counts, _ = growth_window(yoy_trends, start_year)
     if len(growth_counts) < 2:
         return 0, 0
     return growth_counts[0][1], growth_counts[-1][1]
@@ -210,7 +210,6 @@ def growth_endpoint_counts(
 def growth_headline(
     yoy_trends: list[dict],
     start_year: int,
-    min_ratio: float = 0.6,
 ) -> dict:
     """A growth percentage together with the gate and counts a tile needs.
 
@@ -224,11 +223,9 @@ def growth_headline(
     to test the years for None separately.
     """
     growth, growth_start_year, growth_end_year, used_partial_year = (
-        calculate_yoy_growth(yoy_trends, start_year, min_ratio=min_ratio)
+        calculate_yoy_growth(yoy_trends, start_year)
     )
-    base_filings, end_filings = growth_endpoint_counts(
-        yoy_trends, start_year, min_ratio=min_ratio
-    )
+    base_filings, end_filings = growth_endpoint_counts(yoy_trends, start_year)
     return {
         "yoy_growth": growth,
         "growth_start_year": growth_start_year,
