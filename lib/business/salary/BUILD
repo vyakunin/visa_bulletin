@@ -142,6 +142,7 @@ py_library(
     name = "common_stats",
     srcs = ["common_stats.py"],
     deps = [
+        "//models:salary",
         "//models/enums:visa_program",
     ],
     visibility = ["//visibility:public"],

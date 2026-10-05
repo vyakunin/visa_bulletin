@@ -7,7 +7,7 @@ setup_django_for_tests()
 import json
 import sys
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.test import Client, TestCase, override_settings
@@ -1590,8 +1590,13 @@ class GrowthTileBaseFloorTest(TestCase):
         self.client = Client()
         self.current_year = datetime.now().year
 
-    def _make_cluster(self, slug, counts_by_year):
-        """Create a cluster whose window carries `counts_by_year` filings."""
+    def _make_cluster(self, slug, counts_by_year, decided_through=None):
+        """Create a cluster whose window carries `counts_by_year` filings.
+
+        `decided_through` maps a fiscal year to the decision date its records
+        carry, which is how the ingested data's coverage of that year is read.
+        """
+        decided_through = decided_through or {}
         total = sum(counts_by_year.values())
         cluster = JobTitleCluster.objects.create(
             canonical_title=slug.replace("-", " ").title(),
@@ -1623,6 +1628,7 @@ class GrowthTileBaseFloorTest(TestCase):
                     visa_program=VisaProgram.H1B,
                     case_status=CaseStatus.CERTIFIED,
                     fiscal_year=year,
+                    decision_date=decided_through.get(year),
                     source_file="test.xlsx",
                     is_worksite=False,
                 )
@@ -1694,6 +1700,51 @@ class GrowthTileBaseFloorTest(TestCase):
             f"{base} \u2192 {end} filings, FY{self.current_year - 4} "
             f"to FY{self.current_year - 1}",
         )
+
+    def test_a_fiscal_year_the_data_covers_only_partly_is_left_out(self):
+        """Nine months of a flat series must not read as a 25% decline.
+
+        /job-title/software-engineer/ showed -40.9% off a FY2026 the data covered
+        only through June 30. The old guard dropped a latest year only when it fell
+        under 60% of the year before, and nine months of a flat series sit at 75%.
+        """
+        partial = self.current_year
+        self._make_cluster(
+            "flat-series-title",
+            {partial - 4: 20, partial - 1: 20, partial: 15},
+            decided_through={
+                partial - 4: date(partial - 4, 9, 28),
+                partial - 1: date(partial - 1, 9, 28),
+                partial: date(partial, 6, 30),
+            },
+        )
+
+        response = self.client.get("/job-title/flat-series-title/")
+
+        stats = response.context["stats"]
+        self.assertTrue(stats["used_partial_year"])
+        self.assertEqual(stats["growth_end_year"], partial - 1)
+        self.assertEqual(stats["yoy_growth"], 0)
+        self.assertContains(response, "(latest year appears partial)")
+
+    def test_a_fiscal_year_covered_through_september_stays_in(self):
+        """A complete latest year is kept, however far it fell."""
+        complete = self.current_year - 1
+        self._make_cluster(
+            "falling-series-title",
+            {complete - 3: 20, complete: 15},
+            decided_through={
+                complete - 3: date(complete - 3, 9, 28),
+                complete: date(complete, 9, 29),
+            },
+        )
+
+        response = self.client.get("/job-title/falling-series-title/")
+
+        stats = response.context["stats"]
+        self.assertFalse(stats["used_partial_year"])
+        self.assertEqual(stats["growth_end_year"], complete)
+        self.assertEqual(stats["yoy_growth"], -25.0)
 
 
 if __name__ == "__main__":

@@ -36,8 +36,6 @@ from models.salary import SalaryRecord
 # Shared between webapp/views/job_titles/profile.py and webapp/views/seo/sitemaps.py.
 INDEXABLE_MIN_FILINGS = 100
 
-GROWTH_PARTIAL_YEAR_MIN_RATIO = 0.6
-
 # Salary validation bounds (annual)
 # These filter out clearly incorrect data (data entry errors, unrealistic values)
 MIN_REASONABLE_SALARY = (
@@ -312,11 +310,7 @@ def get_job_title_statistics(
     # Growth headline (use latest non-partial year when possible). The gate
     # travels with the figure: below GROWTH_MIN_BASE_FILINGS base-year filings
     # the percentage is base noise and the tile is withheld.
-    growth = growth_headline(
-        yoy_trends,
-        start_year,
-        min_ratio=GROWTH_PARTIAL_YEAR_MIN_RATIO,
-    )
+    growth = growth_headline(yoy_trends, start_year)
 
     # H. Company Comparison (top 5 employers with detailed stats)
     # "None" row: records where employer_id is NULL or employer.canonical_cluster_id is NULL.
