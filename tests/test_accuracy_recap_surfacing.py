@@ -315,6 +315,23 @@ class RecapBannerTest(TestCase):
         self.assertIn("See the live forecast for the September 2026 bulletin", html)
         self.assertIn('href="/predictions/september-2026/"', html)
 
+    def test_official_dates_come_before_the_archive_blocks(self):
+        """The H1 and the official table lead; the archive note and scorecard follow.
+
+        Above the H1 they pushed it to y=1072 at 1440x900 and y=1427 at 390x844,
+        so a reader arriving for the official dates met three blocks and an ad first.
+        """
+        html = self._get()
+        forward = html.index("September 2026 predictions are up")
+        h1 = html.index("<h1")
+        table = html.index("<table")
+        archive = html.index("This page is the <strong>accuracy archive</strong>")
+        scorecard = html.index("How our August 2026 forecast scored")
+        self.assertLess(forward, h1)
+        self.assertLess(h1, table)
+        self.assertLess(table, archive)
+        self.assertLess(table, scorecard)
+
 
 class SitemapContainsAccuracyPagesTest(TestCase):
     def setUp(self):
