@@ -192,6 +192,41 @@ class TestUnifiedRowCurrentState(unittest.TestCase):
         self.assertFalse(rows[0]["cutoff_is_current"])
 
 
+class TestUnifiedRowsDropRetiredCategories(unittest.TestCase):
+    """A category the latest bulletin no longer prints is not a current row.
+
+    EB-5 Non-Regional Center and Regional Center ended with the April 2022 bulletin,
+    and the homepage still listed both under the October 2026 edition as
+    "Already current", off their last cell.
+    """
+
+    def _retired(self):
+        return {
+            "visa_class_label": "EB-5: Non-Regional Center",
+            "visa_class": "5th Non-Regional",
+            "dates": [date(2022, 3, 1), date(2022, 4, 1)],
+            "cutoff_dates": [None, None],
+            "cutoff_states": ["current", "current"],
+            "last_bulletin_date": date(2022, 4, 1),
+        }
+
+    def test_a_category_absent_from_the_latest_bulletin_is_dropped(self):
+        rows = _build_unified_prediction_rows(
+            [_vcd(["date"] * 3, [date(2025, 1, 1)] * 3), self._retired()],
+            {},
+            None,
+        )
+
+        self.assertEqual([r["label"] for r in rows], ["F2A"])
+
+    def test_every_category_in_the_latest_bulletin_stays(self):
+        live = _vcd(["date"] * 3, [date(2025, 1, 1)] * 3)
+        unavailable = {**live, "visa_class_label": "F4", "cutoff_states": ["unavailable"] * 3}
+        rows = _build_unified_prediction_rows([live, unavailable], {}, None)
+
+        self.assertEqual([r["label"] for r in rows], ["F2A", "F4"])
+
+
 class TestDashboardTemplateCutoffCell(unittest.TestCase):
     """The template's fallback branch labelled EVERY dateless row "Current" — so an
     Unavailable class, and a class with no data at all, both claimed no backlog."""

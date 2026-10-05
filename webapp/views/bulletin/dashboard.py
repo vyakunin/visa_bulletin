@@ -415,6 +415,17 @@ def _build_unified_prediction_rows(
     # dates, so neither may resolve to one: falling back to the last date on
     # file would present a superseded cutoff as this month's, and the two states
     # mean opposite things to a reader (no backlog vs no numbers published).
+    # A category the latest bulletin no longer prints is history, not a current
+    # row: EB-5 Non-Regional / Regional Center last appeared in April 2022.
+    latest_bulletin = max(
+        (vcd["last_bulletin_date"] for vcd in visa_class_data if vcd.get("last_bulletin_date")),
+        default=None,
+    )
+    visa_class_data = [
+        vcd for vcd in visa_class_data
+        if latest_bulletin is None or vcd.get("last_bulletin_date") == latest_bulletin
+    ]
+
     current_cutoffs: dict[str, date | None] = {}
     latest_states: dict[str, str] = {}
     for vcd in visa_class_data:
