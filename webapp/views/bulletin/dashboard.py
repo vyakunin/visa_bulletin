@@ -168,23 +168,27 @@ def _get_vqs_predictions(category: str, country: int, action_type: str, submissi
     return predictions
 
 
+# A priority date past this many years ahead is a typo (07/01/8201 for 2018), and projecting
+# toward it overflows date arithmetic downstream.
+MAX_PRIORITY_DATE_YEARS_AHEAD = 100
+
+
 def _parse_submission_date(date_str: str) -> date:
     """Parse submission date from request, supports MM/DD/YYYY and YYYY-MM-DD."""
     if not date_str:
         return date.today()
 
-    # Try MM/DD/YYYY format first
-    try:
-        return datetime.strptime(date_str, "%m/%d/%Y").date()
-    except ValueError:
-        pass
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+        try:
+            parsed = datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+        if parsed.year > date.today().year + MAX_PRIORITY_DATE_YEARS_AHEAD:
+            break
+        return parsed
 
-    # Try YYYY-MM-DD format (backward compatibility)
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        logger.warning(f"Invalid submission_date format: {date_str}, using today")
-        return date.today()
+    logger.warning(f"Invalid submission_date: {date_str}, using today")
+    return date.today()
 
 
 def _linear_maturity_fallback(
