@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 _error_distribution_cache: dict[str, dict[tuple, list[int]]] = {}
 _cache_knowledge_month: tuple[int, int] | None = None
 
+# Below this, a regime stratum's 90th percentile is one or two episodes, so pool
+# the series' regimes. At 10, two 2024 EB-1 India rebound jumps (+1308d, +1339d)
+# gave a shallow 2026 dip a 1370-day "80% range".
+MIN_ERRORS_FOR_REGIME_STRATUM = 20
+
 
 def _get_regime(visa_class: str, country: int, action_type: str, knowledge_date: date) -> str:
     """Get regime string for a series at a knowledge_date."""
@@ -180,8 +185,7 @@ def compute_calibrated_interval(
     key = (visa_class, country, horizon, regime)
     errors = distributions.get(key, [])
 
-    # If not enough data for this exact key, relax regime and use all regimes
-    if len(errors) < 10:
+    if len(errors) < MIN_ERRORS_FOR_REGIME_STRATUM:
         any_regime_errors = []
         for k, v in distributions.items():
             if k[0] == visa_class and k[1] == country and k[2] == horizon:

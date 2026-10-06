@@ -2876,3 +2876,41 @@ Test status: 3 of the file's assertions red before the change
 ### Pending Planning Review
 
 Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+
+## 32. A 10-Sample Regime Stratum Set a 1,370-Day "80% Range" (October 2026)
+
+### Motivation
+Interval calibration (§28). The November 2026 page rendered EB-1 India as
+"February 1, 2023 — 80% range: Jan 1, 2023 – Oct 2, 2026".
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| `MIN_ERRORS_FOR_REGIME_STRATUM = 20` (was an inline 10) | `lib/business/vqs/calibration.py` | A (series, horizon, regime) stratum with fewer than 20 signed errors pools the series' regimes before taking the 10th/90th percentile |
+| Counterfactual comparison | `scripts/oneoff/compare_regime_stratum_minimum.py` | Re-derives h=1 intervals for graded stored rows under each minimum |
+| Tests | `tests/test_calibration_cache.py` | 10-sample stratum is pooled; 20-sample stratum is used alone |
+
+### Results (Facts)
+EB-1 India final_action, h=1, regime `recovering`, knowledge date 2026-10-31
+(staging): 10 errors `[-31, -30, 0, 0, 30, 31, 31, 31, 1308, 1339]`. The +1339 is
+the January 2024 move 2017-01-01 → 2020-09-01 after the 2023 retrogression to
+2012. `int(0.9 * 10)` indexes the maximum, so the upper bound was
+2023-02-01 + 1339 d = 2026-10-02. The pooled EB-1 India h=1 distribution has
+n = 404, p10 −31 d, p90 +105 d.
+
+At minimum 10, 13 strata had 10–19 samples with the p90 index on the maximum;
+on the 2026-10-31 run only EB-1 India produced `confidence_high − predicted_date > 700`.
+
+Counterfactual, 624 graded h=1 final_action rows with prediction_date ≥ 2025-06-01
+(`scripts/vqs/run_in_stg.sh -m scripts.oneoff.compare_regime_stratum_minimum --since 2025-06-01`):
+
+| Minimum | Coverage | Below | Above | Width median | Width p90 | Width max |
+|---|---|---|---|---|---|---|
+| 10 | 77.6% (484/624) | 1.6% | 20.8% | 90 d | 198 d | 3957 d |
+| 20 | 77.1% (481/624) | 1.6% | 21.3% | 89 d | 182 d | 1644 d |
+
+### Current Status
+Enabled. November 2026 predictions republished on prod after the release.
+
+### Pending Planning Review
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
