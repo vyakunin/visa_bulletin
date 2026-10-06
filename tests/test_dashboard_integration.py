@@ -11,11 +11,13 @@ setup_django_for_tests()
 
 import unittest
 import xml.etree.ElementTree as ET
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock
 
 from django.conf import settings
 
+from webapp.views.bulletin.dashboard import _parse_submission_date
 from webapp.views.seo.sitemaps import robots_view, sitemap_view
 
 _DASHBOARD_TEMPLATE = (
@@ -86,6 +88,17 @@ class TestDashboardBasic(unittest.TestCase):
         src = _DASHBOARD_TEMPLATE.read_text()
         self.assertIn("'doubleClick': 'autosize'", src)
         self.assertNotIn("'doubleClick': false", src)
+
+
+class TestParseSubmissionDate(unittest.TestCase):
+    def test_typo_year_falls_back_to_today(self):
+        # 07/01/8201 (meant 2018) overflowed the projection and 500'd the dashboard.
+        self.assertEqual(_parse_submission_date("07/01/8201"), date.today())
+        self.assertEqual(_parse_submission_date("8201-07-01"), date.today())
+
+    def test_distant_but_plausible_date_is_kept(self):
+        self.assertEqual(_parse_submission_date("07/01/2060"), date(2060, 7, 1))
+        self.assertEqual(_parse_submission_date("2018-07-01"), date(2018, 7, 1))
 
 
 class TestRobotsTxtView(unittest.TestCase):
