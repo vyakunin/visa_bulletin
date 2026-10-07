@@ -75,7 +75,7 @@ independently-known verdicts and found the two the eye missed.
 
 **The old anonymous curl recipe cannot do this any more and fails SILENTLY**: since
 2026-08-11 old.reddit answers the logged-out wall with HTTP 200, so a curl of the
-submitted page parses to zero posts and reads as "nothing removed" (`reddit_read.md`).
+submitted page parses to zero posts and reads as "nothing removed" (`refs/reddit_read.md`).
 `--transport cdp` goes through the logged-in debug Chrome, which is the only path
 that sees the marker; the HTML path reports `removed: null` rather than guessing.
 
