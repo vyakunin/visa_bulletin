@@ -71,7 +71,7 @@ not already urgent) · 📅 coming week (`today < Due <= today+7`). Items `Due >
 today+7` or no Due collapse to a footer line. Render this block at the top of the
 digest (after the headline, before the project findings).
 **Filter gotcha:** `Status`/`Project` are `select`-typed — use `{"select":{...}}`,
-not `{"status":{...}}` (per `notion_followups.md`).
+not `{"status":{...}}` (per `refs/notion_followups_manual.md`).
 
 **ALWAYS pass `filter_properties` — the bucketed list only needs 4 fields.**
 Without it the query returns full page objects (~5.5k chars each; Notes' rich_text
