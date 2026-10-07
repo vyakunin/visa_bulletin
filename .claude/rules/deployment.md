@@ -473,7 +473,7 @@ retries once. Both rungs report passively; kill switch `BULLETIN_CDP_AUTOHEAL=0`
 A browser with live tabs is serving a human, so that path alerts instead of restarting:
 on 2026-08-10 the seven live tabs held three checkouts with cart tokens, a logged-in
 banking session and two staged bookings, and a restart would have destroyed all of it to
-clear two dead tabs (`browser_personal.md` § "sweep only YOUR OWN leftovers"). One missed
+clear two dead tabs (`refs/browser_personal.md` § "sweep only YOUR OWN leftovers"). One missed
 30-min cycle is the cheaper loss.
 
 Note the restart needs the session bus: `systemctl --user` under cron has neither
