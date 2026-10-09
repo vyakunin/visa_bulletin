@@ -188,6 +188,15 @@
                         The bulletin publishes two charts and they carry different dates for the same
                         category — switch the Action Type filter above to read the other one.
                     </p>
+                    {% if show_vqs_column %}
+                    <p class="text-muted small mb-2" id="horizon-roll-forward-note">
+                        The 6-month and 12-month columns roll the next-bulletin forecast forward one
+                        month at a time. Backtested on India and China EB-1, EB-2 and EB-3, their mean
+                        error is 302 days at 6 months and 448 days at 12 months. The
+                        <a href="{% url 'prediction_list' %}">monthly prediction pages</a> use a
+                        separate model for each horizon.
+                    </p>
+                    {% endif %}
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0">
                             <thead>
@@ -209,7 +218,7 @@
                                         6-Month
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="Predicted cutoff date 6 months from now, based on the Bulletin Forecast Model. &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            data-bs-content="Predicted cutoff date 6 months from now, from rolling the next-bulletin forecast forward month by month (mean error in the note above the table). &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
@@ -218,7 +227,7 @@
                                         12-Month
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="Predicted cutoff date 12 months from now, based on the Bulletin Forecast Model. &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            data-bs-content="Predicted cutoff date 12 months from now, from rolling the next-bulletin forecast forward month by month (mean error in the note above the table). &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>

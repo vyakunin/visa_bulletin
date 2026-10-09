@@ -81,12 +81,13 @@ _ES_FAQ = [
             "mes, clasifica el régimen actual de cada serie (avanzando, estancada o "
             "retrocediendo) y aplica la estrategia más precisa para ese estado — por defecto "
             "predice sin cambios cuando está estancada y aplica patrones estacionales históricos "
-            "cuando avanza activamente. Para horizontes de 6 a 12 meses toma el control un "
+            "cuando avanza activamente. Para los pronósticos de 6 a 12 meses de las páginas "
+            "mensuales de predicciones (visa-bulletin.us/predictions/) toma el control un "
             "modelo de machine learning (gradient boosting) entrenado con más de una década de "
-            "historial del boletín, datos de demanda I-140 y ciclos del año fiscal. En "
-            "horizontes de 6 meses para las series clave de India/China EB-2/EB-3 logra errores "
-            "absolutos medios de 155 a 264 días, mejor que simplemente asumir que no habrá "
-            "cambios (~280 días)."
+            "historial del boletín, datos de demanda I-140 y ciclos del año fiscal. En esas "
+            "páginas, en horizontes de 6 meses para las series clave de India/China EB-2/EB-3, "
+            "los pronósticos logran errores absolutos medios de 155 a 264 días, mejor que "
+            "simplemente asumir que no habrá cambios (~280 días)."
         ),
     },
     {

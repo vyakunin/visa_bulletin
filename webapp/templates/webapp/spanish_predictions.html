@@ -44,7 +44,8 @@
         precisa para ese estado. Cuando una serie está estancada o retrocediendo, predice sin
         cambios (la conjetura históricamente más segura). Cuando avanza activamente, aplica
         patrones estacionales históricos para ese mes del calendario.</li>
-      <li><strong>Horizonte de 6 a 12 meses:</strong> toma el control un modelo de machine
+      <li><strong>Horizonte de 6 a 12 meses:</strong> en las páginas mensuales de
+        predicciones toma el control un modelo de machine
         learning (gradient boosting) entrenado con más de una década de historial del boletín,
         datos de demanda I-140 y ciclos del año fiscal (octubre–septiembre). Esto captura
         patrones estructurales — como el reinicio típico de octubre y el desbordamiento entre
@@ -53,9 +54,10 @@
 
     <h2 class="mt-4">¿Qué tan preciso es?</h2>
     <p>
-      El modelo se evalúa retroactivamente contra los boletines publicados. Para las series
-      clave de India/China EB-2 y EB-3 en horizontes de 6 meses, logra errores absolutos
-      medios de 155 a 264 días — mejor que simplemente asumir que no habrá cambios (~280 días).
+      El modelo se evalúa retroactivamente contra los boletines publicados. En las páginas
+      mensuales de predicciones, para las series clave de India/China EB-2 y EB-3 en
+      horizontes de 6 meses, los pronósticos logran errores absolutos medios de 155 a 264
+      días — mejor que simplemente asumir que no habrá cambios (~280 días).
       El modelo es deliberadamente conservador: subestima los saltos grandes para reducir
       falsas alarmas. La inmigración también depende de decisiones de política y picos de
       demanda impredecibles que ningún modelo puede anticipar. Por eso publicamos el
