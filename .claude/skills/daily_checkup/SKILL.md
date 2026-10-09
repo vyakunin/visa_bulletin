@@ -84,9 +84,9 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
   - Then the **per-surface chart**, not a table (user request 2026-10-09: "convert these tables to graphs"). Render it and show it:
     ```bash
     PNG=$(uv run scripts/daily_checkup_charts.py | tail -1)   # prints the PNG path last
-    show-media "$PNG" --caption "Pageviews by surface, 7d"
+    show-media "$PNG" --caption "Pageviews by surface, 120d"
     ```
-    One bar per surface, split readers / headless-Chrome scraper, a tick at the 4-weeks-ago total, and each row labelled with its raw numbers (7d views, readers, share, pages, 4w-ago and last-week totals with MoM/WoW). It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
+    One panel per surface over the last 120 days: daily readers, their 7-day and 28-day trailing averages, and the headless-Chrome scraper as a grey band on top of the 7-day line. Each panel has its own y scale, and its title carries the raw 7d numbers (views, readers, share, 4w-ago and last-week totals with MoM/WoW). It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
     - **Exit 2 (export unavailable):** no chart. Say `⚠️ surface chart unavailable — GC export missing` and render the MCP's surface rows as text, one per line, every row.
     - A surface the MCP labels `other` with real volume still gets the one-line text flag (`⚠️ other <N> — unclassified surface, add a bucket`).
   - **The scraper is not a finding.** Its share is visible in the chart and that is all the digest says about it. Do not raise its growth, its spread to a new surface, or a farm-driven MoM jump as 🟡/🔴, and do not propose blocking it. It is absorbed on purpose (`~/.claude/rules/absorb_dont_block.md`; escalation condition in `visa_bulletin_platform/hosting/cloudflare/waf.md` § "The residual proxy pool"): surface it only when a real-user metric crosses that condition — origin 5xx, latency on human requests, homeserver saturation.
