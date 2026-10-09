@@ -145,10 +145,18 @@ All static/profile URLs use `changefreq: monthly`, `priority: 0.8`. Blog posts u
 
 Per-EB-class × per-country focused landing pages targeting high-intent queries
 ("eb2 india priority date", "eb3 china priority date" — real GSC demand at pos
-~7-8). EB-1/2/3 × India/China/Philippines/Mexico (12 pages). Each shows the
+~7-8). EB-1/2/3/4 × India/China/Philippines/Mexico (16 pages, plus a Spanish
+sibling each). Each shows the
 current Final Action + Dates-for-Filing cutoffs, the latest month-over-month
 movement, a 6-month history table, an FAQ (FAQPage schema), and links into the
 full per-country dashboard + salary data + sibling pages (internal-link mesh).
+
+- **EB-4 is history only.** No forecast model covers EB-4, so its pages carry no
+  forecast, no "+ predictions" link and no H-1B salary link
+  (`EbLandingClass.has_forecast` / `has_salary_data`). Whether to forecast EB-4
+  is decided on search demand once these pages have GSC numbers.
+- The slug sets live in `_EB_CLASSES` / `_COUNTRIES`; the sitemap, hub, rollups,
+  dashboard links, Spanish hub and calculator deep link all iterate them.
 
 - View: `webapp/views/bulletin/priority_date_landing.py` (reuses the normalized
   `get_aggregated_visa_class_data` series; headline status from the latest
@@ -161,7 +169,7 @@ full per-country dashboard + salary data + sibling pages (internal-link mesh).
 - **Status (2026-06-23):** core shipped to `main` + sitemap, suite green.
   Pending: staging deploy + real-data render verify, internal links FROM the
   main dashboards, then GSC measurement. Possible v2: embed the prediction,
-  add EB-4/EB-5 + ALL, expand country set.
+  add EB-5 + ALL, expand country set.
 
 ### Featured-snippet harvest (priority-date hub / rollups / landings)
 
@@ -267,7 +275,7 @@ CTR — on their OWN intent they're healthy: `/salaries/` salary queries ≈ 3.5
 - **Hub** `/priority-date/`: index of all EB classes × countries; targets
   "priority date" / "visa bulletin priority date". Gives `/salaries/` +
   `/employers/` a clean link target to steer priority-date intent away.
-- **Rollup** `/priority-date/<eb_class>/` (eb1/eb2/eb3): ONE EB class across all
+- **Rollup** `/priority-date/<eb_class>/` (eb1/eb2/eb3/eb4): ONE EB class across all
   five chargeability areas (India/China/Mexico/Philippines/All-Others) in one
   table; targets the generic "ebN priority date".
 - View: `webapp/views/bulletin/priority_date_rollup.py` (reuses the landing

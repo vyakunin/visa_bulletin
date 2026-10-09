@@ -84,11 +84,13 @@
         <i class="bi bi-calculator"></i> Is my {{ eb_short }} priority date current?
       </a>
       <a href="{{ dashboard_url }}" class="btn btn-outline-secondary">
-        <i class="bi bi-graph-up-arrow"></i> Full {{ country_display }} dashboard + predictions
+        <i class="bi bi-graph-up-arrow"></i> Full {{ country_display }} dashboard{% if has_forecast %} + predictions{% endif %}
       </a>
+      {% if has_salary_data %}
       <a href="/salaries/" class="btn btn-outline-secondary">
         <i class="bi bi-cash-stack"></i> {{ eb_short }} salary data
       </a>
+      {% endif %}
     </div>
 
     {% if history %}

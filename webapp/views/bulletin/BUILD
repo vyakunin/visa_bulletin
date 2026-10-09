@@ -85,6 +85,7 @@ py_library(
     srcs = ["priority_date_calculator.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":priority_date_landing",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models/enums:action_type",

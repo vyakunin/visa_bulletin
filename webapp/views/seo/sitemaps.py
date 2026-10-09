@@ -23,6 +23,12 @@ from models.blog import BlogPost
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.job_title import JobTitleCluster
+from webapp.views.bulletin.priority_date_landing import (
+    _COUNTRIES as PRIORITY_DATE_COUNTRIES,
+)
+from webapp.views.bulletin.priority_date_landing import (
+    _EB_CLASSES as PRIORITY_DATE_EB_CLASSES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,10 +226,9 @@ def build_sitemap_xml(base_url: str) -> str:
             if slug:
                 xml_parts.extend(_url_entry(f"{base_url}/{cat_slug}/{slug}/", lastmod=bulletin_lastmod))
 
-    # Priority-date landing pages: EB-1/2/3 x India/China/Philippines/Mexico.
-    # Mirrors the slug sets in webapp/views/bulletin/priority_date_landing.py.
-    for eb_slug in ("eb1", "eb2", "eb3"):
-        for ctry_slug in ("india", "china", "philippines", "mexico"):
+    # Priority-date landing pages: every landing EB class x landing country.
+    for eb_slug in PRIORITY_DATE_EB_CLASSES:
+        for ctry_slug in PRIORITY_DATE_COUNTRIES:
             xml_parts.extend(_url_entry(
                 f"{base_url}/priority-date/{eb_slug}/{ctry_slug}/",
                 lastmod=bulletin_lastmod,
@@ -240,8 +245,7 @@ def build_sitemap_xml(base_url: str) -> str:
             ))
 
     # Priority-date HUB + per-EB-class rollups — country-agnostic "ebN priority
-    # date" demand the per-country pages miss. Mirrors the slug sets in
-    # webapp/views/bulletin/priority_date_rollup.py.
+    # date" demand the per-country pages miss.
     xml_parts.extend(_url_entry(
         f"{base_url}/priority-date/",
         lastmod=bulletin_lastmod,
@@ -256,7 +260,7 @@ def build_sitemap_xml(base_url: str) -> str:
         changefreq="weekly",
         priority="0.7",
     ))
-    for eb_slug in ("eb1", "eb2", "eb3"):
+    for eb_slug in PRIORITY_DATE_EB_CLASSES:
         xml_parts.extend(_url_entry(
             f"{base_url}/priority-date/{eb_slug}/",
             lastmod=bulletin_lastmod,
