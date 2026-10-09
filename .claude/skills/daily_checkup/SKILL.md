@@ -58,7 +58,7 @@ The MCP returns RAW signals. Do not just paste them — **answer each red/yellow
 - **Slow tail (>10s requests)**: cross-reference the path against the per-property "Performance" data. If predictions backtest is the offender, that's expected today (heavy Plotly render); flag only if it grows beyond 5–10 hits.
 - **Rate-limited (nginx 429)**: ~6k+/day is normal — that's the bot subnet limiter doing its job. Surface only if `5xx > 0.5%` of total OR human-request 429s appear (filter UA for non-bot).
 - **/salaries/ 4xx flood**: ~2k/day of 429 to /salaries/ is bingbot getting throttled — not a bug. Confirm with `docker logs vb_nginx --since 24h | awk '$7 ~ /^\\/salaries\\/?$/ && $9 ~ /^4/'`.
-- **Traffic deltas**: positive MoM is the goal — celebrate briefly. Negative MoM ≥ 30% → 🟡, ≥ 60% → 🔴; investigate the surface-by-surface breakdown (nginx/GC). Ranking/visibility (GSC) analysis is NOT this digest's job — it lives in the visa_bulletin_platform digest; don't pull GSC or render a `gsc:` line here.
+- **Traffic deltas** (readers, never raw views — D9a): positive MoM is the goal — celebrate briefly. Negative MoM ≥ 30% → 🟡, ≥ 60% → 🔴; investigate the surface-by-surface breakdown (nginx/GC). Ranking/visibility (GSC) analysis is NOT this digest's job — it lives in the visa_bulletin_platform digest; don't pull GSC or render a `gsc:` line here.
 
 ### Step 2.5 — unified ticket block (visa_bulletin)
 
@@ -80,13 +80,15 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - One-sentence headline: `<emoji> <status verdict>` (🟢 all clear / 🟡 needs attention / 🔴 act now). State the most important finding right after.
 - Then the unified ticket block from Step 2.5 (only the non-empty buckets).
 - Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
-  - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
+  - Headline line counts **readers only** (user ruling D9a, 2026-10-09 — a headless-Chrome scraper runs the beacon and is about half the raw pageviews):
+    `Traffic: 7d <N> readers (<+/-N%> MoM cycle, <+/-N%> WoW)`, then one footnote line `scraper: <N> more views, not counted above`.
+    Take every figure from the chart script's JSON `totals` (`uv run scripts/daily_checkup_charts.py --json`), which runs on the same export; never from the MCP's raw totals. Any per-surface MoM/WoW in text is readers too (the `rows[].mom/wow` fields).
   - Then the **per-surface chart**, not a table (user request 2026-10-09: "convert these tables to graphs"). Render it and show it:
     ```bash
-    PNG=$(uv run scripts/daily_checkup_charts.py | tail -1)   # prints the PNG path last
+    PNG=$(uv run scripts/daily_checkup_charts.py --json | tail -1)   # JSON (headline totals) first, PNG path last
     show-media "$PNG" --caption "Pageviews by surface, 120d"
     ```
-    One panel per surface over the last 120 days: daily readers, their 7-day and 28-day trailing averages, and the headless-Chrome scraper as a grey band on top of the 7-day line. Each panel has its own y scale, and its title carries the raw 7d numbers (views, readers, share, 4w-ago and last-week totals with MoM/WoW). It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
+    One panel per surface over the last 120 days: daily readers, their 7-day and 28-day trailing averages, and the headless-Chrome scraper as a grey band on top of the 7-day line. Each panel has its own y scale, and its title carries the raw 7d numbers: readers with their 4w-ago and last-week totals and MoM/WoW, then all views including the scraper and the surface's share. It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
     - **Exit 2 (export unavailable):** no chart. Say `⚠️ surface chart unavailable — GC export missing` and render the MCP's surface rows as text, one per line, every row.
     - A surface the MCP labels `other` with real volume still gets the one-line text flag (`⚠️ other <N> — unclassified surface, add a bucket`).
   - **The scraper is not a finding.** Its share is visible in the chart and that is all the digest says about it. Do not raise its growth, its spread to a new surface, or a farm-driven MoM jump as 🟡/🔴, and do not propose blocking it. It is absorbed on purpose (`~/.claude/rules/absorb_dont_block.md`; escalation condition in `visa_bulletin_platform/hosting/cloudflare/waf.md` § "The residual proxy pool"): surface it only when a real-user metric crosses that condition — origin 5xx, latency on human requests, homeserver saturation.
