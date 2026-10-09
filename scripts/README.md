@@ -321,21 +321,30 @@ uv run --with playwright --with python-dateutil \
 **`scripts/sync_bulletin_to_prod.sh`** (minipc only) — the bridge: fetch via browser →
 stream the cache into `vb_web` (tar over ssh) → run `scripts.cron.refresh_bulletin`
 there with `BULLETIN_HTML_CACHE_DIR` set → discover/download read the cached HTML, parse
-/load/predict run prod-side unchanged. Idempotent (dedup by DataSource). Scheduled a few
-times/day on the minipc during the mid-month publish window (State Dept publishes the
-next month ~8th–15th).
+/load/predict run prod-side unchanged. Idempotent (dedup by DataSource). Runs every 30
+min on the minipc. Each poll also updates `$STATE_DIR/release_brackets.json` — per
+month, the last poll whose index lacked the edition and the first that listed it — and
+`refresh_bulletin` records a bracket of at most 24h as `Bulletin.released_on` (Eastern
+date, source `live`).
 ```bash
 scripts/sync_bulletin_to_prod.sh                       # current + next month
 scripts/sync_bulletin_to_prod.sh --months 2026-08      # specific month
 ```
 
+One-off for the editions ingested before the bracket existed (Aug/Sep/Oct 2026, dates
+taken from the bridge log; writes only a NULL `released_on`):
+```bash
+docker exec -w /app vb_web python3 -m scripts.oneoff.correct_bridge_release_dates --dry-run
+```
+
 ### Backfill real release dates (`Bulletin.released_on`)
 
 **`scripts/bulletin/backfill_release_dates.py`** — fills the date the State Department
-actually *published* each bulletin. `publication_date` is the governing month and
-`fetched_at` only approximates the release for editions our own cron ingested live (4 of
-290 rows before this backfill), so earlier editions come from the **first Internet
-Archive capture** of the bulletin's travel.state.gov URL.
+actually *published* each bulletin. `publication_date` is the governing month. Editions
+the bridge ingested carry a `live` date written at ingest from the bridge's release
+bracket (see `sync_bulletin_to_prod.sh` above); older editions come from the **first
+Internet Archive capture** of the bulletin's travel.state.gov URL, read in Eastern time.
+The backfill never derives a date from `fetched_at`.
 
 Both sources are upper bounds on the true release, so the **earlier** of the two wins.
 A candidate whose implied lead falls outside 3–45 days before the governing month is

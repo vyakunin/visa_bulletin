@@ -23,9 +23,14 @@ Inputs:
                     (default: current + next month, UTC). Only months whose link
                     exists on the index are fetched; missing = not published yet.
   --cdp URL         CDP endpoint (default: http://127.0.0.1:9222).
+  --state-file PATH Release brackets carried across runs: per month, the last poll
+                    whose index lacked it and the first that listed it. Omit to
+                    record nothing.
 Outputs:
   <cache-dir>/visa-bulletin.html                          (index)
   <cache-dir>/visa-bulletin-for-<month>-<year>.html       (each fetched month)
+  <cache-dir>/release_observations.json                   (with --state-file: the
+                    brackets, which refresh_bulletin turns into Bulletin.released_on)
   Prints a JSON summary {index_ok, months_available, months_fetched} to stdout.
 Exit codes: 0 = index fetched (regardless of month availability); 2 = index fetch
 failed (wall not passed / CDP down) so the caller can alert.
@@ -42,6 +47,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dateutil.relativedelta import relativedelta
+
+# Run as a file under `uv run`, outside Bazel: put the repo root on the path for the
+# stdlib-only bracket module shared with the prod ingest.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lib.business.bulletin.release_bracket import (  # noqa: E402
+    RELEASE_OBSERVATIONS_FILENAME,
+    dump_brackets,
+    load_brackets,
+    observe,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -103,11 +118,24 @@ def _bulletin_url_for(year_month: str) -> str:
     return BULLETIN_URL_TMPL.format(fy_dir=fy, month=dt.strftime("%B").lower(), year=dt.year)
 
 
+def _record_brackets(state_file: Path, cache: Path, months: list[str], links: set[str]) -> None:
+    """Fold this poll into the carried release brackets and hand them to the ingest."""
+    brackets = load_brackets(state_file)
+    now = datetime.now(UTC)
+    for ym in months:
+        month = datetime.strptime(ym, "%Y-%m").date()
+        observe(brackets, month, _month_link_name(ym) in links, now)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    dump_brackets(brackets, state_file)
+    dump_brackets(brackets, cache / RELEASE_OBSERVATIONS_FILENAME)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cache-dir", default="/tmp/bulletin_html_cache")
     ap.add_argument("--months", default=None, help="comma-separated YYYY-MM")
     ap.add_argument("--cdp", default="http://127.0.0.1:9222")
+    ap.add_argument("--state-file", type=Path, default=None)
     args = ap.parse_args()
 
     from playwright.sync_api import sync_playwright
@@ -137,6 +165,8 @@ def main() -> int:
             (cache / "visa-bulletin.html").write_text(index_html, encoding="utf-8")
             summary["index_ok"] = True
             logger.info("Index saved: %d bulletin links", len(links))
+            if args.state_file is not None:
+                _record_brackets(args.state_file, cache, months, links)
 
             for ym in months:
                 link_name = _month_link_name(ym)

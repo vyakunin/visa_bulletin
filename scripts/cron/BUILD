@@ -21,6 +21,8 @@ py_library(
     visibility = ["//tests:__pkg__"],
     deps = [
         "//lib/business/blog:blog",
+        "//lib/business/bulletin:release_bracket",
+        "//lib/utils:http_utils",
         "//lib/ingest:orchestrator",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:visa_bulletin",
@@ -49,6 +51,8 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/business/blog:blog",
+        "//lib/business/bulletin:release_bracket",
+        "//lib/utils:http_utils",
         "//lib/ingest:orchestrator",
         "//lib/ingest:registry",
         "//lib/ingest/plugins:visa_bulletin",

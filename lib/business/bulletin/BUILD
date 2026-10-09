@@ -15,6 +15,12 @@ py_library(
 )
 
 py_library(
+    name = "release_bracket",
+    srcs = ["release_bracket.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "release_schedule",
     srcs = ["release_schedule.py"],
     visibility = ["//visibility:public"],
@@ -89,6 +95,7 @@ py_library(
     srcs = ["wayback.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":release_bracket",
         requirement("requests"),
     ],
 )

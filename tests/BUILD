@@ -217,6 +217,28 @@ pytest_py_test(
 )
 
 pytest_py_test(
+    name = "test_release_bracket",
+    size = "small",
+    srcs = ["test_release_bracket.py"],
+    deps = [
+        "//lib/business/bulletin:release_bracket",
+    ],
+)
+
+pytest_py_test(
+    name = "test_fetch_release_brackets",
+    size = "small",
+    srcs = ["test_fetch_release_brackets.py"],
+    data = [
+        "//scripts:fetch_bulletin_via_browser.py",
+    ],
+    deps = [
+        "//lib/business/bulletin:release_bracket",
+        requirement("python-dateutil"),
+    ],
+)
+
+pytest_py_test(
     name = "test_bulletin_html_cache",
     size = "small",
     srcs = ["test_bulletin_html_cache.py"],
@@ -253,6 +275,33 @@ django_py_test(
         "//models/ingest:ingest",
         "//scripts/cron:refresh_bulletin_lib",
         "//scripts/ingest:run_pipeline_lib",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_record_release_dates",
+    size = "medium",
+    srcs = ["test_record_release_dates.py"],
+    deps = [
+        ":conftest_lib",
+        "//lib/business/bulletin:release_bracket",
+        "//lib/utils:http_utils",
+        "//models:bulletin",
+        "//scripts/cron:refresh_bulletin_lib",
+        "//scripts/oneoff:correct_bridge_release_dates_lib",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
+    name = "test_backfill_release_dates",
+    size = "medium",
+    srcs = ["test_backfill_release_dates.py"],
+    deps = [
+        ":conftest_lib",
+        "//models:bulletin",
+        "//scripts/bulletin:backfill_release_dates_lib",
         requirement("pytest-django"),
     ],
 )
