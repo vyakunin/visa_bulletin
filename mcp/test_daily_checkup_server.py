@@ -771,10 +771,10 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 
 def _log_line(ip: str, hour: int, rt: float, *, minute: int = 0, second: int = 0,
-              path: str = "/employer/acme-corp/") -> str:
+              path: str = "/employer/acme-corp/", ua: str = _UA) -> str:
     """One nginx access line in the prod log_format (combined + $request_time)."""
     return (f'{ip} - - [29/Jul/2026:{hour:02d}:{minute:02d}:{second:02d} +0000] '
-            f'"GET {path} HTTP/1.1" 200 51715 {rt} "-" "{_UA}"')
+            f'"GET {path} HTTP/1.1" 200 51715 {rt} "-" "{ua}"')
 
 
 def _run_awk(lines: list[str]) -> dict:
@@ -797,7 +797,7 @@ def _run_awk(lines: list[str]) -> dict:
 
 def _healthy_background(n: int = 400) -> list[str]:
     """Fast 200s so the surface has a realistic mean and hit count."""
-    return [_log_line(f"10.20.{i // 250}.{i % 250}", hour=i % 24, rt=0.208,
+    return [_log_line(f"81.20.{i // 250}.{i % 250}", hour=i % 24, rt=0.208,
                       minute=i % 60, second=i % 60)
             for i in range(n)]
 
@@ -931,6 +931,68 @@ def test_burst_on_the_heavy_render_surface_is_not_even_yellow():
     assert m._slow_tail_shape(row).is_burst
     _s, status = m._section_top_properties({"surface_latency": {"predictions": row}}, None)
     assert status == "green", status
+
+
+# ── Only a real visitor's hit is graded ──────────────────────────────────────
+#
+# One predicate, `is_real_client` in the awk, decides which hits reach the
+# per-surface latency tally: not a non-public address, not a bot UA anywhere in
+# the line. These replay the measured false alarms through the real awk.
+
+_OAI_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36; compatible; "
+    "OAI-SearchBot/1.4; +https://openai.com/searchbot"
+)
+_IPHONE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1"
+)
+
+
+@pytest.mark.parametrize("addr", ["127.0.0.1", "::1", "172.18.0.6", "192.168.1.152"])
+def test_a_sweep_from_the_box_is_not_graded(addr):
+    """2026-08-11: 41 >3s hits on /h1b-salary/ from 127.0.0.1 in one hour, a
+    verification sweep, graded the digest RED. A browser UA here, so only the
+    address can exclude it."""
+    lines = _healthy_background()
+    for i in range(41):
+        lines.append(_log_line(addr, hour=9, rt=4.2 if i >= 6 else 12.1, minute=i,
+                               path="/h1b-salary/software-developers/"))
+    nx = _run_awk(lines)
+    assert "occupation_salary" not in nx["surface_latency"], nx["surface_latency"]
+    assert nx["page_hits_human"] == 400, nx["page_hits_human"]
+    _s, status = m._section_top_properties(nx, None)
+    assert status == "green", status
+
+
+def test_oai_searchbot_slow_tail_is_not_graded():
+    """OpenAI's crawler appends its token to a full Chrome UA and skips the page
+    cache, so its uncached renders form a slow tail spread over the day."""
+    lines = _healthy_background()
+    for i in range(60):
+        lines.append(_log_line(f"74.7.{228 + i % 16}.{i + 1}", hour=i % 24, rt=11.3,
+                               minute=i % 60, path="/employer/bain-company-inc/",
+                               ua=_OAI_UA))
+    nx = _run_awk(lines)
+    assert nx["surface_latency"]["employer_profile"]["n_over_10s"] == 0
+    _s, status = m._section_top_properties(nx, None)
+    assert status == "green", status
+
+
+def test_a_real_visitor_slow_tail_still_grades():
+    """The boundary: a public address with a browser UA is a visitor, and its
+    spread slow tail grades RED exactly as before."""
+    lines = _healthy_background()
+    for i in range(8):
+        lines.append(_log_line(f"2603:8090:2100:12d1::{i + 1:x}", hour=i * 3, rt=14.0,
+                               path="/salaries/", ua=_IPHONE_UA))
+    nx = _run_awk(lines)
+    row = nx["surface_latency"]["salaries"]
+    assert row["n_over_10s"] == 8, row
+    assert nx["page_hits_human"] == 408, nx["page_hits_human"]
+    _s, status = m._section_top_properties(nx, None)
+    assert status == "red", status
 
 
 # ── Index audit: prod schema vs what the models declare ─────────────────────
