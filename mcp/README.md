@@ -26,9 +26,10 @@ Implements the contract at `~/.cursor/shared_rules/daily_checkup.mdc`. Exposes a
 ### Security + traffic (origin nginx, 24h)
 - Status-code mix (2xx/3xx/4xx/5xx), 5xx percentage.
 - Real-page hits broken down human vs bot (UA heuristic, plus the declared-crawler allowlist — several crawlers name themselves without the word "bot").
+- **One real-visitor test** (`is_real_client` in the awk): not a loopback / docker-bridge / LAN address (`NON_PUBLIC_CLIENT_IP_ERES`), and no bot token anywhere in the line — a full Chrome UA proves nothing, since OAI-SearchBot appends its token to one. The human counts and every per-surface latency figure (and therefore the slow-tail grade) read it; crawler and internal hits are never graded.
 - **Unique IPs hitting real pages in 24h** — total + human-only — our visitor proxy (since GoatCounter doesn't expose uniques).
 - Top 5xx and 4xx paths.
-- Top client IPs (real, via `CF-Connecting-IP` — RFC 1918 private ranges are filtered out). A declared crawler goes to a separate informational list instead: `KNOWN_CRAWLER_UA_TOKENS` in `daily_checkup_server.py` owns that set and generates the awk test from it, mirroring the nginx `$bot_key` throttle map.
+- Top client IPs (real, via `CF-Connecting-IP` — loopback and RFC 1918 private ranges are filtered out). A declared crawler goes to a separate informational list instead: `KNOWN_CRAWLER_UA_TOKENS` in `daily_checkup_server.py` owns that set and generates the awk test from it, mirroring the nginx `$bot_key` throttle map.
 - Bot/scraper user-agent hit count.
 - Scanner-path probes (`/wp-admin`, `/.env`, `/phpmyadmin`, etc.) with per-path counts.
 - nginx 429 (rate-limited) count.

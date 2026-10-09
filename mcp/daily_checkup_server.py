@@ -501,7 +501,22 @@ _KNOWN_CRAWLER_IP_ERES = (
     r"^216\.73\.21[6-9]\.",
 )
 
+# Client addresses that are never a visitor: loopback (sweeps and warmers run on
+# the box), the docker bridge (sidecars, healthchecks), and the RFC 1918 LAN.
+NON_PUBLIC_CLIENT_IP_ERES = (
+    r"^127\.",
+    r"^::1$",
+    r"^172\.(1[6-9]|2[0-9]|3[01])\.",
+    r"^10\.",
+    r"^192\.168\.",
+)
+
 _AWK_UNSAFE_TOKEN = re.compile(r"[/'{}()|\\^$*+?\[\]]")
+
+
+def _awk_non_public_test() -> str:
+    """The `is_internal` awk expression, generated from the list above."""
+    return "(" + " || ".join(f"ip ~ /{ere}/" for ere in NON_PUBLIC_CLIENT_IP_ERES) + ")"
 
 
 def _awk_known_crawler_test() -> str:
@@ -562,13 +577,27 @@ _NGINX_AWK_TEMPLATE = r"""
     if (is_scanner) scanner_path[path]++
     # Real-page hits = 2xx/3xx on something that is not API/static/scanner.
     is_page = (substr(status,1,1) ~ /^[23]$/) && path !~ /^\/(api|static|favicon|robots\.txt|sitemap\.xml|\.well-known)/ && !is_scanner
+    ip = $1
+    # Loopback, the docker bridge and the LAN: our own sweeps, warmers and
+    # sidecars. GENERATED from NON_PUBLIC_CLIENT_IP_ERES.
+    is_internal = {non_public_test}
+    # Declared-crawler allowlist — UA token OR publisher subnet. GENERATED from
+    # KNOWN_CRAWLER_UA_TOKENS, which mirrors the nginx throttle map; do not
+    # hand-edit this line, edit the Python list. One line because mawk chokes on
+    # a multi-line parenthesized assignment.
+    is_known_bot = {known_crawler_test}
+    # Matched over the WHOLE line: OAI-SearchBot appends its token to a full
+    # Chrome UA, so a browser string is never evidence of a human.
+    is_bot = (tolower($0) ~ /(curl|wget|python-requests|python-urllib|libwww|httpclient|scrapy|java\/|go-http|bot[ )\/]|crawler|spider|httrack|nikto|sqlmap|nmap|masscan|zmeu)/ || is_known_bot)
+    # The one real-visitor test: per-surface latency and the human counts read it.
+    is_real_client = !is_internal && !is_bot
     # Surface classification for per-property latency tracking. GENERATED from
     # SURFACE_PATTERNS by _awk_surface_classifier() — do not hand-edit this chain,
     # edit the Python list (a hand-maintained copy drifted and blinded the digest
     # to four live pSEO surfaces; see the note above SURFACE_PATTERNS). First
     # match wins. Only classifies is_page (2xx/3xx real pages; scanner/api/static
-    # already filtered out).
-    if (is_page) {{
+    # already filtered out) from a real client.
+    if (is_page && is_real_client) {{
       {surface_classifier}
       rt = $11 + 0
       surf_count[surf]++
@@ -589,33 +618,16 @@ _NGINX_AWK_TEMPLATE = r"""
         surf_n10_ip[surf, $1]++
       }}
     }}
-    ip = $1
-    # Skip docker-internal IPs (cloudflared sidecar / internal probes). These
-    # appear in older log windows pre-2026-05-14 (before real_ip_module config)
-    # and continue to appear for internal /health hits. Anything in private
-    # ranges is uninteresting for client-IP analysis.
-    is_internal = (ip ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ || ip ~ /^10\./ || ip ~ /^192\.168\./)
-    # Declared-crawler allowlist — UA token OR publisher subnet. GENERATED from
-    # KNOWN_CRAWLER_UA_TOKENS, which mirrors the nginx throttle map; do not
-    # hand-edit this line, edit the Python list. One line because mawk chokes on
-    # a multi-line parenthesized assignment.
-    is_known_bot = {known_crawler_test}
-    # Bot/scraper UA heuristic. Legit search engines (Googlebot, Bingbot) match
-    # intentionally -- we want bot visibility. UA fields are $12 and beyond. A
-    # declared crawler counts here too: several announce themselves without the
-    # word "bot" (anthropic-ai, meta-externalagent, ia_archiver), and one of
-    # those in the human column is what the split exists to prevent.
-    is_bot = (tolower($0) ~ /(curl|wget|python-requests|python-urllib|libwww|httpclient|scrapy|java\/|go-http|bot[ )\/]|crawler|spider|httrack|nikto|sqlmap|nmap|masscan|zmeu)/ || is_known_bot)
     if (is_bot) bot_hits++
     if (!is_internal) {{ if (is_known_bot) bot_ip_hits[ip]++; else ip_hits[ip]++ }}
     if (is_page) {{
       page_hits++
       if (is_bot) page_hits_bot++
-      else        page_hits_human++
-      if (!is_internal) {{
-        unique_ip_page[ip] = 1
-        if (!is_bot) unique_ip_human[ip] = 1
+      if (is_real_client) {{
+        page_hits_human++
+        unique_ip_human[ip] = 1
       }}
+      if (!is_internal) unique_ip_page[ip] = 1
     }}
   }}
   END {{
@@ -691,6 +703,7 @@ def _nginx_awk_program() -> str:
     """The awk program, with the surface classifier rendered in."""
     return _NGINX_AWK_TEMPLATE.format(
         surface_classifier=_awk_surface_classifier(),
+        non_public_test=_awk_non_public_test(),
         known_crawler_test=_awk_known_crawler_test()).strip("\n")
 
 
@@ -2767,7 +2780,7 @@ def _section_top_properties(
         else "GC 7d/MoM = top-100 paths from /stats/hits (long tail not visible until next CSV export lands). "
     )
     lines = [
-        f"_{source_blurb}Perf = origin nginx 24h, real pages (incl. bots)._",
+        f"_{source_blurb}Perf = origin nginx 24h, real pages from real visitors (crawlers and internal addresses excluded)._",
         "",
     ]
     for surf in ordered_surfaces:
