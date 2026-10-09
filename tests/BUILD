@@ -1421,6 +1421,19 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_forecast_accuracy_claim_scope",
+    size = "medium",
+    srcs = ["test_forecast_accuracy_claim_scope.py"],
+    deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//webapp:urls",
+        "//webapp/views:views",
+        requirement("pytest-django"),
+    ],
+)
+
+django_py_test(
     name = "test_priority_date_calculator",
     size = "medium",
     srcs = ["test_priority_date_calculator.py"],
