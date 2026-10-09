@@ -14,6 +14,7 @@ This directory contains all project scripts organized by functionality. All scri
 > | Field CLS after an ad-density/placement change (live CDP + ad slots, the <0.05 monetization gate) | `scripts/measure_cls.py` | platform |
 > | Traffic share **per section/path** (full-coverage GoatCounter export) | `scripts/gc_section_shares.py` | here |
 > | Was that traffic a PERSON? (referrer mix + automated-client share per surface) | `scripts/gc_traffic_provenance.py` | here |
+> | The digest's per-surface chart (readers vs scraper, raw numbers on every row) | `scripts/daily_checkup_charts.py` | here |
 > | Traffic **channel/referrer mix** (organic vs Reddit vs direct) | `scripts/channel_mix.py` | platform |
 >
 > SEO docs split the same way: implementation here (`docs/seo/SEO_OPTIMIZATION.md`),
@@ -1340,6 +1341,16 @@ uv run scripts/gc_traffic_provenance.py --by-surface      # farm% per surface (v
 uv run scripts/gc_traffic_provenance.py --surface all --weeks 4
 ```
 `--by-surface` is the honesty check on the fingerprint: a signature that were really just Linux users would be flat across surfaces, not 80/44% on two and 1-7% elsewhere. Re-run it before trusting the split. Exit 2 if the export is unavailable (never falls back to top-100).
+
+### Daily digest surface chart
+
+**`scripts/daily_checkup_charts.py`** — the morning digest's per-surface traffic as one phone-width PNG, in place of a text table. One bar per surface, split into readers and the headless-Chrome scraper (the `gc_traffic_provenance.py` fingerprint), a tick at the 4-weeks-ago total, and each row labelled with its raw numbers. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`.
+
+```bash
+uv run scripts/daily_checkup_charts.py                       # $TMPDIR/vb_digest/surfaces.png
+uv run scripts/daily_checkup_charts.py --out x.png --json    # also print the rows
+```
+Exit 2 if the export is unavailable (never falls back to top-100).
 
 ### Daily Checkup — run the report locally
 

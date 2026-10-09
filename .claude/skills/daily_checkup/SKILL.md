@@ -62,32 +62,15 @@ The MCP returns RAW signals. Do not just paste them — **answer each red/yellow
 
 ### Step 2.5 — unified ticket block (visa_bulletin)
 
-Query the Notion follow-ups data source `d0ad4f4b-ed1c-4c69-9fa9-0202a2b0d4d2`
-(`mcp__notion__API-query-data-source`) filtered to `Project=visa_bulletin`,
-`Status not in (Done, Won't Do)`, sort `Due` asc. Bucket by `Due` vs today (`date
-+%F`) + the `important` Subtag, same as every channel:
+`mcp__tracker__sweep(project="visa_bulletin", with_log=True, compact=True)` returns
+every open ticket already bucketed (see the generic skill's "Unified ticket block"),
+same buckets as every channel:
 🔴 past due (`Due < today`) · 🟡 due today · ⭐ important (Subtag has `important`,
 not already urgent) · 📅 coming week (`today < Due <= today+7`). Items `Due >
 today+7` or no Due collapse to a footer line. Render this block at the top of the
 digest (after the headline, before the project findings).
-**Filter gotcha:** `Status`/`Project` are `select`-typed — use `{"select":{...}}`,
-not `{"status":{...}}` (per `refs/notion_followups_manual.md`).
-
-**ALWAYS pass `filter_properties` — the bucketed list only needs 4 fields.**
-Without it the query returns full page objects (~5.5k chars each; Notes' rich_text
-annotations alone are ~2.6k/ticket) — 14 tickets ≈ 19k tokens of context for a
-list that renders only Title/Status/Due/Subtag. With it, ~4x smaller. Pass the
-property *value IDs* exactly as they appear in the schema (percent-encoded —
-verified accepted by the MCP 2026-06-13):
-```
-filter_properties: ["title", "er%40O", "e%7BlA", "Ev%3D%5D"]
-                     Title    Status    Due       Subtag
-```
-**Notes on demand only.** Notes (`skQK`) is the bloat AND is rendered only for the
-0–2 urgent (🔴 past-due / 🟡 due-today) tickets. Do NOT add it to
-`filter_properties`. Instead, for each urgent ticket, fetch its Notes alone via
-`mcp__notion__API-retrieve-a-page-property(page_id=<id>, property_id="skQK")`. A
-quiet day (no urgent tickets) then loads zero Notes.
+Read a ticket's block (`mcp__tracker__get_ticket`) only for the 🔴/🟡 tickets you
+render; a quiet day loads none.
 
 ### Step 3 — compose the digest
 
@@ -98,23 +81,15 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - Then the unified ticket block from Step 2.5 (only the non-empty buckets).
 - Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
   - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
-  - Then a per-surface breakdown — **one surface per line, each row showing 7d views, share-of-total %, distinct page count, MoM%, and WoW%** (user request 2026-06-17: wants the full-coverage section-share table in every digest, with MoM/WoW). Data is in the MCP's `_build_surface_deltas` rows: `this_week` (absolute), `share_pct` (% of 7d total), `pages` (distinct paths in the bucket — the long-tail size), `delta_pct` (MoM vs `cycle_ago`), `wow_pct` (vs `prev_week`). Rows are already sorted by `this_week` desc — render in that order. Annotate the profile surfaces (`employer_profile`, `job_title_profile`) with `← tail` since their share is spread over hundreds of pages. Column header, terse, ≤50 chars/line, no wide tables:
-  - 🚨 **RENDER EVERY SURFACE ROW THE MCP RETURNS — DO NOT SHORTEN.** This block keeps getting trimmed to a handful of rows; that is a recurring defect, not a formatting choice (user, 2026-06-29). The rule:
-    - Emit **one line per surface for ALL rows** in `gc.surfaces` (and the matching `surface_breakdown`/`surface_latency`), in `this_week` desc order. No "top N", no "…and 4 others", no dropping the small/zero-traffic surfaces.
-    - **Never cut surface rows to fit the ~3000-char cap. SPLIT into a 2nd `🤖 `-prefixed send instead** — the per-surface block is the daily KPI payload, so it has priority over single-message length. Truncating rows to stay in one message is the exact failure to avoid.
-    - **`other` is a row too** — render it whenever `this_week > 0`. A large/growing `other` means a live URL surface has no `SURFACE_PATTERN` yet → flag it (`⚠️ other <N> — unclassified surface, add a bucket`) so it gets a taxonomy entry rather than hiding.
-    - The taxonomy now includes the recently-launched pSEO families — `priority_date`, `occupation_salary`, `h1b_sponsors`, `spanish` (added 2026-06-29). They will appear as their own rows; render them like any other surface (they were previously swallowed by `other`).
+  - Then the **per-surface chart**, not a table (user request 2026-10-09: "convert these tables to graphs"). Render it and show it:
+    ```bash
+    uv run scripts/daily_checkup_charts.py --out "$SCRATCH/surfaces.png"   # every surface, one PNG
+    show-media "$SCRATCH/surfaces.png" --caption "Pageviews by surface, 7d"
     ```
-    7d / share / pages / MoM / WoW:
-    dashboard  6.0k  57%  7p   −27%/+33%
-    fam-spons  2.0k  19%  7p   +7%/+17%
-    employer   773   7%  659p  −11%/−15% ← tail
-    job-title  471   5%  420p  −44%/−18% ← tail
-    salaries   425   4%  3p    +8%/−15%
-    blog       320   3%  7p    −59%/+30%
-    predict    220   2%  77p   +159%/−4%
-    ```
-  - This is the SAME full-coverage data `scripts/gc_section_shares.py` prints (export CSV, 100% coverage). Round views (1.2k / 773) + percentages to whole numbers. Show `n/a` for share/pages/MoM/WoW when null — that means the MCP fell back to the top-100 `/stats/hits` path (export unavailable); flag it explicitly (`⚠️ top-100 only — long tail not counted this run`) rather than presenting truncated shares as real.
+    One bar per surface, split readers / headless-Chrome scraper, a tick at the 4-weeks-ago total, and each row labelled with its raw numbers (7d views, readers, share, pages, 4w-ago and last-week totals with MoM/WoW). It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
+    - **Exit 2 (export unavailable):** no chart. Say `⚠️ surface chart unavailable — GC export missing` and render the MCP's surface rows as text, one per line, every row.
+    - A surface the MCP labels `other` with real volume still gets the one-line text flag (`⚠️ other <N> — unclassified surface, add a bucket`).
+  - **The scraper is not a finding.** Its share is visible in the chart and that is all the digest says about it. Do not raise its growth, its spread to a new surface, or a farm-driven MoM jump as 🟡/🔴, and do not propose blocking it. It is absorbed on purpose (`~/.claude/rules/absorb_dont_block.md`; escalation condition in `visa_bulletin_platform/hosting/cloudflare/waf.md` § "The residual proxy pool"): surface it only when a real-user metric crosses that condition — origin 5xx, latency on human requests, homeserver saturation.
   - **NO GSC / SEO lines in this digest — do NOT render any `gsc:` line, not even `gsc: n/a`.** GSC/SEO reporting was removed from the visa_bulletin MCP on 2026-06-26 and moved to the **visa_bulletin_platform** digest (marketing/SEO is owned by the platform overlay, same split as F5Bot/Reddit-watch — see `daily_checkup.md`). The MCP returns no GSC section here, so there is nothing to render and a `gsc: n/a` line falsely reads as a gather-gap in a digest GSC was never in scope for. Clicks/impressions/position live in the platform digest. (If GSC is ever deliberately re-scoped back into THIS channel, that's a code change to the MCP + this skill — until then, no gsc line.)
   - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the surface breakdown, raw numbers both windows (never percentages alone). Note the engaged-time is **whole-visit** active engagement time (session-scoped, attributed to the organic landing surface — keeps counting as the user browses other pages), not time on a single page; label it `engaged/visit` so it's not misread as per-page. It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
@@ -126,6 +101,13 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - Telegram replies: NO wide tables per `[[feedback_telegram_formatting]]` — bullets only.
 - Cap ~3000 chars; split into 2 sends if needed.
 - Prefix every send with `🤖 ` (load-bearing — the receiver classifier uses it).
+
+### Step 3.5 — owed decisions go through the `decisions` MCP
+
+Any choice only Vladimir can make — a ticket with `ball=mine`, a fork a finding turns up — is recorded with `mcp__decisions__add_decision(project="visa_bulletin", owner="Vladimir", ...)` in the same turn and pasted into the digest as the store returns it (`D3 — …`, reply handle `D3b`). Never write inline `(a)/(b)/(c)` options in the digest: an option set outside the store has no id, no re-raise and no ⚖️ line under the reply.
+- **Before adding**, `mcp__decisions__list_decisions(project="visa_bulletin")` — a matter already owed is re-raised from that output in full, never re-added and never pointed at ("see above").
+- **His ruling** (`D3b`, or a positional reply to a numbered digest item that names one) → `resolve_decision` with his words, apply it, and update the ticket in the same turn.
+- The ticket records the D id in its log; the digest's 🔴/🟡 ticket line for it says `→ D3`.
 
 ### Step 4 — deliver
 
