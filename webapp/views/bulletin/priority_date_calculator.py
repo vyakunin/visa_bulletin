@@ -25,6 +25,7 @@ from models.enums.employment_preference import EmploymentPreference
 from models.enums.family_preference import FamilyPreference
 from models.enums.visa_category import VisaCategory
 from models.visa_cutoff_date import VisaCutoffDate
+from webapp.views.bulletin.priority_date_landing import _COUNTRIES, _EB_CLASSES
 
 # Calculator dropdown — ordered (key, short label, long label, group). Only keys
 # that actually have data in the latest bulletin are surfaced (see the view).
@@ -69,13 +70,8 @@ _CALC_COUNTRIES = [
 
 # EB classes / countries that have a dedicated per-country landing page, so the
 # calculator can deep-link "see the full trend + history" for the chosen combo.
-_LANDING_EB = {"eb1", "eb2", "eb3"}
-_LANDING_COUNTRY_SLUG = {
-    Country.INDIA.value: "india",
-    Country.CHINA.value: "china",
-    Country.MEXICO.value: "mexico",
-    Country.PHILIPPINES.value: "philippines",
-}
+_LANDING_EB = set(_EB_CLASSES)
+_LANDING_COUNTRY_SLUG = {country.value: slug for slug, country in _COUNTRIES.items()}
 
 
 def _status_from_row(row: VisaCutoffDate) -> dict:

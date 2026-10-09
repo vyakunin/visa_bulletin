@@ -799,8 +799,8 @@ def dashboard_view(request, category=None, country=None):
     priority_date_links = []
     if category == VisaCategory.EMPLOYMENT_BASED.value and country_slug in _PRIORITY_DATE_COUNTRY_SLUGS:
         priority_date_links = [
-            {"label": short, "url": f"/priority-date/{eb_slug}/{country_slug}/"}
-            for eb_slug, (short, _full) in _PRIORITY_DATE_EB_CLASSES.items()
+            {"label": cls.short, "url": f"/priority-date/{eb_slug}/{country_slug}/"}
+            for eb_slug, cls in _PRIORITY_DATE_EB_CLASSES.items()
         ]
 
     # Crawlable internal links to the sibling per-country dashboards for this

@@ -17,6 +17,7 @@ from webapp.views.bulletin.priority_date_landing import (
     _COUNTRIES,
     _EB_CLASSES,
     _ES_COUNTRY,
+    eb_class_list_text,
 )
 
 
@@ -175,12 +176,12 @@ def spanish_predictions_view(request):
 
 
 def spanish_priority_date_hub_view(request):
-    """Spanish priority-date hub (/es/priority-date/) — index of the 12 ES pages."""
+    """Spanish priority-date hub (/es/priority-date/) — index of the ES landing pages."""
     groups = []
-    for eb_slug, (eb_short, _full) in _EB_CLASSES.items():
+    for eb_slug, cls in _EB_CLASSES.items():
         groups.append(
             {
-                "eb_short": eb_short,
+                "eb_short": cls.short,
                 "countries": [
                     {"label": _ES_COUNTRY[c_slug], "url": f"/es/priority-date/{eb_slug}/{c_slug}/"}
                     for c_slug in _COUNTRIES
@@ -194,7 +195,7 @@ def spanish_priority_date_hub_view(request):
             "page_title": "Fechas de Prioridad por Categoría y País — Boletín de Visas",
             "page_description": (
                 "Fechas de prioridad actuales del Boletín de Visas de EE.UU. por categoría "
-                "(EB-1, EB-2, EB-3) y país (India, China, Filipinas, México), con tendencia "
+                f"({eb_class_list_text('y', serial_comma=False)}) y país (India, China, Filipinas, México), con tendencia "
                 "mensual e historial."
             ),
             "canonical_url": request.build_absolute_uri("/es/priority-date/"),

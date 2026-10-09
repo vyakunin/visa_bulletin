@@ -1398,6 +1398,7 @@ django_py_test(
         "//models/enums:action_type",
         "//models/enums:country",
         "//webapp:urls",
+        "//webapp/views/seo:sitemaps",
         "//webapp/views:views",
         requirement("pytest-django"),
     ],

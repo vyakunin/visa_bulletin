@@ -58,6 +58,8 @@ class TestPriorityDateRollup(TestCase):
         self.assertIn('href="/priority-date/eb1/"', body)
         self.assertIn('href="/priority-date/eb2/"', body)
         self.assertIn('href="/priority-date/eb3/"', body)
+        self.assertIn('href="/priority-date/eb4/"', body)
+        self.assertIn('href="/priority-date/eb4/india/"', body)
         self.assertIn('"@type": "FAQPage"', body)
         self.assertIn('rel="canonical" href="http://testserver/priority-date/"', body)
         # Featured-snippet harvest: definitional lead paragraph + FAQ questions as
@@ -91,6 +93,23 @@ class TestPriorityDateRollup(TestCase):
     def test_eb_class_without_data_404(self):
         # EB-1 has no cutoff rows in this fixture -> no thin page.
         self.assertEqual(self.client.get("/priority-date/eb1/").status_code, 404)
+
+    def test_eb4_rollup_renders_history_without_forecast_links(self):
+        b = Bulletin.objects.get(publication_date=date(2026, 7, 1))
+        VisaCutoffDate.objects.create(
+            bulletin=b, visa_category="employment_based", visa_class="4th",
+            action_type=ActionType.FINAL_ACTION.value, country=Country.INDIA.value,
+            cutoff_value="15SEP22", cutoff_date=date(2022, 9, 15),
+            is_current=False, is_unavailable=False,
+        )
+        resp = self.client.get("/priority-date/eb4/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn("EB-4 Priority Date by Country", body)
+        self.assertIn("September 15, 2022", body)
+        self.assertIn('href="/priority-date/eb4/india/"', body)
+        self.assertNotIn("+ predictions", body)
+        self.assertNotIn("chart, and predictions", body)
 
     def test_route_precedence(self):
         # Hub (0 seg), rollup (1 seg), and per-country landing (2 seg) stay distinct.

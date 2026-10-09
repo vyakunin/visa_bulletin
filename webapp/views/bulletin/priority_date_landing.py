@@ -3,7 +3,7 @@
 SEO landing pages targeting high-intent queries like "eb2 india priority date",
 "eb3 priority date china", etc. (real GSC demand — "eb2 priority date india"
 pulls clicks at pos ~7-8). Each page is a focused answer for ONE employment
-preference (EB-1/2/3) x ONE country (India/China/Philippines/Mexico): the
+preference (EB-1/2/3/4) x ONE country (India/China/Philippines/Mexico): the
 current Final Action + Dates-for-Filing cutoffs, the latest month-over-month
 movement, a short recent-history table, an FAQ (FAQPage schema), and links into
 the full interactive dashboard + salary data.
@@ -12,11 +12,13 @@ Deliberately CHEAP to render — no live VQS solver (the per-country dashboard's
 filter-combo query cost is the heavy path; see Notion EB-dashboard latency
 ticket). Headline current status comes from the latest bulletin row; trend +
 history reuse the already-normalized aggregator arrays. Predictions are linked,
-not embedded, to keep this page fast and cacheable.
+not embedded, to keep this page fast and cacheable — and only for a class with
+``has_forecast``; EB-4 pages are history only.
 """
 
 import json
 from datetime import date
+from typing import NamedTuple
 
 from django.http import Http404
 from django.shortcuts import render
@@ -31,13 +33,36 @@ from models.enums.cutoff_state import CUTOFF_STATE_CURRENT, CUTOFF_STATE_UNAVAIL
 from models.enums.employment_preference import EmploymentPreference
 from models.visa_cutoff_date import VisaCutoffDate
 
-# slug -> (short label, full aggregated label). Restricted to EB-1/2/3, the
-# preferences with real per-country priority-date search demand + non-thin data.
+
+class EbLandingClass(NamedTuple):
+    """One employment preference that has priority-date landing pages."""
+
+    short: str  # "EB-2"
+    full: str  # the aggregated series label
+    # False: no forecast model covers the class, so its pages show history only and
+    # never link out as "+ predictions".
+    has_forecast: bool
+    # False: H-1B/PERM salary data has nothing to say about the class (EB-4 special immigrants).
+    has_salary_data: bool
+
+
+# slug -> class.
 _EB_CLASSES = {
-    "eb1": ("EB-1", "EB-1: Priority Workers"),
-    "eb2": ("EB-2", "EB-2: Professionals with Advanced Degrees"),
-    "eb3": ("EB-3", "EB-3: Skilled Workers, Professionals"),
+    "eb1": EbLandingClass("EB-1", "EB-1: Priority Workers", has_forecast=True, has_salary_data=True),
+    "eb2": EbLandingClass(
+        "EB-2", "EB-2: Professionals with Advanced Degrees", has_forecast=True, has_salary_data=True
+    ),
+    "eb3": EbLandingClass("EB-3", "EB-3: Skilled Workers, Professionals", has_forecast=True, has_salary_data=True),
+    "eb4": EbLandingClass("EB-4", "EB-4: Special Immigrants", has_forecast=False, has_salary_data=False),
 }
+
+
+def eb_class_list_text(conjunction: str = "and", serial_comma: bool = True) -> str:
+    """The landing classes as prose, e.g. "EB-1, EB-2, EB-3, and EB-4"."""
+    shorts = [c.short for c in _EB_CLASSES.values()]
+    comma = "," if serial_comma else ""
+    return f"{', '.join(shorts[:-1])}{comma} {conjunction} {shorts[-1]}"
+
 
 # slug -> Country. The four countries with their own per-country backlog.
 _COUNTRIES = {
@@ -308,7 +333,7 @@ def priority_date_landing_view(request, eb_class: str, country: str):
     if eb is None or ctry is None:
         raise Http404("Unknown priority-date landing page")
 
-    eb_short, eb_full = eb
+    eb_short, eb_full = eb.short, eb.full
     country_display = Country(ctry.value).label.split(" (")[0]  # "China" not "China (mainland born)"
 
     final_series = _series(ctry.value, ActionType.FINAL_ACTION.value, eb_full)
@@ -350,8 +375,8 @@ def priority_date_landing_view(request, eb_class: str, country: str):
 
     # Internal-link mesh: sibling EB classes (same country) + same class (other countries).
     sibling_classes = [
-        {"label": short, "url": f"/priority-date/{slug}/{country.lower()}/"}
-        for slug, (short, _full) in _EB_CLASSES.items()
+        {"label": cls.short, "url": f"/priority-date/{slug}/{country.lower()}/"}
+        for slug, cls in _EB_CLASSES.items()
         if slug != eb_class.lower()
     ]
     sibling_countries = [
@@ -384,6 +409,8 @@ def priority_date_landing_view(request, eb_class: str, country: str):
         "chart_json": chart_json,
         "faq": faq,
         "dashboard_url": f"/employment-based/{country.lower()}/",
+        "has_forecast": eb.has_forecast,
+        "has_salary_data": eb.has_salary_data,
         "sibling_classes": sibling_classes,
         "sibling_countries": sibling_countries,
     }
@@ -545,7 +572,7 @@ def spanish_priority_date_landing_view(request, eb_class: str, country: str):
     if eb is None or ctry is None:
         raise Http404("Unknown priority-date landing page")
 
-    eb_short, eb_full = eb
+    eb_short, eb_full = eb.short, eb.full
     country_es = _ES_COUNTRY[country.lower()]
 
     final_series = _series(ctry.value, ActionType.FINAL_ACTION.value, eb_full)
@@ -596,8 +623,8 @@ def spanish_priority_date_landing_view(request, eb_class: str, country: str):
     }
 
     sibling_classes = [
-        {"label": short, "url": f"/es/priority-date/{slug}/{country.lower()}/"}
-        for slug, (short, _full) in _EB_CLASSES.items()
+        {"label": cls.short, "url": f"/es/priority-date/{slug}/{country.lower()}/"}
+        for slug, cls in _EB_CLASSES.items()
         if slug != eb_class.lower()
     ]
     sibling_countries = [
@@ -626,6 +653,8 @@ def spanish_priority_date_landing_view(request, eb_class: str, country: str):
         "chart_json": chart_json,
         "faq": faq,
         "dashboard_url": f"/employment-based/{country.lower()}/",
+        "has_forecast": eb.has_forecast,
+        "has_salary_data": eb.has_salary_data,
         "sibling_classes": sibling_classes,
         "sibling_countries": sibling_countries,
     }

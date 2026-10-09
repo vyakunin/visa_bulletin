@@ -5,7 +5,7 @@ Two SEO pages that sit ABOVE the per-(EB class x country) landing pages
 country-AGNOSTIC priority-date demand the per-country pages miss:
 
 * ``/priority-date/``            — hub: every EB class x country at a glance.
-* ``/priority-date/<eb_class>/`` — rollup: ONE EB class (EB-1/2/3) across all
+* ``/priority-date/<eb_class>/`` — rollup: ONE EB class (EB-1/2/3/4) across all
   five chargeability areas (India, China, Mexico, Philippines, All Others).
 
 Why they exist (GSC, 2026-06): the country-agnostic query "eb2 priority date"
@@ -30,10 +30,12 @@ from models.bulletin import Bulletin
 from models.enums.action_type import ActionType
 from models.enums.country import Country
 from webapp.views.bulletin.priority_date_landing import (
+    _COUNTRIES,
     _EB_CLASSES,
     _latest_status,
     _series,
     _trend,
+    eb_class_list_text,
 )
 
 # Chargeability areas shown on a rollup, in search-interest order. India/China
@@ -49,7 +51,7 @@ _ROLLUP_COUNTRIES = (
 # Per-country landing pages only exist for the four backlogged countries
 # (see priority_date_landing._COUNTRIES); Country.ALL has none, so its row links
 # to the full employment-based dashboard instead.
-_HAS_LANDING = {"india", "china", "philippines", "mexico"}
+_HAS_LANDING = set(_COUNTRIES)
 
 
 def _country_label(country: Country) -> str:
@@ -156,9 +158,10 @@ def _hub_faq(bulletin_month: str) -> list[dict]:
         {
             "q": "How do I find my priority date?",
             "a": (
-                "It is printed on your I-140 (or I-130) approval notice, Form I-797. Compare it to "
-                "the Final Action and Dates-for-Filing cutoffs for your employment preference "
-                "(EB-1/EB-2/EB-3) and country of chargeability."
+                "It is printed on your petition's approval notice, Form I-797 (I-140 for EB-1 to "
+                "EB-3, I-360 for EB-4, I-130 for family). Compare it to the Final Action and "
+                f"Dates-for-Filing cutoffs for your employment preference ({eb_class_list_text('or')}) "
+                "and country of chargeability."
             ),
         },
         {
@@ -177,7 +180,7 @@ def priority_date_eb_rollup_view(request, eb_class: str):
     eb = _EB_CLASSES.get((eb_class or "").lower())
     if eb is None:
         raise Http404("Unknown priority-date rollup")
-    eb_short, eb_full = eb
+    eb_short, eb_full = eb.short, eb.full
     slug = eb_class.lower()
 
     rows: list[dict] = []
@@ -216,8 +219,8 @@ def priority_date_eb_rollup_view(request, eb_class: str):
     canonical_url = request.build_absolute_uri(request.path)
     faq = _rollup_faq(eb_short, rows, bulletin_month)
     sibling_classes = [
-        {"label": short, "url": f"/priority-date/{sl}/"}
-        for sl, (short, _full) in _EB_CLASSES.items()
+        {"label": cls.short, "url": f"/priority-date/{sl}/"}
+        for sl, cls in _EB_CLASSES.items()
         if sl != slug
     ]
 
@@ -230,6 +233,8 @@ def priority_date_eb_rollup_view(request, eb_class: str):
         "structured_data": json.dumps(_faq_schema(faq)),
         "eb_short": eb_short,
         "eb_full": eb_full,
+        "has_forecast": eb.has_forecast,
+        "has_salary_data": eb.has_salary_data,
         "bulletin_month": bulletin_month,
         "lead_answer": _rollup_lead_answer(eb_short, rows, bulletin_month),
         "rows": rows,
@@ -243,7 +248,7 @@ def priority_date_hub_view(request):
     """Index of every priority-date page — targets generic "priority date" / "visa bulletin priority date"."""
     bulletin_month = _bulletin_month()
     classes = []
-    for slug, (eb_short, eb_full) in _EB_CLASSES.items():
+    for slug, cls in _EB_CLASSES.items():
         countries = [
             {"label": _country_label(country), "url": f"/priority-date/{slug}/{ctry_slug}/"}
             for ctry_slug, country in _ROLLUP_COUNTRIES
@@ -251,17 +256,17 @@ def priority_date_hub_view(request):
         ]
         classes.append(
             {
-                "eb_short": eb_short,
-                "eb_full": eb_full,
+                "eb_short": cls.short,
+                "eb_full": cls.full,
                 "url": f"/priority-date/{slug}/",
                 "countries": countries,
             }
         )
 
     page_heading = "Green Card Priority Dates"
-    page_title = "Green Card Priority Dates — EB-1, EB-2, EB-3 by Country (Visa Bulletin)"
+    page_title = f"Green Card Priority Dates — {eb_class_list_text()} by Country (Visa Bulletin)"
     page_description = (
-        f"Look up the current EB-1, EB-2, and EB-3 priority dates by country from the "
+        f"Look up the current {eb_class_list_text()} priority dates by country from the "
         f"{bulletin_month} U.S. Visa Bulletin: Final Action and Dates-for-Filing cutoffs for "
         f"India, China, Mexico, the Philippines, and all other countries."
     )

@@ -33,6 +33,7 @@ py_library(
         "//models:salary",
         "//webapp/views:prediction_views",
         "//webapp/views/bulletin:prediction_month_forecast",
+        "//webapp/views/bulletin:priority_date_landing",
         requirement("Django"),
     ],
 )
