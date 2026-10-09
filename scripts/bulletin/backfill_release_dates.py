@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Backfill ``Bulletin.released_on`` — the real State Department release date.
 
-``publication_date`` is the governing month and ``fetched_at`` only approximates
-the release date for bulletins our own cron ingested live (4 of 290 rows as of
-2026-07). This fills the rest from the Internet Archive: the earliest capture of
-each bulletin's travel.state.gov URL.
+``publication_date`` is the governing month. This fills ``released_on`` from the
+Internet Archive: the earliest capture of each bulletin's travel.state.gov URL.
 
 Sources, best first:
-  live     our own ``fetched_at`` (within hours of the State Dept posting)
+  live     a release the ingest bridge bracketed to within 24h, recorded at ingest
+           by ``scripts/cron/refresh_bulletin.py``. Kept, never derived here: our
+           own ``fetched_at`` is when we ingested, which trails the release by up to
+           days whenever the bridge lags.
   wayback  earliest archived capture — an UPPER bound (measured lag vs our live
            ingests: -1 to +6 days)
 
@@ -77,11 +78,10 @@ def _plausible(governing_month: date, released_on: date | None) -> bool:
 
 
 def _live_candidate(b: Bulletin) -> date | None:
-    """``fetched_at`` as a release-date candidate, if it looks like a live ingest."""
-    if b.fetched_at is None:
+    """The release date the ingest bridge already recorded for this bulletin, if any."""
+    if b.released_on_source != Bulletin.SOURCE_LIVE:
         return None
-    candidate = b.fetched_at.date()
-    return candidate if _plausible(b.publication_date, candidate) else None
+    return b.released_on if _plausible(b.publication_date, b.released_on) else None
 
 
 def backfill(

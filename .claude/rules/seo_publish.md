@@ -143,25 +143,16 @@ with it. A release under 3 days before its month is dropped from
 `release_schedule`'s history (`_MIN_LEAD_DAYS`), so it never moves the typical-day
 estimate.
 
-**`released_on` can be NULL — do not substitute `fetched_at` for it, and know
-that two code paths already do.** Both the Aug-2026 and Sep-2026 rows have no
-`released_on` (the minipc bridge records none). `fetched_at` is when WE ingested,
-not when State published, and the bias is always LATE because a bridge can only
-fetch after a release: Aug-2026 reads Jul 20 against an actual ~Jul 15-16
-(GoatCounter daily pageviews 12.3k / 15.4k / 14.7k on Jul 15/16/17 vs a ~2k
-baseline), and Sep-2026 reads Aug 22 against an actual Aug 21 22:00-22:30 ET.
-
-The substitution is not just a reading habit — it is a live defect, tracked as
-`3cf62b8d409f81fbaf0be401b573270b`:
-`lib/business/bulletin/release_schedule.py:_record_from_bulletin` falls back to
-`fetched_at.date()`, so the public `/when-is-the-next-visa-bulletin/` estimator
-already uses it; and `scripts/bulletin/backfill_release_dates.py` would WRITE it
-(dry-run 2026-09-02 resolved both rows from source `live`, Wayback contributing
-nothing). **Do not run that backfill without `--dry-run` against recent rows** —
-leaving a row NULL is strictly better than writing a known-late value, which is
-the script's own stated philosophy. When `released_on` is NULL, bound the release
-from the bridge log's discover-absent/discover-present bracket, or from the
-GoatCounter daily spike.
+**`released_on` comes from the bridge's release bracket, never from `fetched_at`.**
+`fetched_at` is when WE ingested, which trails the release whenever the bridge lags.
+The fetcher records, per month, the last 30-minute poll whose index lacked the
+edition and the first that listed it (`$STATE_DIR/release_brackets.json` on the
+minipc); `refresh_bulletin` writes a bracket of at most 24h as `released_on`, read in
+Eastern time (`lib/business/bulletin/release_bracket.py`). A wider bracket — a
+failure streak, a bridge started after the release — leaves the row NULL, and the
+estimator skips a NULL row rather than guessing. Aug/Sep/Oct 2026 predate the
+bracket and were set from the bridge log by
+`scripts/oneoff/correct_bridge_release_dates.py`.
 
 **Keep the cadence armed durably, not in a session.** Each cycle schedules the
 next one via the `scheduled_actions` MCP: a single `visa_bulletin` readiness

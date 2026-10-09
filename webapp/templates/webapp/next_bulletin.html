@@ -13,7 +13,7 @@
       "name": "When does the next Visa Bulletin come out?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin is expected to be released around {{ schedule.next_release_estimate|date:'F j, Y' }}. The U.S. Department of State publishes each Visa Bulletin in the middle of the prior month — recently between the {{ schedule.next_release_window.0|date:'jS' }} and the {{ schedule.next_release_window.1|date:'jS' }} — for the month that follows. The most recent bulletin ({{ schedule.latest_governing_month|date:'F Y' }}) was released on {{ schedule.latest_released_on|date:'F j, Y' }}."
+        "text": "The {{ schedule.next_governing_month|date:'F Y' }} Visa Bulletin is expected to be released around {{ schedule.next_release_estimate|date:'F j, Y' }}. The U.S. Department of State publishes each Visa Bulletin in the middle of the prior month — recently between the {{ schedule.next_release_window.0|date:'jS' }} and the {{ schedule.next_release_window.1|date:'jS' }} — for the month that follows.{% if schedule.latest_released_on %} The most recent bulletin ({{ schedule.latest_governing_month|date:'F Y' }}) was released on {{ schedule.latest_released_on|date:'F j, Y' }}.{% endif %}"
       }
     },
     {
@@ -108,9 +108,10 @@
 
     <p class="lead">
       The U.S. Department of State publishes the Visa Bulletin <strong>monthly</strong>,
-      in the middle of each month, for the <em>following</em> month. The most recent
+      in the middle of each month, for the <em>following</em> month.
+      {% if schedule.latest_released_on %}The most recent
       edition &mdash; the <strong>{{ schedule.latest_governing_month|date:"F Y" }}</strong>
-      bulletin &mdash; was released on <strong>{{ schedule.latest_released_on|date:"F j, Y" }}</strong>.
+      bulletin &mdash; was released on <strong>{{ schedule.latest_released_on|date:"F j, Y" }}</strong>.{% endif %}
     </p>
 
     <h2 class="h5 mt-4">Recent release dates</h2>

@@ -5,19 +5,18 @@ before the month it governs (the "July" bulletin posts in mid-June).
 ``Bulletin.publication_date`` is normalised to the 1st of the *governing* month,
 so the real release date is not stored there.
 
-``Bulletin.released_on`` carries the release date itself, backfilled by
-``scripts/bulletin/backfill_release_dates.py`` from two sources:
+``Bulletin.released_on`` carries the release date itself, in Eastern time, from:
 
-* ``live`` — our own cron's ``fetched_at``, within hours of the State Department
-  posting (only the handful of bulletins we ingested live).
+* ``live`` — the ingest bridge's own 30-minute polls bracketed the release to within
+  24h (``lib/business/bulletin/release_bracket.py``).
 * ``wayback`` — the earliest Internet Archive capture of the bulletin's
-  travel.state.gov URL. An **upper bound**: the crawler sees the page some time
-  after State posts it (measured lag vs our live ingests: -1 to +6 days).
+  travel.state.gov URL, backfilled by ``scripts/bulletin/backfill_release_dates.py``.
+  An **upper bound**: the crawler sees the page some time after State posts it
+  (measured lag vs our live ingests: -1 to +6 days).
 
-Rows whose implied lead time is implausible are left NULL rather than guessed,
-so "we don't know" stays distinguishable from "we know". For rows not yet
-backfilled this module falls back to the original ``fetched_at`` heuristic, so
-it keeps working on a database that predates the backfill.
+A row with no ``released_on`` is unknown and stays out of the history.
+``fetched_at`` is when we ingested, which trails the release by days whenever the
+bridge lags, so it is never read as a release date.
 """
 
 from dataclasses import dataclass
@@ -29,10 +28,8 @@ from dateutil.relativedelta import relativedelta
 from models.bulletin import Bulletin
 
 # A release lands a few days to a few weeks BEFORE the governing month's 1st.
-# Bulk-backfilled rows share one synthetic fetched_at far from their governing
-# month, and a sparsely-crawled URL's first capture can land after the governing
-# month starts (e.g. May 2020, first archived on 2020-05-01). This window
-# excludes both: outside it we record nothing rather than a wrong date.
+# A sparsely-crawled URL's first capture can land after the governing month starts
+# (e.g. May 2020, first archived on 2020-05-01); a date outside this window is dropped.
 _MIN_LEAD_DAYS = 3
 _MAX_LEAD_DAYS = 45
 
@@ -52,7 +49,7 @@ class ReleaseRecord:
 
     governing_month: date  # 1st of the governing month
     released_on: date
-    source: str = ""  # Bulletin.SOURCE_LIVE | SOURCE_WAYBACK | "" (fetched_at fallback)
+    source: str = ""  # Bulletin.SOURCE_LIVE | SOURCE_WAYBACK
 
     @property
     def lead_days(self) -> int:
@@ -70,7 +67,7 @@ class ReleaseSchedule:
     """Projected next release + the recent history it was derived from."""
 
     latest_governing_month: date
-    latest_released_on: date
+    latest_released_on: date | None  # None when the newest edition's release went unrecorded
     next_governing_month: date
     next_release_estimate: date  # soonest day the release can still land
     next_release_window: tuple[date, date]  # observed spread of release days
@@ -105,25 +102,14 @@ class ReleaseOdds:
 
 
 def _record_from_bulletin(b: Bulletin) -> ReleaseRecord | None:
-    """Best available release record for one bulletin, or None when unknown.
-
-    Prefers the backfilled ``released_on``; falls back to the ``fetched_at``
-    heuristic so this keeps working before/without the backfill.
-    """
-    if b.released_on is not None:
-        rec = ReleaseRecord(
-            governing_month=b.publication_date,
-            released_on=b.released_on,
-            source=b.released_on_source or "",
-        )
-    elif b.fetched_at is not None:
-        rec = ReleaseRecord(
-            governing_month=b.publication_date,
-            released_on=b.fetched_at.date(),
-            source="",
-        )
-    else:
+    """The bulletin's recorded release, or None when it is unknown or implausible."""
+    if b.released_on is None:
         return None
+    rec = ReleaseRecord(
+        governing_month=b.publication_date,
+        released_on=b.released_on,
+        source=b.released_on_source or "",
+    )
     return rec if _MIN_LEAD_DAYS <= rec.lead_days <= _MAX_LEAD_DAYS else None
 
 
@@ -189,7 +175,7 @@ def get_release_schedule(today: date | None = None) -> ReleaseSchedule | None:
     window = (_clamp_dom(release_month_first, lo_dom), _clamp_dom(release_month_first, hi_dom))
     return ReleaseSchedule(
         latest_governing_month=newest.publication_date,
-        latest_released_on=newest.released_on or newest.fetched_at.date(),
+        latest_released_on=newest.released_on,
         next_governing_month=next_governing,
         next_release_estimate=estimate,
         next_release_window=window,

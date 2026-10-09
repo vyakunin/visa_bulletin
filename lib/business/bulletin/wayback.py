@@ -1,10 +1,8 @@
 """Internet Archive (Wayback) CDX lookups for bulletin release dates.
 
-``Bulletin.publication_date`` is the *governing* month, and ``fetched_at`` only
-approximates the real State Department release date for bulletins our own cron
-ingested live (4 of 290 rows as of 2026-07). For everything older, the earliest
-Wayback capture of the bulletin's travel.state.gov URL is the best obtainable
-proxy.
+``Bulletin.publication_date`` is the *governing* month. For editions the ingest
+bridge did not bracket, the earliest Wayback capture of the bulletin's
+travel.state.gov URL is the best obtainable proxy for the release date.
 
 That proxy is an **upper bound**: the crawler sees the page some time *after*
 State posts it. Measured against the four live-ingested bulletins the lag is
@@ -26,6 +24,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 import requests
+
+from lib.business.bulletin.release_bracket import release_date_of
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,10 @@ def first_capture_date(
     *,
     cache_dir: Path | None = None,
 ) -> tuple[date | None, int | None]:
-    """``(first capture date, capture gap days)`` for ``url``; ``(None, None)`` if unarchived."""
+    """``(first capture date, capture gap days)`` for ``url``; ``(None, None)`` if unarchived.
+
+    The date is the State Department's calendar day of the (UTC) capture.
+    """
     history = fetch_captures(url, cache_dir=cache_dir)
     first = history.first_capture
-    return (first.date() if first else None, history.capture_gap_days)
+    return (release_date_of(first) if first else None, history.capture_gap_days)

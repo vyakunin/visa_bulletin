@@ -52,6 +52,9 @@ CONTAINER_CACHE="/tmp/vb_bulletin_cache"
 STATE_DIR="${BULLETIN_SYNC_STATE_DIR:-$HOME/.local/state/visa_bulletin}"
 FAIL_STREAK_FILE="$STATE_DIR/fetch_fail_streak"
 LAST_SUCCESS_FILE="$STATE_DIR/last_success"
+# Per month: the last poll whose index lacked it, the first that listed it. The fetcher
+# copies it into the cache, and refresh_bulletin records a <=24h bracket as released_on.
+RELEASE_BRACKETS_FILE="$STATE_DIR/release_brackets.json"
 # Overridable so the alert path can be exercised against a recorder stub instead of
 # the live bot (see tests/test_sync_bulletin_alerting.sh).
 NOTIFY="${BULLETIN_SYNC_NOTIFY:-$HOME/cursor_projects/agent_infra/scripts/notify_chat.py}"
@@ -146,6 +149,7 @@ run_fetch() {
   rm -rf "$CACHE"
   SUMMARY="$(cd "$REPO" && uv run --with playwright --with python-dateutil \
     python scripts/fetch_bulletin_via_browser.py --cache-dir "$CACHE" \
+    --state-file "$RELEASE_BRACKETS_FILE" \
     "${MONTHS_ARG[@]}" "${CDP_ARG[@]}" 2>"$FETCH_ERR")"
   FETCH_RC=$?
   cat "$FETCH_ERR"

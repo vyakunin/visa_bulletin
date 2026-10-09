@@ -69,3 +69,18 @@ class TestCacheIsBestEffort(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFirstCaptureDateIsEastern(unittest.TestCase):
+    """CDX timestamps are UTC; a capture at 02:00 UTC is the previous day in
+    Washington, and the release date is the State Department's calendar day."""
+
+    def test_early_utc_capture_is_the_previous_eastern_day(self):
+        with mock.patch.object(wayback, "_query_cdx", return_value=["20250816020000", "20250817120000"]):
+            first, _ = wayback.first_capture_date(URL)
+        self.assertEqual(first, datetime(2025, 8, 15).date())
+
+    def test_midday_capture_keeps_its_day(self):
+        with mock.patch.object(wayback, "_query_cdx", return_value=ROWS):
+            first, _ = wayback.first_capture_date(URL)
+        self.assertEqual(first, datetime(2025, 7, 15).date())

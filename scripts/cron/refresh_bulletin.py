@@ -45,9 +45,14 @@ from django.core.cache import cache  # noqa: E402
 
 from django_config.logging_config import setup_logging  # noqa: E402
 from lib.business.blog.bulletin_narrator import BulletinNarrator  # noqa: E402
+from lib.business.bulletin.release_bracket import (  # noqa: E402
+    RELEASE_OBSERVATIONS_FILENAME,
+    load_brackets,
+)
 from lib.ingest.orchestrator import PipelineOrchestrator  # noqa: E402
 from lib.ingest.plugins.visa_bulletin import VisaBulletinPlugin  # noqa: E402
 from lib.ingest.registry import PluginRegistry  # noqa: E402
+from lib.utils.http_utils import bulletin_cache_dir  # noqa: E402
 from lib.utils.logging_utils import ScriptLogger  # noqa: E402
 from lib.utils.url_utils import (  # noqa: E402
     normalize_source_url,
@@ -201,6 +206,31 @@ def ingest_sources(source_ids: list[int]) -> int:
     return succeeded
 
 
+def record_observed_release_dates() -> int:
+    """Write ``released_on`` for each bulletin whose release the bridge bracketed.
+
+    Fills only an empty ``released_on``, so a re-run, or a bracket already recorded,
+    changes nothing. A bracket wider than 24h records nothing. Returns rows written.
+    """
+    cache_dir = bulletin_cache_dir()
+    if cache_dir is None:
+        return 0
+    written = 0
+    for month, bracket in load_brackets(cache_dir / RELEASE_OBSERVATIONS_FILENAME).items():
+        released = bracket.release_date()
+        if released is None:
+            continue
+        n = Bulletin.objects.filter(publication_date=month, released_on__isnull=True).update(
+            released_on=released,
+            released_on_source=Bulletin.SOURCE_LIVE,
+            released_on_gap_days=None,
+        )
+        if n:
+            logger.info("Recorded release date %s for the %s bulletin", released, month.strftime("%B %Y"))
+        written += n
+    return written
+
+
 def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
     """Publish VQS predictions for the N most recently ingested bulletins.
 
@@ -319,11 +349,14 @@ def main() -> None:
 
     pending_ids = get_pending_bulletin_source_ids()
     if not pending_ids:
+        record_observed_release_dates()
         logger.info("No pending bulletins to ingest. Done.")
         return
 
     logger.info("Ingesting %d pending bulletin source(s)...", len(pending_ids))
     ingested = ingest_sources(pending_ids)
+    # Before the publish + cache clear below, so the first render carries the date.
+    record_observed_release_dates()
 
     if ingested > 0:
         # Publish predictions + posts FIRST, then clear caches — so the first

@@ -53,11 +53,10 @@ py_binary(
     },
 )
 
-py_binary(
-    name = "backfill_release_dates",
+py_library(
+    name = "backfill_release_dates_lib",
     srcs = ["backfill_release_dates.py"],
-    main = "backfill_release_dates.py",
-    visibility = ["//visibility:public"],
+    visibility = ["//tests:__pkg__"],
     deps = [
         "//django_config:settings",
         "//webapp:apps",
@@ -70,6 +69,14 @@ py_binary(
         requirement("psycopg2_binary"),
         requirement("requests"),
     ],
+)
+
+py_binary(
+    name = "backfill_release_dates",
+    srcs = ["backfill_release_dates.py"],
+    main = "backfill_release_dates.py",
+    visibility = ["//visibility:public"],
+    deps = [":backfill_release_dates_lib"],
     python_version = "PY3",
     env = {
         "DJANGO_SETTINGS_MODULE": "django_config.settings",

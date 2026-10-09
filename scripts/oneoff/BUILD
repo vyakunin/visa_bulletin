@@ -296,3 +296,29 @@ py_binary(
         "DB_NAME": "postgres",
     },
 )
+
+py_library(
+    name = "correct_bridge_release_dates_lib",
+    srcs = ["correct_bridge_release_dates.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//django_config:settings",
+        "//lib/business/bulletin:release_bracket",
+        "//lib/utils:logging_utils",
+        "//models:bulletin",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),
+    ],
+)
+
+py_binary(
+    name = "correct_bridge_release_dates",
+    srcs = ["correct_bridge_release_dates.py"],
+    main = "correct_bridge_release_dates.py",
+    deps = [":correct_bridge_release_dates_lib"],
+    python_version = "PY3",
+    env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)

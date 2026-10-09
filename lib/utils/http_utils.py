@@ -27,6 +27,15 @@ def get_workspace_dir() -> Path:
     return Path(__file__).parent.parent
 
 
+BULLETIN_HTML_CACHE_DIR_ENV = "BULLETIN_HTML_CACHE_DIR"
+
+
+def bulletin_cache_dir() -> Path | None:
+    """The browser-fetched bulletin cache the bridge streams to prod, when one is set."""
+    cache_dir = os.environ.get(BULLETIN_HTML_CACHE_DIR_ENV)
+    return Path(cache_dir) if cache_dir else None
+
+
 def bulletin_cache_file(url: str) -> Path | None:
     """Return a pre-fetched HTML cache file for ``url``, or None.
 
@@ -36,13 +45,13 @@ def bulletin_cache_file(url: str) -> Path | None:
     ``scripts/fetch_bulletin_via_browser.py``) are fed to the prod ingest, which has no
     browser. A pure no-op when the env var is unset, so existing flows are untouched.
     """
-    cache_dir = os.environ.get("BULLETIN_HTML_CACHE_DIR")
-    if not cache_dir:
+    cache_dir = bulletin_cache_dir()
+    if cache_dir is None:
         return None
     name = Path(urlparse(url).path).name
     if not name:
         return None
-    candidate = Path(cache_dir) / name
+    candidate = cache_dir / name
     return candidate if candidate.is_file() else None
 
 

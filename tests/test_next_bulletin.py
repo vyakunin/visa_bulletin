@@ -16,14 +16,24 @@ from lib.business.bulletin.release_schedule import (
 from models.bulletin import Bulletin
 
 
-def _make(governing: date, released: datetime) -> None:
-    """Create a Bulletin whose fetched_at is forced to ``released``.
+def _make_released(governing: date, released: date, source: str = "wayback") -> Bulletin:
+    """Create a Bulletin with a backfilled ``released_on`` (the real release date)."""
+    b = Bulletin.objects.create(publication_date=governing)
+    Bulletin.objects.filter(pk=b.pk).update(
+        released_on=released, released_on_source=source
+    )
+    return Bulletin.objects.get(pk=b.pk)
+
+
+def _make_unreleased(governing: date, fetched: datetime) -> Bulletin:
+    """A Bulletin with no recorded release date, ingested at ``fetched``.
 
     fetched_at is auto_now_add, so .create() stamps "now"; a queryset .update()
-    bypasses auto_now_add to set the controlled release-date proxy.
+    bypasses auto_now_add.
     """
     b = Bulletin.objects.create(publication_date=governing)
-    Bulletin.objects.filter(pk=b.pk).update(fetched_at=released)
+    Bulletin.objects.filter(pk=b.pk).update(fetched_at=fetched)
+    return Bulletin.objects.get(pk=b.pk)
 
 
 def _dt(y: int, m: int, d: int) -> datetime:
@@ -32,19 +42,19 @@ def _dt(y: int, m: int, d: int) -> datetime:
 
 class TestReleaseSchedule(TestCase):
     def setUp(self):
-        # Live-ingested: released ~mid the prior month (lead 14-17 days).
-        _make(date(2025, 5, 1), _dt(2025, 4, 16))  # lead 15
-        _make(date(2025, 6, 1), _dt(2025, 5, 15))  # lead 17
-        _make(date(2025, 7, 1), _dt(2025, 6, 16))  # lead 15
-        # Bulk-backfill row: one synthetic fetched_at far from its governing month.
-        _make(date(2002, 1, 1), _dt(2026, 3, 7))  # huge negative lead -> excluded
+        # Released ~mid the prior month (lead 15-17 days).
+        _make_released(date(2025, 5, 1), date(2025, 4, 16), Bulletin.SOURCE_LIVE)  # lead 15
+        _make_released(date(2025, 6, 1), date(2025, 5, 15), Bulletin.SOURCE_LIVE)  # lead 17
+        _make_released(date(2025, 7, 1), date(2025, 6, 16), Bulletin.SOURCE_LIVE)  # lead 15
 
-    def test_backfill_rows_excluded_from_history(self):
-        recs = recent_live_releases()
-        govs = {r.governing_month for r in recs}
-        self.assertIn(date(2025, 7, 1), govs)
-        self.assertNotIn(date(2002, 1, 1), govs)  # synthetic backfill dropped
-        self.assertEqual(len(recs), 3)
+    def test_ingest_time_is_never_a_release_date(self):
+        """Our own ingest time only bounds the release from above, and the bridge can
+        lag it by a day or more (Sep 2026 read as a Saturday). A row with no recorded
+        release stays out of the history the estimate is built from."""
+        _make_unreleased(date(2025, 4, 1), _dt(2025, 3, 20))  # a plausible lead of 12
+        govs = {r.governing_month for r in recent_live_releases()}
+        self.assertNotIn(date(2025, 4, 1), govs)
+        self.assertEqual(len(govs), 3)
 
     def test_projects_next_month_and_release_date(self):
         sched = get_release_schedule(today=date(2025, 6, 20))
@@ -64,7 +74,7 @@ class TestReleaseSchedule(TestCase):
     def test_release_inside_min_lead_still_advances_the_next_month(self):
         # Released 2 days before its governing month: too close to trust as a release
         # date, but the bulletin is out, so the page must name the one after it.
-        _make(date(2025, 8, 1), _dt(2025, 7, 30))
+        _make_released(date(2025, 8, 1), date(2025, 7, 30), Bulletin.SOURCE_LIVE)
         sched = get_release_schedule(today=date(2025, 7, 30))
         self.assertEqual(sched.latest_governing_month, date(2025, 8, 1))
         self.assertEqual(sched.latest_released_on, date(2025, 7, 30))
@@ -72,17 +82,24 @@ class TestReleaseSchedule(TestCase):
         self.assertEqual(sched.next_release_estimate, date(2025, 8, 18))  # the 16th is a Saturday
         self.assertNotIn(date(2025, 8, 1), {r.governing_month for r in sched.recent_history})
 
-    def test_none_when_no_live_history(self):
+    def test_newest_edition_without_a_release_date_names_none(self):
+        """The newest edition still advances the projection, but its ingest time is
+        not reported as the day it was released."""
+        _make_unreleased(date(2025, 8, 1), _dt(2025, 7, 30))
+        sched = get_release_schedule(today=date(2025, 7, 30))
+        self.assertEqual(sched.next_governing_month, date(2025, 9, 1))
+        self.assertIsNone(sched.latest_released_on)
+
+    def test_none_when_no_release_history(self):
         Bulletin.objects.all().delete()
-        # Only a synthetic backfill-style row -> no live history -> None.
-        _make(date(2003, 1, 1), _dt(2026, 3, 7))
+        _make_unreleased(date(2026, 3, 1), _dt(2026, 2, 16))
         self.assertIsNone(get_release_schedule(today=date(2026, 3, 8)))
 
 
 class TestNextBulletinView(TestCase):
     def setUp(self):
-        _make(date(2025, 6, 1), _dt(2025, 5, 15))
-        _make(date(2025, 7, 1), _dt(2025, 6, 16))
+        _make_released(date(2025, 6, 1), date(2025, 5, 15), Bulletin.SOURCE_LIVE)
+        _make_released(date(2025, 7, 1), date(2025, 6, 16), Bulletin.SOURCE_LIVE)
 
     def test_page_renders_with_projection_and_schema(self):
         resp = self.client.get("/when-is-the-next-visa-bulletin/")
@@ -95,6 +112,16 @@ class TestNextBulletinView(TestCase):
         self.assertIn("August 2025", html)
         self.assertIn('"@type": "FAQPage"', html)
         self.assertIn("when-is-the-next-visa-bulletin", html)  # canonical
+        self.assertIn("was released on <strong>June 16, 2025</strong>", html)
+
+    def test_page_omits_the_release_day_it_does_not_know(self):
+        """No "was released on" claim — in prose or in the FAQ schema — for an
+        edition whose release date was never recorded."""
+        _make_unreleased(date(2025, 8, 1), _dt(2025, 7, 30))
+        html = self.client.get("/when-is-the-next-visa-bulletin/").content.decode()
+        self.assertIn("September 2025", html)
+        self.assertNotIn("was released on", html)
+        self.assertNotIn("July 30, 2025", html)
 
     def test_month_specific_targeting(self):
         """Title/H2/FAQ name the governing month so the page matches
@@ -118,15 +145,6 @@ class TestNextBulletinView(TestCase):
         self.assertIn("When does the next Visa Bulletin come out?", home)
         archive = self.client.get("/predictions/").content.decode()
         self.assertIn("/when-is-the-next-visa-bulletin/", archive)
-
-
-def _make_released(governing: date, released: date, source: str = "wayback") -> Bulletin:
-    """Create a Bulletin with a backfilled ``released_on`` (the real release date)."""
-    b = Bulletin.objects.create(publication_date=governing)
-    Bulletin.objects.filter(pk=b.pk).update(
-        released_on=released, released_on_source=source
-    )
-    return Bulletin.objects.get(pk=b.pk)
 
 
 class TestReleasedOnPreferredOverFetchedAt(TestCase):
