@@ -83,8 +83,8 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
   - Headline line: `Traffic: 7d <N> views (<+/-N%> MoM cycle, <+/-N%> WoW)`.
   - Then the **per-surface chart**, not a table (user request 2026-10-09: "convert these tables to graphs"). Render it and show it:
     ```bash
-    uv run scripts/daily_checkup_charts.py --out "$SCRATCH/surfaces.png"   # every surface, one PNG
-    show-media "$SCRATCH/surfaces.png" --caption "Pageviews by surface, 7d"
+    PNG=$(uv run scripts/daily_checkup_charts.py | tail -1)   # prints the PNG path last
+    show-media "$PNG" --caption "Pageviews by surface, 7d"
     ```
     One bar per surface, split readers / headless-Chrome scraper, a tick at the 4-weeks-ago total, and each row labelled with its raw numbers (7d views, readers, share, pages, 4w-ago and last-week totals with MoM/WoW). It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
     - **Exit 2 (export unavailable):** no chart. Say `⚠️ surface chart unavailable — GC export missing` and render the MCP's surface rows as text, one per line, every row.
