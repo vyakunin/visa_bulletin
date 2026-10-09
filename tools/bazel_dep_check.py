@@ -114,9 +114,23 @@ class DepGraph:
         self.owners: dict[str, set[str]] = {}
         self._parse_builds()
 
+    def _bazelignored(self) -> set[str]:
+        try:
+            with open(os.path.join(self.root, ".bazelignore"), encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except FileNotFoundError:
+            return set()
+        return {ln.strip().rstrip("/") for ln in lines if ln.strip() and not ln.startswith("#")}
+
     def _parse_builds(self) -> None:
+        ignored = self._bazelignored()
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if not d.startswith("bazel-") and d != ".git"]
+            rel = os.path.relpath(dirpath, self.root)
+            dirnames[:] = [
+                d for d in dirnames
+                if not d.startswith("bazel-") and d != ".git"
+                and os.path.normpath(os.path.join(rel, d)) not in ignored
+            ]
             if "BUILD" not in filenames:
                 continue
             pkg = os.path.relpath(dirpath, self.root)

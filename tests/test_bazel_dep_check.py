@@ -45,6 +45,24 @@ class TestDepCheck(unittest.TestCase):
         self.tree = _Tree()
         self.addCleanup(self.tree.cleanup)
 
+    def _write_nested_violation(self):
+        self.tree.write("models/b.py", "X = 1\n")
+        self.tree.write("models/BUILD", 'py_library(name = "b", srcs = ["b.py"])\n')
+        self.tree.write(".claude/worktrees/agent/models/a.py", "import models.b\n")
+        self.tree.write(".claude/worktrees/agent/models/BUILD",
+                        'py_library(name = "a", srcs = ["a.py"])\n')
+
+    def test_bazelignored_tree_is_not_scanned(self):
+        """A path in .bazelignore is not a package to Bazel, so its imports are not checked."""
+        self._write_nested_violation()
+        self.tree.write(".bazelignore", "# agent worktrees\n.claude/worktrees/\n")
+        self.assertEqual(self.tree.graph().violations(), [])
+
+    def test_unignored_nested_tree_is_scanned(self):
+        """Without the .bazelignore entry the same nested tree is flagged."""
+        self._write_nested_violation()
+        self.assertNotEqual(self.tree.graph().violations(), [])
+
     def test_flags_undeclared_import(self):
         """The bug this whole check exists for: import present, dep absent."""
         self.tree.write("models/enums/visa_category.py", "CATEGORY = 1\n")

@@ -1,0 +1,2 @@
+# Agent git worktrees nest a full copy of the repo here.
+.claude/worktrees
