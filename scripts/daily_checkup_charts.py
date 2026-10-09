@@ -71,8 +71,8 @@ class SurfaceWeek:
     views: int
     scraper: int
     readers: int
-    prev_week: int
-    four_weeks_ago: int
+    readers_prev_week: int
+    readers_four_weeks_ago: int
     share_pct: float
     pages: int
     mom: str
@@ -145,16 +145,14 @@ def collect(csv_path: Path, anchor: date, plot_days: int) -> list[SurfaceSeries]
         views = r_week + f_week
         if not views:
             continue
-        prev = (_window_sum(readers[s], anchor - timedelta(days=7))
-                + _window_sum(scraper[s], anchor - timedelta(days=7)))
-        cycle = (_window_sum(readers[s], anchor - timedelta(days=28))
-                 + _window_sum(scraper[s], anchor - timedelta(days=28)))
+        prev = _window_sum(readers[s], anchor - timedelta(days=7))
+        cycle = _window_sum(readers[s], anchor - timedelta(days=28))
         name, url = _name_and_path(s)
         week = SurfaceWeek(
             surface=s, name=name, path=url, views=views, scraper=f_week, readers=r_week,
-            prev_week=prev, four_weeks_ago=cycle,
+            readers_prev_week=prev, readers_four_weeks_ago=cycle,
             share_pct=round(views / total * 100, 1), pages=len(pages[s]),
-            mom=_pct(views, cycle), wow=_pct(views, prev),
+            mom=_pct(r_week, cycle), wow=_pct(r_week, prev),
         )
         out.append(SurfaceSeries(
             week=week, days=days,
@@ -163,6 +161,16 @@ def collect(csv_path: Path, anchor: date, plot_days: int) -> list[SurfaceSeries]
         ))
     out.sort(key=lambda x: -x.week.views)
     return out
+
+
+def totals(weeks: list[SurfaceWeek]) -> dict[str, int | str]:
+    """The digest's headline: readers with their MoM/WoW, the scraper as its own figure."""
+    readers = sum(w.readers for w in weeks)
+    prev = sum(w.readers_prev_week for w in weeks)
+    cycle = sum(w.readers_four_weeks_ago for w in weeks)
+    return {"readers": readers, "readers_prev_week": prev, "readers_four_weeks_ago": cycle,
+            "mom": _pct(readers, cycle), "wow": _pct(readers, prev),
+            "scraper": sum(w.scraper for w in weeks), "views": sum(w.views for w in weeks)}
 
 
 def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
@@ -182,9 +190,9 @@ def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
     w = series.week
     ax.set_title(f"{w.name}  {w.path}", loc="left", fontsize=6.6, color=INK, pad=11)
     ax.text(0, 1.015,
-            f"7d {_humanize(w.views)} · readers {_humanize(w.readers)} · {w.share_pct:.0f}% · "
-            f"4w ago {_humanize(w.four_weeks_ago)} ({w.mom}) · "
-            f"last wk {_humanize(w.prev_week)} ({w.wow})",
+            f"7d readers {_humanize(w.readers)}: 4w ago {_humanize(w.readers_four_weeks_ago)} "
+            f"({w.mom}) · last wk {_humanize(w.readers_prev_week)} ({w.wow}) · "
+            f"all views {_humanize(w.views)}, {w.share_pct:.0f}%",
             transform=ax.transAxes, fontsize=5.4, color=INK_2, va="bottom")
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: _humanize(v)))
@@ -241,7 +249,8 @@ def main() -> int:
     ap.add_argument("--end", help="ISO date anchor; default = last COMPLETE day in the export")
     ap.add_argument("--days", type=int, default=DEFAULT_PLOT_DAYS,
                     help=f"days on the x axis (default {DEFAULT_PLOT_DAYS})")
-    ap.add_argument("--json", action="store_true", help="also print the 7d rows as JSON")
+    ap.add_argument("--json", action="store_true",
+                    help="also print the 7d totals and rows as JSON")
     args = ap.parse_args()
 
     async def _load():
@@ -258,8 +267,8 @@ def main() -> int:
     rows = collect(csv_path, anchor, args.days)
     render(rows, anchor, args.days, args.out)
     if args.json:
-        print(json.dumps({"anchor": str(anchor), "rows": [asdict(r.week) for r in rows]},
-                         indent=1))
+        print(json.dumps({"anchor": str(anchor), "totals": totals([r.week for r in rows]),
+                          "rows": [asdict(r.week) for r in rows]}, indent=1))
     print(args.out)
     return 0
 
