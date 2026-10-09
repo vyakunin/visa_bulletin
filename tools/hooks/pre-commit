@@ -107,7 +107,9 @@ if [ -n "$STAGED_CODE_FILES" ]; then
         # inheriting the verdict of an unrelated branch.
         # ---------------------------------------------------------------------
         status_lines() {
-            echo "$TEST_OUTPUT" | grep -E "^[[:space:]]*//[^[:space:]]+[[:space:]]+$1" || true
+            # .bazelrc sets --color=yes, which wraps each status line in ANSI codes.
+            echo "$TEST_OUTPUT" | sed 's/\x1b\[[0-9;]*m//g' \
+                | grep -E "^[[:space:]]*//[^[:space:]]+[[:space:]]+$1" || true
         }
 
         SEGFAULTS=$(status_lines 'FAILED TO BUILD')

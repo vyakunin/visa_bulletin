@@ -123,6 +123,20 @@ class PreCommitHookTest(unittest.TestCase):
         self.assertIn("TIMED OUT", r.stdout)
         self.assertNotIn("No test ran", r.stdout)
 
+    def test_coloured_status_lines_are_classified(self):
+        """.bazelrc sets --color=yes, so status lines arrive wrapped in ANSI codes."""
+        green, red, reset = "\x1b[32m", "\x1b[31m", "\x1b[0m"
+        self._stub_bazel(
+            f"{green}//tests:test_a{reset}                     {green}PASSED{reset} in 1.2s\n"
+            f"{red}//tests:test_slow{reset}                  {red}TIMEOUT{reset} in 300.1s",
+            3,
+        )
+        self._stage("tests/BUILD")
+        r = self._run_hook()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("TIMED OUT", r.stdout)
+        self.assertNotIn("No test ran", r.stdout)
+
     def test_real_failure_fails(self):
         self._stub_bazel(
             f"{PASS_LINE}\n//tests:test_b                     FAILED in 2.0s", 3
