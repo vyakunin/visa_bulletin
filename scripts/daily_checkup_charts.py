@@ -3,11 +3,11 @@
 # requires-python = ">=3.11"
 # dependencies = ["httpx", "mcp>=1.0.0,<2", "matplotlib>=3.8"]
 # ///
-"""The daily digest's per-surface traffic: daily pageviews over time, one panel per surface.
+"""The daily digest's per-surface traffic: daily readers over time, one panel per surface.
 
-Each panel plots readers' 7-day and 28-day trailing averages over the daily count, with the
-headless-Chrome scraper (the provenance script's farm fingerprint) as a band stacked on the
-7-day reader line. Panel titles carry the raw 7d numbers. Reads the daily_checkup MCP's
+Each panel plots readers' 7-day and 28-day trailing averages over the daily count. The
+headless-Chrome scraper (the provenance script's farm fingerprint) is excluded everywhere:
+no series, no total, no share. Panel titles carry the raw 7d numbers. Reads the daily_checkup MCP's
 cached full GoatCounter export (FirstVisit=1, the digest's basis) through its surface
 buckets. Exit 2 when the export is unavailable.
 
@@ -60,7 +60,6 @@ INK_2 = "#52514e"
 GRID = "#e4e3dd"
 READERS = "#2a78d6"
 READERS_DAILY = "#a9c9ef"
-SCRAPER = "#c3c2b7"
 
 
 @dataclass(frozen=True)
@@ -68,8 +67,6 @@ class SurfaceWeek:
     surface: str
     name: str
     path: str
-    views: int
-    scraper: int
     readers: int
     readers_prev_week: int
     readers_four_weeks_ago: int
@@ -84,7 +81,6 @@ class SurfaceSeries:
     week: SurfaceWeek
     days: list[date]
     readers: list[int]
-    scraper: list[int]
 
 
 def _name_and_path(surface: str) -> tuple[str, str]:
@@ -117,7 +113,6 @@ def collect(csv_path: Path, anchor: date, plot_days: int) -> list[SurfaceSeries]
     first = anchor - timedelta(days=plot_days + LONG_AVG_DAYS - 2)
     week_start = anchor - timedelta(days=6)
     readers: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
-    scraper: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     pages: dict[str, set[str]] = collections.defaultdict(set)
     for row in _read_rows(csv_path):
         if (row.get("FirstVisit") or "0") != "1":
@@ -130,47 +125,42 @@ def collect(csv_path: Path, anchor: date, plot_days: int) -> list[SurfaceSeries]
             continue
         path = (row.get("Path") or "").split("?", 1)[0].rstrip("/") or "/"
         surface = _bucket_path(path)
-        if surface in NOT_PAGEVIEWS:
+        if surface in NOT_PAGEVIEWS or _is_farm(row):
             continue
-        (scraper if _is_farm(row) else readers)[surface][d] += 1
+        readers[surface][d] += 1
         if d >= week_start:
             pages[surface].add(path)
     days = [first + timedelta(days=i) for i in range((anchor - first).days + 1)]
-    surfaces = set(readers) | set(scraper)
-    total = sum(_window_sum(readers[s], anchor) + _window_sum(scraper[s], anchor)
-                for s in surfaces)
+    total = sum(_window_sum(readers[s], anchor) for s in readers)
     out = []
-    for s in surfaces:
-        r_week, f_week = _window_sum(readers[s], anchor), _window_sum(scraper[s], anchor)
-        views = r_week + f_week
-        if not views:
+    for s in readers:
+        r_week = _window_sum(readers[s], anchor)
+        if not r_week:
             continue
         prev = _window_sum(readers[s], anchor - timedelta(days=7))
         cycle = _window_sum(readers[s], anchor - timedelta(days=28))
         name, url = _name_and_path(s)
         week = SurfaceWeek(
-            surface=s, name=name, path=url, views=views, scraper=f_week, readers=r_week,
+            surface=s, name=name, path=url, readers=r_week,
             readers_prev_week=prev, readers_four_weeks_ago=cycle,
-            share_pct=round(views / total * 100, 1), pages=len(pages[s]),
+            share_pct=round(r_week / total * 100, 1), pages=len(pages[s]),
             mom=_pct(r_week, cycle), wow=_pct(r_week, prev),
         )
         out.append(SurfaceSeries(
             week=week, days=days,
             readers=[readers[s].get(d, 0) for d in days],
-            scraper=[scraper[s].get(d, 0) for d in days],
         ))
-    out.sort(key=lambda x: -x.week.views)
+    out.sort(key=lambda x: -x.week.readers)
     return out
 
 
 def totals(weeks: list[SurfaceWeek]) -> dict[str, int | str]:
-    """The digest's headline: readers with their MoM/WoW, the scraper as its own figure."""
+    """The digest's headline: readers with their MoM/WoW."""
     readers = sum(w.readers for w in weeks)
     prev = sum(w.readers_prev_week for w in weeks)
     cycle = sum(w.readers_four_weeks_ago for w in weeks)
     return {"readers": readers, "readers_prev_week": prev, "readers_four_weeks_ago": cycle,
-            "mom": _pct(readers, cycle), "wow": _pct(readers, prev),
-            "scraper": sum(w.scraper for w in weeks), "views": sum(w.views for w in weeks)}
+            "mom": _pct(readers, cycle), "wow": _pct(readers, prev)}
 
 
 def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
@@ -179,12 +169,8 @@ def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
     daily = series.readers[lead:]
     short = trailing_mean(series.readers, SHORT_AVG_DAYS)[lead:]
     long = trailing_mean(series.readers, LONG_AVG_DAYS)[lead:]
-    farm = trailing_mean(series.scraper, SHORT_AVG_DAYS)[lead:]
     ax.set_facecolor(SURFACE_BG)
     ax.plot(days, daily, color=READERS_DAILY, linewidth=0.6)
-    if any(series.scraper[lead:]):
-        ax.fill_between(days, short, [a + b for a, b in zip(short, farm)],
-                        color=SCRAPER, linewidth=0)
     ax.plot(days, short, color=READERS, linewidth=1.6)
     ax.plot(days, long, color=INK, linewidth=1.1)
     w = series.week
@@ -192,7 +178,7 @@ def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
     ax.text(0, 1.015,
             f"7d readers {_humanize(w.readers)}: 4w ago {_humanize(w.readers_four_weeks_ago)} "
             f"({w.mom}) · last wk {_humanize(w.readers_prev_week)} ({w.wow}) · "
-            f"all views {_humanize(w.views)}, {w.share_pct:.0f}%",
+            f"{w.share_pct:.0f}% of readers",
             transform=ax.transAxes, fontsize=5.4, color=INK_2, va="bottom")
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: _humanize(v)))
@@ -207,7 +193,6 @@ def _panel(ax, series: SurfaceSeries, plot_days: int) -> None:
 
 
 def render(rows: list[SurfaceSeries], anchor: date, plot_days: int, out: Path) -> None:
-    total = sum(r.week.views for r in rows)
     readers = sum(r.week.readers for r in rows)
     n_rows = math.ceil(len(rows) / PANEL_COLUMNS)
     fig, axes = plt.subplots(n_rows, PANEL_COLUMNS, figsize=(7.2, 1.35 * n_rows + 0.8),
@@ -220,9 +205,9 @@ def render(rows: list[SurfaceSeries], anchor: date, plot_days: int, out: Path) -
     for ax in axes.flat:
         ax.xaxis.set_tick_params(labelbottom=True)
     start = anchor - timedelta(days=6)
-    fig.suptitle(f"Daily pageviews by surface, last {plot_days} days to {anchor:%b %d}. "
-                 f"Week {start:%b %d}–{anchor:%b %d}: {_humanize(total)} "
-                 f"({_humanize(readers)} readers). Each panel has its own scale.",
+    fig.suptitle(f"Daily readers by surface, last {plot_days} days to {anchor:%b %d}. "
+                 f"Week {start:%b %d}–{anchor:%b %d}: {_humanize(readers)} readers. "
+                 f"Each panel has its own scale.",
                  x=0.02, ha="left", fontsize=7.6, color=INK, y=0.997)
     handles = [
         matplotlib.lines.Line2D([], [], color=READERS_DAILY, linewidth=0.8, label="readers, daily"),
@@ -230,10 +215,8 @@ def render(rows: list[SurfaceSeries], anchor: date, plot_days: int, out: Path) -
                                 label=f"readers, {SHORT_AVG_DAYS}d avg"),
         matplotlib.lines.Line2D([], [], color=INK, linewidth=1.1,
                                 label=f"readers, {LONG_AVG_DAYS}d avg"),
-        matplotlib.patches.Patch(color=SCRAPER,
-                                 label=f"headless-Chrome scraper, {SHORT_AVG_DAYS}d avg"),
     ]
-    fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.02, 0.985), ncol=4,
+    fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.02, 0.985), ncol=3,
                frameon=False, fontsize=5.8, labelcolor=INK)
     fig.tight_layout(rect=(0, 0, 1, 1 - 0.5 / (1.35 * n_rows + 0.8)), h_pad=1.4, w_pad=1.6)
     out.parent.mkdir(parents=True, exist_ok=True)

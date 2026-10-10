@@ -14,7 +14,7 @@ This directory contains all project scripts organized by functionality. All scri
 > | Field CLS after an ad-density/placement change (live CDP + ad slots, the <0.05 monetization gate) | `scripts/measure_cls.py` | platform |
 > | Traffic share **per section/path** (full-coverage GoatCounter export) | `scripts/gc_section_shares.py` | here |
 > | Was that traffic a PERSON? (referrer mix + automated-client share per surface) | `scripts/gc_traffic_provenance.py` | here |
-> | The digest's per-surface traffic over time (7d/28d averages, readers vs scraper) | `scripts/daily_checkup_charts.py` | here |
+> | The digest's per-surface traffic over time (readers only, 7d/28d averages) | `scripts/daily_checkup_charts.py` | here |
 > | Traffic **channel/referrer mix** (organic vs Reddit vs direct) | `scripts/channel_mix.py` | platform |
 >
 > SEO docs split the same way: implementation here (`docs/seo/SEO_OPTIMIZATION.md`),
@@ -1353,7 +1353,7 @@ uv run scripts/gc_traffic_provenance.py --surface all --weeks 4
 
 ### Daily digest surface chart
 
-**`scripts/daily_checkup_charts.py`** — the morning digest's per-surface traffic as one phone-width PNG. One panel per surface over the last 120 days (`--days`): daily readers, their 7-day and 28-day trailing averages, and the headless-Chrome scraper (the `gc_traffic_provenance.py` fingerprint) as a band on the 7-day line. Panel titles carry the raw 7d numbers; each panel has its own y scale. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`.
+**`scripts/daily_checkup_charts.py`** — the morning digest's per-surface traffic as one phone-width PNG. One panel per surface over the last 120 days (`--days`): daily readers, and their 7-day and 28-day trailing averages. The headless-Chrome scraper (the `gc_traffic_provenance.py` fingerprint) is excluded from every series, total and share. Panel titles carry the raw 7d numbers; each panel has its own y scale. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`.
 
 ```bash
 uv run scripts/daily_checkup_charts.py                       # $TMPDIR/vb_digest/surfaces.png
