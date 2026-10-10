@@ -21,9 +21,12 @@ TWO FINGERPRINTS, both measured, both overridable:
            desktop traffic does not concentrate 80/44% on two surfaces and
            1-7% everywhere else, and that asymmetry is what the `--by-surface`
            column is for. Re-check it before trusting the split.
-  sgwave : Location startswith "SG" AND Browser startswith "Chrome 145" —
-           the 2026-07-24..30 Singapore burst, kept separate because it is a
-           distinct, dated event that poisons any window overlapping it.
+  sgwave : Location startswith "SG" AND Browser startswith "Chrome 145", dated
+           2026-07-27..29 — the Singapore burst (2,600 employer + 2,303
+           job-title readers on 07-27 alone). Kept separate because it is a
+           distinct, dated event that poisons any window overlapping it. The
+           date bound matters: the same client pair matches a 1-15/day trickle
+           outside the burst, which is not the burst.
 
 THE REFERRER COLUMN IS NOT EVIDENCE ON ITS OWN — cross-check against GSC.
 A referrer is set by the client and can be forged. Measured 2026-08-28:
@@ -99,8 +102,12 @@ def _is_farm(row: dict) -> bool:
             and (row.get("Screen size") or "") == "1920,0,1")
 
 
+SGWAVE_DAYS = ("2026-07-27", "2026-07-29")
+
+
 def _is_sgwave(row: dict) -> bool:
-    return ((row.get("Location") or "").startswith("SG")
+    return (SGWAVE_DAYS[0] <= (row.get("Date") or "")[:10] <= SGWAVE_DAYS[1]
+            and (row.get("Location") or "").startswith("SG")
             and (row.get("Browser") or "").startswith("Chrome 145"))
 
 

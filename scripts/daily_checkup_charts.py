@@ -6,8 +6,8 @@
 """The daily digest's per-surface traffic: daily readers over time, one panel per surface.
 
 Each panel plots readers' 7-day and 28-day trailing averages over the daily count. The
-headless-Chrome scraper (the provenance script's farm fingerprint) is excluded everywhere:
-no series, no total, no share. Panel titles carry the raw 7d numbers. Reads the daily_checkup MCP's
+headless-Chrome scraper and the 2026-07-27..29 Singapore burst (the provenance script's farm
+and sgwave fingerprints) are excluded everywhere: no series, no total, no share. Panel titles carry the raw 7d numbers. Reads the daily_checkup MCP's
 cached full GoatCounter export (FirstVisit=1, the digest's basis) through its surface
 buckets. Exit 2 when the export is unavailable.
 
@@ -44,7 +44,7 @@ from daily_checkup_server import (  # noqa: E402
     _gc_export_max_ts,
     _humanize,
 )
-from gc_traffic_provenance import _is_farm, _read_rows  # noqa: E402
+from gc_traffic_provenance import _is_farm, _is_sgwave, _read_rows  # noqa: E402
 
 # Buckets that are beacons or plumbing, not pages a reader opened.
 NOT_PAGEVIEWS = frozenset({"donation_click", "api", "static_meta"})
@@ -125,7 +125,7 @@ def collect(csv_path: Path, anchor: date, plot_days: int) -> list[SurfaceSeries]
             continue
         path = (row.get("Path") or "").split("?", 1)[0].rstrip("/") or "/"
         surface = _bucket_path(path)
-        if surface in NOT_PAGEVIEWS or _is_farm(row):
+        if surface in NOT_PAGEVIEWS or _is_farm(row) or _is_sgwave(row):
             continue
         readers[surface][d] += 1
         if d >= week_start:
