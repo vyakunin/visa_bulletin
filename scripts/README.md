@@ -1353,7 +1353,7 @@ uv run scripts/gc_traffic_provenance.py --surface all --weeks 4
 
 ### Daily digest surface chart
 
-**`scripts/daily_checkup_charts.py`** — the morning digest's per-surface traffic as one phone-width PNG. One panel per surface over the last 120 days (`--days`): daily readers, and their 7-day and 28-day trailing averages. The headless-Chrome scraper (the `gc_traffic_provenance.py` fingerprint) is excluded from every series, total and share. Panel titles carry the raw 7d numbers; each panel has its own y scale. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`.
+**`scripts/daily_checkup_charts.py`** — the morning digest's per-surface traffic as one phone-width PNG. One panel per surface over the last 120 days (`--days`): daily readers, and their 7-day and 28-day trailing averages. The headless-Chrome scraper and the 2026-07-27..29 Singapore burst (the `gc_traffic_provenance.py` farm and sgwave fingerprints) are excluded from every series, total and share. Panel titles carry the raw 7d numbers; each panel has its own y scale. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`.
 
 ```bash
 uv run scripts/daily_checkup_charts.py                       # $TMPDIR/vb_digest/surfaces.png
