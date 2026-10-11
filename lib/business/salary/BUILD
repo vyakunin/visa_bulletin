@@ -191,7 +191,9 @@ py_library(
     srcs = ["market_overview.py"],
     deps = [
         ":common_stats",
+        ":employer_stats",
         "//models:salary",
+        "//models/enums:visa_program",
     ],
     visibility = ["//visibility:public"],
 )

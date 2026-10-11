@@ -30,7 +30,9 @@ Two thin conditions matter, and they are NOT the same:
    have a lifetime count of 0.
 
 `is_thin_employer_profile` covers both. The view uses it for `meta_robots` and
-for the `data-vb-thin` body flag.
+for the `data-vb-thin` body flag. `is_indexable_employer_profile` evaluates the
+same two conditions for the DEFAULT render without computing the page, for
+callers that point at a profile (the `/salaries/?employer=` canonical).
 
 The sitemap can only evaluate condition 1: `EmployerCluster` stores the two
 lifetime counters but no last-filing year, so nothing here can tell whether a
@@ -53,7 +55,9 @@ is the whole property; the ops repo pins it with a static test. Removing the
 attribute here silently re-enables ads on ~217k profiles.
 """
 
-from models.salary import EmployerCluster
+from datetime import datetime
+
+from models.salary import EmployerCluster, SalaryRecord
 
 # Employer profiles with fewer lifetime filings than this are noindexed by the
 # view and excluded from the sitemap. Shared by webapp/views/employers/profile.py
@@ -67,6 +71,9 @@ from models.salary import EmployerCluster
 #   threshold 100 →  1,710 indexable (matches the job-title gate)
 EMPLOYER_INDEXABLE_MIN_FILINGS = 10
 
+# Fiscal years the profile renders when the URL carries no `years` param.
+EMPLOYER_PROFILE_DEFAULT_YEARS = 5
+
 
 def employer_lifetime_filings(cluster: EmployerCluster) -> int:
     """Lifetime filing count for a cluster, across BOTH visa programs.
@@ -79,6 +86,21 @@ def employer_lifetime_filings(cluster: EmployerCluster) -> int:
     return (cluster.total_lca_count or 0) + (cluster.total_perm_count or 0)
 
 
+def employer_profile_window_start(years: int = EMPLOYER_PROFILE_DEFAULT_YEARS) -> int:
+    """First fiscal year a profile rendering `years` years of data includes."""
+    return datetime.now().year - years
+
+
+def employer_profile_records(cluster: EmployerCluster, start_year: int):
+    """SalaryRecord rows the employer profile renders, across both programs."""
+    return SalaryRecord.objects.filter(
+        employer__canonical_cluster=cluster,
+        fiscal_year__gte=start_year,
+        wage_annual__isnull=False,
+        is_worksite=False,
+    )
+
+
 def is_thin_employer_profile(cluster: EmployerCluster, rendered_filings: int) -> bool:
     """Whether this employer profile is too thin to index or to carry ads.
 
@@ -89,6 +111,19 @@ def is_thin_employer_profile(cluster: EmployerCluster, rendered_filings: int) ->
     if rendered_filings <= 0:
         return True
     return employer_lifetime_filings(cluster) < EMPLOYER_INDEXABLE_MIN_FILINGS
+
+
+def is_indexable_employer_profile(cluster: EmployerCluster) -> bool:
+    """Whether `/employer/<slug>/`, rendered with no query params, is indexable.
+
+    False when the page 404s (no slug, the placeholder 'Unknown' cluster) or
+    when `is_thin_employer_profile` would noindex it.
+    """
+    if not cluster.slug or cluster.slug == "unknown" or cluster.canonical_name == "Unknown":
+        return False
+    if employer_lifetime_filings(cluster) < EMPLOYER_INDEXABLE_MIN_FILINGS:
+        return False
+    return employer_profile_records(cluster, employer_profile_window_start()).exists()
 
 
 def indexable_employer_clusters(limit: int = 10000):

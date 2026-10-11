@@ -5,7 +5,7 @@ Market overview statistics for salary landing pages.
 from datetime import datetime
 
 from django.core.cache import cache
-from django.db.models import Count
+from django.db.models import Count, Max, Min
 
 from lib.business.salary.common_stats import (
     Median,
@@ -16,6 +16,11 @@ from lib.business.salary.common_stats import (
     calculate_yoy_trends,
     growth_headline,
 )
+from lib.business.salary.employer_stats import (
+    employer_lifetime_filings,
+    indexable_employer_clusters,
+)
+from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
 
@@ -124,3 +129,69 @@ def get_salary_explore_links(
     links = {"top_job_titles": top_job_titles, "top_employers": top_employers}
     cache.set(cache_key, links)
     return links
+
+
+# Program values whose wage comes from an H-1B-family LCA; PERM is the other.
+_LCA_PROGRAMS = (VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3)
+
+
+def get_salary_database_summary() -> dict:
+    """Coverage of the /salaries/ database: what a search can return.
+
+    Counts the same rows the search page lists (non-worksite, a named employer,
+    a positive annual wage), split into LCA (H-1B, H-1B1, E-3) and PERM.
+    """
+    cache_key = "salary_database_summary"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    searchable = SalaryRecord.objects.filter(
+        is_worksite=False, wage_annual__isnull=False, wage_annual__gt=0
+    ).exclude(employer_name="Unknown")
+    by_program = dict(
+        searchable.order_by()
+        .values("visa_program")
+        .annotate(n=Count("id"))
+        .values_list("visa_program", "n")
+    )
+    span = searchable.aggregate(
+        first_fiscal_year=Min("fiscal_year"),
+        last_fiscal_year=Max("fiscal_year"),
+        decided_through=Max("decision_date"),
+    )
+    summary = {
+        "total_records": sum(by_program.values()),
+        "lca_records": sum(by_program.get(p, 0) for p in _LCA_PROGRAMS),
+        "perm_records": by_program.get(VisaProgram.PERM, 0),
+        "employer_count": EmployerCluster.objects.filter(search_record_count__gt=0)
+        .exclude(slug__isnull=True)
+        .exclude(slug="unknown")
+        .count(),
+        **span,
+    }
+    cache.set(cache_key, summary)
+    return summary
+
+
+def get_salary_landing_employer_pages(limit: int = 60) -> list[dict]:
+    """The largest indexable employer profiles, for the landing's link list."""
+    cache_key = f"salary_landing_employer_pages:{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # The gate's queryset arrives sliced, so the placeholder cluster (whose
+    # profile 404s) is dropped here rather than filtered out.
+    pages = [
+        {
+            "slug": c.slug,
+            "canonical_name": c.canonical_name,
+            "lifetime_filings": employer_lifetime_filings(c),
+            "search_avg_salary": c.search_avg_salary,
+        }
+        for c in indexable_employer_clusters(limit=limit + 1)
+        if c.slug != "unknown" and c.canonical_name != "Unknown"
+    ][:limit]
+    cache.set(cache_key, pages)
+    return pages

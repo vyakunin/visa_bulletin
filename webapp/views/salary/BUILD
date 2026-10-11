@@ -10,6 +10,7 @@ py_library(
     deps = [
         "//django_config:cache_utils",
         "//lib/business/salary:common_chart_builder",
+        "//lib/business/salary:employer_stats",
         "//lib/business/salary:market_overview",
         "//lib/utils:filter_utils",
         "//lib/utils:location_utils",

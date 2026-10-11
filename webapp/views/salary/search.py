@@ -17,9 +17,12 @@ from lib.business.salary.common_chart_builder import (
     build_geographic_median_chart,
     build_salary_trend_chart,
 )
+from lib.business.salary.employer_stats import is_indexable_employer_profile
 from lib.business.salary.market_overview import (
     get_market_overview_stats,
+    get_salary_database_summary,
     get_salary_explore_links,
+    get_salary_landing_employer_pages,
 )
 from lib.utils.filter_utils import (
     apply_filing_year_filter,
@@ -36,7 +39,7 @@ from lib.utils.pagination import (
     build_pagination_query_string,
     calculate_pagination_info,
 )
-from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
+from models.salary import Employer, EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
 from webapp.views.ads_test import SALARY_SEARCH_ARM
 from webapp.views.seo.jsonld import build_dataset_jsonld, embed_jsonld
@@ -350,6 +353,143 @@ def _build_salary_seo(
     )
 
 
+def _long_date(day) -> str:
+    """'June 30, 2026' for a date."""
+    return f"{day:%B} {day.day}, {day.year}"
+
+
+def _landing_faq(summary: dict, market_stats: dict, employer_pages: list[dict]) -> list[dict]:
+    """Question/answer pairs for the bare landing, every figure read from the data.
+
+    Rendered on the page and as FAQPage JSON-LD, so the two never disagree.
+    """
+    span = f"fiscal years {summary['first_fiscal_year']}–{summary['last_fiscal_year']}"
+    faq = [
+        {
+            "q": "What is in this H-1B salary database?",
+            "a": (
+                f"{summary['total_records']:,} salary records from U.S. Department of "
+                f"Labor disclosure files, {span}: {summary['lca_records']:,} H-1B labor "
+                f"condition applications (including H-1B1 and E-3) and "
+                f"{summary['perm_records']:,} PERM green card labor certifications, "
+                f"filed by {summary['employer_count']:,} employers. Each record lists "
+                "the employer, job title, worksite city and state, and the annual wage "
+                "offered."
+            ),
+        },
+    ]
+    example = employer_pages[0]["canonical_name"] if employer_pages else None
+    faq.append({
+        "q": "How do I look up a company's H-1B salaries?",
+        "a": (
+            "Type the company into the Employer box above and pick it from the "
+            "suggestions to list every filing it made, highest wage first. Add a job "
+            "title or state to narrow the list. Each employer also has its own page "
+            "with its median salary, top job titles and filing history"
+            + (f" — for example {example}." if example else ".")
+        ),
+    })
+    pct = market_stats.get("salary_percentiles") or {}
+    filings = (market_stats.get("basic") or {}).get("total_filings") or 0
+    if pct.get("p50") and filings:
+        spread = (
+            f" One in ten filings offered under ${pct['p10']:,.0f} and one in ten over "
+            f"${pct['p90']:,.0f}."
+            if pct.get("p10") and pct.get("p90")
+            else ""
+        )
+        faq.append({
+            "q": "What is the median H-1B and green card salary?",
+            "a": (
+                f"${pct['p50']:,.0f} across {filings:,} H-1B and PERM filings since "
+                f"fiscal year {market_stats['start_year']}.{spread}"
+            ),
+        })
+    if summary.get("decided_through"):
+        faq.append({
+            "q": "Where does the data come from, and how current is it?",
+            "a": (
+                "The Department of Labor's Office of Foreign Labor Certification "
+                "publishes every H-1B labor condition application and PERM labor "
+                "certification it decides, in quarterly disclosure files. The newest "
+                f"decision in this database is dated {_long_date(summary['decided_through'])}."
+            ),
+        })
+    faq.append({
+        "q": "Do these salaries include bonuses or stock?",
+        "a": (
+            "No. The wage is the base salary the employer stated on the filing. Stock "
+            "grants, signing bonuses and variable pay are not part of it."
+        ),
+    })
+    return faq
+
+
+def _faq_jsonld(faq: list[dict]) -> str:
+    """FAQPage JSON-LD for question/answer pairs, safe for a <script> tag."""
+    return embed_jsonld({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": item["q"],
+                "acceptedAnswer": {"@type": "Answer", "text": item["a"]},
+            }
+            for item in faq
+        ],
+    })
+
+
+_CLUSTER_GATE_FIELDS = (
+    "id",
+    "slug",
+    "canonical_name",
+    "total_lca_count",
+    "total_perm_count",
+)
+
+
+def _cluster_named(employer_name: str):
+    """The one cluster an `?employer=` value names exactly, or None.
+
+    The two link producers pass a cluster's canonical_name (employer profile)
+    or a filing's raw employer_name (result rows), so both are tried, by
+    indexed equality. A name shared by several clusters names none of them.
+    """
+    name = employer_name.strip()
+    if not name:
+        return None
+    by_canonical = list(
+        EmployerCluster.objects.filter(canonical_name=name).only(*_CLUSTER_GATE_FIELDS)[:2]
+    )
+    if len(by_canonical) == 1:
+        return by_canonical[0]
+    cluster_ids = list(
+        Employer.objects.filter(name=name, canonical_cluster__isnull=False)
+        .values_list("canonical_cluster_id", flat=True)
+        .distinct()[:2]
+    )
+    if len(cluster_ids) != 1:
+        return None
+    return EmployerCluster.objects.filter(id=cluster_ids[0]).only(*_CLUSTER_GATE_FIELDS).first()
+
+
+def _employer_profile_canonical(request, *, matched_cluster, employer_filter: str) -> str | None:
+    """Absolute `/employer/<slug>/` URL for an employer-only facet, or None.
+
+    None unless the employer resolves to exactly one cluster whose profile
+    is indexable: a canonical pointing at a noindexed page can carry the
+    noindex back onto this one.
+    """
+    cluster = matched_cluster if matched_cluster is not None else _cluster_named(employer_filter)
+    if cluster is None or not is_indexable_employer_profile(cluster):
+        return None
+    return request.build_absolute_uri(
+        reverse("employer_profile", kwargs={"slug": cluster.slug})
+    )
+
+
 # Cap on how many cluster ids we resolve from a free-text employer search
 # before handing them to the salary_record filter. With the trigram GIN, a
 # typical multi-character substring matches 100–500 clusters; bots typing
@@ -596,8 +736,14 @@ def salary_search_view(request):
     market_stats = None
     market_chart_data = {}
     state_links = []
+    database_summary = None
+    employer_pages = []
+    landing_faq = []
     if not has_filters and not no_data_yet:
         market_stats = get_market_overview_stats()
+        database_summary = get_salary_database_summary()
+        employer_pages = get_salary_landing_employer_pages()
+        landing_faq = _landing_faq(database_summary, market_stats, employer_pages)
         geographic_dist = market_stats.get("geographic_dist", [])
         geographic_dist_by_median = market_stats.get("geographic_dist_by_median", [])
         yoy_trends = market_stats.get("yoy_trends", [])
@@ -722,6 +868,19 @@ def salary_search_view(request):
     # SERP snippet and landed page both reflect the searcher's exact query.
     # See _build_salary_seo for the per-filter copy shapes.
     canonical_url = request.build_absolute_uri(reverse("salary_search"))
+    # An employer-only facet (?employer= or ?employer_slug=, any page) is that
+    # employer's salary listing, not a duplicate of the landing: point it at
+    # the employer profile, which ranks for "<employer> h1b salary".
+    employer_only = (matched_cluster is not None or employer_filter.strip()) and not any(
+        [query, state_filter, program_filter, fiscal_year_filter, filing_year_filter]
+    )
+    employer_canonical = (
+        _employer_profile_canonical(
+            request, matched_cluster=matched_cluster, employer_filter=employer_filter
+        )
+        if employer_only
+        else None
+    )
     seo = _build_salary_seo(
         has_filters=has_filters,
         query=query,
@@ -800,6 +959,10 @@ def salary_search_view(request):
         "market_stats": market_stats,
         "market_chart_data": market_chart_data,
         "state_links": state_links,
+        "database_summary": database_summary,
+        "employer_pages": employer_pages,
+        "landing_faq": landing_faq,
+        "landing_faq_jsonld": _faq_jsonld(landing_faq) if landing_faq else None,
         # Onward-navigation rail (breaks the dead-end on result pages, which
         # otherwise end at pagination). Cheap + cached; rendered on every view.
         "explore_links": get_salary_explore_links(),
@@ -822,7 +985,7 @@ def salary_search_view(request):
         "page_heading": seo.page_heading,
         "page_intro": seo.page_intro,
         "structured_data": seo.structured_data,
-        "canonical_url": canonical_url,
+        "canonical_url": employer_canonical or canonical_url,
         # Crawl-budget hygiene: noindex the free-text ?q= keyword space (see
         # _NOINDEX_FOLLOW). Filtered-but-no-q pages stay indexable.
         "meta_robots": _NOINDEX_FOLLOW if query.strip() else None,

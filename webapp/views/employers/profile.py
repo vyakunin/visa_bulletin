@@ -2,7 +2,6 @@
 
 import logging
 import time
-from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
@@ -30,11 +29,16 @@ from lib.business.salary.common_stats import (
     growth_headline,
 )
 from lib.business.salary.employer_renames import get_rename_link
-from lib.business.salary.employer_stats import is_thin_employer_profile
+from lib.business.salary.employer_stats import (
+    EMPLOYER_PROFILE_DEFAULT_YEARS,
+    employer_profile_records,
+    employer_profile_window_start,
+    is_thin_employer_profile,
+)
 from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
-from models.salary import EmployerCluster, SalaryRecord
+from models.salary import EmployerCluster
 from webapp.views.ads_test import employer_ads_arm
 
 logger = logging.getLogger(__name__)
@@ -59,9 +63,9 @@ def _get_cluster_or_404(slug: str):
 def _parse_employer_profile_params(request):
     """Parse years, program, level from request; return dict with start_year, level_choices, etc."""
     try:
-        years = min(int(request.GET.get("years", 5)), 20)
+        years = min(int(request.GET.get("years", EMPLOYER_PROFILE_DEFAULT_YEARS)), 20)
     except (ValueError, TypeError):
-        years = 5
+        years = EMPLOYER_PROFILE_DEFAULT_YEARS
     program_filter = request.GET.get("program", "all").lower()
     level_param = request.GET.get("level", "all").lower().strip()
     level_choices = list(JobTitle._meta.get_field("experience_level").choices)
@@ -75,8 +79,7 @@ def _parse_employer_profile_params(request):
     else:
         experience_level = None
         level_filter = "all"
-    current_year = datetime.now().year
-    start_year = current_year - years
+    start_year = employer_profile_window_start(years)
     return {
         "years": years,
         "program_filter": program_filter,
@@ -89,12 +92,7 @@ def _parse_employer_profile_params(request):
 
 def _get_employer_records_queryset(cluster, params):
     """Base SalaryRecord queryset for this employer and filters."""
-    records = SalaryRecord.objects.filter(
-        employer__canonical_cluster=cluster,
-        fiscal_year__gte=params["start_year"],
-        wage_annual__isnull=False,
-        is_worksite=False,
-    )
+    records = employer_profile_records(cluster, params["start_year"])
     if params["program_filter"] == "h1b":
         records = records.filter(visa_program=VisaProgram.H1B)
     elif params["program_filter"] == "perm":

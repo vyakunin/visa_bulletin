@@ -5,6 +5,11 @@
 {% block container_class %}salary-container{% endblock %}
 
 {% block extra_head %}
+{% if landing_faq_jsonld %}
+<script type="application/ld+json">
+    {{ landing_faq_jsonld|safe }}
+</script>
+{% endif %}
 <style>
     .salary-container {
         min-height: 400px;
@@ -129,6 +134,28 @@
             <h1 class="h3 mb-2">{{ page_heading }}</h1>
             {% if page_intro %}
             <p class="text-muted mb-4">{{ page_intro }}</p>
+            {% endif %}
+            {% if database_summary %}
+            {# Bare landing: answer "what is this database" before the form. Every figure comes from get_salary_database_summary. #}
+            <div class="mb-3" id="database-summary">
+                <p class="mb-2">
+                    Search <strong>{{ database_summary.total_records|intcomma }}</strong> H-1B and green card (PERM)
+                    salary records from U.S. Department of Labor filings, fiscal years
+                    {{ database_summary.first_fiscal_year }}&ndash;{{ database_summary.last_fiscal_year }},
+                    from {{ database_summary.employer_count|intcomma }} employers.
+                </p>
+                <ul class="small mb-2">
+                    <li><strong>By company</strong> &mdash; type an employer below, or open its salary page{% if employer_pages %}:
+                        {% for e in employer_pages|slice:":6" %}<a href="{% url 'employer_profile' slug=e.slug %}">{{ e.canonical_name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %},
+                        <a href="#employer-pages">more employers</a>{% endif %}.</li>
+                    <li><strong>By job title</strong> &mdash; enter a role in the Job Title box{% if explore_links.top_job_titles %}, or start from
+                        {% for t in explore_links.top_job_titles|slice:":3" %}<a href="{% url 'job_title_profile' slug=t.slug %}">{{ t.canonical_title }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}.</li>
+                    <li><strong>By location</strong> &mdash; pick a state below{% if state_links %}, or <a href="#salaries-by-state">see median salary by state</a>{% endif %}.</li>
+                </ul>
+                <p class="small text-muted mb-0">
+                    {% if database_summary.decided_through %}Newest decision: {{ database_summary.decided_through|date:"F j, Y" }}. {% endif %}Wages are the base salary stated on the filing.
+                </p>
+            </div>
             {% endif %}
             <p class="text-muted small mb-4">Looking for green-card wait times instead? See <a href="/priority-date/">EB-1, EB-2 &amp; EB-3 priority dates by country</a>.</p>
 
@@ -377,7 +404,7 @@
             </div>
             {% if state_links %}
             <!-- Crawler-readable per-state links (chart pixels above are invisible to bots). -->
-            <div class="card mb-4">
+            <div class="card mb-4" id="salaries-by-state">
                 <div class="card-header">
                     <h5 class="mb-0">Salaries by State</h5>
                 </div>
@@ -427,6 +454,40 @@
             
             {% if market_stats.yoy_trends %}
                 {% include "webapp/includes/yoy_trends_table.html" with yoy_trends=market_stats.yoy_trends title="Year-over-Year Salary Statistics" %}
+            {% endif %}
+
+            {% if employer_pages %}
+            <div class="card mb-4" id="employer-pages">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">Employer salary pages</h2>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">The {{ employer_pages|length }} largest H-1B and PERM sponsors by lifetime filings. Each page has the employer's median salary, pay by job title and state, and filing history.</p>
+                    <ul class="list-unstyled row row-cols-1 row-cols-sm-2 row-cols-lg-3 mb-3">
+                        {% for e in employer_pages %}
+                        <li class="col mb-1">
+                            <a href="{% url 'employer_profile' slug=e.slug %}">{{ e.canonical_name }}</a>
+                            <span class="text-muted small">&mdash; {{ e.lifetime_filings|intcomma }} filings{% if e.search_avg_salary %}, ${{ e.search_avg_salary|floatformat:0|intcomma }} avg{% endif %}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'employer_directory' %}">All employers</a>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if landing_faq %}
+            <div class="card mb-4" id="salary-database-faq">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">About the H-1B salary database</h2>
+                </div>
+                <div class="card-body">
+                    {% for item in landing_faq %}
+                    <h3 class="h6">{{ item.q }}</h3>
+                    <p{% if forloop.last %} class="mb-0"{% endif %}>{{ item.a }}</p>
+                    {% endfor %}
+                </div>
+            </div>
             {% endif %}
             {% endif %}
             
