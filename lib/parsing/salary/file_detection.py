@@ -72,3 +72,8 @@ def is_worksite_file(filename: str) -> bool:
     """
     filename_lower = filename.lower()
     return "worksite" in filename_lower or "worksites" in filename_lower
+
+
+def is_appendix_file(filename: str) -> bool:
+    """True for an LCA Appendix A file: exempt-worker degrees, no wage or job rows."""
+    return "appendix" in filename.lower()

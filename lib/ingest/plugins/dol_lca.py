@@ -1,7 +1,8 @@
 """DOL H-1B LCA and Worksite data source plugin with openpyxl streaming
 
-Combined plugin that handles both regular LCA files (employer-focused) and worksite files
-(location-focused). Routes records to SalaryRecord or WorksiteRecord based on case number prefix.
+Routes by file: an LCA disclosure file's rows become SalaryRecord, a worksite file's rows
+WorksiteRecord, and an Appendix A file (exempt-worker degrees) yields nothing. The visa
+program comes from VISA_CLASS, or from the case-number prefix where a file has no such column.
 """
 
 import logging
@@ -23,8 +24,13 @@ from lib.parsing.salary.db_importer import (
     _parse_wage_info,
     get_column_value,
     get_fiscal_year_from_filename,
+    normalize_soc_code,
 )
-from lib.parsing.salary.file_detection import WORKSITE_COLUMN_MAPPINGS
+from lib.parsing.salary.file_detection import (
+    WORKSITE_COLUMN_MAPPINGS,
+    is_appendix_file,
+    is_worksite_file,
+)
 from lib.parsing.salary.wage_unit_correction import (
     validate_wage_annual,
 )
@@ -38,6 +44,31 @@ from models.ingest.ingest_run import IngestRun
 from models.salary import Employer, SalaryRecord, WorksiteRecord
 
 logger = logging.getLogger(__name__)
+
+# DOL iCert LCA case numbers: I-200 H-1B, I-201 H-1B1 Chile, I-202 H-1B1 Singapore, I-203 E-3.
+_PROGRAM_BY_CASE_PREFIX = {
+    "I-200": VisaProgram.H1B,
+    "I-201": VisaProgram.H1B1,
+    "I-202": VisaProgram.H1B1,
+    "I-203": VisaProgram.E3,
+}
+
+# Every H-1B LCA disclosure file on the DOL page: "LCA_*", "H-1B_iCert_LCA_*", and the
+# FY2010/FY2014-FY2019 "H-1B_FY*" / "H-1B_Disclosure_Data_*" files. H-1B_Case_Data_* is
+# the pre-iCert schema, not ingested.
+LCA_FILE_RE = re.compile(r"LCA|^H-1B_(?!Case_Data)", re.IGNORECASE)
+
+
+def lca_visa_program(record: dict, case_number: str) -> VisaProgram:
+    """VISA_CLASS when the file carries it ("H-1B1 Chile", "E-3 Australian"), else the case prefix."""
+    visa_class = (get_column_value(record, LCA_COLUMN_MAPPINGS["visa_class"]) or "").upper()
+    if visa_class.startswith("E-3"):
+        return VisaProgram.E3
+    if visa_class.startswith("H-1B1"):
+        return VisaProgram.H1B1
+    if visa_class.startswith("H-1B"):
+        return VisaProgram.H1B
+    return _PROGRAM_BY_CASE_PREFIX.get(case_number[:5], VisaProgram.H1B)
 
 
 @dataclass(frozen=True)
@@ -53,12 +84,8 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
     Combined plugin for Department of Labor H-1B LCA and Worksite disclosure data.
 
     Handles both:
-    - Regular LCA files (employer-focused) → creates SalaryRecord
+    - LCA disclosure files (employer-focused) → creates SalaryRecord
     - Worksite files (location-focused) → creates WorksiteRecord
-
-    Routes records based on case number prefix:
-    - I-200* → WorksiteRecord (worksite case numbers)
-    - Other prefixes → SalaryRecord (regular LCA records)
     """
 
     domain = DataDomain.DOL
@@ -71,7 +98,6 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         skip_clustering: bool = False,
         case_number_whitelist: set[str] | None = None,
         skip_worksite: bool = False,
-        force_salary_record: bool = False,
     ):
         """
         Initialize plugin with employer cache
@@ -80,7 +106,6 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             skip_clustering: If True, skip employer clustering (faster for re-imports)
             case_number_whitelist: If provided, only ingest records matching these case numbers
             skip_worksite: If True, skip WorksiteRecord creation entirely
-            force_salary_record: If True, treat I-200 records as SalaryRecord updates
         """
         super().__init__()  # Initialize base class (sets up rejection tracker)
         self._employer_cache = {}
@@ -93,7 +118,6 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             else None
         )
         self.skip_worksite = skip_worksite
-        self.force_salary_record = force_salary_record
 
     def _load_employer_cache(self) -> None:
         """Preload employers to avoid per-record lookups."""
@@ -132,22 +156,19 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         try:
             html = fetch_page(base_url)
 
-            # Find all LCA disclosure data links
-            # Look for patterns like: LCA_Disclosure_Data_FY2024.xlsx, LCA_FY2013.xlsx
-            lca_pattern = r'href=["\']([^"\']*LCA[^"\']*\.(?:xlsx|csv|XLSX|CSV))["\']'
-            lca_matches = re.findall(lca_pattern, html, re.IGNORECASE)
+            file_pattern = r'href=["\']([^"\']*\.(?:xlsx|csv))["\']'
+            lca_matches = [
+                m
+                for m in re.findall(file_pattern, html, re.IGNORECASE)
+                if LCA_FILE_RE.search(Path(m).name)
+                and not is_worksite_file(m)
+                and not is_appendix_file(m)
+            ]
 
             for match in lca_matches:
-                # Skip worksite files (will be handled by worksite pattern)
-                if "worksite" in match.lower():
-                    continue
-
                 url = urljoin(base_url, match)
-
-                # Extract fiscal year from filename
-                fiscal_year_match = re.search(r"FY(\d{4})", match, re.IGNORECASE)
-                if fiscal_year_match:
-                    fiscal_year = int(fiscal_year_match.group(1))
+                fiscal_year = get_fiscal_year_from_filename(Path(match).name)
+                if fiscal_year:
                     format_version = (
                         FormatVersion.LEGACY
                         if fiscal_year < 2015
@@ -316,9 +337,8 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         """
         Transform raw record into SalaryRecord or WorksiteRecord model.
 
-        Routes based on case number prefix:
-        - I-200* → WorksiteRecord (worksite case numbers)
-        - Other prefixes → SalaryRecord (regular LCA records)
+        Routes by source file: worksite file → WorksiteRecord, Appendix A → None,
+        LCA disclosure file → SalaryRecord.
 
         Args:
             record: Raw record dictionary from parse stage
@@ -351,12 +371,13 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             return None
 
         source_file = record.get("_source_file", "")
-        is_worksite_file = "worksite" in source_file.lower()
-
-        # Route worksite files or I-200 records to WorksiteRecord
-        if is_worksite_file or case_number_value.startswith("I-200"):
-            if self.force_salary_record:
-                return self._transform_to_salary_record(record, column_mappings)
+        if is_appendix_file(source_file):
+            if self._rejection_tracker:
+                self._rejection_tracker.record_rejection(
+                    "appendix_row", case_number_value
+                )
+            return None
+        if is_worksite_file(source_file):
             if self.skip_worksite:
                 if self._rejection_tracker:
                     self._rejection_tracker.record_rejection(
@@ -364,8 +385,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
                     )
                 return None
             return self._transform_to_worksite_record(record, column_mappings)
-        else:
-            return self._transform_to_salary_record(record, column_mappings)
+        return self._transform_to_salary_record(record, column_mappings)
 
     @staticmethod
     def _validate_wage_field(
@@ -600,7 +620,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
             record,
             column_mappings,
             case_number_value,
-            VisaProgram.H1B,
+            lca_visa_program(record, case_number_value),
             employer_instance,
             employer_name,
             job_title,
@@ -624,7 +644,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
     def _transform_to_worksite_record(
         self, record: dict, column_mappings: dict
     ) -> WorksiteRecord | None:
-        """Transform record to WorksiteRecord (I-200 case numbers)
+        """Transform a worksite-file row to WorksiteRecord
 
         Note:
             Non-plugin-specific errors should propagate to the framework.
@@ -674,12 +694,11 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
                 else 0
             )
 
-        # Determine visa program from case number prefix
-        visa_program = VisaProgram.H1B  # Default to H-1B
-        if case_number.startswith("P-"):
-            visa_program = VisaProgram.PERM
-        elif case_number.startswith("I-200"):
-            visa_program = VisaProgram.H1B
+        visa_program = (
+            VisaProgram.PERM
+            if case_number_value.startswith("P-")
+            else lca_visa_program(record, case_number_value)
+        )
 
         # Parse worksite location fields (using LCA mappings - works for both)
         worksite_city = get_column_value(record, column_mappings["worksite_city"]) or ""
@@ -699,7 +718,7 @@ class H1BSalaryDataSourcePlugin(DataSourcePlugin):
         # pw_worksites/lca_worksites) carry only CASE_NUMBER + worksite + SOC
         # columns and have NO JOB_TITLE — these are valid worksite records, so
         # fall back to the SOC title instead of dropping every row.
-        soc_code = get_column_value(record, column_mappings["soc_code"]) or ""
+        soc_code = normalize_soc_code(get_column_value(record, column_mappings["soc_code"]))
         soc_title = get_column_value(record, column_mappings["soc_title"]) or ""
         job_title_raw = get_column_value(record, column_mappings["job_title"])
         job_title = (job_title_raw or "").strip()

@@ -29,6 +29,7 @@ py_library(
         "//lib/business/salary:employer_clustering",
         "//models:salary",
         "//models/enums:visa_program",
+        "//lib/parsing/salary:file_detection",
         "//lib/parsing/salary:wage_unit_correction",
         "//lib/utils:data_source_utils",
         "//lib/utils:location_utils",

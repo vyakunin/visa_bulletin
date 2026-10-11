@@ -279,6 +279,7 @@ py_binary(
         "//django_config:settings",
         "//lib/ingest/plugins:dol_lca",
         "//lib/ingest/plugins:dol_perm",
+        "//lib/parsing/salary:file_detection",
         "//lib/utils:logging_utils",
         "//models:salary",
         "//tests:django_setup",
@@ -321,4 +322,23 @@ py_binary(
     deps = [":correct_bridge_release_dates_lib"],
     python_version = "PY3",
     env = {"DJANGO_SETTINGS_MODULE": "django_config.settings"},
+)
+
+py_binary(
+    name = "reimport_lca_disclosure",
+    srcs = ["reimport_lca_disclosure.py"],
+    main = "reimport_lca_disclosure.py",
+    deps = [
+        "//django_config:settings",
+        "//lib/ingest:orchestrator",
+        "//lib/ingest:registry",
+        "//lib/ingest/plugins:dol_lca",
+        "//lib/parsing/salary:file_detection",
+        "//lib/utils:http_utils",
+        "//lib/utils:logging_utils",
+        "//models/ingest:ingest",
+        "//models:salary",
+        "//scripts/ingest:run_pipeline_lib",
+        requirement("Django"),
+    ],
 )

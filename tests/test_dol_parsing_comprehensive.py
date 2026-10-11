@@ -87,7 +87,7 @@ class TestDolParsingComprehensive(TestCase):
         # Transform the sample row
         result = None
         try:
-            result = plugin.transform(sample_row)
+            result = plugin.transform({**sample_row, "_source_file": filename})
         except Exception as e:
             self.fail(f"Transform failed for {filename}: {e}")
 
@@ -127,8 +127,8 @@ class TestDolParsingComprehensive(TestCase):
             SourceType.LCA,
             "H-1B_FY2009.xlsx",
             sample_row,
-            ExpectedOutputType.WORKSITE_RECORD,
-        )  # I-200 = worksite
+            ExpectedOutputType.SALARY_RECORD,
+        )
 
     def test_lca_fy2015_format(self):
         """Test old LCA format (FY2015)"""
@@ -145,8 +145,8 @@ class TestDolParsingComprehensive(TestCase):
             SourceType.LCA,
             "H-1B_Disclosure_Data_FY15_Q4.xlsx",
             sample_row,
-            ExpectedOutputType.WORKSITE_RECORD,
-        )  # I-200 = worksite
+            ExpectedOutputType.SALARY_RECORD,
+        )
 
     def test_lca_fy2020_format(self):
         """Test mid-era LCA format (FY2020)"""
