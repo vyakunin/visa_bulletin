@@ -1943,6 +1943,17 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_manage_salary_indexes",
+    size = "medium",
+    srcs = ["test_manage_salary_indexes.py"],
+    deps = [
+        "//scripts/salary:manage_salary_indexes",
+        requirement("pytest_django"),
+        requirement("PyYAML"),
+    ],
+)
+
+django_py_test(
     name = "test_employer_index_depth_cap",
     size = "medium",
     srcs = ["test_employer_index_depth_cap.py"],
