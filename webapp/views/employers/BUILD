@@ -36,6 +36,7 @@ py_library(
         "//lib/business/salary:employer_renames",
         "//lib/business/salary:employer_stats",
         "//lib/business/salary:slug_redirects",
+        "//webapp/views:ads_test",
         "//models/enums:visa_program",
         "//models:job_title",
         "//models:salary",

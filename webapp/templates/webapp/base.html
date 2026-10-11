@@ -277,6 +277,11 @@
             });
         });
     </script>
+    {% if ads_test_arm %}
+    {% comment %}Ads-off split test (webapp/views/ads_test.py). Queued ahead of the GA4 snippet so
+       its config page_view already carries the arm; `set` sends nothing on its own.{% endcomment %}
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("set",{content_group:"{{ ads_test_arm.content_group }}"});</script>
+    {% endif %}
     {% if analytics_script %}
     {{ analytics_script|safe }}
     {% endif %}
@@ -752,13 +757,12 @@
     {% block extra_head %}{% endblock %}
 </head>
 {% comment %}
-  data-vb-thin marks a profile too thin to index (see lib/business/salary/employer_stats.py).
-  Nothing reads it yet: it is the seam for collapsing ad slots on thin pages, since AdSense
-  evaluates pages that SERVE ads (reached by Mediapartners-Google via the ad request itself)
-  and the meta-robots noindex set alongside it covers only the Search-side exposure. The
-  partials that would consume it are bind-mounted from the private ops repo.
+  data-vb-thin marks a profile too thin to index (see lib/business/salary/employer_stats.py);
+  the bind-mounted ad partial withholds ads on it, since AdSense evaluates pages that SERVE
+  ads and the meta-robots noindex set alongside it covers only the Search-side exposure.
+  data-vb-ads-arm names the page's arm in the ads-off split test (webapp/views/ads_test.py).
 {% endcomment %}
-<body{% if thin_page %} data-vb-thin="1"{% endif %}>
+<body{% if thin_page %} data-vb-thin="1"{% endif %}{% if ads_test_arm %} data-vb-ads-arm="{{ ads_test_arm.slug }}"{% endif %}>
     <div class="hero-section">
         <div class="container">
             {% if request.path != '/' %}<a href="{% url 'dashboard' %}" class="hero-home-link" aria-label="U.S. Visa Bulletin — home">{% endif %}

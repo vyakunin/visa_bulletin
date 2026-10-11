@@ -38,6 +38,7 @@ from lib.utils.pagination import (
 )
 from models.salary import EmployerCluster, SalaryRecord, WorksiteRecord
 from webapp.forms import SalarySearchForm, WorksiteSearchForm
+from webapp.views.ads_test import SALARY_SEARCH_ARM
 from webapp.views.seo.jsonld import build_dataset_jsonld, embed_jsonld
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
@@ -825,6 +826,8 @@ def salary_search_view(request):
         # Crawl-budget hygiene: noindex the free-text ?q= keyword space (see
         # _NOINDEX_FOLLOW). Filtered-but-no-q pages stay indexable.
         "meta_robots": _NOINDEX_FOLLOW if query.strip() else None,
+        # Every facet shares the one canonical /salaries/ page, so all of them share its arm.
+        "ads_test_arm": SALARY_SEARCH_ARM,
         # Autocomplete URLs (shared component used for both Job Title and Employer)
         "company_autocomplete_url": request.build_absolute_uri(
             reverse("company_autocomplete")

@@ -17,6 +17,7 @@ py_library(
         "//models:salary",
         "//webapp:forms",
         "//webapp/views/seo:jsonld",
+        "//webapp/views:ads_test",
         requirement("Django"),
     ],
 )
