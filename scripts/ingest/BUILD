@@ -9,7 +9,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 py_library(
     name = "run_pipeline_lib",
     srcs = ["run_pipeline.py"],
-    visibility = ["//tests:__pkg__"],
+    visibility = [
+        "//scripts/oneoff:__pkg__",
+        "//tests:__pkg__",
+    ],
     deps = [
         "//lib/ingest:ingest",
         "//lib/ingest:orchestrator",

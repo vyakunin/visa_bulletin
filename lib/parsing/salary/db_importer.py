@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import re
 import time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from django.db import transaction
 
+from lib.parsing.salary.file_detection import is_worksite_file
 from lib.parsing.salary.wage_unit_correction import (
     calculate_annual_wage,
     correct_wage_unit,
@@ -41,9 +43,22 @@ LCA_COLUMN_MAPPINGS = {
     "employer_state": ["EMPLOYER_STATE", "LCA_CASE_EMPLOYER_STATE"],
     "job_title": ["JOB_TITLE", "LCA_CASE_JOB_TITLE"],
     "soc_code": ["SOC_CODE", "LCA_CASE_SOC_CODE"],
-    "soc_title": ["SOC_TITLE", "LCA_CASE_SOC_NAME"],
-    "worksite_city": ["WORKSITE_CITY", "LCA_CASE_WORKLOC1_CITY", "WORK_CITY"],
-    "worksite_state": ["WORKSITE_STATE", "LCA_CASE_WORKLOC1_STATE", "WORK_STATE"],
+    "soc_title": ["SOC_TITLE", "SOC_NAME", "LCA_CASE_SOC_NAME"],
+    "visa_class": ["VISA_CLASS"],
+    "worksite_city": [
+        "WORKSITE_CITY",
+        "WORKSITE_CITY_1",
+        "LCA_CASE_WORKLOC1_CITY",
+        "WORK_LOCATION_CITY1",
+        "WORK_CITY",
+    ],
+    "worksite_state": [
+        "WORKSITE_STATE",
+        "WORKSITE_STATE_1",
+        "LCA_CASE_WORKLOC1_STATE",
+        "WORK_LOCATION_STATE1",
+        "WORK_STATE",
+    ],
     "wage_from": [
         "WAGE_RATE_OF_PAY_FROM",
         "LCA_CASE_WAGE_RATE_FROM",
@@ -68,8 +83,8 @@ LCA_COLUMN_MAPPINGS = {
         "PW_UNIT_1",
         "PW_UNIT_2",
     ],
-    "prevailing_wage": ["PREVAILING_WAGE", "PW_WAGE_LEVEL", "PREVAILING_WAGE_1"],
-    "prevailing_wage_unit": ["PW_UNIT_OF_PAY", "PW_UNIT_OF_PAY_1"],
+    "prevailing_wage": ["PREVAILING_WAGE", "PREVAILING_WAGE_1", "PW_1"],
+    "prevailing_wage_unit": ["PW_UNIT_OF_PAY", "PW_UNIT_OF_PAY_1", "PW_UNIT_1"],
     "case_submitted": [
         "RECEIVED_DATE",
         "LCA_CASE_SUBMIT",
@@ -86,11 +101,13 @@ LCA_COLUMN_MAPPINGS = {
         "BEGIN_DATE",
         "LCA_CASE_EMPLOYMENT_START_DATE",
         "EMPLOYMENT_START_DATE",
+        "PERIOD_OF_EMPLOYMENT_START_DATE",
     ],
     "employment_end": [
         "END_DATE",
         "LCA_CASE_EMPLOYMENT_END_DATE",
         "EMPLOYMENT_END_DATE",
+        "PERIOD_OF_EMPLOYMENT_END_DATE",
     ],
 }
 
@@ -229,6 +246,17 @@ def parse_date(date_str: str | None) -> datetime | None:
             continue
 
     return None
+
+
+_SOC_CODE_RE = re.compile(r"\d{2}-\d{4}(?:\.\d{2})?")
+
+
+def normalize_soc_code(raw: str | None) -> str:
+    """The SOC code alone ("15-1253"), from a cell that may carry its title after it."""
+    if not raw:
+        return ""
+    match = _SOC_CODE_RE.search(raw)
+    return match.group(0) if match else raw.strip()[: SalaryRecord._meta.get_field("soc_code").max_length]
 
 
 def parse_decimal(value: str | None) -> Decimal | None:
@@ -620,16 +648,7 @@ def _create_salary_record(
         )
         wage_annual = None
 
-    # Determine if this is a worksite record for efficient filtering
-    # Worksite records are identified by:
-    # 1. Filename contains 'worksite' or 'worksites' (worksite files)
-    # 2. Case number starts with 'I-200' (worksite case prefix, per DOL format)
-    is_worksite = (
-        source_file.startswith("LCA_Worksites")
-        or "_Worksites_" in source_file
-        or "worksite" in source_file.lower()
-        or (case_number and case_number.startswith("I-200"))
-    )
+    is_worksite = is_worksite_file(source_file)
 
     return SalaryRecord(
         case_number=case_number,
@@ -638,7 +657,7 @@ def _create_salary_record(
         employer=employer,
         employer_name=employer_name,
         job_title=job_title,
-        soc_code=get_column_value(row, column_mappings["soc_code"]) or "",
+        soc_code=normalize_soc_code(get_column_value(row, column_mappings["soc_code"])),
         soc_title=get_column_value(row, column_mappings["soc_title"]) or "",
         worksite_city=get_column_value(row, column_mappings["worksite_city"]) or "",
         worksite_state=normalize_state_code(

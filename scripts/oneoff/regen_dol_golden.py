@@ -11,6 +11,10 @@ job_title employer-title preference, or the wage-unit annualization fix — with
 ZERO field losses. With sign-off, this rebaselines `expected_result` from the
 (now-correct) transform output so the golden becomes a live regression guard.
 
+H1B case inputs carry `_source_file` (the case's own source file), as parse() sets it
+in a real run, since routing reads it. The one record_type change accepted is an
+H-1B (I-200) row from an LCA disclosure file moving WorksiteRecord -> SalaryRecord.
+
 Only annotated, non-error cases are rebaselined. Cases with `expected_error`
 (or record_type=None) are left untouched. If any previously-annotated case now
 returns None or raises, the script ABORTS without writing — that would be a real
@@ -32,6 +36,7 @@ setup_django_for_tests()
 
 from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin  # noqa: E402
 from lib.ingest.plugins.dol_perm import PERMSalaryDataSourcePlugin  # noqa: E402
+from lib.parsing.salary.file_detection import is_worksite_file  # noqa: E402
 from lib.utils.logging_utils import log_context  # noqa: E402
 
 
@@ -77,6 +82,8 @@ def main() -> int:
             continue
 
         plugin = perm if plugin_type == "PERM" else h1b
+        if plugin_type != "PERM":
+            case["input"].setdefault("_source_file", case.get("source_file", ""))
         try:
             result = plugin.transform(case.get("input", {}))
         except Exception as e:  # regression guard
@@ -90,6 +97,12 @@ def main() -> int:
             continue
 
         actual_type = type(result).__name__
+        if (
+            record_type == "WorksiteRecord"
+            and actual_type == "SalaryRecord"
+            and not is_worksite_file(case["input"]["_source_file"])
+        ):
+            case["record_type"] = record_type = actual_type
         if actual_type != record_type:
             regressions.append(
                 f"Case {i+1} ({src}): record_type {record_type} -> {actual_type}"

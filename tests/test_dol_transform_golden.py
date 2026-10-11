@@ -323,7 +323,7 @@ class TestDOLTransformGolden:
             )
 
     def test_h1b_worksite_cases(self):
-        """Test only H1B WorksiteRecord cases (I-200 routing)"""
+        """Test only H1B WorksiteRecord cases (worksite-file rows)"""
         test_cases = self.load_test_data()
         h1b_worksite_cases = [
             tc

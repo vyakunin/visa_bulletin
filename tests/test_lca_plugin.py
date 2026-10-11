@@ -10,7 +10,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin
+from lib.ingest.plugins.dol_lca import H1BSalaryDataSourcePlugin, lca_visa_program
+from lib.parsing.salary.db_importer import normalize_soc_code
 from models.enums.visa_program import VisaProgram
 from models.ingest.data_source import DataSource
 from models.ingest.enums import DataDomain, FormatVersion, IngestStatus, SourceType
@@ -76,6 +77,26 @@ class TestLCADiscovery:
         assert all(s.source_type == SourceType.LCA.value for s in lca_sources)
 
     @patch("lib.ingest.plugins.dol_lca.fetch_page")
+    def test_discover_sources_finds_archive_year_h1b_files(self, mock_fetch):
+        plugin = H1BSalaryDataSourcePlugin()
+        mock_fetch.return_value = """
+        <a href="/pdfs/H-1B_FY2010.xlsx">FY2010</a>
+        <a href="/pdfs/H-1B_FY14_Q4.xlsx">FY2014</a>
+        <a href="/pdfs/H-1B_Disclosure_Data_FY17.xlsx">FY2017</a>
+        <a href="/pdfs/H-1B_Case_Data_FY2008.xlsx">FY2008</a>
+        <a href="/pdfs/H-2B_Appendix_A_FY2025_Q4.xlsx">H-2B</a>
+        <a href="/pdfs/LCA_Appendix_A_FY2025_Q4.xlsx">Appendix</a>
+        """
+
+        names = sorted(Path(s.url).name for s in plugin.discover_sources())
+
+        assert names == [
+            "H-1B_Disclosure_Data_FY17.xlsx",
+            "H-1B_FY14_Q4.xlsx",
+            "H-1B_FY2010.xlsx",
+        ]
+
+    @patch("lib.ingest.plugins.dol_lca.fetch_page")
     def test_discover_sources_finds_worksite_files(self, mock_fetch):
         """Test source discovery finds worksite files"""
         plugin = H1BSalaryDataSourcePlugin()
@@ -104,14 +125,37 @@ class TestLCADiscovery:
 class TestLCATransformRouting:
     """Tests for transform method routing (SalaryRecord vs WorksiteRecord)"""
 
-    def test_transform_routes_i200_to_worksite_record(self):
-        """Test transform routes I-200 case numbers to WorksiteRecord"""
+    def test_an_h1b_row_in_a_disclosure_file_is_an_h1b_salary_record(self):
+        plugin = H1BSalaryDataSourcePlugin(skip_clustering=True)
+        plugin._current_run = Mock()
+        record = {
+            "CASE_NUMBER": "I-200-24111-111111",
+            "VISA_CLASS": "H-1B",
+            "EMPLOYER_NAME": "Tech Corp",
+            "EMPLOYER_CITY": "Austin",
+            "EMPLOYER_STATE": "TX",
+            "WORKSITE_CITY": "Austin",
+            "WORKSITE_STATE": "TX",
+            "JOB_TITLE": "Data Scientist",
+            "SOC_CODE": "15-2051.00",
+            "WAGE_RATE_OF_PAY_FROM": "120000",
+            "WAGE_UNIT_OF_PAY": "Year",
+            "_fiscal_year": 2024,
+            "_source_file": "LCA_Disclosure_Data_FY2024_Q1.xlsx",
+        }
+
+        result = plugin.transform(record)
+
+        assert isinstance(result, SalaryRecord)
+        assert result.visa_program == VisaProgram.H1B
+        assert result.is_worksite is False
+        assert result.wage_annual == 120000.0
+
+    def test_an_h1b_row_in_a_worksite_file_stays_a_worksite_record(self):
         plugin = H1BSalaryDataSourcePlugin()
         plugin._current_run = Mock()
-
-        # Mock record with I-200 case number
         record = {
-            "LCA_CASE_NUMBER": "I-200-11111-1111",
+            "CASE_NUMBER": "I-200-11111-1111",
             "WORKSITE_CITY": "Austin",
             "WORKSITE_STATE": "TX",
             "JOB_TITLE": "Data Scientist",
@@ -119,19 +163,23 @@ class TestLCATransformRouting:
             "WAGE_RATE_OF_PAY_FROM": "120000",
             "WAGE_UNIT_OF_PAY": "Year",
             "_fiscal_year": 2024,
-            "_source_file": "LCA_FY2024.xlsx",
+            "_source_file": "LCA_Worksites_FY2024_Q4.xlsx",
         }
 
         result = plugin.transform(record)
 
-        # Should create WorksiteRecord, not SalaryRecord
-        assert result is not None
         assert isinstance(result, WorksiteRecord)
-        assert result.case_number == "I-200-11111-1111"
+        assert result.visa_program == VisaProgram.H1B
         assert result.worksite_city == "Austin"
-        assert result.worksite_state == "TX"
-        assert result.job_title == "Data Scientist"
-        assert result.wage_annual == 120000.0
+
+    def test_an_appendix_a_row_yields_nothing(self):
+        plugin = H1BSalaryDataSourcePlugin()
+        record = {
+            "CASE_NUMBER": "I-200-21165-395314",
+            "APPX_A_NAME_OF_INSTITUTION": "New Jersey Institute of Technology",
+            "_source_file": "LCA_Appendix_A_FY2024_Q4.xlsx",
+        }
+        assert plugin.transform(record) is None
 
     def test_transform_routes_non_i200_to_salary_record(self):
         """Test transform routes non-I-200 case numbers to SalaryRecord"""
@@ -238,6 +286,36 @@ class TestLCATransformRouting:
         assert result.case_number == "G-200-11111-1111"
         assert result.employer_name == "Tech Corp"
         assert result.wage_annual == 120000.0
+
+
+class TestSocCode:
+    def test_a_title_after_the_code_is_dropped(self):
+        assert normalize_soc_code("15-1253 Software Quality Assurance") == "15-1253"
+
+    def test_a_detailed_code_keeps_its_suffix(self):
+        assert normalize_soc_code("15-1242.00") == "15-1242.00"
+
+    def test_a_cell_with_no_code_is_kept(self):
+        assert normalize_soc_code(" 151132 ") == "151132"
+
+
+class TestLCAVisaProgram:
+    @pytest.mark.parametrize(
+        "visa_class, case_number, expected",
+        [
+            ("E-3 Australian", "I-200-15000-000001", VisaProgram.E3),
+            ("H-1B1 Singapore", "I-200-15000-000002", VisaProgram.H1B1),
+            ("H-1B1 Chile", "I-201-15000-000003", VisaProgram.H1B1),
+            ("H-1B", "I-203-15000-000004", VisaProgram.H1B),
+            ("", "I-203-09000-000005", VisaProgram.E3),
+            ("", "I-202-09000-000006", VisaProgram.H1B1),
+            ("", "I-200-09000-000007", VisaProgram.H1B),
+        ],
+    )
+    def test_visa_class_decides_and_the_case_prefix_fills_in(
+        self, visa_class, case_number, expected
+    ):
+        assert lca_visa_program({"VISA_CLASS": visa_class}, case_number) == expected
 
 
 @pytest.mark.django_db

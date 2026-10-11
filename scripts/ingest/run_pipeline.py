@@ -501,10 +501,7 @@ def reingest_files(
                 )
                 if source.source_type == SourceType.LCA.value:
                     PluginRegistry.register(
-                        H1BSalaryDataSourcePlugin(
-                            skip_clustering=True,
-                            force_salary_record=True,
-                        )
+                        H1BSalaryDataSourcePlugin(skip_clustering=True)
                     )
                 elif source.source_type == SourceType.PERM.value:
                     PluginRegistry.register(
