@@ -35,6 +35,7 @@ from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
 from models.salary import EmployerCluster, SalaryRecord
+from webapp.views.ads_test import employer_ads_arm
 
 logger = logging.getLogger(__name__)
 
@@ -418,8 +419,7 @@ def employer_profile_view(request, slug):
     # Thin-page gate: an employer whose cluster carries almost no data (or whose
     # filings all fall outside the rendered window) renders all-zero stats and a
     # blank chart. Keep it reachable (follow preserves link equity) but out of
-    # the index. The flag is also exposed to the template as the seam for ad
-    # suppression, which nothing consumes yet — see employer_stats.py.
+    # the index; the ad partial withholds ads on it.
     thin_page = is_thin_employer_profile(cluster, stats["basic"]["total_filings"])
 
     context = {
@@ -428,6 +428,8 @@ def employer_profile_view(request, slug):
         "rename_link": rename_link,
         "meta_robots": "noindex, follow" if thin_page else None,
         "thin_page": thin_page,
+        # Thin profiles are noindexed and already ad-free, so only indexed ones join.
+        "ads_test_arm": None if thin_page else employer_ads_arm(cluster.slug),
         "chart_data": chart_data,
         "pay_comparison": pay_comparison,
         "approval_stats": approval_stats,

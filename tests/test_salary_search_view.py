@@ -15,6 +15,7 @@ from lib.business.salary.common_stats import GROWTH_MIN_BASE_FILINGS
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
+from webapp.views.ads_test import AdsArm
 
 
 class SalarySearchLandingViewTest(TestCase):
@@ -89,6 +90,22 @@ class SalarySearchLandingViewTest(TestCase):
         self.assertTrue(response.context["has_filters"])
         self.assertIsNone(response.context["market_stats"])
         self.assertEqual(response.context["market_chart_data"], {})
+
+
+class SalarySearchAdsTestArmTest(TestCase):
+    """/salaries/ and every query-string facet of it sit in the ads-off arm."""
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+
+    def test_landing_and_facets_render_the_off_arm(self):
+        for query in ("", "?state=CA", "?employer=landing-test-co&program=h1b&page=2"):
+            response = self.client.get(reverse("salary_search") + query)
+
+            self.assertIs(response.context["ads_test_arm"], AdsArm.OFF)
+            self.assertContains(response, 'data-vb-ads-arm="off"')
+            self.assertContains(response, 'content_group:"ads-test:off"')
 
 
 class MarketOverviewGrowthGateTest(TestCase):

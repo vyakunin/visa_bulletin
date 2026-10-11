@@ -86,6 +86,13 @@ pytest_py_test(
     ],
 )
 
+pytest_py_test(
+    name = "test_ads_test",
+    size = "small",
+    srcs = ["test_ads_test.py"],
+    deps = ["//webapp/views:ads_test"],
+)
+
 # No Django, no DB, no real bazel — drives the tracked hook against a throwaway
 # git repo with a stub `bazel` on PATH. Pins the pathspec that made nested BUILD
 # files invisible, and the exit-classification that twice reported a broken run
@@ -637,6 +644,7 @@ django_py_test(
         "//models/enums:visa_program",
         "//webapp:urls",
         "//webapp/views:views",
+        "//webapp/views:ads_test",
     ],
 )
 
@@ -1051,6 +1059,7 @@ django_py_test(
         "//models/enums:visa_program",
         "//webapp:urls",
         "//webapp/views:views",
+        "//webapp/views:ads_test",
     ],
 )
 

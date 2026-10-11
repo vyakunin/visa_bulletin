@@ -23,6 +23,12 @@ py_library(
 )
 
 py_library(
+    name = "ads_test",
+    srcs = ["ads_test.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "prediction_views",
     srcs = ["prediction_views.py"],
     visibility = ["//visibility:public"],

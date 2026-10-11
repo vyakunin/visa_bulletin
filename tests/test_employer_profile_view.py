@@ -15,6 +15,7 @@ from lib.business.salary.employer_stats import EMPLOYER_INDEXABLE_MIN_FILINGS
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
+from webapp.views.ads_test import AdsArm, employer_ads_arm
 
 
 class EmployerProfileViewTest(TestCase):
@@ -485,6 +486,32 @@ class EmployerThinPageGateTest(TestCase):
         self.assertTrue(response.context["thin_page"])
         self.assertEqual(response.context["meta_robots"], "noindex, follow")
         self.assertContains(response, 'data-vb-thin="1"')
+
+    def test_indexed_profile_renders_its_ads_test_arm(self):
+        for slug, arm in (("arm-off-employer-llc", AdsArm.OFF), ("arm-on-employer-llc", AdsArm.ON)):
+            self.assertIs(employer_ads_arm(slug), arm)
+            self._make_cluster(
+                slug,
+                lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS,
+                fiscal_year=datetime.now().year - 1,
+            )
+            response = self.client.get(f"/employer/{slug}/")
+
+            self.assertIs(response.context["ads_test_arm"], arm)
+            self.assertContains(response, f'data-vb-ads-arm="{arm.slug}"')
+            self.assertContains(response, f'content_group:"{arm.content_group}"')
+
+    def test_thin_profile_is_outside_the_ads_test(self):
+        self._make_cluster(
+            "arm-off-employer-llc",
+            lifetime=EMPLOYER_INDEXABLE_MIN_FILINGS - 1,
+            fiscal_year=datetime.now().year - 1,
+        )
+        response = self.client.get("/employer/arm-off-employer-llc/")
+
+        self.assertIsNone(response.context["ads_test_arm"])
+        self.assertNotContains(response, "data-vb-ads-arm")
+        self.assertNotContains(response, "content_group")
 
     def test_sitemap_excludes_thin_includes_qualifying(self):
         self._make_cluster(
