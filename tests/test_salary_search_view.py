@@ -536,3 +536,173 @@ class SalaryExploreRailTest(TestCase):
         self.assertIn(
             reverse("employer_profile", kwargs={"slug": "rail-sponsor-inc"}), html
         )
+
+
+class SalarySearchEmployerCanonicalTest(TestCase):
+    """An employer-only facet canonicalises to the employer profile, but only
+    when that profile exists and is indexable; otherwise to /salaries/."""
+
+    LANDING = "http://testserver/salaries/"
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        recent_fy = datetime.now().year - 1
+        self.indexable = self._cluster(
+            "Indexable Co", "indexable-co", lifetime=40, raw_name="INDEXABLE CO", fy=recent_fy
+        )
+        self._cluster("Thin Co", "thin-co", lifetime=3, raw_name="THIN CO", fy=recent_fy)
+        # Lifetime count clears the gate, but every filing predates the profile's
+        # rendered window, so the profile noindexes itself.
+        self._cluster("Stale Co", "stale-co", lifetime=40, raw_name="STALE CO", fy=2005)
+
+    def _cluster(self, name, slug, *, lifetime, raw_name, fy):
+        cluster = EmployerCluster.objects.create(
+            canonical_name=name,
+            slug=slug,
+            total_lca_count=lifetime,
+            search_record_count=1,
+            search_avg_salary=150000,
+            search_min_salary=150000,
+            search_max_salary=150000,
+        )
+        employer = Employer.objects.create(
+            name=raw_name, name_normalized=raw_name.lower(), canonical_cluster=cluster
+        )
+        SalaryRecord.objects.create(
+            case_number=f"CANON-{slug}",
+            employer=employer,
+            employer_name=raw_name,
+            job_title="Engineer",
+            wage_annual=150000,
+            visa_program=VisaProgram.H1B,
+            case_status=CaseStatus.CERTIFIED,
+            fiscal_year=fy,
+            worksite_state="CA",
+            is_worksite=False,
+        )
+        return cluster
+
+    def _canonical(self, params):
+        response = self.client.get(reverse("salary_search"), params)
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_employer_facet_points_at_the_indexable_employer_profile(self):
+        target = "http://testserver/employer/indexable-co/"
+        for params in (
+            {"employer": "Indexable Co"},
+            {"employer": "INDEXABLE CO", "page": "1"},
+            {"employer_slug": "indexable-co", "employer": "Indexable Co"},
+        ):
+            with self.subTest(params=params):
+                response = self._canonical(params)
+                self.assertEqual(response.context["canonical_url"], target)
+                self.assertContains(response, f'<link rel="canonical" href="{target}">')
+
+    def test_canonical_target_profile_is_itself_indexable(self):
+        profile = self.client.get(reverse("employer_profile", kwargs={"slug": "indexable-co"}))
+        self.assertEqual(profile.status_code, 200)
+        self.assertIsNone(profile.context["meta_robots"])
+
+    def test_noindexed_or_missing_employer_keeps_the_landing_canonical(self):
+        for params in (
+            {"employer": "Thin Co"},
+            {"employer": "Stale Co"},
+            {"employer": "No Such Employer"},
+            {"employer_slug": "no-such-slug", "employer": "No Such Employer"},
+        ):
+            with self.subTest(params=params):
+                response = self._canonical(params)
+                self.assertEqual(response.context["canonical_url"], self.LANDING)
+                self.assertContains(response, f'<link rel="canonical" href="{self.LANDING}">')
+
+    def test_stale_profile_is_the_one_the_view_noindexes(self):
+        profile = self.client.get(reverse("employer_profile", kwargs={"slug": "stale-co"}))
+        self.assertEqual(profile.context["meta_robots"], "noindex, follow")
+
+    def test_employer_combined_with_another_facet_keeps_the_landing_canonical(self):
+        response = self._canonical({"employer": "Indexable Co", "state": "CA"})
+        self.assertEqual(response.context["canonical_url"], self.LANDING)
+
+    def test_name_shared_by_two_clusters_names_neither(self):
+        EmployerCluster.objects.create(
+            canonical_name="Indexable Co", slug="indexable-co-2", total_lca_count=40
+        )
+        response = self._canonical({"employer": "Indexable Co"})
+        self.assertEqual(response.context["canonical_url"], self.LANDING)
+
+
+class SalaryLandingDepthTest(TestCase):
+    """The bare landing answers "what is this database" above the search form
+    from real data, then links into employer profiles and carries an FAQ."""
+
+    def setUp(self):
+        self.client = Client()
+        cache.clear()
+        recent_fy = datetime.now().year - 1
+        for name, slug, lifetime, program in (
+            ("Big Sponsor Inc", "big-sponsor-inc", 500, VisaProgram.H1B),
+            ("Tiny Sponsor LLC", "tiny-sponsor-llc", 2, VisaProgram.PERM),
+        ):
+            cluster = EmployerCluster.objects.create(
+                canonical_name=name,
+                slug=slug,
+                total_lca_count=lifetime,
+                search_record_count=1,
+                search_avg_salary=140000,
+            )
+            employer = Employer.objects.create(
+                name=name, name_normalized=name.lower(), canonical_cluster=cluster
+            )
+            SalaryRecord.objects.create(
+                case_number=f"DEPTH-{slug}",
+                employer=employer,
+                employer_name=name,
+                job_title="Analyst",
+                wage_annual=140000,
+                visa_program=program,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=recent_fy,
+                worksite_state="TX",
+                is_worksite=False,
+            )
+
+    def test_summary_counts_the_searchable_records(self):
+        response = self.client.get(reverse("salary_search"))
+        summary = response.context["database_summary"]
+        self.assertEqual(summary["total_records"], 2)
+        self.assertEqual(summary["lca_records"], 1)
+        self.assertEqual(summary["perm_records"], 1)
+        self.assertEqual(summary["employer_count"], 2)
+
+    def test_summary_renders_above_the_search_form(self):
+        html = self.client.get(reverse("salary_search")).content.decode()
+        self.assertIn('id="database-summary"', html)
+        self.assertLess(html.index('id="database-summary"'), html.index('class="card search-card'))
+
+    def test_landing_links_only_indexable_employer_profiles(self):
+        response = self.client.get(reverse("salary_search"))
+        slugs = [e["slug"] for e in response.context["employer_pages"]]
+        self.assertEqual(slugs, ["big-sponsor-inc"])
+        html = response.content.decode()
+        # The top-employers table and the explore rail link by volume, not by the
+        # gate, so only the employer-pages section is held to it.
+        section = html[html.index('id="employer-pages"') : html.index('id="salary-database-faq"')]
+        self.assertIn('href="/employer/big-sponsor-inc/"', section)
+        self.assertNotIn('href="/employer/tiny-sponsor-llc/"', section)
+
+    def test_faq_jsonld_matches_the_visible_questions(self):
+        response = self.client.get(reverse("salary_search"))
+        faq = response.context["landing_faq"]
+        self.assertIn('"@type": "FAQPage"', response.context["landing_faq_jsonld"])
+        self.assertIn("2 salary records", faq[0]["a"])
+        for item in faq:
+            self.assertContains(response, escape(item["q"]))
+            self.assertIn(item["q"], response.context["landing_faq_jsonld"].replace("\\u0026", "&"))
+
+    def test_filtered_view_carries_no_landing_depth(self):
+        response = self.client.get(reverse("salary_search"), {"state": "TX"})
+        self.assertIsNone(response.context["database_summary"])
+        self.assertEqual(response.context["landing_faq"], [])
+        self.assertNotContains(response, 'id="database-summary"')
