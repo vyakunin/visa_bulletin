@@ -676,6 +676,16 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_cluster_job_titles_timeout",
+    size = "medium",
+    srcs = ["test_cluster_job_titles_timeout.py"],
+    deps = [
+        "//scripts/salary:cluster_job_titles_lib",
+        requirement("pytest_django"),
+    ],
+)
+
+django_py_test(
     name = "test_cluster_stats_freshness",
     srcs = ["test_cluster_stats_freshness.py"],
     deps = [

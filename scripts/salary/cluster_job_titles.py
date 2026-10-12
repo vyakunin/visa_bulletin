@@ -31,6 +31,8 @@ django.setup()
 import logging
 import time
 
+from django.db import connection
+
 from django_config.logging_config import setup_logging
 from lib.business import clustering_engine
 from lib.business.salary.job_title_config import JobTitleClusteringConfig
@@ -329,6 +331,11 @@ def main():
         args={"dry_run": args.dry_run},
         context="Clustering job titles using generic clustering framework",
     )
+
+    # Phase 3 updates 10k salary rows per statement on a ~10M-row table, which outruns
+    # the 45s application statement_timeout once the table is that large.
+    with connection.cursor() as cursor:
+        cursor.execute("SET statement_timeout = 0")
 
     try:
         cluster_job_titles(dry_run=args.dry_run)
