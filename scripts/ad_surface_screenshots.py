@@ -206,6 +206,7 @@ SKIP_SURFACES = {"donation_click", "static_meta", "api"}
 # Ads settle asynchronously: a slot can sit reserved-but-empty for ~6s before it
 # either fills or collapses. Capturing earlier photographs a transient state.
 AD_SETTLE_MS = 7000
+LOAD_WAIT_MS = 20_000  # past this, a hung third-party creative is holding `load`
 
 # Playwright's 30s default is not enough for a full-page shot of a tall mobile
 # surface with the ad stack live: /job-title/ mobile timed out on 2026-08-24 and
@@ -629,6 +630,13 @@ def ad_layer_unexercised(ok_shots: list[dict]) -> bool:
     return bool(ok_shots) and all(slots_seen(s) == 0 for s in ok_shots)
 
 
+def anchor_is_defect(shot: dict) -> bool:
+    """An anchor unit on a DESKTOP shot. The mobile bottom anchor is on by decision
+    (monetization/PIPELINE.md, "Anchor restored, BOTTOM-ONLY"); anchors on screens
+    wider than 1000px are off, so one there means the setting came back."""
+    return bool(shot.get("anchor_present")) and shot.get("device") == "desktop"
+
+
 def blackout_devices(shots: list[dict]) -> list[str]:
     """Devices where every captured shot rendered ZERO ad slots.
 
@@ -859,9 +867,16 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         page.route("**/cdn-cgi/trace", _fake_trace)
                     url = f"{base}{path}"
                     # NOT networkidle: with the ad stack live, Google keeps polling and
-                    # the network never goes idle — mobile captures timed out at 90s.
-                    # `load` + an explicit settle is both faster and deterministic.
-                    page.goto(url, wait_until="load", timeout=90_000)
+                    # the network never goes idle. `load` is best-effort too: an ad
+                    # iframe's creative on a host this box's LAN DNS blackholes never
+                    # finishes, so `load` never fires (2026-10-12, mediago.io on / and
+                    # /predictions mobile). The explicit settle below is the real wait.
+                    page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+                    try:
+                        page.wait_for_load_state("load", timeout=LOAD_WAIT_MS)
+                        load_fired = True
+                    except Exception:
+                        load_fired = False
                     page.wait_for_timeout(AD_SETTLE_MS)  # let slots fill or collapse
                     integrity = page.evaluate(INTEGRITY_JS)
                     if integrity["challenged"] or not integrity["ours"]:
@@ -974,6 +989,7 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         "screenshot_error": shot_error,
                         "cls": cls,
                         "cls_settled": cls_settled,
+                        "load_fired": load_fired,
                         **diag,
                         # Every flagged number is derived from the settled probe,
                         # so the manifest carries the settled copy of the fields
@@ -1016,11 +1032,8 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
                         flag += "  ⚠ SCREENSHOT INCOMPLETE"
                     if rec.get("content_below_fold"):
                         flag += "  ⚠ H1 BELOW FOLD"
-                    if rec.get("anchor_present"):
-                        # Anchor ads were turned OFF site-wide on 2026-08-03 and have
-                        # read false on all 17 shots since (9/10 were true before), so
-                        # a true here now means the unit came back, not a flake.
-                        flag += "  ⚠ ANCHOR PRESENT (anchor ads are off site-wide)"
+                    if anchor_is_defect(rec):
+                        flag += "  ⚠ ANCHOR PRESENT (anchor ads are off on desktop)"
                     print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']}"
                           f"->{rec['slots_total_scrolled']} "
                           f"filled={rec['slots_filled']}"
@@ -1115,7 +1128,7 @@ def main() -> int:
               or s.get("over_wide_px", 0) > 0
               or s.get("labelled_empty_px", 0) > 0
               or s.get("blank_run_flagged")
-              or s.get("anchor_present")
+              or anchor_is_defect(s)
               or s.get("ads_above_h1_px", 0) > 0 or s.get("content_below_fold")
               or s.get("screenshot_error")
               or s.get("captured") is False]
