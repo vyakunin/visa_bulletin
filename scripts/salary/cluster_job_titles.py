@@ -31,7 +31,6 @@ django.setup()
 import logging
 import time
 
-
 from django_config.logging_config import setup_logging
 from lib.business import clustering_engine
 from lib.business.salary.job_title_config import JobTitleClusteringConfig
