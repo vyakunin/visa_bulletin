@@ -5,7 +5,7 @@ description: visa_bulletin-only morning checkup — run the project's daily_chec
 
 Project-scoped variant of `/daily_checkup` for visa_bulletin, shadowing the
 generic `~/.claude/skills/daily_checkup/SKILL.md` with the project's own
-investigation playbook + traffic KPI. As of 2026-06-03 the daily checkup is
+investigation playbook + traffic charts. As of 2026-06-03 the daily checkup is
 per-project: a 7am launchd job (`agent_infra/daily_checkup/run_daily.py`) spawns
 one `claude -p /daily_checkup` per project (Opus) in its own cwd, delivering to
 its own bot. There is no cross-project Kombi roll-up anymore. This skill runs in
@@ -14,14 +14,14 @@ two modes:
   the visa_bulletin relay session runs this skill): gather → compose → reply.
 - **Interactive**: user types `/daily_checkup` on @vyakunin_visa_bulletin_bot.
 
-visa_bulletin always sends (never silent — never `[[SILENT]]`); the traffic KPI line
-is the daily signal the user opens the chat for.
+visa_bulletin always sends (never silent — never `[[SILENT]]`); the traffic charts
+are the daily signal the user opens the chat for.
 
 **Delivery — relay mode (see generic skill "Delivery mode").** This runs inside the
 visa_bulletin **relay session**: the relay delivers your reply, so **emit the digest
 as your reply text** (`🤖 `-prefixed) — do NOT curl the Bot API in relay mode (Step 4's
 curl is the legacy `--headless` fallback only).
-**Reply = the digest only.** First char must be `🤖 ` (the traffic-KPI line); never
+**Reply = the digest only.** First char must be `🤖 ` (the checkup title line); never
 preface it with plumbing narration ("Composing the digest", "Relay mode — I emit it as
 my reply", "the relay delivers to the <X> bot", naming the bot/chat) — that internal
 kitchen leaks into the chat. Reason about delivery silently; output only the digest.
@@ -79,21 +79,19 @@ Telegram-mobile format. One screen = one user-readable summary. Style:
 - First line: `🤖 visa_bulletin checkup — <YYYY-MM-DD> <HH:MM> Berlin`
 - One-sentence headline: `<emoji> <status verdict>` (🟢 all clear / 🟡 needs attention / 🔴 act now). State the most important finding right after.
 - Then the unified ticket block from Step 2.5 (only the non-empty buckets).
-- Traffic block (the user's #1 KPI), cycle-aware per `[[feedback_traffic_analysis_visa_bulletin]]`:
-  - Headline line counts **readers only** (user ruling D9a, 2026-10-09 — a headless-Chrome scraper runs the beacon and is about half the raw pageviews):
-    `Traffic: 7d <N> readers (<+/-N%> MoM cycle, <+/-N%> WoW)`. No scraper line, no raw-views figure (user ruling 2026-10-10: remove the scraper completely).
-    Take every figure from the chart script's JSON `totals` (`uv run scripts/daily_checkup_charts.py --json`), which runs on the same export; never from the MCP's raw totals. Any per-surface MoM/WoW in text is readers too (the `rows[].mom/wow` fields).
-  - Then the **per-surface chart**, not a table (user request 2026-10-09: "convert these tables to graphs"). Render it and show it:
+- **Charts carry the numbers; the text carries what no chart shows** (user ruling 2026-10-12: "whatever reflected in graphs — drop, the rest — add graphs", one picture per graph). Render and show every chart, one image per graph:
     ```bash
-    PNG=$(uv run scripts/daily_checkup_charts.py --json | tail -1)   # JSON (headline totals) first, PNG path last
-    show-media "$PNG" --caption "Pageviews by surface, 120d"
+    uv run scripts/daily_checkup_charts.py --json > /tmp/vb_digest.json   # writes $TMPDIR/vb_digest/*.png
+    show-media $(jq -r '.charts[]' /tmp/vb_digest.json) --caption "Readers 120d, then GA4 organic"
     ```
-    One panel per surface over the last 120 days: daily readers, their 7-day and 28-day trailing averages, and nothing else. Each panel has its own y scale, and its title carries the raw 7d numbers: readers with their 4w-ago and last-week totals and MoM/WoW, then the surface's share of readers. It covers every surface the full-coverage export has, so nothing is trimmed and nothing needs splitting across sends. Same data and buckets as the MCP's surface rows and `scripts/gc_traffic_provenance.py`.
-    - **Exit 2 (export unavailable):** no chart. Say `⚠️ surface chart unavailable — GC export missing` and render the MCP's surface rows as text, one per line, every row.
-    - A surface the MCP labels `other` with real volume still gets the one-line text flag (`⚠️ other <N> — unclassified surface, add a bucket`).
-  - **The scraper (and the dated 2026-07-27..29 Singapore burst) is excluded and never mentioned** — not in the chart, the headline or a footnote. Do not raise its growth, its spread to a new surface, or a farm-driven MoM jump as 🟡/🔴, and do not propose blocking it. It is absorbed on purpose (`~/.claude/rules/absorb_dont_block.md`; escalation condition in `visa_bulletin_platform/hosting/cloudflare/waf.md` § "The residual proxy pool"): surface it only when a real-user metric crosses that condition — origin 5xx, latency on human requests, homeserver saturation.
-  - **NO GSC / SEO lines in this digest — do NOT render any `gsc:` line, not even `gsc: n/a`.** GSC/SEO reporting was removed from the visa_bulletin MCP on 2026-06-26 and moved to the **visa_bulletin_platform** digest (marketing/SEO is owned by the platform overlay, same split as F5Bot/Reddit-watch — see `daily_checkup.md`). The MCP returns no GSC section here, so there is nothing to render and a `gsc: n/a` line falsely reads as a gather-gap in a digest GSC was never in scope for. Clicks/impressions/position live in the platform digest. (If GSC is ever deliberately re-scoped back into THIS channel, that's a code change to the MCP + this skill — until then, no gsc line.)
-  - **GA4 engagement block (long-click proxy; user request 2026-07-04).** The MCP returns a "GA4 engagement — organic landings" section: this-7d vs prior-7d sessions / engaged % / engaged-time-per-session for site-organic + `/job-title/*` + `/employer/*` + `/salaries`. Render it every day right after the surface breakdown, raw numbers both windows (never percentages alone). Note the engaged-time is **whole-visit** active engagement time (session-scoped, attributed to the organic landing surface — keeps counting as the user browses other pages), not time on a single page; label it `engaged/visit` so it's not misread as per-page. It flags yellow itself on a ≥10pt WoW engagement drop with N≥50 — surface that flag as a 🟡 finding. Watch list = the profile surfaces (weakest engagement AND the impression-losing ones, 2026-07 diagnosis). If the section is missing, say `ga4: n/a (gather errored)` — don't silently drop the block.
+    The set, in order: all readers, then one chart per surface (every surface the full-coverage export has), then one per GA4 watched surface (site organic, `/job-title/*`, `/employer/*`, `/salaries`). Each reader chart plots daily readers with 7d and 28d trailing averages over 120 days; its subtitle carries 7d readers, 4w-ago and last-week totals with MoM/WoW, and the surface's share. Each GA4 chart plots daily organic sessions and engaged sessions with 7d averages, ending at the last FINAL GA4 day (rows under 4 days old are not final); its subtitle carries sessions, engaged % and engaged time per visit (whole-visit, not per-page) against the prior week.
+  - **The digest text repeats none of those numbers.** No traffic headline line, no surface list, no GA4 block. Text keeps: the verdict, the cycle position (when the last bulletin dropped, when the next is due), every 🟡/🔴 finding with its cause and action, health (5xx, disk, RAM, load — point-in-time only, no history kept to chart), and tickets. A finding may quote the one number it turns on.
+  - **Cycle-aware verdict** per `[[feedback_traffic_analysis_visa_bulletin]]`: readers MoM ≤ −30% is 🟡, ≤ −60% 🔴, unless the investigation shows the calendar moved it (compare the same calendar days in earlier months with `--end`). Every figure comes from the chart script's JSON (`totals`, `rows`, `ga4`), never the MCP's raw pageview totals (user ruling D9a, 2026-10-09: readers only).
+  - **Exit 2 (GC export unavailable):** no charts. Say `⚠️ charts unavailable — GC export missing` and render the MCP's surface rows as text, one per line. **`ga4_error` set:** say `ga4: n/a (<error>)`; the reader charts still ship.
+  - A surface the MCP labels `other` with real volume gets a text flag (`⚠️ other <N> — unclassified surface, add a bucket`).
+  - The MCP's GA4 section flags yellow on a ≥10pt WoW engagement drop with N≥50; surface that flag as a 🟡 finding.
+  - **The scraper (and the dated 2026-07-27..29 Singapore burst) is excluded and never mentioned** — not in a chart, the text or a footnote. Do not raise its growth, its spread to a new surface, or a farm-driven MoM jump as 🟡/🔴, and do not propose blocking it. It is absorbed on purpose (`~/.claude/rules/absorb_dont_block.md`; escalation condition in `visa_bulletin_platform/hosting/cloudflare/waf.md` § "The residual proxy pool"): surface it only when a real-user metric crosses that condition — origin 5xx, latency on human requests, homeserver saturation.
+  - **No GSC / SEO lines, not even `gsc: n/a`.** GSC reporting lives in the visa_bulletin_platform digest since 2026-06-26.
 - Each 🟡/🔴 finding gets its own block — 3 lines max:
   - Line 1: signal
   - Line 2: root cause (from Step 2 investigation)
@@ -139,7 +137,7 @@ listener the moment the user replies to the bot.
 - ❌ Do not reply on Kombi — always on @vyakunin_visa_bulletin_bot.
 - ❌ Do not paste raw MCP signals without investigation. The whole point of running on the project's bot is that the agent's cwd is the project repo — use it (SSH into homeserver, check nginx logs, query the prod DB).
 - ❌ Do not surface "all clear" sections verbatim. Collapse to a footer line.
-- ❌ Do not skip the traffic line even when nothing else is interesting — it's the daily KPI the user opens the chat to see.
+- ❌ Do not skip the traffic charts even when nothing else is interesting — they are the daily KPI the user opens the chat to see.
 
 ## Why this skill is separate from the cross-project version
 
