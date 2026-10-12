@@ -298,11 +298,6 @@ def main() -> None:
         context="Manage salary/worksite indexes for bulk ingest",
     )
 
-    # An index build over ~10M salary rows runs for minutes, so the 45s application
-    # statement_timeout cancels it partway and leaves the rest of the snapshot unbuilt.
-    with connection.cursor() as cursor:
-        cursor.execute("SET statement_timeout = 0")
-
     if args.list:
         list_indexes()
         return

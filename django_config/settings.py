@@ -31,6 +31,14 @@ else:
     _db_name = os.environ.get("DB_NAME", "visa_bulletin_dev")
     _db_user = os.environ.get("DB_USER", "visa_bulletin_user")
     _db_password = os.environ.get("DB_PASSWORD", "dev_password")
+def statement_timeout_option(argv: list[str]) -> str:
+    """libpq options giving the web server, and only it, a 45 s per-query limit."""
+    # The limit kills a query before gunicorn's 60 s worker timeout, so a client disconnect
+    # cannot leave it running in Postgres for hours. Scripts and migrations run for minutes.
+    serves_web = bool(argv) and Path(argv[0]).name == "gunicorn"
+    return f"-c statement_timeout={45000 if serves_web else 0}"
+
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -41,19 +49,7 @@ DATABASES = {
         "PORT": os.environ.get("DB_PORT", "5432"),
         "OPTIONS": {
             "connect_timeout": 120,
-            # Kill runaway queries before gunicorn's 60s worker timeout. Without this,
-            # a client disconnect (Cloudflare/gunicorn 504) leaves the query running
-            # in Postgres for hours and starves all DB capacity.
-            # Disabled (0) for migrations and long-running management scripts; the
-            # role-level default also gets overridden so DDL like CREATE INDEX is safe.
-            "options": (
-                "-c statement_timeout=0"
-                if any(
-                    cmd in sys.argv
-                    for cmd in ("migrate", "makemigrations", "sqlmigrate", "dbshell")
-                )
-                else "-c statement_timeout=45000"
-            ),
+            "options": statement_timeout_option(sys.argv),
         },
     }
 }
