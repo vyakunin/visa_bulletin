@@ -233,6 +233,27 @@ def test_a_device_dark_after_the_scroll_pass_is_still_a_blackout():
     assert sweep.blackout_devices(shots) == ["desktop"]
 
 
+def test_a_run_whose_ads_load_only_on_scroll_exercised_the_ad_layer():
+    """The whole-run gate reads the post-scroll count, as blackout_devices does.
+
+    2026-10-12: every first paint read 0 slots while the scroll pass found 3-5 on
+    three surfaces, and the run failed as though the ad stack never loaded.
+    """
+    shots = [_shot("desktop", 0, slots_total_scrolled=3),
+             _shot("mobile", 0, slots_total_scrolled=0)]
+    assert not sweep.ad_layer_unexercised(shots)
+
+
+def test_a_run_dark_after_the_scroll_pass_did_not_exercise_the_ad_layer():
+    shots = [_shot("desktop", 0, slots_total_scrolled=0),
+             _shot("mobile", 0, slots_total_scrolled=0)]
+    assert sweep.ad_layer_unexercised(shots)
+
+
+def test_a_run_with_no_captured_shot_is_not_called_unexercised():
+    assert not sweep.ad_layer_unexercised([])
+
+
 def test_probe_js_still_measures_the_wrapper_not_only_the_ins():
     """Guard the class-name contract with the private repo's ad_slot.html.
 
