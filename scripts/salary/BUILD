@@ -457,6 +457,27 @@ py_binary(
     },
 )
 
+py_library(
+    name = "cluster_job_titles_lib",
+    srcs = ["cluster_job_titles.py"],
+    visibility = ["//tests:__pkg__"],
+    deps = [
+        "//lib/utils:logging_utils",
+        "//lib/utils:db_utils",
+        "//lib/business:clustering_engine",
+        "//lib/business/salary:job_title_config",
+        "//models:salary",
+        "//models:job_title",
+        "//django_config:settings",
+        "//django_config:logging_config",
+        "//webapp:apps",
+        requirement("Django"),
+        requirement("asgiref"),
+        requirement("sqlparse"),
+        requirement("psycopg2_binary"),  # PostgreSQL adapter
+    ],
+)
+
 py_binary(
     name = "analyze_job_title_normalization",
     srcs = ["analyze_job_title_normalization.py"],
