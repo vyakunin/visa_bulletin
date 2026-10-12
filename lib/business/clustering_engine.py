@@ -36,6 +36,9 @@ class EntityClusteringConfig(Protocol[EntityType, ClusterType]):
     Configuration interface for entity-specific clustering behavior.
 
     Implement this protocol to customize clustering for different entity types.
+    Optional hooks: `create_cluster(entity)`, and
+    `create_review_entry(entity1, entity2, similarity_score, match_reason)` to queue
+    ambiguous pairs; without it, ambiguous pairs are not recorded.
     """
 
     def normalize_name(self, name: str) -> str:
@@ -68,19 +71,6 @@ class EntityClusteringConfig(Protocol[EntityType, ClusterType]):
         """Return the cluster model class."""
         ...
 
-    def get_review_model(self):
-        """Return the review model class for ambiguous pairs."""
-        ...
-
-    def create_review_entry(
-        self,
-        entity1: EntityType,
-        entity2: EntityType,
-        similarity_score: float,
-        match_reason: str,
-    ):
-        """Create a review queue entry for ambiguous pairs (entity-specific field names)."""
-        ...
 
 
 @dataclass
@@ -409,22 +399,13 @@ def assign_to_cluster(
                 if save:
                     entity.save()
                 return entity.canonical_cluster
-            else:
-                match_result = match_entities(
-                    entity,
-                    similar_entity,
-                    config,
-                    norm1=entity_normalized,
-                    norm2=similar_normalized,
+            if result.confidence >= 0.6 and hasattr(config, "create_review_entry"):
+                config.create_review_entry(
+                    min(entity, similar_entity, key=lambda e: e.id),
+                    max(entity, similar_entity, key=lambda e: e.id),
+                    result.confidence,
+                    result.reason or f"Fuzzy match: {result.confidence:.3f}",
                 )
-                if match_result.confidence >= 0.6:
-                    config.create_review_entry(
-                        min(entity, similar_entity, key=lambda e: e.id),
-                        max(entity, similar_entity, key=lambda e: e.id),
-                        match_result.confidence,
-                        match_result.reason
-                        or f"Fuzzy match: {match_result.confidence:.3f}",
-                    )
 
     if hasattr(config, "create_cluster"):
         cluster = config.create_cluster(entity)

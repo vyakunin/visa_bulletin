@@ -66,10 +66,6 @@ class EmployerClusteringConfig:
         """Return the EmployerCluster model class."""
         return EmployerCluster
 
-    def get_review_model(self) -> type[EmployerClusteringReview]:
-        """Return the EmployerClusteringReview model class."""
-        return EmployerClusteringReview
-
     def create_review_entry(
         self,
         entity1: Employer,

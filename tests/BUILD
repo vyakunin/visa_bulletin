@@ -78,6 +78,15 @@ django_py_test(
 # No Django, no DB — builds synthetic BUILD trees in a tmpdir. The repo-wide scan
 # runs from the pre-commit hook instead, because glob() cannot cross packages.
 pytest_py_test(
+    name = "test_clustering_engine",
+    size = "small",
+    srcs = ["test_clustering_engine.py"],
+    deps = [
+        "//lib/business:clustering_engine",
+    ],
+)
+
+pytest_py_test(
     name = "test_bazel_dep_check",
     size = "small",
     srcs = ["test_bazel_dep_check.py"],

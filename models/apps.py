@@ -21,11 +21,7 @@ class ModelsConfig(AppConfig):
             IngestRejectionStats,
             RejectionReason,
         )
-        from .job_title import (  # noqa: F401
-            JobTitle,
-            JobTitleCluster,
-            JobTitleClusteringReview,
-        )
+        from .job_title import JobTitle, JobTitleCluster  # noqa: F401
         from .published_floor import PublishedFloor  # noqa: F401
         from .raw_facts import RawFactsLedger  # noqa: F401
         from .salary import Employer, SalaryRecord, WorksiteRecord  # noqa: F401
