@@ -146,6 +146,7 @@ GA4_MIN_SESSIONS = 50             # below this N the rate is noise; never flag
 # leave this as a backstop that should never fire. Pending that change (ticket
 # 3b762b8d409f816ab746c073b0c84474), do not read a clean run as proof the window
 # held only finalized days.
+GA4_FINALIZED_ROW_AGE_DAYS = 4        # a GA4 day is final once this many days old
 GA4_ENGAGED_MIN_DURATION_S = 10       # GA4's own rule: >10s alone qualifies a session
 GA4_MAX_PAGES_PER_SESSION = 30        # a single organic session above this is a crawler
 GA4_IMPLIED_ENGAGED_S_CEILING = 600   # mean engaged-session time that cannot be real
