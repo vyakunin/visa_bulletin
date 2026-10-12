@@ -17,6 +17,10 @@ from lib.business.salary.common_chart_builder import (
     build_geographic_median_chart,
     build_salary_trend_chart,
 )
+from lib.business.salary.common_stats import (
+    distinct_filing_years,
+    distinct_fiscal_years,
+)
 from lib.business.salary.employer_stats import is_indexable_employer_profile
 from lib.business.salary.market_overview import (
     get_market_overview_stats,
@@ -543,12 +547,7 @@ def _get_cached_fiscal_years() -> list[int]:
     fiscal_years = cache.get(cache_key)
 
     if fiscal_years is None:
-        fiscal_years = list(
-            SalaryRecord.objects.exclude(fiscal_year__isnull=True)
-            .values_list("fiscal_year", flat=True)
-            .distinct()
-            .order_by("-fiscal_year")
-        )
+        fiscal_years = distinct_fiscal_years()
         cache.set(cache_key, fiscal_years)
 
     return fiscal_years
@@ -562,15 +561,7 @@ def _get_cached_filing_years() -> list[int]:
     filing_years = cache.get(cache_key)
 
     if filing_years is None:
-        from django.db.models.functions import ExtractYear
-
-        filing_years = list(
-            SalaryRecord.objects.exclude(case_submitted__isnull=True)
-            .annotate(year=ExtractYear("case_submitted"))
-            .values_list("year", flat=True)
-            .distinct()
-            .order_by("-year")
-        )
+        filing_years = distinct_filing_years()
         cache.set(cache_key, filing_years)
 
     return filing_years

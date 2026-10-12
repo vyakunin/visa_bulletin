@@ -5,6 +5,7 @@ Shared salary statistics utilities for profile and landing pages.
 import logging
 from datetime import date
 
+from django.db import connection
 from django.db.models import (
     Aggregate,
     Count,
@@ -72,6 +73,36 @@ class Median(Aggregate):
 # `?years=` / `?program=` / `?level=`, and decides one tile. Equal today by
 # coincidence; they move for different reasons.
 GROWTH_MIN_BASE_FILINGS = 10
+
+
+def _distinct_desc(value_sql: str, column: str, below: str) -> list[int]:
+    # A recursive max() probes the column's index once per distinct value; DISTINCT reads
+    # every salary_record row and outruns the 45 s statement timeout on a cold cache.
+    table = SalaryRecord._meta.db_table
+    sql = f"""
+        WITH RECURSIVE walk AS (
+            SELECT max({column}) AS v FROM {table}
+            UNION ALL
+            SELECT (SELECT max({column}) FROM {table} WHERE {column} < {below})
+            FROM walk WHERE walk.v IS NOT NULL
+        )
+        SELECT {value_sql} FROM walk WHERE v IS NOT NULL ORDER BY v DESC
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        return [int(row[0]) for row in cursor.fetchall()]
+
+
+def distinct_fiscal_years() -> list[int]:
+    """Fiscal years present in salary_record, newest first."""
+    return _distinct_desc("v", "fiscal_year", "walk.v")
+
+
+def distinct_filing_years() -> list[int]:
+    """Calendar years of case_submitted present in salary_record, newest first."""
+    return _distinct_desc(
+        "EXTRACT(year FROM v)", "case_submitted", "date_trunc('year', walk.v)"
+    )
 
 
 def calculate_market_overview_stats(queryset) -> dict:

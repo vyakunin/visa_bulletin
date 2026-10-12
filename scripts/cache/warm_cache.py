@@ -23,6 +23,7 @@ import argparse
 
 from django.core.cache import cache
 
+from lib.business.salary.common_stats import distinct_fiscal_years
 from lib.business.salary.market_overview import get_market_overview_stats
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
@@ -64,12 +65,7 @@ def warm_fiscal_years_cache(verbose: bool = False):
     cache.delete("salary_fiscal_years")
 
     # Populate cache
-    fiscal_years = list(
-        SalaryRecord.objects.exclude(fiscal_year__isnull=True)
-        .values_list("fiscal_year", flat=True)
-        .distinct()
-        .order_by("-fiscal_year")
-    )
+    fiscal_years = distinct_fiscal_years()
     cache.set("salary_fiscal_years", fiscal_years)
 
     elapsed = time.time() - start
