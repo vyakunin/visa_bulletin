@@ -618,6 +618,17 @@ def blank_rows_from_image(path: Path, luma_floor: int = BLANK_ROW_MIN_LUMA) -> l
     return [min(pixels[y * width:(y + 1) * width]) >= luma_floor for y in range(height)]
 
 
+def slots_seen(shot: dict) -> int:
+    """Ad slots after the scroll pass, falling back to first paint on a run without one."""
+    got = shot.get("slots_total_scrolled")
+    return shot.get("slots_total", 0) if got is None else got
+
+
+def ad_layer_unexercised(ok_shots: list[dict]) -> bool:
+    """True when no captured shot rendered an ad slot, even after the scroll pass."""
+    return bool(ok_shots) and all(slots_seen(s) == 0 for s in ok_shots)
+
+
 def blackout_devices(shots: list[dict]) -> list[str]:
     """Devices where every captured shot rendered ZERO ad slots.
 
@@ -639,17 +650,13 @@ def blackout_devices(shots: list[dict]) -> list[str]:
     to every reader who scrolls. What it is meant to catch is a device that renders
     nothing even once the whole page has been through the viewport.
     """
-    def slots(shot: dict) -> int:
-        got = shot.get("slots_total_scrolled")
-        return shot.get("slots_total", 0) if got is None else got
-
     by_device: dict[str, list[dict]] = {}
     for s in shots:
         if s.get("error") or s.get("captured") is False:
             continue
         by_device.setdefault(s.get("device", "?"), []).append(s)
     return sorted(dev for dev, got in by_device.items()
-                  if got and all(slots(g) == 0 for g in got))
+                  if got and all(slots_seen(g) == 0 for g in got))
 
 
 def _gc_machinery():
@@ -1135,7 +1142,7 @@ def main() -> int:
     # Silence is not success: with the gate told we are non-EEA, a run that finds
     # ZERO ad slots everywhere has measured nothing about the ad layer — the exact
     # false all-clear this sweep exists to prevent. Fail loudly instead.
-    if args.geo != "EEA" and ok_shots and all(s.get("slots_total", 0) == 0 for s in ok_shots):
+    if args.geo != "EEA" and ad_layer_unexercised(ok_shots):
         print("\nERROR: geo override is on but NO ad slots rendered on any surface — the ad "
               "layer was not exercised, so a clean result here means nothing. Check the EEA "
               "gate in overrides/ad_slot.html, the /cdn-cgi/trace intercept, and that "
