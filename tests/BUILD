@@ -659,6 +659,14 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_cluster_job_titles_progress",
+    srcs = ["test_cluster_job_titles_progress.py"],
+    deps = [
+        "//scripts/salary:cluster_job_titles_lib",
+    ],
+)
+
+django_py_test(
     name = "test_cluster_stats_freshness",
     srcs = ["test_cluster_stats_freshness.py"],
     deps = [

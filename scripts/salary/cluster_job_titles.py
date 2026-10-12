@@ -29,6 +29,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_config.settings")
 django.setup()
 
 import logging
+import time
 
 from django_config.logging_config import setup_logging
 from lib.business import clustering_engine
@@ -46,6 +47,13 @@ script_logger = ScriptLogger(__file__)
 PHASE1_CHUNK_SIZE = 5000
 PHASE2_CHUNK_SIZE = 5000
 PHASE2_FLUSH_SIZE = 1000
+PHASE2_PROGRESS_EVERY = 5000
+# A run of large-bucket titles can take over an hour per 5,000; a log-silence watchdog reads that as a stall.
+PHASE2_HEARTBEAT_S = 300
+
+
+def phase2_progress_due(i: int, now: float, last_logged_at: float) -> bool:
+    return i % PHASE2_PROGRESS_EVERY == 0 or now - last_logged_at >= PHASE2_HEARTBEAT_S
 
 
 def _phase1_create_job_titles():
@@ -147,13 +155,17 @@ def _phase2_cluster(config: JobTitleClusteringConfig):
     new_clusters = 0
     flush_batch: list[JobTitle] = []
 
+    last_logged_at = time.monotonic()
     for i, job_title in enumerate(all_job_titles, 1):
-        if i % 5000 == 0:
+        now = time.monotonic()
+        if phase2_progress_due(i, now, last_logged_at):
             logger.info(
-                "Phase 2 progress: %s/%s job titles",
+                "Phase 2 progress: %s/%s job titles, %s auto-clustered",
                 f"{i:,}",
                 f"{len(all_job_titles):,}",
+                f"{auto_clustered:,}",
             )
+            last_logged_at = now
 
         if job_title.canonical_cluster:
             continue
