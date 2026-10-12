@@ -409,3 +409,19 @@ def test_probe_js_collects_what_the_widened_rules_need(field):
     """Same silent-degradation risk as the earlier contract test: a missing key
     reads as a zero, and a zero here reads as a clean surface."""
     assert field in sweep.PROBE_JS
+
+
+# ── Anchor units: on for mobile by decision, a defect on desktop ─────────────
+
+def test_the_mobile_bottom_anchor_is_not_flagged():
+    """The mobile anchor was restored bottom-only on 2026-08-25; flagging it fired on
+    every mobile shot that carried it, which is the deliberate state."""
+    assert sweep.anchor_is_defect({"device": "mobile", "anchor_present": True}) is False
+
+
+def test_a_desktop_anchor_is_flagged():
+    assert sweep.anchor_is_defect({"device": "desktop", "anchor_present": True}) is True
+
+
+def test_no_anchor_is_never_a_defect():
+    assert sweep.anchor_is_defect({"device": "desktop", "anchor_present": False}) is False
