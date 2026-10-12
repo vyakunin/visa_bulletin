@@ -65,7 +65,7 @@ from models.ingest.rejection_stats import (  # noqa: F401  (for makemigrations)
     IngestRejectionStats,
     RejectionReason,
 )
-from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
+from models.job_title import JobTitle, JobTitleCluster
 from models.published_floor import PublishedFloor  # noqa: F401  (for makemigrations)
 from models.raw_facts import RawFactsLedger
 from models.salary import Employer, SalaryRecord
@@ -83,7 +83,6 @@ logger.debug(f"IngestRun model: {IngestRun}")
 logger.debug(f"IngestVersion model: {IngestVersion}")
 logger.debug(f"JobTitle model: {JobTitle}")
 logger.debug(f"JobTitleCluster model: {JobTitleCluster}")
-logger.debug(f"JobTitleClusteringReview model: {JobTitleClusteringReview}")
 logger.debug(f"PredictedBulletin model: {PredictedBulletin}")
 logger.debug(f"PredictedCutoff model: {PredictedCutoff}")
 logger.debug(f"RawFactsLedger model: {RawFactsLedger}")

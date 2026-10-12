@@ -6,7 +6,7 @@ leveraging the JobTitle model's normalization logic.
 """
 
 from lib.business.salary.generic_words import GENERIC_WORDS
-from models.job_title import JobTitle, JobTitleCluster, JobTitleClusteringReview
+from models.job_title import JobTitle, JobTitleCluster
 
 # Job-title-specific generic words (extend employer generic words)
 JOB_TITLE_GENERIC_WORDS = GENERIC_WORDS | {
@@ -89,10 +89,6 @@ class JobTitleClusteringConfig:
         """Return the JobTitleCluster model class."""
         return JobTitleCluster
 
-    def get_review_model(self) -> type[JobTitleClusteringReview]:
-        """Return the JobTitleClusteringReview model class."""
-        return JobTitleClusteringReview
-
     def create_cluster(self, entity: JobTitle) -> JobTitleCluster:
         """
         Create a new cluster for a job title.
@@ -100,25 +96,3 @@ class JobTitleClusteringConfig:
         Uses job-title-specific field name (canonical_title instead of canonical_name).
         """
         return JobTitleCluster.objects.create(canonical_title=entity.title)
-
-    def create_review_entry(
-        self,
-        entity1: JobTitle,
-        entity2: JobTitle,
-        similarity_score: float,
-        match_reason: str,
-    ):
-        """
-        Create a review queue entry for ambiguous job title pairs.
-
-        Uses job-title-specific field names (job_title1, job_title2).
-        """
-        JobTitleClusteringReview.objects.get_or_create(
-            job_title1=entity1,
-            job_title2=entity2,
-            defaults={
-                "similarity_score": similarity_score,
-                "match_reason": match_reason,
-                "status": "pending",
-            },
-        )
