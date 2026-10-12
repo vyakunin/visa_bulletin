@@ -10742,7 +10742,7 @@ test_cases:
     id: null
     case_number: I-200-19310-129720
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 88
     employer_name: Case Western Reserve University
     job_title_entity_id: null
@@ -10876,7 +10876,7 @@ test_cases:
     id: null
     case_number: I-200-19288-087593
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 89
     employer_name: The University of Tennessee
     job_title_entity_id: null
@@ -13288,7 +13288,7 @@ test_cases:
     id: null
     case_number: I-200-20116-518469
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 106
     employer_name: Management Health Systems, LLC
     job_title_entity_id: null
@@ -19586,7 +19586,7 @@ test_cases:
     id: null
     case_number: I-200-20247-804188
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 148
     employer_name: Charter Global, Inc.
     job_title_entity_id: null
@@ -19854,7 +19854,7 @@ test_cases:
     id: null
     case_number: I-200-21103-220997
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 149
     employer_name: Amazon Data Services, Inc.
     job_title_entity_id: null
@@ -20122,7 +20122,7 @@ test_cases:
     id: null
     case_number: I-200-20107-491572
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 151
     employer_name: SRK SYSTEMS INC.
     job_title_entity_id: null
@@ -23874,7 +23874,7 @@ test_cases:
     id: null
     case_number: I-200-22084-011850
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 173
     employer_name: PeaceHealth
     job_title_entity_id: null
@@ -31902,7 +31902,7 @@ test_cases:
     id: null
     case_number: I-200-23198-192848
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 209
     employer_name: Lowe's Companies, Inc.
     job_title_entity_id: null
@@ -32442,7 +32442,7 @@ test_cases:
     id: null
     case_number: I-200-22234-429273
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 211
     employer_name: Appian Corporation
     job_title_entity_id: null
@@ -33117,7 +33117,7 @@ test_cases:
     id: null
     case_number: I-200-24010-631501
     visa_program: 1
-    case_status: null
+    case_status: 4
     employer_id: 215
     employer_name: Meritor Inc.
     job_title_entity_id: null
