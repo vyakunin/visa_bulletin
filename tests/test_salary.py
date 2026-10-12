@@ -82,6 +82,18 @@ class TestCaseStatusParsing(unittest.TestCase):
             CaseStatus.CERTIFIED_WITHDRAWN,
         )
 
+    def test_parse_spaced_hyphen_spelling_of_the_fy2020_on_files(self):
+        self.assertEqual(
+            CaseStatus.from_dol_value("Certified - Withdrawn"),
+            CaseStatus.CERTIFIED_WITHDRAWN,
+        )
+        self.assertEqual(
+            CaseStatus.from_dol_value("Certified - Expired"), CaseStatus.CERTIFIED
+        )
+
+    def test_parse_unknown_status_returns_none(self):
+        self.assertIsNone(CaseStatus.from_dol_value("Certified - Pending"))
+
     def test_parse_empty_returns_none(self):
         self.assertIsNone(CaseStatus.from_dol_value(""))
         self.assertIsNone(CaseStatus.from_dol_value(None))

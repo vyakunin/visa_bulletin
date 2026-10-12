@@ -1,5 +1,7 @@
 """Case status enum for salary database"""
 
+import re
+
 from django.db import models
 
 
@@ -26,7 +28,8 @@ class CaseStatus(models.IntegerChoices):
         if not value:
             return None
 
-        normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
+        # FY2020+ files spell it "Certified - Withdrawn", so join word runs, not characters.
+        normalized = "_".join(re.findall(r"[A-Z]+", value.upper()))
         mappings = {
             "CERTIFIED": cls.CERTIFIED,
             "DENIED": cls.DENIED,
