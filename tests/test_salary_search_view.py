@@ -4,14 +4,18 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
-from datetime import datetime
+from datetime import date, datetime
 
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils.html import escape
 
-from lib.business.salary.common_stats import GROWTH_MIN_BASE_FILINGS
+from lib.business.salary.common_stats import (
+    GROWTH_MIN_BASE_FILINGS,
+    distinct_filing_years,
+    distinct_fiscal_years,
+)
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -706,3 +710,40 @@ class SalaryLandingDepthTest(TestCase):
         self.assertIsNone(response.context["database_summary"])
         self.assertEqual(response.context["landing_faq"], [])
         self.assertNotContains(response, 'id="database-summary"')
+
+
+class DistinctYearsTest(TestCase):
+    """The search form's year lists come from an index walk, not a DISTINCT scan."""
+
+    def _record(self, n, fiscal_year, case_submitted):
+        employer = Employer.objects.get_or_create(
+            name="Years Co", defaults={"name_normalized": "years co"}
+        )[0]
+        SalaryRecord.objects.create(
+            case_number=f"YEARS-{n}",
+            visa_program=VisaProgram.H1B,
+            employer=employer,
+            employer_name=employer.name,
+            job_title="Engineer",
+            wage_annual=100000,
+            fiscal_year=fiscal_year,
+            case_submitted=case_submitted,
+        )
+
+    def test_empty_table_has_no_years(self):
+        self.assertEqual(distinct_fiscal_years(), [])
+        self.assertEqual(distinct_filing_years(), [])
+
+    def test_years_match_distinct_newest_first_across_gaps(self):
+        rows = [
+            (2026, date(2025, 12, 31)),
+            (2026, date(2025, 1, 1)),
+            (2024, date(2023, 6, 15)),
+            (2024, None),
+            (2020, date(2019, 3, 2)),
+            (2011, date(2010, 12, 31)),
+        ]
+        for n, (fy, submitted) in enumerate(rows):
+            self._record(n, fy, submitted)
+        self.assertEqual(distinct_fiscal_years(), [2026, 2024, 2020, 2011])
+        self.assertEqual(distinct_filing_years(), [2025, 2023, 2019, 2010])
