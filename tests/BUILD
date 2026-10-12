@@ -676,16 +676,6 @@ django_py_test(
 )
 
 django_py_test(
-    name = "test_cluster_job_titles_timeout",
-    size = "medium",
-    srcs = ["test_cluster_job_titles_timeout.py"],
-    deps = [
-        "//scripts/salary:cluster_job_titles_lib",
-        requirement("pytest_django"),
-    ],
-)
-
-django_py_test(
     name = "test_cluster_stats_freshness",
     srcs = ["test_cluster_stats_freshness.py"],
     deps = [
@@ -1970,17 +1960,6 @@ django_py_test(
 )
 
 django_py_test(
-    name = "test_manage_salary_indexes",
-    size = "medium",
-    srcs = ["test_manage_salary_indexes.py"],
-    deps = [
-        "//scripts/salary:manage_salary_indexes",
-        requirement("pytest_django"),
-        requirement("PyYAML"),
-    ],
-)
-
-django_py_test(
     name = "test_employer_index_depth_cap",
     size = "medium",
     srcs = ["test_employer_index_depth_cap.py"],
@@ -2003,4 +1982,12 @@ pytest_py_test(
     size = "small",
     srcs = ["test_origin_check.py"],
     data = ["//scripts:toplevel_python_sources"],
+)
+
+django_py_test(
+    name = "test_statement_timeout",
+    srcs = ["test_statement_timeout.py"],
+    deps = [
+        requirement("pytest_django"),
+    ],
 )
