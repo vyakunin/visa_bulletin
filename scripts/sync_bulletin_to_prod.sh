@@ -14,7 +14,10 @@
 #      already-ingested months a no-op.
 #
 # Idempotent: safe to run repeatedly (dedup by DataSource). Requires: debug Chrome on
-# :9222, ssh alias `homeserver`.
+# :9222, and the box serving prod reachable as BULLETIN_PROD_SSH (default `homeserver`;
+# empty = this box) running BULLETIN_PROD_WEB (default `vb_web`). While the minipc
+# serves prod (staging prodconn up), the cron sets BULLETIN_PROD_SSH= and
+# BULLETIN_PROD_WEB=vb_stg_web, so a bulletin lands in the database the site reads.
 #
 # ALERTING (this is the only thing watching bulletin ingest — see
 # ~/.claude/rules/monitoring_means_realtime_alerts.md):
@@ -70,12 +73,19 @@ CDP_ARG=()
 # staging (pg_dump | psql) and restarts vb_web; it writes its PID to this marker for the
 # whole armed window. The path is a cross-repo contract — change it in both or the
 # interlock silently disappears.
+PROD_SSH="${BULLETIN_PROD_SSH-homeserver}"
+PROD_WEB="${BULLETIN_PROD_WEB:-vb_web}"
 CUTOVER_MARKER="${VB_CUTOVER_MARKER:-/tmp/vb_cutover_in_flight}"
 CUTOVER_MAX_AGE_MIN="${VB_CUTOVER_MAX_AGE_MIN:-120}"
 
 mkdir -p "$STATE_DIR"
 
 log() { echo "[sync_bulletin] $*"; }
+
+# Run a shell command on the box serving prod; stdin passes through.
+on_prod() {
+  if [ -n "$PROD_SSH" ]; then ssh "$PROD_SSH" "$1"; else bash -c "$1"; fi
+}
 
 # True only while a cutover is GENUINELY armed. Two reasons this must never touch prod
 # mid-cutover (2026-07-16):
@@ -249,8 +259,8 @@ fi
 echo 0 > "$FAIL_STREAK_FILE"
 date -u +%FT%TZ > "$LAST_SUCCESS_FILE"
 
-log "streaming cache -> vb_web:$CONTAINER_CACHE"
-if ! ssh homeserver "docker exec -i vb_web sh -c 'rm -rf $CONTAINER_CACHE && mkdir -p $CONTAINER_CACHE && tar -C $CONTAINER_CACHE -xf -'" < <(tar -C "$CACHE" -cf - .); then
+log "streaming cache -> ${PROD_SSH:-local}:$PROD_WEB:$CONTAINER_CACHE"
+if ! on_prod "docker exec -i $PROD_WEB sh -c 'rm -rf $CONTAINER_CACHE && mkdir -p $CONTAINER_CACHE && tar -C $CONTAINER_CACHE -xf -'" < <(tar -C "$CACHE" -cf - .); then
   log "ERROR: streaming cache to vb_web failed"
   # A cutover that armed AFTER the top-of-run check restarts vb_web out from under us.
   if cutover_in_flight; then
@@ -258,18 +268,18 @@ if ! ssh homeserver "docker exec -i vb_web sh -c 'rm -rf $CONTAINER_CACHE && mkd
     exit 0
   fi
   alert inject "bulletin-sync:stream-fail" 60 \
-    "🚨 Bulletin bridge: fetched the HTML but could not stream it into vb_web (ssh homeserver / docker exec failed). Bulletin ingest is stalled — check the homeserver and vb_web container."
+    "🚨 Bulletin bridge: fetched the HTML but could not stream it into ${PROD_WEB} on ${PROD_SSH:-this box} (ssh / docker exec failed). Bulletin ingest is stalled — check that box and the container."
   exit 3
 fi
 
 log "running refresh_bulletin (cache-backed) in vb_web..."
-REFRESH_OUT="$(ssh homeserver "docker exec -e BULLETIN_HTML_CACHE_DIR=$CONTAINER_CACHE -w /app vb_web \
+REFRESH_OUT="$(on_prod "docker exec -e BULLETIN_HTML_CACHE_DIR=$CONTAINER_CACHE -w /app $PROD_WEB \
   python3 -m scripts.cron.refresh_bulletin" 2>&1)"
 REFRESH_RC=$?
 echo "$REFRESH_OUT"
 
 log "cleaning up container cache"
-ssh homeserver "docker exec vb_web rm -rf $CONTAINER_CACHE" || true
+on_prod "docker exec $PROD_WEB rm -rf $CONTAINER_CACHE" || true
 
 if [ "$REFRESH_RC" -ne 0 ]; then
   if cutover_in_flight; then
@@ -304,7 +314,7 @@ if echo "$REFRESH_OUT" | grep -qE "Ingested [0-9]+ bulletin\(s\)"; then
   # Non-fatal: the renderer refuses to publish a degraded render, so a failure
   # here just means the previous good sitemap keeps serving until the cron retries.
   log "new bulletin ingested -> re-rendering static sitemap"
-  if ! ssh homeserver "docker exec -w /app vb_web python3 -m scripts.seo.render_sitemap" 2>&1; then
+  if ! on_prod "docker exec -w /app $PROD_WEB python3 -m scripts.seo.render_sitemap" 2>&1; then
     log "WARNING: sitemap re-render failed; the previous sitemap.xml is still being served"
   fi
 
