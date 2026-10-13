@@ -25,7 +25,6 @@ from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
 
-
 # Eight whole-corpus aggregates: ~205s on the 4-core prod box, past the web server's
 # 45s query limit. The landing only reads them; scripts.cache.warm_cache writes them.
 

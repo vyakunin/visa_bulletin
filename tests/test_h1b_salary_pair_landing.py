@@ -16,8 +16,7 @@ from tests.django_setup import setup_django_for_tests
 setup_django_for_tests()
 
 from django.conf import settings
-from django.core.cache import caches
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
