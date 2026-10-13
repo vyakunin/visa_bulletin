@@ -376,3 +376,27 @@ def test_user_systemctl_supplies_the_session_bus() -> None:
         "The self-heal no longer falls through to the fetch-failure/alert check, so a "
         "browser that stays wedged after a restart would report success."
     )
+
+
+def test_every_prod_touch_goes_through_on_prod() -> None:
+    """The prod box is named once, so pointing the bridge at another host moves all of it.
+
+    While the minipc serves prod, BULLETIN_PROD_SSH/BULLETIN_PROD_WEB repoint the bridge.
+    A single hardcoded `ssh homeserver` or `vb_web` exec left behind would stream the cache
+    to one database and ingest or re-render the sitemap on another.
+    """
+    src = _sync_src()
+    code = "\n".join(line for line in src.splitlines() if not line.lstrip().startswith("#"))
+    assert not re.search(r"\bssh homeserver\b", code), "a prod command bypasses on_prod()"
+    assert not re.search(r"docker exec[^\n]*\bvb_web\b", code), "a docker exec names vb_web, not $PROD_WEB"
+
+
+def test_empty_prod_ssh_runs_on_this_box() -> None:
+    """BULLETIN_PROD_SSH= (empty) runs the prod command locally rather than defaulting to homeserver."""
+    on_prod = re.search(r"^on_prod\(\) \{.*?^\}", _sync_src(), re.S | re.M).group(0)
+    script = f'PROD_SSH="${{BULLETIN_PROD_SSH-homeserver}}"\n{on_prod}\non_prod "echo local-ran"\n'
+    out = subprocess.run(
+        ["bash", "-c", script], env={**os.environ, "BULLETIN_PROD_SSH": ""},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert out.stdout.strip() == "local-ran", out.stderr
