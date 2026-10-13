@@ -45,7 +45,8 @@ Attribution required on any surface: "sourced from USCIS, obtained by Bloomberg.
 import logging
 from dataclasses import dataclass
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import caches
 
 from lib.business.i129.demographic_pay import (
     DemographicPayBreakdown,
@@ -69,9 +70,9 @@ PUBLISHED_DIMENSIONS = (
 # on a cache miss inside a request: each dimension costs ~3s (a full pass over
 # i129_petition with percentile_cont — measured 2.7-3.1s on prod), so computing all
 # three would add ~9s to a page that already competes. The view reads; the warmer
-# writes (scripts/i129/warm_demographic_pay.py).
+# writes (scripts/i129/warm_demographic_pay.py), into the aggregates store, which neither
+# Redis eviction nor a bulletin ingest's cache.clear() empties.
 SITEWIDE_CACHE_KEY = "i129_demographic_pay.sitewide.v1"
-SITEWIDE_CACHE_TTL = 60 * 60 * 24 * 7
 
 # ISO3 codes carried by the FY21-24 population with enough petitions to be listed
 # (every value at or above the stats layer's listing floor, measured 2026-08-09).
@@ -229,9 +230,10 @@ def get_sitewide_demographic_pay() -> DemographicPayPanel | None:
     Returns None on a cache miss, which the template renders as nothing. That is the
     deliberate trade: the section is dark until the warmer has run, in exchange for the
     guarantee that it can never add ~9s to a page render. Run
-    ``scripts/i129/warm_demographic_pay.py`` after any deploy or cache flush.
+    ``scripts/i129/warm_demographic_pay.py`` after the I-129 data changes; a Redis
+    flush does not empty it.
     """
-    cached = cache.get(SITEWIDE_CACHE_KEY)
+    cached = caches[settings.AGGREGATES_CACHE_ALIAS].get(SITEWIDE_CACHE_KEY)
     if cached is None:
         logger.info("[i129_demographic_pay] sitewide panel not warmed; section hidden")
         return None
@@ -243,7 +245,7 @@ def get_sitewide_demographic_pay() -> DemographicPayPanel | None:
 def warm_sitewide_demographic_pay() -> DemographicPayPanel | None:
     """Compute the site-wide panel and write it to cache. For the warmer only."""
     panel = build_demographic_pay_panel()
-    cache.set(SITEWIDE_CACHE_KEY, (panel,), SITEWIDE_CACHE_TTL)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(SITEWIDE_CACHE_KEY, (panel,))
     return panel
 
 

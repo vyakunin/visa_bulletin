@@ -16,6 +16,7 @@ setup_django_for_tests()
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.test import Client, TestCase, override_settings
 
 from lib.business.salary.job_title_stats import INDEXABLE_MIN_FILINGS
@@ -27,7 +28,7 @@ _DUMMY_CACHE = {
 }
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestAppendSlashRedirect(TestCase):
     """Slash-less profile URLs must 301 to the canonical slashed route
     (regression: MIDDLEWARE lacked CommonMiddleware, so /job-title/lawyers
@@ -45,7 +46,7 @@ class TestAppendSlashRedirect(TestCase):
         self.assertEqual(response["Location"], "/job-title/lawyers-test/")
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestJobTitleStaleSlugRedirect(TestCase):
     """Stale /job-title/ slugs resolve to the current canonical slug."""
 
@@ -94,7 +95,7 @@ class TestJobTitleStaleSlugRedirect(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestEmployerStaleSlugRedirect(TestCase):
     """Stale /employer/ slugs resolve to the current canonical slug."""
 
@@ -138,7 +139,7 @@ class TestEmployerStaleSlugRedirect(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestJobTitleThinPageGate(TestCase):
     """Profiles below INDEXABLE_MIN_FILINGS are noindexed and sitemap-excluded."""
 

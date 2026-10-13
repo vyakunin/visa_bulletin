@@ -16,6 +16,10 @@ from lib.business.salary.common_stats import (
     distinct_filing_years,
     distinct_fiscal_years,
 )
+from lib.business.salary.market_overview import (
+    get_market_overview_stats,
+    warm_market_overview_stats,
+)
 from models.enums.visa_program import CaseStatus, VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -76,6 +80,7 @@ class SalarySearchLandingViewTest(TestCase):
         )
 
     def test_landing_shows_market_overview(self):
+        warm_market_overview_stats()
         response = self.client.get(reverse("salary_search"))
 
         self.assertEqual(response.status_code, 200)
@@ -86,6 +91,14 @@ class SalarySearchLandingViewTest(TestCase):
         market_chart_data = response.context["market_chart_data"]
         self.assertIn("state_filings", market_chart_data)
         self.assertIn("filing_volume", market_chart_data)
+
+    def test_unwarmed_landing_renders_without_computing_the_overview(self):
+        """The overview is ~205s of whole-corpus aggregates on prod; a request never runs them."""
+        response = self.client.get(reverse("salary_search"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["market_stats"])
+        self.assertIsNone(get_market_overview_stats())
 
     def test_filtered_view_hides_market_overview(self):
         response = self.client.get(reverse("salary_search"), {"q": "Landing"})
@@ -155,6 +168,7 @@ class MarketOverviewGrowthGateTest(TestCase):
 
     def test_tiny_base_year_withholds_the_market_growth_tile(self):
         self._file({self.current_year - 4: 1, self.current_year - 1: 38})
+        warm_market_overview_stats()
 
         response = self.client.get(reverse("salary_search"))
 
@@ -166,6 +180,7 @@ class MarketOverviewGrowthGateTest(TestCase):
         base = GROWTH_MIN_BASE_FILINGS
         end = base * 2
         self._file({self.current_year - 4: base, self.current_year - 1: end})
+        warm_market_overview_stats()
 
         response = self.client.get(reverse("salary_search"))
 

@@ -12,6 +12,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 
@@ -46,7 +47,7 @@ class TestContentTokens(TestCase):
         self.assertEqual(content_tokens("Senior Lead II"), frozenset())
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestRankAndBroaderRole(TestCase):
     def setUp(self):
         cache.delete(_UNIVERSE_CACHE_KEY)
@@ -104,7 +105,7 @@ class TestRankAndBroaderRole(TestCase):
         )
 
 
-@override_settings(CACHES=_DUMMY_CACHE)
+@override_settings(CACHES={**settings.CACHES, **_DUMMY_CACHE})
 class TestThinPageBanner(TestCase):
     def setUp(self):
         cache.delete(_UNIVERSE_CACHE_KEY)

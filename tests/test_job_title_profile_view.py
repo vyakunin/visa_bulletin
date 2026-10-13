@@ -10,6 +10,7 @@ import unittest
 from datetime import date, datetime
 from decimal import Decimal
 
+from django.conf import settings
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
@@ -38,11 +39,11 @@ except ImportError:
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleProfileView(TestCase):
     """Test job title profile view functionality"""
@@ -494,11 +495,11 @@ class TestJobTitleProfileView(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleSlugGeneration(TestCase):
     """Test slug generation for JobTitleCluster"""
@@ -570,11 +571,11 @@ class TestJobTitleSlugGeneration(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleAutocompleteView(TestCase):
     """Test job title autocomplete sorting and grouping (ranks by recent-year filings)."""
@@ -706,11 +707,11 @@ class TestJobTitleAutocompleteView(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleStatistics(TestCase):
     """Test job title statistics calculations"""
@@ -901,11 +902,11 @@ class TestJobTitleStatistics(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleDataCoherence(TestCase):
     """
@@ -1158,11 +1159,11 @@ class TestJobTitleDataCoherence(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleCoherenceE2E(TestCase):
     """
@@ -1437,11 +1438,11 @@ class TestJobTitleCoherenceE2E(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class TestJobTitleDirectoryCanonical(TestCase):
     """Test that the job title directory page renders a canonical URL tag."""
@@ -1462,12 +1463,12 @@ class TestJobTitleDirectoryCanonical(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "test_similar_clusters_cache",
         }
-    }
+    }}
 )
 class TestSimilarClustersCaching(TestCase):
     """Per-cluster cache for the icontains lookup that builds "Similar Job
@@ -1566,11 +1567,11 @@ class TestFiscalYearChartAxis(TestCase):
 
 
 @override_settings(
-    CACHES={
+    CACHES={**settings.CACHES, **{
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
         }
-    }
+    }}
 )
 class GrowthTileBaseFloorTest(TestCase):
     """The growth headline is withheld when its base year is too small to carry it.

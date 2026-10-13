@@ -146,7 +146,7 @@ def job_title_profile_view(request, slug: str):
     # Cross-mesh: link each top employer to the dedicated "{role} salary at
     # {employer}" page when that pair qualifies (shared cached gate, never a 404).
     if cluster.slug:
-        qual_pairs = set(qualifying_pairs())
+        qual_pairs = set(qualifying_pairs() or ())
         for e in stats.get("top_employers", []):
             es = e.get("employer__canonical_cluster__slug")
             e["pair_url"] = (

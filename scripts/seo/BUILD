@@ -10,6 +10,7 @@ py_library(
     deps = [
         "//django_config:settings",
         "//webapp:apps",
+        "//lib/business/salary:h1b_salary_pair",
         "//webapp/views/seo:sitemaps",
         requirement("Django"),
         requirement("asgiref"),
