@@ -33,6 +33,7 @@ py_binary(
         "//models:job_title",
         "//models/enums:visa_program",
         "//lib/business/salary:common_stats",
+        "//lib/business/salary:h1b_salary_pair",
         "//lib/business/salary:market_overview",
         requirement("Django"),
         requirement("asgiref"),

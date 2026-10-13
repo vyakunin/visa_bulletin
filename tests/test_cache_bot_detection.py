@@ -30,6 +30,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.http import HttpResponse  # noqa: E402
 from django.test import (  # noqa: E402
     RequestFactory,
@@ -188,7 +189,7 @@ class SkipBotsCachingTest(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
-    @override_settings(CACHES=LOCMEM)
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
     def test_crawler_never_populates_the_cache(self):
         from django.core.cache import cache
 

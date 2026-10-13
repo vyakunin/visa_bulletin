@@ -244,7 +244,8 @@
             </div>
             
             {% if has_data %}
-            {% if not has_filters and market_stats %}
+            {% if not has_filters and database_summary %}
+            {% if market_stats %}
             <div class="mb-4">
                 <h2 class="h4">Salary Market Overview</h2>
                 <p class="text-muted">Top-level trends across H-1B and green card filings.</p>
@@ -375,6 +376,7 @@
                 </div>
             </div>
             
+            {% endif %}
             {% if market_chart_data.state_filings or market_chart_data.state_median_salary %}
             <div class="row mb-4">
                 {% if market_chart_data.state_filings %}

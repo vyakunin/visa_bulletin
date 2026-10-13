@@ -15,6 +15,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -59,7 +60,7 @@ def _add_records(employer, *, soc_code, n, start_case, program=VisaProgram.H1B, 
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 class TestOccupationSalary(TestCase):
     def setUp(self):
@@ -128,7 +129,7 @@ class TestOccupationSalary(TestCase):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}}
 )
 class TestOccupationStatsResultCache(TestCase):
     """Every occupation aggregate is a full scan of the salary_record heap, and
@@ -174,7 +175,7 @@ class TestOccupationStatsResultCache(TestCase):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}}
 )
 class TestOccupationWarmthProbe(TestCase):
     """`occupation_stats_cached` reports coldness WITHOUT filling the entry.

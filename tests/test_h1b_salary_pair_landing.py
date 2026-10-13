@@ -15,11 +15,13 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
+from django.core.cache import caches
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from lib.business.salary.h1b_salary_pair import qualifying_pairs
+from lib.business.salary.h1b_salary_pair import qualifying_pairs, warm_qualifying_pairs
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -59,7 +61,7 @@ def _add(jt, employer, program, n, *, start_case, state="CA", wage=120000):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 class TestH1BSalaryPairLanding(TestCase):
     def setUp(self):
@@ -89,6 +91,7 @@ class TestH1BSalaryPairLanding(TestCase):
         self.perm_role = _make_role("perm-role", "Perm Role")
         self.permco = _make_employer("perm-co", "Perm Co")
         _add(self.perm_role, self.permco, VisaProgram.PERM, 10, start_case="PERMCO")
+        warm_qualifying_pairs()
 
     def test_qualifying_pair_renders(self):
         resp = self.client.get("/h1b-salary/google-llc/software-engineer/")
@@ -137,6 +140,12 @@ class TestH1BSalaryPairLanding(TestCase):
         self.assertEqual(
             self.client.get("/h1b-salary/google-llc/no-such-role/").status_code, 404
         )
+
+    def test_unwarmed_pairs_render_no_pair_links(self):
+        caches[settings.AGGREGATES_CACHE_ALIAS].clear()
+        self.assertIsNone(qualifying_pairs())
+        body = self.client.get("/h1b-sponsors/software-engineer/").content.decode()
+        self.assertNotIn("/h1b-salary/", body)
 
     def test_qualifying_pairs_gate(self):
         pairs = set(qualifying_pairs())

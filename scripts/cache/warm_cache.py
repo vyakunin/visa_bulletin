@@ -8,6 +8,7 @@ fast page loads for users. Run after data refresh or deployment.
 Usage:
     bazel run //scripts/cache:warm_cache
     bazel run //scripts/cache:warm_cache -- --verbose
+    docker exec -w /app vb_web python3 -m scripts.cache.warm_cache --aggregates-only   # cron + after a data change
 """
 
 import logging
@@ -24,36 +25,32 @@ import argparse
 from django.core.cache import cache
 
 from lib.business.salary.common_stats import distinct_fiscal_years
-from lib.business.salary.market_overview import get_market_overview_stats
+from lib.business.salary.h1b_salary_pair import warm_qualifying_pairs
+from lib.business.salary.market_overview import warm_market_overview_stats
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
 
 logger = logging.getLogger(__name__)
 
 
-def warm_market_overview_cache(verbose: bool = False):
-    """Warm the market overview stats cache."""
-    logger.info("Warming market overview cache...")
+def warm_aggregates(verbose: bool = False):
+    """Recompute the whole-corpus aggregates requests only read.
+
+    Runs without the web server's 45s query limit (scripts get none), which is the point:
+    on the prod box the market overview takes ~205s and the qualifying pairs ~150s.
+    """
+    logger.info("Warming market overview...")
     start = time.time()
-
-    # Clear existing cache to force refresh
-    cache.delete("salary_market_overview:5:all")
-
-    # Trigger cache population
-    stats = get_market_overview_stats(years=5, program_filter="all")
-
-    elapsed = time.time() - start
-    logger.info(f"  Market overview cache warmed in {elapsed:.1f}s")
-
+    stats = warm_market_overview_stats(years=5, program_filter="all")
+    logger.info(f"  Market overview warmed in {time.time() - start:.1f}s")
     if verbose:
-        logger.info(
-            f"    Total filings: {stats['basic'].get('total_filings', 'N/A'):,}"
-        )
-        logger.info(
-            f"    Median salary: ${stats['basic'].get('median_salary', 0):,.0f}"
-        )
+        logger.info(f"    Total filings: {stats['basic'].get('total_filings', 'N/A'):,}")
         logger.info(f"    Top employers: {len(stats.get('top_employers', []))}")
-        logger.info(f"    Top job titles: {len(stats.get('top_job_titles', []))}")
+
+    logger.info("Warming qualifying (employer, job title) pairs...")
+    start = time.time()
+    pairs = warm_qualifying_pairs()
+    logger.info(f"  {len(pairs)} qualifying pairs warmed in {time.time() - start:.1f}s")
 
 
 def warm_fiscal_years_cache(verbose: bool = False):
@@ -179,7 +176,9 @@ def main():
         "--verbose", "-v", action="store_true", help="Show detailed cache contents"
     )
     parser.add_argument(
-        "--market-only", action="store_true", help="Only warm market overview cache"
+        "--aggregates-only",
+        action="store_true",
+        help="Only recompute the whole-corpus aggregates (market overview, qualifying pairs)",
     )
     parser.add_argument(
         "--base-url",
@@ -204,10 +203,10 @@ def main():
 
     total_start = time.time()
 
-    if args.market_only:
-        warm_market_overview_cache(args.verbose)
+    if args.aggregates_only:
+        warm_aggregates(args.verbose)
     else:
-        warm_market_overview_cache(args.verbose)
+        warm_aggregates(args.verbose)
         warm_fiscal_years_cache(args.verbose)
         warm_count_caches(args.verbose)
         warm_directory_caches(args.verbose)

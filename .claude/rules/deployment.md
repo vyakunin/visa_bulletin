@@ -71,29 +71,28 @@ docker compose logs --tail 30 web   # confirm migrate + collectstatic + gunicorn
 curl -s -o /dev/null -w "%{http_code}\n" https://visa-bulletin.us/   # 200
 # After deploy: flush Redis page cache so the new content is served, not the pre-deploy cache
 docker exec vb_redis redis-cli -n 1 FLUSHDB
-# The FLUSHDB also empties TWO cache-ONLY surfaces. Neither is computed on a request, so
-# an empty cache does not make them slow — it makes one WRONG and hands the other's full
-# render to a crawler. ORDER MATTERS: flush FIRST, then warm, then warm_cache.sh.
+# Three whole-corpus aggregates are READ-only on requests and live in Postgres (the
+# `aggregates` cache alias, table precomputed_aggregate), so the FLUSHDB does not touch them:
+# the /salaries/ market overview, the (employer, job title) pair set behind /h1b-salary/ links,
+# and the I-129 demographic panel on /job-title/. Unwarmed, each section is simply ABSENT —
+# 200, looks fine. They need warming only when the data under them changes (a new DB, a
+# graduation) or on a stack's first deploy of migration 0061:
+#   docker exec -w /app vb_web python3 -m scripts.cache.warm_cache --aggregates-only  # ~6 min here
+#   docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay
+# Warm them BEFORE the page warm below, or the page cache stores the section-less render.
 #
-# (a) the site-wide I-129 demographic-pay panel on /job-title/ (~3s per dimension, ~9s total).
-#     Cold, the section silently DISAPPEARS — the page still returns 200 and looks perfect.
-docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay
-# (b) the 41 /h1b-salary/<occupation>/ pages. Their aggregates cache on FIRST MISS with a 24h
-#     TTL, and the view is cache_page_skip_bots, so that first hit is Googlebot essentially
-#     every time. Measured 2026-08-10: 36 of 41 took 5.9-9.2s cold, 0.13s after.
+# The FLUSHDB DOES empty the 41 /h1b-salary/<occupation>/ pages' aggregates, which cache on
+# FIRST MISS with a 24h TTL; the view is cache_page_skip_bots, so that first hit is Googlebot
+# essentially every time. Measured 2026-08-10: 36 of 41 took 5.9-9.2s cold, 0.13s after.
 docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
 # Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
 # (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
 ```
 
-**Do not warm and then flush.** Both warmers write into the same Redis DB the page cache
-lives in, so a FLUSHDB after warming wipes them — and the failure is silent in the worst
-way: `/job-title/` still returns 200 and renders fully, with the panel simply absent, which
-reads exactly like a page that is fine.
-Re-warming afterwards does NOT fix it either, because the page cache has by then been
-populated with the panel-less render and is served unchanged (an identical byte count
-between two fetches is the tell). Both traps cost a wrong reading each on 2026-08-10.
+**Do not page-warm before the aggregates are warm.** A section-less render goes into the
+page cache and is served unchanged until it expires (an identical byte count between two
+fetches is the tell); re-warming the aggregate afterwards does not fix it without another flush.
 
 **Check the panel by its heading, never by counting a phrase.** Measured 2026-08-25 on a
 healthy `/job-title/software-engineer/`: `Country of birth` appears twice, both times in
@@ -106,10 +105,10 @@ uv run scripts/origin_check.py body /job-title/software-engineer/ \
   | grep -A2 '<h3[^>]*>Country of birth</h3>'   # heading + a data row => panel is live
 ```
 
-A daily cron re-warms both at 05:10 Berlin (`hosting/homeserver/crontab.sample`), because
-the occupation TTL is 24h and the cold fills therefore RECUR rather than only following a
-deploy. That cron does not cover a deploy — a FLUSHDB at any other hour leaves both surfaces
-cold until the next morning, so run them by hand as above.
+Daily crons re-warm them on the homeserver (`hosting/homeserver/crontab.sample`): the
+occupations at 05:10, because their 24h TTL makes the cold fills RECUR, and the aggregates at
+05:20, so a graduated DB is never more than a day stale. A FLUSHDB at any other hour leaves
+the occupations cold until the next morning, so run that warmer by hand as above.
 
 Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s
 render (repopulates Django's `@cache_page` Redis entries; CF then re-caches at the

@@ -4,7 +4,8 @@ Market overview statistics for salary landing pages.
 
 from datetime import datetime
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import cache, caches
 from django.db.models import Count, Max, Min
 
 from lib.business.salary.common_stats import (
@@ -25,13 +26,26 @@ from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
 
 
-def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> dict:
-    """Return market-wide salary statistics for the landing page."""
-    cache_key = f"salary_market_overview:{years}:{program_filter}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+# Eight whole-corpus aggregates: ~205s on the 4-core prod box, past the web server's
+# 45s query limit. The landing only reads them; scripts.cache.warm_cache writes them.
 
+
+def _market_overview_cache_key(years: int, program_filter: str) -> str:
+    return f"salary_market_overview:{years}:{program_filter}"
+
+
+def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> dict | None:
+    """Market-wide salary statistics for the landing page.
+
+    None means not warmed: the landing renders without the overview.
+    """
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(
+        _market_overview_cache_key(years, program_filter)
+    )
+
+
+def warm_market_overview_stats(years: int = 5, program_filter: str = "all") -> dict:
+    """Compute the market overview and cache it. For warmers and scripts only."""
     current_year = datetime.now().year
     start_year = current_year - years
 
@@ -89,7 +103,9 @@ def get_market_overview_stats(years: int = 5, program_filter: str = "all") -> di
         "start_year": start_year,
     }
 
-    cache.set(cache_key, stats)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(
+        _market_overview_cache_key(years, program_filter), stats
+    )
     return stats
 
 

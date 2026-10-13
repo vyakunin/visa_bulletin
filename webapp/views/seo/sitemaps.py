@@ -394,7 +394,7 @@ def build_sitemap_xml(base_url: str) -> str:
     # with the view's 404-gate) so we never list a page that 404s. lastmod =
     # latest ingest (the underlying DOL data's real change date).
     try:
-        sponsor_pairs = qualifying_pairs()
+        sponsor_pairs = qualifying_pairs() or []
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load H-1B salary pairs for sitemap", exc_info=True)
         sponsor_pairs = []

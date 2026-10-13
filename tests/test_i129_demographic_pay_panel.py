@@ -179,20 +179,24 @@ class PanelAssemblyTests(TestCase):
 
 
 class SitewideCacheTests(TestCase):
-    def setUp(self):
-        cache.clear()
-
-    def tearDown(self):
-        cache.clear()
-
-    def test_cold_cache_returns_none_and_runs_no_queries(self):
+    def test_cold_cache_returns_none_and_computes_nothing(self):
         """The perf guarantee. Each dimension costs ~3s against the real table, so a
-        request must never be the thing that computes them."""
+        request must never be the thing that computes them: one lookup, no aggregate."""
         _petitions("AAA", "Engineer", 120_000, 2_000)
         _petitions("BBB", "Engineer", 100_000, 2_000, start=10_000)
 
-        with self.assertNumQueries(0):
+        with self.assertNumQueries(1):
             self.assertIsNone(get_sitewide_demographic_pay())
+
+    def test_a_redis_flush_does_not_empty_the_warmed_panel(self):
+        """A bulletin ingest runs cache.clear(); the panel must survive it."""
+        _petitions("AAA", "Engineer", 120_000, 2_000)
+        _petitions("BBB", "Engineer", 100_000, 2_000, start=10_000)
+        warm_sitewide_demographic_pay()
+
+        cache.clear()
+
+        self.assertIsNotNone(get_sitewide_demographic_pay())
 
     def test_warmer_populates_what_the_reader_returns(self):
         _petitions("AAA", "Engineer", 120_000, 2_000)
@@ -201,7 +205,7 @@ class SitewideCacheTests(TestCase):
         warmed = warm_sitewide_demographic_pay()
         self.assertIsNotNone(warmed)
 
-        with self.assertNumQueries(0):
+        with self.assertNumQueries(1):
             served = get_sitewide_demographic_pay()
         self.assertEqual(
             [r.cell.value for r in served.sections[0].rows],
@@ -212,7 +216,7 @@ class SitewideCacheTests(TestCase):
         """Nothing publishable is a legitimate outcome; caching it stops every request
         re-deciding that, and it must not look like the warmer never ran."""
         self.assertIsNone(warm_sitewide_demographic_pay())
-        with self.assertNumQueries(0):
+        with self.assertNumQueries(1):
             self.assertIsNone(get_sitewide_demographic_pay())
 
 

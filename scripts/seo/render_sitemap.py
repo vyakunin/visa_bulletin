@@ -65,6 +65,10 @@ django.setup()
 
 from django.conf import settings  # noqa: E402
 
+from lib.business.salary.h1b_salary_pair import (  # noqa: E402
+    qualifying_pairs,
+    warm_qualifying_pairs,
+)
 from webapp.views.seo.sitemaps import build_sitemap_xml  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -169,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
 
     base_url = args.base_url.rstrip("/")
     out_path = args.out or default_output_path()
+
+    # The builder only reads the pair set; an unwarmed set would drop every pair URL.
+    if qualifying_pairs() is None:
+        logger.info("qualifying pairs not warmed; computing them first")
+        warm_qualifying_pairs()
 
     logger.info("rendering sitemap for %s", base_url)
     start = time.time()

@@ -732,12 +732,13 @@ def salary_search_view(request):
     landing_faq = []
     if not has_filters and not no_data_yet:
         market_stats = get_market_overview_stats()
+        overview = market_stats or {}
         database_summary = get_salary_database_summary()
         employer_pages = get_salary_landing_employer_pages()
-        landing_faq = _landing_faq(database_summary, market_stats, employer_pages)
-        geographic_dist = market_stats.get("geographic_dist", [])
-        geographic_dist_by_median = market_stats.get("geographic_dist_by_median", [])
-        yoy_trends = market_stats.get("yoy_trends", [])
+        landing_faq = _landing_faq(database_summary, overview, employer_pages)
+        geographic_dist = overview.get("geographic_dist", [])
+        geographic_dist_by_median = overview.get("geographic_dist_by_median", [])
+        yoy_trends = overview.get("yoy_trends", [])
 
         # Build a name + slug-augmented list of per-state entries so the
         # template can render crawler-readable links (charts above are pixels;

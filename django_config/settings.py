@@ -166,6 +166,16 @@ else:
         }
     }
 
+# Precomputed whole-corpus aggregates: written by scripts (scripts.cache.warm_cache),
+# only read by requests. In Postgres, not Redis: Redis evicts under allkeys-lru and is
+# cleared on every bulletin ingest, and a request must never fall back to computing these.
+AGGREGATES_CACHE_ALIAS = "aggregates"
+CACHES[AGGREGATES_CACHE_ALIAS] = {
+    "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+    "LOCATION": "precomputed_aggregate",
+    "TIMEOUT": None,
+}
+
 # Analytics Configuration
 # Flexible analytics support (GoatCounter, Umami, Plausible, etc.)
 # Set ANALYTICS_SCRIPT via environment variable with your tracking code

@@ -26,6 +26,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.core.cache import cache  # noqa: E402
 from django.test import Client, TestCase, override_settings  # noqa: E402
 
@@ -139,7 +140,7 @@ class CapSeasonPhaseTest(TestCase):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 class FilingWavesTest(TestCase):
     """Receipt bucketing — the observed trace of an additional selection round."""
@@ -190,7 +191,7 @@ class FilingWavesTest(TestCase):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 class LotteryPagesTest(TestCase):
     PATHS = ("/h1b-lottery/", "/h1b-lottery/odds/", "/h1b-lottery/second-round/")
@@ -273,7 +274,7 @@ class LotteryPagesTest(TestCase):
 
 
 @override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 class LotteryInboundLinksTest(TestCase):
     """A sitemap entry is a hint; an inbound link is the discovery path."""

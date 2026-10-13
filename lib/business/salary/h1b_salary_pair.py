@@ -14,7 +14,8 @@ not a duplicate. All queries are index-served and scoped to a single
 (employer cluster, job-title cluster) pair, so the page stays cheap and cacheable.
 """
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import caches
 from django.db.models import Avg, Count
 
 from models.enums.visa_program import VisaProgram
@@ -29,11 +30,9 @@ MIN_PAIR_FILINGS = 10
 # qualifying count; a guard against future growth ballooning the sitemap.
 SITEMAP_MAX_PAGES = 5000
 
-# The qualifying-pair set is a two-key GROUP BY over the whole H-1B corpus — too
-# heavy to run per Googlebot sitemap fetch. Cache it; the refresh pipeline's
-# ``cache.clear()`` on each ingest naturally refreshes it.
+# A two-key GROUP BY over the whole H-1B corpus: ~150s on the 4-core prod box, past the
+# web server's 45s query limit. Requests only read it; scripts.cache.warm_cache writes it.
 _QUALIFYING_PAIRS_CACHE_KEY = "h1b_salary_pair.qualifying_pairs.v1"
-_QUALIFYING_PAIRS_TTL = 60 * 60 * 24
 
 
 def _h1b_pair_base(emp_cluster_id: int, jt_cluster_id: int):
@@ -86,16 +85,20 @@ def pair_top_states(emp_cluster_id: int, jt_cluster_id: int, limit: int = 5) -> 
     )
 
 
-def qualifying_pairs() -> list[tuple[str, str]]:
+def qualifying_pairs() -> list[tuple[str, str]] | None:
     """(employer-cluster slug, job-title-cluster slug) pairs whose page qualifies.
 
-    Cached: the underlying aggregate is a two-key GROUP BY over the full H-1B
-    corpus. Ordered by filing volume, capped to the highest-demand pairs. Both
-    clusters must have a non-null, non-"unknown" slug (so the URL is linkable).
+    None means not warmed: callers render no pair links.
     """
-    cached = cache.get(_QUALIFYING_PAIRS_CACHE_KEY)
-    if cached is not None:
-        return cached
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(_QUALIFYING_PAIRS_CACHE_KEY)
+
+
+def warm_qualifying_pairs() -> list[tuple[str, str]]:
+    """Compute the qualifying-pair set and cache it. For warmers and scripts only.
+
+    Ordered by filing volume, capped to the highest-demand pairs. Both clusters must
+    have a non-null, non-"unknown" slug (so the URL is linkable).
+    """
     rows = (
         SalaryRecord.objects.filter(
             visa_program=VisaProgram.H1B,
@@ -122,5 +125,5 @@ def qualifying_pairs() -> list[tuple[str, str]]:
         )
         for r in rows
     ]
-    cache.set(_QUALIFYING_PAIRS_CACHE_KEY, pairs, _QUALIFYING_PAIRS_TTL)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_QUALIFYING_PAIRS_CACHE_KEY, pairs)
     return pairs

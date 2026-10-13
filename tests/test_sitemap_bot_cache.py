@@ -19,6 +19,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.http import HttpResponse  # noqa: E402
 from django.test import (  # noqa: E402
     RequestFactory,
@@ -58,7 +59,7 @@ def _counting_view():
     return view, calls
 
 
-@override_settings(CACHES=LOCMEM)
+@override_settings(CACHES={**settings.CACHES, **LOCMEM})
 class SitemapBotCacheTest(SimpleTestCase):
     def setUp(self):
         from django.core.cache import cache

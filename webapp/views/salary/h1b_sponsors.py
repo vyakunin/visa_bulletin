@@ -136,7 +136,7 @@ def h1b_sponsors_landing_view(request, slug: str):
     # Ranked rows for the template: rank, employer, filings, mean wage. Each
     # employer links to the dedicated "{role} salary at {employer}" page when that
     # pair qualifies (gated against the shared cached set, so never a 404).
-    qual_pairs = set(qualifying_pairs())
+    qual_pairs = set(qualifying_pairs() or ())
     sponsor_rows = [
         {
             "rank": i + 1,

@@ -12,6 +12,7 @@ from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
 from django.test import TestCase, override_settings
@@ -27,10 +28,10 @@ from lib.business.i129.pay_comparison import (
 # different fixtures, so the result cache in get_soc_pay_comparison would serve
 # the first test's answer to the rest. They are about the query, not the cache.
 _NO_CACHE = override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
 )
 _LOCMEM_CACHE = override_settings(
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}}
 )
 from lib.business.salary.soc_occupations import Occupation
 from models.enums.case_status import CaseStatus
