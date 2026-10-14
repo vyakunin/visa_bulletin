@@ -26,7 +26,14 @@ from django.core.cache import cache
 
 from lib.business.salary.common_stats import distinct_fiscal_years
 from lib.business.salary.h1b_salary_pair import warm_qualifying_pairs
-from lib.business.salary.market_overview import warm_market_overview_stats
+from lib.business.salary.h1b_sponsors import (
+    warm_qualifying_slugs,
+    warm_qualifying_state_codes,
+)
+from lib.business.salary.market_overview import (
+    warm_market_overview_stats,
+    warm_salary_database_summary,
+)
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster, SalaryRecord
 
@@ -51,6 +58,16 @@ def warm_aggregates(verbose: bool = False):
     start = time.time()
     pairs = warm_qualifying_pairs()
     logger.info(f"  {len(pairs)} qualifying pairs warmed in {time.time() - start:.1f}s")
+
+    start = time.time()
+    warm_salary_database_summary()
+    logger.info(f"  Database summary warmed in {time.time() - start:.1f}s")
+
+    start = time.time()
+    roles, states = warm_qualifying_slugs(), warm_qualifying_state_codes()
+    logger.info(
+        f"  {len(roles)} sponsor roles, {len(states)} sponsor states warmed in {time.time() - start:.1f}s"
+    )
 
 
 def warm_fiscal_years_cache(verbose: bool = False):

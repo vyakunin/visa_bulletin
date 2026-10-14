@@ -23,6 +23,8 @@ from django.urls import reverse
 from lib.business.salary.h1b_sponsors import (
     highest_paying_in_state,
     qualifying_state_codes,
+    warm_qualifying_slugs,
+    warm_qualifying_state_codes,
 )
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
@@ -113,6 +115,9 @@ class TestH1BSponsorsStateLanding(TestCase):
                 self.role, emp, VisaProgram.PERM, 10,
                 start_case=f"NY-{idx}", state="NY", wage=100000,
             )
+        # Requests only read the qualifying sets; the warmer writes them.
+        warm_qualifying_slugs()
+        warm_qualifying_state_codes()
 
     def test_qualifying_state_renders(self):
         resp = self.client.get("/h1b-sponsors/in/ca/")

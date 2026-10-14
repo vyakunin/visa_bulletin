@@ -15,20 +15,12 @@ thin pages); the gate is shared with the sitemap
 import json
 
 from django.conf import settings
-from django.db.models import Max, Min
 from django.http import Http404
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
-from lib.business.salary.common_stats import calculate_salary_percentiles
-from lib.business.salary.h1b_salary_pair import (
-    _h1b_pair_base,
-    pair_filings_by_year,
-    pair_h1b_filings,
-    pair_qualifies,
-    pair_top_states,
-)
-from lib.business.salary.h1b_sponsors import _h1b_role_base
+from lib.business.salary.h1b_salary_pair import pair_page, pair_qualifies
+from lib.business.salary.h1b_sponsors import role_h1b_percentiles
 from lib.utils.location_utils import US_STATES
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster
@@ -92,18 +84,17 @@ def h1b_salary_pair_view(request, employer: str, role: str):
     except JobTitleCluster.DoesNotExist:
         raise Http404("Unknown role")
 
-    # Cheap 404-gate, shared with the sitemap: no thin/duplicate pages.
-    filings = pair_h1b_filings(emp.id, jt.id)
+    # 404-gate shared with the sitemap: no thin/duplicate pages.
+    page = pair_page(emp.id, jt.id)
+    filings = page["filings"]
     if not pair_qualifies(filings):
         raise Http404("Not enough H-1B data for this employer/role pair")
 
     emp_name = emp.canonical_name
     role_title = jt.canonical_title
 
-    base_qs = _h1b_pair_base(emp.id, jt.id)
-    percentiles = calculate_salary_percentiles(base_qs)
-    bounds = base_qs.aggregate(fy=Max("fiscal_year"), lo=Min("wage_annual"),
-                               hi=Max("wage_annual"))
+    percentiles = page["percentiles"]
+    bounds = page["bounds"]
     fy = bounds["fy"]
 
     median_val = percentiles.get("p50") if percentiles else None
@@ -113,7 +104,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
 
     # Comparison: pair median vs the role's market-wide H-1B median (all
     # employers) — the non-duplicative insight ("pays X% above the market").
-    role_pct = calculate_salary_percentiles(_h1b_role_base(jt.id))
+    role_pct = role_h1b_percentiles(jt.id)
     role_median_val = role_pct.get("p50") if role_pct else None
     vs_role = None
     role_median_label = _money(role_median_val)
@@ -126,7 +117,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
 
     year_rows = [
         {"year": r["fiscal_year"], "filings": r["filings"]}
-        for r in pair_filings_by_year(emp.id, jt.id)
+        for r in page["years"]
         if r["fiscal_year"]
     ]
     state_rows = [
@@ -136,7 +127,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
             "filings": s["filings"],
             "avg_salary": _money(s["avg_salary"]),
         }
-        for s in pair_top_states(emp.id, jt.id)
+        for s in page["states"]
     ]
 
     fy_str = f"FY{fy}" if fy else None

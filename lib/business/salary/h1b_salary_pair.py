@@ -15,11 +15,17 @@ not a duplicate. All queries are index-served and scoped to a single
 """
 
 from django.conf import settings
-from django.core.cache import caches
-from django.db.models import Avg, Count
+from django.core.cache import cache, caches
+from django.db.models import Avg, Count, Max, Min
 
+from lib.business.salary.common_stats import (
+    calculate_salary_percentiles,
+    min_max_aggregate,
+)
+from lib.business.salary.precomputed_profiles import PRECOMPUTED_PROFILE_KEY_PREFIX
 from models.enums.visa_program import VisaProgram
-from models.salary import SalaryRecord
+from models.job_title import JobTitle
+from models.salary import Employer, SalaryRecord
 
 # A pair needs enough H-1B filings for a meaningful salary distribution (p25/
 # median/p75) or it is a thin page. ≈506 (employer, role) pairs clear this on the
@@ -44,8 +50,8 @@ def _h1b_pair_base(emp_cluster_id: int, jt_cluster_id: int):
     return (
         SalaryRecord.objects.filter(
             visa_program=VisaProgram.H1B,
-            employer__canonical_cluster_id=emp_cluster_id,
-            job_title_entity__canonical_cluster_id=jt_cluster_id,
+            employer_id__in=Employer.ids_in_cluster(emp_cluster_id),
+            job_title_entity_id__in=JobTitle.ids_in_cluster(jt_cluster_id),
             wage_annual__isnull=False,
             wage_annual__gt=0,
         )
@@ -83,6 +89,73 @@ def pair_top_states(emp_cluster_id: int, jt_cluster_id: int, limit: int = 5) -> 
         .annotate(filings=Count("id"), avg_salary=Avg("wage_annual"))
         .order_by("-filings")[:limit]
     )
+
+
+def _pair_page_key(emp_cluster_id: int, jt_cluster_id: int) -> str:
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}pair.{emp_cluster_id}.{jt_cluster_id}"
+
+
+def compute_pair_page(emp_cluster_id: int, jt_cluster_id: int) -> dict:
+    """The pair's own numbers on /h1b-salary/<employer>/<role>/.
+
+    `filings` is always present; the rest only when the pair qualifies.
+    """
+    filings = pair_h1b_filings(emp_cluster_id, jt_cluster_id)
+    page = {"filings": filings}
+    if not pair_qualifies(filings):
+        return page
+    base = _h1b_pair_base(emp_cluster_id, jt_cluster_id)
+    page["percentiles"] = calculate_salary_percentiles(base)
+    page["bounds"] = min_max_aggregate(
+        base, fy=Max("fiscal_year"), lo=Min("wage_annual"), hi=Max("wage_annual")
+    )
+    page["years"] = pair_filings_by_year(emp_cluster_id, jt_cluster_id)
+    page["states"] = pair_top_states(emp_cluster_id, jt_cluster_id)
+    return page
+
+
+def pair_page(emp_cluster_id: int, jt_cluster_id: int) -> dict:
+    """The stored page warm_profiles wrote, else computed (and kept in Redis for a day)."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_pair_page_key(emp_cluster_id, jt_cluster_id))
+    if stored is not None:
+        return stored
+    redis_key = f"h1b_salary_pair.page.v1.{emp_cluster_id}.{jt_cluster_id}"
+    page = cache.get(redis_key)
+    if page is None:
+        page = compute_pair_page(emp_cluster_id, jt_cluster_id)
+        cache.set(redis_key, page, 60 * 60 * 24)
+    return page
+
+
+def warm_pair_page(emp_cluster_id: int, jt_cluster_id: int) -> dict:
+    """Compute the pair's page and store it. For warmers only."""
+    page = compute_pair_page(emp_cluster_id, jt_cluster_id)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_pair_page_key(emp_cluster_id, jt_cluster_id), page)
+    return page
+
+
+def pairs_with_filings(min_filings: int) -> list[tuple[int, int]]:
+    """(employer cluster id, job-title cluster id) of every pair with at least
+    `min_filings` H-1B filings, largest first. One GROUP BY over the H-1B corpus."""
+    rows = (
+        SalaryRecord.objects.filter(
+            visa_program=VisaProgram.H1B,
+            wage_annual__isnull=False,
+            wage_annual__gt=0,
+            employer__canonical_cluster__slug__isnull=False,
+            job_title_entity__canonical_cluster__slug__isnull=False,
+        )
+        .exclude(is_worksite=True)
+        .exclude(employer_name="Unknown")
+        .values("employer__canonical_cluster_id", "job_title_entity__canonical_cluster_id")
+        .annotate(filings=Count("id"))
+        .filter(filings__gte=min_filings)
+        .order_by("-filings")
+    )
+    return [
+        (r["employer__canonical_cluster_id"], r["job_title_entity__canonical_cluster_id"])
+        for r in rows
+    ]
 
 
 def qualifying_pairs() -> list[tuple[str, str]] | None:

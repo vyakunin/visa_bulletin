@@ -5,6 +5,7 @@ Shared salary statistics utilities for profile and landing pages.
 import logging
 from datetime import date
 
+from django.core.exceptions import EmptyResultSet
 from django.db import connection
 from django.db.models import (
     Aggregate,
@@ -103,6 +104,19 @@ def distinct_filing_years() -> list[int]:
     return _distinct_desc(
         "EXTRACT(year FROM v)", "case_submitted", "date_trunc('year', walk.v)"
     )
+
+
+def min_max_aggregate(queryset, **aggregates) -> dict:
+    """`queryset.aggregate(**aggregates)` for MIN/MAX-only aggregates, planned as a scan.
+
+    With only MIN/MAX in the select list, Postgres rewrites each into an ordered index
+    scan with LIMIT 1 and walks that index until a row passes the filter: 60s for one
+    (employer, role) pair whose 3,700 rows sit deep in the wage index. A COUNT beside
+    them turns the rewrite off.
+    """
+    result = queryset.aggregate(_scan_not_index_walk=Count("id"), **aggregates)
+    del result["_scan_not_index_walk"]
+    return result
 
 
 def calculate_market_overview_stats(queryset) -> dict:
@@ -320,7 +334,11 @@ def calculate_salary_percentiles(queryset) -> dict:
     empty = {"p10": 0, "p25": 0, "p50": 0, "p75": 0, "p90": 0}
 
     if connection.vendor == "postgresql":
-        inner_sql, params = queryset.values("wage_annual").query.sql_with_params()
+        try:
+            inner_sql, params = queryset.values("wage_annual").query.sql_with_params()
+        except EmptyResultSet:
+            # An `__in=[]` filter (a cluster with no members) compiles to no SQL at all.
+            return empty
         raw_sql = f"""
             SELECT
                 percentile_cont(0.10) WITHIN GROUP (ORDER BY wage_annual),

@@ -359,7 +359,7 @@ def build_sitemap_xml(base_url: str) -> str:
     # the view's 404-gate) so we never list a page that 404s. lastmod = latest
     # ingest (the underlying DOL data's real change date).
     try:
-        sponsor_slugs = qualifying_slugs()
+        sponsor_slugs = qualifying_slugs() or []
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load H-1B sponsor slugs for sitemap", exc_info=True)
         sponsor_slugs = []
@@ -376,7 +376,7 @@ def build_sitemap_xml(base_url: str) -> str:
     # the view's 404-gate) intersected with the canonical US_STATES list so we
     # only ever emit valid, qualifying URLs (never a 404).
     try:
-        qual_states = set(qualifying_state_codes())
+        qual_states = set(qualifying_state_codes() or ())
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load H-1B sponsor states for sitemap", exc_info=True)
         qual_states = set()

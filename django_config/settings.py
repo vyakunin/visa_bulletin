@@ -174,6 +174,9 @@ CACHES[AGGREGATES_CACHE_ALIAS] = {
     "BACKEND": "django.core.cache.backends.db.DatabaseCache",
     "LOCATION": "precomputed_aggregate",
     "TIMEOUT": None,
+    # DatabaseCache deletes a third of its rows on any set past MAX_ENTRIES (default
+    # 300). The store holds thousands of precomputed profiles and nothing may evict them.
+    "OPTIONS": {"MAX_ENTRIES": 1_000_000},
 }
 
 # Analytics Configuration

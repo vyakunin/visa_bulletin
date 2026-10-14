@@ -6,6 +6,7 @@ limited to filings whose worksite_state matches the requested state.
 """
 
 from django.conf import settings
+from django.core.cache import cache, caches
 from django.db.models import Avg, Count, Max, Min
 from django.http import Http404
 from django.shortcuts import render
@@ -18,6 +19,7 @@ from lib.business.salary.common_stats import (
     calculate_salary_percentiles,
 )
 from lib.business.salary.h1b_sponsors import qualifying_state_codes
+from lib.business.salary.precomputed_profiles import PRECOMPUTED_PROFILE_KEY_PREFIX
 from lib.utils.location_utils import US_STATES
 from models.salary import SalaryRecord
 
@@ -40,12 +42,32 @@ def _resolve_state(state_slug: str) -> tuple[str, str]:
     return _STATE_LOOKUP[normalized]
 
 
-@cache_page_skip_bots(settings.CACHE_TIMEOUT)
-def salary_by_state_view(request, state: str):
-    """Per-state aggregate salary landing page."""
-    state_code, state_name = _resolve_state(state)
-    state_slug = state_code.lower()
+def _state_salary_page_key(state_code: str) -> str:
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}by_state.{state_code}"
 
+
+def state_salary_page(state_code: str) -> dict:
+    """The stored page warm_profiles wrote, else computed (and kept in Redis for a day)."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_state_salary_page_key(state_code))
+    if stored is not None:
+        return stored
+    redis_key = f"salary_by_state.page.v1.{state_code}"
+    page = cache.get(redis_key)
+    if page is None:
+        page = compute_state_salary_page(state_code)
+        cache.set(redis_key, page, settings.CACHE_TIMEOUT)
+    return page
+
+
+def warm_state_salary_page(state_code: str) -> dict:
+    """Compute the state's page and store it. For warmers only."""
+    page = compute_state_salary_page(state_code)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_state_salary_page_key(state_code), page)
+    return page
+
+
+def compute_state_salary_page(state_code: str) -> dict:
+    """Every aggregate /salaries/by-state/<state>/ shows."""
     # Base queryset: searchable, non-worksite, salaried filings in this state.
     base_qs = (
         SalaryRecord.objects.filter(worksite_state=state_code)
@@ -96,6 +118,27 @@ def salary_by_state_view(request, state: str):
         .annotate(count=Count("id"), median_salary=Median("wage_annual"))
         .order_by("-count")[:25]
     )
+    return {
+        "agg": agg,
+        "percentiles": percentiles,
+        "program_breakdown": program_breakdown,
+        "top_employers": top_employers,
+        "top_job_titles": top_job_titles,
+    }
+
+
+@cache_page_skip_bots(settings.CACHE_TIMEOUT)
+def salary_by_state_view(request, state: str):
+    """Per-state aggregate salary landing page."""
+    state_code, state_name = _resolve_state(state)
+    state_slug = state_code.lower()
+    page = state_salary_page(state_code)
+    agg = page["agg"]
+    total_filings = agg["total_filings"] or 0
+    percentiles = page["percentiles"]
+    program_breakdown = page["program_breakdown"]
+    top_employers = page["top_employers"]
+    top_job_titles = page["top_job_titles"]
 
     canonical_url = request.build_absolute_uri(
         reverse("salary_by_state", kwargs={"state": state_slug})
@@ -104,7 +147,7 @@ def salary_by_state_view(request, state: str):
     # Inbound link to the dedicated "Top H-1B sponsors in {state}" leaderboard,
     # only when that page qualifies (shared cached gate) so we never link to a
     # 404. Cross-mesh between the state-overview and the H-1B-sponsor page.
-    show_h1b_sponsors_cta = state_code in set(qualifying_state_codes())
+    show_h1b_sponsors_cta = state_code in set(qualifying_state_codes() or ())
 
     median_salary = percentiles.get("p50") if percentiles else None
     # Fall back to mean when median isn't available (no rows).

@@ -87,6 +87,7 @@ py_library(
     name = "job_title_stats",
     srcs = ["job_title_stats.py"],
     deps = [
+        ":precomputed_profiles",
         ":common_stats",
         "//models:salary",
         "//models:job_title",
@@ -152,6 +153,9 @@ py_library(
     name = "h1b_sponsors",
     srcs = ["h1b_sponsors.py"],
     deps = [
+        ":common_stats",
+        ":precomputed_profiles",
+        "//models:job_title",
         "//models:salary",
         "//models/enums:visa_program",
     ],
@@ -162,6 +166,9 @@ py_library(
     name = "h1b_salary_pair",
     srcs = ["h1b_salary_pair.py"],
     deps = [
+        ":common_stats",
+        ":precomputed_profiles",
+        "//models:job_title",
         "//models:salary",
         "//models/enums:visa_program",
     ],
@@ -214,6 +221,15 @@ py_library(
         ":common_stats",
         ":soc_occupations",
         "//models:salary",
+        requirement("Django"),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "precomputed_profiles",
+    srcs = ["precomputed_profiles.py"],
+    deps = [
         requirement("Django"),
     ],
     visibility = ["//visibility:public"],

@@ -69,6 +69,12 @@ from lib.business.salary.h1b_salary_pair import (  # noqa: E402
     qualifying_pairs,
     warm_qualifying_pairs,
 )
+from lib.business.salary.h1b_sponsors import (  # noqa: E402
+    qualifying_slugs,
+    qualifying_state_codes,
+    warm_qualifying_slugs,
+    warm_qualifying_state_codes,
+)
 from webapp.views.seo.sitemaps import build_sitemap_xml  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -174,10 +180,15 @@ def main(argv: list[str] | None = None) -> int:
     base_url = args.base_url.rstrip("/")
     out_path = args.out or default_output_path()
 
-    # The builder only reads the pair set; an unwarmed set would drop every pair URL.
-    if qualifying_pairs() is None:
-        logger.info("qualifying pairs not warmed; computing them first")
-        warm_qualifying_pairs()
+    # The builder only reads the qualifying sets; an unwarmed set would drop its URLs.
+    for name, read, warm in (
+        ("pairs", qualifying_pairs, warm_qualifying_pairs),
+        ("sponsor roles", qualifying_slugs, warm_qualifying_slugs),
+        ("sponsor states", qualifying_state_codes, warm_qualifying_state_codes),
+    ):
+        if read() is None:
+            logger.info("qualifying %s not warmed; computing them first", name)
+            warm()
 
     logger.info("rendering sitemap for %s", base_url)
     start = time.time()

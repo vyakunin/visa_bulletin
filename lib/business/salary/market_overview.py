@@ -150,17 +150,36 @@ def get_salary_explore_links(
 _LCA_PROGRAMS = (VisaProgram.H1B, VisaProgram.H1B1, VisaProgram.E3)
 
 
+_DATABASE_SUMMARY_KEY = "salary_database_summary"
+
+
 def get_salary_database_summary() -> dict:
     """Coverage of the /salaries/ database: what a search can return.
 
-    Counts the same rows the search page lists (non-worksite, a named employer,
-    a positive annual wage), split into LCA (H-1B, H-1B1, E-3) and PERM.
+    The stored copy warm_cache --aggregates-only wrote, else computed (two whole-table
+    aggregates, ~7s on the prod box) and kept in Redis.
     """
-    cache_key = "salary_database_summary"
-    cached = cache.get(cache_key)
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_DATABASE_SUMMARY_KEY)
+    if stored is not None:
+        return stored
+    cached = cache.get(_DATABASE_SUMMARY_KEY)
     if cached is not None:
         return cached
+    summary = compute_salary_database_summary()
+    cache.set(_DATABASE_SUMMARY_KEY, summary)
+    return summary
 
+
+def warm_salary_database_summary() -> dict:
+    """Compute the summary and store it. For warmers only."""
+    summary = compute_salary_database_summary()
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_DATABASE_SUMMARY_KEY, summary)
+    return summary
+
+
+def compute_salary_database_summary() -> dict:
+    """Counts the same rows the search page lists (non-worksite, a named employer,
+    a positive annual wage), split into LCA (H-1B, H-1B1, E-3) and PERM."""
     searchable = SalaryRecord.objects.filter(
         is_worksite=False, wage_annual__isnull=False, wage_annual__gt=0
     ).exclude(employer_name="Unknown")
@@ -185,7 +204,6 @@ def get_salary_database_summary() -> dict:
         .count(),
         **span,
     }
-    cache.set(cache_key, summary)
     return summary
 
 

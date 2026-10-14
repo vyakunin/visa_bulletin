@@ -14,10 +14,17 @@ for {role}" / "which companies sponsor H-1B for {role}" — as a dedicated ranke
 leaderboard.
 """
 
-from django.core.cache import cache
-from django.db.models import Avg, Count
+from django.conf import settings
+from django.core.cache import cache, caches
+from django.db.models import Avg, Count, Max
 
+from lib.business.salary.common_stats import (
+    calculate_salary_percentiles,
+    min_max_aggregate,
+)
+from lib.business.salary.precomputed_profiles import PRECOMPUTED_PROFILE_KEY_PREFIX
 from models.enums.visa_program import VisaProgram
+from models.job_title import JobTitle
 from models.salary import SalaryRecord
 
 # A page needs a substantive leaderboard or it is a thin/duplicate page (SEO
@@ -39,17 +46,14 @@ MIN_EMPLOYER_FILINGS_FOR_PAY = 5
 # search demand) and to keep the sitemap from ballooning.
 SITEMAP_MAX_PAGES = 5000
 
-# The qualifying-slug aggregate is a GROUP BY over the whole H-1B corpus — too
-# heavy to run per Googlebot sitemap fetch (bots bypass the rendered-page
-# cache). Cache the slug list so it is recomputed at most once per TTL; the
-# refresh pipeline's ``cache.clear()`` on each ingest naturally refreshes it.
+# The qualifying role and state sets are GROUP BYs over the whole H-1B corpus, read on
+# every sponsor and by-state page. Requests only read them from the `aggregates` store;
+# scripts.cache.warm_cache --aggregates-only writes them.
 _QUALIFYING_SLUGS_CACHE_KEY = "h1b_sponsors.qualifying_slugs.v1"
-_QUALIFYING_SLUGS_TTL = 60 * 60 * 24
-
-# Same idea for the per-state variant ("Top H-1B sponsors in {state}"): cache the
-# qualifying worksite-state set so the per-Googlebot sitemap fetch never reruns
-# the full GROUP-BY-state aggregate.
 _QUALIFYING_STATES_CACHE_KEY = "h1b_sponsors.qualifying_states.v1"
+
+# A computed sponsor page (no stored copy) is kept in Redis this long.
+_SPONSOR_PAGE_TTL = 60 * 60 * 24
 
 
 def _h1b_role_base(cluster_id: int | None):
@@ -72,7 +76,7 @@ def _h1b_role_base(cluster_id: int | None):
         .exclude(employer__canonical_cluster__slug="unknown")
     )
     if cluster_id is not None:
-        qs = qs.filter(job_title_entity__canonical_cluster_id=cluster_id)
+        qs = qs.filter(job_title_entity_id__in=JobTitle.ids_in_cluster(cluster_id))
     return qs
 
 
@@ -124,15 +128,75 @@ def top_states_for_cluster(cluster_id: int, limit: int = 5) -> list[dict]:
     )
 
 
-def qualifying_slugs() -> list[str]:
-    """Job-title-cluster slugs whose H-1B sponsor page qualifies (for sitemap).
+def _sponsor_page_key(cluster_id: int) -> str:
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}sponsors.{cluster_id}"
 
-    Cached: the underlying aggregate is a GROUP BY over the full H-1B corpus.
+
+def compute_role_sponsor_page(cluster_id: int) -> dict:
+    """Everything the /h1b-sponsors/<slug>/ page shows for a role.
+
+    `filings` and `sponsors` are always present; the rest only when the role qualifies.
+    """
+    filings, sponsors = role_h1b_stats(cluster_id)
+    page = {"filings": filings, "sponsors": sponsors}
+    if not role_qualifies(filings, sponsors):
+        return page
+    base = _h1b_role_base(cluster_id)
+    page["top_rows"] = top_sponsors_for_cluster(cluster_id)
+    page["top_states"] = top_states_for_cluster(cluster_id)
+    page["percentiles"] = calculate_salary_percentiles(base)
+    page["fy"] = min_max_aggregate(base, fy=Max("fiscal_year"))["fy"]
+    return page
+
+
+def role_sponsor_page(cluster_id: int) -> dict:
+    """The stored page warm_profiles wrote, else computed (and kept in Redis for a day)."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_sponsor_page_key(cluster_id))
+    if stored is not None:
+        return stored
+    redis_key = f"h1b_sponsors.page.v1.{cluster_id}"
+    page = cache.get(redis_key)
+    if page is None:
+        page = compute_role_sponsor_page(cluster_id)
+        cache.set(redis_key, page, _SPONSOR_PAGE_TTL)
+    return page
+
+
+def role_h1b_percentiles(cluster_id: int) -> dict:
+    """The role's H-1B wage percentiles: from the stored sponsor page when it has them."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_sponsor_page_key(cluster_id))
+    if stored is not None and "percentiles" in stored:
+        return stored["percentiles"]
+    return calculate_salary_percentiles(_h1b_role_base(cluster_id))
+
+
+def role_sponsor_counts(cluster_id: int) -> tuple[int, int]:
+    """(filings, sponsors) for the job-title page's link gate: the stored page when
+    there is one, else the one aggregate."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_sponsor_page_key(cluster_id))
+    if stored is not None:
+        return stored["filings"], stored["sponsors"]
+    return role_h1b_stats(cluster_id)
+
+
+def warm_role_sponsor_page(cluster_id: int) -> dict:
+    """Compute the page and store it. For warmers only."""
+    page = compute_role_sponsor_page(cluster_id)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_sponsor_page_key(cluster_id), page)
+    return page
+
+
+def qualifying_slugs() -> list[str] | None:
+    """Job-title-cluster slugs whose H-1B sponsor page qualifies. None means not warmed:
+    callers link no sponsor pages."""
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(_QUALIFYING_SLUGS_CACHE_KEY)
+
+
+def warm_qualifying_slugs() -> list[str]:
+    """Compute the qualifying role slugs and store them. For warmers only.
+
     Ordered by filing volume, capped to the highest-demand roles.
     """
-    cached = cache.get(_QUALIFYING_SLUGS_CACHE_KEY)
-    if cached is not None:
-        return cached
     rows = (
         _h1b_role_base(None)
         .filter(job_title_entity__canonical_cluster__slug__isnull=False)
@@ -145,7 +209,7 @@ def qualifying_slugs() -> list[str]:
         .order_by("-filings")[:SITEMAP_MAX_PAGES]
     )
     slugs = [r["job_title_entity__canonical_cluster__slug"] for r in rows]
-    cache.set(_QUALIFYING_SLUGS_CACHE_KEY, slugs, _QUALIFYING_SLUGS_TTL)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_QUALIFYING_SLUGS_CACHE_KEY, slugs)
     return slugs
 
 
@@ -247,16 +311,60 @@ def top_roles_in_state(state_code: str, limit: int = 10) -> list[dict]:
     )
 
 
-def qualifying_state_codes() -> list[str]:
-    """Worksite-state codes whose H-1B sponsor page qualifies (for sitemap).
+def _state_sponsor_page_key(state_code: str) -> str:
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}state_sponsors.{state_code}"
 
-    Cached (the aggregate is a GROUP BY over the full H-1B corpus). Callers
-    intersect with the canonical US_STATES list, so a non-standard
+
+def compute_state_sponsor_page(state_code: str) -> dict:
+    """Everything /h1b-sponsors/in/<state>/ shows.
+
+    `filings` and `sponsors` are always present; the rest only when the state qualifies.
+    """
+    filings, sponsors = state_h1b_stats(state_code)
+    page = {"filings": filings, "sponsors": sponsors}
+    if not role_qualifies(filings, sponsors):
+        return page
+    base = _h1b_state_base(state_code)
+    page["top_rows"] = top_sponsors_in_state(state_code)
+    page["paying_rows"] = highest_paying_in_state(state_code)
+    page["role_rows"] = top_roles_in_state(state_code)
+    page["percentiles"] = calculate_salary_percentiles(base)
+    page["fy"] = min_max_aggregate(base, fy=Max("fiscal_year"))["fy"]
+    return page
+
+
+def state_sponsor_page(state_code: str) -> dict:
+    """The stored page warm_profiles wrote, else computed (and kept in Redis for a day)."""
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_state_sponsor_page_key(state_code))
+    if stored is not None:
+        return stored
+    redis_key = f"h1b_sponsors.state_page.v1.{state_code}"
+    page = cache.get(redis_key)
+    if page is None:
+        page = compute_state_sponsor_page(state_code)
+        cache.set(redis_key, page, _SPONSOR_PAGE_TTL)
+    return page
+
+
+def warm_state_sponsor_page(state_code: str) -> dict:
+    """Compute the state's page and store it. For warmers only."""
+    page = compute_state_sponsor_page(state_code)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_state_sponsor_page_key(state_code), page)
+    return page
+
+
+def qualifying_state_codes() -> list[str] | None:
+    """Worksite-state codes whose H-1B sponsor page qualifies. None means not warmed:
+    callers link no state sponsor pages."""
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(_QUALIFYING_STATES_CACHE_KEY)
+
+
+def warm_qualifying_state_codes() -> list[str]:
+    """Compute the qualifying states and store them. For warmers only.
+
+    Callers intersect with the canonical US_STATES list, so a non-standard
     ``worksite_state`` value here can never produce an emitted URL.
     """
-    cached = cache.get(_QUALIFYING_STATES_CACHE_KEY)
-    if cached is not None:
-        return cached
     rows = (
         _h1b_state_base(None)
         .exclude(worksite_state="")
@@ -268,5 +376,5 @@ def qualifying_state_codes() -> list[str]:
         .filter(filings__gte=MIN_H1B_FILINGS, sponsors__gte=MIN_SPONSORS)
     )
     codes = [r["worksite_state"] for r in rows]
-    cache.set(_QUALIFYING_STATES_CACHE_KEY, codes, _QUALIFYING_SLUGS_TTL)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_QUALIFYING_STATES_CACHE_KEY, codes)
     return codes

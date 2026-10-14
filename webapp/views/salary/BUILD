@@ -46,6 +46,7 @@ py_library(
         "//django_config:cache_utils",
         "//lib/business/salary:common_stats",
         "//lib/business/salary:h1b_sponsors",
+        "//lib/business/salary:precomputed_profiles",
         "//lib/utils:location_utils",
         "//models:salary",
         requirement("Django"),
