@@ -81,6 +81,14 @@ docker exec vb_redis redis-cli -n 1 FLUSHDB
 #   docker exec -w /app vb_web python3 -m scripts.i129.warm_demographic_pay
 # Warm them BEFORE the page warm below, or the page cache stores the section-less render.
 #
+# The same store holds the default render of the largest per-entity pages and of every state
+# page (/job-title/, /h1b-sponsors/, /employer/, /h1b-salary/<emp>/<role>/ above a size floor;
+# /h1b-sponsors/in/<st>/ and /salaries/by-state/<st>/), read before computing. They are
+# warmed on STAGING where the data changed (refresh_staging.sh `warm`) and arrive with the
+# cutover's resync; unwarmed, the page computes live (software-engineer: 80s here). After
+# anything else that changes salary data or cluster ids:
+#   docker exec -w /app vb_web python3 -m scripts.cache.warm_profiles --rebuild   # ~50 min here
+#
 # The FLUSHDB DOES empty the 41 /h1b-salary/<occupation>/ pages' aggregates, which cache on
 # FIRST MISS with a 24h TTL; the view is cache_page_skip_bots, so that first hit is Googlebot
 # essentially every time. Measured 2026-08-10: 36 of 41 took 5.9-9.2s cold, 0.13s after.
@@ -107,7 +115,9 @@ uv run scripts/origin_check.py body /job-title/software-engineer/ \
 
 Daily crons re-warm them on the homeserver (`hosting/homeserver/crontab.sample`): the
 occupations at 05:10, because their 24h TTL makes the cold fills RECUR, and the aggregates at
-05:20, so a graduated DB is never more than a day stale. A FLUSHDB at any other hour leaves
+05:20, so a graduated DB is never more than a day stale. 05:30 fills any missing precomputed
+page (`warm_profiles --missing-only`), which matters on 1 January, when every year-windowed
+key changes. A FLUSHDB at any other hour leaves
 the occupations cold until the next morning, so run that warmer by hand as above.
 
 Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s
