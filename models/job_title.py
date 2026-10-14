@@ -148,6 +148,17 @@ class JobTitle(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @classmethod
+    def ids_in_cluster(cls, cluster_id: int) -> list[int]:
+        """Ids of the titles in a cluster, for filtering salary_record by job_title_entity_id.
+
+        Filter by these ids, never through the cluster join: Postgres estimates the join
+        at ~50 rows per title (software-engineer: 1,740 against 890,387), picks one index
+        lookup per row and runs minutes. An id list is estimated from the column's own
+        statistics and gets a bitmap scan.
+        """
+        return list(cls.objects.filter(canonical_cluster_id=cluster_id).values_list("id", flat=True))
+
     class Meta:
         db_table = "salary_job_title"
         unique_together = ["title_normalized", "experience_level"]

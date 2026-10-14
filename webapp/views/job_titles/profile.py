@@ -11,7 +11,7 @@ from django.urls import reverse
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.i129.demographic_pay_panel import get_sitewide_demographic_pay
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
-from lib.business.salary.h1b_sponsors import role_h1b_stats, role_qualifies
+from lib.business.salary.h1b_sponsors import role_qualifies, role_sponsor_counts
 from lib.business.salary.job_title_chart_builder import build_job_title_profile_charts
 from lib.business.salary.job_title_stats import (
     INDEXABLE_MIN_FILINGS,
@@ -164,7 +164,7 @@ def job_title_profile_view(request, slug: str):
 
     # Inbound link to the dedicated "Top H-1B sponsors for {role}" page — only
     # when that page qualifies (shared gate), so we never link to a 404.
-    h1b_filings, h1b_sponsors = role_h1b_stats(cluster.id)
+    h1b_filings, h1b_sponsors = role_sponsor_counts(cluster.id)
     h1b_sponsors_url = (
         f"/h1b-sponsors/{cluster.slug}/"
         if cluster.slug and role_qualifies(h1b_filings, h1b_sponsors)

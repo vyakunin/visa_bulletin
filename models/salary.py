@@ -183,6 +183,15 @@ class Employer(models.Model):
         help_text="Average salary across all records",
     )
 
+    @classmethod
+    def ids_in_cluster(cls, cluster_id: int) -> list[int]:
+        """Ids of the employers in a cluster, for filtering salary_record by employer_id.
+
+        Same reason as JobTitle.ids_in_cluster: the join through the cluster is
+        estimated at a few dozen rows (google-llc: 29 against 130,740).
+        """
+        return list(cls.objects.filter(canonical_cluster_id=cluster_id).values_list("id", flat=True))
+
     class Meta:
         db_table = "salary_employer"
         indexes = [

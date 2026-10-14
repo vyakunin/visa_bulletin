@@ -18,6 +18,10 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from lib.business.salary.h1b_sponsors import (
+    warm_qualifying_slugs,
+    warm_qualifying_state_codes,
+)
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import Employer, EmployerCluster, SalaryRecord
@@ -91,6 +95,9 @@ class TestH1BSponsorsLanding(TestCase):
         for idx in range(10):
             emp = _make_employer(200 + idx)
             _add_records(perm_jt, emp, VisaProgram.PERM, 10, start_case=f"PERM-{idx}")
+        # Requests only read the qualifying sets; the warmer writes them.
+        warm_qualifying_slugs()
+        warm_qualifying_state_codes()
 
     def test_qualifying_role_renders(self):
         resp = self.client.get("/h1b-sponsors/software-engineer-h1b/")

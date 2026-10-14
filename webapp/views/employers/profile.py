@@ -4,7 +4,7 @@ import logging
 import time
 
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.db.models import Count, Max, Min, Q
 from django.http import Http404
 from django.shortcuts import redirect, render
@@ -35,6 +35,7 @@ from lib.business.salary.employer_stats import (
     employer_profile_window_start,
     is_thin_employer_profile,
 )
+from lib.business.salary.precomputed_profiles import PRECOMPUTED_PROFILE_KEY_PREFIX
 from lib.business.salary.slug_redirects import resolve_employer_slug
 from models.enums.visa_program import VisaProgram
 from models.job_title import JobTitle
@@ -302,12 +303,48 @@ def _build_employer_chart_data(
     return chart_data
 
 
+def _precomputed_payload_key(cluster_id: int, start_year: int) -> str:
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}employer.{cluster_id}.{start_year}"
+
+
+def _is_default_render(params: dict) -> bool:
+    return (
+        params["years"] == EMPLOYER_PROFILE_DEFAULT_YEARS
+        and params["program_filter"] == "all"
+    )
+
+
+def warm_employer_profile(cluster: EmployerCluster) -> dict:
+    """Compute the default-render payload and store it. For warmers only."""
+    params = {
+        "years": EMPLOYER_PROFILE_DEFAULT_YEARS,
+        "program_filter": "all",
+        "start_year": employer_profile_window_start(EMPLOYER_PROFILE_DEFAULT_YEARS),
+    }
+    records = _get_employer_records_queryset(cluster, params)
+    stats = _compute_employer_stats(records, cluster.slug, params["start_year"])
+    payload = {
+        "stats": stats,
+        "chart_data": _build_employer_chart_data(stats, cluster, cluster.slug),
+    }
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(
+        _precomputed_payload_key(cluster.id, params["start_year"]), payload
+    )
+    return payload
+
+
 def _get_or_compute_page_payload(
     cluster, records, slug: str, cache_key: str, params: dict
 ) -> tuple:
     """
     Return (stats, chart_data, cache_hit).
     """
+    if _is_default_render(params):
+        stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(
+            _precomputed_payload_key(cluster.id, params["start_year"])
+        )
+        if stored is not None:
+            return stored["stats"], stored["chart_data"], True
     page_payload = cache.get(cache_key)
     if page_payload is not None:
         return (

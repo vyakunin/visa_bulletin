@@ -16,27 +16,18 @@ Deliberately cheap to render — a handful of indexed, single-cluster aggregates
 import json
 
 from django.conf import settings
-from django.db.models import Max
 from django.http import Http404
 from django.shortcuts import render
 
 from django_config.cache_utils import cache_page_skip_bots
-from lib.business.salary.common_stats import calculate_salary_percentiles
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
 from lib.business.salary.h1b_sponsors import (
     MIN_EMPLOYER_FILINGS_FOR_PAY,
-    _h1b_role_base,
-    _h1b_state_base,
-    highest_paying_in_state,
     qualifying_slugs,
     qualifying_state_codes,
-    role_h1b_stats,
     role_qualifies,
-    state_h1b_stats,
-    top_roles_in_state,
-    top_sponsors_for_cluster,
-    top_sponsors_in_state,
-    top_states_for_cluster,
+    role_sponsor_page,
+    state_sponsor_page,
 )
 from lib.utils.location_utils import US_STATES
 from models.job_title import JobTitleCluster
@@ -116,18 +107,17 @@ def h1b_sponsors_landing_view(request, slug: str):
     except JobTitleCluster.DoesNotExist:
         raise Http404("Unknown role")
 
-    # Cheap 404-gate, shared with the sitemap: no thin/duplicate pages.
-    filings, sponsors = role_h1b_stats(cluster.id)
+    # 404-gate shared with the sitemap: no thin/duplicate pages.
+    page = role_sponsor_page(cluster.id)
+    filings, sponsors = page["filings"], page["sponsors"]
     if not role_qualifies(filings, sponsors):
         raise Http404("Not enough H-1B data for this role")
 
     title = cluster.canonical_title
-    top_rows = top_sponsors_for_cluster(cluster.id)
-    top_states = top_states_for_cluster(cluster.id)
-
-    base_qs = _h1b_role_base(cluster.id)
-    percentiles = calculate_salary_percentiles(base_qs)
-    fy = base_qs.aggregate(fy=Max("fiscal_year"))["fy"]
+    top_rows = page["top_rows"]
+    top_states = page["top_states"]
+    percentiles = page["percentiles"]
+    fy = page["fy"]
 
     median = _money(percentiles.get("p50") if percentiles else None)
     p25 = _money(percentiles.get("p25") if percentiles else None)
@@ -155,7 +145,7 @@ def h1b_sponsors_landing_view(request, slug: str):
     # Link each state to its own "Top H-1B sponsors in {state}" page when that
     # page qualifies — cross-mesh between the role and state leaderboards,
     # gated so we never link to a 404.
-    qual_states = set(qualifying_state_codes())
+    qual_states = set(qualifying_state_codes() or ())
     state_rows = [
         {
             "code": s["worksite_state"],
@@ -288,18 +278,17 @@ def h1b_sponsors_state_view(request, state: str):
     state_code, state_name = _resolve_state_or_404(state)
     state_slug = state_code.lower()
 
-    # Cheap 404-gate, shared with the sitemap: no thin/duplicate pages.
-    filings, sponsors = state_h1b_stats(state_code)
+    # 404-gate shared with the sitemap: no thin/duplicate pages.
+    page = state_sponsor_page(state_code)
+    filings, sponsors = page["filings"], page["sponsors"]
     if not role_qualifies(filings, sponsors):
         raise Http404("Not enough H-1B data for this state")
 
-    top_rows = top_sponsors_in_state(state_code)
-    paying_rows = highest_paying_in_state(state_code)
-    role_rows = top_roles_in_state(state_code)
-
-    base_qs = _h1b_state_base(state_code)
-    percentiles = calculate_salary_percentiles(base_qs)
-    fy = base_qs.aggregate(fy=Max("fiscal_year"))["fy"]
+    top_rows = page["top_rows"]
+    paying_rows = page["paying_rows"]
+    role_rows = page["role_rows"]
+    percentiles = page["percentiles"]
+    fy = page["fy"]
 
     median = _money(percentiles.get("p50") if percentiles else None)
     p25 = _money(percentiles.get("p25") if percentiles else None)
@@ -327,7 +316,7 @@ def h1b_sponsors_state_view(request, state: str):
     ]
     # Cross-mesh: link top roles to their own /h1b-sponsors/<role>/ leaderboard
     # when it qualifies, else to the job-title profile (never a 404).
-    qual_roles = set(qualifying_slugs())
+    qual_roles = set(qualifying_slugs() or ())
     role_table = [
         {
             "title": r["job_title_entity__canonical_cluster__canonical_title"],

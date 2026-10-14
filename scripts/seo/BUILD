@@ -11,6 +11,7 @@ py_library(
         "//django_config:settings",
         "//webapp:apps",
         "//lib/business/salary:h1b_salary_pair",
+        "//lib/business/salary:h1b_sponsors",
         "//webapp/views/seo:sitemaps",
         requirement("Django"),
         requirement("asgiref"),

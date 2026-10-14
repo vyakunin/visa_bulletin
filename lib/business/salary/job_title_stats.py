@@ -13,7 +13,8 @@ Provides comprehensive statistics for job title clusters including:
 
 from datetime import datetime
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import cache, caches
 from django.db.models import Count, Max, Min, Q, StdDev
 
 from lib.business.salary.common_stats import (
@@ -25,7 +26,9 @@ from lib.business.salary.common_stats import (
     calculate_salary_percentiles,
     calculate_yoy_trends,
     growth_headline,
+    min_max_aggregate,
 )
+from lib.business.salary.precomputed_profiles import PRECOMPUTED_PROFILE_KEY_PREFIX
 from models.job_title import JobTitle, JobTitleCluster
 from models.salary import SalaryRecord
 
@@ -47,6 +50,43 @@ MIN_REASONABLE_SALARY = (
     15000
 )
 MAX_REASONABLE_SALARY = 1000000  # $1M/year maximum (above this is likely data error)
+
+
+# The /job-title/<slug>/ render without query params. Only that render is precomputed:
+# it is the indexable page every crawler fetches; the filtered variants are user clicks.
+PROFILE_DEFAULT_YEARS = 5
+
+
+def is_default_profile_render(
+    years: int, program_filter: str, experience_level: str | None, normalized_title: str | None
+) -> bool:
+    return (
+        years == PROFILE_DEFAULT_YEARS
+        and program_filter == "all"
+        and experience_level is None
+        and normalized_title is None
+    )
+
+
+def _precomputed_profile_key(cluster_id: int) -> str:
+    # The window start is in the key, so 1 January turns every entry into a miss
+    # instead of serving last year's window.
+    start_year = datetime.now().year - PROFILE_DEFAULT_YEARS
+    return f"{PRECOMPUTED_PROFILE_KEY_PREFIX}job_title.{cluster_id}.{start_year}"
+
+
+def precomputed_profile(cluster_id: int) -> dict | None:
+    """The default-render statistics warm_profiles stored for this cluster, or None."""
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(_precomputed_profile_key(cluster_id))
+
+
+def warm_job_title_profile(cluster: JobTitleCluster) -> dict:
+    """Compute the default-render statistics and store them. For warmers only."""
+    caches[settings.AGGREGATES_CACHE_ALIAS].delete(_precomputed_profile_key(cluster.id))
+    cache.delete(f"job_title_stats:cluster:{cluster.id}:all:{PROFILE_DEFAULT_YEARS}:all")
+    stats = get_job_title_statistics(cluster, PROFILE_DEFAULT_YEARS, "all", None, None)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_precomputed_profile_key(cluster.id), stats)
+    return stats
 
 
 def get_job_title_statistics(
@@ -80,6 +120,10 @@ def get_job_title_statistics(
     else:
         base_key = f"cluster:{cluster.id}"
     cache_key = f"job_title_stats:{base_key}:{program_filter}:{years}:{level_cache_key}"
+    if is_default_profile_render(years, program_filter, experience_level, normalized_title):
+        stats = precomputed_profile(cluster.id)
+        if stats is not None:
+            return stats
     stats = cache.get(cache_key)
 
     if stats is not None:
@@ -103,7 +147,8 @@ def get_job_title_statistics(
     if normalized_title:
         base_filters["job_title_entity__title_normalized"] = normalized_title
     else:
-        base_filters["job_title_entity__canonical_cluster"] = cluster
+        cluster_title_ids = JobTitle.ids_in_cluster(cluster.id)
+        base_filters["job_title_entity_id__in"] = cluster_title_ids
     records = SalaryRecord.objects.filter(**base_filters)
 
     # Apply program filter
@@ -135,7 +180,7 @@ def get_job_title_statistics(
                 normalized_title
             )
         else:
-            base_filters_all_years["job_title_entity__canonical_cluster"] = cluster
+            base_filters_all_years["job_title_entity_id__in"] = cluster_title_ids
 
         records_all_years = SalaryRecord.objects.filter(**base_filters_all_years)
         records_all_years = apply_program_filter(records_all_years, program_filter)
@@ -159,7 +204,8 @@ def get_job_title_statistics(
             years = 20  # Expand to maximum
 
             # Get the actual min/max fiscal years for accurate display
-            year_range = records_all_years.aggregate(
+            year_range = min_max_aggregate(
+                records_all_years,
                 min_year=Min("fiscal_year"),
                 max_year=Max("fiscal_year"),
             )

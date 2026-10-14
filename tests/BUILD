@@ -1991,3 +1991,27 @@ django_py_test(
         requirement("pytest_django"),
     ],
 )
+
+django_py_test(
+    name = "test_precomputed_profiles",
+    size = "medium",
+    srcs = ["test_precomputed_profiles.py"],
+    deps = [
+        "//models:salary",
+        "//models:job_title",
+        "//models/enums:visa_program",
+        "//lib/business/salary:common_stats",
+        "//lib/business/salary:h1b_salary_pair",
+        "//lib/business/salary:h1b_sponsors",
+        "//lib/business/salary:market_overview",
+        "//lib/business/salary:job_title_stats",
+        "//lib/business/salary:precomputed_profiles",
+        "//scripts/cache:warm_profiles_lib",
+        "//lib/utils:location_utils",
+        "//webapp/views/employers:profile",
+        "//webapp/views/salary:by_state",
+        "//webapp:urls",
+        "//webapp/views:views",
+        "//django_config:urls",
+    ],
+)

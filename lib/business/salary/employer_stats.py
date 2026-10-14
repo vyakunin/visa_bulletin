@@ -57,7 +57,7 @@ attribute here silently re-enables ads on ~217k profiles.
 
 from datetime import datetime
 
-from models.salary import EmployerCluster, SalaryRecord
+from models.salary import Employer, EmployerCluster, SalaryRecord
 
 # Employer profiles with fewer lifetime filings than this are noindexed by the
 # view and excluded from the sitemap. Shared by webapp/views/employers/profile.py
@@ -91,13 +91,19 @@ def employer_profile_window_start(years: int = EMPLOYER_PROFILE_DEFAULT_YEARS) -
     return datetime.now().year - years
 
 
-def employer_profile_records(cluster: EmployerCluster, start_year: int):
-    """SalaryRecord rows the employer profile renders, across both programs."""
+def employer_profile_records_all_clusters(start_year: int):
+    """SalaryRecord rows employer profiles render, before narrowing to one employer."""
     return SalaryRecord.objects.filter(
-        employer__canonical_cluster=cluster,
         fiscal_year__gte=start_year,
         wage_annual__isnull=False,
         is_worksite=False,
+    )
+
+
+def employer_profile_records(cluster: EmployerCluster, start_year: int):
+    """SalaryRecord rows the employer profile renders, across both programs."""
+    return employer_profile_records_all_clusters(start_year).filter(
+        employer_id__in=Employer.ids_in_cluster(cluster.id)
     )
 
 

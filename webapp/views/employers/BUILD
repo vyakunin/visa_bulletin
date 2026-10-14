@@ -27,6 +27,7 @@ py_library(
     srcs = ["profile.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/salary:precomputed_profiles",
         "//django_config:cache_utils",
         "//lib/business/i129:approval_stats",
         "//lib/business/i129:demographic_pay_panel",

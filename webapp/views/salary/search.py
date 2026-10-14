@@ -687,7 +687,7 @@ def salary_search_view(request):
         # than dragging every record through the trigram heap-scan that
         # __icontains on canonical_name compiles to.
         records = records.filter(
-            employer__canonical_cluster_id=matched_cluster.id
+            employer_id__in=Employer.ids_in_cluster(matched_cluster.id)
         )
     elif employer_filter:
         # Free-text path: user typed a name and submitted without picking a
@@ -703,7 +703,11 @@ def salary_search_view(request):
         )
         if cluster_ids:
             records = records.filter(
-                employer__canonical_cluster_id__in=cluster_ids
+                employer_id__in=list(
+                    Employer.objects.filter(
+                        canonical_cluster_id__in=cluster_ids
+                    ).values_list("id", flat=True)
+                )
             )
         else:
             records = records.none()
@@ -848,10 +852,8 @@ def salary_search_view(request):
                 page_ids = None
     else:
         stats = _NO_STATS
-        total_results = cache.get("salary_non_worksite_count")
-        if total_results is None:
-            total_results = records.count()
-            cache.set("salary_non_worksite_count", total_results)
+        # The same rows the summary counts (searchable, named employer, positive wage).
+        total_results = get_salary_database_summary()["total_records"]
 
     # Pagination
     pagination = calculate_pagination_info(total_results, page, per_page)
@@ -896,6 +898,14 @@ def salary_search_view(request):
     # on common terms — see fenced_page_ids), then fetch only those rows with
     # the profile-link joins (nested-loop by pkey, sub-ms). Cold filtered
     # searches already resolved the page together with the aggregate above.
+    if page_ids is None and not has_filters:
+        # Unfiltered, the filters match nearly every row, so walking the wage index is
+        # the fast plan the fence exists to prevent: 3ms against 10s fenced on the prod box.
+        page_ids = list(
+            records.order_by("-wage_annual", "-fiscal_year").values_list("id", flat=True)[
+                pagination["offset"] : pagination["offset"] + per_page
+            ]
+        )
     if page_ids is None:
         page_ids = fenced_page_ids(
             records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
