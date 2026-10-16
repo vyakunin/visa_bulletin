@@ -50,6 +50,12 @@ post-launch counterpart to `docs/seo/SEO_OPTIMIZATION.md`.
    re-fetches submitted sitemaps on its own cadence; re-submitting on every deploy
    isn't required, but do it on a new-page launch to nudge the crawl.)
 
+   **A cutover does items 1 (re-render) and 4 itself.** `cutover.sh --code` / `--data` /
+   `--resume` end with `post_cutover_seo`, which re-renders the sitemap on prod and runs
+   `hosting/scripts/gsc_submit_sitemap.py`. A failure there only warns and prints the
+   manual command — read the cutover's tail for a `WARN:` line. Not done by it: the
+   Cloudflare purge (item 3).
+
 5. **Structured data.** High-intent Q&A pages emit valid **FAQPage** JSON-LD (rich
    result). Confirm the `"@type": "FAQPage"` block renders on prod.
 
