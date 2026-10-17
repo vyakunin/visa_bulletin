@@ -11,8 +11,9 @@ Singapore burst (the provenance script's farm and sgwave fingerprints) are exclu
 everywhere: no series, no total, no share. Reads the daily_checkup MCP's cached full
 GoatCounter export (FirstVisit=1, the digest's basis) through its surface buckets.
 
-GA4: one chart per watched organic-landing surface (the MCP's GA4_SURFACES), daily sessions
-and engaged sessions, ending at the last finalized GA4 day.
+GA4: one chart per watched landing surface (the MCP's GA4_SURFACES), daily sessions and
+engaged sessions, ending at the last finalized GA4 day. Organic Search only, except the
+surfaces in ALL_CHANNEL_PREFIXES, which chart every channel.
 
 Titles carry the raw 7d numbers. Exit 2 when the GoatCounter export is unavailable; a GA4
 failure drops only the GA4 charts and is reported as `ga4_error`.
@@ -74,6 +75,10 @@ READERS_DAILY = "#a9c9ef"
 ENGAGED = "#eb6834"
 ENGAGED_DAILY = "#f6b99f"
 
+# The Cloudflare challenge on these surfaces reloads the page and strips the referrer, so a
+# Google visitor lands in GA4 as Direct; an organic-only chart reads ~0 since 2026-07-28.
+ALL_CHANNEL_PREFIXES = frozenset({"/job-title/", "/employer/"})
+
 
 @dataclass(frozen=True)
 class SurfaceWeek:
@@ -99,6 +104,7 @@ class SurfaceSeries:
 @dataclass(frozen=True)
 class Ga4Week:
     label: str
+    channel: str
     sessions: int
     engaged: int
     engaged_time_s: float
@@ -205,31 +211,39 @@ def totals(weeks: list[SurfaceWeek]) -> dict[str, int | str]:
             "mom": _pct(readers, cycle), "wow": _pct(readers, prev)}
 
 
+def _ga4_channel(prefix: str | None) -> str:
+    return "all channels" if prefix in ALL_CHANNEL_PREFIXES else "organic"
+
+
 def _ga4_daily_args(prefix: str | None, start: date, end: date) -> dict:
-    organic = {"filter": {"fieldName": "sessionDefaultChannelGroup",
-                          "stringFilter": {"value": "Organic Search"}}}
-    landing = {"filter": {"fieldName": "landingPage",
-                          "stringFilter": {"matchType": "BEGINS_WITH", "value": prefix}}}
+    expressions = []
+    if _ga4_channel(prefix) == "organic":
+        expressions.append({"filter": {"fieldName": "sessionDefaultChannelGroup",
+                                       "stringFilter": {"value": "Organic Search"}}})
+    if prefix is not None:
+        expressions.append({"filter": {"fieldName": "landingPage",
+                                       "stringFilter": {"matchType": "BEGINS_WITH",
+                                                        "value": prefix}}})
     return {
         "property_id": GA4_PROPERTY_ID,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "dimensions": ["date"],
         "metrics": ["sessions", "engagedSessions", "userEngagementDuration"],
-        "dimension_filter": organic if prefix is None
-        else {"andGroup": {"expressions": [organic, landing]}},
+        "dimension_filter": expressions[0] if len(expressions) == 1
+        else {"andGroup": {"expressions": expressions}},
         "row_limit": 1000,
     }
 
 
 def collect_ga4(end: date, plot_days: int) -> list[Ga4Series]:
-    """Daily organic sessions per GA4 watched surface, ending at the last finalized day."""
+    """Daily sessions per GA4 watched surface, ending at the last finalized day."""
     start = end - timedelta(days=plot_days + SHORT_AVG_DAYS - 2)
     calls = [("ga4_run_report", _ga4_daily_args(prefix, start, end)) for _, prefix in GA4_SURFACES]
     reports = asyncio.run(call_mcp_tools("ga4", calls, timeout=GA4_TIMEOUT))
     days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     out = []
-    for (label, _), report in zip(GA4_SURFACES, reports):
+    for (label, prefix), report in zip(GA4_SURFACES, reports):
         by_day = {date(int(r["date"][:4]), int(r["date"][4:6]), int(r["date"][6:])): r
                   for r in (report or {}).get("rows") or []}
 
@@ -241,7 +255,7 @@ def collect_ga4(end: date, plot_days: int) -> list[Ga4Series]:
 
         out.append(Ga4Series(
             week=Ga4Week(
-                label=label, last_day=end,
+                label=label, channel=_ga4_channel(prefix), last_day=end,
                 sessions=int(week(0, "sessions")), engaged=int(week(0, "engagedSessions")),
                 engaged_time_s=week(0, "userEngagementDuration"),
                 sessions_prev_week=int(week(7, "sessions")),
@@ -329,7 +343,7 @@ def render_ga4(series: Ga4Series, plot_days: int, out: Path) -> None:
                 f"{_rate(w.engaged_prev_week, w.sessions_prev_week)} · "
                 f"{_per_visit(w.engaged_time_s, w.sessions)} vs "
                 f"{_per_visit(w.engaged_time_prev_week_s, w.sessions_prev_week)}/visit")
-    fig, ax = _figure(f"GA4 organic landings  {w.label}", subtitle)
+    fig, ax = _figure(f"GA4 {w.channel} landings  {w.label}", subtitle)
     ax.plot(days, series.sessions[lead:], color=READERS_DAILY, linewidth=0.7)
     ax.plot(days, series.engaged[lead:], color=ENGAGED_DAILY, linewidth=0.7)
     ax.plot(days, trailing_mean(series.sessions, SHORT_AVG_DAYS)[lead:], color=READERS,

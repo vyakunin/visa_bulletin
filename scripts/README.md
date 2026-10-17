@@ -14,7 +14,7 @@ This directory contains all project scripts organized by functionality. All scri
 > | Field CLS after an ad-density/placement change (live CDP + ad slots, the <0.05 monetization gate) | `scripts/measure_cls.py` | platform |
 > | Traffic share **per section/path** (full-coverage GoatCounter export) | `scripts/gc_section_shares.py` | here |
 > | Was that traffic a PERSON? (referrer mix + automated-client share per surface) | `scripts/gc_traffic_provenance.py` | here |
-> | The digest's charts: readers per surface + GA4 organic engagement, one PNG each | `scripts/daily_checkup_charts.py` | here |
+> | The digest's charts: readers per surface + GA4 landing engagement, one PNG each | `scripts/daily_checkup_charts.py` | here |
 > | Traffic **channel/referrer mix** (organic vs Reddit vs direct) | `scripts/channel_mix.py` | platform |
 >
 > SEO docs split the same way: implementation here (`docs/seo/SEO_OPTIMIZATION.md`),
@@ -1353,7 +1353,7 @@ uv run scripts/gc_traffic_provenance.py --surface all --weeks 4
 
 ### Daily digest surface chart
 
-**`scripts/daily_checkup_charts.py`** — the morning digest's charts, one phone-width PNG per graph in `$TMPDIR/vb_digest/` (`--out-dir`). All readers, then one per surface, over the last 120 days (`--days`): daily readers and their 7-day and 28-day trailing averages. Then one per GA4 watched organic-landing surface: daily sessions and engaged sessions, ending at the last final GA4 day. The headless-Chrome scraper and the 2026-07-27..29 Singapore burst (the `gc_traffic_provenance.py` farm and sgwave fingerprints) are excluded from every series, total and share. Subtitles carry the raw 7d numbers. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`. `--json` prints the totals, rows, GA4 weeks and chart paths.
+**`scripts/daily_checkup_charts.py`** — the morning digest's charts, one phone-width PNG per graph in `$TMPDIR/vb_digest/` (`--out-dir`). All readers, then one per surface, over the last 120 days (`--days`): daily readers and their 7-day and 28-day trailing averages. Then one per GA4 watched landing surface: daily sessions and engaged sessions, ending at the last final GA4 day — Organic Search only, except `/job-title/*` and `/employer/*`, which chart all channels (the Cloudflare challenge on them strips the referrer, so Google visitors arrive as Direct). The headless-Chrome scraper and the 2026-07-27..29 Singapore burst (the `gc_traffic_provenance.py` farm and sgwave fingerprints) are excluded from every series, total and share. Subtitles carry the raw 7d numbers. Same full-coverage export, buckets and FirstVisit basis as the digest, so the numbers reconcile with `gc_section_shares.py`. `--json` prints the totals, rows, GA4 weeks and chart paths.
 
 ```bash
 uv run scripts/daily_checkup_charts.py                       # $TMPDIR/vb_digest/*.png
