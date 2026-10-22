@@ -1074,6 +1074,11 @@ scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_interval_coverage --since 2026
 ```
 Re-run after each newly graded bulletin month and append the numbers to the tracking ticket, so the next month compares against a recorded series instead of re-deriving the baseline. Baseline measurements: `docs/PREDICTIONS_ASSESSMENT.md` §28.
 
+**`scripts/vqs/backtest_horizon_dispatch.py`** – Choose the 6m/12m expert per India/China EB-1/2/3 series for one action type. Walk-forward scores GBM Gated and Oppenheim Pace against no-change and prints the dispatch the rule picks (beat no-change by ≥10d since 2016, and not lose to it from FY2022 on). `_FILING_HORIZON_DISPATCH` in `scripts/publish_predictions.py` is this output for `--action-type filing`; re-run after a model change and update the table from it. Results: `docs/PREDICTIONS_ASSESSMENT.md` §33.
+```bash
+scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_horizon_dispatch --action-type filing --out /app/logs/horizon_dispatch_filing.json
+```
+
 ---
 
 ## Database Management

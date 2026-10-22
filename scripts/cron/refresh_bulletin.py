@@ -280,8 +280,11 @@ def _publish_predictions_for_latest_bulletin(n_bulletins: int) -> None:
         for h in (3, 6, 12):
             fwd_target = latest_first + relativedelta(months=h)
             fwd_str = fwd_target.strftime("%Y-%m")
+            # Dates for Filing has a backtested dispatch at 6m/12m only
+            # (_FILING_HORIZON_DISPATCH); the dashboard's horizon columns read both.
+            actions = ["final_action", "filing"] if h >= 6 else ["final_action"]
             try:
-                _run_publish([fwd_target], ["final_action"], horizon_months=h)
+                _run_publish([fwd_target], actions, horizon_months=h)
                 logger.info("Published %dm-ahead predictions for %s", h, fwd_str)
             except Exception:
                 logger.exception("Failed %dm-ahead publish for %s", h, fwd_str)

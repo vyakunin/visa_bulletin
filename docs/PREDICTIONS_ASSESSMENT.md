@@ -2914,3 +2914,54 @@ Enabled. November 2026 predictions republished on prod after the release.
 
 ### Pending Planning Review
 Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.
+
+---
+
+## 33. Dates for Filing Gets a Per-Horizon Dispatch; the Dashboard Reads It (October 2026)
+
+### Motivation
+The dashboard's 6m/12m columns rolled the 1-step expert forward (§27: 302 d / 448 d),
+so most Dates-for-Filing cells read "No step predicted" on series that moved 5–15
+months a year. The per-horizon dispatch behind the monthly pages covered Final Action
+only. Ruling D15b (2026-10-22): show the published per-horizon forecasts on the
+dashboard, and give Dates for Filing its own dispatch, gated against no-change.
+
+### What Was Implemented
+| Change | Files | Description |
+|--------|-------|-------------|
+| Gate harness | `scripts/vqs/backtest_horizon_dispatch.py` | Walk-forward from 2016, GBM Gated and Pace vs persistence per (series, horizon); rule fixed before the run: best candidate must beat persistence by ≥10 d over the full window and not lose to it from FY2022 on |
+| Filing dispatch | `scripts/publish_predictions.py` `_FILING_HORIZON_DISPATCH` | The gate's output for `filing`; persistence where nothing passed |
+| Forward publish | `scripts/cron/refresh_bulletin.py` | 6m/12m targets publish `filing` as well as `final_action` |
+| Dashboard | `webapp/views/bulletin/dashboard.py` `_apply_published_horizons` | 6m/12m cells read published gbm_gated / oppenheim_pace / persistence rows with their range; a Filing cell is raised to its Final Action counterpart |
+
+### Results (Facts)
+`scripts/vqs/run_in_stg.sh -m scripts.vqs.backtest_horizon_dispatch --action-type filing`
+(staging, 2026-10-22). MAE in days; recent = targets ≥ 2021-10-01.
+
+| Series | h | n | Persistence | GBM Gated | Pace | Recent persistence | Recent best | Dispatch |
+|---|---|---|---|---|---|---|---|---|
+| China EB-1 | 6 | 119 | 174.3 | 146.3 | 149.3 | 112.8 | 90.0 | gbm_gated |
+| China EB-1 | 12 | 113 | 314.5 | 278.9 | 264.7 | 207.0 | 148.7 | oppenheim_pace |
+| China EB-2 | 6 | 119 | 183.3 | 172.3 | 148.6 | 148.8 | 111.5 | oppenheim_pace |
+| China EB-2 | 12 | 113 | 353.3 | 234.5 | 234.9 | 336.4 | 173.6 | gbm_gated |
+| China EB-3 | 6 | 119 | 227.6 | 243.6 | 210.4 | 230.3 | 230.8 | persistence |
+| China EB-3 | 12 | 113 | 364.6 | 266.2 | 284.9 | 384.0 | 294.3 | gbm_gated |
+| India EB-1 | 6 | 119 | 272.8 | 210.4 | 250.4 | 268.4 | 192.5 | gbm_gated |
+| India EB-1 | 12 | 113 | 461.2 | 384.1 | 418.4 | 420.6 | 302.2 | gbm_gated |
+| India EB-2 | 6 | 119 | 209.9 | 232.1 | 204.7 | 306.6 | 294.4 | persistence |
+| India EB-2 | 12 | 113 | 362.2 | 377.7 | 337.8 | 481.2 | 452.1 | oppenheim_pace |
+| India EB-3 | 6 | 119 | 267.7 | 309.2 | 262.0 | 179.2 | 175.6 | persistence |
+| India EB-3 | 12 | 113 | 525.4 | 534.0 | 488.3 | 348.0 | 318.9 | oppenheim_pace |
+
+The same harness on `final_action` picks a different expert from the committed
+Final Action tables on 8 of 12 surfaces (e.g. India EB-1 12m: committed GBM Gated,
+783.9 d against persistence 825.2 d over 2016+, but 735.9 d against 735.2 d from
+FY2022). The Final Action tables were not changed.
+
+### Current Status
+Enabled. India Filing on the dashboard, knowledge 2026-10-31: EB-1 Oct 25 2024 (6m),
+Jan 14 2026 (12m); EB-2 and EB-3 hold Jan 15 2015 (6m), Apr 9 2015 (12m). The chart's
+dotted projection still plots the roll-forward trajectory.
+
+### Pending Planning Review
+Awaiting planning session to interpret results, update hypotheses, and re-prioritize next steps.

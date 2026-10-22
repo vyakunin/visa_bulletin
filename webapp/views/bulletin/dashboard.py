@@ -20,6 +20,7 @@ from lib.business.vqs.coupling import (
     reconcile_pair,
     w_fad_concedes_for_country,
 )
+from lib.business.vqs.prediction_loader import load_published_horizon_forecasts
 from models.blog import BlogPost
 from models.enums.action_type import ActionType
 from models.enums.country import Country
@@ -330,6 +331,45 @@ def _apply_reconciled_trajectory(
     return new
 
 
+_HORIZON_CELLS = ((6, "cutoff_6m"), (12, "cutoff_12m"))
+
+
+def _apply_published_horizons(
+    vqs_predictions: dict,
+    country: int,
+    action_type: str,
+    latest_publication: date,
+) -> None:
+    """In place: replace the roll-forward 6m/12m cells with the published per-horizon forecasts.
+
+    Series the publish dispatch keeps on the next-bulletin model have no published
+    horizon row and keep the roll-forward value. A Filing cell is raised to its
+    published Final Action counterpart: a Filing cutoff is never behind Final Action.
+    """
+    is_filing = action_type == ActionType.FILING.value
+    for horizon, key in _HORIZON_CELLS:
+        published = load_published_horizon_forecasts(country, action_type, latest_publication, horizon)
+        final_action = (
+            load_published_horizon_forecasts(
+                country, ActionType.FINAL_ACTION.value, latest_publication, horizon
+            )
+            if is_filing
+            else {}
+        )
+        for label, pred in vqs_predictions.items():
+            visa_class = VQS_VISA_CLASS_MAP.get(label)
+            forecast = published.get(visa_class)
+            if forecast is None:
+                continue
+            cutoff = forecast.predicted_date
+            floor = final_action.get(visa_class)
+            if floor is not None and cutoff < floor.predicted_date:
+                cutoff = floor.predicted_date
+            pred[key] = cutoff
+            pred[f"{key}_low"] = forecast.confidence_low
+            pred[f"{key}_high"] = forecast.confidence_high
+
+
 def _reconcile_prediction_pair(
     fad_pred: dict,
     dff_pred: dict,
@@ -518,6 +558,10 @@ def _build_unified_prediction_rows(
             "cutoff_12m": pred.get("cutoff_12m"),
             "cutoff_6m_flat": cutoff_6m_flat,
             "cutoff_12m_flat": cutoff_12m_flat,
+            "cutoff_6m_low": pred.get("cutoff_6m_low"),
+            "cutoff_6m_high": pred.get("cutoff_6m_high"),
+            "cutoff_12m_low": pred.get("cutoff_12m_low"),
+            "cutoff_12m_high": pred.get("cutoff_12m_high"),
             "confidence": pred.get("confidence"),
             "confidence_low": pred.get("confidence_low"),
             "confidence_high": pred.get("confidence_high"),
@@ -727,6 +771,14 @@ def dashboard_view(request, category=None, country=None):
         except Exception:
             logger.exception("Failed to reconcile FAD/DFF VQS predictions")
 
+    from models.bulletin import Bulletin
+
+    latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
+    current_bulletin_date = latest_bulletin.publication_date if latest_bulletin else None
+
+    if vqs_predictions and current_bulletin_date:
+        _apply_published_horizons(vqs_predictions, country, action_type, current_bulletin_date)
+
     # Build chart after VQS predictions so trajectory data can be included
     if has_data:
         cat_label = (
@@ -761,10 +813,7 @@ def dashboard_view(request, category=None, country=None):
     # the H1 ("Latest edition: <Month Year> Visa Bulletin"). publication_date is the
     # edition month (e.g. the July bulletin published mid-June), which is exactly the
     # "current" framing users expect — not a today-capped "last updated" timestamp.
-    from models.bulletin import Bulletin
-
-    latest_bulletin = Bulletin.objects.order_by("-publication_date").first()
-    current_bulletin_date = latest_bulletin.publication_date if latest_bulletin else None
+    # current_bulletin_date is read above, before the horizon cells.
 
     # Homepage link to the upcoming-month forecast. The homepage is the most
     # frequently crawled page on the site, so this is the fastest path for Google

@@ -130,6 +130,28 @@ py_binary(
 )
 
 py_binary(
+    name = "backtest_horizon_dispatch",
+    srcs = ["backtest_horizon_dispatch.py"],
+    main = "backtest_horizon_dispatch.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//django_config:logging_config",
+        "//django_config:settings",
+        "//lib/business/vqs:data_cache",
+        "//lib/business/vqs:expert_pool",
+        "//lib/business/vqs:gbm_expert",
+        "//lib/utils:logging_utils",
+        "//models/enums:country",
+        "//webapp:apps",
+        requirement("Django"),
+    ],
+    python_version = "PY3",
+    env = {
+        "DJANGO_SETTINGS_MODULE": "django_config.settings",
+    },
+)
+
+py_binary(
     name = "compute_prediction_accuracy",
     srcs = ["compute_prediction_accuracy.py"],
     main = "compute_prediction_accuracy.py",
