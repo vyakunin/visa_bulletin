@@ -1201,11 +1201,12 @@ cache-busting query param, so it warms the same key real visitors hit. Faceted
 `/salaries/?...` query URLs are deliberately excluded (per-query, challenge-gated). Run it
 right after a prod deploy + Redis flush (see the deploy flow in `.claude/rules/deployment.md`,
 next to the `redis-cli -n 1 FLUSHDB` step). Prints per-URL status + timing; exit 1 if any
-URL is non-200. Safe to run any time — plain read-only GETs.
+URL is non-200. Safe to run any time — plain read-only GETs. The month-specific pages
+(scorecard, upcoming forecast, family-sponsored month, newest analysis post) come from the
+homepage's own links, so the set rolls forward with each bulletin.
 ```bash
 ./scripts/warm_cache.sh                                    # warm https://visa-bulletin.us
 ./scripts/warm_cache.sh --base https://staging.visa-bulletin.us
-BASE=... PRED_MONTH=2026-8 ./scripts/warm_cache.sh         # env overrides
 ```
 
 **`scripts/seo/render_sitemap.py`** - pre-render `/sitemap.xml` to a static file
