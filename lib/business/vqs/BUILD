@@ -110,11 +110,13 @@ py_library(
     srcs = ["accuracy_surfacing.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         ":accuracy_metrics",
         "//lib/business/bulletin:eb_series",
         "//models:bulletin",
         "//models:visa_cutoff_date",
         "//models:vqs",
+        "//models/enums:visa_category",
     ],
 )
 

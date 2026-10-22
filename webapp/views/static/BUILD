@@ -12,6 +12,7 @@ py_library(
     srcs = ["pages.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         "//lib/business/bulletin:release_schedule",
         "//webapp/views/bulletin:prediction_month_forecast",
         requirement("Django"),

@@ -15,6 +15,13 @@ py_library(
 )
 
 py_library(
+    name = "prediction_urls",
+    srcs = ["prediction_urls.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//models/enums:visa_category"],
+)
+
+py_library(
     name = "release_bracket",
     srcs = ["release_bracket.py"],
     visibility = ["//visibility:public"],
@@ -65,6 +72,7 @@ py_library(
     srcs = ["cutoff_data_aggregator.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         ":cutoff_projection",
         ":visa_class_utils",
         "//models:bulletin",

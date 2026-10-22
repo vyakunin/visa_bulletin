@@ -22,6 +22,7 @@ py_library(
     srcs = ["dashboard.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         ":prediction_month_forecast",
         ":priority_date_landing",
         ":retention",
@@ -103,6 +104,7 @@ py_library(
     srcs = ["prediction_month_forecast.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         ":retention",
         "//django_config:cache_utils",
         "//lib/business/bulletin:eb_series",

@@ -12,6 +12,7 @@ from operator import attrgetter
 from django.core.cache import cache
 
 from lib.business.bulletin.cutoff_projection import calculate_projection
+from lib.business.bulletin.prediction_urls import prediction_canonical_path
 from models.bulletin import Bulletin
 from models.enums.country import Country
 from models.enums.cutoff_state import (
@@ -232,9 +233,9 @@ def _append_records_to_data(data: VisaClassData, records, category: str) -> None
             continue
 
         data.dates.append(pub_date)
-        # Internal link to prediction detail page (category-aware)
-        internal_url = f"/predictions/{category}/{pub_date.year}-{pub_date.month}/"
-        data.bulletin_urls.append(internal_url)
+        data.bulletin_urls.append(
+            prediction_canonical_path(category, pub_date.year, pub_date.month)
+        )
 
         if record.is_current:
             data.cutoff_dates.append(None)

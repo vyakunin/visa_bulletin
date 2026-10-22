@@ -100,7 +100,7 @@ class StoredScorecardTest(TestCase):
         sc = latest_month_scorecard()
         self.assertIsNotNone(sc)
         self.assertEqual(sc["month_label"], "August 2026")
-        self.assertEqual(sc["recap_url"], "/predictions/2026-8/")
+        self.assertEqual(sc["recap_url"], "/predictions/august-2026/")
         self.assertEqual(sc["n_scored"], 2)
         self.assertEqual(sc["mae_days"], 11)  # round(mean(9, 13))
         bands = {b["label"]: b["mae_days"] for b in sc["bands"]}
@@ -217,7 +217,7 @@ class ArchiveIndexTest(TestCase):
         self.assertIn("Latest scorecard", html)
         self.assertIn("August 2026", html)
         self.assertIn("11 days", html)  # headline MAE
-        self.assertIn("/predictions/2026-8/", html)  # link to that month's recap
+        self.assertIn("/predictions/august-2026/", html)  # link to that month's recap
 
     def test_track_record_links_present(self):
         html = self._html()
@@ -374,7 +374,8 @@ class DashboardDeepLinkTest(TestCase):
 
     def test_eb_backtest_link_deep_links_latest_month(self):
         html = self._html("/employment-based/india/")
-        # Bare-numeric canonical recap URL for the latest confirmed month.
-        self.assertIn('href="/predictions/2026-8/"', html)
+        # The latest confirmed month's canonical slug, not the numeric alias that 301s.
+        self.assertIn('href="/predictions/august-2026/"', html)
+        self.assertNotIn('href="/predictions/2026-8/"', html)
         # And no longer the category landing that 301s to latest.
         self.assertNotIn('href="/predictions/employment_based/"', html)

@@ -18,6 +18,10 @@ from lib.business.bulletin.eb_series import (
     EB_SHORT_LABELS,
     series_key_for_label,
 )
+from lib.business.bulletin.prediction_urls import (
+    forecast_url_for,
+    prediction_canonical_path,
+)
 from lib.business.vqs.prediction_loader import (
     PredictionResult,
     get_all_predictions_for_month,
@@ -320,10 +324,7 @@ def _archive_index_structured_data(canonical_url: str) -> str:
 def prediction_list(request: HttpRequest) -> HttpResponse:
     """List all bulletin months available for prediction browsing."""
     from lib.business.vqs.accuracy_surfacing import archive_index_accuracy
-    from webapp.views.bulletin.prediction_month_forecast import (
-        forecast_url_for,
-        upcoming_forecast_month,
-    )
+    from webapp.views.bulletin.prediction_month_forecast import upcoming_forecast_month
 
     months = (
         Bulletin.objects.order_by("-publication_date")
@@ -393,33 +394,6 @@ def _add_months(sourcedate: date, months: int) -> date:
     mon = m % 12 + 1
     day = min(sourcedate.day, calendar.monthrange(y, mon)[1])
     return date(y, mon, day)
-
-
-def prediction_canonical_path(category: str, year: int, month: int) -> str:
-    """The single canonical URL path for a prediction month.
-
-    For employment_based this is the keyword-rich monthname slug
-    ``/predictions/<monthname>-<year>/`` — the SAME URL the evergreen forecast
-    ranks on before the bulletin drops. Keeping it canonical across the whole
-    lifecycle means the ranking-established URL never changes at publication:
-    the slug route renders the forecast pre-drop and the accuracy archive
-    post-drop, in place, with no peak-intent 301. The bare-numeric
-    ``/predictions/<y>-<m>/`` and the ``/predictions/employment_based/<y>-<m>/``
-    alias each 301 here in a single hop.
-
-    family_sponsored keeps its own ``/predictions/family_sponsored/<y>-<m>/``
-    segment — distinct content, self-canonical, already stable across the
-    lifecycle (no forecast-slug→numeric flip to fix). This is the nearest thing
-    the app has to a ``get_absolute_url`` for a prediction month; route every
-    internal link, canonical tag, and sitemap entry through it.
-    """
-    if category == VisaCategory.EMPLOYMENT_BASED.value:
-        # Reuse the forecast slug builder so the archive canonical and the
-        # forecast URL are byte-identical (one URL, two lifecycle phases).
-        from webapp.views.bulletin.prediction_month_forecast import forecast_url_for
-
-        return forecast_url_for(date(year, month, 1))
-    return f"/predictions/{category}/{year}-{month}/"
 
 
 def _actuals_by_series_key(
@@ -814,10 +788,7 @@ def prediction_detail(
     # page has to be crawled and ranked by then. Imported locally: the forecast
     # module imports prediction_detail from here, so a module-level import would
     # be circular.
-    from webapp.views.bulletin.prediction_month_forecast import (
-        forecast_url_for,
-        upcoming_forecast_month,
-    )
+    from webapp.views.bulletin.prediction_month_forecast import upcoming_forecast_month
 
     upcoming = upcoming_forecast_month()
     # Suppress on the month that IS the upcoming forecast's target (can't happen

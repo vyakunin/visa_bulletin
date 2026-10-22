@@ -18,6 +18,7 @@ py_library(
     srcs = ["sitemaps.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/business/bulletin:prediction_urls",
         "//django_config:cache_utils",
         "//lib/business/i129:lottery_season",
         "//lib/business/salary:h1b_salary_pair",
@@ -31,7 +32,6 @@ py_library(
         "//models/enums:country",
         "//models:job_title",
         "//models:salary",
-        "//webapp/views:prediction_views",
         "//webapp/views/bulletin:prediction_month_forecast",
         "//webapp/views/bulletin:priority_date_landing",
         requirement("Django"),

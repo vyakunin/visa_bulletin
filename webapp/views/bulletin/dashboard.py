@@ -14,6 +14,7 @@ from lib.business.bulletin.cutoff_data_aggregator import (
     build_seo_metadata,
     get_aggregated_visa_class_data,
 )
+from lib.business.bulletin.prediction_urls import forecast_url_for
 from lib.business.vqs.coupling import (
     LEGACY_CLAMP_W,
     reconcile_maturity,
@@ -818,10 +819,7 @@ def dashboard_view(request, category=None, country=None):
     # Homepage link to the upcoming-month forecast. The homepage is the most
     # frequently crawled page on the site, so this is the fastest path for Google
     # to discover the forecast page while the pre-drop anticipation wave builds.
-    from webapp.views.bulletin.prediction_month_forecast import (
-        forecast_url_for,
-        upcoming_forecast_month,
-    )
+    from webapp.views.bulletin.prediction_month_forecast import upcoming_forecast_month
 
     upcoming_forecast = upcoming_forecast_month()
     upcoming_forecast_url = (
@@ -829,6 +827,9 @@ def dashboard_view(request, category=None, country=None):
     )
     upcoming_forecast_label = (
         upcoming_forecast.strftime("%B %Y") if upcoming_forecast else None
+    )
+    current_bulletin_scorecard_url = (
+        forecast_url_for(current_bulletin_date) if current_bulletin_date else None
     )
 
     # For family-sponsored, pre-select all series; for employment-based, use the default subset.
@@ -897,6 +898,7 @@ def dashboard_view(request, category=None, country=None):
         ),
         "latest_post": latest_post,
         "current_bulletin_date": current_bulletin_date,
+        "current_bulletin_scorecard_url": current_bulletin_scorecard_url,
         "upcoming_forecast_url": upcoming_forecast_url,
         "upcoming_forecast_label": upcoming_forecast_label,
         # Filter options
