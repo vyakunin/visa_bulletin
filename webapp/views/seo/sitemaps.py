@@ -9,6 +9,10 @@ from django.http import HttpResponse
 from django.urls import reverse
 
 from django_config.cache_utils import cache_page_all_agents
+from lib.business.bulletin.prediction_urls import (
+    forecast_url_for,
+    prediction_canonical_path,
+)
 from lib.business.i129.lottery_season import SELECTION_HISTORY_UPDATED
 from lib.business.salary.employer_stats import indexable_employer_clusters
 from lib.business.salary.h1b_salary_pair import qualifying_pairs
@@ -275,7 +279,6 @@ def build_sitemap_xml(base_url: str) -> str:
     # webapp/views/bulletin/prediction_month_forecast.py.
     try:
         from webapp.views.bulletin.prediction_month_forecast import (
-            forecast_url_for,
             upcoming_forecast_month,
         )
 
@@ -454,8 +457,6 @@ def build_sitemap_xml(base_url: str) -> str:
     except (OperationalError, ProgrammingError):
         logger.error("Failed to load bulletin dates for sitemap", exc_info=True)
         bulletin_dates = []
-
-    from webapp.views.prediction_views import prediction_canonical_path
 
     for pub_date in bulletin_dates:
         # The latest bulletin's publication_date is next month (future); cap so

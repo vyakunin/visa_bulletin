@@ -30,12 +30,14 @@ from lib.business.bulletin.eb_series import (
     series_key_for_label,
     window_note,
 )
+from lib.business.bulletin.prediction_urls import prediction_canonical_path
 from lib.business.vqs.accuracy_metrics import (
     QUEUE_DRIVEN_CLASSES,
     BulletinAccuracyRow,
     compare_to_no_change_baseline,
     compute_bulletin_accuracy_summary,
 )
+from models.enums.visa_category import VisaCategory
 
 logger = logging.getLogger(__name__)
 
@@ -311,9 +313,9 @@ def latest_month_scorecard() -> dict | None:
     if roll is None:
         return None
     roll["month"] = latest
-    # Canonical bare-numeric employment_based recap URL (see
-    # prediction_canonical_path) — non-zero-padded month, matching the canonical.
-    roll["recap_url"] = f"/predictions/{latest.year}-{latest.month}/"
+    roll["recap_url"] = prediction_canonical_path(
+        VisaCategory.EMPLOYMENT_BASED.value, latest.year, latest.month
+    )
     return roll
 
 

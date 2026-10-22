@@ -58,7 +58,7 @@ def _record(publication_date: date, cutoff_date=None, *, current=False, unavaila
     )
 
 
-def _aggregate(records) -> VisaClassData:
+def _aggregate(records, category: str = "family_sponsored") -> VisaClassData:
     data = VisaClassData(
         visa_class="2A",
         visa_class_label="F2A: Spouses/Children of Permanent Residents",
@@ -66,7 +66,7 @@ def _aggregate(records) -> VisaClassData:
         cutoff_dates=[],
         bulletin_urls=[],
     )
-    _append_records_to_data(data, records, "family_sponsored")
+    _append_records_to_data(data, records, category)
     return data
 
 
@@ -127,6 +127,19 @@ class TestAggregatorCurrentState(unittest.TestCase):
         self.assertEqual(finalized["dates"], _BULLETINS)
         self.assertEqual(finalized["cutoff_states"], ["date", "unavailable", "current"])
         self.assertEqual(finalized["cutoff_dates"], [date(2025, 1, 1), None, None])
+
+
+class TestChartPointLinks(unittest.TestCase):
+    def test_an_employment_based_point_links_the_canonical_slug(self):
+        """It linked /predictions/employment_based/<y>-<m>/, which 301s."""
+        data = _aggregate([_record(_BULLETINS[-1], cutoff_date=date(2024, 1, 1))], "employment_based")
+
+        self.assertEqual(data.bulletin_urls, ["/predictions/august-2026/"])
+
+    def test_a_family_sponsored_point_keeps_its_own_month_url(self):
+        data = _aggregate([_record(_BULLETINS[-1], cutoff_date=date(2024, 1, 1))])
+
+        self.assertEqual(data.bulletin_urls, ["/predictions/family_sponsored/2026-8/"])
 
 
 class TestUnifiedRowCurrentState(unittest.TestCase):

@@ -395,7 +395,7 @@
                 <em>Estimates are from the Bulletin Forecast Model, which uses historical bulletin patterns, I-140 demand data, and fiscal year cycles. Actual dates may differ due to policy changes, retrogressions, or demand surges.</em>
                 <a href="{% url 'blog_detail' slug='how-my-prediction-model-works' %}" style="color: #0066CC; text-decoration: underline;">How are projections calculated? →</a>
                 &nbsp;|&nbsp;
-                <a href="{% if current_bulletin_date %}/predictions/{{ current_bulletin_date.year }}-{{ current_bulletin_date.month }}/{% else %}/predictions/employment_based/{% endif %}" style="color: #0066CC; text-decoration: underline;">How did we score the {% if current_bulletin_date %}{{ current_bulletin_date|date:"M Y" }} {% endif %}forecast? See our track record →</a>
+                <a href="{% if current_bulletin_scorecard_url %}{{ current_bulletin_scorecard_url }}{% else %}/predictions/employment_based/{% endif %}" style="color: #0066CC; text-decoration: underline;">How did we score the {% if current_bulletin_date %}{{ current_bulletin_date|date:"M Y" }} {% endif %}forecast? See our track record →</a>
                 {% if upcoming_forecast_url %}
                 &nbsp;|&nbsp;
                 <a href="{{ upcoming_forecast_url }}" style="color: #0066CC; text-decoration: underline;">Our {{ upcoming_forecast_label }} Visa Bulletin predictions →</a>

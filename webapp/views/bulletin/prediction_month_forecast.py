@@ -34,6 +34,7 @@ from django.utils.safestring import mark_safe
 
 from django_config.cache_utils import cache_page_skip_bots
 from lib.business.bulletin.eb_series import EB_SHORT_LABELS, series_key_for_label
+from lib.business.bulletin.prediction_urls import MONTH_SLUGS
 from lib.business.vqs.october_reset import floor_for_target
 from models.bulletin import Bulletin
 from models.enums.country import Country
@@ -74,11 +75,7 @@ _HEADLINE_SERIES = (
 _FINAL = "final_action"
 _FILING = "filing"
 
-_MONTH_NAMES = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-]
-_MONTH_SLUG_TO_NUM = {name: i + 1 for i, name in enumerate(_MONTH_NAMES)}
+_MONTH_SLUG_TO_NUM = {name: i + 1 for i, name in enumerate(MONTH_SLUGS)}
 
 
 # The six modeled series: EB-1/2/3 for China + India. Everything else falls back
@@ -560,10 +557,6 @@ def upcoming_forecast_month() -> date | None:
     if latest is None:
         return None
     return latest.replace(day=1) + relativedelta(months=1)
-
-
-def forecast_url_for(target: date) -> str:
-    return f"/predictions/{_MONTH_NAMES[target.month - 1]}-{target.year}/"
 
 
 def prediction_month_forecast_view(request, slug: str) -> HttpResponse:

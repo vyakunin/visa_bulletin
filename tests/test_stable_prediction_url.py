@@ -187,3 +187,9 @@ class TestUpcomingForecastInboundLinks(TestCase):
         """Link to the URL that holds the equity, never the 301'ing alias."""
         body = self.client.get("/predictions/august-2026/").content.decode()
         self.assertNotIn('href="/predictions/2026-9/"', body)
+
+    def test_homepage_track_record_link_is_the_canonical_slug(self):
+        """The dashboard's 'how did we score' link pointed at the 301'ing numeric alias."""
+        body = self.client.get("/").content.decode()
+        self.assertIn('href="/predictions/august-2026/"', body)
+        self.assertNotIn('href="/predictions/2026-8/"', body)

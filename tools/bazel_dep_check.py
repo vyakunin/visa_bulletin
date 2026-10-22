@@ -66,11 +66,8 @@ ALLOWLIST: set[tuple[str, str]] = {
     # ranking-established URL never 301s at peak intent. All four imports are lazy
     # (in-function), so it fails at CALL time with ModuleNotFoundError for a target
     # whose closure has only prediction_month_forecast.
-    # Fix: extract the shared URL surface — prediction_canonical_path and
-    # forecast_url_for — into a leaf module both import. That breaks this cycle AND
-    # removes the reason webapp/views/seo:sitemaps has to depend on prediction_views
-    # at all. Tracked separately; not done during the back-port because it reshapes
-    # live prediction routing.
+    # The URL builders already live in the leaf lib.business.bulletin.prediction_urls;
+    # what still closes the cycle is prediction_views importing upcoming_forecast_month.
     ("//webapp/views/bulletin:prediction_month_forecast", "webapp.views.prediction_views"),
 }
 

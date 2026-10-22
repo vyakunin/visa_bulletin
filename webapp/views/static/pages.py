@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.test import Client
 
+from lib.business.bulletin.prediction_urls import forecast_url_for
 from lib.business.bulletin.release_schedule import get_release_schedule, release_odds
 
 # Canonical author entity, reused across trust pages (E-E-A-T / GEO). A single
@@ -106,10 +107,7 @@ def next_bulletin_view(request):
     the same calendar month had already landed by today. See
     ``lib.business.bulletin.release_schedule``.
     """
-    from webapp.views.bulletin.prediction_month_forecast import (
-        forecast_url_for,
-        upcoming_forecast_month,
-    )
+    from webapp.views.bulletin.prediction_month_forecast import upcoming_forecast_month
 
     today = date.today()
     schedule = get_release_schedule(today=today)
