@@ -37,11 +37,14 @@
 #   ./scripts/warm_cache.sh                      # warm https://visa-bulletin.us
 #   ./scripts/warm_cache.sh --base https://staging.visa-bulletin.us
 #   BASE=https://staging.visa-bulletin.us ./scripts/warm_cache.sh
-#   PRED_MONTH=2026-8 ./scripts/warm_cache.sh    # override current predictions month
 #
 # Env overrides:
 #   BASE        base URL to warm (default https://visa-bulletin.us)
-#   PRED_MONTH  current predictions month "YYYY-M" (default: derived from `date`)
+#
+# The month-specific pages (the current bulletin's scorecard, the upcoming forecast,
+# the family-sponsored month, the newest analysis post) are read off the homepage's
+# own links, so they roll forward with each bulletin instead of tracking `date`,
+# which names last month's bulletin for the days after a mid-month drop.
 #
 # The per-URL curl timeout is 60s, not 30s. It was raised for /sitemap.xml (now
 # removed — see above), but it stays at 60s: on the cold Redis left by a deploy's
@@ -55,9 +58,6 @@
 set -uo pipefail
 
 BASE="${BASE:-https://visa-bulletin.us}"
-# Default predictions month = current year-month (no zero-pad on month, matching
-# the consolidated /predictions/<YYYY-M>/ URL scheme).
-PRED_MONTH="${PRED_MONTH:-$(date -u '+%Y-%-m')}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -72,13 +72,28 @@ for arg in "$@"; do
 done
 BASE="${BASE%/}"  # strip trailing slash
 
+HOME_HTML="$(curl -sS --max-time 60 "${BASE}/" 2>/dev/null)"
+# Word-month slugs only: the numeric /predictions/<YYYY-M>/ alias 301s, so curling it
+# warms nothing. Sorted by date, the last one is the upcoming forecast.
+mapfile -t PRED_URLS < <(grep -oE '/predictions/[a-z]+-[0-9]{4}/' <<<"$HOME_HTML" | sort -u \
+  | while read -r u; do s="${u#/predictions/}"; s="${s%/}"; \
+      echo "$(date -d "1 ${s%-*} ${s##*-}" +%Y%m) $u"; done | sort | cut -d' ' -f2)
+LATEST_POST="$(grep -oE '/analysis/visa-bulletin-analysis-[a-z]+-[0-9]{4}/' <<<"$HOME_HTML" | head -n1)"
+if [ "${#PRED_URLS[@]}" -eq 0 ] || [ -z "$LATEST_POST" ]; then
+  echo "ERROR: homepage at ${BASE}/ links no /predictions/<month>-<year>/ page or no analysis post"
+  exit 1
+fi
+UPCOMING="${PRED_URLS[-1]#/predictions/}"; UPCOMING="${UPCOMING%/}"
+# Family-sponsored months keep the numeric scheme; the current bulletin is upcoming - 1.
+FS_MONTH="$(date -d "1 ${UPCOMING%-*} ${UPCOMING##*-} -1 month" +%Y-%-m)"
+
 # Top ~20 high-traffic cacheable GET pages. Derived from scripts/staging_prod_diff.sh
 # + the sitemap. Keep this a landing/dashboard/content set — NO faceted query URLs.
 URLS=(
   "/"                                             # homepage
   "/predictions/"                                 # predictions index
-  "/predictions/${PRED_MONTH}/"                   # current EB predictions (consolidated scheme)
-  "/predictions/family_sponsored/${PRED_MONTH}/"  # current FS predictions
+  "${PRED_URLS[@]}"                                # current scorecard + upcoming forecast
+  "/predictions/family_sponsored/${FS_MONTH}/"     # current FS predictions
   "/salaries/"                                     # salary DB landing (no query)
   "/employers/"                                    # employer directory landing
   "/job-titles/"                                   # job-title directory landing
@@ -90,14 +105,14 @@ URLS=(
   "/priority-date/eb2/india/"                      # high-intent priority-date hub
   "/priority-date/eb3/india/"                      # high-intent priority-date hub
   "/analysis/how-my-prediction-model-works/"       # methodology post
-  "/analysis/visa-bulletin-analysis-july-2026/"    # latest monthly analysis post
+  "$LATEST_POST"                                   # latest monthly analysis post
   "/faq/"                                          # FAQ
   "/when-is-the-next-visa-bulletin/"               # high-intent evergreen
   "/about/"                                        # about
   "/contact/"                                      # contact
 )
 
-echo "Warming ${#URLS[@]} URLs on ${BASE} (predictions month ${PRED_MONTH})"
+echo "Warming ${#URLS[@]} URLs on ${BASE} (upcoming forecast ${UPCOMING})"
 printf '%-48s %6s %9s\n' "URL" "status" "time(s)"
 
 fail=0

@@ -318,6 +318,15 @@ if echo "$REFRESH_OUT" | grep -qE "Ingested [0-9]+ bulletin\(s\)"; then
     log "WARNING: sitemap re-render failed; the previous sitemap.xml is still being served"
   fi
 
+  # refresh_bulletin's cache.clear() empties the 41 /h1b-salary/<occupation>/ aggregates,
+  # which fill on first miss — and the view skips the page cache for bots, so every
+  # crawler pays a 6-9s render until something re-warms them. ~6 min; non-fatal.
+  log "new bulletin ingested -> re-warming the occupation pages"
+  if ! on_prod "docker exec -w /app $PROD_WEB python3 -m scripts.salary.warm_occupations" 2>&1; then
+    log "WARNING: occupation warm failed or a page rendered slow; the 05:10 cron retries"
+  fi
+  "$REPO/scripts/warm_cache.sh" || log "WARNING: a top page answered non-200 while warming"
+
   alert inject "bulletin-sync:new-bulletin" 0 \
     "📗 New Visa Bulletin ingested on prod (${INGESTED_LINE}). Verify the end-state: visa-bulletin.us renders the new month, predictions published, the analysis post generated and reading correctly, CF edge purged."
 fi

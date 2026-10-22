@@ -456,7 +456,7 @@ The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, inde
 
 Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`, cronned on the **minipc**: it browser-fetches via the debug Chrome on `:9222`, streams the HTML into `vb_web`, and runs the unchanged `scripts.cron.refresh_bulletin` there with `BULLETIN_HTML_CACHE_DIR` set, so parse/load/predict still happen prod-side. Idempotent (dedup by `DataSource`).
 
-**A landed bulletin leaves the 41 `/h1b-salary/` occupation pages COLD — warm them by hand until the ingest does it itself.** `refresh_bulletin` ends with `cache.clear()` and no re-warm, so they render cold until the next 05:10 Berlin cron. The I-129 panel, the market overview and the pair set are in the Postgres `aggregates` store (b79aa4c) and survive the clear. Run `warm_occupations` and `warm_cache.sh`, then purge Cloudflare **after** the warm. Tracked as internal ticket `3c462b8d409f81eea8b1f2d8621c0a2c`.
+**The bridge re-warms what a landed bulletin empties.** `refresh_bulletin` ends with `cache.clear()`, which drops the 41 `/h1b-salary/` occupation aggregates; after the sitemap re-render the bridge runs `warm_occupations` on prod (~6 min) and `warm_cache.sh` from the minipc, before it injects the new-bulletin alert. The I-129 panel, the market overview and the pair set live in the Postgres `aggregates` store (b79aa4c) and survive the clear. A code cutover also flushes Redis and does not re-warm the occupations: run `warm_occupations` by hand after one.
 
 ```bash
 # on the MINIPC (not prod) — cadence: */30 while awaiting a bulletin, 0 */4 otherwise
