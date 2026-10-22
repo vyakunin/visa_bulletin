@@ -456,7 +456,7 @@ The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, inde
 
 Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`, cronned on the **minipc**: it browser-fetches via the debug Chrome on `:9222`, streams the HTML into `vb_web`, and runs the unchanged `scripts.cron.refresh_bulletin` there with `BULLETIN_HTML_CACHE_DIR` set, so parse/load/predict still happen prod-side. Idempotent (dedup by `DataSource`).
 
-**The bridge re-warms what a landed bulletin empties.** `refresh_bulletin` ends with `cache.clear()`, which drops the 41 `/h1b-salary/` occupation aggregates; after the sitemap re-render the bridge runs `warm_occupations` on prod (~6 min) and `warm_cache.sh` from the minipc, before it injects the new-bulletin alert. The I-129 panel, the market overview and the pair set live in the Postgres `aggregates` store (b79aa4c) and survive the clear. A code cutover also flushes Redis and does not re-warm the occupations: run `warm_occupations` by hand after one.
+**The bridge re-warms what a landed bulletin empties.** `refresh_bulletin` ends with `cache.clear()`, which drops the 41 `/h1b-salary/` occupation aggregates; after the sitemap re-render the bridge runs `warm_occupations` on prod (~6 min) and `warm_cache.sh` from the minipc, before it injects the new-bulletin alert. The I-129 panel, the market overview and the pair set live in the Postgres `aggregates` store (b79aa4c) and survive the clear. A code cutover flushes Redis too, and its `post_cutover_warm` step re-warms them (`visa_bulletin_platform/hosting/cutover.sh`); a hand-run `docker compose up -d web` or `FLUSHDB` does not.
 
 ```bash
 # on the MINIPC (not prod) — cadence: */30 while awaiting a bulletin, 0 */4 otherwise
