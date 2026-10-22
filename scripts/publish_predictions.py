@@ -41,11 +41,17 @@ from lib.business.vqs.october_reset import (
     estimate_october_reset,
     find_reset_events,
 )
+from lib.business.vqs.prediction_loader import (
+    MODEL_GBM_GATED,
+    MODEL_OPPENHEIM_PACE,
+    MODEL_PERSISTENCE,
+)
 from lib.business.vqs.solver import (
     predict_next_bulletin_and_maturity,
     predict_regime_switched,
 )
 from models.bulletin import Bulletin
+from models.enums.action_type import ActionType
 from models.enums.country import Country
 from models.enums.family_preference import FamilyPreference
 from models.raw_facts import RawFactsLedger
@@ -96,6 +102,32 @@ _PACE_12M_SERIES = frozenset([
 # Currently empty — India EB-3 Pace (490d) beats Persistence (524d).
 # Reassign series here if future evals show model-12m MAE > persistence-12m MAE.
 _PERSISTENCE_12M_SERIES: frozenset = frozenset()
+
+# Dates for Filing at 6m/12m: per (country, class, horizon bucket), the model that beat
+# no-change by >=10d over 2016+ and did not lose to it from FY2022 on
+# (scripts/vqs/backtest_horizon_dispatch.py --action-type filing, 2026-10-22).
+# MODEL_PERSISTENCE entries are the series where nothing passed.
+_FILING_HORIZON_DISPATCH: dict[tuple[int, str, int], str] = {
+    (Country.INDIA.value, "1st", 6): MODEL_GBM_GATED,         # 210.4d vs persist 272.8d
+    (Country.INDIA.value, "1st", 12): MODEL_GBM_GATED,        # 384.1d vs 461.2d
+    (Country.INDIA.value, "2nd", 6): MODEL_PERSISTENCE,       # Pace 204.7d vs 209.9d, under margin
+    (Country.INDIA.value, "2nd", 12): MODEL_OPPENHEIM_PACE,   # 337.8d vs 362.2d
+    (Country.INDIA.value, "3rd", 6): MODEL_PERSISTENCE,       # Pace 262.0d vs 267.7d, under margin
+    (Country.INDIA.value, "3rd", 12): MODEL_OPPENHEIM_PACE,   # 488.3d vs 525.4d
+    (Country.CHINA.value, "1st", 6): MODEL_GBM_GATED,         # 146.3d vs 174.3d
+    (Country.CHINA.value, "1st", 12): MODEL_OPPENHEIM_PACE,   # 264.7d vs 314.5d
+    (Country.CHINA.value, "2nd", 6): MODEL_OPPENHEIM_PACE,    # 148.6d vs 183.3d
+    (Country.CHINA.value, "2nd", 12): MODEL_GBM_GATED,        # 234.5d vs 353.3d
+    (Country.CHINA.value, "3rd", 6): MODEL_PERSISTENCE,       # Pace 210.4d wins 2016+, loses from FY2022
+    (Country.CHINA.value, "3rd", 12): MODEL_GBM_GATED,        # 266.2d vs 364.6d
+}
+
+
+def _filing_horizon_model(country: int, visa_class: str, horizon_m: int) -> str | None:
+    if horizon_m < 6:
+        return None
+    return _FILING_HORIZON_DISPATCH.get((country, visa_class, 12 if horizon_m >= 12 else 6))
+
 
 # Series for which a 1m movement probability badge is computed.
 # These are the oversubscribed EB-1/2/3 series where GBM CondDir signal is meaningful.
@@ -338,7 +370,7 @@ def publish_predictions(
                             country=country,
                             action_type=action,
                             predicted_date=None,
-                            model_name="persistence",
+                            model_name=MODEL_PERSISTENCE,
                         )
                         count += 1
                         continue
@@ -452,8 +484,34 @@ def publish_predictions(
                             model_name = (
                                 m_meta.get("model")
                                 or m_meta.get("selected_expert")
-                                or "persistence"
+                                or MODEL_PERSISTENCE
                             )
+                    elif (
+                        action == ActionType.FILING.value
+                        and (filing_model := _filing_horizon_model(country, visa_class, horizon_m))
+                    ):
+                        model_name = filing_model
+                        m_meta = {"model": filing_model, "horizon_months": horizon_m}
+                        confidence = "medium"
+                        if filing_model == MODEL_GBM_GATED:
+                            cutoff = expert_gbm_gated(
+                                visa_class=visa_class,
+                                country=country,
+                                action_type=action,
+                                knowledge_date=knowledge_date,
+                                horizon=horizon_m,
+                            )
+                        elif filing_model == MODEL_OPPENHEIM_PACE:
+                            cutoff = expert_oppenheim_pace(
+                                visa_class=visa_class,
+                                country=country,
+                                action_type=action,
+                                knowledge_date=knowledge_date,
+                                horizon=horizon_m,
+                            )
+                        else:
+                            cutoff = get_cutoff_at_date(visa_class, country, action, knowledge_date)
+                            confidence = "low"
                     elif (dispatch_key == _CHINA_EB1 and horizon_m < 12) or (
                         dispatch_key == _INDIA_EB1 and horizon_m < 6
                     ) or horizon_m == 1:
@@ -475,7 +533,7 @@ def publish_predictions(
                         confidence = outcome.confidence
                     elif horizon_m >= 12 and dispatch_key in _GBM_GATED_12M_SERIES:
                         # GBM Gated at 12m+: China EB-1/3, India EB-1/2
-                        model_name = "gbm_gated"
+                        model_name = MODEL_GBM_GATED
                         cutoff = expert_gbm_gated(
                             visa_class=visa_class,
                             country=country,
@@ -483,11 +541,11 @@ def publish_predictions(
                             knowledge_date=knowledge_date,
                             horizon=horizon_m,
                         )
-                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_m}
+                        m_meta = {"model": MODEL_GBM_GATED, "horizon_months": horizon_m}
                         confidence = "medium"
                     elif horizon_m >= 12 and dispatch_key in _PACE_12M_SERIES:
                         # Pace at 12m+: India EB-3 (Pace 490d beats GBM 494d, Persistence 524d)
-                        model_name = "oppenheim_pace"
+                        model_name = MODEL_OPPENHEIM_PACE
                         cutoff = expert_oppenheim_pace(
                             visa_class=visa_class,
                             country=country,
@@ -495,19 +553,19 @@ def publish_predictions(
                             knowledge_date=knowledge_date,
                             horizon=horizon_m,
                         )
-                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_m}
+                        m_meta = {"model": MODEL_OPPENHEIM_PACE, "horizon_months": horizon_m}
                         confidence = "medium"
                     elif horizon_m >= 12 and dispatch_key in _PERSISTENCE_12M_SERIES:
                         # Persistence at 12m+: for structurally stalled series where Pace
                         # and GBM both produce extremely high MAE vs no-change baseline.
                         # India EB-3: Pace 491d, GBM 499d — both dominated by no-change.
-                        model_name = "persistence"
+                        model_name = MODEL_PERSISTENCE
                         cutoff = get_cutoff_at_date(visa_class, country, action, knowledge_date)
-                        m_meta = {"model": "persistence", "horizon_months": horizon_m}
+                        m_meta = {"model": MODEL_PERSISTENCE, "horizon_months": horizon_m}
                         confidence = "low"
                     elif dispatch_key in _GBM_GATED_6M_SERIES and horizon_m >= 6:
                         # GBM Gated at 6m (but < 12m): India EB-1, China EB-3
-                        model_name = "gbm_gated"
+                        model_name = MODEL_GBM_GATED
                         cutoff = expert_gbm_gated(
                             visa_class=visa_class,
                             country=country,
@@ -515,11 +573,11 @@ def publish_predictions(
                             knowledge_date=knowledge_date,
                             horizon=horizon_m,
                         )
-                        m_meta = {"model": "gbm_gated", "horizon_months": horizon_m}
+                        m_meta = {"model": MODEL_GBM_GATED, "horizon_months": horizon_m}
                         confidence = "medium"
                     elif dispatch_key in _PACE_6M_SERIES and horizon_m >= 6:
                         # Pace at 6m (but < 12m): India EB-2/3, China EB-2
-                        model_name = "oppenheim_pace"
+                        model_name = MODEL_OPPENHEIM_PACE
                         cutoff = expert_oppenheim_pace(
                             visa_class=visa_class,
                             country=country,
@@ -527,7 +585,7 @@ def publish_predictions(
                             knowledge_date=knowledge_date,
                             horizon=horizon_m,
                         )
-                        m_meta = {"model": "oppenheim_pace", "horizon_months": horizon_m}
+                        m_meta = {"model": MODEL_OPPENHEIM_PACE, "horizon_months": horizon_m}
                         confidence = "medium"
                     else:
                         outcome = predict_next_bulletin_and_maturity(

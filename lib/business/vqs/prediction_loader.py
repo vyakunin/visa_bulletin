@@ -24,6 +24,13 @@ from models.vqs import PredictedCutoff
 
 logger = logging.getLogger(__name__)
 
+# PredictedCutoff.model_name values written by scripts/publish_predictions.py for
+# the per-horizon dispatch; the dashboard reads these rows back by name.
+MODEL_GBM_GATED = "gbm_gated"
+MODEL_OPPENHEIM_PACE = "oppenheim_pace"
+MODEL_PERSISTENCE = "persistence"
+HORIZON_MODEL_NAMES = frozenset({MODEL_GBM_GATED, MODEL_OPPENHEIM_PACE, MODEL_PERSISTENCE})
+
 
 @dataclass
 class PredictionResult:
@@ -248,6 +255,52 @@ def get_prediction_for_series(
             exc_info=True,
         )
         return PredictionResult(predicted_date=None, knowledge_date=kd, source="backtest")
+
+
+@dataclass(frozen=True)
+class HorizonForecast:
+    """One published per-horizon forecast cell."""
+
+    predicted_date: date
+    confidence_low: date | None
+    confidence_high: date | None
+    model_name: str
+
+
+def load_published_horizon_forecasts(
+    country: int,
+    action_type: str,
+    latest_publication: date,
+    horizon: int,
+) -> dict[str, HorizonForecast]:
+    """Published forecasts ``horizon`` bulletins past the latest one, keyed by visa_class.
+
+    Only rows from a per-horizon model (``HORIZON_MODEL_NAMES``) made from the
+    latest bulletin's knowledge count. A series the dispatch leaves on the
+    next-bulletin model has no entry, so its caller keeps its own value.
+    """
+    target = latest_publication.replace(day=1) + relativedelta(months=horizon)
+    rows = (
+        PredictedCutoff.objects.filter(
+            bulletin__target_bulletin_month=target,
+            bulletin__prediction_date__gte=latest_publication - timedelta(days=1),
+            country=country,
+            action_type=action_type,
+            model_name__in=HORIZON_MODEL_NAMES,
+            predicted_date__isnull=False,
+        )
+        .select_related("bulletin")
+        .order_by("bulletin__prediction_date")
+    )
+    return {
+        row.visa_class: HorizonForecast(
+            predicted_date=row.predicted_date,
+            confidence_low=row.confidence_low,
+            confidence_high=row.confidence_high,
+            model_name=row.model_name,
+        )
+        for row in rows
+    }
 
 
 def get_all_predictions_for_month(

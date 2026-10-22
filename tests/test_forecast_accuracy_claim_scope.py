@@ -3,9 +3,9 @@
 Two models answer "where will this cutoff be in 6-12 months". The monthly
 prediction pages (/predictions/<month>-<year>/) publish a horizon-specific
 dispatch; its backtest is the 155-264 day MAE the FAQ quotes against a ~280 day
-no-change baseline. The country dashboards' 6-Month / 12-Month columns roll the
-next-bulletin forecast forward instead, and backtest at 302 / 448 days
-(docs/PREDICTIONS_ASSESSMENT.md section 27). The FAQ text, its FAQPage JSON-LD
+no-change baseline. The country dashboards' 6-Month / 12-Month columns show that
+dispatch where it covers the series, and otherwise roll the next-bulletin forecast
+forward, which backtests at 302 / 448 days (docs/PREDICTIONS_ASSESSMENT.md section 27). The FAQ text, its FAQPage JSON-LD
 and the Spanish mirror must scope the figure to the monthly pages, and the
 dashboard must state its own columns' error. Notion 3ac62b8d409f8183884ddd7831183ee5.
 """
@@ -73,11 +73,12 @@ class TestDashboardStatesRollForwardError(TestCase):
 
     def test_note_names_the_method_and_its_error(self):
         body = re.sub(r"\s+", " ", self._render(show_vqs_column=True))
-        self.assertIn("roll the next-bulletin forecast forward", body)
-        self.assertIn("302 days at 6 months", body)
-        self.assertIn("448 days at 12 months", body)
+        self.assertIn("separate model for each horizon", body)
+        self.assertIn("repeat the next-bulletin forecast month by month", body)
+        self.assertIn("302 days off at 6 months", body)
+        self.assertIn("448 days at 12", body)
         self.assertNotIn("155", body)
 
     def test_note_absent_without_forecast_columns(self):
         body = self._render(show_vqs_column=False)
-        self.assertNotIn("302 days at 6 months", body)
+        self.assertNotIn("302 days off at 6 months", body)

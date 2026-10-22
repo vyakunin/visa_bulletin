@@ -29,6 +29,7 @@ py_library(
         "//lib/business/bulletin:chart_builder",
         "//lib/business/bulletin:cutoff_data_aggregator",
         "//lib/business/vqs:coupling",
+        "//lib/business/vqs:prediction_loader",
         "//lib/business/vqs:solver",
         "//models:blog",
         "//models/enums:action_type",

@@ -1836,6 +1836,24 @@ django_py_test(
 )
 
 django_py_test(
+    name = "test_dashboard_published_horizons",
+    size = "medium",
+    srcs = ["test_dashboard_published_horizons.py"],
+    data = [
+        "//webapp:templates",
+    ],
+    deps = [
+        "//webapp/views:views",
+        "//lib/business/vqs:prediction_loader",
+        "//scripts:publish_predictions_lib",
+        "//models/enums:country",
+        "//models/enums:action_type",
+        "//django_config:urls",
+        "//webapp:urls",
+    ],
+)
+
+django_py_test(
     name = "test_median_cards_show_the_median",
     size = "medium",
     srcs = ["test_median_cards_show_the_median.py"],

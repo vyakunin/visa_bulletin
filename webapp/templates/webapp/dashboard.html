@@ -190,11 +190,14 @@
                     </p>
                     {% if show_vqs_column %}
                     <p class="text-muted small mb-2" id="horizon-roll-forward-note">
-                        The 6-month and 12-month columns roll the next-bulletin forecast forward one
-                        month at a time. Backtested on India and China EB-1, EB-2 and EB-3, their mean
-                        error is 302 days at 6 months and 448 days at 12 months. The
-                        <a href="{% url 'prediction_list' %}">monthly prediction pages</a> use a
-                        separate model for each horizon.
+                        For most India and China EB-1, EB-2 and EB-3 rows, the 6-month and 12-month
+                        columns show the forecast from the
+                        <a href="{% url 'prediction_list' %}">monthly prediction pages</a>, made by a
+                        separate model for each horizon. Each model was chosen per category because it
+                        beat assuming no change in a backtest; where none did, the cell says
+                        &ldquo;No step predicted&rdquo;. Other rows repeat the next-bulletin forecast
+                        month by month, which in the same backtest averaged 302 days off at 6 months
+                        and 448 days at 12.
                     </p>
                     {% endif %}
                     <div class="table-responsive">
@@ -218,7 +221,7 @@
                                         6-Month
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="Predicted cutoff date 6 months from now, from rolling the next-bulletin forecast forward month by month (mean error in the note above the table). &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            data-bs-content="Predicted cutoff date 6 months from now. Where the monthly prediction pages have a 6-month model for this category, the cell shows its forecast and range; otherwise it repeats the next-bulletin forecast month by month (see the note above the table). &quot;No step predicted&quot; means the forecast is no net movement over that window — most cutoffs move in occasional jumps rather than steadily. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
@@ -227,7 +230,7 @@
                                         12-Month
                                         <span tabindex="0" data-bs-toggle="popover" data-bs-placement="top"
                                             data-bs-html="true" data-bs-trigger="focus"
-                                            data-bs-content="Predicted cutoff date 12 months from now, from rolling the next-bulletin forecast forward month by month (mean error in the note above the table). &quot;No step predicted&quot; means the model forecasts no net movement over that window — most cutoffs move in occasional jumps rather than steadily, and the model does not call when the next jump lands. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
+                                            data-bs-content="Predicted cutoff date 12 months from now. Where the monthly prediction pages have a 12-month model for this category, the cell shows its forecast and range; otherwise it repeats the next-bulletin forecast month by month (see the note above the table). &quot;No step predicted&quot; means the forecast is no net movement over that window — most cutoffs move in occasional jumps rather than steadily. <a href='{% url 'blog_detail' slug='how-my-prediction-model-works' %}'>How it works →</a>"
                                             style="cursor:help;">
                                             <i class="bi bi-question-circle text-muted" style="font-size:0.85em;"></i>
                                         </span>
@@ -278,6 +281,9 @@
                                         {% if row.cutoff_6m_flat %}
                                             <span class="text-muted">No step predicted</span>
                                             <br><span class="text-muted" style="font-size:0.75em;">holds {{ row.cutoff_6m|date:"M d, Y" }}</span>
+                                        {% elif row.cutoff_6m and row.cutoff_6m_low and row.cutoff_6m_high %}
+                                            {{ row.cutoff_6m|date:"M d, Y" }}
+                                            <br><span class="text-muted" style="font-size:0.75em;">{{ row.cutoff_6m_low|date:"M Y" }}–{{ row.cutoff_6m_high|date:"M Y" }}</span>
                                         {% elif row.cutoff_6m %}
                                             {{ row.cutoff_6m|date:"M d, Y" }}
                                             {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
@@ -291,6 +297,9 @@
                                         {% if row.cutoff_12m_flat %}
                                             <span class="text-muted">No step predicted</span>
                                             <br><span class="text-muted" style="font-size:0.75em;">holds {{ row.cutoff_12m|date:"M d, Y" }}</span>
+                                        {% elif row.cutoff_12m and row.cutoff_12m_low and row.cutoff_12m_high %}
+                                            {{ row.cutoff_12m|date:"M d, Y" }}
+                                            <br><span class="text-muted" style="font-size:0.75em;">{{ row.cutoff_12m_low|date:"M Y" }}–{{ row.cutoff_12m_high|date:"M Y" }}</span>
                                         {% elif row.cutoff_12m %}
                                             {{ row.cutoff_12m|date:"M d, Y" }}
                                             {% if row.confidence == "high" %}<i class="bi bi-circle-fill text-success ms-1" style="font-size:0.5em; vertical-align:middle;" title="High confidence"></i>
