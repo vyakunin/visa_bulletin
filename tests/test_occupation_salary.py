@@ -9,6 +9,7 @@ not count); the sitemap lists qualifying occupations + the hub only (never a
 (lib/business/salary/occupation_stats.py).
 """
 
+import re
 from decimal import Decimal
 
 from tests.django_setup import setup_django_for_tests
@@ -88,6 +89,12 @@ class TestOccupationSalary(TestCase):
         self.assertIn("Employer 0 Inc", body)  # a ranked sponsoring employer
         self.assertIn("/employer/employer-0/", body)  # employer cross-link
         self.assertIn("percentile", body.lower())
+
+    def test_counts_are_not_called_certified(self):
+        # Counts include denied and withdrawn filings; only the outcome list may say certified.
+        body = self.client.get("/h1b-salary/software-engineer/").content.decode()
+        body = re.sub(r"\(certified,\s+denied or\s+withdrawn\)", "", body)
+        self.assertNotIn("certified", body.lower())
 
     def test_faqpage_schema_and_canonical(self):
         body = self.client.get("/h1b-salary/software-engineer/").content.decode()

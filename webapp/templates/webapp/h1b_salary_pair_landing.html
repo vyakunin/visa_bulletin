@@ -8,7 +8,7 @@
   <div class="col-lg-9 offset-lg-1">
     <h1 class="mb-2">{{ page_heading }}</h1>
     <p class="text-muted mb-4">
-      <strong>{{ employer_name }}</strong> filed {{ total_filings|intcomma }} certified
+      <strong>{{ employer_name }}</strong> filed {{ total_filings|intcomma }}
       H-1B applications for <strong>{{ role_title }}</strong> roles{% if fy_str %} (through {{ fy_str }}){% endif %},
       from U.S. Department of Labor disclosure data.
     </p>
@@ -110,8 +110,9 @@
     {% endfor %}
 
     <p class="text-muted small mt-4">
-      Counts are certified H-1B Labor Condition Applications (LCAs) from public
-      U.S. Department of Labor disclosure data. Wages shown are the offered annual
+      Counts are H-1B Labor Condition Applications (LCAs) from public
+      U.S. Department of Labor disclosure data, whatever their outcome (certified,
+      denied or withdrawn). Wages shown are the offered annual
       wage on the filing, not a guarantee of pay.
     </p>
   </div>

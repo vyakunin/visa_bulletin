@@ -139,7 +139,8 @@ class EmployerProfileViewTest(TestCase):
         self.assertIn("10 H-1B & PERM filings", desc)
         self.assertIn("salary", desc)
         self.assertIn("$", desc)
-        self.assertIn("certified DOL wage data", desc)
+        self.assertIn("DOL wage data", desc)
+        self.assertNotIn("certified", desc)
         # Old generic, non-differentiating framing must be gone.
         self.assertNotIn("visa sponsorship statistics", desc)
         self.assertNotIn("approval rate", desc)

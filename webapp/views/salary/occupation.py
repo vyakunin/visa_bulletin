@@ -64,7 +64,7 @@ def _build_faq(occ: Occupation, stats) -> list[dict]:
             "q": f"How much does a {occ.display} make on a visa-sponsored job in the US?",
             "a": (
                 f"Across {stats.total_filings:,} H-1B and PERM filings, the median "
-                f"certified salary for a {occ.display} is ${median:,.0f} per year, "
+                f"offered salary for a {occ.display} is ${median:,.0f} per year, "
                 f"with most offers between ${p10:,.0f} (10th percentile) and "
                 f"${p90:,.0f} (90th percentile)."
             ),

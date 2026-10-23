@@ -9,6 +9,7 @@ h1b-sponsors role page links a qualifying employer's wage cell to the pair page
 (gated cross-mesh).
 """
 
+import re
 from decimal import Decimal
 
 from tests.django_setup import setup_django_for_tests
@@ -101,6 +102,12 @@ class TestH1BSalaryPairLanding(TestCase):
         self.assertIn("/employer/google-llc/", body)  # outbound mesh
         self.assertIn("/job-title/software-engineer/", body)
         self.assertIn("/h1b-sponsors/software-engineer/", body)
+
+    def test_counts_are_not_called_certified(self):
+        # Counts include denied and withdrawn filings; only the outcome list may say certified.
+        body = self.client.get("/h1b-salary/google-llc/software-engineer/").content.decode()
+        body = re.sub(r"\(certified,\s+denied or\s+withdrawn\)", "", body)
+        self.assertNotIn("certified", body.lower())
 
     def test_faqpage_schema_and_canonical(self):
         body = self.client.get(

@@ -8,7 +8,7 @@
   <div class="col-lg-9 offset-lg-1">
     <h1 class="mb-2">{{ page_heading }}</h1>
     <p class="text-muted mb-4">
-      {{ total_sponsors|intcomma }} companies filed certified H-1B applications with a
+      {{ total_sponsors|intcomma }} companies filed H-1B applications with a
       worksite in <strong>{{ state_name }}</strong>{% if fy_str %} ({{ fy_str }}){% endif %},
       ranked by filing volume and pay from U.S. Department of Labor disclosure data.
     </p>
@@ -62,7 +62,7 @@
     {% if paying_rows %}
     <h2 class="h4 mt-4 mb-3">Highest-paying H-1B employers in {{ state_name }}</h2>
     <p class="text-muted small mb-2">
-      Ranked by mean certified H-1B wage, among employers with at least
+      Ranked by mean H-1B offered wage, among employers with at least
       {{ min_pay_filings }} filings in {{ state_name }}.
     </p>
     <div class="table-responsive">
@@ -119,8 +119,9 @@
     {% endfor %}
 
     <p class="text-muted small mt-4">
-      Counts are certified H-1B Labor Condition Applications (LCAs) from public
-      U.S. Department of Labor disclosure data, by worksite state. Wages shown are
+      Counts are H-1B Labor Condition Applications (LCAs) from public
+      U.S. Department of Labor disclosure data, whatever their outcome (certified,
+      denied or withdrawn), by worksite state. Wages shown are
       the offered annual wage on the filing, not a guarantee of pay.
     </p>
   </div>
