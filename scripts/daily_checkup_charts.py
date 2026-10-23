@@ -13,7 +13,7 @@ GoatCounter export (FirstVisit=1, the digest's basis) through its surface bucket
 
 GA4: one chart per watched landing surface (the MCP's GA4_SURFACES), daily sessions and
 engaged sessions, ending at the last finalized GA4 day. Organic Search only, except the
-surfaces in ALL_CHANNEL_PREFIXES, which chart every channel.
+surfaces in ALL_CHANNEL_PREFIXES, which chart every channel from ALL_CHANNEL_SINCE.
 
 Titles carry the raw 7d numbers. Exit 2 when the GoatCounter export is unavailable; a GA4
 failure drops only the GA4 charts and is reported as `ga4_error`.
@@ -78,6 +78,9 @@ ENGAGED_DAILY = "#f6b99f"
 # The Cloudflare challenge on these surfaces reloads the page and strips the referrer, so a
 # Google visitor lands in GA4 as Direct; an organic-only chart reads ~0 since 2026-07-28.
 ALL_CHANNEL_PREFIXES = frozenset({"/job-title/", "/employer/"})
+# Before the challenge, all-channel landings there were mostly unfiltered bot Direct traffic
+# (7,828 sessions on /job-title/ on 2026-07-27), which flattens the real line to zero.
+ALL_CHANNEL_SINCE = date(2026, 7, 30)
 
 
 @dataclass(frozen=True)
@@ -215,6 +218,10 @@ def _ga4_channel(prefix: str | None) -> str:
     return "all channels" if prefix in ALL_CHANNEL_PREFIXES else "organic"
 
 
+def _ga4_start(prefix: str | None, start: date) -> date:
+    return max(start, ALL_CHANNEL_SINCE) if prefix in ALL_CHANNEL_PREFIXES else start
+
+
 def _ga4_daily_args(prefix: str | None, start: date, end: date) -> dict:
     expressions = []
     if _ga4_channel(prefix) == "organic":
@@ -239,11 +246,13 @@ def _ga4_daily_args(prefix: str | None, start: date, end: date) -> dict:
 def collect_ga4(end: date, plot_days: int) -> list[Ga4Series]:
     """Daily sessions per GA4 watched surface, ending at the last finalized day."""
     start = end - timedelta(days=plot_days + SHORT_AVG_DAYS - 2)
-    calls = [("ga4_run_report", _ga4_daily_args(prefix, start, end)) for _, prefix in GA4_SURFACES]
+    calls = [("ga4_run_report", _ga4_daily_args(prefix, _ga4_start(prefix, start), end))
+             for _, prefix in GA4_SURFACES]
     reports = asyncio.run(call_mcp_tools("ga4", calls, timeout=GA4_TIMEOUT))
-    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     out = []
     for (label, prefix), report in zip(GA4_SURFACES, reports):
+        first = _ga4_start(prefix, start)
+        days = [first + timedelta(days=i) for i in range((end - first).days + 1)]
         by_day = {date(int(r["date"][:4]), int(r["date"][4:6]), int(r["date"][6:])): r
                   for r in (report or {}).get("rows") or []}
 
@@ -334,7 +343,7 @@ def _per_visit(seconds: float, sessions: int) -> str:
 
 
 def render_ga4(series: Ga4Series, plot_days: int, out: Path) -> None:
-    lead = len(series.days) - plot_days
+    lead = max(0, len(series.days) - plot_days)
     days = series.days[lead:]
     w = series.week
     subtitle = (f"7d to {w.last_day:%b %d} (last final GA4 day): "
