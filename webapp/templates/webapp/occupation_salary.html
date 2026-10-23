@@ -23,7 +23,7 @@
 
     <h1 class="mb-2">{{ occ.display }} H-1B &amp; PERM Salary</h1>
     <p class="text-muted mb-4">
-      {{ occ.blurb }} Based on {{ stats.total_filings|intcomma }} certified H-1B and
+      {{ occ.blurb }} Based on {{ stats.total_filings|intcomma }} H-1B and
       PERM filings from U.S. Department of Labor disclosure data, the median
       sponsored salary for a {{ occ.display }} is
       <strong>${{ stats.percentiles.p50|floatformat:0|intcomma }}</strong> per year.
@@ -146,7 +146,7 @@
     {% include "webapp/includes/salary_explore_rail.html" %}
 
     <p class="text-muted small mt-4">
-      Salaries are the certified offered annual wage on public U.S. Department of
+      Salaries are the offered annual wage on public U.S. Department of
       Labor H-1B (LCA) and PERM disclosure filings, not a guarantee of pay.
       Occupation is the DOL-assigned Standard Occupational Classification (SOC) code.
     </p>

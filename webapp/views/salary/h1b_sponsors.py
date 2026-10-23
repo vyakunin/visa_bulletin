@@ -52,7 +52,7 @@ def _faq(title: str, filings: int, sponsors: int, top_rows: list[dict],
     fy_str = f"FY{fy}" if fy else "recent fiscal years"
 
     pay_a = (
-        f"The median certified H-1B wage for {title} roles is {median}."
+        f"The median H-1B offered wage for {title} roles is {median}."
         if median else
         f"H-1B wages for {title} roles vary by employer and location."
     )
@@ -73,7 +73,7 @@ def _faq(title: str, filings: int, sponsors: int, top_rows: list[dict],
         {
             "q": f"Which companies sponsor H-1B visas for {title}?",
             "a": (
-                f"{sponsors:,} employers filed certified H-1B labor condition "
+                f"{sponsors:,} employers filed H-1B labor condition "
                 f"applications for {title} roles ({fy_str}). The top sponsors by "
                 f"filing volume include {top_names_str}. The full ranked list is "
                 f"below."
@@ -90,10 +90,11 @@ def _faq(title: str, filings: int, sponsors: int, top_rows: list[dict],
         {
             "q": "How is this ranking calculated?",
             "a": (
-                f"Employers are ranked by the number of certified H-1B Labor "
+                f"Employers are ranked by the number of H-1B Labor "
                 f"Condition Applications (LCAs) they filed for {title} roles, "
                 f"sourced from U.S. Department of Labor public disclosure data. "
-                f"This page reflects {filings:,} H-1B filings for the role."
+                f"This page reflects {filings:,} H-1B filings for the role, whatever "
+                f"their outcome (certified, denied or withdrawn)."
             ),
         },
     ]
@@ -230,7 +231,7 @@ def _state_faq(state_name: str, filings: int, sponsors: int,
     fy_str = f"FY{fy}" if fy else "recent fiscal years"
 
     pay_a = (
-        f"The median certified H-1B wage in {state_name} is {median}."
+        f"The median H-1B offered wage in {state_name} is {median}."
         if median else
         f"H-1B wages in {state_name} vary by employer and role."
     )
@@ -241,7 +242,7 @@ def _state_faq(state_name: str, filings: int, sponsors: int,
         {
             "q": f"Which companies sponsor H-1B visas in {state_name}?",
             "a": (
-                f"{sponsors:,} employers filed certified H-1B labor condition "
+                f"{sponsors:,} employers filed H-1B labor condition "
                 f"applications with a worksite in {state_name} ({fy_str}). The top "
                 f"sponsors by filing volume include {top_names_str}. The full "
                 f"ranked list is below."
@@ -250,7 +251,7 @@ def _state_faq(state_name: str, filings: int, sponsors: int,
         {
             "q": f"Who are the highest-paying H-1B employers in {state_name}?",
             "a": (
-                f"Ranked by mean certified H-1B wage (among employers with at "
+                f"Ranked by mean H-1B offered wage (among employers with at "
                 f"least {MIN_EMPLOYER_FILINGS_FOR_PAY} filings in the state), the "
                 f"top payers include {pay_names_str}. {pay_a}"
             ),
@@ -262,11 +263,11 @@ def _state_faq(state_name: str, filings: int, sponsors: int,
         {
             "q": "How is this ranking calculated?",
             "a": (
-                f"Employers are ranked by the number of certified H-1B Labor "
+                f"Employers are ranked by the number of H-1B Labor "
                 f"Condition Applications (LCAs) they filed for worksites in "
                 f"{state_name}, sourced from U.S. Department of Labor public "
                 f"disclosure data. This page reflects {filings:,} H-1B filings in "
-                f"the state."
+                f"the state, whatever their outcome (certified, denied or withdrawn)."
             ),
         },
     ]

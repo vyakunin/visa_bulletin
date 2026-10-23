@@ -376,7 +376,7 @@ def _employer_salary_phrase(stats: dict) -> str:
     pct = stats.get("salary_percentiles") or {}
     p50, p10, p90 = pct.get("p50") or 0, pct.get("p10") or 0, pct.get("p90") or 0
     if not p50:
-        return "certified DOL wage data"
+        return "DOL wage data"
     phrase = f"${p50:,.0f} median salary"
     if p10 and p90:
         phrase += f" (${p10:,.0f}–${p90:,.0f})"
@@ -425,7 +425,7 @@ def employer_profile_view(request, slug):
         "description": (
             f"{cluster.canonical_name}: {stats['basic']['total_filings']:,} "
             f"H-1B & PERM filings, {_employer_salary_phrase(stats)}. "
-            f"Free certified DOL wage data by job title, year & state."
+            f"Free DOL wage data by job title, year & state."
         ),
         "canonical_url": request.build_absolute_uri(request.path),
     }

@@ -7,6 +7,7 @@ toward qualification (a PERM-heavy role 404s). The qualification gate is shared
 with the sitemap (lib/business/salary/h1b_sponsors.py).
 """
 
+import re
 from decimal import Decimal
 
 from tests.django_setup import setup_django_for_tests
@@ -106,6 +107,12 @@ class TestH1BSponsorsLanding(TestCase):
         self.assertIn("Top H-1B Sponsors for Software Engineer", body)  # H1
         self.assertIn("Employer 0 Inc", body)  # a ranked employer
         self.assertIn("/employer/employer-0/", body)  # employer link
+
+    def test_counts_are_not_called_certified(self):
+        # Counts include denied and withdrawn filings; only the outcome list may say certified.
+        body = self.client.get("/h1b-sponsors/software-engineer-h1b/").content.decode()
+        body = re.sub(r"\(certified,\s+denied or\s+withdrawn\)", "", body)
+        self.assertNotIn("certified", body.lower())
 
     def test_faqpage_schema_and_canonical(self):
         body = self.client.get("/h1b-sponsors/software-engineer-h1b/").content.decode()

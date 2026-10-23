@@ -9,6 +9,7 @@ by-state page links in only when the page qualifies. The qualification gate is
 shared with the sitemap (lib/business/salary/h1b_sponsors.py).
 """
 
+import re
 from decimal import Decimal
 
 from tests.django_setup import setup_django_for_tests
@@ -127,6 +128,12 @@ class TestH1BSponsorsStateLanding(TestCase):
         self.assertIn("Highest-paying H-1B employers in California", body)  # 2nd table
         self.assertIn("Employer 0 Inc", body)  # a ranked employer (emp A)
         self.assertIn("/employer/employer-0/", body)  # employer link
+
+    def test_counts_are_not_called_certified(self):
+        # Counts include denied and withdrawn filings; only the outcome list may say certified.
+        body = self.client.get("/h1b-sponsors/in/ca/").content.decode()
+        body = re.sub(r"\(certified,\s+denied or\s+withdrawn\)", "", body)
+        self.assertNotIn("certified", body.lower())
 
     def test_faqpage_schema_and_canonical(self):
         body = self.client.get("/h1b-sponsors/in/ca/").content.decode()

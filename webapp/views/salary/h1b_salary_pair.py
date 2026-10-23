@@ -37,7 +37,7 @@ def _faq(employer: str, role: str, filings: int, median: str | None,
          vs_role: str | None) -> list[dict]:
     fy_str = f"FY{fy}" if fy else "recent fiscal years"
     pay_a = (
-        f"The median certified H-1B wage for {role} at {employer} is {median}."
+        f"The median H-1B offered wage for {role} at {employer} is {median}."
         if median else
         f"H-1B wages for {role} at {employer} vary by level and location."
     )
@@ -50,7 +50,7 @@ def _faq(employer: str, role: str, filings: int, median: str | None,
         {
             "q": f"Does {employer} sponsor H-1B visas for {role}?",
             "a": (
-                f"Yes — {employer} filed {filings:,} certified H-1B labor "
+                f"Yes — {employer} filed {filings:,} H-1B labor "
                 f"condition applications for {role} roles ({fy_str}), per U.S. "
                 f"Department of Labor disclosure data."
             ),
@@ -62,11 +62,12 @@ def _faq(employer: str, role: str, filings: int, median: str | None,
         {
             "q": "How is this data sourced?",
             "a": (
-                f"From certified H-1B Labor Condition Applications (LCAs) filed by "
+                f"From H-1B Labor Condition Applications (LCAs) filed by "
                 f"{employer} for {role} roles, in U.S. Department of Labor public "
                 f"disclosure files. Wages shown are the offered annual wage on the "
                 f"filing, not a guarantee of pay. This page reflects {filings:,} "
-                f"H-1B filings."
+                f"H-1B filings, whatever their outcome (certified, denied or "
+                f"withdrawn)."
             ),
         },
     ]
@@ -142,7 +143,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
     vs_clause = f" {vs_role} the {role_title} market median." if vs_role else ""
     page_description = (
         f"{emp_name} pays a median {median or 'competitive'} H-1B wage for "
-        f"{role_title} ({filings:,} certified filings).{vs_clause}"
+        f"{role_title} ({filings:,} filings).{vs_clause}"
     )[:155]
 
     canonical_url = request.build_absolute_uri(request.path)
