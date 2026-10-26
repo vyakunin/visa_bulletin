@@ -231,7 +231,7 @@ def _add_visa_class_traces(
 
     if vqs_pred and not latest_is_current:
         current_idx = _add_horizon_forecast_markers(
-            fig, vqs_pred, visa_class_label, color, trace_indices, current_idx
+            fig, vqs_pred, visa_class_label, color, current_cutoff, trace_indices, current_idx
         )
 
     return trace_indices, projection_date, current_idx
@@ -246,6 +246,7 @@ def _add_horizon_forecast_markers(
     vqs_pred: dict,
     visa_class_label: str,
     color: str,
+    current_cutoff: date | None,
     trace_indices: list[int],
     current_idx: int,
 ) -> int:
@@ -265,7 +266,8 @@ def _add_horizon_forecast_markers(
         ys.append(cutoff)
         labels.append(label)
         low, high = vqs_pred.get(f"{key}_low"), vqs_pred.get(f"{key}_high")
-        if low is not None and high is not None:
+        # A cell holding today's cutoff reads "No step predicted" in the table, with no range.
+        if low is not None and high is not None and cutoff != current_cutoff:
             # A Filing cell raised to its Final Action floor can sit outside its range.
             range_x += [month, month, None]
             range_y += [min(low, cutoff), max(high, cutoff), None]

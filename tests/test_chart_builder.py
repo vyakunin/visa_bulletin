@@ -354,6 +354,18 @@ class TestHorizonForecastMarkers(unittest.TestCase):
         (rng,) = self._ranges(result)
         self.assertEqual(rng["y"][:2], ["2024-08-01", "2025-05-01"])
 
+    def test_cell_holding_todays_cutoff_draws_no_range_like_the_table(self):
+        # The table renders such a cell as "No step predicted" with no range.
+        _, result = self._chart(self._pred(cutoff_6m=date(2024, 7, 1)))
+        (rng,) = self._ranges(result)
+        self.assertEqual(rng["x"], ["2027-10-01", "2027-10-01", None])
+
+    def test_cell_moving_off_todays_cutoff_keeps_its_range(self):
+        # Neighbour of the flat case: one day past today's cutoff is a forecast step.
+        _, result = self._chart(self._pred(cutoff_6m=date(2024, 7, 2)))
+        (rng,) = self._ranges(result)
+        self.assertEqual(rng["x"][:2], ["2027-04-01", "2027-04-01"])
+
     def test_roll_forward_cells_without_a_range_draw_bare_markers(self):
         markers, result = self._chart(
             self._pred(cutoff_6m_low=None, cutoff_6m_high=None, cutoff_12m_low=None, cutoff_12m_high=None)
