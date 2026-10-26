@@ -229,7 +229,85 @@ def _add_visa_class_traces(
             if maturity_month and (projection_date is None or maturity_month > projection_date):
                 projection_date = maturity_month
 
+    if vqs_pred and not latest_is_current:
+        current_idx = _add_horizon_forecast_markers(
+            fig, vqs_pred, visa_class_label, color, trace_indices, current_idx
+        )
+
     return trace_indices, projection_date, current_idx
+
+
+# The table's 6-Month and 12-Month cells, as (cell key, column label).
+_HORIZON_MARKER_CELLS = (("cutoff_6m", "6-month"), ("cutoff_12m", "12-month"))
+
+
+def _add_horizon_forecast_markers(
+    fig: go.Figure,
+    vqs_pred: dict,
+    visa_class_label: str,
+    color: str,
+    trace_indices: list[int],
+    current_idx: int,
+) -> int:
+    """Plot the table's 6- and 12-month cells as markers, each with its published range as a bar.
+
+    Reads the same pred keys the table renders, so the chart and the table show one
+    forecast at those months. Returns the next trace index.
+    """
+    xs, ys, labels = [], [], []
+    range_x, range_y = [], []
+    for key, label in _HORIZON_MARKER_CELLS:
+        month = vqs_pred.get(f"{key}_month")
+        cutoff = vqs_pred.get(key)
+        if month is None or cutoff is None:
+            continue
+        xs.append(month)
+        ys.append(cutoff)
+        labels.append(label)
+        low, high = vqs_pred.get(f"{key}_low"), vqs_pred.get(f"{key}_high")
+        if low is not None and high is not None:
+            # A Filing cell raised to its Final Action floor can sit outside its range.
+            range_x += [month, month, None]
+            range_y += [min(low, cutoff), max(high, cutoff), None]
+    if not xs:
+        return current_idx
+
+    # Drawn as segments: plotly 2.32 renders no error_y on a date y-axis.
+    if range_x:
+        fig.add_trace(
+            go.Scatter(
+                x=range_x,
+                y=range_y,
+                mode="lines",
+                name=f"{visa_class_label} (6/12-Month Range)",
+                line=dict(color=color, width=2),
+                opacity=0.5,
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        trace_indices.append(current_idx)
+        current_idx += 1
+
+    fig.add_trace(
+        go.Scatter(
+            x=xs,
+            y=ys,
+            mode="markers",
+            name=f"{visa_class_label} (6/12-Month Forecast)",
+            marker=dict(size=9, symbol="circle", color=color, line=dict(width=1, color="white")),
+            # text, not customdata: a click on a point opens its customdata as a URL.
+            text=labels,
+            showlegend=False,
+            hovertemplate=(
+                f"<b>{visa_class_label} — %{{text}} forecast</b><br>"
+                f"<b>Month:</b> %{{x|%B %Y}}<br>"
+                f"<b>Forecast Cutoff:</b> %{{y|%b %d, %Y}}<extra></extra>"
+            ),
+        )
+    )
+    trace_indices.append(current_idx)
+    return current_idx + 1
 
 
 def _add_priority_date_line(
