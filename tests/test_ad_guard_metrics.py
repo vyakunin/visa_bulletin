@@ -425,3 +425,34 @@ def test_a_desktop_anchor_is_flagged():
 
 def test_no_anchor_is_never_a_defect():
     assert sweep.anchor_is_defect({"device": "desktop", "anchor_present": False}) is False
+
+
+# ── Surface choice: the ads-off split test leaves some pages with no ad stack ──
+# 2026-10-12..26: the sweep's employer row (/employer/prosper-marketplace-inc) and its
+# salaries row (/salaries/) were both off-arm, so 4 of 10 shots measured no ad at all
+# and read as clean. Fixture slugs: acme-a hashes ON, acme-b hashes OFF (test_ads_test).
+
+def test_a_surface_is_swept_at_its_busiest_ad_bearing_page():
+    picked = sweep._pick_surface_paths(
+        {"employer_profile": {"/employer/acme-b/": 900, "/employer/acme-a/": 100}}, n=5)
+    assert picked == [("employer_profile", "/employer/acme-a/")]
+
+
+def test_a_surface_with_only_off_arm_pages_yields_its_place():
+    picked = sweep._pick_surface_paths(
+        {"salaries": {"/salaries/": 5000},
+         "dashboard": {"/": 3000},
+         "faq": {"/faq/": 10}},
+        n=2)
+    assert picked == [("dashboard", "/"), ("faq", "/faq/")]
+
+
+def test_salary_pages_outside_the_test_still_count_as_ad_bearing():
+    """Only /salaries/ itself is in the off arm; its role, employer and state pages are not."""
+    picked = sweep._pick_surface_paths(
+        {"salaries": {"/salaries/": 5000, "/salaries/by-state/ca/": 40}}, n=1)
+    assert picked == [("salaries", "/salaries/by-state/ca/")]
+
+
+def test_the_employers_directory_hub_is_not_an_employer_profile():
+    assert sweep._in_ads_off_arm("/employers/") is False

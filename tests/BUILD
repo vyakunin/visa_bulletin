@@ -156,6 +156,7 @@ pytest_py_test(
     srcs = ["test_ad_guard_metrics.py"],
     data = [
         "//scripts:toplevel_python_sources",
+        "//webapp/views:ads_test",
     ],
 )
 
