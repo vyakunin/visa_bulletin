@@ -161,6 +161,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import shutil
 import sys
@@ -708,12 +709,45 @@ def _derive_top_surfaces(n: int) -> list[tuple[str, str]]:
         if surf in SKIP_SURFACES:
             continue
         by_surface.setdefault(surf, {})[path] = hits
+    return _pick_surface_paths(by_surface, n)
+
+
+def _ads_test():
+    """webapp/views/ads_test.py, loaded by file: it is stdlib-only, while importing it
+    as a package member would run webapp/views/__init__ and need Django."""
+    path = Path(__file__).resolve().parent.parent / "webapp" / "views" / "ads_test.py"
+    spec = importlib.util.spec_from_file_location("vb_ads_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _in_ads_off_arm(path: str) -> bool:
+    """True for a page the ads-off split test serves with no ad stack at all."""
+    ads_test = _ads_test()
+    bare = path.split("?", 1)[0].rstrip("/")
+    if bare == "/salaries":
+        return ads_test.SALARY_SEARCH_ARM is ads_test.AdsArm.OFF
+    if bare.startswith("/employer/") and bare.count("/") == 2:
+        return ads_test.employer_ads_arm(bare.rsplit("/", 1)[1]) is ads_test.AdsArm.OFF
+    return False
+
+
+def _pick_surface_paths(by_surface: dict[str, dict[str, int]], n: int) -> list[tuple[str, str]]:
+    """[(surface, path)] for the n busiest surfaces, each at its most-viewed ad-bearing path.
+
+    An off-arm page renders no ad stack, so sweeping it reports a clean row that measured
+    nothing; a surface with no ad-bearing path is skipped and the next one takes its place.
+    """
     ranked = sorted(by_surface.items(), key=lambda kv: -sum(kv[1].values()))
     out: list[tuple[str, str]] = []
-    for surf, paths in ranked[:n]:
-        # Representative page = the single most-viewed real path in the surface.
-        top_path = max(paths.items(), key=lambda kv: kv[1])[0]
-        out.append((surf, top_path))
+    for surf, paths in ranked:
+        serving = {p: h for p, h in paths.items() if not _in_ads_off_arm(p)}
+        if not serving:
+            continue
+        out.append((surf, max(serving.items(), key=lambda kv: kv[1])[0]))
+        if len(out) == n:
+            break
     return out
 
 
