@@ -241,22 +241,6 @@ def test_new_bulletin_injects_an_agent_pass() -> None:
     )
 
 
-def test_new_bulletin_rewarms_the_occupation_pages_before_waking_the_agent() -> None:
-    """refresh_bulletin's cache.clear() empties the 41 /h1b-salary/ occupation aggregates.
-
-    They fill on first miss and the view skips the page cache for bots, so until something
-    re-warms them every crawler pays a 6-9s render. Measured cold on the September, October
-    and November 2026 ingests (40 of 41 the last time), each warmed by hand.
-    """
-    src = _sync_src()
-    branch = src[src.index('grep -qE "Ingested [0-9]+ bulletin'):]
-    warm = re.search(r'on_prod "docker exec -w /app \$PROD_WEB python3 -m scripts\.salary\.warm_occupations"', branch)
-    assert warm, "the new-bulletin branch no longer re-warms the occupation pages on prod"
-    assert warm.start() < branch.index('alert inject "bulletin-sync:new-bulletin"'), (
-        "warm before the inject, so the agent pass verifies a warm site"
-    )
-
-
 def test_cdp_wedge_detection_requires_the_full_signature() -> None:
     """The self-heal must fire ONLY on a genuinely wedged browser.
 

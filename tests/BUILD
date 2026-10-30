@@ -1550,6 +1550,7 @@ django_py_test(
     srcs = ["test_occupation_salary.py"],
     deps = [
         "//django_config:context_processors",
+        "//lib/business/i129:pay_comparison",
         "//django_config:urls",
         "//models:salary",
         "//models/enums:visa_program",

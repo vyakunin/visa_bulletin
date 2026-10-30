@@ -9,7 +9,7 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on th
 | Container | Purpose | Image / Notes |
 |---|---|---|
 | `vb_postgres` | PostgreSQL 14, DB on `./postgres-data/` | `postgres:14` |
-| `vb_redis` | Page cache, Django sessions | `redis:7-alpine`, 512 MB maxmemory allkeys-lru |
+| `vb_redis` | Page cache (zlib-compressed entries), Django sessions | `redis:7-alpine`, 1.5 GB maxmemory allkeys-lru |
 | `vb_web` | Django + gunicorn 23 (3 workers × 2 threads) | `ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG}` |
 | `vb_nginx` | Static file serving + reverse-proxy to web | `nginx:1.27-alpine`, listens on internal `:80` |
 | `vb_cloudflared` | Cloudflare Tunnel connector (QUIC to CF edge) | `cloudflare/cloudflared:latest` |
@@ -89,10 +89,11 @@ docker exec vb_redis redis-cli -n 1 FLUSHDB
 # anything else that changes salary data or cluster ids:
 #   docker exec -w /app vb_web python3 -m scripts.cache.warm_profiles --rebuild   # ~50 min here
 #
-# The FLUSHDB DOES empty the 41 /h1b-salary/<occupation>/ pages' aggregates, which cache on
-# FIRST MISS with a 24h TTL; the view is cache_page_skip_bots, so that first hit is Googlebot
-# essentially every time. Measured 2026-08-10: 36 of 41 took 5.9-9.2s cold, 0.13s after.
-docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
+# The 41 /h1b-salary/<occupation>/ pages read their aggregates from the same store, written
+# by warm_occupations; unstored, a page computes live (65-209s cold under load on 2026-10-29,
+# enough to starve the workers into 504s). Re-store them after a code change to the
+# occupation aggregates, or a data change under them:
+docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations   # ~6 min here
 # Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s render
 # (repopulates Django's @cache_page Redis entries; CF then re-caches at the edge):
 ./scripts/warm_cache.sh   # see scripts/README.md § Deployment; --base for staging
@@ -114,11 +115,9 @@ uv run scripts/origin_check.py body /job-title/software-engineer/ \
 ```
 
 Daily crons re-warm them on the homeserver (`hosting/homeserver/crontab.sample`): the
-occupations at 05:10, because their 24h TTL makes the cold fills RECUR, and the aggregates at
-05:20, so a graduated DB is never more than a day stale. 05:30 fills any missing precomputed
-page (`warm_profiles --missing-only`), which matters on 1 January, when every year-windowed
-key changes. A FLUSHDB at any other hour leaves
-the occupations cold until the next morning, so run that warmer by hand as above.
+occupations at 05:10 and the aggregates at 05:20, so a graduated DB is never more than a day
+stale. 05:30 fills any missing precomputed page (`warm_profiles --missing-only`), which
+matters on 1 January, when every year-windowed key changes.
 
 Then pre-warm the top cacheable pages so the next cold user doesn't pay the 2-3s
 render (repopulates Django's `@cache_page` Redis entries; CF then re-caches at the
@@ -456,7 +455,7 @@ The weekly visa-bulletin + salary refresh is a heavy job (millions of rows, inde
 
 Ingest is now the **minipc → prod bridge**, `scripts/sync_bulletin_to_prod.sh`, cronned on the **minipc**: it browser-fetches via the debug Chrome on `:9222`, streams the HTML into `vb_web`, and runs the unchanged `scripts.cron.refresh_bulletin` there with `BULLETIN_HTML_CACHE_DIR` set, so parse/load/predict still happen prod-side. Idempotent (dedup by `DataSource`).
 
-**The bridge re-warms what a landed bulletin empties.** `refresh_bulletin` ends with `cache.clear()`, which drops the 41 `/h1b-salary/` occupation aggregates; after the sitemap re-render the bridge runs `warm_occupations` on prod (~6 min) and `warm_cache.sh` from the minipc, before it injects the new-bulletin alert. The I-129 panel, the market overview and the pair set live in the Postgres `aggregates` store (b79aa4c) and survive the clear. A code cutover flushes Redis too, and its `post_cutover_warm` step re-warms them (`visa_bulletin_platform/hosting/cutover.sh`); a hand-run `docker compose up -d web` or `FLUSHDB` does not.
+**The bridge re-warms the page cache a landed bulletin empties.** `refresh_bulletin` ends with `cache.clear()`; after the sitemap re-render the bridge runs `warm_cache.sh` from the minipc, before it injects the new-bulletin alert. The occupation aggregates, the I-129 panel, the market overview and the pair set live in the Postgres `aggregates` store and survive the clear. A code cutover's `post_cutover_warm` step re-stores the occupation aggregates under the new code (`visa_bulletin_platform/hosting/cutover.sh`); a hand-run `docker compose up -d web` does not.
 
 ```bash
 # on the MINIPC (not prod) — cadence: */30 while awaiting a bulletin, 0 */4 otherwise

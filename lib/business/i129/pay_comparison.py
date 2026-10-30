@@ -22,7 +22,8 @@ Attribution required on any surface: "sourced from USCIS, obtained by Bloomberg.
 import logging
 from dataclasses import dataclass
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import cache, caches
 from django.db import connection
 
 from lib.business.salary.soc_occupations import Occupation
@@ -35,19 +36,13 @@ logger = logging.getLogger(__name__)
 # seq scan of i129_petition (373k rows) is correctly cheaper. `/h1b-salary/<slug>/`
 # is served by `cache_page_skip_bots`, so the crawler traffic that is nearly all
 # of its hits bypasses the rendered-page cache and would pay that on every
-# request — hence a result cache here.
+# request. A request reads it from the `aggregates` store, which
+# scripts.salary.warm_occupations writes daily and which nothing evicts; the Redis
+# entry serves only an occupation the store lacks, and vb_redis evicts it within hours.
 #
-# The cache is a latency floor, not a guarantee: vb_redis runs allkeys-lru against
-# a keyspace of ~65k page/profile entries, so these 41 read-rarely keys are among
-# the first evicted and are routinely gone within hours of being written. The
-# query has to be affordable uncached, which is what the shape above buys.
-#
-# Only the SOC (occupation) variant is cached: the occupation registry is a fixed
-# 41 entries, whereas keying the employer variant by cluster would put thousands
-# of entries into a Redis running allkeys-lru — the very pressure
-# `cache_page_skip_bots` exists to avoid.
-#
-# The refresh pipeline's cache.clear() on each ingest refreshes these.
+# Only the SOC (occupation) variant is stored: the occupation registry is a fixed 41
+# entries, whereas the employer variant would need one per cluster.
+_STORED_SOC_COMPARISON_KEY = "occupation.i129_pay_comparison.v1.{slug}"
 _SOC_COMPARISON_CACHE_KEY = "i129_pay_comparison.soc.v1.{slug}"
 _SOC_COMPARISON_TTL = 60 * 60 * 24
 
@@ -166,22 +161,32 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
     """Three-way pay comparison for one occupation (matched over its SOC-6 set).
 
     Returns None when fewer than ``MIN_COMPARISON_N`` petitions match (thin cell
-    suppressed) — the view then hides the section entirely. Cached per occupation
-    (see the cache note above), though the cache is a floor rather than a guarantee.
+    suppressed) — the view then hides the section entirely.
 
-    The cached value is wrapped in a 1-tuple so a **suppressed** result — a
+    Both stores hold the value wrapped in a 1-tuple so a **suppressed** result — a
     legitimate ``None``, and the common case, since most occupations fall under
-    ``MIN_COMPARISON_N`` — is distinguishable from a cache miss. Storing a bare
-    ``None`` would leave exactly those occupations recomputing the most expensive
-    query on the page on every single request.
+    ``MIN_COMPARISON_N`` — is distinguishable from a miss. A bare ``None`` would
+    leave exactly those occupations recomputing the most expensive query on the page
+    on every single request.
     """
-    like_params = [prefix + "%" for prefix in occ.soc6]
-    if not like_params:
+    if not occ.soc6:
         return None
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(
+        _STORED_SOC_COMPARISON_KEY.format(slug=occ.slug)
+    )
+    if stored is not None:
+        return stored[0]
     key = _SOC_COMPARISON_CACHE_KEY.format(slug=occ.slug)
     cached = cache.get(key)
     if cached is not None:
         return cached[0]
+    comparison = _compute_soc_pay_comparison(occ)
+    cache.set(key, (comparison,), _SOC_COMPARISON_TTL)
+    return comparison
+
+
+def _compute_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
+    like_params = [prefix + "%" for prefix in occ.soc6]
     # An OR of plain ``LIKE`` predicates, NOT ``LIKE ANY(array)``: the planner
     # can turn ``soc_code LIKE 'prefix%%'`` into an index condition on the
     # existing ``worksite_record_soc_code_..._like`` index, but it cannot do that
@@ -192,18 +197,26 @@ def get_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
     # identical results. Non-selective occupations (software-engineer matches 140k
     # petitions) plan the same either way and are unchanged.
     soc_clause = " OR ".join(["w.soc_code LIKE %s"] * len(like_params))
-    comparison = _run_comparison(f"({soc_clause})", like_params)
-    cache.set(key, (comparison,), _SOC_COMPARISON_TTL)
-    return comparison
+    return _run_comparison(f"({soc_clause})", like_params)
 
 
-def soc_pay_comparison_cached(slug: str) -> bool:
-    """Whether this occupation's SOC comparison is cached, without computing it.
+def soc_pay_comparison_stored(slug: str) -> bool:
+    """Whether the warmer has stored this occupation's comparison, without computing it.
 
-    A suppressed result is a cached ``(None,)``, so this reports warm for it too —
+    A suppressed result is a stored ``(None,)``, so this reports stored for it too —
     which is correct: the page renders without the section and pays no query.
     """
-    return cache.get(_SOC_COMPARISON_CACHE_KEY.format(slug=slug)) is not None
+    key = _STORED_SOC_COMPARISON_KEY.format(slug=slug)
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(key) is not None
+
+
+def warm_soc_pay_comparison(occ: Occupation) -> PayComparison | None:
+    """Compute one occupation's comparison and store it. For warmers only."""
+    comparison = _compute_soc_pay_comparison(occ) if occ.soc6 else None
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(
+        _STORED_SOC_COMPARISON_KEY.format(slug=occ.slug), (comparison,)
+    )
+    return comparison
 
 
 def get_employer_pay_comparison(cluster) -> PayComparison | None:

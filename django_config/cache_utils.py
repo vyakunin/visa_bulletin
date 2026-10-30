@@ -7,7 +7,9 @@ human traffic.
 """
 
 import hashlib
+import pickle
 import re
+import zlib
 
 from django.core.cache import cache
 
@@ -70,7 +72,17 @@ def _make_cache_key(request) -> str:
     """
     url = request.get_full_path()
     url_hash = hashlib.md5(url.encode()).hexdigest()
-    return f"page_cache.{request.method}.{url_hash}"
+    return f"page_cache.zlib.{request.method}.{url_hash}"
+
+
+# Rendered pages average ~195 KB and compress 5.3-5.6x. Stored raw they filled
+# vb_redis's 1.5G, and allkeys-lru evicted entries within ~4h of a 24h TTL.
+def _compress_response(response) -> bytes:
+    return zlib.compress(pickle.dumps(response, pickle.HIGHEST_PROTOCOL))
+
+
+def _decompress_response(blob: bytes):
+    return pickle.loads(zlib.decompress(blob))
 
 
 def _cache_page(timeout, *, skip_bots: bool):
@@ -89,12 +101,12 @@ def _cache_page(timeout, *, skip_bots: bool):
             if skip_bots and is_bot_request(request):
                 return view_func(request, *args, **kwargs)
             key = _make_cache_key(request)
-            response = cache.get(key)
-            if response is not None:
-                return response
+            blob = cache.get(key)
+            if blob is not None:
+                return _decompress_response(blob)
             response = view_func(request, *args, **kwargs)
             if hasattr(response, "status_code") and response.status_code == 200:
-                cache.set(key, response, timeout)
+                cache.set(key, _compress_response(response), timeout)
             return response
 
         return _wrapped_view

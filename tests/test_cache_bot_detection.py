@@ -42,6 +42,7 @@ from django.test import (  # noqa: E402
 )
 
 from django_config.cache_utils import (  # noqa: E402
+    _make_cache_key,
     cache_page_skip_bots,
     is_bot_request,
 )
@@ -215,6 +216,41 @@ class SkipBotsCachingTest(SimpleTestCase):
         )
         self.assertEqual(len(calls), 4, "the human render must be served from cache")
         self.assertEqual(first.content, second.content)
+
+
+class PageCacheCompressionTest(SimpleTestCase):
+    """Rendered pages are stored compressed: raw, ~195 KB pages filled vb_redis's 1.5G
+    and allkeys-lru evicted them within ~4h of a 24h TTL (prod, 2026-10-30)."""
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_stored_page_is_compressed_and_replays_the_render(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        page = "<tr><td>Software Engineer</td><td>$150,000</td></tr>\n" * 2000
+        calls = []
+
+        def view(request):
+            calls.append(1)
+            response = HttpResponse(page, content_type="text/html; charset=utf-8")
+            response["X-Render"] = "1"
+            return response
+
+        cached = cache_page_skip_bots(60)(view)
+        factory = RequestFactory()
+        human = HUMANS["chrome-win"]
+        first = cached(factory.get("/employment-based/china/", HTTP_USER_AGENT=human))
+
+        stored = cache.get(_make_cache_key(factory.get("/employment-based/china/")))
+        self.assertIsInstance(stored, bytes)
+        self.assertLess(len(stored), len(first.content) / 5)
+
+        second = cached(factory.get("/employment-based/china/", HTTP_USER_AGENT=human))
+        self.assertEqual(len(calls), 1, "the second request must be served from cache")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.content, first.content)
+        self.assertEqual(second["Content-Type"], "text/html; charset=utf-8")
+        self.assertEqual(second["X-Render"], "1")
 
 
 class CacheWarmerUserAgentTest(SimpleTestCase):
