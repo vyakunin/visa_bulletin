@@ -53,6 +53,7 @@ django_py_test(
     name = "test_cache_bot_detection",
     size = "medium",
     srcs = ["test_cache_bot_detection.py"],
+    data = ["//scripts:warm_cache.sh"],
     deps = ["//django_config:cache_utils"],
 )
 

@@ -26,6 +26,9 @@ the other half of the guard: matching too broadly would push real visitors onto
 the permanently-uncached path, converting a cache problem into a slower one.
 """
 
+import re
+from pathlib import Path
+
 from tests.django_setup import setup_django_for_tests
 
 setup_django_for_tests()
@@ -212,3 +215,38 @@ class SkipBotsCachingTest(SimpleTestCase):
         )
         self.assertEqual(len(calls), 4, "the human render must be served from cache")
         self.assertEqual(first.content, second.content)
+
+
+class CacheWarmerUserAgentTest(SimpleTestCase):
+    """scripts/warm_cache.sh must reach the page cache it exists to fill.
+
+    With curl's default User-Agent every request was classed as a bot, so a
+    post-deploy warm rendered the pages and stored none of them (verified on
+    prod 2026-10-30: a default-UA GET left no key, a browser-UA GET wrote one).
+    """
+
+    _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "warm_cache.sh"
+
+    def _script(self) -> str:
+        return self._SCRIPT.read_text()
+
+    def test_warmer_user_agent_is_not_a_bot(self):
+        match = re.search(r"^WARM_USER_AGENT='([^']+)'$", self._script(), re.M)
+        self.assertIsNotNone(match, "warm_cache.sh no longer sets WARM_USER_AGENT")
+        request = RequestFactory().get("/", HTTP_USER_AGENT=match.group(1))
+        self.assertFalse(is_bot_request(request))
+
+    def test_every_curl_sends_the_warmer_user_agent(self):
+        curls = [
+            line
+            for line in self._script().splitlines()
+            if re.search(r"\bcurl -", line) and not line.lstrip().startswith("#")
+        ]
+        self.assertTrue(curls)
+        for line in curls:
+            with self.subTest(line=line.strip()):
+                self.assertIn('-A "$WARM_USER_AGENT"', line)
+
+    def test_default_curl_user_agent_is_a_bot(self):
+        request = RequestFactory().get("/", HTTP_USER_AGENT="curl/8.5.0")
+        self.assertTrue(is_bot_request(request))

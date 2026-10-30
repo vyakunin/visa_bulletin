@@ -58,6 +58,9 @@
 set -uo pipefail
 
 BASE="${BASE:-https://visa-bulletin.us}"
+# The page cache skips every request it classes as a bot (django_config.cache_utils),
+# curl's default User-Agent included, so a default-UA warm fills nothing.
+WARM_USER_AGENT='Mozilla/5.0 (X11; Linux x86_64) visa-bulletin-cache-warmer/1.0'
 
 for arg in "$@"; do
   case "$arg" in
@@ -72,7 +75,7 @@ for arg in "$@"; do
 done
 BASE="${BASE%/}"  # strip trailing slash
 
-HOME_HTML="$(curl -sS --max-time 60 "${BASE}/" 2>/dev/null)"
+HOME_HTML="$(curl -sS -A "$WARM_USER_AGENT" --max-time 60 "${BASE}/" 2>/dev/null)"
 # Word-month slugs only: the numeric /predictions/<YYYY-M>/ alias 301s, so curling it
 # warms nothing. Sorted by date, the last one is the upcoming forecast.
 mapfile -t PRED_URLS < <(grep -oE '/predictions/[a-z]+-[0-9]{4}/' <<<"$HOME_HTML" | sort -u \
@@ -119,7 +122,7 @@ fail=0
 for u in "${URLS[@]}"; do
   # -sS: quiet but show errors; no-cache header so the request reaches the origin
   # and warms Django's @cache_page Redis entry (not a stale CF edge copy).
-  read -r code t <<<"$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' \
+  read -r code t <<<"$(curl -sS -A "$WARM_USER_AGENT" -o /dev/null -w '%{http_code} %{time_total}' \
     --max-time 60 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
     "${BASE}${u}" 2>/dev/null || echo 'ERR -')"
   printf '%-48s %6s %9s\n' "$u" "$code" "$t"
