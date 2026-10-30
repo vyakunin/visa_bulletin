@@ -410,7 +410,7 @@ def build_sitemap_xml(base_url: str) -> str:
             priority="0.5",
         ))
 
-    # {occupation} salary pages (hub + per-occupation). Cached qualifying-slug set
+    # {occupation} salary pages (hub + per-occupation). Stored qualifying-slug set
     # (shared with the view's 404-gate) so we never list a thin page that 404s.
     xml_parts.extend(_url_entry(
         f"{base_url}/h1b-salary/",

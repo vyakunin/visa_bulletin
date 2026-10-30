@@ -22,6 +22,8 @@ from lib.business.i129.pay_comparison import (
     MIN_COMPARISON_N,
     get_employer_pay_comparison,
     get_soc_pay_comparison,
+    soc_pay_comparison_stored,
+    warm_soc_pay_comparison,
 )
 
 # The SQL-correctness tests below all query the SAME occupation slug against
@@ -33,6 +35,12 @@ _NO_CACHE = override_settings(
 _LOCMEM_CACHE = override_settings(
     CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}}
 )
+
+
+def _non_store_queries(captured) -> list[str]:
+    """Captured queries that touch anything but the `aggregates` store."""
+    table = settings.CACHES[settings.AGGREGATES_CACHE_ALIAS]["LOCATION"]
+    return [q["sql"] for q in captured.captured_queries if table not in q["sql"]]
 from lib.business.salary.soc_occupations import Occupation
 from models.enums.case_status import CaseStatus
 from models.enums.visa_program import VisaProgram
@@ -178,8 +186,9 @@ class TestSocComparisonResultCache(TestCase):
 
         first = get_soc_pay_comparison(_OCC)
         assert first is not None and first.n == 60
-        with self.assertNumQueries(0):
+        with CaptureQueriesContext(connection) as captured:
             again = get_soc_pay_comparison(_OCC)
+        assert _non_store_queries(captured) == []
         assert again == first
 
     def test_suppressed_result_is_cached_not_recomputed(self):
@@ -191,8 +200,33 @@ class TestSocComparisonResultCache(TestCase):
             _pair(f"THIN-{i}", actual=110000, lca=100000)
 
         assert get_soc_pay_comparison(_OCC) is None
-        with self.assertNumQueries(0):
+        with CaptureQueriesContext(connection) as captured:
             assert get_soc_pay_comparison(_OCC) is None
+        assert _non_store_queries(captured) == []
+
+
+@_NO_CACHE
+class TestStoredSocComparison(TestCase):
+    """The warmer's stored comparison serves a request with Redis empty."""
+
+    def test_stored_comparison_is_served_without_the_aggregate(self):
+        for i in range(60):
+            _pair(f"CASE-{i}", actual=110000, lca=100000)
+        stored = warm_soc_pay_comparison(_OCC)
+        assert stored is not None and stored.n == 60
+        with CaptureQueriesContext(connection) as captured:
+            assert get_soc_pay_comparison(_OCC) == stored
+        assert _non_store_queries(captured) == []
+
+    def test_stored_suppressed_result_is_served_without_the_aggregate(self):
+        for i in range(MIN_COMPARISON_N - 1):
+            _pair(f"THIN-{i}", actual=110000, lca=100000)
+        assert not soc_pay_comparison_stored(_OCC.slug)
+        assert warm_soc_pay_comparison(_OCC) is None
+        assert soc_pay_comparison_stored(_OCC.slug)
+        with CaptureQueriesContext(connection) as captured:
+            assert get_soc_pay_comparison(_OCC) is None
+        assert _non_store_queries(captured) == []
 
 
 @_NO_CACHE

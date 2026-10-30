@@ -17,7 +17,8 @@ queryset is not program-filtered; callers narrow with ``apply_program_filter``.
 
 from dataclasses import dataclass, field
 
-from django.core.cache import cache
+from django.conf import settings
+from django.core.cache import cache, caches
 from django.db.models import Avg, Count
 
 from lib.business.salary.common_stats import (
@@ -48,22 +49,17 @@ TOP_TITLES = 12
 # `sr_soc_code_pattern` index (migration 0058). Only software-engineer (28% of the
 # 1.66M-row / 1.24 GB table) and systems-analyst (5.8%) are broad enough that
 # PostgreSQL correctly prefers a Parallel Seq Scan; the other 39 occupations match
-# under 5% and index-scan. One page needs nine of these aggregates, so on the two
-# broad occupations that is still nine seq scans (~490ms each, measured 2026-08-18).
+# under 5% and index-scan. A cold page runs nine of these aggregates and took 65-209s
+# under load on 2026-10-29, long enough to starve the gunicorn workers into 504s.
 #
-# This matters because `/h1b-salary/` is served by `cache_page_skip_bots`: crawler
-# traffic bypasses the rendered-page cache by design and pays the aggregates on
-# every hit.
-#
-# The results are cached per occupation, but treat that as a latency floor rather
-# than a guarantee. vb_redis runs allkeys-lru over ~65k keys (salary_search,
-# job_title_*, employer_page_*), and these 41 read-rarely entries are among the
-# first evicted: measured 2026-08-18 at 08:22 UTC, 34 of 41 were absent five hours
-# after the nightly warm, and the seven present had all been written minutes
-# earlier by crawler cold-fills. So the uncached cost is what a crawler actually
-# pays, which is why it has to be affordable rather than merely cached.
-#
-# The refresh pipeline's cache.clear() on each ingest refreshes all of them.
+# `/h1b-salary/` is served by `cache_page_skip_bots`, so crawler traffic never reads
+# the rendered-page cache. A request therefore reads the page's aggregates from the
+# `aggregates` store, which scripts.salary.warm_occupations writes daily and which
+# nothing evicts. The Redis entries below serve only an occupation the store lacks
+# (a stack the warmer has not run on yet), and vb_redis evicts them within hours.
+_STORED_PAGE_KEY = "occupation.page.v1.{slug}"
+_STORED_QUALIFYING_SLUGS_KEY = "occupation.qualifying_slugs.v1"
+
 _QUALIFYING_SLUGS_CACHE_KEY = "occupation_salary.qualifying_slugs.v1"
 _FILING_COUNT_CACHE_KEY = "occupation_salary.filing_count.v1.{slug}"
 _STATS_CACHE_KEY = "occupation_salary.stats.v1.{slug}"
@@ -90,6 +86,18 @@ class OccupationStats:
     yoy: list[dict] = field(default_factory=list)
 
 
+@dataclass
+class StoredOccupationPage:
+    """What one occupation page reads, as the warmer stores it."""
+
+    filing_count: int
+    stats: OccupationStats | None  # None for a thin occupation, which 404s
+
+
+def _stored_page(slug: str) -> StoredOccupationPage | None:
+    return caches[settings.AGGREGATES_CACHE_ALIAS].get(_STORED_PAGE_KEY.format(slug=slug))
+
+
 def occupation_base_qs(occ: Occupation):
     """Salaried, real-employer records for one occupation (both H-1B and PERM).
 
@@ -108,13 +116,10 @@ def occupation_base_qs(occ: Occupation):
 
 
 def occupation_filing_count(occ: Occupation) -> int:
-    """Total qualifying filings for the occupation — the 404-gate input.
-
-    Index-scanned for all but the two broadest occupations (see the note above),
-    and cached per occupation. ``qualifying_occupation_slugs`` reads through the
-    same entries, so a page view and the sitemap warm each other rather than each
-    paying their own scan.
-    """
+    """Total qualifying filings for the occupation — the 404-gate input."""
+    stored = _stored_page(occ.slug)
+    if stored is not None:
+        return stored.filing_count
     key = _FILING_COUNT_CACHE_KEY.format(slug=occ.slug)
     cached = cache.get(key)
     if cached is not None:
@@ -175,22 +180,21 @@ def _top_titles(qs, limit: int = TOP_TITLES) -> list[dict]:
     )
 
 
-def get_occupation_stats(occ: Occupation, years: int = RECENT_YEARS) -> OccupationStats:
-    """Full statistics for the occupation page. Assumes the gate already passed.
-
-    Cached per (occupation, years) — eight aggregates over the same rows, and the
-    page's crawler traffic never reads the rendered-page cache.
-    """
-    key = f"{_STATS_CACHE_KEY.format(slug=occ.slug)}.{years}"
+def get_occupation_stats(occ: Occupation) -> OccupationStats:
+    """Full statistics for the occupation page. Assumes the gate already passed."""
+    stored = _stored_page(occ.slug)
+    if stored is not None and stored.stats is not None:
+        return stored.stats
+    key = _STATS_CACHE_KEY.format(slug=occ.slug)
     cached = cache.get(key)
     if cached is not None:
         return cached
-    stats = _compute_occupation_stats(occ, years)
+    stats = _compute_occupation_stats(occ)
     cache.set(key, stats, _OCCUPATION_CACHE_TTL)
     return stats
 
 
-def _compute_occupation_stats(occ: Occupation, years: int) -> OccupationStats:
+def _compute_occupation_stats(occ: Occupation) -> OccupationStats:
     """Run every occupation aggregate against the database. Uncached."""
     from datetime import datetime
 
@@ -198,7 +202,7 @@ def _compute_occupation_stats(occ: Occupation, years: int) -> OccupationStats:
     basic = qs.aggregate(total=Count("id"), avg=Avg("wage_annual"))
     total = basic["total"] or 0
 
-    start_year = datetime.now().year - years
+    start_year = datetime.now().year - RECENT_YEARS
     recent_qs = qs.filter(fiscal_year__gte=start_year)
 
     return OccupationStats(
@@ -217,9 +221,11 @@ def _compute_occupation_stats(occ: Occupation, years: int) -> OccupationStats:
 def qualifying_occupation_slugs() -> list[str]:
     """Occupation slugs whose page qualifies (>= MIN_OCCUPATION_FILINGS).
 
-    Cached — the per-occupation counts are GROUP-BY aggregates over the corpus.
     Used by the sitemap so it never emits a URL that will 404.
     """
+    stored = caches[settings.AGGREGATES_CACHE_ALIAS].get(_STORED_QUALIFYING_SLUGS_KEY)
+    if stored is not None:
+        return stored
     cached = cache.get(_QUALIFYING_SLUGS_CACHE_KEY)
     if cached is not None:
         return cached
@@ -232,14 +238,20 @@ def qualifying_occupation_slugs() -> list[str]:
     return slugs
 
 
-def occupation_stats_cached(slug: str, years: int = RECENT_YEARS) -> bool:
-    """Whether this occupation's stats are already cached, without computing them.
+def occupation_page_stored(slug: str) -> bool:
+    """Whether the warmer has stored this occupation's page, without computing it."""
+    return _stored_page(slug) is not None
 
-    Lets a warmer report coldness. Reading it through ``get_occupation_stats`` would
-    fill the entry as a side effect, which is the opposite of a check.
 
-    ``years`` is part of the key, so it must match what the page asks for — the
-    default is the same ``RECENT_YEARS`` the view uses.
-    """
-    key = f"{_STATS_CACHE_KEY.format(slug=slug)}.{years}"
-    return cache.get(key) is not None
+def warm_occupation_page(occ: Occupation) -> StoredOccupationPage:
+    """Compute one occupation's page aggregates and store them. For warmers only."""
+    filing_count = occupation_base_qs(occ).count()
+    stats = _compute_occupation_stats(occ) if occupation_qualifies(filing_count) else None
+    page = StoredOccupationPage(filing_count=filing_count, stats=stats)
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_STORED_PAGE_KEY.format(slug=occ.slug), page)
+    return page
+
+
+def store_qualifying_occupation_slugs(slugs: list[str]) -> None:
+    """Store the sitemap's occupation set. For warmers only."""
+    caches[settings.AGGREGATES_CACHE_ALIAS].set(_STORED_QUALIFYING_SLUGS_KEY, slugs)

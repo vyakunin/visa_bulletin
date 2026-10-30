@@ -1,44 +1,35 @@
 #!/usr/bin/env python3
-"""Fill the per-occupation caches the /h1b-salary/<occupation>/ pages read, then
-assert the pages actually render fast.
+"""Store the aggregates the /h1b-salary/<occupation>/ pages read, then assert the
+pages actually render fast.
 
 Each occupation page runs nine aggregates over salary_record plus the I-129
-matched-triple aggregate. `occupation_stats` caches the results per occupation but
-fills them ON THE FIRST MISS, so an uncached request pays the whole cost. That
-request is almost always a crawler: the view is `cache_page_skip_bots`, so bot
-traffic bypasses the rendered-page cache by design and can never be warmed by it.
+matched-triple aggregate. This script computes them for every occupation and writes
+them to the `aggregates` store (Postgres), which a request reads first and nothing
+evicts. The view is `cache_page_skip_bots`, so crawler traffic, nearly all of this
+surface's hits, can never be served from the rendered-page cache.
 
-WHY THIS SCRIPT MEASURES THE PAGE, NOT THE CACHE KEY
-Warming alone is not a guarantee and reporting on it is not a check. vb_redis runs
-allkeys-lru over a ~65k-key space (salary_search, job_title_*, employer_page_*), so
-these 41 read-rarely entries are among the first evicted. Measured on prod
-2026-08-18: five hours after the nightly warm, 34 of 41 stats entries were gone and
-the seven present had all been written minutes earlier by crawler cold-fills.
-Through all of that this script logged "warmed 41 occupations in 0.2s — 0 were cold
-fills", which was true about the keys and false about what a visitor waited for —
-pages were still rendering 5-13s on prod. So the pass condition here is the RENDERED
-PAGE's latency, which is the thing anyone actually cares about; the cache fill is
-just an optimisation performed on the way.
+WHY THIS SCRIPT MEASURES THE PAGE, NOT THE STORED ROW
+A stored row is not proof that a crawler gets a fast page: when the aggregates lived
+in Redis, this script logged "0 cold fills" for weeks while pages rendered 5-13s,
+because allkeys-lru evicted the keys hours after the warm. So the pass condition is
+the RENDERED PAGE's latency.
 
 The probe sends a crawler User-Agent on purpose: that is the path with no
 rendered-page cache in front of it, and it is nearly all of this surface's traffic.
 It therefore measures the real worst case rather than a cache hit.
 
 RUN IT:
-  * after anything that empties the cache — a deploy's `redis-cli -n 1 FLUSHDB`
-    (.claude/rules/deployment.md), the refresh pipeline's cache.clear(), a data load;
-  * daily, ahead of the crawl window, so the TTL never expires into a crawler.
+  * after anything that changes salary or I-129 data — a data load, a graduation;
+  * daily, ahead of the crawl window, so the stored pages track the data and the
+    year window.
 
-Read-only against the database (the probe issues GETs). Run it INSIDE the app
-container, which is where the cache the site reads actually lives:
+Writes only the `aggregates` store. Run it INSIDE the app container:
 
     docker exec -w /app vb_web python3 -m scripts.salary.warm_occupations
     bazel run //scripts/salary:warm_occupations -- [--check]
 
---check probes the pages without warming the expensive per-occupation aggregates, so
-it measures the surface as a crawler finds it rather than one this run just made
-fast. It does resolve which occupations are published, which fills the cheap
-filing-count entries if they are cold; nothing else is written.
+--check probes the pages without storing anything, so it measures the surface as a
+crawler finds it rather than one this run just made fast.
 
 Exit status is the check: 0 when every page renders under --max-render-ms, 1 when
 any page is slower (or unreachable), so cron surfaces a regression instead of
@@ -59,15 +50,15 @@ django.setup()
 
 from django_config.logging_config import setup_logging  # noqa: E402
 from lib.business.i129.pay_comparison import (  # noqa: E402
-    get_soc_pay_comparison,
-    soc_pay_comparison_cached,
+    soc_pay_comparison_stored,
+    warm_soc_pay_comparison,
 )
 from lib.business.salary.occupation_stats import (  # noqa: E402
-    get_occupation_stats,
-    occupation_filing_count,
+    occupation_page_stored,
     occupation_qualifies,
-    occupation_stats_cached,
     qualifying_occupation_slugs,
+    store_qualifying_occupation_slugs,
+    warm_occupation_page,
 )
 from lib.business.salary.soc_occupations import OCCUPATIONS  # noqa: E402
 
@@ -95,25 +86,22 @@ DEFAULT_MAX_RENDER_MS = 1500
 PROBE_TIMEOUT_S = 30
 
 
-def _is_warm(slug: str) -> bool:
-    """Whether the two per-occupation entries a page render needs are both present.
-
-    The filing count alone is not enough — it is the cheap 404 gate, while the stats
-    and the SOC comparison are what cost seconds.
-    """
-    return occupation_stats_cached(slug) and soc_pay_comparison_cached(slug)
+def _is_stored(slug: str) -> bool:
+    """Whether both stored entries a page render reads are present."""
+    return occupation_page_stored(slug) and soc_pay_comparison_stored(slug)
 
 
-def _warm_one(occ) -> float:
-    """Fill every cached value one occupation page reads. Returns seconds taken."""
-    started = time.perf_counter()
-    filing_count = occupation_filing_count(occ)
-    if occupation_qualifies(filing_count):
-        # A thin occupation 404s, so its stats are never rendered and warming them
-        # would pay nine aggregates for a page nobody can reach.
-        get_occupation_stats(occ)
-        get_soc_pay_comparison(occ)
-    return time.perf_counter() - started
+def _warm_all() -> list[str]:
+    """Store every occupation's page aggregates. Returns the qualifying slugs."""
+    slugs = []
+    for occ in OCCUPATIONS:
+        page = warm_occupation_page(occ)
+        if occupation_qualifies(page.filing_count):
+            # A thin occupation 404s, so its comparison is never rendered.
+            warm_soc_pay_comparison(occ)
+            slugs.append(occ.slug)
+    store_qualifying_occupation_slugs(slugs)
+    return slugs
 
 
 def _probe_page(base_url: str, slug: str) -> tuple[int | None, float]:
@@ -190,7 +178,7 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="probe the pages without warming the aggregates (see --help notes)",
+        help="probe the pages without storing anything (see --help notes)",
     )
     parser.add_argument(
         "--base-url",
@@ -211,40 +199,26 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.check:
-        # Report coldness for context, but the verdict is the page latency: a
-        # fully-warm cache proves nothing about what a crawler waits for, which is
-        # exactly the false all-clear this script used to emit.
-        cold = [o.slug for o in OCCUPATIONS if not _is_warm(o.slug)]
-        if cold:
+        # Report what is missing for context, but the verdict is the page latency.
+        missing = [o.slug for o in OCCUPATIONS if not _is_stored(o.slug)]
+        if missing:
             logger.warning(
-                "%d/%d occupations have no cached aggregates: %s",
-                len(cold),
+                "%d/%d occupations have no stored aggregates: %s",
+                len(missing),
                 len(OCCUPATIONS),
-                ", ".join(cold),
+                ", ".join(missing),
             )
         return _probe_all(
             args.base_url, list(qualifying_occupation_slugs()), args.max_render_ms
         )
 
-    # Coldness measured BEFORE filling anything. The old report inferred it from how
-    # long the fill took, so a cache that had been refilled by crawlers paying 6s
-    # each read back as "0 cold fills" — a healthy-looking line describing the exact
-    # failure it was meant to detect.
-    cold_before = [o.slug for o in OCCUPATIONS if not _is_warm(o.slug)]
-
     started = time.perf_counter()
-    # Fill the qualifying-slug set first: it reads through the same per-occupation
-    # filing-count entries, so the sitemap and the pages warm each other.
-    slugs = list(qualifying_occupation_slugs())
-    for occ in OCCUPATIONS:
-        _warm_one(occ)
-
+    slugs = _warm_all()
     logger.info(
-        "warmed %d occupations in %.1fs — %d were cold beforehand%s",
+        "stored %d occupations (%d published) in %.1fs",
         len(OCCUPATIONS),
+        len(slugs),
         time.perf_counter() - started,
-        len(cold_before),
-        (": " + ", ".join(cold_before)) if cold_before else "",
     )
 
     if args.skip_probe:
