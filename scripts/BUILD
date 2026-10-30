@@ -10,6 +10,8 @@ exports_files([
     # Read by //tests:test_bulletin_sync_alerting — the bridge is the only bulletin
     # ingest path, so its alerting + state-file contract is guarded statically.
     "sync_bulletin_to_prod.sh",
+    # Read by //tests:test_cache_bot_detection — its User-Agent must reach the page cache.
+    "warm_cache.sh",
 ])
 
 # Every top-level PEP-723 script, read as data by //tests:test_mcp_pin_guard. It is a
