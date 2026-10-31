@@ -9,7 +9,7 @@ Production is a single Docker Compose stack at `/opt/stack/visa_bulletin/` on th
 | Container | Purpose | Image / Notes |
 |---|---|---|
 | `vb_postgres` | PostgreSQL 14, DB on `./postgres-data/` | `postgres:14` |
-| `vb_redis` | Page cache (zlib-compressed entries), Django sessions | `redis:7-alpine`, 1.5 GB maxmemory allkeys-lru |
+| `vb_redis` | Page cache (zlib-compressed entries), Django sessions | `redis:7-alpine`, 3 GB maxmemory allkeys-lru |
 | `vb_web` | Django + gunicorn 23 (3 workers × 2 threads) | `ghcr.io/vyakunin/visa_bulletin:${IMAGE_TAG}` |
 | `vb_nginx` | Static file serving + reverse-proxy to web | `nginx:1.27-alpine`, listens on internal `:80` |
 | `vb_cloudflared` | Cloudflare Tunnel connector (QUIC to CF edge) | `cloudflare/cloudflared:latest` |
