@@ -59,7 +59,9 @@ set -uo pipefail
 
 BASE="${BASE:-https://visa-bulletin.us}"
 # The page cache skips every request it classes as a bot (django_config.cache_utils),
-# curl's default User-Agent included, so a default-UA warm fills nothing.
+# curl's default User-Agent included, so a default-UA warm fills nothing. The
+# visa-bulletin-cache-warmer/ token (CACHE_WARMER_UA_TOKEN) makes the page cache
+# store on this single request instead of waiting for a second miss.
 WARM_USER_AGENT='Mozilla/5.0 (X11; Linux x86_64) visa-bulletin-cache-warmer/1.0'
 
 for arg in "$@"; do

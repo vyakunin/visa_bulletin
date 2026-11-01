@@ -64,15 +64,53 @@ def is_bot_request(request) -> bool:
     return bool(_BOT_RE.search(ua))
 
 
+def _url_hash(request) -> str:
+    return hashlib.md5(request.get_full_path().encode()).hexdigest()
+
+
 def _make_cache_key(request) -> str:
     """Build a cache key from the full URL path + query string.
 
     Does not depend on Django's UpdateCacheMiddleware or Vary headers.
     Uses MD5 hash to keep keys short and avoid special characters.
     """
-    url = request.get_full_path()
-    url_hash = hashlib.md5(url.encode()).hexdigest()
-    return f"page_cache.zlib.{request.method}.{url_hash}"
+    return f"page_cache.zlib.{request.method}.{_url_hash(request)}"
+
+
+def _make_seen_key(request) -> str:
+    return f"page_cache.seen.{request.method}.{_url_hash(request)}"
+
+
+# scripts/warm_cache.sh sends this in its User-Agent; a warm request stores on its
+# first render, since the warmer requests each page once.
+CACHE_WARMER_UA_TOKEN = "visa-bulletin-cache-warmer/"
+
+
+def is_cache_warmer_request(request) -> bool:
+    return CACHE_WARMER_UA_TOKEN in (request.META.get("HTTP_USER_AGENT") or "")
+
+
+def _admit(request, timeout) -> bool:
+    """Count this miss; True once the URL has missed PAGE_CACHE_ADMIT_AFTER times.
+
+    Measured on prod 2026-11-01 over 8.5h: 25.6k distinct cacheable URLs from
+    26.2k requests, 85% of them a scraper walking /employers/ pagination. Storing
+    from the 2nd request left 113 entries and kept 79% of the cache hits.
+    """
+    from django.conf import settings
+
+    admit_after = settings.PAGE_CACHE_ADMIT_AFTER
+    if admit_after <= 1 or is_cache_warmer_request(request):
+        return True
+    seen_key = _make_seen_key(request)
+    if cache.add(seen_key, 1, timeout):
+        return False
+    try:
+        seen = cache.incr(seen_key)
+    except ValueError:  # the counter expired between add() and incr()
+        cache.add(seen_key, 1, timeout)
+        return False
+    return seen >= admit_after
 
 
 # Rendered pages average ~195 KB and compress 5.3-5.6x. Stored raw they filled
@@ -105,8 +143,14 @@ def _cache_page(timeout, *, skip_bots: bool):
             if blob is not None:
                 return _decompress_response(blob)
             response = view_func(request, *args, **kwargs)
-            if hasattr(response, "status_code") and response.status_code == 200:
+            if getattr(response, "status_code", None) != 200:
+                return response
+            # An all-agents view is one fixed path; only an open URL space needs
+            # the admission threshold.
+            if not skip_bots or _admit(request, timeout):
                 cache.set(key, _compress_response(response), timeout)
+                if skip_bots:
+                    cache.delete(_make_seen_key(request))
             return response
 
         return _wrapped_view
@@ -118,7 +162,9 @@ def cache_page_skip_bots(timeout):
     """Like @cache_page(timeout) but skip cache get/set for bot User-Agents.
 
     Bot requests always hit the view and never read or write cache, so they
-    don't evict human cache entries when using LRU eviction.
+    don't evict human cache entries when using LRU eviction. A page is stored
+    only on its PAGE_CACHE_ADMIT_AFTER-th miss within `timeout`, so a
+    browser-UA scraper walking distinct URLs writes counters, not pages.
 
     Use this for views with a LARGE, OPEN URL SPACE — employer/job-title
     profiles, faceted salary search — where a crawler walking thousands of

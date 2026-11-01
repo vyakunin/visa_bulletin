@@ -147,6 +147,8 @@ ROOT_URLCONF = "django_config.urls"
 # Caching configuration
 # Cache is for production (multi-worker, Redis). Use Redis when REDIS_URL is set; otherwise LocMem only so Django doesn't require Redis (e.g. tests, one-off scripts that don't need cache).
 CACHE_TIMEOUT = 60 * 60 * 24  # 24 hours
+# The page cache stores a page on its Nth miss within CACHE_TIMEOUT (django_config.cache_utils).
+PAGE_CACHE_ADMIT_AFTER = int(os.environ.get("PAGE_CACHE_ADMIT_AFTER", "2"))
 REDIS_URL = os.environ.get("REDIS_URL", "")
 if REDIS_URL:
     CACHES = {
