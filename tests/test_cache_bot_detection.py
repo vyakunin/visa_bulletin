@@ -42,7 +42,10 @@ from django.test import (  # noqa: E402
 )
 
 from django_config.cache_utils import (  # noqa: E402
+    CACHE_WARMER_UA_TOKEN,
     _make_cache_key,
+    _make_seen_key,
+    cache_page_all_agents,
     cache_page_skip_bots,
     is_bot_request,
 )
@@ -206,16 +209,21 @@ class SkipBotsCachingTest(SimpleTestCase):
             cached(self.factory.get("/employer/x/", HTTP_USER_AGENT=ua))
         self.assertEqual(len(calls), 3, "crawler requests must always hit the view")
 
-        # The human arriving after the crawler still faces a cold cache — proof
-        # nothing the crawler rendered was stored under the human's key either.
+        # The crawler's three requests did not count towards admission either:
+        # the first human miss is a first miss, so it renders and stores nothing.
         human = self.factory.get("/employer/x/", HTTP_USER_AGENT=HUMANS["chrome-win"])
-        first = cached(human)
+        cached(human)
         self.assertEqual(len(calls), 4)
+        self.assertIsNone(cache.get(_make_cache_key(human)))
         second = cached(
             self.factory.get("/employer/x/", HTTP_USER_AGENT=HUMANS["chrome-mac"])
         )
-        self.assertEqual(len(calls), 4, "the human render must be served from cache")
-        self.assertEqual(first.content, second.content)
+        self.assertEqual(len(calls), 5)
+        third = cached(
+            self.factory.get("/employer/x/", HTTP_USER_AGENT=HUMANS["chrome-win"])
+        )
+        self.assertEqual(len(calls), 5, "the human render must be served from cache")
+        self.assertEqual(second.content, third.content)
 
 
 class PageCacheCompressionTest(SimpleTestCase):
@@ -239,6 +247,7 @@ class PageCacheCompressionTest(SimpleTestCase):
         cached = cache_page_skip_bots(60)(view)
         factory = RequestFactory()
         human = HUMANS["chrome-win"]
+        cached(factory.get("/employment-based/china/", HTTP_USER_AGENT=human))
         first = cached(factory.get("/employment-based/china/", HTTP_USER_AGENT=human))
 
         stored = cache.get(_make_cache_key(factory.get("/employment-based/china/")))
@@ -246,7 +255,7 @@ class PageCacheCompressionTest(SimpleTestCase):
         self.assertLess(len(stored), len(first.content) / 5)
 
         second = cached(factory.get("/employment-based/china/", HTTP_USER_AGENT=human))
-        self.assertEqual(len(calls), 1, "the second request must be served from cache")
+        self.assertEqual(len(calls), 2, "the third request must be served from cache")
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.content, first.content)
         self.assertEqual(second["Content-Type"], "text/html; charset=utf-8")
@@ -283,6 +292,109 @@ class CacheWarmerUserAgentTest(SimpleTestCase):
             with self.subTest(line=line.strip()):
                 self.assertIn('-A "$WARM_USER_AGENT"', line)
 
+    def test_warmer_user_agent_carries_the_admission_token(self):
+        match = re.search(r"^WARM_USER_AGENT='([^']+)'$", self._script(), re.M)
+        self.assertIn(CACHE_WARMER_UA_TOKEN, match.group(1))
+
     def test_default_curl_user_agent_is_a_bot(self):
         request = RequestFactory().get("/", HTTP_USER_AGENT="curl/8.5.0")
         self.assertTrue(is_bot_request(request))
+
+
+class PageCacheAdmissionTest(SimpleTestCase):
+    """A page is stored on its 2nd miss, not its 1st.
+
+    Prod 2026-11-01, 8.5h of origin traffic: 25.6k distinct cacheable URLs from
+    26.2k non-bot requests, 85% of them a browser-UA scraper walking /employers/
+    pagination, so nearly every stored page was never read again and the cache
+    sat full of them in swap.
+    """
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _get(self, path, ua=HUMANS["chrome-win"]):
+        return self.factory.get(path, HTTP_USER_AGENT=ua)
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_a_url_requested_once_stores_no_page(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cache_page_skip_bots(60)(view)(self._get("/employers/?page=7&cursor=abc"))
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(cache.get(_make_cache_key(self._get("/employers/?page=7&cursor=abc"))))
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_the_second_miss_stores_and_clears_the_counter(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cached = cache_page_skip_bots(60)(view)
+        cached(self._get("/employer/acme/"))
+        cached(self._get("/employer/acme/"))
+        cached(self._get("/employer/acme/"))
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(cache.get(_make_seen_key(self._get("/employer/acme/"))))
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_the_cache_warmer_stores_on_its_single_request(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cached = cache_page_skip_bots(60)(view)
+        warmer = "Mozilla/5.0 (X11; Linux x86_64) visa-bulletin-cache-warmer/1.0"
+        cached(self._get("/salaries/", ua=warmer))
+        cached(self._get("/salaries/"))
+        self.assertEqual(len(calls), 1)
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_a_plain_linux_browser_is_not_the_warmer(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cached = cache_page_skip_bots(60)(view)
+        cached(self._get("/salaries/", ua=HUMANS["firefox"]))
+        cached(self._get("/salaries/"))
+        self.assertEqual(len(calls), 2)
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM}, PAGE_CACHE_ADMIT_AFTER=1)
+    def test_admit_after_one_stores_on_the_first_miss(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cached = cache_page_skip_bots(60)(view)
+        cached(self._get("/employer/acme/"))
+        cached(self._get("/employer/acme/"))
+        self.assertEqual(len(calls), 1)
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_a_non_200_miss_does_not_count(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        statuses = [404, 200, 200]
+
+        def view(request):
+            return HttpResponse("x", status=statuses.pop(0))
+
+        cached = cache_page_skip_bots(60)(view)
+        cached(self._get("/employer/gone/"))
+        cached(self._get("/employer/gone/"))
+        self.assertIsNone(cache.get(_make_cache_key(self._get("/employer/gone/"))))
+
+    @override_settings(CACHES={**settings.CACHES, **LOCMEM})
+    def test_an_all_agents_view_stores_on_the_first_miss(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        view, calls = _counting_view()
+        cached = cache_page_all_agents(60)(view)
+        cached(self._get("/sitemap.xml", ua=CRAWLERS_ALREADY_COVERED["Googlebot"]))
+        cached(self._get("/sitemap.xml", ua=CRAWLERS_ALREADY_COVERED["bingbot"]))
+        self.assertEqual(len(calls), 1)

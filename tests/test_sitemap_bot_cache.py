@@ -121,8 +121,9 @@ class SitemapBotCacheTest(SimpleTestCase):
 
         self._get(cached, HUMAN)
         self._get(cached, HUMAN)
+        self._get(cached, HUMAN)
 
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2, "stored on the 2nd miss, served on the 3rd")
 
     def test_seo_views_use_the_bot_caching_decorator(self):
         """Pin the wiring, so a future edit can't silently revert the fix."""
