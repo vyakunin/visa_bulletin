@@ -244,12 +244,17 @@ class SalarySearchSEOTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.context["page_title"],
-            "H-1B & PERM Salary Database — 1.5M+ Real DOL Filings",
+            "H-1B & PERM Salary Database — 10M+ Real DOL Filings",
         )
         # Title must stay short enough to avoid SERP truncation (~60 chars).
         self.assertLessEqual(len(response.context["page_title"]), 60)
         # Bare landing still emits no intro paragraph.
         self.assertIsNone(response.context["page_intro"])
+
+    def test_bare_landing_states_the_current_corpus_size(self):
+        # The corpus passed 10M rows when the full LCA history was loaded; "1.5M+" undersold it 7x.
+        body = self.client.get(reverse("salary_search")).content.decode()
+        self.assertNotIn("1.5M", body)
 
     def test_bare_landing_emits_corpus_dataset_jsonld(self):
         # Regression: the bare /salaries/ landing ranks for "h1b salary

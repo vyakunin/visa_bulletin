@@ -44,12 +44,17 @@ def _money(value) -> str | None:
     return f"${value:,.0f}" if value else None
 
 
+def filings_through_label(fy: int | None) -> str | None:
+    """Label for an H-1B count that spans every fiscal year on file, ending at ``fy``."""
+    return f"through FY{fy}" if fy else None
+
+
 def _faq(title: str, filings: int, sponsors: int, top_rows: list[dict],
          median: str | None, p25: str | None, p75: str | None,
          top_states: list[dict], fy: int | None) -> list[dict]:
     top_names = [r["employer__canonical_cluster__canonical_name"] for r in top_rows[:3]]
     top_names_str = ", ".join(top_names) if top_names else "a range of employers"
-    fy_str = f"FY{fy}" if fy else "recent fiscal years"
+    fy_str = filings_through_label(fy) or "recent fiscal years"
 
     pay_a = (
         f"The median H-1B offered wage for {title} roles is {median}."
@@ -161,7 +166,7 @@ def h1b_sponsors_landing_view(request, slug: str):
         for s in top_states
     ]
 
-    fy_str = f"FY{fy}" if fy else None
+    fy_str = filings_through_label(fy)
     page_heading = f"Top H-1B Sponsors for {title}"
     # <title> ≤60 chars: append the FY suffix only when it still fits.
     title_with_fy = f"{page_heading} ({fy_str})" if fy_str else page_heading
@@ -228,7 +233,7 @@ def _state_faq(state_name: str, filings: int, sponsors: int,
     top_names_str = ", ".join(top_names) if top_names else "a range of employers"
     pay_names = [r["employer__canonical_cluster__canonical_name"] for r in paying_rows[:3]]
     pay_names_str = ", ".join(pay_names) if pay_names else "a range of employers"
-    fy_str = f"FY{fy}" if fy else "recent fiscal years"
+    fy_str = filings_through_label(fy) or "recent fiscal years"
 
     pay_a = (
         f"The median H-1B offered wage in {state_name} is {median}."
@@ -332,7 +337,7 @@ def h1b_sponsors_state_view(request, state: str):
         for r in role_rows
     ]
 
-    fy_str = f"FY{fy}" if fy else None
+    fy_str = filings_through_label(fy)
     page_heading = f"Top H-1B Sponsors in {state_name}"
     # <title> ≤60 chars: append the FY suffix only when it still fits.
     title_with_fy = f"{page_heading} ({fy_str})" if fy_str else page_heading
