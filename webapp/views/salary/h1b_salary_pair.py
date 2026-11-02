@@ -24,6 +24,7 @@ from lib.business.salary.h1b_sponsors import role_h1b_percentiles
 from lib.utils.location_utils import US_STATES
 from models.job_title import JobTitleCluster
 from models.salary import EmployerCluster
+from webapp.views.salary.h1b_sponsors import filings_through_label
 
 _STATE_NAMES = {code: name for code, name in US_STATES}
 
@@ -35,7 +36,7 @@ def _money(value) -> str | None:
 def _faq(employer: str, role: str, filings: int, median: str | None,
          p25: str | None, p75: str | None, fy: int | None,
          vs_role: str | None) -> list[dict]:
-    fy_str = f"FY{fy}" if fy else "recent fiscal years"
+    fy_str = filings_through_label(fy) or "recent fiscal years"
     pay_a = (
         f"The median H-1B offered wage for {role} at {employer} is {median}."
         if median else
@@ -131,7 +132,7 @@ def h1b_salary_pair_view(request, employer: str, role: str):
         for s in page["states"]
     ]
 
-    fy_str = f"FY{fy}" if fy else None
+    fy_str = filings_through_label(fy)
     page_heading = f"{role_title} Salary at {emp_name} (H-1B)"
     # <title> ≤60 chars: fall back to a shorter form when the names are long.
     page_title = page_heading

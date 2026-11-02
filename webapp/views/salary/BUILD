@@ -80,6 +80,7 @@ py_library(
         "//lib/utils:location_utils",
         "//models:job_title",
         "//models:salary",
+        ":h1b_sponsors",
         requirement("Django"),
     ],
 )

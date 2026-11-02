@@ -65,7 +65,7 @@ _PAGE_CAP_GONE_BODY = (
 
 # Kept ≤60 chars so it doesn't truncate in SERP; "Salary Database" is
 # front-loaded — it's the dominant query ("h1b salary database", etc.).
-_STATIC_PAGE_TITLE = "H-1B & PERM Salary Database — 1.5M+ Real DOL Filings"
+_STATIC_PAGE_TITLE = "H-1B & PERM Salary Database — 10M+ Real DOL Filings"
 _STATIC_PAGE_DESCRIPTION = (
     "Look up real H-1B and PERM wages from official DOL filings — by company, "
     "job title, and city. Compare offers, negotiate, or research filing "
@@ -255,7 +255,7 @@ def _build_salary_seo(
         # Corpus-level Dataset on the bare landing — this is the page that
         # ranks for "h1b salary database" / "perm salary database" / "green
         # card salary database", so it carries a Dataset describing the whole
-        # 1.5M+ DOL salary corpus (eligible for a Dataset rich result).
+        # 10M+ DOL salary corpus (eligible for a Dataset rich result).
         return _SalarySEO(
             page_title=_STATIC_PAGE_TITLE,
             page_description=_STATIC_PAGE_DESCRIPTION,
@@ -264,7 +264,7 @@ def _build_salary_seo(
             structured_data=build_dataset_jsonld(
                 name="H-1B & PERM (Green Card) Salary Database — U.S. DOL Filings",
                 description=(
-                    "1.5M+ H-1B and PERM (green card) salary records from "
+                    "10M+ H-1B and PERM (green card) salary records from "
                     "official U.S. Department of Labor disclosure data, "
                     "searchable by employer, job title, and state. Includes "
                     "prevailing wages and offered wages."

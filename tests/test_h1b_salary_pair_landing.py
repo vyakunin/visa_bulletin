@@ -109,6 +109,12 @@ class TestH1BSalaryPairLanding(TestCase):
         body = re.sub(r"\(certified,\s+denied or\s+withdrawn\)", "", body)
         self.assertNotIn("certified", body.lower())
 
+    def test_all_time_count_is_labelled_through_latest_fy(self):
+        # The count spans every fiscal year on file, so a bare "(FY2025)" claims one year's filings.
+        body = self.client.get("/h1b-salary/google-llc/software-engineer/").content.decode()
+        self.assertNotRegex(body, r"\(FY20\d\d\)")
+        self.assertIn("through FY2025", body)
+
     def test_faqpage_schema_and_canonical(self):
         body = self.client.get(
             "/h1b-salary/google-llc/software-engineer/"
