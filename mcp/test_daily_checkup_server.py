@@ -1033,3 +1033,25 @@ def test_index_audit_reports_each_missing_index_by_name():
     assert "1 model-declared index" in section["title"]
     assert "salary_record_ingest_version_id_ad9dc99b" in section["body"]
     assert "--create-missing" in section["body"]
+
+
+# ── Single-IP volume is absorbed traffic, not an incident ────────────────────
+
+def _nginx(top_ips, five_xx=15, total=58_000):
+    return {"total": total, "by_class": {"2xx": total - five_xx, "5xx": five_xx},
+            "top_ips": top_ips}
+
+
+def test_heavy_single_ip_alone_does_not_grade_the_section():
+    _, status = m._section_nginx(_nginx([("161.153.31.2", 10_000), ("141.148.133.111", 4_800)]))
+    assert status == "green"
+
+
+def test_heavy_single_ip_is_still_listed_and_marked():
+    section, _ = m._section_nginx(_nginx([("161.153.31.2", 10_000)]))
+    assert "161.153.31.2" in section["body"] and "⚠️" in section["body"]
+
+
+def test_5xx_rate_still_grades_red_beside_a_heavy_ip():
+    _, status = m._section_nginx(_nginx([("161.153.31.2", 10_000)], five_xx=2_000))
+    assert status == "red"

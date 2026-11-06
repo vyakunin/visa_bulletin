@@ -202,11 +202,10 @@ PATH_5XX_RED = 100
 # absolute count clears this AND it's a meaningful % of traffic (NGINX_5XX_YELLOW_PCT).
 # Mirrors alert_5xx_spike.sh Rule 2 (gateway burst ≥20 & rate ≥2%).
 GW_5XX_BURST = 50
-# A single real client IP hitting more than this in 24h is a scraper / abuse
-# candidate. Now meaningful since 2026-05-14 (real_ip_module rewrites
-# $remote_addr from CF-Connecting-IP).
-SCRAPER_IP_YELLOW = 2000
-SCRAPER_IP_RED = 10000
+# A single real client IP above this in 24h is marked ⚠️ in the list. Volume alone
+# never grades the section: absorbed traffic escalates only on a real-user harm
+# (5xx, latency, saturation), per ~/.claude/rules/absorb_dont_block.md.
+SCRAPER_IP_MARK = 2000
 
 # Traffic-delta thresholds. The visa bulletin publishes monthly (~8th–15th),
 # producing a strong monthly traffic cycle, so WoW is misleading mid-cycle.
@@ -2430,20 +2429,11 @@ def _section_nginx(nx: dict) -> tuple[dict, str]:
         for p, c in nx["top_4xx_paths"][:5]:
             lines.append(f"  - `{p}` — {c}")
     if nx.get("top_ips"):
-        # Flag abnormally heavy single-IP volume. Well-known crawlers
-        # (Googlebot, Bingbot, Claude-SearchBot, etc.) are filtered out upstream
-        # in the awk into `top_bot_ips`, so anything here is either a real
-        # scraper or a heavy individual user.
-        for ip, c in nx["top_ips"]:
-            if c >= SCRAPER_IP_RED:
-                status = "red"
-                break
-            if c >= SCRAPER_IP_YELLOW and status == "green":
-                status = "yellow"
+        # Known crawlers are split out upstream into `top_bot_ips`.
         top_5 = nx["top_ips"][:5]
         lines.append("- Top client IPs (real, excl. known crawlers):")
         for ip, c in top_5:
-            mark = " ⚠️" if c >= SCRAPER_IP_YELLOW else ""
+            mark = " ⚠️" if c >= SCRAPER_IP_MARK else ""
             lines.append(f"  - `{ip}` — {_humanize(c)}{mark}")
     if nx.get("top_bot_ips"):
         lines.append("- Top known-crawler IPs (informational, not flagged):")
