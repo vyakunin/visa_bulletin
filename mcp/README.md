@@ -97,5 +97,5 @@ Thresholds are constants at the top of `daily_checkup_server.py`:
 | `BACKUP_YELLOW_HOURS` / `_RED_HOURS` | 30 / 50 | Daily backup staleness |
 | `BULLETIN_DATA_STALE_DAYS_YELLOW` / `_RED` | 35 / 50 | Newest bulletin age |
 | `NGINX_5XX_YELLOW_PCT` / `_RED_PCT` | 0.5 / 2.0 | 5xx as % of 24h traffic |
-| `SCRAPER_IP_YELLOW` / `_RED` | 2 000 / 10 000 | Single real-client IP hits / 24h |
+| `SCRAPER_IP_MARK` | 2 000 | Single real-client IP hits / 24h marked ⚠️ in the list; never grades status |
 | `TRAFFIC_DROP_YELLOW_PCT` / `_RED_PCT` | -30 / -60 | MoM cycle pageview delta |
