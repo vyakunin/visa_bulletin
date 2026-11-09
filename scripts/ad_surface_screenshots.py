@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx", "mcp>=1.0.0,<2", "pillow", "playwright"]
+# dependencies = ["httpx[socks]", "mcp>=1.0.0,<2", "pillow", "playwright"]
 # ///
 """Weekly visual + structural sweep of the top ad-bearing surfaces.
 
@@ -92,9 +92,9 @@ per-unit metrics — twice now. `blank_run_px` is the backstop that survives it,
 because a hole in the image is a hole whatever the class is called.
 //tests:test_ad_guard_metrics pins our side; the other side has no guard.
 
-Runs against the headed debug Chrome over CDP (:9222) — a real profile is what
-makes Google serve ads; headless is both ad-hostile and fingerprint-walled (see
-`~/.claude/rules/browser.md`).
+Runs against the headed debug Chrome over CDP (:9222); headless is both
+ad-hostile and fingerprint-walled (see `~/.claude/rules/browser.md`). The US route
+runs in an isolated context inside it, which Google serves normally.
 
 ⚠️ THE GEO GATE — why `--geo US` is the default, and what it does NOT prove.
 The site withholds adsbygoogle.js ENTIRELY from EEA/UK/CH (the "EEA loader gate"
@@ -104,19 +104,23 @@ Berlin, so an un-overridden capture from here renders the **ad-free EEA view**
 and reports slots=0 — a sweep that looks perfectly clean while measuring
 literally nothing about the ad layer. That is a false all-clear, so:
 
-  --geo US (default)  intercept ONLY `/cdn-cgi/trace` and answer `loc=US`, so
-                      the page's own gate takes the non-EEA branch and the real
-                      ad stack loads. Nothing else is faked.
-  --geo EEA           no interception — captures what an EEA reader truly sees
-                      (correctly ad-free). Use to audit the EEA experience.
+  --route us-exit (default)  capture in an isolated browser context whose
+                      traffic leaves through the Kansas City SOCKS exit
+                      (`us_exit_socks.service`, 127.0.0.1:10808). The page, the
+                      trace and Google all see a real US IP, so nothing is faked.
+                      A tunnel that is down or not a US exit stops the run
+                      (exit 2): `systemctl --user restart us_exit_socks`.
+  --route direct      the box's own German route, with `/cdn-cgi/trace`
+                      answered as `loc=<--geo>` so the gate loads the ad stack.
+                      Google still sees a German IP: it serves its GDPR consent
+                      dialog over every page (from 2026-11-09), inline ad-intent
+                      chips a US reader does not get, German creatives and
+                      unrepresentative fill — none of it what a US reader sees.
+  --geo EEA           direct route, no interception: what an EEA reader truly
+                      sees (correctly ad-free). Use to audit the EEA experience.
 
-HONEST LIMIT: ad requests still originate from this box's real German IP, so
-FILL RATES HERE ARE NOT REPRESENTATIVE of what a US reader gets — do not read
-`slots_filled` as a business metric or compare it to AdSense reporting. What
-this sweep IS good for: layout, geometry, overflow, reserved-but-empty holes,
-and visual appearance with the ad stack live — including the unfilled-slot
-state, which is exactly the condition that caused the 2026-07 sitewide
-scrollbar. Unfilled slots here are a FEATURE of the test, not a defect.
+Unfilled slots are still part of the test even on the US route: the unfilled
+state caused the 2026-07 sitewide scrollbar, so a hole is judged, not excused.
 
 ⚠️ THE `cls` FIELD IS A COARSE SMOKE SIGNAL — NOT the CLS number of record.
 `scripts/measure_cls.py` is the authoritative tool: it throttles CPU 4x and
@@ -134,6 +138,7 @@ late Auto-ads injection lands — it caught none of the shift that moved the H1 
 
 INPUTS  : GoatCounter token at ~/tokens/goatcounter.token (read by the MCP);
           debug Chrome on :9222 (`agent_infra/scripts/launch_chrome_cdp.sh`);
+          the US exit on 127.0.0.1:10808 (`us_exit_socks.service`) for the default route;
           ~/tokens/vb_smoke_header — the WAF exemption. WAF rule 5 managed-
           challenges /job-title/ and /employer/, and without this header those
           surfaces capture the "Verify you are human" interstitial instead of
@@ -143,10 +148,11 @@ INPUTS  : GoatCounter token at ~/tokens/goatcounter.token (read by the MCP);
           stderr warning, not a crash.
 OUTPUTS : ~/.cache/vb_ad_screenshots/<YYYY-MM-DD>/<surface>__<device>.jpg
           + manifest.json (per-shot diagnostics) + a printed summary table.
-          Exit 0 = captured; 2 = could not reach the debug Chrome / no surfaces.
+          Exit 0 = captured; 2 = could not reach the debug Chrome / the US exit / no surfaces.
 
 USAGE :
-  uv run scripts/ad_surface_screenshots.py                  # top 5, both devices, geo=US
+  uv run scripts/ad_surface_screenshots.py                  # top 5, both devices, US exit
+  uv run scripts/ad_surface_screenshots.py --route direct   # German IP, trace faked to loc=US
   uv run scripts/ad_surface_screenshots.py --surfaces 3
   uv run scripts/ad_surface_screenshots.py --geo EEA        # audit the ad-free EEA view
   uv run scripts/ad_surface_screenshots.py --urls /=dashboard --urls /salaries/=salaries
@@ -163,6 +169,7 @@ import argparse
 import asyncio
 import importlib.util
 import json
+import re
 import shutil
 import sys
 from datetime import UTC, date, datetime, timedelta
@@ -176,6 +183,8 @@ from typing import NamedTuple
 
 OUT_ROOT = Path.home() / ".cache" / "vb_ad_screenshots"
 CDP_URL = "http://127.0.0.1:9222"
+US_EXIT_SOCKS = "127.0.0.1:10808"  # us_exit_socks.service (ssh -D to the Kansas City VPS)
+ROUTE_US_EXIT, ROUTE_DIRECT = "us-exit", "direct"
 BASE = "https://visa-bulletin.us"
 
 # The WAF exemption the release scripts already use (hosting/promote.sh,
@@ -241,6 +250,9 @@ LAZY_SCROLL_STEP_FRAC = 0.8
 LAZY_SCROLL_PAUSE_MS = 250
 LAZY_SCROLL_MAX_STEPS = 40
 LAZY_RENDER_SETTLE_MS = 3000
+# The scroll pass activates the lowest slots last, and ad_slot.html settles a no-fill
+# 8000ms after activation; probing sooner reads an in-flight request as a labelled blank.
+POST_SCROLL_AD_SETTLE_MS = 9000
 
 
 def _scroll_through(page) -> None:
@@ -296,7 +308,7 @@ PROBE_JS = r"""
   const box = (e) => { const r = e.getBoundingClientRect(); return {w: Math.round(r.width), h: Math.round(r.height)}; };
   const status = (e) => e.getAttribute('data-ad-status') || 'none';
   const filled = slots.filter(e => status(e) === 'filled');
-  const unfilled = slots.filter(e => status(e) === 'unfilled');
+  const unfilled = slots.filter(e => status(e).startsWith('unfill'));  // also 'unfill-optimized'
   // A unit that did NOT fill but still reserves vertical space is a visible hole
   // — and the space is reserved by the CONTAINER, not the ins. ad_slot.html hides
   // an unfilled ins outright (display:none), so measuring the ins finds nothing
@@ -638,6 +650,22 @@ def anchor_is_defect(shot: dict) -> bool:
     return bool(shot.get("anchor_present")) and shot.get("device") == "desktop"
 
 
+# A desktop page's vertical scrollbar takes ~15px of the 1440, so match within this.
+VIEWPORT_WIDTH_SLACK_PX = 24
+
+
+def emulation_misses(shots: list[dict]) -> list[dict]:
+    """Shots whose page rendered at a width other than their device's.
+
+    A context Playwright creates pins its own 1280x720 viewport over the CDP
+    device-metrics override, so a "mobile" shot can render the desktop layout and
+    still pass every other check. That happened on 2026-11-09.
+    """
+    return [s for s in shots
+            if s.get("captured") is not False and s.get("viewport_width") is not None
+            and abs(s["viewport_width"] - DEVICES[s["device"]][0]) > VIEWPORT_WIDTH_SLACK_PX]
+
+
 def blackout_devices(shots: list[dict]) -> list[str]:
     """Devices where every captured shot rendered ZERO ad slots.
 
@@ -845,8 +873,19 @@ def _blank_run_facts(image: Path, settled: dict, viewport_h: int) -> dict:
     }
 
 
+def us_exit_country(socks: str = US_EXIT_SOCKS) -> str | None:
+    """Country code the SOCKS exit answers from, per our own /cdn-cgi/trace; None if down."""
+    import httpx
+    try:
+        r = httpx.get(f"{BASE}/cdn-cgi/trace", proxy=f"socks5://{socks}", timeout=15)
+    except Exception:
+        return None
+    m = re.search(r"^loc=([A-Z]{2})$", r.text, re.M)
+    return m.group(1) if m else None
+
+
 def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
-             geo: str, base: str = BASE) -> list[dict]:
+             geo: str, base: str = BASE, via: str = ROUTE_US_EXIT) -> list[dict]:
     from playwright.sync_api import sync_playwright
 
     smoke = _smoke_secret()
@@ -872,7 +911,6 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
         route.fulfill(status=200, content_type="text/plain",
                       body=f"fl=0f0\nh=visa-bulletin.us\nip=0.0.0.0\nloc={geo}\n")
 
-    shots: list[dict] = []
     with sync_playwright() as p:
         try:
             browser = p.chromium.connect_over_cdp(CDP_URL)
@@ -881,206 +919,239 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
             print("       start it: bash ~/cursor_projects/agent_infra/scripts/launch_chrome_cdp.sh",
                   file=sys.stderr)
             raise SystemExit(2) from e
-        ctx = browser.contexts[0]
-        for surf, path in surfaces:
-            for dev in devices:
+        # The US route gets isolated contexts: a per-context proxy is the only way to
+        # move this traffic without moving the profile's other tabs, and the empty
+        # cookie jar keeps a consent state from the profile out of the capture. One
+        # context per device, with the device declared on it: a Playwright-made
+        # context otherwise pins its own viewport over the per-page CDP override,
+        # and "mobile" renders the desktop layout.
+        own: dict[str, object] = {}
+
+        def ctx_for(dev: str):
+            if via == ROUTE_DIRECT:
+                return browser.contexts[0]
+            if dev not in own:
                 w, h, dsf, mobile, ua = DEVICES[dev]
-                page = ctx.new_page()
+                own[dev] = browser.new_context(
+                    proxy={"server": f"socks5://{US_EXIT_SOCKS}"},
+                    viewport={"width": w, "height": h}, device_scale_factor=dsf,
+                    is_mobile=mobile, has_touch=mobile, **({"user_agent": ua} if ua else {}))
+            return own[dev]
+
+        try:
+            shots = _capture_all(ctx_for, surfaces, out_dir, devices, geo, base, via,
+                                 smoke, _add_smoke, _fake_trace)
+        finally:
+            for c in own.values():
+                c.close()
+    return shots
+
+
+def _capture_all(ctx_for, surfaces, out_dir, devices, geo, base, via,
+                 smoke, _add_smoke, _fake_trace) -> list[dict]:
+    shots: list[dict] = []
+    for surf, path in surfaces:
+        for dev in devices:
+            w, h, dsf, mobile, ua = DEVICES[dev]
+            ctx = ctx_for(dev)
+            page = ctx.new_page()
+            try:
+                cdp = ctx.new_cdp_session(page)
+                cdp.send("Emulation.setDeviceMetricsOverride",
+                         {"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": mobile})
+                if ua:
+                    cdp.send("Emulation.setUserAgentOverride", {"userAgent": ua})
+                cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
+                # Order matters: broad smoke-header route first, specific
+                # trace route second, so the later trace handler wins.
+                if smoke:
+                    page.route(f"{base}/**", _add_smoke)
+                if via == ROUTE_DIRECT and geo != "EEA":
+                    page.route("**/cdn-cgi/trace", _fake_trace)
+                url = f"{base}{path}"
+                # NOT networkidle: with the ad stack live, Google keeps polling and
+                # the network never goes idle. `load` is best-effort too: an ad
+                # iframe's creative on a host this box's LAN DNS blackholes never
+                # finishes, so `load` never fires (2026-10-12, mediago.io on / and
+                # /predictions mobile). The explicit settle below is the real wait.
+                page.goto(url, wait_until="domcontentloaded", timeout=90_000)
                 try:
-                    cdp = ctx.new_cdp_session(page)
-                    cdp.send("Emulation.setDeviceMetricsOverride",
-                             {"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": mobile})
-                    if ua:
-                        cdp.send("Emulation.setUserAgentOverride", {"userAgent": ua})
-                    cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
-                    # Order matters: broad smoke-header route first, specific
-                    # trace route second, so the later trace handler wins.
-                    if smoke:
-                        page.route(f"{base}/**", _add_smoke)
-                    if geo != "EEA":
-                        page.route("**/cdn-cgi/trace", _fake_trace)
-                    url = f"{base}{path}"
-                    # NOT networkidle: with the ad stack live, Google keeps polling and
-                    # the network never goes idle. `load` is best-effort too: an ad
-                    # iframe's creative on a host this box's LAN DNS blackholes never
-                    # finishes, so `load` never fires (2026-10-12, mediago.io on / and
-                    # /predictions mobile). The explicit settle below is the real wait.
-                    page.goto(url, wait_until="domcontentloaded", timeout=90_000)
-                    try:
-                        page.wait_for_load_state("load", timeout=LOAD_WAIT_MS)
-                        load_fired = True
-                    except Exception:
-                        load_fired = False
-                    page.wait_for_timeout(AD_SETTLE_MS)  # let slots fill or collapse
-                    integrity = page.evaluate(INTEGRITY_JS)
-                    if integrity["challenged"] or not integrity["ours"]:
-                        # Keep the image as evidence, but never emit guard
-                        # metrics for a page that is not ours — a row of zeros
-                        # here reads as a clean surface (see INTEGRITY_JS).
-                        fn = out_dir / f"{surf}__{dev}.jpg"
-                        page.screenshot(path=str(fn), full_page=False,
-                                        type="jpeg", quality=80)
-                        why = ("WAF challenge interstitial"
-                               if integrity["challenged"] else "no first-party markup")
-                        shots.append({
-                            "surface": surf, "label": _surface_label(surf),
-                            "url": url, "device": dev, "viewport": f"{w}x{h}",
-                            "file": str(fn), "captured": False,
-                            "capture_error": f"{why} (title={integrity['title']!r})",
-                        })
-                        print(f"  {surf:20s} {dev:7s} ⚠ NOT CAPTURED — {why}",
-                              file=sys.stderr)
-                        continue
-                    try:
-                        cls = page.evaluate(CLS_JS)
-                    except Exception:
-                        cls = None
-                    diag = page.evaluate(PROBE_JS)
-                    # Trigger IntersectionObserver-gated lazy content before the
-                    # full-page shot. The Plotly charts on / and the country
-                    # landings only inject their CDN script once #chart-container
-                    # intersects; a never-scrolled capture leaves every one of
-                    # them showing "Loading chart..." and reads as a broken
-                    # widget on inspection. Verified against the headed debug
-                    # Chrome: with a real scroll the observer fires, Plotly
-                    # loads and .js-plotly-plot renders, so the spinner was the
-                    # capture's artifact, not a production defect. Runs AFTER
-                    # the CLS + probe evaluate() calls so their numbers keep
-                    # measuring the unscrolled first paint.
-                    _scroll_through(page)
-                    # Second probe, AFTER the scroll. Both slots load lazily on an
-                    # IntersectionObserver, so on desktop — where nothing hoists pos-1 above the
-                    # fold — the first-paint probe legitimately reads zero ad slots and a reader
-                    # who scrolls still gets both. Judging presence on the first-paint numbers
-                    # alone reported the whole desktop class dark for two Mondays while desktop
-                    # was serving ads all week (2026-08-06..17). The first-paint numbers stay the
-                    # manifest's primary ones — CLS and overflow are first-paint properties and
-                    # must not be measured after a scroll — and the ad-presence gate reads these.
-                    try:
-                        diag_scrolled = page.evaluate(PROBE_JS)
-                    except Exception:
-                        diag_scrolled = {}
-                    # CLS again, after everything has landed. The observer is
-                    # `buffered: true`, so this replays from load and can only be
-                    # >= the first-paint reading — but the first reading closes
-                    # ~7s in, before the Auto-ads banner that put the H1 of
-                    # /job-title/ at y=637 instead of y=333 ever arrives, and it
-                    # reported cls 0 for that page. Both numbers are kept: `cls`
-                    # stays the comparable first-paint series, `cls_settled` says
-                    # whether a late injection moved the page.
-                    try:
-                        cls_settled = page.evaluate(CLS_JS)
-                    except Exception:
-                        cls_settled = None
+                    page.wait_for_load_state("load", timeout=LOAD_WAIT_MS)
+                    load_fired = True
+                except Exception:
+                    load_fired = False
+                page.wait_for_timeout(AD_SETTLE_MS)  # let slots fill or collapse
+                integrity = page.evaluate(INTEGRITY_JS)
+                if integrity["challenged"] or not integrity["ours"]:
+                    # Keep the image as evidence, but never emit guard
+                    # metrics for a page that is not ours — a row of zeros
+                    # here reads as a clean surface (see INTEGRITY_JS).
                     fn = out_dir / f"{surf}__{dev}.jpg"
-                    # A timeout here used to raise, and the record went with it —
-                    # /job-title/ mobile, the heaviest surface, captured nothing
-                    # at all on 2026-08-24 while its diagnostics were already in
-                    # hand. Keep them: a shot we could not take is a gap to
-                    # report, not a reason to discard a measurement.
-                    shot_error: str | None = None
-                    try:
-                        page.screenshot(path=str(fn), full_page=True, type="jpeg",
-                                        quality=80, timeout=SCREENSHOT_TIMEOUT_MS)
-                    except Exception as e:
-                        shot_error = f"full-page screenshot failed: {e}"
-                        print(f"  {surf:20s} {dev:7s} ⚠ {shot_error}", file=sys.stderr)
-                    # A full-page shot stitches the scrolled page but leaves position:fixed
-                    # elements at their VIEWPORT offset — so the bottom anchor ad appears
-                    # frozen mid-page and reads as "an ad covering the content". It is an
-                    # artifact, not a bug. The viewport shot shows where fixed units really
-                    # sit; compare the two before reporting any overlap.
-                    fold = out_dir / f"{surf}__{dev}__viewport.jpg"
-                    try:
-                        page.screenshot(path=str(fold), full_page=False, type="jpeg",
-                                        quality=80, timeout=SCREENSHOT_TIMEOUT_MS)
-                    except Exception as e:
-                        shot_error = ((shot_error + "; ") if shot_error else "") + \
-                            f"viewport screenshot failed: {e}"
-                    # The SETTLED probe, not first paint, is what the screenshot
-                    # shows: a below-fold unit has not activated at first paint,
-                    # so its label, its no-fill and any late auto placement above
-                    # the H1 are all invisible there. `cls` and `overflow_px`
-                    # stay first-paint properties and keep their own numbers.
-                    settled = diag_scrolled or diag
-                    metrics = derive_guard_metrics(
-                        [AdUnitFacts.from_probe(u) for u in settled.get("ad_units", [])],
-                        escaping_el_px=settled.get("escaping_el_px",
-                                                   diag.get("escaping_el_px", 0)),
-                        viewport_width=settled.get("viewport_width", w),
-                        h1_doc_top_px=settled.get("h1_doc_top_px"),
-                    )
-                    blank = _blank_run_facts(fn, settled, viewport_h=h)
-                    rec = {
-                        "surface": surf,
-                        "label": _surface_label(surf),
-                        "url": url,
-                        "device": dev,
-                        "viewport": f"{w}x{h}",
-                        "file": str(fn),
-                        "size_kb": round(fn.stat().st_size / 1024) if fn.exists() else 0,
-                        "captured": True,
-                        "screenshot_error": shot_error,
-                        "cls": cls,
-                        "cls_settled": cls_settled,
-                        "load_fired": load_fired,
-                        **diag,
-                        # Every flagged number is derived from the settled probe,
-                        # so the manifest carries the settled copy of the fields
-                        # behind them — a reader comparing a flag against a
-                        # pre-activation geometry would be reading the wrong page.
-                        "ad_units": settled.get("ad_units", []),
-                        "hero_h": settled.get("hero_h", diag.get("hero_h")),
-                        "h1_top_px": settled.get("h1_top_px", diag.get("h1_top_px")),
-                        "h1_top_px_first_paint": diag.get("h1_top_px"),
-                        "content_below_fold": settled.get(
-                            "content_below_fold", diag.get("content_below_fold")),
-                        "escaping_el": settled.get("escaping_el", diag.get("escaping_el")),
-                        "escaping_el_px": settled.get(
-                            "escaping_el_px", diag.get("escaping_el_px")),
-                        **metrics._asdict(),
-                        **blank,
-                        "slots_total_scrolled": diag_scrolled.get("slots_total"),
-                        "slots_filled_scrolled": diag_scrolled.get("slots_filled"),
-                    }
-                    shots.append(rec)
-                    flag = "" if rec["overflow_px"] <= 0 else f"  ⚠ OVERFLOW {rec['overflow_px']}px"
-                    if metrics.over_wide_px > 0:
-                        flag += (f"  ⚠ OVER-WIDE {metrics.over_wide_px}px "
-                                 f"({rec.get('escaping_el')} reaches "
-                                 f"{rec.get('escaping_el_px')}px)")
-                    if metrics.labelled_empty_px > 0:
-                        flag += (f"  ⚠ LABELLED BLANK {metrics.labelled_empty_px}px "
-                                 f"({metrics.labelled_empty_slots} slot(s))")
-                    if rec.get("blank_run_flagged"):
-                        flag += (f"  ⚠ BLANK BAND {rec['blank_run_px']}px "
-                                 f"({rec.get('blank_run_viewports')} screens) at "
-                                 f"y={rec.get('blank_run_top_px')}"
-                                 + (f" over {', '.join(rec['blank_run_ads'])}"
-                                    if rec.get("blank_run_ads") else ""))
-                    if metrics.ads_above_h1_px > 0:
-                        flag += (f"  ⚠ AD ABOVE H1 {metrics.ads_above_h1_px}px "
-                                 f"({metrics.ads_above_h1} unit(s), "
-                                 f"h1 at y={rec.get('h1_top_px')})")
-                    if shot_error:
-                        flag += "  ⚠ SCREENSHOT INCOMPLETE"
-                    if rec.get("content_below_fold"):
-                        flag += "  ⚠ H1 BELOW FOLD"
-                    if anchor_is_defect(rec):
-                        flag += "  ⚠ ANCHOR PRESENT (anchor ads are off on desktop)"
-                    print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']}"
-                          f"->{rec['slots_total_scrolled']} "
-                          f"filled={rec['slots_filled']}"
-                          f"->{rec['slots_filled_scrolled']} "
-                          f"empty-reserved={metrics.slots_reserved_empty}"
-                          f"/{metrics.reserved_empty_px}px "
-                          f"cls={cls}->{cls_settled}{flag}")
-                except Exception as e:  # one bad surface must not kill the sweep
-                    print(f"  {surf:20s} {dev:7s} FAILED: {e}", file=sys.stderr)
-                    shots.append({"surface": surf, "device": dev, "url": f"{base}{path}",
-                                  "error": str(e)})
-                finally:
-                    page.close()  # campsite: never leak tabs into the shared debug Chrome
+                    page.screenshot(path=str(fn), full_page=False, scale="css",
+                                    type="jpeg", quality=80)
+                    why = ("WAF challenge interstitial"
+                           if integrity["challenged"] else "no first-party markup")
+                    shots.append({
+                        "surface": surf, "label": _surface_label(surf),
+                        "url": url, "device": dev, "viewport": f"{w}x{h}",
+                        "file": str(fn), "captured": False,
+                        "capture_error": f"{why} (title={integrity['title']!r})",
+                    })
+                    print(f"  {surf:20s} {dev:7s} ⚠ NOT CAPTURED — {why}",
+                          file=sys.stderr)
+                    continue
+                try:
+                    cls = page.evaluate(CLS_JS)
+                except Exception:
+                    cls = None
+                diag = page.evaluate(PROBE_JS)
+                # Trigger IntersectionObserver-gated lazy content before the
+                # full-page shot. The Plotly charts on / and the country
+                # landings only inject their CDN script once #chart-container
+                # intersects; a never-scrolled capture leaves every one of
+                # them showing "Loading chart..." and reads as a broken
+                # widget on inspection. Verified against the headed debug
+                # Chrome: with a real scroll the observer fires, Plotly
+                # loads and .js-plotly-plot renders, so the spinner was the
+                # capture's artifact, not a production defect. Runs AFTER
+                # the CLS + probe evaluate() calls so their numbers keep
+                # measuring the unscrolled first paint.
+                _scroll_through(page)
+                page.wait_for_timeout(POST_SCROLL_AD_SETTLE_MS - LAZY_RENDER_SETTLE_MS)
+                # Second probe, AFTER the scroll. Both slots load lazily on an
+                # IntersectionObserver, so on desktop — where nothing hoists pos-1 above the
+                # fold — the first-paint probe legitimately reads zero ad slots and a reader
+                # who scrolls still gets both. Judging presence on the first-paint numbers
+                # alone reported the whole desktop class dark for two Mondays while desktop
+                # was serving ads all week (2026-08-06..17). The first-paint numbers stay the
+                # manifest's primary ones — CLS and overflow are first-paint properties and
+                # must not be measured after a scroll — and the ad-presence gate reads these.
+                try:
+                    diag_scrolled = page.evaluate(PROBE_JS)
+                except Exception:
+                    diag_scrolled = {}
+                # CLS again, after everything has landed. The observer is
+                # `buffered: true`, so this replays from load and can only be
+                # >= the first-paint reading — but the first reading closes
+                # ~7s in, before the Auto-ads banner that put the H1 of
+                # /job-title/ at y=637 instead of y=333 ever arrives, and it
+                # reported cls 0 for that page. Both numbers are kept: `cls`
+                # stays the comparable first-paint series, `cls_settled` says
+                # whether a late injection moved the page.
+                try:
+                    cls_settled = page.evaluate(CLS_JS)
+                except Exception:
+                    cls_settled = None
+                fn = out_dir / f"{surf}__{dev}.jpg"
+                # A timeout here used to raise, and the record went with it —
+                # /job-title/ mobile, the heaviest surface, captured nothing
+                # at all on 2026-08-24 while its diagnostics were already in
+                # hand. Keep them: a shot we could not take is a gap to
+                # report, not a reason to discard a measurement.
+                shot_error: str | None = None
+                try:
+                    # scale="css": blank_rows_from_image reads image rows as CSS px.
+                    page.screenshot(path=str(fn), full_page=True, type="jpeg", scale="css",
+                                    quality=80, timeout=SCREENSHOT_TIMEOUT_MS)
+                except Exception as e:
+                    shot_error = f"full-page screenshot failed: {e}"
+                    print(f"  {surf:20s} {dev:7s} ⚠ {shot_error}", file=sys.stderr)
+                # A full-page shot stitches the scrolled page but leaves position:fixed
+                # elements at their VIEWPORT offset — so the bottom anchor ad appears
+                # frozen mid-page and reads as "an ad covering the content". It is an
+                # artifact, not a bug. The viewport shot shows where fixed units really
+                # sit; compare the two before reporting any overlap.
+                fold = out_dir / f"{surf}__{dev}__viewport.jpg"
+                try:
+                    page.screenshot(path=str(fold), full_page=False, type="jpeg", scale="css",
+                                    quality=80, timeout=SCREENSHOT_TIMEOUT_MS)
+                except Exception as e:
+                    shot_error = ((shot_error + "; ") if shot_error else "") + \
+                        f"viewport screenshot failed: {e}"
+                # The SETTLED probe, not first paint, is what the screenshot
+                # shows: a below-fold unit has not activated at first paint,
+                # so its label, its no-fill and any late auto placement above
+                # the H1 are all invisible there. `cls` and `overflow_px`
+                # stay first-paint properties and keep their own numbers.
+                settled = diag_scrolled or diag
+                metrics = derive_guard_metrics(
+                    [AdUnitFacts.from_probe(u) for u in settled.get("ad_units", [])],
+                    escaping_el_px=settled.get("escaping_el_px",
+                                               diag.get("escaping_el_px", 0)),
+                    viewport_width=settled.get("viewport_width", w),
+                    h1_doc_top_px=settled.get("h1_doc_top_px"),
+                )
+                blank = _blank_run_facts(fn, settled, viewport_h=h)
+                rec = {
+                    "surface": surf,
+                    "label": _surface_label(surf),
+                    "url": url,
+                    "device": dev,
+                    "viewport": f"{w}x{h}",
+                    "file": str(fn),
+                    "size_kb": round(fn.stat().st_size / 1024) if fn.exists() else 0,
+                    "captured": True,
+                    "screenshot_error": shot_error,
+                    "cls": cls,
+                    "cls_settled": cls_settled,
+                    "load_fired": load_fired,
+                    **diag,
+                    # Every flagged number is derived from the settled probe,
+                    # so the manifest carries the settled copy of the fields
+                    # behind them — a reader comparing a flag against a
+                    # pre-activation geometry would be reading the wrong page.
+                    "ad_units": settled.get("ad_units", []),
+                    "hero_h": settled.get("hero_h", diag.get("hero_h")),
+                    "h1_top_px": settled.get("h1_top_px", diag.get("h1_top_px")),
+                    "h1_top_px_first_paint": diag.get("h1_top_px"),
+                    "content_below_fold": settled.get(
+                        "content_below_fold", diag.get("content_below_fold")),
+                    "escaping_el": settled.get("escaping_el", diag.get("escaping_el")),
+                    "escaping_el_px": settled.get(
+                        "escaping_el_px", diag.get("escaping_el_px")),
+                    **metrics._asdict(),
+                    **blank,
+                    "slots_total_scrolled": diag_scrolled.get("slots_total"),
+                    "slots_filled_scrolled": diag_scrolled.get("slots_filled"),
+                }
+                shots.append(rec)
+                flag = "" if rec["overflow_px"] <= 0 else f"  ⚠ OVERFLOW {rec['overflow_px']}px"
+                if metrics.over_wide_px > 0:
+                    flag += (f"  ⚠ OVER-WIDE {metrics.over_wide_px}px "
+                             f"({rec.get('escaping_el')} reaches "
+                             f"{rec.get('escaping_el_px')}px)")
+                if metrics.labelled_empty_px > 0:
+                    flag += (f"  ⚠ LABELLED BLANK {metrics.labelled_empty_px}px "
+                             f"({metrics.labelled_empty_slots} slot(s))")
+                if rec.get("blank_run_flagged"):
+                    flag += (f"  ⚠ BLANK BAND {rec['blank_run_px']}px "
+                             f"({rec.get('blank_run_viewports')} screens) at "
+                             f"y={rec.get('blank_run_top_px')}"
+                             + (f" over {', '.join(rec['blank_run_ads'])}"
+                                if rec.get("blank_run_ads") else ""))
+                if metrics.ads_above_h1_px > 0:
+                    flag += (f"  ⚠ AD ABOVE H1 {metrics.ads_above_h1_px}px "
+                             f"({metrics.ads_above_h1} unit(s), "
+                             f"h1 at y={rec.get('h1_top_px')})")
+                if shot_error:
+                    flag += "  ⚠ SCREENSHOT INCOMPLETE"
+                if rec.get("content_below_fold"):
+                    flag += "  ⚠ H1 BELOW FOLD"
+                if anchor_is_defect(rec):
+                    flag += "  ⚠ ANCHOR PRESENT (anchor ads are off on desktop)"
+                print(f"  {surf:20s} {dev:7s} slots={rec['slots_total']}"
+                      f"->{rec['slots_total_scrolled']} "
+                      f"filled={rec['slots_filled']}"
+                      f"->{rec['slots_filled_scrolled']} "
+                      f"empty-reserved={metrics.slots_reserved_empty}"
+                      f"/{metrics.reserved_empty_px}px "
+                      f"cls={cls}->{cls_settled}{flag}")
+            except Exception as e:  # one bad surface must not kill the sweep
+                print(f"  {surf:20s} {dev:7s} FAILED: {e}", file=sys.stderr)
+                shots.append({"surface": surf, "device": dev, "url": f"{base}{path}",
+                              "error": str(e)})
+            finally:
+                page.close()  # campsite: never leak tabs into the shared debug Chrome
     return shots
 
 
@@ -1094,6 +1165,9 @@ def main() -> int:
     ap.add_argument("--geo", default="US",
                     help="country the page's EEA gate should see: a 2-letter code to load the "
                          "ad stack (default US), or 'EEA' to capture the real ad-free EEA view")
+    ap.add_argument("--route", choices=(ROUTE_US_EXIT, ROUTE_DIRECT), default=ROUTE_US_EXIT,
+                    help="us-exit (default): capture through the Kansas City SOCKS exit, a real "
+                         "US reader. direct: this box's German IP with the trace faked to --geo")
     ap.add_argument("--base", default=BASE,
                     help="origin to capture (default prod). Point at the staging stack to "
                          "validate an ad-layer change before it reaches prod — note staging "
@@ -1127,25 +1201,39 @@ def main() -> int:
         print("ERROR: no surfaces resolved (GC export unavailable?)", file=sys.stderr)
         return 2
 
+    via = ROUTE_DIRECT if args.geo == "EEA" else args.route
+    if via == ROUTE_US_EXIT:
+        exit_loc = us_exit_country()
+        if exit_loc != "US":
+            print(f"ERROR: the US exit at {US_EXIT_SOCKS} answered loc={exit_loc} — a capture "
+                  "from here would sit behind Google's GDPR consent dialog. Restart it: "
+                  "systemctl --user restart us_exit_socks (or pass --route direct, whose "
+                  "shots show what a German IP gets).", file=sys.stderr)
+            return 2
+
     out_dir = Path(args.out) if args.out else OUT_ROOT / date.today().isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
-    mode = "ad-free EEA view" if args.geo == "EEA" else f"ad stack on (gate sees loc={args.geo})"
+    mode = ("ad-free EEA view" if args.geo == "EEA"
+            else "real US reader via the Kansas City exit" if via == ROUTE_US_EXIT
+            else f"German IP, trace faked to loc={args.geo}")
     print(f"\nCapturing {len(surfaces)} surfaces x {len(devices)} devices -> {out_dir}")
     print(f"Geo mode: {mode}")
     for surf, path in surfaces:
         print(f"  - {surf:20s} {path}")
     print()
 
-    shots = _capture(surfaces, out_dir, devices, args.geo, args.base)
+    shots = _capture(surfaces, out_dir, devices, args.geo, args.base, via)
 
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
         "base": args.base,
         "geo": args.geo,
+        "route": via,
         "geo_note": (
-            "Ad requests originate from this box's real (German) IP, so fill rates are NOT "
-            "representative of US fill and must not be read as a business metric. Layout, "
-            "overflow, reserved-empty holes and CLS ARE meaningful."
+            "Captured through a US exit IP: ad content, consent behaviour and fill are what a "
+            "US reader gets." if via == ROUTE_US_EXIT else
+            "Ad requests originate from this box's German IP: Google's GDPR consent dialog, "
+            "German creatives and unrepresentative fill are artifacts of the route."
         ),
         "surfaces": [{"surface": s, "path": p} for s, p in surfaces],
         "shots": shots,
@@ -1185,6 +1273,15 @@ def main() -> int:
               "from the metrics above and were NOT inspected:", file=sys.stderr)
         for s in uncaptured:
             print(f"    {s['surface']:20s} {s['device']:7s} {s['capture_error']}", file=sys.stderr)
+
+    misses = emulation_misses(ok_shots)
+    if misses:
+        print("\nERROR: device emulation did not take — these shots rendered at the wrong "
+              "width, so their layout and metrics describe another device:", file=sys.stderr)
+        for s in misses:
+            print(f"    {s['surface']:20s} {s['device']:7s} rendered {s['viewport_width']}px",
+                  file=sys.stderr)
+        return 2
 
     # Silence is not success: with the gate told we are non-EEA, a run that finds
     # ZERO ad slots everywhere has measured nothing about the ad layer — the exact

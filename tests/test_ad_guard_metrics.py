@@ -456,3 +456,61 @@ def test_salary_pages_outside_the_test_still_count_as_ad_bearing():
 
 def test_the_employers_directory_hub_is_not_an_employer_profile():
     assert sweep._in_ads_off_arm("/employers/") is False
+
+
+# ── Route: a German-IP capture sits behind Google's GDPR consent dialog ──────
+# 2026-11-09: every shot of the sweep was covered by the consent dialog, which a
+# US reader never gets. The default route captures through the US exit and stops
+# when that exit is not a US IP, so the sweep never quietly falls back to it.
+
+class _CaptureReachedError(Exception):
+    pass
+
+
+def _run_main(monkeypatch, argv, exit_loc):
+    calls = []
+
+    def fake_exit_country(*a, **k):
+        calls.append("preflight")
+        return exit_loc
+
+    def fake_capture(*a, **k):
+        raise _CaptureReachedError(a[-1] if len(a) > 5 else k.get("via"))
+
+    monkeypatch.setattr(sweep, "us_exit_country", fake_exit_country)
+    monkeypatch.setattr(sweep, "_capture", fake_capture)
+    monkeypatch.setattr(sys, "argv", ["ad_surface_screenshots.py", "--urls", "/=dashboard", *argv])
+    return calls
+
+
+def test_default_route_refuses_to_capture_when_the_exit_is_not_us(monkeypatch, tmp_path):
+    calls = _run_main(monkeypatch, ["--out", str(tmp_path)], exit_loc="DE")
+    assert sweep.main() == 2
+    assert calls == ["preflight"]
+
+
+def test_default_route_captures_through_the_us_exit(monkeypatch, tmp_path):
+    _run_main(monkeypatch, ["--out", str(tmp_path)], exit_loc="US")
+    with pytest.raises(_CaptureReachedError) as hit:
+        sweep.main()
+    assert hit.value.args[0] == sweep.ROUTE_US_EXIT
+
+
+def test_direct_route_skips_the_exit_preflight(monkeypatch, tmp_path):
+    calls = _run_main(monkeypatch, ["--out", str(tmp_path), "--route", "direct"], exit_loc=None)
+    with pytest.raises(_CaptureReachedError) as hit:
+        sweep.main()
+    assert calls == [] and hit.value.args[0] == sweep.ROUTE_DIRECT
+
+
+# ── Emulation: a mobile shot that rendered the desktop layout ────────────────
+
+def test_a_mobile_shot_rendered_at_desktop_width_is_an_emulation_miss():
+    shots = [{"surface": "dashboard", "device": "mobile", "viewport_width": 1280}]
+    assert sweep.emulation_misses(shots) == shots
+
+
+def test_a_desktop_shot_narrowed_by_its_scrollbar_is_not_an_emulation_miss():
+    shots = [{"surface": "dashboard", "device": "desktop", "viewport_width": 1425},
+             {"surface": "dashboard", "device": "mobile", "viewport_width": 390}]
+    assert sweep.emulation_misses(shots) == []

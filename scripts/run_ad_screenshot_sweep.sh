@@ -56,8 +56,8 @@ rm -f "$CAP_LOG"
 
 read -r -d '' PROMPT <<EOF
 [SCHEDULED — weekly ad-surface visual sweep] Screenshots of the top 5 ad-bearing
-surfaces (desktop 1440 + mobile 390, ad stack forced on via the /cdn-cgi/trace
-geo override) are in ${OUT_DIR} with manifest.json.
+surfaces (desktop 1440 + mobile 390, captured as a US reader through the
+Kansas City exit) are in ${OUT_DIR} with manifest.json.
 
 Do the inspection — the capture is done, the judgement is not:
 1. Read EVERY *.jpg (Read renders them). Look for product/logical issues AND
@@ -67,10 +67,10 @@ Do the inspection — the capture is done, the judgement is not:
 2. Cross-check manifest.json: overflow_px must be 0 (regression guard for the
    2026-07 sitewide scrollbar); slots_reserved_empty > 0 = a visible hole; CLS
    > 0.1 fails Google's threshold.
-3. Two known artifacts — do NOT report either as a bug: (a) full-page shots
-   freeze position:fixed anchor ads mid-page (compare the __viewport.jpg);
-   (b) ads are served to a German IP, so ad CONTENT is German and FILL RATES are
-   not representative — judge layout, not fill.
+3. Known artifact — do NOT report it as a bug: full-page shots freeze
+   position:fixed anchor ads mid-page (compare the __viewport.jpg). A Google
+   consent dialog or German ad copy means the capture left through a German IP
+   (manifest "route" says which) — that is a harness fault, not a site bug.
 4. Report findings to Vladimir here. File a Notion ticket (Project=visa_bulletin)
    for anything real; if it is all clean, say so in one line.
 EOF
