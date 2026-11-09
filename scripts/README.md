@@ -57,7 +57,8 @@ This captures what a reader actually gets, on the top-N surfaces **by real
 traffic** (derived from the full GoatCounter export — never the top-100 cap).
 
 ```bash
-uv run scripts/ad_surface_screenshots.py                 # top 5, desktop+mobile, ads on
+uv run scripts/ad_surface_screenshots.py                 # top 5, desktop+mobile, US reader via the Kansas City exit
+uv run scripts/ad_surface_screenshots.py --route direct  # German IP, trace faked to loc=US
 uv run scripts/ad_surface_screenshots.py --geo EEA       # the real ad-free EEA view
 uv run scripts/ad_surface_screenshots.py --surfaces 3
 uv run scripts/ad_surface_screenshots.py --prune-dry-run # retention preview
@@ -131,14 +132,15 @@ wherever it lands (`⚠ AD ABOVE H1`); tickets
 
 1. **The EEA gate.** The site withholds `adsbygoogle.js` entirely from EEA/UK/CH
    (`overrides/ad_slot.html` reads `/cdn-cgi/trace`). This box is in Berlin, so
-   an un-overridden capture renders the ad-free view, reports `slots=0`, and
-   looks perfectly clean while measuring **nothing**. `--geo US` (default)
-   intercepts only that trace so the page's own gate loads the ad stack. A run
-   that finds zero slots with the override on **exits 2** rather than reporting
-   a false all-clear.
-2. **Fill rates are not a business metric.** Ad requests come from this box's
-   real German IP, so ad content is German and fill is unrepresentative. Judge
-   layout / overflow / holes / CLS — never fill%. Likewise, full-page shots
+   a capture from its own IP renders the ad-free view, or — with the trace
+   faked (`--route direct`) — sits behind Google's GDPR consent dialog, which
+   Google decides by IP. The default `--route us-exit` captures in isolated
+   per-device contexts proxied through `us_exit_socks` (127.0.0.1:10808) and
+   exits 2 when that exit is not a US IP. A run that finds zero slots **exits
+   2** rather than reporting a false all-clear.
+2. **Fill rates are not a business metric.** The Kansas City exit is a
+   datacenter IP, so fill there is low and unrepresentative. Judge layout /
+   overflow / holes / CLS — never fill%. Likewise, full-page shots
    freeze `position:fixed` anchor ads mid-page (an artifact, not an overlap) —
    compare the `__viewport.jpg`.
 3. **Lazy charts are force-rendered, so a rendered chart proves nothing about
