@@ -176,6 +176,12 @@ def salary_by_state_view(request, state: str):
         "percentiles": percentiles,
         "median_salary": median_or_avg,
         "program_breakdown": program_breakdown,
+        # Derived here, not stored: the precomputed page holds counts, and the
+        # H-1B share must carry the same precision as perm_ratio beside it.
+        "h1b_share_pct": (
+            program_breakdown["h1b_count"] / program_breakdown["total"] * 100
+            if program_breakdown.get("total") else None
+        ),
         "top_employers": top_employers,
         "top_job_titles": top_job_titles,
         "show_h1b_sponsors_cta": show_h1b_sponsors_cta,

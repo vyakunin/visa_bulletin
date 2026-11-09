@@ -192,3 +192,26 @@ class TestH1BSponsorsStateLanding(TestCase):
         # Thin state's by-state page must NOT link to a 404 sponsor page.
         tx_body = self.client.get("/salaries/by-state/tx/").content.decode()
         self.assertNotIn("/h1b-sponsors/in/tx/", tx_body)
+
+
+@override_settings(
+    CACHES={**settings.CACHES, **{"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}}
+)
+class TestStateProgramShares(TestCase):
+    """The H-1B and PERM shares on /salaries/by-state/ share one precision.
+
+    The H-1B cell once rounded to a whole percent beside a one-decimal PERM cell,
+    so Ohio read 90% + 10.5% = 100.5% (2026-11-09 ad-surface sweep).
+    """
+
+    def setUp(self):
+        cache.clear()
+        role = _make_role("software-engineer", "Software Engineer")
+        emp = _make_employer(1)
+        _add_records(role, emp, VisaProgram.H1B, 179, start_case="OH-H", state="OH", wage=90000)
+        _add_records(role, emp, VisaProgram.PERM, 21, start_case="OH-P", state="OH", wage=95000)
+
+    def test_shares_render_at_one_decimal_and_sum_to_a_hundred(self):
+        body = self.client.get("/salaries/by-state/oh/").content.decode()
+        shares = re.findall(r'<td class="text-end">\s*([\d.]+)%\s*</td>', body)
+        self.assertEqual(shares, ["89.5", "10.5"])
