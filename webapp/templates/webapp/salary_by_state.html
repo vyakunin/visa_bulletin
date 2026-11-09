@@ -141,7 +141,7 @@
                                         <td>H-1B (Specialty Occupation)</td>
                                         <td class="text-end">{{ program_breakdown.h1b_count|intcomma }}</td>
                                         <td class="text-end">
-                                            {% widthratio program_breakdown.h1b_count program_breakdown.total 100 %}%
+                                            {{ h1b_share_pct|floatformat:1 }}%
                                         </td>
                                     </tr>
                                     <tr>
