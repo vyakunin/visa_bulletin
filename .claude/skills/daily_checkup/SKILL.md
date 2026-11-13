@@ -28,22 +28,17 @@ kitchen leaks into the chat. Reason about delivery silently; output only the dig
 
 The gather side is the orchestrator's single-project run (`main.py --project
 visa_bulletin --print`), which spawns `mcp/daily_checkup_server.py` the same way
-the 07:00 run does. If a fresh enough reports JSON (≤30 min
-old) exists in `agent_infra/daily_checkup/logs/`, reuse it; otherwise run fresh.
+the 07:00 run does.
 
 ## Steps
 
-### Step 1 — gather (reuse-or-rerun)
+### Step 1 — gather
 
 ```bash
-NEWEST=$(ls -1t ~/cursor_projects/agent_infra/daily_checkup/logs/reports_*.json 2>/dev/null | head -1)
-AGE_MIN=$(( ( $(date +%s) - $(stat -f%m "$NEWEST" 2>/dev/null || stat -c%Y "$NEWEST") ) / 60 ))
-if [ -z "$NEWEST" ] || [ "$AGE_MIN" -gt 30 ]; then
-  REPORT_JSON=$(cd ~/cursor_projects/agent_infra/daily_checkup && \
-    uv run python main.py --project visa_bulletin --print 2>/dev/null)
-else
-  REPORT_JSON=$(jq -c '.[] | select(.project == "visa_bulletin")' "$NEWEST")
-fi
+REPORT_JSON=$(cd ~/cursor_projects/os/daily_checkup && \
+  uv run python main.py --project visa_bulletin --print 2>/dev/null)
+# Run from the os checkout: agent_infra/daily_checkup/pyproject.toml is a symlink, and uv
+# resolves its `../agent_core` source from the link's dir, where no agent_core exists.
 ```
 
 Capture the `CheckupReport` (status / summary / sections / errors / generated_at).
