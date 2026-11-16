@@ -103,7 +103,7 @@
             {% if stats.auto_expanded %}
             <div class="alert alert-info mb-4">
                 <i class="fas fa-info-circle"></i>
-                <strong>Note:</strong> No data found for the last {{ stats.original_years }} years. Automatically expanded to show all available years ({{ stats.actual_years }} years total, starting from {{ stats.start_year }}).
+                <strong>Note:</strong> No data found for the last {{ stats.original_years }} years. Showing all available filings instead, fiscal years {{ stats.start_year }}–{{ stats.end_year }}.
             </div>
             {% endif %}
             
@@ -555,7 +555,7 @@
             <!-- Data Source Disclaimer -->
             <div class="alert alert-info">
                 <strong>Data Source:</strong> U.S. Department of Labor (DOL) H-1B and green card (PERM) disclosure data. 
-                Data shown for fiscal years {{ start_year }} to present. 
+                Data shown for {% if stats.auto_expanded %}fiscal years {{ stats.start_year }}–{{ stats.end_year }}{% else %}fiscal years {{ start_year }} to present{% endif %}. 
                 Last updated: {{ cluster.updated_at|date:"F j, Y" }}
                 <br><br>
                 <strong>Note on Salary Data:</strong> For data quality, we exclude salaries below $30,000 (likely data entry errors) and above $1,000,000 (lacking automated validation for ultra-high compensation packages). This may affect statistics for some executive and specialized positions.

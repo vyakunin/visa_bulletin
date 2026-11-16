@@ -134,6 +134,7 @@ def get_job_title_statistics(
     start_year = current_year - years
     original_years = years
     auto_expanded = False
+    end_year = None  # last fiscal year with data; set only when the window expands
 
     # Build base queryset - use normalized title when aggregating across levels.
     # When normalized_title is set, count matches JobTitleCluster.total_filings
@@ -201,7 +202,6 @@ def get_job_title_statistics(
         ):
             # We have data in other years - expand window and recalculate
             auto_expanded = True
-            years = 20  # Expand to maximum
 
             # Get the actual min/max fiscal years for accurate display
             year_range = min_max_aggregate(
@@ -209,7 +209,8 @@ def get_job_title_statistics(
                 min_year=Min("fiscal_year"),
                 max_year=Max("fiscal_year"),
             )
-            start_year = year_range["min_year"] or (current_year - 20)
+            start_year = year_range["min_year"]
+            end_year = year_range["max_year"]
 
             # Use the expanded queryset
             records = records_all_years
@@ -402,8 +403,8 @@ def get_job_title_statistics(
         "company_comparison": company_comparison,
         "auto_expanded": auto_expanded,
         "original_years": original_years,
-        "actual_years": years,
         "start_year": start_year,
+        "end_year": end_year,
     }
 
     # Cache for 6 hours
