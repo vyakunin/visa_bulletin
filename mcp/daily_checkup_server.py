@@ -51,7 +51,7 @@ from mcp.server.fastmcp import FastMCP
 
 # Shared transport-aware MCP-call helper (agent_infra) — handles stdio (gsc) AND
 # the google_workspace HTTP daemon. See ~/.claude/rules/daily_checkup.md.
-sys.path.insert(0, str(Path.home() / "cursor_projects" / "agent_infra" / "daily_checkup"))
+sys.path.insert(0, str(Path.home() / "cursor_projects" / "os" / "daily_checkup"))
 from mcp_call import call_mcp_tool, call_mcp_tools  # noqa: E402
 
 logger = logging.getLogger("visa_bulletin_daily_checkup")
