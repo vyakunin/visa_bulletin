@@ -916,7 +916,7 @@ def _capture(surfaces: list[tuple[str, str]], out_dir: Path, devices: list[str],
             browser = p.chromium.connect_over_cdp(CDP_URL)
         except Exception as e:
             print(f"ERROR: cannot reach debug Chrome at {CDP_URL}: {e}", file=sys.stderr)
-            print("       start it: bash ~/cursor_projects/agent_infra/scripts/launch_chrome_cdp.sh",
+            print("       start it: bash ~/cursor_projects/vyakunin-config/scripts/launch_chrome_cdp.sh",
                   file=sys.stderr)
             raise SystemExit(2) from e
         # The US route gets isolated contexts: a per-context proxy is the only way to

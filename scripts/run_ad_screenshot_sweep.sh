@@ -14,8 +14,8 @@
 set -uo pipefail
 
 REPO="$HOME/cursor_projects/visa_bulletin"
-NOTIFY="$HOME/cursor_projects/agent_infra/scripts/notify_chat.py"
-LAUNCH_CHROME="$HOME/cursor_projects/agent_infra/scripts/launch_chrome_cdp.sh"
+NOTIFY="$HOME/cursor_projects/vyakunin-config/scripts/notify_chat.py"
+LAUNCH_CHROME="$HOME/cursor_projects/vyakunin-config/scripts/launch_chrome_cdp.sh"
 OUT_DIR="$HOME/.cache/vb_ad_screenshots/$(date +%F)"
 
 cd "$REPO" || exit 1

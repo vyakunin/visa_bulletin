@@ -60,7 +60,7 @@ LAST_SUCCESS_FILE="$STATE_DIR/last_success"
 RELEASE_BRACKETS_FILE="$STATE_DIR/release_brackets.json"
 # Overridable so the alert path can be exercised against a recorder stub instead of
 # the live bot (see tests/test_sync_bulletin_alerting.sh).
-NOTIFY="${BULLETIN_SYNC_NOTIFY:-$HOME/cursor_projects/agent_infra/scripts/notify_chat.py}"
+NOTIFY="${BULLETIN_SYNC_NOTIFY:-$HOME/cursor_projects/vyakunin-config/scripts/notify_chat.py}"
 ALERT_AFTER="${BULLETIN_SYNC_ALERT_AFTER:-3}"
 MONTHS_ARG=()
 [ "${1:-}" = "--months" ] && MONTHS_ARG=(--months "$2")
@@ -216,7 +216,7 @@ if [ "$FETCH_RC" -ne 0 ] && cdp_is_wedged \
   # Remedy ladder, cheapest and least destructive first. Reaping closes ONLY targets
   # that fail to answer, so it cannot take a co-tenant's staged work with it; the
   # restart is reserved for the case where nothing is alive to lose.
-  REAP="$(~/cursor_projects/agent_infra/scripts/cdp_tabs.py reap --json 2>&1 | tail -1)"
+  REAP="$(~/cursor_projects/vyakunin-config/scripts/cdp_tabs.py reap --json 2>&1 | tail -1)"
   log "CDP wedged — reaped hung targets: ${REAP}"
   if echo "$REAP" | grep -q '"dead": [1-9]'; then
     run_fetch
