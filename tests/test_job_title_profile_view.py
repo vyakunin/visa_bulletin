@@ -147,6 +147,59 @@ class TestJobTitleProfileView(TestCase):
                 is_worksite=False,
             )
 
+    def test_auto_expanded_profile_states_the_years_its_data_covers(self):
+        """A title with no filings in the window shows the years it really has.
+
+        The note once read "20 years total, starting from 2016" and the
+        data-source box "fiscal years 2021 to present" for a title whose only
+        filings are FY2016-2018.
+        """
+        cluster = JobTitleCluster.objects.create(
+            canonical_title="Old Title Only", total_filings=3
+        )
+        title = JobTitle.objects.create(
+            title="Old Title Only",
+            title_normalized="old title only",
+            canonical_cluster=cluster,
+            total_filings=3,
+        )
+        for fy in (2016, 2017, 2018):
+            SalaryRecord.objects.create(
+                case_number=f"TEST-JT-OLD-{fy}",
+                employer_name="Test Company Inc JT",
+                employer=self.employer,
+                job_title="Old Title Only",
+                job_title_entity=title,
+                worksite_city="Buffalo",
+                worksite_state="NY",
+                wage_from=Decimal("90000.00"),
+                wage_unit=WageUnit.YEAR,
+                wage_annual=Decimal("90000.00"),
+                visa_program=VisaProgram.H1B,
+                case_status=CaseStatus.CERTIFIED,
+                fiscal_year=fy,
+                source_file="test.xlsx",
+                is_worksite=False,
+            )
+
+        response = Client().get(
+            reverse("job_title_profile", kwargs={"slug": cluster.slug})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "fiscal years 2016–2018", count=2)
+        self.assertNotContains(response, "years total")
+        self.assertNotContains(response, "to present")
+
+    def test_profile_with_recent_data_keeps_the_window_to_present(self):
+        """The covered-years wording replaces the window only when it expanded."""
+        response = Client().get(
+            reverse("job_title_profile", kwargs={"slug": "software-engineer-test"})
+        )
+
+        self.assertContains(response, "to present")
+        self.assertNotContains(response, "Showing all available filings")
+
     def test_slug_generation_uniqueness(self):
         """Test that slug generation creates unique slugs"""
         # Create cluster with same canonical title
