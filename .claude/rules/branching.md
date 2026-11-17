@@ -182,8 +182,12 @@ A code-only promotion to prod **defaults to `hosting/cutover.sh --code <sha>`**,
      trigger. From automation pass **`--detached-ok`**, and then honour what that flag promises:
      **never kill the launcher.** A cutover killed mid-swap leaves the connector moved and prod
      served from the wrong side; finish a dead run with `./cutover.sh --resume`, do not re-run it
-     from the top. In practice: `setsid` it with its own exit-code sentinel and poll for that
-     sentinel, so a harness timeout on the *watcher* can never reap the *swap*.
+     from the top. In practice: launch it as its own transient unit with an exit-code sentinel,
+     `systemd-run --user --unit=<name> --collect -p WorkingDirectory=<hosting dir> /bin/bash -c
+     '<cmd>; echo $$? > <sentinel>'`, and wait for the sentinel. `setsid` is NOT enough: it
+     leaves the process in the relay session's cgroup, and the relay reaper stopping that scope
+     kills it. That is how the 2026-11-17 Q4 staging refresh died mid post-ingest. The same
+     applies to `refresh_staging.sh` heavy runs.
 - **The dry-run's fingerprint verdict tells you which strategy you're about to get.** `staging ==
   prod` → staging serves the window; **diverged** → the standby stack serves from live prod pg
   over an SSH tunnel (more moving parts, still zero-downtime). Diverged is the normal case
