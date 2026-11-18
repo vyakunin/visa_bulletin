@@ -9,9 +9,9 @@ regression in the fenced-query optimization is measurable:
   * two_scan     — fenced_aggregate() + fenced_page_ids() (the pair; each
                    materializes the filtered match set once, so a cold search
                    scans it TWICE).
-  * single_scan  — fenced_page_and_aggregate() (one AS MATERIALIZED fenced scan
-                   yields both the ordered page and the aggregate; the current
-                   cold /salaries/?q= path).
+  * walked       — parallel_aggregate() (fenced_aggregate() under an employer
+                   filter) + walked_page_ids(), falling back to fenced_page_ids();
+                   the current cold /salaries/?q= path.
   * naive        — plain ORM .aggregate() + sliced .order_by()[...] (the
                    pre-fence path that LIMIT-pessimized / timed out; --include-naive,
                    guarded by the DB statement_timeout).
@@ -68,9 +68,11 @@ from lib.utils.filter_utils import (  # noqa: E402
     apply_fiscal_year_filter,
     apply_text_search_filter,
     apply_visa_program_filter,
+    estimated_table_rows,
     fenced_aggregate,
-    fenced_page_and_aggregate,
     fenced_page_ids,
+    parallel_aggregate,
+    walked_page_ids,
 )
 from lib.utils.logging_utils import ScriptLogger  # noqa: E402
 from models.salary import EmployerCluster, SalaryRecord  # noqa: E402
@@ -185,10 +187,15 @@ def _two_scan(records, offset: int) -> tuple[int, int]:
     return agg.count, len(ids)
 
 
-def _single_scan(records, offset: int) -> tuple[int, int]:
-    ids, agg = fenced_page_and_aggregate(
-        records, ORDER_FIELDS, offset, PER_PAGE, AGG_FIELD
+def _walked(records, offset: int, uses_employer: bool) -> tuple[int, int]:
+    aggregate = fenced_aggregate if uses_employer else parallel_aggregate
+    agg = aggregate(records, AGG_FIELD)
+    ids = walked_page_ids(
+        records, ORDER_FIELDS, offset, PER_PAGE,
+        match_count=agg.count, table_rows=estimated_table_rows(SalaryRecord),
     )
+    if ids is None:
+        ids = fenced_page_ids(records, ORDER_FIELDS, offset, PER_PAGE)
     return agg.count, len(ids)
 
 
@@ -225,8 +232,8 @@ def run_shape(shape: Shape, *, warmup: int, iterations: int,
         _time("two_scan (fenced_aggregate + fenced_page_ids)",
               lambda: _two_scan(records, offset),
               warmup=warmup, iterations=iterations),
-        _time("single_scan (fenced_page_and_aggregate)",
-              lambda: _single_scan(records, offset),
+        _time("walked (parallel_aggregate + walked_page_ids)",
+              lambda: _walked(records, offset, bool(shape.params.get("employer"))),
               warmup=warmup, iterations=iterations),
     ]
     if include_naive:
@@ -248,7 +255,7 @@ def run_shape(shape: Shape, *, warmup: int, iterations: int,
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark SalaryRecord fenced-query resolvers "
-                    "(two_scan vs single_scan vs naive).",
+                    "(two_scan vs walked vs naive).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--shape", choices=[s.name for s in SHAPES],

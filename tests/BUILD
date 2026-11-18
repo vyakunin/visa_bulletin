@@ -700,12 +700,17 @@ django_py_test(
 )
 
 django_py_test(
-    name = "test_fenced_page_and_aggregate",
-    srcs = ["test_fenced_page_and_aggregate.py"],
+    name = "test_salary_search_resolvers",
+    size = "medium",
+    srcs = ["test_salary_search_resolvers.py"],
     deps = [
+        "//django_config:context_processors",
+        "//django_config:urls",
+        "//lib/utils:filter_utils",
         "//models:salary",
         "//models/enums:visa_program",
-        "//lib/utils:filter_utils",
+        "//webapp:urls",
+        "//webapp/views:views",
     ],
 )
 
