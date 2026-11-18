@@ -33,9 +33,11 @@ from lib.utils.filter_utils import (
     apply_fiscal_year_filter,
     apply_text_search_filter,
     apply_visa_program_filter,
+    estimated_table_rows,
     fenced_aggregate,
-    fenced_page_and_aggregate,
     fenced_page_ids,
+    parallel_aggregate,
+    walked_page_ids,
 )
 from lib.utils.location_utils import US_STATES
 from lib.utils.pagination import (
@@ -49,6 +51,7 @@ from webapp.views.ads_test import SALARY_SEARCH_ARM
 from webapp.views.seo.jsonld import build_dataset_jsonld, embed_jsonld
 
 _NO_STATS = {"avg_salary": None, "min_salary": None, "max_salary": None}
+_SALARY_ORDER = ("-wage_annual", "-fiscal_year")
 
 # A free-text keyword search (?q=<text>) is an unbounded URL space — every
 # distinct query is a new page. We noindex those so Google doesn't burn crawl
@@ -798,9 +801,6 @@ def salary_search_view(request):
         and not fiscal_year_filter
         and not filing_year_filter
     )
-    # page_ids stays None when the ordered page still needs resolving below;
-    # the cold has_filters branch fills it from the same scan as the aggregate.
-    page_ids = None
     if only_slug_filter:
         total_results = matched_cluster.search_record_count
         stats = {
@@ -827,18 +827,11 @@ def salary_search_view(request):
         if cached is not None:
             total_results, stats = cached["count"], cached["stats"]
         else:
-            # Cold search: resolve the aggregate AND the ordered page from ONE
-            # fenced scan of the match set (fenced_page_and_aggregate) instead
-            # of scanning it twice (fenced_aggregate + fenced_page_ids) — the
-            # ?q= double-scan residual from the 2026-06-21 504 swarm.
-            raw_offset = (page - 1) * per_page
-            page_ids, agg = fenced_page_and_aggregate(
-                records,
-                ("-wage_annual", "-fiscal_year"),
-                raw_offset,
-                per_page,
-                "wage_annual",
-            )
+            # An employer filter keeps the fence (see fenced_aggregate); every other
+            # filter is a column predicate the planner can scan in parallel.
+            uses_employer = matched_cluster is not None or bool(employer_filter)
+            aggregate = fenced_aggregate if uses_employer else parallel_aggregate
+            agg = aggregate(records, "wage_annual")
             total_results = agg.count
             stats = {
                 "avg_salary": agg.avg,
@@ -846,10 +839,6 @@ def salary_search_view(request):
                 "max_salary": agg.max,
             }
             cache.set(cache_key, {"count": total_results, "stats": stats})
-            if not page_ids and total_results:
-                # Requested page lies beyond the last page; pagination clamps
-                # the page number below — re-resolve just the page then.
-                page_ids = None
     else:
         stats = _NO_STATS
         # The same rows the summary counts (searchable, named employer, positive wage).
@@ -893,12 +882,9 @@ def salary_search_view(request):
         state_name_map={code: name for code, name in US_STATES},
     )
 
-    # Resolve the ordered page of ids behind an OFFSET-0 fence (avoids
-    # LIMIT-pessimization on rare terms and the full dimension-table hash-joins
-    # on common terms — see fenced_page_ids), then fetch only those rows with
-    # the profile-link joins (nested-loop by pkey, sub-ms). Cold filtered
-    # searches already resolved the page together with the aggregate above.
-    if page_ids is None and not has_filters:
+    # Resolve the ordered page of ids, then fetch only those rows with the
+    # profile-link joins (nested-loop by pkey, sub-ms).
+    if not has_filters:
         # Unfiltered, the filters match nearly every row, so walking the wage index is
         # the fast plan the fence exists to prevent: 3ms against 10s fenced on the prod box.
         page_ids = list(
@@ -906,10 +892,21 @@ def salary_search_view(request):
                 pagination["offset"] : pagination["offset"] + per_page
             ]
         )
-    if page_ids is None:
-        page_ids = fenced_page_ids(
-            records, ("-wage_annual", "-fiscal_year"), pagination["offset"], per_page
+    else:
+        # A broad term's page sits in the first few hundred rows of the wage ordering;
+        # a rare or wage-correlated one falls back to the fence (see fenced_page_ids).
+        page_ids = walked_page_ids(
+            records,
+            _SALARY_ORDER,
+            pagination["offset"],
+            per_page,
+            match_count=total_results or 0,
+            table_rows=estimated_table_rows(SalaryRecord),
         )
+        if page_ids is None:
+            page_ids = fenced_page_ids(
+                records, _SALARY_ORDER, pagination["offset"], per_page
+            )
     row_by_id = {
         row.id: row
         for row in SalaryRecord.objects.filter(pk__in=page_ids)
@@ -928,6 +925,7 @@ def salary_search_view(request):
             "wage_to",
             "visa_program",
             "fiscal_year",
+            "case_submitted",
             "employer__canonical_cluster__slug",
         )
     }

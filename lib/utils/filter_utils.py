@@ -1,9 +1,10 @@
 """Generic filter application utilities for Django querysets"""
 
+import math
 from typing import NamedTuple
 
 from django.core.exceptions import EmptyResultSet
-from django.db import connections
+from django.db import connections, router, transaction
 
 from models.enums.visa_program import VisaProgram
 
@@ -19,8 +20,8 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
 
     Anti-pessimization note: callers that chain
     ``order_by('-wage_annual', '-fiscal_year')[offset:offset+N]`` over this
-    filter MUST resolve their page through :func:`fenced_page_ids`, NOT a plain
-    sliced queryset. With the ``LIMIT`` visible to the planner the trigram
+    filter MUST resolve their page through :func:`walked_page_ids` or
+    :func:`fenced_page_ids`, NOT a plain sliced queryset. With the ``LIMIT`` visible to the planner the trigram
     filter triggers a classic LIMIT-pessimization (Index Scan Backward on
     ``wage_annual`` + inline trigram recheck, scanning ~1.2M heap rows for rare
     low-wage terms like CASHIER). The aggregate/count path (no ORDER BY/LIMIT)
@@ -128,9 +129,21 @@ def fenced_page_ids(
         return [row[0] for row in cursor.fetchall()]
 
 
-class FencedAggregate(NamedTuple):
-    """Result of :func:`fenced_aggregate` — count + wage stats over a page's
-    full filtered set. ``avg``/``min``/``max`` are None when count is 0.
+def estimated_table_rows(model) -> int:
+    """The planner's row count for ``model``'s table (``pg_class.reltuples``); 0 or less
+    when the table has never been analyzed."""
+    with connections[router.db_for_read(model)].cursor() as cursor:
+        cursor.execute(
+            "SELECT reltuples::bigint FROM pg_class WHERE oid = %s::regclass",
+            [model._meta.db_table],
+        )
+        row = cursor.fetchone()
+    return row[0] if row else 0
+
+
+class MatchAggregate(NamedTuple):
+    """Count + ``agg_field`` stats over a search's full filtered set, from
+    :func:`fenced_aggregate` or :func:`parallel_aggregate`. ``avg``/``min``/``max`` are None when count is 0.
     """
 
     count: int
@@ -139,7 +152,7 @@ class FencedAggregate(NamedTuple):
     max: float | None
 
 
-def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
+def fenced_aggregate(queryset, agg_field: str) -> MatchAggregate:
     """``count(*)`` + ``avg``/``min``/``max`` of ``agg_field`` over the filtered
     set, computed behind the same PostgreSQL ``OFFSET 0`` optimization fence as
     :func:`fenced_page_ids`.
@@ -168,7 +181,7 @@ def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
             (e.g. ``"wage_annual"``). ``count`` is ``count(*)`` of the rows.
 
     Returns:
-        :class:`FencedAggregate`.
+        :class:`MatchAggregate`.
     """
     model = queryset.model
     col = model._meta.get_field(agg_field).column
@@ -183,7 +196,7 @@ def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
         # ``records.none()`` when a typed name resolves to zero clusters):
         # Django raises EmptyResultSet from as_sql() instead of emitting SQL.
         # An empty set has count 0 and no wage stats.
-        return FencedAggregate(count=0, avg=None, min=None, max=None)
+        return MatchAggregate(count=0, avg=None, min=None, max=None)
 
     # OFFSET 0 = optimization fence; see docstring + fenced_page_ids.
     sql = (
@@ -193,100 +206,97 @@ def fenced_aggregate(queryset, agg_field: str) -> FencedAggregate:
     with connections[inner.db].cursor() as cursor:
         cursor.execute(sql, list(inner_params))
         count, avg, min_, max_ = cursor.fetchone()
-    return FencedAggregate(count=count or 0, avg=avg, min=min_, max=max_)
+    return MatchAggregate(count=count or 0, avg=avg, min=min_, max=max_)
 
 
-def fenced_page_and_aggregate(
+# Each walked row is a random heap read: 24k rows took 0.43s warm, about what the fence
+# costs for a match set of a few hundred thousand rows.
+PAGE_WALK_MAX_ROWS = 20_000
+# The top of the wage ordering is executives and partners: there a broad term matches
+# 1x-4.2x less often than across the table (measured on 10.78M rows, 2026-11-18).
+PAGE_WALK_SLACK = 6
+
+
+def walked_page_ids(
     queryset,
     order_fields: tuple[str, ...],
     offset: int,
     limit: int,
-    agg_field: str,
-) -> tuple[list, FencedAggregate]:
-    """One ordered page of primary keys AND the count/avg/min/max aggregate over
-    the same filtered set, in a SINGLE scan of the underlying table.
+    *,
+    match_count: int,
+    table_rows: int,
+) -> list | None:
+    """One ordered page of primary keys, read from a bounded prefix of the table's own
+    ordering; None when the prefix cannot prove the page, so the caller uses
+    :func:`fenced_page_ids`.
 
-    :func:`fenced_page_ids` and :func:`fenced_aggregate` each materialize the
-    full filtered match set independently, so a cold search request pays the
-    expensive part (the trigram Bitmap Heap Scan over salary_record — 55k-391k
-    matched rows for common terms like ENGINEERS) TWICE. That double-scan is
-    the ``/salaries/?q=`` slow-tail residual from the 2026-06-21 504 swarm.
-
-    Fix: materialize the fenced match set once in a CTE (``AS MATERIALIZED``,
-    PG12+) and derive both the top-N page and the aggregate from that
-    tuplestore. The heap is scanned once; the two derivations are cheap passes
-    over the already-materialized rows.
-
-    The requested ``offset`` is used as-is. If it lies beyond the end of the
-    result set the page comes back empty while the aggregate is still correct —
-    callers that clamp the page number to the last page (the list views) should
-    re-resolve just the page via :func:`fenced_page_ids` in that (rare) case.
-
-    Args:
-        queryset: the filtered queryset (``select_related``/``only``/ordering
-            are ignored — only its WHERE clause is used).
-        order_fields: model field names; a ``-`` prefix means DESC.
-        offset: page slice start (rows to skip).
-        limit: page size.
-        agg_field: model field name to compute avg/min/max over.
-
-    Returns:
-        (list of primary keys in order, :class:`FencedAggregate`).
+    The prefix is the top ``budget`` rows of the whole table in ``order_fields`` order,
+    with the queryset's WHERE applied outside it. A full page found there is exactly the
+    global page; a short page, or a budget over :data:`PAGE_WALK_MAX_ROWS`, returns None.
+    The budget comes from the match rate ``match_count / table_rows``, so a broad term
+    (a third of the table matches "engineer") walks a few hundred rows and a rare one
+    is never walked.
     """
-    model = queryset.model
-    pk_col = model._meta.pk.column
-    agg_col = model._meta.get_field(agg_field).column
-    order_cols = {
-        f: model._meta.get_field(f.lstrip("-")).column for f in order_fields
-    }
+    if match_count <= 0:
+        return []
+    if table_rows <= 0:
+        return None
+    budget = math.ceil(PAGE_WALK_SLACK * (offset + limit) * table_rows / match_count)
+    if budget > PAGE_WALK_MAX_ROWS:
+        return None
 
-    # Project pk + ordering + aggregate columns (deduped); drop ORM ordering
-    # and any joins — same shape as fenced_page_ids/fenced_aggregate.
-    field_names = [model._meta.pk.name]
-    for f in order_fields:
-        name = model._meta.get_field(f.lstrip("-")).name
-        if name not in field_names:
-            field_names.append(name)
-    if agg_field not in field_names:
-        field_names.append(agg_field)
-    inner = queryset.order_by().values_list(*field_names)
+    model = queryset.model
+    table = model._meta.db_table
+    inner = queryset.order_by().values_list(model._meta.pk.name)
     compiler = inner.query.get_compiler(using=inner.db)
     try:
         inner_sql, inner_params = compiler.as_sql()
     except EmptyResultSet:
-        # Provably-empty WHERE (the employer free-text ``records.none()`` path).
-        return [], FencedAggregate(count=0, avg=None, min=None, max=None)
+        return []
+    from_clause = f'FROM "{table}"'
+    if inner_sql.count(from_clause) != 1:
+        return None  # a join or subquery: the prefix alias would not stand in for it
 
     order_sql = ", ".join(
-        f'"{order_cols[f]}" {"DESC" if f.startswith("-") else "ASC"}'
+        f'"{model._meta.get_field(f.lstrip("-")).column}" '
+        f'{"DESC" if f.startswith("-") else "ASC"}'
         for f in order_fields
     )
-    # _fenced: the OFFSET-0 fence (see fenced_page_ids) + AS MATERIALIZED so
-    # the match set is computed ONCE and both consumers read the tuplestore.
-    # _page: top-N over the tuplestore (its inner ORDER BY/LIMIT keeps the
-    # top-N heapsort; row_number() OVER () just records arrival order so the
-    # final join can be re-ordered). _agg: always exactly one row, so the
-    # cross join tags every page row with the aggregate (and yields a single
-    # NULL-pk row when the page is empty).
-    sql = (
-        f"WITH _fenced AS MATERIALIZED ({inner_sql} OFFSET 0), "
-        f"_page AS MATERIALIZED ("
-        f'SELECT "{pk_col}", row_number() OVER () AS _rn FROM ('
-        f'SELECT "{pk_col}" FROM _fenced ORDER BY {order_sql} '
-        f"LIMIT %s OFFSET %s) _p), "
-        f"_agg AS (SELECT count(*) AS _n, avg(\"{agg_col}\") AS _avg, "
-        f'min("{agg_col}") AS _min, max("{agg_col}") AS _max FROM _fenced) '
-        f'SELECT _agg._n, _agg._avg, _agg._min, _agg._max, _page."{pk_col}" '
-        f"FROM _agg LEFT JOIN _page ON TRUE ORDER BY _page._rn"
-    )
+    # The prefix is aliased as the table, so the compiled WHERE ("table"."col") reads it.
+    # Its LIMIT keeps the outer WHERE from being pushed down into the walk.
+    prefix = f'FROM (SELECT * FROM "{table}" ORDER BY {order_sql} LIMIT %s) "{table}"'
+    walked_sql = inner_sql.replace(from_clause, prefix)
+    sql = f"{walked_sql} ORDER BY {order_sql} LIMIT %s OFFSET %s"
     with connections[inner.db].cursor() as cursor:
-        cursor.execute(sql, list(inner_params) + [limit, offset])
-        rows = cursor.fetchall()
-    if not rows:  # cannot happen (_agg always has one row), but stay safe
-        return [], FencedAggregate(count=0, avg=None, min=None, max=None)
-    count, avg, min_, max_ = rows[0][:4]
-    page_ids = [row[4] for row in rows if row[4] is not None]
-    return page_ids, FencedAggregate(count=count or 0, avg=avg, min=min_, max=max_)
+        cursor.execute(sql, [budget, *inner_params, limit, offset])
+        page = [row[0] for row in cursor.fetchall()]
+    return page if len(page) == limit else None
+
+
+def parallel_aggregate(queryset, agg_field: str) -> MatchAggregate:
+    """``count(*)`` + ``avg``/``min``/``max`` of ``agg_field`` as one plain statement, so
+    PostgreSQL can run a broad trigram match as a parallel bitmap scan.
+
+    Unsafe where :func:`fenced_aggregate`'s fence is needed: an employer filter combined
+    with a trigram term. JIT is off: compiling this plan took 1.1s of a 2.3s query.
+    """
+    model = queryset.model
+    col = model._meta.get_field(agg_field).column
+    aggregated = queryset.order_by().values_list(agg_field, flat=True)
+    compiler = aggregated.query.get_compiler(using=aggregated.db)
+    try:
+        inner_sql, inner_params = compiler.as_sql()
+    except EmptyResultSet:
+        return MatchAggregate(count=0, avg=None, min=None, max=None)
+    sql = (
+        f'SELECT count(*), avg("{col}"), min("{col}"), max("{col}")'
+        f'{inner_sql[inner_sql.index(" FROM "):]}'
+    )
+    with transaction.atomic(using=aggregated.db), connections[aggregated.db].cursor() as cursor:
+        cursor.execute("SET LOCAL jit = off")
+        cursor.execute(sql, list(inner_params))
+        count, avg, min_, max_ = cursor.fetchone()
+    return MatchAggregate(count=count or 0, avg=avg, min=min_, max=max_)
 
 
 def apply_visa_program_filter(
