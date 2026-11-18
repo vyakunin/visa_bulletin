@@ -9,6 +9,12 @@ from django.db import connections, router, transaction
 from models.enums.visa_program import VisaProgram
 
 
+def is_trigram_search(query: str) -> bool:
+    """Whether :func:`apply_text_search_filter` filters on ``query`` at all: trigrams
+    need at least 3 characters to use the GIN index."""
+    return bool(query) and len(query.strip()) >= 3
+
+
 def apply_text_search_filter(queryset, query: str, fields: list[str]):
     """
     Apply case-insensitive substring search across multiple fields.
@@ -35,7 +41,7 @@ def apply_text_search_filter(queryset, query: str, fields: list[str]):
     Returns:
         Filtered queryset
     """
-    if not query or len(query.strip()) < 3:
+    if not is_trigram_search(query):
         # Trigrams need ≥3 chars to use the GIN index. Patterns of 1-2 chars
         # match every row and PostgreSQL falls back to a sequential scan on
         # the full table — ~22s on /salaries/?q=R, ~5s on q=ENGINEERS truncated
@@ -273,12 +279,16 @@ def walked_page_ids(
     return page if len(page) == limit else None
 
 
-def parallel_aggregate(queryset, agg_field: str) -> MatchAggregate:
+def parallel_aggregate(
+    queryset, agg_field: str, *, trigram_search: bool
+) -> MatchAggregate:
     """``count(*)`` + ``avg``/``min``/``max`` of ``agg_field`` as one plain statement, so
     PostgreSQL can run a broad trigram match as a parallel bitmap scan.
 
     Unsafe where :func:`fenced_aggregate`'s fence is needed: an employer filter combined
     with a trigram term. JIT is off: compiling this plan took 1.1s of a 2.3s query.
+    A ``trigram_search`` also has the seq scan off: prod's planner picked it for
+    q=engineer, which runs upper()+LIKE on every row (4.6s against 2.7s by bitmap).
     """
     model = queryset.model
     col = model._meta.get_field(agg_field).column
@@ -294,6 +304,8 @@ def parallel_aggregate(queryset, agg_field: str) -> MatchAggregate:
     )
     with transaction.atomic(using=aggregated.db), connections[aggregated.db].cursor() as cursor:
         cursor.execute("SET LOCAL jit = off")
+        if trigram_search:
+            cursor.execute("SET LOCAL enable_seqscan = off")
         cursor.execute(sql, list(inner_params))
         count, avg, min_, max_ = cursor.fetchone()
     return MatchAggregate(count=count or 0, avg=avg, min=min_, max=max_)

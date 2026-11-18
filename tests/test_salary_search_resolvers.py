@@ -163,16 +163,25 @@ class ParallelAggregateTest(TestCase):
     def test_equals_the_fenced_aggregate(self):
         for query in ("ENGINEER", "CASHIER", "NONEXISTENTZZZ"):
             qs = _searched(query)
-            self.assertEqual(parallel_aggregate(qs, "wage_annual"),
+            self.assertEqual(parallel_aggregate(qs, "wage_annual", trigram_search=True),
                              fenced_aggregate(qs, "wage_annual"), query)
 
     def test_provably_empty_queryset_is_zero(self):
-        agg = parallel_aggregate(SalaryRecord.objects.none(), "wage_annual")
+        agg = parallel_aggregate(
+            SalaryRecord.objects.none(), "wage_annual", trigram_search=False
+        )
         self.assertEqual((agg.count, agg.avg, agg.min, agg.max), (0, None, None, None))
+
+    def test_a_trigram_search_is_kept_off_the_seq_scan(self):
+        for force, expected in ((True, True), (False, False)):
+            with CaptureQueriesContext(connection) as ctx:
+                parallel_aggregate(_searched("ENGINEER"), "wage_annual", trigram_search=force)
+            statements = [q["sql"] for q in ctx.captured_queries]
+            self.assertEqual("SET LOCAL enable_seqscan = off" in statements, expected)
 
     def test_runs_unfenced_with_jit_off(self):
         with CaptureQueriesContext(connection) as ctx:
-            parallel_aggregate(_searched("ENGINEER"), "wage_annual")
+            parallel_aggregate(_searched("ENGINEER"), "wage_annual", trigram_search=True)
         statements = [q["sql"] for q in ctx.captured_queries]
         self.assertIn("SET LOCAL jit = off", statements)
         (aggregate,) = [sql for sql in statements if "count(*)" in sql]
@@ -199,6 +208,7 @@ class SalarySearchViewResolverTest(TestCase):
         self.assertEqual(response.status_code, 200)
         sql = " ".join(q["sql"] for q in ctx.captured_queries)
         self.assertNotIn("_fenced", sql)
+        self.assertIn("SET LOCAL enable_seqscan = off", sql)
         self.assertEqual(response.context["total_results"], 120)
         top = [r.wage_annual for r in response.context["records"]]
         self.assertEqual(len(top), 50)

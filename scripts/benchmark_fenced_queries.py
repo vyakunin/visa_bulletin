@@ -71,6 +71,7 @@ from lib.utils.filter_utils import (  # noqa: E402
     estimated_table_rows,
     fenced_aggregate,
     fenced_page_ids,
+    is_trigram_search,
     parallel_aggregate,
     walked_page_ids,
 )
@@ -187,9 +188,12 @@ def _two_scan(records, offset: int) -> tuple[int, int]:
     return agg.count, len(ids)
 
 
-def _walked(records, offset: int, uses_employer: bool) -> tuple[int, int]:
-    aggregate = fenced_aggregate if uses_employer else parallel_aggregate
-    agg = aggregate(records, AGG_FIELD)
+def _walked(records, offset: int, uses_employer: bool,
+            trigram_search: bool) -> tuple[int, int]:
+    if uses_employer:
+        agg = fenced_aggregate(records, AGG_FIELD)
+    else:
+        agg = parallel_aggregate(records, AGG_FIELD, trigram_search=trigram_search)
     ids = walked_page_ids(
         records, ORDER_FIELDS, offset, PER_PAGE,
         match_count=agg.count, table_rows=estimated_table_rows(SalaryRecord),
@@ -233,7 +237,8 @@ def run_shape(shape: Shape, *, warmup: int, iterations: int,
               lambda: _two_scan(records, offset),
               warmup=warmup, iterations=iterations),
         _time("walked (parallel_aggregate + walked_page_ids)",
-              lambda: _walked(records, offset, bool(shape.params.get("employer"))),
+              lambda: _walked(records, offset, bool(shape.params.get("employer")),
+                              is_trigram_search(shape.params.get("query", ""))),
               warmup=warmup, iterations=iterations),
     ]
     if include_naive:
