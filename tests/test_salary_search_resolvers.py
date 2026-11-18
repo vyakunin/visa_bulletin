@@ -21,6 +21,7 @@ from lib.utils.filter_utils import (
     fenced_aggregate,
     fenced_page_ids,
     parallel_aggregate,
+    parallel_page_ids,
     walked_page_ids,
 )
 from models.enums.visa_program import CaseStatus, VisaProgram
@@ -150,6 +151,49 @@ class WalkedPageIdsTest(TestCase):
         self.assertIn('ORDER BY "wage_annual" DESC, "fiscal_year" DESC LIMIT', sql)
 
 
+class ParallelPageIdsTest(TestCase):
+    def setUp(self):
+        employer = _employer("Page Co")
+        rows = [
+            (f"ENGINEER {i}", 100000 + i * 1000, 2024 if i % 2 else 2020, "CA" if i % 3 else "NY")
+            for i in range(40)
+        ]
+        rows += [
+            ("SENIOR ENGINEER", 250000, 2024, "CA"),
+            ("SENIOR ENGINEER", 250000, 2022, "CA"),
+            ("CASHIER", 35000, 2023, "CA"),
+        ]
+        _seed(employer, rows)
+
+    def test_equals_the_fence(self):
+        cases = [("ENGINEER", {}, 0), ("ENGINEER", {}, 20), ("ENGINEER", {}, 40),
+                 ("CASHIER", {}, 0), ("ENGINEER", {"worksite_state": "NY"}, 5),
+                 ("", {"worksite_state": "NY"}, 0), ("NONEXISTENTZZZ", {}, 0)]
+        for query, filters, offset in cases:
+            qs = _searched(query, **filters)
+            self.assertEqual(
+                parallel_page_ids(qs, ORDER, offset, 10, trigram_search=bool(query)),
+                fenced_page_ids(qs, ORDER, offset, 10),
+                (query, filters, offset),
+            )
+
+    def test_provably_empty_queryset_is_an_empty_page(self):
+        self.assertEqual(
+            parallel_page_ids(SalaryRecord.objects.none(), ORDER, 0, 10, trigram_search=False),
+            [],
+        )
+
+    def test_steers_the_planner_instead_of_fencing(self):
+        with CaptureQueriesContext(connection) as ctx:
+            parallel_page_ids(_searched("ENGINEER"), ORDER, 3, 5, trigram_search=True)
+        statements = [q["sql"] for q in ctx.captured_queries]
+        for setting in ("SET LOCAL jit = off", "SET LOCAL enable_indexscan = off",
+                        "SET LOCAL enable_seqscan = off"):
+            self.assertIn(setting, statements)
+        (page,) = [sql for sql in statements if "LIMIT" in sql]
+        self.assertNotIn("_fenced", page)
+
+
 class ParallelAggregateTest(TestCase):
     def setUp(self):
         employer = _employer("Agg Co")
@@ -214,6 +258,14 @@ class SalarySearchViewResolverTest(TestCase):
         self.assertEqual(len(top), 50)
         self.assertEqual(int(top[0]), 219000)
         self.assertEqual(int(top[-1]), 170000)
+
+    def test_a_deep_page_past_the_walk_budget_is_resolved_without_a_fence(self):
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(reverse("salary_search"), {"q": "engineer", "page": 3})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_fenced", " ".join(q["sql"] for q in ctx.captured_queries))
+        self.assertEqual([int(r.wage_annual) for r in response.context["records"]],
+                         list(range(119000, 99000, -1000)))
 
     def test_employer_filter_keeps_the_fenced_aggregate(self):
         with CaptureQueriesContext(connection) as ctx:

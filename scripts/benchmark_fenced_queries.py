@@ -9,8 +9,8 @@ regression in the fenced-query optimization is measurable:
   * two_scan     — fenced_aggregate() + fenced_page_ids() (the pair; each
                    materializes the filtered match set once, so a cold search
                    scans it TWICE).
-  * walked       — parallel_aggregate() (fenced_aggregate() under an employer
-                   filter) + walked_page_ids(), falling back to fenced_page_ids();
+  * walked       — parallel_aggregate() + walked_page_ids(), falling back to
+                   parallel_page_ids() (the fenced pair under an employer filter);
                    the current cold /salaries/?q= path.
   * naive        — plain ORM .aggregate() + sliced .order_by()[...] (the
                    pre-fence path that LIMIT-pessimized / timed out; --include-naive,
@@ -73,6 +73,7 @@ from lib.utils.filter_utils import (  # noqa: E402
     fenced_page_ids,
     is_trigram_search,
     parallel_aggregate,
+    parallel_page_ids,
     walked_page_ids,
 )
 from lib.utils.logging_utils import ScriptLogger  # noqa: E402
@@ -198,8 +199,12 @@ def _walked(records, offset: int, uses_employer: bool,
         records, ORDER_FIELDS, offset, PER_PAGE,
         match_count=agg.count, table_rows=estimated_table_rows(SalaryRecord),
     )
-    if ids is None:
+    if ids is None and uses_employer:
         ids = fenced_page_ids(records, ORDER_FIELDS, offset, PER_PAGE)
+    elif ids is None:
+        ids = parallel_page_ids(
+            records, ORDER_FIELDS, offset, PER_PAGE, trigram_search=trigram_search
+        )
     return agg.count, len(ids)
 
 
