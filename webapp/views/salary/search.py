@@ -36,6 +36,7 @@ from lib.utils.filter_utils import (
     estimated_table_rows,
     fenced_aggregate,
     fenced_page_ids,
+    is_trigram_search,
     parallel_aggregate,
     walked_page_ids,
 )
@@ -829,9 +830,12 @@ def salary_search_view(request):
         else:
             # An employer filter keeps the fence (see fenced_aggregate); every other
             # filter is a column predicate the planner can scan in parallel.
-            uses_employer = matched_cluster is not None or bool(employer_filter)
-            aggregate = fenced_aggregate if uses_employer else parallel_aggregate
-            agg = aggregate(records, "wage_annual")
+            if matched_cluster is not None or employer_filter:
+                agg = fenced_aggregate(records, "wage_annual")
+            else:
+                agg = parallel_aggregate(
+                    records, "wage_annual", trigram_search=is_trigram_search(query)
+                )
             total_results = agg.count
             stats = {
                 "avg_salary": agg.avg,
