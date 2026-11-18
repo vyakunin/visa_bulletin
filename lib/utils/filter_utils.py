@@ -1,6 +1,7 @@
 """Generic filter application utilities for Django querysets"""
 
 import math
+from contextlib import contextmanager
 from typing import NamedTuple
 
 from django.core.exceptions import EmptyResultSet
@@ -279,6 +280,56 @@ def walked_page_ids(
     return page if len(page) == limit else None
 
 
+@contextmanager
+def _parallel_planner_cursor(db: str, *, trigram_search: bool, no_index_walk: bool):
+    """A cursor in a transaction whose planner settings replace the OFFSET-0 fence.
+
+    The fence keeps the planner off its two bad plans but runs in one process, which at
+    10.78M rows costs 5s warm and ~30s on prod for a broad term. The same plans are kept
+    out by settings, leaving it free to scan in parallel:
+    * ``no_index_walk``: no walk down the wage index with an inline recheck, the
+      LIMIT-pessimization a rare low-wage term (CASHIER) hits.
+    * ``trigram_search``: no sequential scan, which prod's planner picked for
+      q=engineer and which runs upper()+LIKE on every row (4.6s against 2.7s by bitmap).
+    JIT is off: compiling these plans took 1.1s of a 2.3s query.
+    """
+    with transaction.atomic(using=db), connections[db].cursor() as cursor:
+        cursor.execute("SET LOCAL jit = off")
+        if no_index_walk:
+            cursor.execute("SET LOCAL enable_indexscan = off")
+        if trigram_search:
+            cursor.execute("SET LOCAL enable_seqscan = off")
+        yield cursor
+
+
+def parallel_page_ids(
+    queryset, order_fields: tuple[str, ...], offset: int, limit: int, *, trigram_search: bool
+) -> list:
+    """The page :func:`fenced_page_ids` returns, planned without the fence so a broad
+    term's top-N sort runs in parallel workers (page 100 of q=engineer: 2.8s against 4.9s).
+
+    Unsafe where the fence is needed: an employer filter combined with a trigram term.
+    """
+    model = queryset.model
+    inner = queryset.order_by().values_list(model._meta.pk.name)
+    compiler = inner.query.get_compiler(using=inner.db)
+    try:
+        inner_sql, inner_params = compiler.as_sql()
+    except EmptyResultSet:
+        return []
+    order_sql = ", ".join(
+        f'"{model._meta.get_field(f.lstrip("-")).column}" '
+        f'{"DESC" if f.startswith("-") else "ASC"}'
+        for f in order_fields
+    )
+    sql = f"{inner_sql} ORDER BY {order_sql} LIMIT %s OFFSET %s"
+    with _parallel_planner_cursor(
+        inner.db, trigram_search=trigram_search, no_index_walk=True
+    ) as cursor:
+        cursor.execute(sql, [*inner_params, limit, offset])
+        return [row[0] for row in cursor.fetchall()]
+
+
 def parallel_aggregate(
     queryset, agg_field: str, *, trigram_search: bool
 ) -> MatchAggregate:
@@ -286,9 +337,7 @@ def parallel_aggregate(
     PostgreSQL can run a broad trigram match as a parallel bitmap scan.
 
     Unsafe where :func:`fenced_aggregate`'s fence is needed: an employer filter combined
-    with a trigram term. JIT is off: compiling this plan took 1.1s of a 2.3s query.
-    A ``trigram_search`` also has the seq scan off: prod's planner picked it for
-    q=engineer, which runs upper()+LIKE on every row (4.6s against 2.7s by bitmap).
+    with a trigram term.
     """
     model = queryset.model
     col = model._meta.get_field(agg_field).column
@@ -302,10 +351,9 @@ def parallel_aggregate(
         f'SELECT count(*), avg("{col}"), min("{col}"), max("{col}")'
         f'{inner_sql[inner_sql.index(" FROM "):]}'
     )
-    with transaction.atomic(using=aggregated.db), connections[aggregated.db].cursor() as cursor:
-        cursor.execute("SET LOCAL jit = off")
-        if trigram_search:
-            cursor.execute("SET LOCAL enable_seqscan = off")
+    with _parallel_planner_cursor(
+        aggregated.db, trigram_search=trigram_search, no_index_walk=False
+    ) as cursor:
         cursor.execute(sql, list(inner_params))
         count, avg, min_, max_ = cursor.fetchone()
     return MatchAggregate(count=count or 0, avg=avg, min=min_, max=max_)

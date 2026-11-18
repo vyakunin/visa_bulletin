@@ -38,6 +38,7 @@ from lib.utils.filter_utils import (
     fenced_page_ids,
     is_trigram_search,
     parallel_aggregate,
+    parallel_page_ids,
     walked_page_ids,
 )
 from lib.utils.location_utils import US_STATES
@@ -897,8 +898,9 @@ def salary_search_view(request):
             ]
         )
     else:
-        # A broad term's page sits in the first few hundred rows of the wage ordering;
-        # a rare or wage-correlated one falls back to the fence (see fenced_page_ids).
+        # A broad term's page sits in the first few hundred rows of the wage ordering.
+        # Otherwise an employer filter keeps the fence (see fenced_aggregate) and every
+        # other filter set is planned to run in parallel.
         page_ids = walked_page_ids(
             records,
             _SALARY_ORDER,
@@ -907,9 +909,17 @@ def salary_search_view(request):
             match_count=total_results or 0,
             table_rows=estimated_table_rows(SalaryRecord),
         )
-        if page_ids is None:
+        if page_ids is None and (matched_cluster is not None or employer_filter):
             page_ids = fenced_page_ids(
                 records, _SALARY_ORDER, pagination["offset"], per_page
+            )
+        elif page_ids is None:
+            page_ids = parallel_page_ids(
+                records,
+                _SALARY_ORDER,
+                pagination["offset"],
+                per_page,
+                trigram_search=is_trigram_search(query),
             )
     row_by_id = {
         row.id: row
