@@ -47,7 +47,7 @@ Capture the `CheckupReport` (status / summary / sections / errors / generated_at
 
 The MCP returns RAW signals. Do not just paste them — **answer each red/yellow signal with the root cause + a recommended action**. Common investigations:
 
-- **Disk pressure on homeserver** (DISK_RED_PCT=85, YELLOW=70): nearly always Docker images + build cache. SSH in and run `docker system df` to confirm; if `RECLAIMABLE > 10 GB`, recommend `docker system prune -af --volumes` and quote the reclaim figure. Don't recommend deleting /opt/stack data without confirming what owns it.
+- **Disk pressure on homeserver** (DISK_RED_PCT=85, YELLOW=80): check Docker images + build cache. `docker system df`'s RECLAIMABLE counts images the other running stacks hold (11.8 of 11.8 GB "reclaimable" on 2026-11-20 with 19 of 20 images in use), so size only the images no container uses before recommending `docker system prune -af`. Don't recommend deleting /opt/stack data without confirming what owns it.
 - **Staging containers exited**: usually intentional (manual experiment, dual-stack burn-in still in progress). Check `Exited (0) <N> days ago` — exit 0 means clean shutdown. Mention as a one-liner ("staging stack idle since X; restart with `cd /opt/stack/visa_bulletin_staging && docker compose up -d` if needed").
 - **5xx spikes**: pull recent error lines from `docker logs vb_web --since 30m | grep -i error` before flagging.
 - **Slow tail (>10s requests)**: cross-reference the path against the per-property "Performance" data. If predictions backtest is the offender, that's expected today (heavy Plotly render); flag only if it grows beyond 5–10 hits.

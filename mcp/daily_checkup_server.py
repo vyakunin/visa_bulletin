@@ -153,7 +153,7 @@ GA4_IMPLIED_ENGAGED_S_CEILING = 600   # mean engaged-session time that cannot be
 GA4_FAULT_MIN_SESSIONS = 50           # below this N the arithmetic is noise, not proof
 
 # Thresholds
-DISK_YELLOW_PCT = 70  # small SSD; want headroom for Postgres growth.
+DISK_YELLOW_PCT = 80  # small SSD; want headroom for Postgres growth.
 DISK_RED_PCT = 85
 MEM_YELLOW_PCT = 80
 MEM_RED_PCT = 92

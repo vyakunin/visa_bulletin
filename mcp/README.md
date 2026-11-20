@@ -90,7 +90,7 @@ Thresholds are constants at the top of `daily_checkup_server.py`:
 
 | Constant | Default | What it controls |
 |---|---|---|
-| `DISK_YELLOW_PCT` / `_RED_PCT` | 70 / 85 | Production SSD (small) |
+| `DISK_YELLOW_PCT` / `_RED_PCT` | 80 / 85 | Production SSD (small) |
 | `MEM_YELLOW_PCT` / `_RED_PCT` | 80 / 92 | Homeserver RAM (8 GB) |
 | `CPU_LOAD_YELLOW` / `_RED` | 1.0 / 2.0 | load1 ÷ nproc |
 | `BULLETIN_REFRESH_YELLOW_MIN` / `_RED_MIN` | 90 / 180 | Hourly cron staleness |
